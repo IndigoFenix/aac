@@ -1,0 +1,99 @@
+{
+  "title": "CliniAACian Vertical OS UI Prototype",
+  "goal": "Create a functional, responsive, two-column web application prototype for the CliniAACian Vertical OS. The prototype must demonstrate the SLP's conversational workflow and quick access to all Tool Agents via action buttons. Use modern web technologies (HTML, CSS, minimal JavaScript) for rapid component building.",
+  "technology_stack": [
+    "HTML5",
+    "CSS3 (Flexbox/Grid for layout)",
+    "Minimal Vanilla JavaScript (for basic interaction/placeholder data)",
+    "CSS Variables for distinct color palette (e.g., Deep Blue/Dark Gray for sidebar, light neutral for main content)."
+  ],
+  "layout_requirements": {
+    "overall_structure": "Two-column layout optimized for desktop/tablet viewing.",
+    "left_column": {
+      "width": "Approx. 25% (Fixed)",
+      "styling": "Fixed vertical sidebar with a distinct background color (e.g., Dark Blue/Deep Gray)."
+    },
+    "right_column": {
+      "width": "Approx. 75% (Fluid)",
+      "styling": "Main content area for dynamic conversation and interaction."
+    }
+  },
+  "left_column_details": {
+    "title": "Navigation and Control Center",
+    "sections": [
+      {
+        "label": "Logo & Title",
+        "items": [
+          "Prominent Xahaph AI Logo placeholder at the top."
+        ]
+      },
+      {
+        "label": "Active Client Context",
+        "items": [
+          "[Icon: Person] + Label: 'Client Name: Sarah J.' (This should simulate the currently selected profile)"
+        ]
+      },
+      {
+        "label": "Workspace",
+        "items": [
+          "[Icon: Chat Bubble] + Label: 'New Session'",
+          "[Icon: Folder] + Label: 'Saved Reports' (DocuSLP Repository)",
+          "[Icon: Grid] + Label: 'My Board Library' (SyntAACx Boards)"
+        ]
+      },
+      {
+        "label": "Bottom Actions",
+        "items": [
+          "[Icon: Gear] + Label: 'Settings'",
+          "[Icon: Door/Logout] + Label: 'Log Out'"
+        ]
+      }
+    ]
+  },
+  "right_column_details": {
+    "title": "Main Conversational OS",
+    "header": {
+      "location": "Top Right",
+      "items": [
+        "[Icon: SLP Profile] + Label: 'SLPPro (Active)'"
+      ]
+    },
+    "main_canvas": {
+      "description": "Empty, dark canvas dominating the area to display conversation history.",
+      "placeholder_content": "Initial message: 'Hello, SLPPro. How can I help you with your client today?'"
+    },
+    "interaction_bar": {
+      "location": "Fixed to Bottom Center of the Right Column",
+      "components": [
+        {
+          "type": "Tool Selection Indicator",
+          "items": [
+            "[Icon: Gear] + Label: 'Current Tool: CliniAACian Orchestrator' (Dropdown placeholder)"
+          ]
+        },
+        {
+          "type": "Prompt Text Box",
+          "items": [
+            "[Icon: Note/Pencil] inside the left of the large text box.",
+            "Placeholder Text: 'Ask the Orchestrator a question...'"
+          ]
+        },
+        {
+          "type": "Voice Input",
+          "items": [
+            "[Icon: Microphone] positioned prominently next to the text box."
+          ]
+        },
+        {
+          "type": "Quick Action Buttons",
+          "description": "Large, clickable buttons representing the Tool Agents.",
+          "items": [
+            "[Icon: Board/Grid] + Label: 'Generate AAC Board' (Triggers SyntAACx)",
+            "[Icon: Head/Speech Bubble] + Label: 'Interpret AAC Intent' (Triggers CommuniACCte)",
+            "[Icon: Document/Report] + Label: 'Draft IEP/TLA Document' (Triggers DocuSLP)"
+          ]
+        }
+      ]
+    }
+  }
+}
