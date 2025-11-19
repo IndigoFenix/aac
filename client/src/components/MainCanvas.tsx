@@ -37,7 +37,7 @@ export function MainCanvas({ messages = [] }: MainCanvasProps) {
               {getGreeting()}, {clientName}.
             </h2>
             <p className="text-sm text-muted-foreground">
-              How can I help you with your client today?
+              What do you need to do?
             </p>
           </div>
         </div>
