@@ -244,7 +244,7 @@ export function MainCanvas({ messages: initialMessages = [] }: MainCanvasProps) 
           </div>
 
           <div className="sticky bottom-0 bg-background border-t border-border p-6">
-            <div className="max-w-3xl mx-auto">
+            <div className="max-w-3xl mx-auto space-y-4">
               <div className="relative bg-card border border-card-border rounded-full px-6 py-4 flex items-center gap-3">
                 <Button
                   size="icon"
@@ -300,6 +300,21 @@ export function MainCanvas({ messages: initialMessages = [] }: MainCanvasProps) 
                 >
                   <Mic className={`w-4 h-4 ${isRecording ? "animate-pulse" : ""}`} />
                 </Button>
+              </div>
+              
+              <div className="flex flex-wrap gap-3 justify-center">
+                {quickActions.map((action) => (
+                  <Button
+                    key={action.id}
+                    variant="secondary"
+                    className="rounded-full px-5 py-2 h-auto hover-elevate active-elevate-2"
+                    onClick={() => handleQuickAction(action.id, action.label)}
+                    data-testid={action.testId}
+                  >
+                    <action.icon className="w-4 h-4 mr-2" />
+                    <span className="text-sm">{action.label}</span>
+                  </Button>
+                ))}
               </div>
             </div>
           </div>
