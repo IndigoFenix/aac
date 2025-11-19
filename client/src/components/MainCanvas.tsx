@@ -16,6 +16,15 @@ type MainCanvasProps = {
 export function MainCanvas({ messages = [] }: MainCanvasProps) {
   const showWelcome = messages.length === 0;
 
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good morning";
+    if (hour < 18) return "Good afternoon";
+    return "Good evening";
+  };
+
+  const clientName = "Sarah"; // Active client from sidebar context
+
   return (
     <ScrollArea className="flex-1 px-6">
       {showWelcome ? (
@@ -25,7 +34,7 @@ export function MainCanvas({ messages = [] }: MainCanvasProps) {
               <Bot className="w-8 h-8 text-primary" />
             </div>
             <h2 className="text-xl font-medium text-foreground" data-testid="text-welcome">
-              Hello, SLPPro.
+              {getGreeting()}, {clientName}.
             </h2>
             <p className="text-sm text-muted-foreground">
               How can I help you with your client today?
