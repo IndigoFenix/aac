@@ -26,7 +26,7 @@ type MainCanvasProps = {
 export function MainCanvas({ messages = [] }: MainCanvasProps) {
   const showWelcome = messages.length === 0;
   const [prompt, setPrompt] = useState("");
-  const [selectedTool, setSelectedTool] = useState("orchestrator");
+  const [selectedTool, setSelectedTool] = useState("syntaacx");
   const [isRecording, setIsRecording] = useState(false);
 
   const getGreeting = () => {
@@ -130,7 +130,6 @@ export function MainCanvas({ messages = [] }: MainCanvasProps) {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="orchestrator">Orchestrator</SelectItem>
                     <SelectItem value="syntaacx">SyntAACx</SelectItem>
                     <SelectItem value="communiacte">CommuniACCte</SelectItem>
                     <SelectItem value="docuslp">DocuSLP</SelectItem>
