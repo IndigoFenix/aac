@@ -5,12 +5,18 @@ import { MainCanvas } from "@/components/MainCanvas";
 import { InteractionBar } from "@/components/InteractionBar";
 
 export default function Dashboard() {
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
   return (
     <div className="flex h-screen bg-background overflow-hidden">
-      <LeftSidebar />
+      <LeftSidebar isCollapsed={isSidebarCollapsed} />
       
-      <div className="flex-1 ml-80 flex flex-col">
-        <TopHeader />
+      <div 
+        className={`flex-1 flex flex-col transition-all duration-300 ${
+          isSidebarCollapsed ? "ml-20" : "ml-80"
+        }`}
+      >
+        <TopHeader onToggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)} />
         <MainCanvas />
         <InteractionBar />
       </div>

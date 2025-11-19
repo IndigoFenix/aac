@@ -1,10 +1,25 @@
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { User } from "lucide-react";
+import { User, Menu } from "lucide-react";
 
-export function TopHeader() {
+type TopHeaderProps = {
+  onToggleSidebar?: () => void;
+};
+
+export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
   return (
-    <div className="h-16 border-b border-border bg-background px-6 flex items-center justify-end">
+    <div className="h-16 border-b border-border bg-background px-6 flex items-center justify-between">
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onToggleSidebar}
+        data-testid="button-toggle-sidebar"
+        className="hover-elevate active-elevate-2"
+      >
+        <Menu className="w-5 h-5" />
+      </Button>
+      
       <div className="flex items-center gap-3" data-testid="header-profile">
         <div className="text-right">
           <p className="text-sm font-medium text-foreground">SLPPro</p>
