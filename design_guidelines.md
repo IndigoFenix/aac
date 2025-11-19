@@ -1,4 +1,4 @@
-# CliniAACian Vertical OS - Design Guidelines
+# CliniAACian - Design Guidelines
 
 ## Design Approach
 **System-Based Design**: Professional clinical dashboard following Material Design principles adapted for healthcare/clinical workflows. Focus on clarity, efficiency, and reduced cognitive load for SLP practitioners.

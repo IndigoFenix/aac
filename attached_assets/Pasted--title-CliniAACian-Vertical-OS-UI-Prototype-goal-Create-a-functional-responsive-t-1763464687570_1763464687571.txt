@@ -1,5 +1,5 @@
 {
-  "title": "CliniAACian Vertical OS UI Prototype",
+  "title": "CliniAACian",
   "goal": "Create a functional, responsive, two-column web application prototype for the CliniAACian Vertical OS. The prototype must demonstrate the SLP's conversational workflow and quick access to all Tool Agents via action buttons. Use modern web technologies (HTML, CSS, minimal JavaScript) for rapid component building.",
   "technology_stack": [
     "HTML5",

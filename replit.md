@@ -1,4 +1,4 @@
-# CliniAACian Vertical OS
+# CliniAACian
 
 A professional conversational interface prototype for SLP (Speech-Language Pathologist) practitioners.
 

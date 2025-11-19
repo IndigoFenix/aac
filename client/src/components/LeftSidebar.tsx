@@ -47,7 +47,6 @@ export function LeftSidebar({ isCollapsed = false }: LeftSidebarProps) {
               <h1 className="text-2xl font-semibold text-sidebar-foreground leading-8" data-testid="text-logo">
                 CliniAACian
               </h1>
-              <p className="text-xs text-muted-foreground mt-1">Vertical OS</p>
             </div>
           </div>
         ) : (
