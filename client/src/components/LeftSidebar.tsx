@@ -13,6 +13,7 @@ import {
   Moon,
   Sun,
 } from "lucide-react";
+import logoImage from "@assets/cliniaccian copy_1763565136724.png";
 
 type LeftSidebarProps = {
   isCollapsed?: boolean;
@@ -35,15 +36,28 @@ export function LeftSidebar({ isCollapsed = false }: LeftSidebarProps) {
     >
       <div className="p-6">
         {!isCollapsed ? (
-          <>
-            <h1 className="text-2xl font-semibold text-sidebar-foreground" data-testid="text-logo">
-              CliniAACian
-            </h1>
-            <p className="text-xs text-muted-foreground mt-1">Vertical OS</p>
-          </>
+          <div className="flex items-start gap-3">
+            <img 
+              src={logoImage} 
+              alt="CliniAACian Logo" 
+              className="w-8 h-8 flex-shrink-0"
+              data-testid="img-logo"
+            />
+            <div className="flex-1">
+              <h1 className="text-2xl font-semibold text-sidebar-foreground leading-8" data-testid="text-logo">
+                CliniAACian
+              </h1>
+              <p className="text-xs text-muted-foreground mt-1">Vertical OS</p>
+            </div>
+          </div>
         ) : (
-          <div className="text-2xl font-semibold text-sidebar-foreground text-center" data-testid="text-logo-collapsed">
-            C
+          <div className="flex justify-center" data-testid="logo-collapsed">
+            <img 
+              src={logoImage} 
+              alt="CliniAACian Logo" 
+              className="w-8 h-8"
+              data-testid="img-logo-collapsed"
+            />
           </div>
         )}
       </div>
