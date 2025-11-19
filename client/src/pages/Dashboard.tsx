@@ -2,7 +2,6 @@ import { useState } from "react";
 import { LeftSidebar } from "@/components/LeftSidebar";
 import { TopHeader } from "@/components/TopHeader";
 import { MainCanvas } from "@/components/MainCanvas";
-import { InteractionBar } from "@/components/InteractionBar";
 
 export default function Dashboard() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -18,7 +17,6 @@ export default function Dashboard() {
       >
         <TopHeader onToggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)} />
         <MainCanvas />
-        <InteractionBar />
       </div>
     </div>
   );

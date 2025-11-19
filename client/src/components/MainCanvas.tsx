@@ -1,6 +1,16 @@
+import { useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Bot } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Bot, Plus, Settings2, Mic, Grid3x3, MessageCircle, FileText } from "lucide-react";
 
 type Message = {
   id: string;
@@ -15,6 +25,9 @@ type MainCanvasProps = {
 
 export function MainCanvas({ messages = [] }: MainCanvasProps) {
   const showWelcome = messages.length === 0;
+  const [prompt, setPrompt] = useState("");
+  const [selectedTool, setSelectedTool] = useState("orchestrator");
+  const [isRecording, setIsRecording] = useState(false);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -23,22 +36,133 @@ export function MainCanvas({ messages = [] }: MainCanvasProps) {
     return "Good evening";
   };
 
-  const clientName = "Sarah"; // Active client from sidebar context
+  const clientName = "Sarah";
+
+  const quickActions = [
+    {
+      id: "syntaacx",
+      icon: Grid3x3,
+      label: "Generate AAC Board",
+      testId: "button-generate-board",
+    },
+    {
+      id: "communiacte",
+      icon: MessageCircle,
+      label: "Interpret AAC Intent",
+      testId: "button-interpret-intent",
+    },
+    {
+      id: "docuslp",
+      icon: FileText,
+      label: "Draft IEP/TLA Document",
+      testId: "button-draft-document",
+    },
+  ];
+
+  const handleQuickAction = (actionId: string, label: string) => {
+    console.log(`Quick action triggered: ${actionId} - ${label}`);
+  };
+
+  const handleVoiceInput = () => {
+    setIsRecording(!isRecording);
+    console.log(`Voice input ${!isRecording ? "started" : "stopped"}`);
+  };
+
+  const handleSend = () => {
+    if (prompt.trim()) {
+      console.log(`Sending prompt: ${prompt}`);
+      setPrompt("");
+    }
+  };
 
   return (
     <ScrollArea className="flex-1 px-6">
       {showWelcome ? (
         <div className="flex items-center justify-center h-full">
-          <div className="text-center space-y-4 max-w-md">
-            <div className="w-16 h-16 mx-auto rounded-full bg-primary/10 flex items-center justify-center">
-              <Bot className="w-8 h-8 text-primary" />
+          <div className="w-full max-w-3xl space-y-8 py-12">
+            <div className="text-center space-y-2">
+              <h2 className="text-3xl font-medium text-foreground" data-testid="text-welcome">
+                {getGreeting()}, {clientName}.
+              </h2>
+              <p className="text-base text-muted-foreground">
+                What do you need to do today?
+              </p>
             </div>
-            <h2 className="text-xl font-medium text-foreground" data-testid="text-welcome">
-              {getGreeting()}, {clientName}.
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              What do you need to do today?
-            </p>
+
+            <div className="space-y-4">
+              <div className="relative bg-card border border-card-border rounded-full px-6 py-4 flex items-center gap-3">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 rounded-full hover-elevate active-elevate-2"
+                  data-testid="button-add-attachment"
+                  onClick={() => console.log("Add attachment clicked")}
+                >
+                  <Plus className="w-5 h-5" />
+                </Button>
+                
+                <Button
+                  variant="ghost"
+                  className="h-8 rounded-full hover-elevate active-elevate-2"
+                  data-testid="button-tools"
+                  onClick={() => console.log("Tools clicked")}
+                >
+                  <Settings2 className="w-4 h-4 mr-2" />
+                  <span className="text-sm">Tools</span>
+                </Button>
+
+                <Input
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="Ask CliniAACian"
+                  className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-base h-8 px-2"
+                  data-testid="input-prompt"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                />
+
+                <Select value={selectedTool} onValueChange={setSelectedTool}>
+                  <SelectTrigger className="w-40 h-8 border-0 focus:ring-0 bg-transparent" data-testid="select-tool">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="orchestrator">Orchestrator</SelectItem>
+                    <SelectItem value="syntaacx">SyntAACx</SelectItem>
+                    <SelectItem value="communiacte">CommuniACCte</SelectItem>
+                    <SelectItem value="docuslp">DocuSLP</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Button
+                  size="icon"
+                  variant={isRecording ? "default" : "ghost"}
+                  className="h-8 w-8 rounded-full hover-elevate active-elevate-2"
+                  onClick={handleVoiceInput}
+                  data-testid="button-voice-input"
+                >
+                  <Mic className={`w-4 h-4 ${isRecording ? "animate-pulse" : ""}`} />
+                </Button>
+              </div>
+
+              <div className="flex flex-wrap gap-3 justify-center">
+                {quickActions.map((action) => (
+                  <Button
+                    key={action.id}
+                    variant="secondary"
+                    className="rounded-full px-5 py-2 h-auto hover-elevate active-elevate-2"
+                    onClick={() => handleQuickAction(action.id, action.label)}
+                    data-testid={action.testId}
+                  >
+                    <action.icon className="w-4 h-4 mr-2" />
+                    <span className="text-sm">{action.label}</span>
+                  </Button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       ) : (
