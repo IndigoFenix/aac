@@ -86,7 +86,7 @@ export function InteractionBar() {
             <Textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Ask the Orchestrator a question..."
+              placeholder="Ask CliniAACian"
               className="min-h-20 pr-12 resize-none text-sm"
               data-testid="input-prompt"
               onKeyDown={(e) => {
