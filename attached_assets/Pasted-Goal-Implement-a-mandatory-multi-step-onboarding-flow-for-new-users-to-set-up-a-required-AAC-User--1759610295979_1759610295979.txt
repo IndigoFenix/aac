@@ -1,0 +1,63 @@
+Goal: Implement a mandatory, multi-step onboarding flow for new users to set up a required AAC User Profile and one initial Schedule Entry to maximize Time-to-Value (TTV).
+
+Technologies: Frontend (React/TS, Tailwind/shadcn, Wouter), Backend (Express/TS), DB (PostgreSQL, Drizzle ORM).
+
+I. Database Enforcement (Drizzle ORM)
+Modify the users (Care Partner/Admin) table: Add a new mandatory field:
+
+onboardingStep: integer (Default 0). Tracks the user's progress: 0 (New User), 1 (Profile Incomplete), 2 (Schedule Incomplete), 3 (Complete).
+
+II. Backend API (Express.js/TypeScript)
+Onboarding Status Check Middleware: Implement middleware on the main application routes (/api/interpretation/*) to check the authenticated user's onboardingStep. If < 3, return a 412 Precondition Failed status code, forcing the frontend redirect.
+
+Profile Completion Endpoint (POST /api/onboarding/complete-step-1): Accepts new AAC User profile data, saves it to the aac_users table, and updates the authenticated user's onboardingStep to 1.
+
+Schedule Completion Endpoint (POST /api/onboarding/complete-step-2): Accepts a single schedule entry (re-using the logic from the A.5 Schedule API). Saves the entry and updates the authenticated user's onboardingStep to 3 (Complete).
+
+III. Frontend (React/TypeScript, Wouter Routing)
+Routing Guard: Use Wouter to redirect any authenticated user to /onboarding if their profile API check returns an onboardingStep value less than 3.
+
+Multi-Step Component (OnboardingFlow.tsx): Use clear shadcn/ui cards/modals for the sequential steps, ensuring the flow is mobile-first and fully accessible.
+
+Screen 1/3: Welcome & AAC User Profile Setup
+Layout: Standard form layout, utilizing existing input components.
+
+Header: Displays Step 1/3 progress.
+
+Title: "Welcome to CommuniAACte! Let's create your first AAC User profile."
+
+Input Fields (Required): Name (Text), Age (Number), Condition/Diagnosis (Text/Select).
+
+Action: Primary Button: (Continue →).
+
+Screen 2/3: Contextual Schedule Setup (First Activity)
+Layout: Focuses on simplified time and context input.
+
+Header: Displays Step 2/3 progress.
+
+Title: "Teach the AI Their Routine! Add one daily activity for better accuracy."
+
+Input Fields (Required): Activity Name (Text/Select), Start Time, End Time, Topic Tags (Multi-select/Tag input, require at least two tags).
+
+Logic: This step must validate and call the Schedule API (POST) for the single entry.
+
+Action: Primary Button: (Continue →).
+
+Screen 3/3: First Interpretation Test & Success
+Layout: Mimics the core interpretation screen but is simplified.
+
+Header: Displays Step 3/3 progress.
+
+Title: "Success! Let's Try It."
+
+Test Area:
+
+Context Bar: Highly visible banner showing the newly added context: "Based on [User's Name]'s profile and your '[Activity Name]' schedule."
+
+User Input: Field for entering a test message (e.g., fragmented text).
+
+AI Output: Box displaying the contextual interpretation result.
+
+Feedback Buttons: Include two buttons (✅ That's Right! and ❌ That's Close, it was...) to demonstrate the future feedback mechanism.
+
+Action: Primary Button: (Finish & Go to App →). This final action redirects the user to the main application dashboard.

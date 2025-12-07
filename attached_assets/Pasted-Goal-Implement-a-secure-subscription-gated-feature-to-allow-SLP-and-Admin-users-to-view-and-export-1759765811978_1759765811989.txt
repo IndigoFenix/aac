@@ -1,0 +1,40 @@
+Goal: Implement a secure, subscription-gated feature to allow SLP and Admin users to view and export comprehensive clinical data logs required for reimbursement and therapy tracking.
+
+Technologies: Frontend (React Query), Backend (Express/TS), DB (PostgreSQL/Drizzle ORM).
+
+I. Database & Data Aggregation (Drizzle ORM)
+Data Log Enrichment: Ensure the core interpretation history table reliably logs the following fields (to be sourced from A.1 and B.1 features once implemented):
+
+aiConfidenceScore: (0.0 to 1.0)
+
+caregiverFeedback: (enum: 'confirmed', 'corrected', 'rejected') - Crucial for Acceptance Rate.
+
+aacUserWPM: Calculated Messages per Minute for that session.
+
+scheduleActivity: The Activity Name from A.5 used in the prompt.
+
+Aggregation Queries: Write Drizzle queries to compute and retrieve aggregated data (e.g., average WPM by week, overall Acceptance Rate) filtered by aacUserId and dateRange.
+
+II. Backend API (Express.js/TypeScript)
+Subscription Gating Middleware (CRITICAL): Define and implement the requireSLPPlan middleware. This middleware must check the user's subscriptionPlanId (from C.6's data) and block access if the user is on the Free or Family plan, enforcing the monetization gate.
+
+Data Retrieval Endpoint (GET /api/slp/clinical-log):
+
+Must be protected by the new requireSLPPlan middleware.
+
+Accepts aacUserId and dateRange as query parameters.
+
+Returns the raw, de-aggregated data required for the final export.
+
+Export Endpoint (GET /api/slp/export-csv):
+
+Protected by requireSLPPlan middleware.
+
+Streams the data retrieved from the log into a downloadable CSV file using a Node.js library (csv-stringify or similar), ensuring all required fields are included for the SLP's reimbursement report.
+
+III. Frontend (React/TypeScript, shadcn/ui)
+Clinical Dashboard Tab: Create a new tab in the main application called "Clinical Data" (or similar), which is only visible/active if the user has the correct SLP/Enterprise subscription status.
+
+UI: Display the aggregated WPM and Acceptance Rate metrics. Include date range filters and a user selector.
+
+Action: A clear, visible "Export Clinical Log (.CSV) ↓" button that calls the /api/slp/export-csv endpoint. If the user does not have the plan, display a clear upgrade path modal.

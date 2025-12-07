@@ -1,0 +1,46 @@
+import { AacMasterSchema, type AacMaster } from "./aac-master.zod";
+import fs from "node:fs/promises";
+
+async function loadAndValidate(path: string): Promise<AacMaster> {
+  const raw = await fs.readFile(path, "utf8");
+  const json = JSON.parse(raw);
+  const parsed = AacMasterSchema.parse(json);
+  // Quick referential integrity checks
+  const symbolIds = new Set((parsed.assets.symbols ?? []).map(s => s.id));
+  const imageIds = new Set((parsed.assets.images ?? []).map(i => i.id));
+  const audioIds = new Set((parsed.assets.audio ?? []).map(a => a.id));
+  const videoIds = new Set((parsed.assets.videos ?? []).map(v => v.id));
+  const boardIds = new Set(parsed.boards.map(b => b.id));
+
+  for (const b of parsed.boards) {
+    for (const c of b.cells) {
+      if (c.symbol_id && !symbolIds.has(c.symbol_id)) {
+        throw new Error(`Cell ${c.id} on board ${b.id} references missing symbol_id ${c.symbol_id}`);
+      }
+      if (c.image_id && !imageIds.has(c.image_id)) {
+        throw new Error(`Cell ${c.id} on board ${b.id} references missing image_id ${c.image_id}`);
+      }
+      if (c.audio_id && !audioIds.has(c.audio_id)) {
+        throw new Error(`Cell ${c.id} on board ${b.id} references missing audio_id ${c.audio_id}`);
+      }
+      if (c.video_id && !videoIds.has(c.video_id)) {
+        throw new Error(`Cell ${c.id} on board ${b.id} references missing video_id ${c.video_id}`);
+      }
+      if (c.actions) {
+        for (const a of c.actions) {
+          if (a.type === "navigate" && a.target_board_id && !boardIds.has(a.target_board_id)) {
+            throw new Error(`Cell ${c.id} on board ${b.id} navigates to missing board_id ${a.target_board_id}`);
+          }
+          if (a.type === "play_audio" && a.audio_id && !audioIds.has(a.audio_id)) {
+            throw new Error(`Cell ${c.id} on board ${b.id} plays missing audio_id ${a.audio_id}`);
+          }
+          if (a.type === "play_video" && a.video_id && !videoIds.has(a.video_id)) {
+            throw new Error(`Cell ${c.id} on board ${b.id} plays missing video_id ${a.video_id}`);
+          }
+        }
+      }
+    }
+  }
+
+  return parsed;
+}

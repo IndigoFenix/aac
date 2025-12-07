@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/aac.master.schema.json",
+  "title": "AAC Master",
+  "type": "object",
+  "required": ["meta", "assets", "boards"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["version", "title", "locale"],
+      "properties": {
+        "version": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "locale": { "type": "string" },
+        "authors": { "type": "array", "items": { "type": "string" } },
+        "targets": {
+          "type": "object",
+          "properties": { "grid3": { "type": "boolean" }, "tdsnap": { "type": "boolean" }, "openboard_obz": { "type": "boolean" } }
+        }
+      }
+    },
+
+    "assets": {
+      "type": "object",
+      "properties": {
+        "symbols": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "set", "ref"],
+            "properties": {
+              "id": { "type": "string" },
+              "set": { "type": "string", "description": "pcs, symbolstix, arasaac, widgets, custom" },
+              "ref": { "type": "string", "description": "symbol code or path" },
+              "file": { "type": "string" },
+              "alt_text": { "type": "string" }
+            }
+          }
+        },
+        "images": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "file"],
+            "properties": {
+              "id": { "type": "string" },
+              "file": { "type": "string" },
+              "license": { "type": "string" },
+              "alt_text": { "type": "string" }
+            }
+          }
+        },
+        "audio": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "file"],
+            "properties": {
+              "id": { "type": "string" },
+              "file": { "type": "string" },
+              "license": { "type": "string" }
+            }
+          }
+        },
+        "videos": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id"],
+            "properties": {
+              "id": { "type": "string" },
+              "file": { "type": "string", "description": "optional local video file" },
+              "url": { "type": "string", "description": "streaming URL such as YouTube" },
+              "license": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "boards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "layout", "cells"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "layout": {
+            "type": "object",
+            "required": ["rows", "cols"],
+            "properties": {
+              "rows": { "type": "integer", "minimum": 1 },
+              "cols": { "type": "integer", "minimum": 1 },
+              "gutter": { "type": "integer", "minimum": 0 },
+              "theme": {
+                "type": "object",
+                "properties": {
+                  "background": { "type": "string" },
+                  "default_cell_color": { "type": "string" },
+                  "font_family": { "type": "string" },
+                  "font_size_pt": { "type": "number" }
+                }
+              }
+            }
+          },
+          "on_enter": { "$ref": "#/$defs/actionList" },
+          "on_exit": { "$ref": "#/$defs/actionList" },
+          "cells": { "type": "array", "items": { "$ref": "#/$defs/cell" } }
+        }
+      }
+    }
+  },
+
+  "$defs": {
+    "cell": {
+      "type": "object",
+      "required": ["id", "row", "col"],
+      "properties": {
+        "id": { "type": "string" },
+        "row": { "type": "integer", "minimum": 1 },
+        "col": { "type": "integer", "minimum": 1 },
+        "row_span": { "type": "integer", "minimum": 1, "default": 1 },
+        "col_span": { "type": "integer", "minimum": 1, "default": 1 },
+
+        "label": { "type": "string" },
+        "speak": { "type": "string" },
+        "pronunciation": { "type": "string" },
+        "lang": { "type": "string" },
+
+        "symbol_id": { "type": "string" },
+        "image_id": { "type": "string" },
+        "audio_id": { "type": "string", "description": "optional, for preview or on select" },
+        "video_id": { "type": "string", "description": "optional, for preview or on select" },
+
+        "style": {
+          "type": "object",
+          "properties": {
+            "bg": { "type": "string" },
+            "fg": { "type": "string" },
+            "label_position": { "type": "string", "enum": ["top", "bottom", "left", "right", "hidden"] },
+            "border_px": { "type": "number" }
+          }
+        },
+
+        "category": { "type": "string" },
+        "actions": { "$ref": "#/$defs/actionList" }
+      }
+    },
+
+    "actionList": { "type": "array", "items": { "$ref": "#/$defs/action" } },
+
+    "action": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "speak",
+            "navigate",
+            "back",
+            "open_url",
+            "play_audio",
+            "stop_audio",
+            "play_video",
+            "stop_video",
+            "add_to_message_window",
+            "clear_message_window",
+            "clipboard_copy",
+            "sequence"
+          ]
+        },
+
+        "text": { "type": "string" },
+        "target_board_id": { "type": "string" },
+        "url": { "type": "string" },
+        "audio_id": { "type": "string" },
+        "video_id": { "type": "string" },
+        "ops": { "type": "array", "items": { "$ref": "#/$defs/action" } }
+      }
+    }
+  }
+}

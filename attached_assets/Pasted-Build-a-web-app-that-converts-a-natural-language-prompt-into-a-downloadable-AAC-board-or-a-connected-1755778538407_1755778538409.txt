@@ -1,0 +1,700 @@
+Build a web app that converts a natural language prompt into a downloadable AAC board or a connected set of boards. Support two export targets:
+
+Smartbox Grid files: .gridset
+
+TD Snap files: .snappkg
+
+The app runs mostly client side for editing and packaging. A small Node backend handles authentication, subscriptions, quotas, storage, and admin.
+
+Tech stack
+
+Frontend: React, TypeScript, Vite, Tailwind
+
+State: Zustand or Redux Toolkit
+
+Accessibility: ARIA labels, keyboard navigation, high contrast toggle
+
+Backend: Node, Express or Fastify
+
+Database: PostgreSQL with Prisma
+
+Auth: JWT access tokens in headers and HTTP only refresh cookies
+
+OAuth optional: Google, Microsoft
+
+Payments: Stripe subscriptions with Checkout, Customer Portal, and webhooks
+
+Storage: IR JSON and metadata in Postgres, optional S3 compatible storage for large icon zips
+
+Packaging: Browser based zip generation that clones user supplied template folders
+
+High level flow
+
+User describes the board set in plain text or uploads a CSV.
+
+App parses to an Intermediate Representation, IR.
+
+User previews and edits pages and buttons.
+
+App validates the IR.
+
+User downloads .gridset or .snappkg if within quota.
+
+Free plan has monthly quotas. Pro plan unlocks higher limits and features. Admin can tune quotas per plan or per user.
+
+UI
+
+Top bar: title, Help, About, Sign in or Profile menu
+
+Left pane: prompt textarea, example prompts, Generate button, CSV upload
+
+Center: live preview, grid size control, pages navigation, zoom
+
+Right: Inspector for selected button. Fields for label, spoken text, color, icon, action, target page
+
+Bottom: Download .gridset, Download .snappkg, Export IR as JSON, validation status
+
+Prompt parsing and templates
+
+Rules based parser extracts grid size, pages, buttons, actions, navigation
+
+Heuristics without LLM: n grams for core words and seeded lists for essential vocabulary, for example yes, no, more, finished, help, bathroom, eat, drink, feelings, people, actions
+
+Built in templates: Core 50, Core 100, Requests, People, Activities
+
+CSV import columns: page, label, spokenText, color, iconUrl, row, col
+
+Intermediate Representation
+type BoardIR = {
+  name: string
+  grid: { rows: number, cols: number }
+  pages: PageIR[]
+  assets?: { [key: string]: Blob | string }
+}
+
+type PageIR = {
+  id: string
+  name: string
+  buttons: ButtonIR[]
+  layout?: { rows: number, cols: number }
+}
+
+type ButtonIR = {
+  id: string
+  row: number
+  col: number
+  label: string
+  spokenText?: string
+  color?: string
+  iconRef?: string
+  action?: ActionIR
+}
+
+type ActionIR =
+  | { type: "speak", text: string }
+  | { type: "navigate", toPageId: string }
+  | { type: "link", toBoardId: string }
+  | { type: "back" }
+
+Visual editor
+
+Drag and drop within a page
+
+Add, duplicate, delete pages and buttons
+
+Inline edits for label and spoken text
+
+Color picker, icon upload, icon ZIP ingestion
+
+Collision checks for row and col, bounds checks against grid
+
+Validation
+
+Required fields present
+
+Coordinates inside grid bounds
+
+Navigation targets resolve
+
+Asset and icon references resolve
+
+Round trip check: export IR JSON and reimport
+
+Packaging to Smartbox Grid .gridset
+
+Template driven mapping
+
+Two template folders in public/templates/grid/: single_page_template, multi_page_template
+
+Packager steps:
+
+Clone template folder in memory
+
+Fill metadata and identifiers
+
+Write button definitions, actions, navigation
+
+Copy icons into expected assets folder
+
+Zip and download as <sanitized-board-name>.gridset
+
+Mapping code lives in src/packagers/grid/packager.ts
+
+Ship no vendor content. Users upload minimal exports from their own licensed Grid installation.
+
+Packaging to TD Snap .snappkg
+
+Template driven mapping
+
+Two template folders in public/templates/tdsnap/: single_page_template, multi_page_template
+
+Packager steps:
+
+Clone template folder in memory
+
+Update manifest and page layout files
+
+Write per page grid size and button positions
+
+Encode speak, navigate, back actions
+
+Copy icons into assets
+
+Zip and download as <sanitized-board-name>.snappkg
+
+Mapping code lives in src/packagers/tdsnap/packager.ts
+
+Ship no vendor content. Users upload minimal exports from their own licensed TD Snap.
+
+Files and modules
+src/
+  app.tsx
+  store.ts
+  prompt/
+    parse.ts
+    templates.ts
+  ir/
+    types.ts
+    validate.ts
+    import.ts
+    export.ts
+  preview/
+    BoardCanvas.tsx
+    PageMiniMap.tsx
+  packagers/
+    grid/packager.ts
+    tdsnap/packager.ts
+  ui/
+    PromptPane.tsx
+    Inspector.tsx
+    Toolbar.tsx
+    Toasts.tsx
+  auth/
+    jwt.ts
+    guard.ts
+  server/
+    index.ts
+    routes/
+      auth.ts
+      users.ts
+      boards.ts
+      download.ts
+      admin.ts
+      stripe.ts
+  lib/
+    zip.ts
+    sanitize.ts
+    rateLimit.ts
+prisma/
+  schema.prisma
+public/
+  templates/
+    grid/
+      single_page_template/**
+      multi_page_template/**
+    tdsnap/
+      single_page_template/**
+      multi_page_template/**
+
+Authentication and user accounts
+
+Register with email and password
+
+Optional OAuth providers
+
+Passwords hashed with bcrypt
+
+Short lived access JWT in Authorization header
+
+Refresh token as HTTP only cookie with rotation and revocation
+
+Roles: user, admin
+
+Plan link by code on the User record
+
+Subscription plans, quotas, and admin control
+Default plans and quotas
+
+Admins can change these at any time. Per user overrides are supported.
+
+Plan	Generations per month	Downloads per month	Stored boards	Notes
+Free	5	3	10	Rolling 30 day window
+Pro Monthly	250	250	1000	Resets on Stripe cycle
+Pro Annual	250	250	1000	Resets on Stripe cycle
+
+Rules:
+
+Generation means a successful prompt to IR run.
+
+Download means a successful .gridset or .snappkg export.
+
+Free plan uses a rolling 30 day window that starts at the first action time.
+
+Subscribed plans reset on Stripe billing cycle renewal.
+
+Admin configurable quotas
+
+Plans page: create and edit plan entries with monthlyGenerations, monthlyDownloads, storedBoards, and optional features JSON.
+
+Per user overrides: set genCapOverride, dlCapOverride, and storedBoardsCap. Null clears the override.
+
+Prisma models
+model Plan {
+  id                 String   @id @default(cuid())
+  code               String   @unique       // "free", "pro_monthly", "pro_annual"
+  name               String
+  monthlyGenerations Int
+  monthlyDownloads   Int
+  storedBoards       Int
+  features           Json     @default("{}")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model User {
+  id                String   @id @default(cuid())
+  email             String   @unique
+  passwordHash      String
+  role              String   // "user" or "admin"
+  planCode          String   // FK to Plan.code
+  status            String   // "active", "past_due", "canceled"
+  genCapOverride    Int?
+  dlCapOverride     Int?
+  storedBoardsCap   Int?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model UsageWindow {
+  id            String   @id @default(cuid())
+  userId        String
+  windowStart   DateTime
+  generations   Int      @default(0)
+  downloads     Int      @default(0)
+  storedBoards  Int      @default(0)
+  createdAt     DateTime @default(now())
+}
+
+Seed script example
+await prisma.plan.upsert({
+  where: { code: "free" },
+  update: {},
+  create: { code: "free", name: "Free", monthlyGenerations: 5, monthlyDownloads: 3, storedBoards: 10 }
+});
+await prisma.plan.upsert({
+  where: { code: "pro_monthly" },
+  update: {},
+  create: { code: "pro_monthly", name: "Pro Monthly", monthlyGenerations: 250, monthlyDownloads: 250, storedBoards: 1000 }
+});
+await prisma.plan.upsert({
+  where: { code: "pro_annual" },
+  update: {},
+  create: { code: "pro_annual", name: "Pro Annual", monthlyGenerations: 250, monthlyDownloads: 250, storedBoards: 1000 }
+});
+
+Quota resolution logic
+
+Load user and plan.
+
+Effective caps are per user overrides if present, otherwise plan caps.
+
+Load or init the current UsageWindow. For subscribed plans align to Stripe period start. For free, use rolling 30 day window.
+
+Compare counters to caps.
+
+If within caps, allow and increment.
+
+Middleware pseudocode:
+
+export const requireQuota = (kind: "generation" | "download") => async (req, res, next) => {
+  const user = req.user
+  const plan = await prisma.plan.findUnique({ where: { code: user.planCode } })
+  const caps = {
+    generations: user.genCapOverride ?? plan.monthlyGenerations,
+    downloads: user.dlCapOverride ?? plan.monthlyDownloads
+  }
+  const window = await getOrInitUsageWindow(user, plan, new Date())
+  const used = kind === "generation" ? window.generations : window.downloads
+  const cap = kind === "generation" ? caps.generations : caps.downloads
+  if (used >= cap) return res.status(429).json({ error: "Quota exceeded", kind, used, cap })
+  await incrementUsage(window.id, kind)
+  next()
+}
+
+Stripe billing flow
+
+One product with two prices: monthly and annual
+
+Upgrade: POST /billing/checkout creates a Checkout session. Frontend redirects to session.url
+
+Manage: POST /billing/portal returns Customer Portal URL
+
+Webhooks on POST /webhooks/stripe: handle checkout.session.completed, customer.subscription.updated, customer.subscription.deleted, invoice.payment_succeeded, invoice.payment_failed
+
+On activation or renewal: set user.status = active, set user.planCode, reset the usage window to Stripe period start
+
+On cancellation: set status = canceled or past_due and schedule downgrade at period end
+
+Environment variables for default seeds:
+
+DEFAULT_FREE_GEN=5
+DEFAULT_FREE_DL=3
+DEFAULT_FREE_STORED=10
+DEFAULT_PRO_GEN=250
+DEFAULT_PRO_DL=250
+DEFAULT_PRO_STORED=1000
+
+API endpoints
+Auth
+
+POST /auth/register
+
+POST /auth/login
+
+POST /auth/logout
+
+POST /auth/refresh
+
+GET /auth/me
+
+Boards and downloads
+
+POST /board/generate guarded by requireAuth and requireQuota("generation")
+
+POST /board/validate
+
+POST /board/save
+
+GET /board/:id
+
+DELETE /board/:id
+
+POST /download/gridset guarded by requireAuth and requireQuota("download")
+
+POST /download/snappkg guarded by requireAuth and requireQuota("download")
+
+Billing
+
+POST /billing/checkout
+
+POST /billing/portal
+
+POST /webhooks/stripe with raw body route
+
+Admin
+
+GET /admin/stats
+
+GET /admin/users and GET /admin/users/:id
+
+PATCH /admin/users/:id
+
+POST /admin/users/:id/quota
+
+POST /admin/users/:id/plan
+
+GET /admin/plans
+
+POST /admin/plan upsert
+
+GET /admin/templates
+
+POST /admin/templates
+
+GET /admin/audit
+
+Zod schemas for request bodies
+
+Install:
+
+npm i zod
+
+
+Common primitives:
+
+import { z } from "zod"
+
+export const Id = z.string().min(1)
+export const Email = z.string().email()
+export const Password = z.string().min(8)
+export const HexColor = z.string().regex(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i).optional()
+export const DataUrl = z.string().startsWith("data:").optional()
+
+
+IR schemas:
+
+export const ActionIR = z.union([
+  z.object({ type: z.literal("speak"), text: z.string().min(1) }),
+  z.object({ type: z.literal("navigate"), toPageId: z.string().min(1) }),
+  z.object({ type: z.literal("link"), toBoardId: z.string().min(1) }),
+  z.object({ type: z.literal("back") })
+])
+
+export const ButtonIR = z.object({
+  id: z.string().min(1),
+  row: z.number().int().min(0),
+  col: z.number().int().min(0),
+  label: z.string().min(1),
+  spokenText: z.string().optional(),
+  color: HexColor,
+  iconRef: z.string().optional(),
+  action: ActionIR.optional()
+})
+
+export const PageIR = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  buttons: z.array(ButtonIR),
+  layout: z.object({
+    rows: z.number().int().min(1).max(25),
+    cols: z.number().int().min(1).max(25)
+  }).optional()
+})
+
+export const BoardIR = z.object({
+  name: z.string().min(1),
+  grid: z.object({
+    rows: z.number().int().min(1).max(25),
+    cols: z.number().int().min(1).max(25)
+  }),
+  pages: z.array(PageIR).min(1),
+  assets: z.record(z.union([z.string(), z.any()])).optional()
+})
+
+
+Auth schemas:
+
+export const RegisterReq = z.object({
+  email: Email,
+  password: Password,
+  name: z.string().min(1).optional(),
+  acceptTerms: z.boolean()
+})
+
+export const LoginReq = z.object({
+  email: Email,
+  password: Password
+})
+
+export const RefreshReq = z.object({})
+export const LogoutReq = z.object({})
+
+
+Board lifecycle:
+
+export const GenerateReq = z.object({
+  prompt: z.string().min(3),
+  grid: z.object({
+    rows: z.number().int().min(1).max(25),
+    cols: z.number().int().min(1).max(25)
+  }).optional(),
+  template: z.enum(["core50", "core100", "requests", "people", "activities"]).optional(),
+  csv: z.object({
+    text: z.string().min(1).optional(),
+    dataUrl: DataUrl
+  }).optional(),
+  assetsZipDataUrl: DataUrl
+})
+
+export const ValidateReq = z.object({ ir: BoardIR })
+
+export const SaveBoardReq = z.object({
+  name: z.string().min(1),
+  ir: BoardIR
+})
+
+export const GetBoardReq = z.object({ id: Id })
+export const DeleteBoardReq = z.object({ id: Id })
+
+
+Downloads:
+
+const BoardRef = z.object({ boardId: Id })
+const InlineIR = z.object({ ir: BoardIR })
+
+export const DownloadGridsetReq = z.union([BoardRef, InlineIR])
+export const DownloadSnappkgReq = z.union([BoardRef, InlineIR])
+
+
+Billing:
+
+export const CheckoutReq = z.object({
+  priceId: z.string().min(1),
+  successUrl: z.string().url(),
+  cancelUrl: z.string().url()
+})
+
+export const PortalReq = z.object({
+  returnUrl: z.string().url()
+})
+
+
+Admin:
+
+export const PlanUpsertReq = z.object({
+  code: z.string().min(1),
+  name: z.string().min(1),
+  monthlyGenerations: z.number().int().min(0),
+  monthlyDownloads: z.number().int().min(0),
+  storedBoards: z.number().int().min(0),
+  features: z.record(z.any()).optional()
+})
+
+export const SetUserPlanReq = z.object({
+  userId: Id,
+  planCode: z.string().min(1)
+})
+
+export const SetUserQuotaOverrideReq = z.object({
+  userId: Id,
+  genCapOverride: z.number().int().min(0).nullable(),
+  dlCapOverride: z.number().int().min(0).nullable(),
+  storedBoardsCap: z.number().int().min(0).nullable()
+})
+
+export const AdminListUsersReq = z.object({
+  q: z.string().optional(),
+  limit: z.number().int().min(1).max(200).optional(),
+  cursor: z.string().optional()
+})
+
+
+Route wiring example:
+
+app.post("/auth/register", validate(RegisterReq), registerHandler)
+app.post("/auth/login", validate(LoginReq), loginHandler)
+app.post("/auth/logout", validate(LogoutReq), logoutHandler)
+app.post("/auth/refresh", validate(RefreshReq), refreshHandler)
+app.get("/auth/me", requireAuth, meHandler)
+
+app.post("/board/generate", requireAuth, requireQuota("generation"), validate(GenerateReq), generateHandler)
+app.post("/board/validate", requireAuth, validate(ValidateReq), validateHandler)
+app.post("/board/save", requireAuth, validate(SaveBoardReq), saveBoardHandler)
+app.get("/board/:id", requireAuth, validateParams(GetBoardReq), getBoardHandler)
+app.delete("/board/:id", requireAuth, validateParams(DeleteBoardReq), deleteBoardHandler)
+
+app.post("/download/gridset", requireAuth, requireQuota("download"), validate(DownloadGridsetReq), downloadGridHandler)
+app.post("/download/snappkg", requireAuth, requireQuota("download"), validate(DownloadSnappkgReq), downloadSnapHandler)
+
+app.post("/billing/checkout", requireAuth, validate(CheckoutReq), checkoutHandler)
+app.post("/billing/portal", requireAuth, validate(PortalReq), portalHandler)
+app.post("/webhooks/stripe", rawBody, stripeWebhookHandler)
+
+app.get("/admin/users", requireAdmin, validateQuery(AdminListUsersReq), adminListUsersHandler)
+app.get("/admin/users/:id", requireAdmin, validateParams(GetBoardReq), adminGetUserHandler)
+app.patch("/admin/users/:id", requireAdmin, adminPatchUserHandler)
+app.post("/admin/users/:id/plan", requireAdmin, validate(SetUserPlanReq), setUserPlanHandler)
+app.post("/admin/users/:id/quota", requireAdmin, validate(SetUserQuotaOverrideReq), setUserQuotaOverrideHandler)
+app.get("/admin/plans", requireAdmin, adminListPlansHandler)
+app.post("/admin/plan", requireAdmin, validate(PlanUpsertReq), upsertPlanHandler)
+app.get("/admin/templates", requireAdmin, adminListTemplatesHandler)
+app.post("/admin/templates", requireAdmin, adminUploadTemplateHandler)
+app.get("/admin/audit", requireAdmin, adminListAuditHandler)
+
+
+Validation helpers:
+
+const validate = (schema: z.ZodSchema) => (req, res, next) => {
+  const parsed = schema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() })
+  req.valid = parsed.data
+  next()
+}
+
+const validateQuery = (schema: z.ZodSchema) => (req, res, next) => {
+  const parsed = schema.safeParse(req.query)
+  if (!parsed.success) return res.status(400).json({ error: "Invalid query", details: parsed.error.flatten() })
+  req.validQuery = parsed.data
+  next()
+}
+
+const validateParams = (schema: z.ZodSchema) => (req, res, next) => {
+  const parsed = schema.safeParse({ id: req.params.id })
+  if (!parsed.success) return res.status(400).json({ error: "Invalid params", details: parsed.error.flatten() })
+  req.validParams = parsed.data
+  next()
+}
+
+Security and privacy
+
+HTTP only cookies for refresh, short lived access JWTs
+
+CSRF protection if you use cookie based access tokens
+
+Rate limits on auth, generate, and download
+
+Input validation with Zod on every route
+
+CORS locked to your Replit domain
+
+Do not ship vendor content for Grid or TD Snap
+
+Require users to upload minimal exported templates and keep mapping code isolated
+
+Deployment on Replit
+
+Create a Node plus Vite workspace
+
+Set environment variables:
+
+DATABASE_URL
+
+JWT_SECRET
+
+STRIPE_SECRET_KEY
+
+STRIPE_WEBHOOK_SECRET
+
+APP_URL
+
+prisma migrate deploy on startup
+
+Serve the Vite build behind the Node server
+
+Expose POST /webhooks/stripe with raw body for signature verification
+
+Acceptance criteria
+
+Example prompts render valid boards in the preview
+
+.gridset imports in Grid
+
+.snappkg imports in TD Snap
+
+Free users can complete at least one generation and one download before hitting quota
+
+Stripe upgrade switches plan to Pro, resets quotas at cycle start, and unlocks premium templates
+
+Admin back office lists users, shows subscription status, edits plans and per user overrides, and adjusts quotas
+
+All code compiles with strict TypeScript, routes use auth and validation guards
+
+App works offline after first load for the editor and preview
+
+Legal notes
+
+The app must not include or redistribute vendor files for Grid or TD Snap
+
+Users provide their own minimal template exports
+
+Keep format specific code under src/packagers/grid and src/packagers/tdsnap so future SDKs can drop in

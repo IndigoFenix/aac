@@ -1,0 +1,370 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/aac-gridset.schema.json",
+  "title": "AAC Grid Set",
+  "type": "object",
+  "required": ["id", "version", "metadata", "deviceProfiles", "pages", "homePageId", "access"],
+  "properties": {
+    "id": { "type": "string", "description": "Stable identifier for this grid set" },
+    "version": { "type": "string", "description": "Semantic version of this spec or content" },
+
+    "metadata": {
+      "type": "object",
+      "required": ["name", "author", "createdAt"],
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "author": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "license": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "copyrightNotice": { "type": "string" },
+        "sourceAttribution": { "type": "string" }
+      }
+    },
+
+    "localization": {
+      "type": "object",
+      "description": "Optional text and symbol localization",
+      "properties": {
+        "defaultLocale": { "type": "string", "examples": ["en-US", "he-IL"] },
+        "supportedLocales": { "type": "array", "items": { "type": "string" } },
+        "strings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "description": "Per locale string table",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      }
+    },
+
+    "styles": {
+      "type": "object",
+      "description": "Global style defaults, overridable on page or cell",
+      "properties": {
+        "fontFamily": { "type": "string" },
+        "fontSize": { "type": "number", "minimum": 6 },
+        "textColor": { "type": "string", "description": "CSS color" },
+        "backgroundColor": { "type": "string" },
+        "symbolSize": { "type": "string", "enum": ["small", "medium", "large", "xlarge"] },
+        "border": {
+          "type": "object",
+          "properties": {
+            "color": { "type": "string" },
+            "widthPx": { "type": "number", "minimum": 0 },
+            "radiusPx": { "type": "number", "minimum": 0 }
+          }
+        },
+        "spacingPx": { "type": "number", "minimum": 0 },
+        "rowHeights": {
+          "type": "array",
+          "items": { "type": "number", "minimum": 0, "description": "Fraction or px depending on layoutMode" }
+        },
+        "colWidths": {
+          "type": "array",
+          "items": { "type": "number", "minimum": 0 }
+        },
+        "layoutMode": { "type": "string", "enum": ["fractional", "pixels"] }
+      }
+    },
+
+    "deviceProfiles": {
+      "type": "array",
+      "description": "Responsive layout hints for different screens or access methods",
+      "items": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string", "examples": ["GridPad 13", "iPad 11", "Laptop 1080p"] },
+          "minWidthPx": { "type": "number" },
+          "maxWidthPx": { "type": "number" },
+          "minHeightPx": { "type": "number" },
+          "maxHeightPx": { "type": "number" },
+          "overrideStyles": { "$ref": "#/properties/styles" }
+        }
+      }
+    },
+
+    "access": {
+      "type": "object",
+      "description": "Selection method and dwell settings",
+      "required": ["method"],
+      "properties": {
+        "method": {
+          "type": "string",
+          "enum": ["touch", "mouse", "eyeGaze", "switchScanning", "headTracking", "keyboard"]
+        },
+        "dwellMs": { "type": "number", "minimum": 0 },
+        "switchScanning": {
+          "type": "object",
+          "properties": {
+            "pattern": { "type": "string", "enum": ["rowColumn", "columnRow", "linear"] },
+            "autoScan": { "type": "boolean" },
+            "scanDelayMs": { "type": "number", "minimum": 0 },
+            "acceptOn": { "type": "string", "enum": ["firstSwitch", "secondSwitch", "hold"] }
+          }
+        },
+        "eyeGaze": {
+          "type": "object",
+          "properties": {
+            "calibrationProfile": { "type": "string" },
+            "dwellToSelectMs": { "type": "number" },
+            "blinkToSelect": { "type": "boolean" }
+          }
+        }
+      }
+    },
+
+    "messageBar": {
+      "type": "object",
+      "description": "Output field behavior at the top or bottom of pages",
+      "properties": {
+        "visible": { "type": "boolean" },
+        "position": { "type": "string", "enum": ["top", "bottom"] },
+        "speakOnCellAdd": { "type": "boolean" },
+        "speakOnSend": { "type": "boolean" },
+        "voice": { "type": "string", "description": "Preferred TTS voice name" },
+        "rate": { "type": "number", "minimum": 0.5, "maximum": 2.0 },
+        "pitch": { "type": "number", "minimum": 0.5, "maximum": 2.0 },
+        "punctuationBehavior": { "type": "string", "enum": ["smart", "literal", "strip"] }
+      }
+    },
+
+    "media": {
+      "type": "object",
+      "description": "Shared assets",
+      "properties": {
+        "symbols": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "label"],
+            "properties": {
+              "id": { "type": "string" },
+              "label": { "type": "string" },
+              "src": { "type": "string", "description": "URL or path to image" },
+              "attribution": { "type": "string" },
+              "license": { "type": "string" }
+            }
+          }
+        },
+        "audio": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "src"],
+            "properties": {
+              "id": { "type": "string" },
+              "src": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          }
+        },
+        "videos": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "src"],
+            "properties": {
+              "id": { "type": "string" },
+              "src": { "type": "string", "description": "Local file or https link, including YouTube" },
+              "startAtSec": { "type": "number", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+
+    "wordLists": {
+      "type": "array",
+      "description": "Reusable vocabulary pools",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "entries"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["text"],
+              "properties": {
+                "text": { "type": "string" },
+                "symbolId": { "type": "string" },
+                "audioId": { "type": "string" },
+                "tags": { "type": "array", "items": { "type": "string" } },
+                "conjugations": {
+                  "type": "object",
+                  "additionalProperties": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "homePageId": { "type": "string" },
+
+    "pages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "layout", "cells"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "template": { "type": "string", "description": "Optional template key like 6x10 core" },
+          "layout": {
+            "type": "object",
+            "required": ["rows", "cols"],
+            "properties": {
+              "rows": { "type": "integer", "minimum": 1 },
+              "cols": { "type": "integer", "minimum": 1 },
+              "gapPx": { "type": "number", "minimum": 0 },
+              "paddingPx": { "type": "number", "minimum": 0 },
+              "backgroundColor": { "type": "string" },
+              "showGridLines": { "type": "boolean" }
+            }
+          },
+          "messageBarOverrides": { "$ref": "#/properties/messageBar" },
+          "styles": { "$ref": "#/properties/styles" },
+          "cells": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "row", "col", "rowSpan", "colSpan", "type"],
+              "properties": {
+                "id": { "type": "string" },
+                "row": { "type": "integer", "minimum": 1 },
+                "col": { "type": "integer", "minimum": 1 },
+                "rowSpan": { "type": "integer", "minimum": 1 },
+                "colSpan": { "type": "integer", "minimum": 1 },
+
+                "type": {
+                  "type": "string",
+                  "enum": ["speak", "jump", "link", "command", "word", "phrase", "predict", "keyboard", "media", "yesNo", "clear", "backspace"]
+                },
+
+                "label": { "type": "string" },
+                "ariaLabel": { "type": "string" },
+                "symbolId": { "type": "string" },
+                "image": {
+                  "type": "object",
+                  "properties": {
+                    "src": { "type": "string" },
+                    "fit": { "type": "string", "enum": ["cover", "contain", "fill", "auto"] }
+                  }
+                },
+                "style": {
+                  "type": "object",
+                  "properties": {
+                    "textColor": { "type": "string" },
+                    "backgroundColor": { "type": "string" },
+                    "fontSize": { "type": "number" },
+                    "border": { "$ref": "#/properties/styles/properties/border" }
+                  }
+                },
+                "speak": {
+                  "type": "object",
+                  "properties": {
+                    "text": { "type": "string" },
+                    "appendToMessageBar": { "type": "boolean" },
+                    "speakImmediately": { "type": "boolean" }
+                  }
+                },
+                "jump": {
+                  "type": "object",
+                  "required": ["targetPageId"],
+                  "properties": {
+                    "targetPageId": { "type": "string" },
+                    "restorePageOnBack": { "type": "boolean" }
+                  }
+                },
+                "link": {
+                  "type": "object",
+                  "properties": {
+                    "url": { "type": "string", "format": "uri" },
+                    "openInApp": { "type": "boolean" }
+                  }
+                },
+                "command": {
+                  "type": "object",
+                  "description": "System or editor commands",
+                  "required": ["name"],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "enum": [
+                        "goHome",
+                        "goBack",
+                        "clearMessage",
+                        "backspace",
+                        "openKeyboard",
+                        "toggleCapitalization",
+                        "setLanguage",
+                        "predictionInsert",
+                        "conjugate",
+                        "morphology",
+                        "sendKeystrokes",
+                        "openSettings"
+                      ]
+                    },
+                    "args": { "type": "object", "additionalProperties": true }
+                  }
+                },
+                "media": {
+                  "type": "object",
+                  "properties": {
+                    "audioId": { "type": "string" },
+                    "videoId": { "type": "string" },
+                    "autoplay": { "type": "boolean" }
+                  }
+                },
+                "wordRef": {
+                  "type": "object",
+                  "description": "Reference into a word list",
+                  "properties": {
+                    "listId": { "type": "string" },
+                    "entryIndex": { "type": "integer", "minimum": 0 }
+                  }
+                },
+                "yesNo": {
+                  "type": "object",
+                  "properties": {
+                    "value": { "type": "string", "enum": ["yes", "no", "maybe"] }
+                  }
+                },
+                "conditions": {
+                  "type": "array",
+                  "description": "Optional visibility or action conditions",
+                  "items": {
+                    "type": "object",
+                    "required": ["if"],
+                    "properties": {
+                      "if": { "type": "string", "description": "Simple expression language, for example profile.method == 'eyeGaze'" },
+                      "then": { "type": "string", "enum": ["show", "hide", "disable"] }
+                    }
+                  }
+                },
+                "analytics": {
+                  "type": "object",
+                  "properties": {
+                    "eventName": { "type": "string" },
+                    "properties": { "type": "object", "additionalProperties": true }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

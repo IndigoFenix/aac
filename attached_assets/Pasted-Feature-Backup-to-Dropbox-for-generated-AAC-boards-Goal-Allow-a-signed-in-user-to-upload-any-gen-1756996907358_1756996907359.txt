@@ -1,0 +1,240 @@
+Feature: “Backup to Dropbox” for generated AAC boards
+Goal
+
+Allow a signed-in user to upload any generated AAC board file to their Dropbox for backup. Support manual uploads from the board detail page and an optional “auto-backup after generation” toggle.
+
+User stories
+
+As a user, I can connect my Dropbox account from Settings.
+
+As a user, I can click “Upload to Dropbox” on a board and see a clear success or error message.
+
+As a user, I can enable “Auto-backup new boards to Dropbox” in Settings.
+
+As a user, I can choose the Dropbox folder used for backups.
+
+As a user, I can see the last backup status and a link to the file on Dropbox.
+
+Scope
+
+File types: .gridset, .gridsetx, .snappkg, exported board JSON, board media bundle zip.
+
+Max file size: 150 MB per upload. Show an error if larger.
+
+Single account per user.
+
+Security and credentials
+
+Create a Dropbox app in the Dropbox Console.
+
+Store DROPBOX_CLIENT_ID and DROPBOX_CLIENT_SECRET in Replit Secrets.
+
+Use OAuth 2 with PKCE and refresh tokens.
+
+Store user tokens server side, encrypted at rest. Never expose tokens to the browser.
+
+Use short-lived access tokens and refresh on 401.
+
+UI additions
+Settings, Cloud Backups section
+
+Controls:
+
+“Connect Dropbox” button
+
+Text input: “Backup folder path” (default: /Apps/SyntAACx/Backups)
+
+Checkbox: “Auto-backup new boards”
+
+“Disconnect” button
+
+Status line:
+
+Connected as: <dropbox account email>
+
+Last backup: <relative time> with icon and link “View on Dropbox”
+
+Board detail page
+
+Button group:
+
+“Download”
+
+“Upload to Dropbox”
+
+Inline status toast with progress percent.
+
+Link “Open in Dropbox” after success.
+
+Backend endpoints
+
+POST /api/integrations/dropbox/oauth/start
+Starts OAuth with PKCE. Returns redirect URL.
+
+GET /api/integrations/dropbox/oauth/callback
+Handles code verification. Exchanges code for tokens. Persists { access_token, refresh_token, expires_at } for the user.
+
+POST /api/integrations/dropbox/upload
+Body: { boardId, fileType }
+Finds the board export on disk or generates it, streams to Dropbox.
+Returns { path, url, rev, size }.
+
+POST /api/integrations/dropbox/settings
+Body: { folderPath, autoBackup }.
+
+GET /api/integrations/dropbox/status
+Returns connection state, folder path, last backup result.
+
+Dropbox API usage
+
+OAuth 2 with PKCE: /oauth2/authorize and token exchange.
+
+Upload endpoint: https://content.dropboxapi.com/2/files/upload with Dropbox-API-Arg and Content-Type: application/octet-stream.
+
+For files larger than 150 MB, use session upload: upload_session/start, upload_session/append_v2, upload_session/finish.
+
+Create folder if missing with files/create_folder_v2.
+
+Create shareable link with sharing/create_shared_link_with_settings. If link exists, reuse.
+
+File naming
+
+Pattern: <slugified-board-title>_<YYYYMMDD_HHmmss>.<ext>
+
+Place under the configured folder, for example /Apps/SyntAACx/Backups/<yyyy>/<MM>/.
+
+Frontend behavior
+
+If user is not connected, “Upload to Dropbox” opens a modal prompting connection.
+
+Show determinate progress if known. Otherwise show indeterminate spinner with percent only when the backend reports it.
+
+Toast states: Success with link, Warning for size limits, Error with retry.
+
+Error handling and retries
+
+Map common errors:
+
+401 from Dropbox: refresh token and retry once.
+
+409 path conflict: append _1, _2.
+
+413 or size limit: instruct user to export a smaller bundle or use session upload.
+
+Network timeouts: one automatic retry with exponential backoff.
+
+Log error code, message, and correlation id.
+
+Rate limits
+
+Respect Dropbox rate limits. If 429, back off using Retry-After.
+
+Cap retries to two attempts per upload request.
+
+Telemetry
+
+Emit events: dropbox_connect_success, dropbox_connect_failed, dropbox_upload_started, dropbox_upload_succeeded, dropbox_upload_failed, dropbox_autobackup_enabled, dropbox_autobackup_disabled.
+
+Include user id, board id, file type, size, duration, and final status.
+
+Privacy
+
+Do not read or list user files outside the configured folder.
+
+Provide a “Delete my Dropbox connection and tokens” control under Settings.
+
+Configuration
+
+Replit Secrets:
+
+DROPBOX_CLIENT_ID
+
+DROPBOX_CLIENT_SECRET
+
+ENCRYPTION_KEY for user token storage
+
+App config defaults:
+
+BACKUP_DEFAULT_FOLDER="/Apps/SyntAACx/Backups"
+
+BACKUP_MAX_SIZE_MB=150
+
+Pseudo workflow
+
+User clicks “Connect Dropbox”
+
+Backend creates PKCE verifier and challenge, stores verifier in session, returns Dropbox authorize URL
+
+User authorizes, app receives code, exchanges for tokens, stores encrypted
+
+On board page, user clicks “Upload to Dropbox”
+
+Backend checks token, refreshes if needed, ensures folder exists
+
+Backend streams the board file
+
+Backend creates share link, returns link and metadata
+
+UI shows success toast with “Open in Dropbox”
+
+Minimal payload and headers for upload
+POST https://content.dropboxapi.com/2/files/upload
+Headers:
+  Authorization: Bearer <access_token>
+  Content-Type: application/octet-stream
+  Dropbox-API-Arg: {
+    "path": "/Apps/SyntAACx/Backups/2025/09/my_board_20250904_154915.gridset",
+    "mode": "add",
+    "autorename": true,
+    "mute": false,
+    "strict_conflict": false
+  }
+Body: <binary file stream>
+
+Acceptance criteria
+
+I can connect and disconnect Dropbox from Settings.
+
+I can set a folder path and it persists.
+
+Clicking “Upload to Dropbox” on a board successfully uploads the current file and returns a share link.
+
+“Auto-backup new boards” uploads within 10 seconds of creation and surfaces the result on the board card.
+
+Large files over 150 MB succeed via session upload.
+
+Tokens refresh automatically without user action.
+
+All failures show actionable messages.
+
+Unit and integration tests pass.
+
+Test plan
+
+Unit tests for token encryption, token refresh, folder creation, and path building.
+
+Integration tests with Dropbox sandbox app.
+
+Manual checks:
+
+First-time connect and upload
+
+Repeated uploads with same name, check autorename
+
+Network failure mid-stream with retry
+
+Session upload for a 300 MB dummy file
+
+Auto-backup toggle on and off
+
+Disconnect flow removes tokens and hides UI
+
+Optional enhancements
+
+Batch upload of multiple boards from the Boards list.
+
+Conflict resolution dialog that lets the user choose overwrite or keep both.
+
+Per-board backup policy, for example exclude media.
+
+If you want, I can turn this into concrete code snippets next, including a PKCE helper, an Express router for the endpoints, and a small React settings panel.

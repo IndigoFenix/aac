@@ -1,0 +1,101 @@
+Implement the full logic for the Referral & Credit Reward System to drive organic user acquisition (UA) by incentivizing existing Care Partners to invite new users. The core system is based on two atomic credit transactions upon successful sign-up.
+
+User Story (Recap)
+
+As a Care Partner, I want to easily share my unique Invite Code with another family or SLP, so that when the new user signs up and uses the code, both of us automatically receive a bonus (e.g. of 50 free CommuniACCte interpretation credits.)
+
+Technical Requirements & Flow
+
+1. Database & User Model Update
+
+User Table: Add two new fields:
+
+referral_code (Unique, Auto-Generated on user creation, e.g., XAHAPH-12A7B).
+
+referred_by_id (Nullable Foreign Key to User.id).
+
+Transaction/Credit Service: Ensure an existing service handles atomic credit updates (add/subtract).
+
+2. Sign-Up API Logic Hook
+
+The Sign-Up POST endpoint must be updated to accept an optional query parameter: referral_code.
+
+Input: User data ($\text{email, password}$) + optional referral_code.
+
+Validation:
+
+If referral_code is present, look up the referrer_user in the database.
+
+If the code is valid (matches an existing user and the referrer is not the new user): Store the referrer_user.id temporarily.
+
+If the code is invalid (or not present): Proceed with normal sign-up.
+
+New User Creation: Create the new user and auto-generate their unique $\text{referral\_code}$. If a valid code was provided, populate the new user's referred_by_id with the referrer_user.id.
+
+3. Atomic Credit Transaction ($50 / 50$)
+
+Trigger: Immediately following successful new user creation (Step 2), if referred_by_id is populated, execute the following two credit transactions atomically:
+
+Reward New User: Add $\text{+50}$ $\text{CommuniACCte}$ interpretation credits to the New User's balance.
+
+Reward Referrer: Add $\text{+50}$ $\text{CommuniACCte}$ interpretation credits to the Referrer's balance (via $\text{referred\_by\_id}$).
+
+Error Handling: If the transaction for either user fails, the entire Sign-Up and Credit Transaction must be logged as a failure and reconciled.
+
+Acceptance Criteria (Tests)
+
+The feature is complete when the following acceptance tests pass:
+
+New User Referral: A new user signs up with a valid referral code. The new user's credit balance increases by 50, and the referrer's credit balance increases by 50.
+
+New User No Referral: A new user signs up without a referral code. Their credit balance remains 0 (or the default new user amount), and no other user's balance is affected.
+
+Invalid Code: A new user signs up with a non-existent code. The system logs an invalid code error but successfully creates the new user (without credit/referral link).
+
+Self-Referral Prevention: Attempting to use one's own referral code during sign-up fails the code validation, and no credit is rewarded.
+
+UX Integration: The $\text{Care Partner}$ can easily find and copy their unique $\text{referral\_code}$ in the Account Settings UI.
+
+
+
+New Service: Centralized Configuration
+
+Create/Update: Implement a $\text{Settings}$ or $\text{Configuration}$ service/table accessed via the Admin Portal.
+
+Key: Add a new configuration key: REFERRAL_BONUS_CREDITS.
+
+Default Value: Set the default value to 50.
+
+Admin Panel UI ($\text{C.2}$ Dependency): A simple input field in the Admin Portal for the PM to change the numeric value of REFERRAL_BONUS_CREDITS and persist it to the database.
+
+2. Sign-Up API Logic Hook (Updated Step 3)
+
+The credit transaction logic must now retrieve the reward amount dynamically before execution.
+
+Validation: (Same as before: Validate $\text{referral\_code}$ and identify the $\text{referrer\_user}$.)
+
+Configuration Check: NEW STEP: Immediately before the transaction, call the $\text{Settings}$ service to retrieve the current value of REFERRAL_BONUS_CREDITS.
+
+Example Retrieval: reward_amount = Settings.get('REFERRAL_BONUS_CREDITS', default=50)
+
+New User Creation: (Same as before.)
+
+3. Atomic Credit Transaction (Dynamic)
+
+Trigger: Execute the two credit transactions using the dynamically retrieved reward_amount.
+
+Reward New User: Add $\text{+reward\_amount}$ interpretation credits to the New User's balance.
+
+Reward Referrer: Add $\text{+reward\_amount}$ interpretation credits to the Referrer's balance.
+
+Audit Trail ($\text{A.3}$ Consideration): Ensure the credit transaction log records the specific reward_amount used at the time of the transaction, which is critical for future audits and financial reconciliation.
+
+Acceptance Criteria (Tests)
+
+The feature is complete when the following acceptance tests pass:
+
+Configuration Test: Change the value of REFERRAL_BONUS_CREDITS in the Admin Panel from 50 to 100.
+
+Referral Execution: A new user signs up with a valid referral code. The new user's credit balance increases by 100, and the referrer's credit balance increases by 100.
+
+Default/Error Test: If the $\text{Settings}$ service fails to retrieve the value, the system must gracefully default to 50 credits to avoid blocking sign-up and ensure a reward is still issued.

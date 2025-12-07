@@ -71,8 +71,8 @@ export function InteractionBar() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="orchestrator">CliniAACian Orchestrator</SelectItem>
-              <SelectItem value="syntaacx">SyntAACx - AAC Board Generator</SelectItem>
-              <SelectItem value="communiacte">CommuniACCte - Intent Interpreter</SelectItem>
+              <SelectItem value="boards">SyntAACx - AAC Board Generator</SelectItem>
+              <SelectItem value="interpret">CommuniACCte - Intent Interpreter</SelectItem>
               <SelectItem value="docuslp">DocuSLP - Document Generator</SelectItem>
             </SelectContent>
           </Select>

@@ -1,0 +1,171 @@
+Add an Admin, User Statistics page with a responsive layout, desktop and mobile.
+
+Provide high level KPIs at the top, with selectable date range, Today, 7 days, 30 days, Quarter to date, Year to date, Custom.
+
+Total users
+
+Active users in range
+
+New signups
+
+Conversion to paid, if plans exist
+
+Churned users in range
+
+DAU, WAU, MAU for the selected range
+
+Average sessions per active user
+
+Average time in app per active user, if available
+
+Add trend charts, one per card, each with its own selector for Daily or Weekly or Monthly aggregation, and with a compare to previous period toggle.
+
+New signups
+
+Active users
+
+Conversions, upgrades, downgrades
+
+Churns
+
+Sessions and average session length
+
+Add cohort and retention analysis
+
+Signup cohorts by week and by month
+
+Retention heatmap, percentage of users returning on period N after signup, D1, D7, D30 or W1, W4, M1
+
+Rolling retention and classic retention, both
+
+Add segmentation controls, multi select, applied across KPIs and charts
+
+Plan tier, Free, Pro, Enterprise
+
+Geography, Country or Region
+
+Acquisition source or campaign, if available
+
+Platform, Web or iOS or Android or Other
+
+Feature usage tags, for example used feature X at least once in range
+
+Add a “Top Users” table for the selected range, sortable and searchable
+
+Columns, user id, email, plan, signup date, last seen, sessions in range, total events in range, key actions, for example generations, downloads
+
+Row click opens a read only User Profile drawer with mini timeline and charts for that single user in the same date range
+
+Add an “Exports” panel
+
+Export KPIs and charts data as CSV
+
+Export Top Users table as CSV
+
+Respect current filters and date range
+
+Add a “Definitions” help drawer, accessible by a small “i” button, that clearly defines each metric and the exact query logic.
+
+Performance and correctness
+
+All analytics must be computed on the server side, not in the browser
+
+Use parameterized queries, include indexes or materialized views as needed for speed
+
+Support time zone awareness, default to project time zone, allow override in the UI
+
+For large ranges, cap sampling or paginate
+
+Security and privacy
+
+Only Admin role can access this page
+
+No PII beyond email and user id in tables and exports
+
+Redact any payment details
+
+Testing and validation
+
+Add unit tests for metric calculations
+
+Add API tests for each analytics endpoint
+
+Add a lightweight seed script that creates sample users, plans, events, and sessions so the dashboard renders meaningful demo data
+
+Accessibility and UX
+
+Keyboard navigable, proper labels, ARIA where needed
+
+Empty states with friendly text
+
+Loading states and error states for each widget
+
+Data model and events, update or create as needed
+
+Tables, Users, Sessions, Events, Plans, Subscriptions
+
+Sessions, id, user_id, started_at, ended_at, device, platform
+
+Events, id, user_id, session_id, name, properties JSON, created_at
+
+Plans, id, name, tier, price, period
+
+Subscriptions, id, user_id, plan_id, status, started_at, ended_at
+
+Add event names, user_signup, user_login, feature_used, generation_created, download_made, subscription_started, subscription_upgraded, subscription_downgraded, subscription_canceled
+
+API surface, create endpoints under an admin analytics namespace
+
+GET KPIs, input, date range, segments, output, numbers for each KPI plus previous period
+
+GET trends, input, metric key, date range, group by, day or week or month, segments, output, time series plus previous period
+
+GET cohorts, input, cohort granularity and date range, output, matrix with rates
+
+GET users top, input, date range and segments and pagination and search, output, rows and totals
+
+GET user detail, input, user id and date range, output, small KPI set and recent timeline
+
+UI, layout
+
+Header with page title and global filters, date range picker and segment chips and “Compare to previous period” toggle
+
+KPI cards in a responsive grid
+
+Trend charts in a simple grid, one chart per card, with a legend, axes, and no custom colors specified
+
+Cohort heatmap section
+
+Top Users table with sticky header and pagination
+
+Exports panel
+
+Definitions drawer
+
+Deliverables
+
+New routes or pages for Admin, User Statistics
+
+Server code for analytics endpoints
+
+Database migrations or materialized views for performance
+
+Seed script for demo data
+
+Tests
+
+Short README, how to run locally, how to run tests, how to seed data
+
+Acceptance criteria
+
+All KPIs and charts change immediately when filters or date range change
+
+Compare to previous period shows deltas and percentages
+
+Cohort heatmap renders within two seconds on a database of at least 100k events in local testing
+
+Access control blocks non Admin users
+
+CSV exports open or download correctly and reflect filters
+
+Build this feature end to end, integrate it into the existing Admin navigation, and keep the design consistent with the current app styling.

@@ -1,0 +1,43 @@
+High level requirements:
+
+Add server side telemetry for each prompt event: prompt_created, board_generated, board_page_created, board_downloaded, error_occurred, user_feedback_submitted.
+
+Persist analytics in a Prompts table and a PromptEvents table.
+
+Compute daily, weekly, and monthly aggregates. Include topic level insights and conversion rates (prompt → board, board → download).
+
+Create an Admin Overview dashboard with filters at the top: Date range, Topic, User, Model, Language, Output format. Default to Last 30 days.
+
+Show KPI cards: Total prompts, Unique users, Boards generated, Pages created, Downloads, Success rate, Avg pages per board, Avg time from prompt to first board. Each KPI must reflect active filters.
+
+Show time series charts for Prompts, Boards, and Downloads over time.
+
+Show Top topics table with: Topic, Prompts, Boards, Conversion rate, Avg pages per board, Last used.
+
+Show Prompt quality insights: average prompt length, common tokens, stop words removed count, language distribution, average generation latency, error rate.
+
+Show Funnel chart: Prompt created → Board generated → Downloaded, with conversion percentages and drop off counts.
+
+Show Cohort table by prompt week: retention of users who return to create another prompt within 7, 14, and 30 days.
+
+Provide a Details table with the most recent 100 prompts, with columns: Timestamp, User, Topic, Prompt excerpt, Board id, Pages, Downloaded yes/no, Latency ms, Status. Each row links to a prompt detail drawer with full prompt, parameters, and event log.
+
+Add export buttons for CSV for the Details table and for Top topics.
+
+Respect RBAC: only users with role admin can view this page. Return 403 for others.
+
+Privacy: store only what the app already stores for prompts. If prompts may contain PII, mask before persisting analytics_prompt_excerpt. Keep full text only if policy allows.
+
+Performance: all charts must load within 2 seconds for 100k events. Add database indexes to support filters.
+
+SLP-focused insights: Include metrics that are clinically relevant for Speech-Language Pathologists, for example:
+
+Most frequent communication topics used by clients (e.g. daily routines, feelings, school, play).
+
+Distribution of board structures (average number of pages, symbols per page, navigation depth) to evaluate ease of use.
+
+Language complexity (average word length, phrase vs single word usage) to help track progression in expressive language.
+
+Error types or abandoned prompts to identify communication breakdowns.
+
+Prompt-to-usefulness ratio (how many generated boards are actively downloaded or used) to highlight what supports communication best in therapy contexts.

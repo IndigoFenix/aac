@@ -1,0 +1,34 @@
+chunk-XQLYTHWV.js?v=755cff82:21551 Download the React DevTools for a better development experience: https://reactjs.org/link/react-devtools
+index.ts:27 i18next: languageChanged en
+index.ts:27 i18next: initialized {debug: true, initAsync: true, ns: Array(1), defaultNS: Array(1), fallbackLng: Array(1), …}
+queryClient.ts:32  GET https://52c98327-2c10-41a1-9dbd-4662a7b10574-00-qlz9ocn3yz2x.riker.replit.dev/api/user 401 (Unauthorized)
+(anonymous) @ queryClient.ts:32
+fetchFn @ @tanstack_react-query.js?v=755cff82:840
+run @ @tanstack_react-query.js?v=755cff82:494
+start @ @tanstack_react-query.js?v=755cff82:536
+fetch @ @tanstack_react-query.js?v=755cff82:926
+executeFetch_fn @ @tanstack_react-query.js?v=755cff82:2211
+onSubscribe @ @tanstack_react-query.js?v=755cff82:1898
+subscribe @ @tanstack_react-query.js?v=755cff82:24
+(anonymous) @ @tanstack_react-query.js?v=755cff82:3022
+subscribeToStore @ chunk-XQLYTHWV.js?v=755cff82:11984
+commitHookEffectListMount @ chunk-XQLYTHWV.js?v=755cff82:16915
+commitPassiveMountOnFiber @ chunk-XQLYTHWV.js?v=755cff82:18156
+commitPassiveMountEffects_complete @ chunk-XQLYTHWV.js?v=755cff82:18129
+commitPassiveMountEffects_begin @ chunk-XQLYTHWV.js?v=755cff82:18119
+commitPassiveMountEffects @ chunk-XQLYTHWV.js?v=755cff82:18109
+flushPassiveEffectsImpl @ chunk-XQLYTHWV.js?v=755cff82:19490
+flushPassiveEffects @ chunk-XQLYTHWV.js?v=755cff82:19447
+performSyncWorkOnRoot @ chunk-XQLYTHWV.js?v=755cff82:18868
+flushSyncCallbacks @ chunk-XQLYTHWV.js?v=755cff82:9119
+commitRootImpl @ chunk-XQLYTHWV.js?v=755cff82:19432
+commitRoot @ chunk-XQLYTHWV.js?v=755cff82:19277
+finishConcurrentRender @ chunk-XQLYTHWV.js?v=755cff82:18805
+performConcurrentWorkOnRoot @ chunk-XQLYTHWV.js?v=755cff82:18718
+workLoop @ chunk-XQLYTHWV.js?v=755cff82:197
+flushWork @ chunk-XQLYTHWV.js?v=755cff82:176
+performWorkUntilDeadline @ chunk-XQLYTHWV.js?v=755cff82:384
+settings-page.tsx:353 Upload button clicked!
+settings-page.tsx:353 Upload button clicked!
+settings-page.tsx:353 Upload button clicked!
+settings-page.tsx:353 Upload button clicked!

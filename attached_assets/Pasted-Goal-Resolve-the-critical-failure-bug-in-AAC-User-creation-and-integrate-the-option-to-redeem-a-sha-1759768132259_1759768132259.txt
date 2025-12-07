@@ -1,0 +1,32 @@
+Goal: Resolve the critical failure bug in AAC User creation and integrate the option to redeem a shared user code during the C.1 Guided Onboarding flow.
+
+Technologies: Frontend (React/TS), Backend (Express/TS), Drizzle ORM.
+
+I. Tech.3: Fix AAC User Creation Failure (Immediate Debugging)
+Backend API Audit: Immediately debug the POST /api/onboarding/complete-step-1 endpoint. The most probable causes are:
+
+Drizzle Transaction Failure: A missing or misconfigured field in the Drizzle ORM schema for the AAC User profile (e.g., a required field is null, or an enum value is invalid).
+
+Foreign Key Violation: The request might be failing to correctly associate the new AAC user with the logged-in Care Partner's user_id.
+
+Verbose Logging: Implement temporary, verbose logging on the complete-step-1 route to capture the raw input and the exact PostgreSQL error message before returning the generic failure message.
+
+II. B.5: Integrate Code Redemption into Onboarding (New Feature)
+Frontend Onboarding Integration: Modify the OnboardingFlow.tsx component (Screen 1/3) to include a second option alongside "Create New AAC User":
+
+New Button/Link: "Have an Invite Code? Redeem Here."
+
+UI: If selected, replace the AAC User creation form with a simplified input field for the Invite Code.
+
+New API Endpoint (POST /api/onboarding/redeem-code):
+
+Logic: This endpoint must reuse the existing Code Redemption logic. It takes the inviteCode, validates it (checking for expiration, limits, and plan access), and if valid:
+
+Establishes the link between the logged-in Care Partner and the shared AAC User profile.
+
+Crucially, updates the Care Partner's onboardingStep to 3 (Complete), bypassing the profile creation and schedule setup steps (as the data is already shared).
+
+Error Handling: Must return specific error messages for 'invalid code', 'expired code', and 'limit reached'.
+
+III. Onboarding Flow Logic Update
+Flow Decision Point: The OnboardingGuard logic in the frontend must be updated: if a user successfully redeems a code, they are immediately redirected to the main application, otherwise, they proceed to Screen 1 (Creation).

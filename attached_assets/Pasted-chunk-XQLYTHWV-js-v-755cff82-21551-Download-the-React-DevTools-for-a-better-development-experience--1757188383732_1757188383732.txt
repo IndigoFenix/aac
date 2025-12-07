@@ -1,0 +1,17 @@
+chunk-XQLYTHWV.js?v=755cff82:21551 Download the React DevTools for a better development experience: https://reactjs.org/link/react-devtools
+index.ts:27 i18next: languageChanged en
+index.ts:27 i18next: initialized {debug: true, initAsync: true, ns: Array(1), defaultNS: Array(1), fallbackLng: Array(1), …}
+settings-page.tsx:355 Upload button clicked!
+settings-page.tsx:193 File input changed: FileList {0: File, length: 1}
+settings-page.tsx:200 Selected file: 20241201_164604-EDIT.jpg image/jpeg 166897
+settings-page.tsx:224 Starting photo upload...
+settings-page.tsx:135 Starting upload mutation for file: 20241201_164604-EDIT.jpg
+settings-page.tsx:138 Getting upload URL...
+settings-page.tsx:140 Upload URL response status: 200
+settings-page.tsx:143 Upload URL data: {uploadUrl: 'https://storage.googleapis.com/replit-objstore-5e8…e6d41e9eea39dfd0affa755&X-Goog-SignedHeaders=host', filename: 'user-photos/7e087bd9-d4d0-4ef6-b4f8-1129a26e3751-1757188367465.jpg'}
+settings-page.tsx:147 Uploading to object storage: https://storage.googleapis.com/replit-objstore-5e81aedd-389e-4111-b531-ada44066fc4c/user-photos/7e087bd9-d4d0-4ef6-b4f8-1129a26e3751-1757188367465.jpg?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=heimdall-production%40replit-user-deployments.iam.gserviceaccount.com%2F20250906%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20250906T195247Z&X-Goog-Expires=899&X-Goog-Signature=490d3388250da3e76dc8b889236459307821e738153ff040fe22c0a72b9782b0246fe6663328d5b8e63e8e6feadd43d3ba5594a904f62f14bb8e709a799a7bb3dd5e272cdae4189e0b568ed406df1444a20bd514b96f9e141d4129a1227ee2d145b58c84d6c75a4866ba3d6bcf60b3f5268557478b723a8f17070efc6bf0597b4816ec6c0d7d8385204b10222d6aaaabf8bce48ad5fdd465775cdf7bcec17cc5aa986a3dc732d5a89089582ec64cc38f20cad55a5293fb975bba6f8d5ac9c2ea6197a7be80b2ae443f584ab1b24eb406d3805e699cac3155bf6797909091d6d105862c176a45b1693ab79d4fc9c6dffad71a0668ee6d41e9eea39dfd0affa755&X-Goog-SignedHeaders=host
+settings-page.tsx:156 Object storage upload response: 200
+settings-page.tsx:164 Updating user photo path: user-photos/7e087bd9-d4d0-4ef6-b4f8-1129a26e3751-1757188367465.jpg
+settings-page.tsx:169 User update response status: 200
+settings-page.tsx:171 Final result: {id: '7e087bd9-d4d0-4ef6-b4f8-1129a26e3751', email: 'admin@syntaacx.com', role: 'admin', planCode: 'pro_monthly', status: 'active', …}
+settings-page.tsx:228 Upload successful: {id: '7e087bd9-d4d0-4ef6-b4f8-1129a26e3751', email: 'admin@syntaacx.com', role: 'admin', planCode: 'pro_monthly', status: 'active', …}

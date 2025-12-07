@@ -1,0 +1,134 @@
+{
+  "meta": {
+    "version": "1.0.0",
+    "title": "Media and Links Demo",
+    "description": "Shows links, symbols, video, audio, images, and URLs",
+    "locale": "en-US",
+    "targets": { "grid3": true, "tdsnap": true, "openboard_obz": true }
+  },
+
+  "assets": {
+    "symbols": [
+      { "id": "sym_home", "set": "arasaac", "ref": "home_001", "alt_text": "home" },
+      { "id": "sym_music", "set": "pcs", "ref": "PCS-MUSIC-ICON" },
+      { "id": "sym_web", "set": "arasaac", "ref": "internet_777" }
+    ],
+    "images": [
+      { "id": "img_pizza", "file": "images/pizza.png", "alt_text": "a slice of pizza" }
+    ],
+    "audio": [
+      { "id": "aud_hello", "file": "audio/hello.wav" }
+    ],
+    "videos": [
+      { "id": "vid_song", "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ" }
+    ]
+  },
+
+  "boards": [
+    {
+      "id": "home",
+      "name": "Home",
+      "layout": { "rows": 6, "cols": 6, "gutter": 4 },
+      "cells": [
+        {
+          "id": "c_say_hello",
+          "row": 1,
+          "col": 1,
+          "label": "Hello",
+          "speak": "Hello",
+          "symbol_id": "sym_home",
+          "actions": [
+            { "type": "speak", "text": "Hello" },
+            { "type": "play_audio", "audio_id": "aud_hello" },
+            { "type": "add_to_message_window", "text": "Hello " }
+          ]
+        },
+        {
+          "id": "c_food",
+          "row": 1,
+          "col": 2,
+          "label": "Food",
+          "image_id": "img_pizza",
+          "actions": [
+            { "type": "navigate", "target_board_id": "food_board" }
+          ]
+        },
+        {
+          "id": "c_music",
+          "row": 1,
+          "col": 3,
+          "label": "Music",
+          "symbol_id": "sym_music",
+          "actions": [
+            { "type": "navigate", "target_board_id": "music_board" }
+          ]
+        },
+        {
+          "id": "c_open_site",
+          "row": 1,
+          "col": 4,
+          "label": "Open Site",
+          "symbol_id": "sym_web",
+          "actions": [
+            { "type": "open_url", "url": "https://example.org" }
+          ]
+        },
+        {
+          "id": "c_clear",
+          "row": 1,
+          "col": 6,
+          "label": "Clear",
+          "actions": [ { "type": "clear_message_window" } ]
+        }
+      ]
+    },
+
+    {
+      "id": "food_board",
+      "name": "Food",
+      "layout": { "rows": 6, "cols": 6, "gutter": 4 },
+      "cells": [
+        {
+          "id": "c_pizza",
+          "row": 1,
+          "col": 1,
+          "label": "Pizza",
+          "image_id": "img_pizza",
+          "actions": [
+            { "type": "speak", "text": "I want pizza" },
+            { "type": "add_to_message_window", "text": "pizza " }
+          ]
+        },
+        { "id": "c_back", "row": 1, "col": 6, "label": "Back", "actions": [ { "type": "back" } ] }
+      ]
+    },
+
+    {
+      "id": "music_board",
+      "name": "Music",
+      "layout": { "rows": 6, "cols": 6, "gutter": 4 },
+      "cells": [
+        {
+          "id": "c_play_song",
+          "row": 1,
+          "col": 1,
+          "label": "Play Video",
+          "video_id": "vid_song",
+          "actions": [
+            { "type": "play_video", "video_id": "vid_song" }
+          ]
+        },
+        {
+          "id": "c_youtube",
+          "row": 1,
+          "col": 2,
+          "label": "Open YouTube",
+          "actions": [
+            { "type": "open_url", "url": "https://youtube.com" }
+          ]
+        },
+        { "id": "c_back_music", "row": 1, "col": 6, "label": "Back", "actions": [ { "type": "back" } ] }
+      ]
+    }
+  ]
+}

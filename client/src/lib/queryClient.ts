@@ -1,5 +1,15 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+// Read and sanitize the base URL from Vite env
+const API_BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, "") ?? "";
+
+// Helper to join base + path safely
+function withBase(path: string): string {
+  const cleanPath = path.replace(/^\/+/, ""); // strip leading slashes
+  // If API_BASE_URL is empty, this just returns "/path"
+  return API_BASE_URL ? `${API_BASE_URL}/${cleanPath}` : `/${cleanPath}`;
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
@@ -9,9 +19,11 @@ async function throwIfResNotOk(res: Response) {
 
 export async function apiRequest(
   method: string,
-  url: string,
-  data?: unknown | undefined,
+  path: string,
+  data?: unknown,
 ): Promise<Response> {
+  const url = withBase(path);
+
   const res = await fetch(url, {
     method,
     headers: data ? { "Content-Type": "application/json" } : {},
@@ -24,22 +36,31 @@ export async function apiRequest(
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
-export const getQueryFn: <T>(options: {
+
+export function getQueryFn<T>(options: {
   on401: UnauthorizedBehavior;
-}) => QueryFunction<T> =
-  ({ on401: unauthorizedBehavior }) =>
-  async ({ queryKey }) => {
-    const res = await fetch(queryKey.join("/") as string, {
+}): QueryFunction<T | null> {
+  const { on401: unauthorizedBehavior } = options;
+
+  return async ({ queryKey }) => {
+    const path =
+      Array.isArray(queryKey) ? queryKey.join("/") : String(queryKey);
+
+    const url = withBase(path);
+
+    const res = await fetch(url, {
       credentials: "include",
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-      return null;
+      // Returning null explicitly when configured to do so
+      return null as any; // still satisfies QueryFunction<T | null>
     }
 
     await throwIfResNotOk(res);
-    return await res.json();
+    return (await res.json()) as T;
   };
+}
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -55,3 +76,4 @@ export const queryClient = new QueryClient({
     },
   },
 });
+

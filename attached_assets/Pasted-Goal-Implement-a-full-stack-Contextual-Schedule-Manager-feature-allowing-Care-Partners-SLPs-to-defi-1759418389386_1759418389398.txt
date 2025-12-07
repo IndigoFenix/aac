@@ -1,0 +1,61 @@
+Goal: Implement a full-stack Contextual Schedule Manager feature allowing Care Partners/SLPs to define a repeating weekly schedule for each AAC User to improve AI interpretation context.
+
+Technologies: Frontend (React/TS, Tailwind/shadcn, React Query), Backend (Express/TS), DB (PostgreSQL, Drizzle ORM), AI (Gemini 2.5 Pro).
+
+I. Database Schema (Drizzle ORM)
+
+Create a new Drizzle schema file for a table named aac_user_schedules.
+
+Fields:
+
+id: serial, Primary Key
+
+aacUserId: integer, Foreign Key referencing the aac_users table
+
+dayOfWeek: integer (1=Sunday to 7=Saturday)
+
+startTime: time (e.g., '08:30:00')
+
+endTime: time
+
+activityName: text (e.g., 'School', 'Hydrotherapy', 'Dinner')
+
+topicTags: text[] or jsonb (e.g., ['food', 'family', 'social']) - CRITICAL for the AI prompt.
+
+isRepeatingWeekly: boolean (default true)
+
+dateOverride: date (for holidays/one-off events, optional)
+
+II. Backend API (Express.js/TypeScript)
+
+Create a new protected router (/api/schedules).
+
+Implement CRUD endpoints:
+
+POST /api/schedules: Create a new schedule entry. Must handle single-day entries and repeating weekly entries.
+
+GET /api/schedules/:aacUserId: Fetch the full weekly schedule for a specific AAC User.
+
+PUT /api/schedules/:id: Update an existing schedule entry.
+
+DELETE /api/schedules/:id: Delete a schedule entry.
+
+Implement the Context Retrieval API (Internal Use):
+
+GET /api/context/schedule/:aacUserId: An internal, low-latency API that takes the aacUserId and the current timestamp and returns the most relevant activity name and topic tags (A.K.A. the contextual schedule data) for that time, including any holiday/override checks. This will be used in the interpretation endpoint.
+
+III. Frontend (React/TypeScript, shadcn/ui)
+
+Create a new React component: ScheduleManager.tsx.
+
+Design: Use a mobile-first, visual weekly calendar grid (RTL-ready) using shadcn/ui components (e.g., Table, Card, Dialog for input forms).
+
+Logic: Use React Query for managing the schedule state (GET /api/schedules/:aacUserId) and mutations (POST/PUT/DELETE). Implement a drag-and-drop or modal-based interface to easily set activity name, time, days of the week, and the critical Topic Tags list.
+
+IV. AI Integration (Core Feature Enhancement)
+
+Modify the CommuniAACte interpretation API endpoint.
+
+Before calling Gemini: Call the new internal API GET /api/context/schedule/:aacUserId to retrieve the current semantic context (activityName and topicTags).
+
+Update the Gemini Prompt: Integrate the retrieved context into the system prompt template (managed via the Admin Portal) using placeholder variables like \{schedule_activity\} and \{schedule_topics\} to maximize interpretation accuracy.

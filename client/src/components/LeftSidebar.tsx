@@ -2,11 +2,12 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { useTheme } from "./ThemeProvider";
+import { useTheme } from "@/contexts/ThemeContext";
 import {
   MessageSquarePlus,
   FolderOpen,
   LayoutGrid,
+  BookOpen,
   Settings,
   LogOut,
   User,
@@ -14,18 +15,46 @@ import {
   Sun,
 } from "lucide-react";
 import logoImage from "@assets/cliniaccian copy_1763565136724.png";
+import { useAuth } from "@/hooks/useAuth";
+import { openUI } from "@/lib/uiEvents";
+import { useLocation, useNavigate } from "react-router-dom";
 
 type LeftSidebarProps = {
   isCollapsed?: boolean;
 };
 
 export function LeftSidebar({ isCollapsed = false }: LeftSidebarProps) {
+  const { user, isAuthenticated, isLoading, logout } = useAuth();
   const { theme, setTheme } = useTheme();
+  
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const workspaceItems = [
-    { icon: MessageSquarePlus, label: "New Session", testId: "button-new-session" },
-    { icon: FolderOpen, label: "Saved Reports", testId: "button-saved-reports" },
-    { icon: LayoutGrid, label: "My Board Library", testId: "button-board-library" },
+    {
+      icon: BookOpen,
+      label: "CliniAACian",
+      path: "/",
+      testId: "nav-main",
+    },
+    {
+      icon: MessageSquarePlus,
+      label: "CommuniAACte",
+      path: "/interpret",
+      testId: "nav-interpret",
+    },
+    {
+      icon: FolderOpen,
+      label: "SyntAACx Boards",
+      path: "/boards",
+      testId: "nav-boards",
+    },
+    {
+      icon: LayoutGrid,
+      label: "DocuSLP Reports",
+      path: "/docuslp",
+      testId: "nav-docuslp",
+    },
   ];
 
   return (
@@ -70,7 +99,7 @@ export function LeftSidebar({ isCollapsed = false }: LeftSidebarProps) {
                   <User className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-card-foreground">Sarah J.</p>
+                  <p className="text-sm font-medium text-card-foreground">{user?.fullName}</p>
                   <p className="text-xs text-muted-foreground">Active Client</p>
                 </div>
               </div>
@@ -87,21 +116,25 @@ export function LeftSidebar({ isCollapsed = false }: LeftSidebarProps) {
             Workspace
           </p>
         )}
-        {workspaceItems.map((item) => (
-          <Button
-            key={item.label}
-            variant="ghost"
-            className={`w-full gap-3 hover-elevate active-elevate-2 ${
-              isCollapsed ? "justify-center px-0" : "justify-start"
-            }`}
-            data-testid={item.testId}
-            onClick={() => console.log(`${item.label} clicked`)}
-            title={isCollapsed ? item.label : undefined}
-          >
-            <item.icon className="w-5 h-5" />
-            {!isCollapsed && <span className="text-sm">{item.label}</span>}
-          </Button>
-        ))}
+        {/* Workspace / features */}
+        <div className="space-y-2">
+          {workspaceItems.map((item) => {
+            const isActive = (item.path == '/') ? location.pathname == '/' : location.pathname.startsWith(item.path);
+            return (
+              <Button
+                key={item.label}
+                variant={isActive ? "secondary" : "ghost"}
+                size="sm"
+                className="w-full justify-start gap-2 hover-elevate active-elevate-2"
+                data-testid={item.testId}
+                onClick={() => navigate(item.path)}
+              >
+                <item.icon className="w-4 h-4" />
+                {!isCollapsed ? (<span>{item.label}</span>) : null}
+              </Button>
+            );
+          })}
+        </div>
       </div>
 
       {!isCollapsed && <Separator className="mx-6" />}
@@ -146,7 +179,7 @@ export function LeftSidebar({ isCollapsed = false }: LeftSidebarProps) {
             isCollapsed ? "justify-center px-0" : "justify-start"
           }`}
           data-testid="button-settings"
-          onClick={() => console.log("Settings clicked")}
+          onClick={() => openUI("settings")}
           title={isCollapsed ? "Settings" : undefined}
         >
           <Settings className="w-5 h-5" />
@@ -159,7 +192,7 @@ export function LeftSidebar({ isCollapsed = false }: LeftSidebarProps) {
             isCollapsed ? "justify-center px-0" : "justify-start"
           }`}
           data-testid="button-logout"
-          onClick={() => console.log("Log Out clicked")}
+          onClick={logout}
           title={isCollapsed ? "Log Out" : undefined}
         >
           <LogOut className="w-5 h-5" />
