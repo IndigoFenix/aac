@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useAuth } from "@/hooks/useAuth";
+import { useAacUser } from "@/hooks/useAacUser";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
 import { openUI, useUIEvent } from "@/lib/uiEvents";
@@ -70,7 +71,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 export function GlobalAuthModals() {
   const { toast } = useToast();
   const { t, isRTL, language } = useLanguage();
-  const { theme, toggleTheme } = useTheme();
+  const { theme } = useTheme();
   const {
     user,
     isAuthenticated,
@@ -80,15 +81,12 @@ export function GlobalAuthModals() {
     refetchUser,
   } = useAuth();
 
-  // Fetch AAC users
-  const { data: aacUsersData, isLoading: aacUsersLoading } = useQuery({
-    queryKey: ["/api/aac-users"],
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/aac-users");
-      return res.json();
-    },
-    enabled: isAuthenticated,
-  });
+  // AAC users come from the global provider
+  const {
+    aacUsers,
+    isLoading: aacUsersLoading,
+    refetchAacUser,
+  } = useAacUser();
 
   // Fetch user's invite codes
   const {
@@ -264,9 +262,13 @@ export function GlobalAuthModals() {
       const res = await apiRequest("POST", "/api/aac-users", aacUserData);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: async () => {
+      // Refresh global AAC users in the provider
+      await refetchAacUser();
+
+      // Optional: keep this if anything else still uses the raw query
       queryClient.invalidateQueries({ queryKey: ["/api/aac-users"] });
-      // CHANGED: Reset with birthDate instead of age
+
       setAacUserForm({
         name: "",
         gender: "",
@@ -278,10 +280,10 @@ export function GlobalAuthModals() {
         description: t("toast.aacUserCreatedDesc"),
       });
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast({
         title: t("toast.aacUserCreateFailed"),
-        description: error.message || t("toast.aacUserCreateFailedDesc"),
+        description: error?.message || t("toast.aacUserCreateFailedDesc"),
         variant: "destructive",
       });
     },
@@ -293,10 +295,11 @@ export function GlobalAuthModals() {
       const res = await apiRequest("PATCH", `/api/aac-users/${id}`, data);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: async () => {
+      await refetchAacUser();
       queryClient.invalidateQueries({ queryKey: ["/api/aac-users"] });
+
       setEditingAacUser(null);
-      // CHANGED: Reset with birthDate instead of age
       setAacUserForm({
         name: "",
         gender: "",
@@ -308,14 +311,15 @@ export function GlobalAuthModals() {
         description: t("toast.aacUserUpdatedDesc"),
       });
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast({
         title: t("toast.aacUserUpdateFailed"),
-        description: error.message || t("toast.aacUserUpdateFailedDesc"),
+        description: error?.message || t("toast.aacUserUpdateFailedDesc"),
         variant: "destructive",
       });
     },
   });
+
 
   // Delete AAC user mutation
   const deleteAacUserMutation = useMutation({
@@ -323,17 +327,19 @@ export function GlobalAuthModals() {
       const res = await apiRequest("DELETE", `/api/aac-users/${id}`);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: async () => {
+      await refetchAacUser();
       queryClient.invalidateQueries({ queryKey: ["/api/aac-users"] });
+
       toast({
         title: t("toast.aacUserDeleted"),
         description: t("toast.aacUserDeletedDesc"),
       });
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast({
         title: t("toast.aacUserDeleteFailed"),
-        description: error.message || t("toast.aacUserDeleteFailedDesc"),
+        description: error?.message || t("toast.aacUserDeleteFailedDesc"),
         variant: "destructive",
       });
     },
@@ -441,13 +447,16 @@ export function GlobalAuthModals() {
       const res = await apiRequest("POST", "/api/invite-codes/redeem", data);
       return res.json();
     },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/aac-users"] });
+    onSuccess: async (data) => {
+      await refetchAacUser();
       queryClient.invalidateQueries({ queryKey: ["/api/invite-codes"] });
+
       redeemInviteForm.reset();
       toast({
         title: t("toast.inviteRedeemed"),
-        description: `${t("label.aacUser")} "${data.aacUserName}" ${language === "he" ? "נוסף בהצלחה" : "has been added successfully"}`,
+        description: `${t("label.aacUser")} "${data.aacUserName}" ${
+          language === "he" ? "נוסף בהצלחה" : "has been added successfully"
+        }`,
       });
     },
     onError: (error: any) => {
@@ -458,8 +467,8 @@ export function GlobalAuthModals() {
         } else if (error?.message) {
           errorMessage = error.message;
         }
-      } catch (e) {
-        // Use default message
+      } catch {
+        // keep default
       }
       toast({
         title: t("toast.inviteRedeemFailed"),
@@ -1328,39 +1337,6 @@ export function GlobalAuthModals() {
                     {language === "he" ? "איפוס" : "Reset"}
                   </Button>
                 </div>
-
-                {/* Theme Toggle Section */}
-                <div className="mt-6 pt-6 border-t border-border">
-                  <h4 className="text-sm font-medium mb-3">
-                    {language === "he" ? "ערכת נושא" : "Theme"}
-                  </h4>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">
-                      {language === "he" 
-                        ? theme === "dark" ? "מצב כהה" : "מצב בהיר"
-                        : theme === "dark" ? "Dark Mode" : "Light Mode"}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={toggleTheme}
-                      className="flex items-center gap-2"
-                      data-testid="button-toggle-theme"
-                    >
-                      {theme === "dark" ? (
-                        <>
-                          <Sun className="w-4 h-4" />
-                          {language === "he" ? "בהיר" : "Light"}
-                        </>
-                      ) : (
-                        <>
-                          <Moon className="w-4 h-4" />
-                          {language === "he" ? "כהה" : "Dark"}
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </div>
               </div>
             </div>
 
@@ -1522,8 +1498,8 @@ export function GlobalAuthModals() {
                   <div className="flex items-center justify-center py-8">
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
                   </div>
-                ) : aacUsersData?.aacUsers?.length > 0 ? (
-                  aacUsersData.aacUsers.map((aacUser: any) => (
+                ) : aacUsers && aacUsers.length > 0 ? (
+                  aacUsers.map((aacUser: any) => (
                     <div
                       key={aacUser.id}
                       className="border border-border rounded-lg p-3 flex justify-between items-start"
@@ -1537,16 +1513,20 @@ export function GlobalAuthModals() {
                               {aacUser.gender}
                             </p>
                           )}
-                          {/* CHANGED: Display age calculated from birthDate */}
                           {(aacUser.birthDate || aacUser.age) && (
                             <p>
                               {language === "he" ? "גיל" : "Age"}:{" "}
-                              {aacUser.age ?? calculateAge(aacUser.birthDate)}
+                              {aacUser.age ??
+                                calculateAge(aacUser.birthDate)}
                               {aacUser.birthDate && (
                                 <span className="text-xs ml-2">
-                                  ({new Date(aacUser.birthDate).toLocaleDateString(
-                                    language === "he" ? "he-IL" : "en-US"
-                                  )})
+                                  (
+                                  {new Date(
+                                    aacUser.birthDate,
+                                  ).toLocaleDateString(
+                                    language === "he" ? "he-IL" : "en-US",
+                                  )}
+                                  )
                                 </span>
                               )}
                             </p>
@@ -1564,7 +1544,6 @@ export function GlobalAuthModals() {
                           variant="outline"
                           size="sm"
                           onClick={() => {
-                            // CHANGED: Use aacUser.id instead of aacUser.aacUserId
                             setScheduleAacUser({
                               aacUserId: aacUser.id,
                               name: aacUser.name,
@@ -1613,6 +1592,7 @@ export function GlobalAuthModals() {
                   </div>
                 )}
               </div>
+
             </div>
 
             {/* AAC User Sharing Section */}
@@ -1689,24 +1669,24 @@ export function GlobalAuthModals() {
                                   <SelectItem value="loading" disabled>
                                     {t("ui.loading")}
                                   </SelectItem>
-                                ) : aacUsersData?.aacUsers?.length > 0 ? (
-                                  aacUsersData.aacUsers
+                                ) : aacUsers && aacUsers.length > 0 ? (
+                                  aacUsers
                                     .filter(
                                       (aacUser: any) =>
-                                        // CHANGED: Use id instead of aacUserId
                                         aacUser.id &&
                                         String(aacUser.id).trim() !== "",
                                     )
                                     .map((aacUser: any) => (
-                                      // CHANGED: Use aacUser.id instead of aacUserId
                                       <SelectItem
                                         key={aacUser.id}
                                         value={String(aacUser.id)}
                                       >
                                         {aacUser.name}
-                                        {/* CHANGED: Show age from birthDate or pre-calculated */}
-                                        {(aacUser.age || aacUser.birthDate) && 
-                                          ` (${aacUser.age ?? calculateAge(aacUser.birthDate)})`}
+                                        {(aacUser.age || aacUser.birthDate) &&
+                                          ` (${
+                                            aacUser.age ??
+                                            calculateAge(aacUser.birthDate)
+                                          })`}
                                         {aacUser.gender &&
                                           ` - ${aacUser.gender}`}
                                       </SelectItem>
@@ -1718,6 +1698,7 @@ export function GlobalAuthModals() {
                                 )}
                               </SelectContent>
                             </Select>
+
                             <FormMessage />
                           </FormItem>
                         )}

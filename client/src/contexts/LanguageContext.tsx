@@ -1,673 +1,167 @@
-// Temporary simplified language context to bypass React hook issues
-type Language = "en" | "he";
-
-interface LanguageContextType {
-  language: Language;
-  setLanguage: (lang: Language) => void;
-  t: (key: string, params?: Record<string, string>) => string;
-  isRTL: boolean;
-}
-
-// Static translations
-const translations = {
-  en: {
-    "app.title": "CommuniAACte - AAC Communication Interpreter",
-    "app.subtitle":
-      "AI-powered speech therapy analysis for better understanding",
-    "input.text": "Text Input",
-    "input.textAnalysis": "What would you like to interpret?",
-    "input.image": "Image Upload",
-    "input.textPlaceholder": "Enter AAC communication text here...",
-    "input.imageChoose": "Choose File",
-    "input.imageSelected": "Selected: {filename} (Click to crop)",
-    "input.original": "Original Input",
-    "input.imageCropped": "Cropped Image Preview:",
-    "button.interpret": "Interpret Communication",
-    "button.processImage": "Process Image & Interpret",
-    "button.processing": "Processing...",
-    "button.clear": "Clear",
-    "button.save": "Save",
-    "button.delete": "Delete",
-    "button.cancel": "Cancel",
-    "button.applyCrop": "Apply Crop",
-    "button.start": "Start",
-    "crop.title": "Crop Image for Better Analysis",
-    "crop.description":
-      "Crop the image to focus on the AAC communication area for better interpretation accuracy.",
-    "result.interpretation": "Interpretation",
-    "result.meaning": "Interpreted Meaning",
-    "result.meaningShort": "Meaning",
-    "result.aacText": "AAC text",
-    "result.analysis": "Analysis",
-    "result.confidence": "Confidence",
-    "result.suggestedResponse": "Suggested Response",
-    "result.confidenceHigh": "High confidence",
-    "result.confidenceMedium": "Medium confidence",
-    "result.confidenceLow": "Low confidence",
-    "share.title": "Share Results",
-    "share.whatsapp": "WhatsApp",
-    "share.copy": "Copy Text",
-    "share.email": "Email",
-    "context.title": "Add Context Information",
-    "context.description":
-      "Providing context helps improve interpretation accuracy. All fields are optional.",
-    "context.time": "Time",
-    "context.timePlaceholder": "When was this communication said?",
-    "context.useCurrentTime": "Use current time",
-    "context.location": "Location",
-    "context.locationPlaceholder": "Where was this communication said?",
-    "context.useCurrentLocation": "Use current location (GPS)",
-    "context.background": "Background Context",
-    "context.backgroundPlaceholder":
-      "General situation or environment when this was communicated...",
-    "context.previousEvents": "Previous Events",
-    "context.previousEventsPlaceholder":
-      "What happened before this communication?",
-    "context.futureEvents": "Future Events",
-    "context.futureEventsPlaceholder":
-      "Any upcoming events that might be related?",
-    "context.cancel": "Cancel",
-    "context.continue": "Continue with Interpretation",
-    "history.title": "Recent Interpretations",
-    "history.empty":
-      "No interpretations yet. Try interpreting some AAC communication!",
-    "history.origin": "Origin",
-    "history.text": "Text",
-    "history.image": "Image",
-    "toast.invalidFile": "Invalid file type",
-    "toast.invalidFileDesc":
-      "Please select a valid image file (JPG, PNG, etc.)",
-    "toast.imageRequired": "Image required",
-    "toast.imageRequiredDesc":
-      "Please select and crop an image file for interpretation.",
-    "toast.textRequired": "Text required",
-    "toast.textRequiredDesc": "Please enter text for interpretation.",
-    "toast.imageCropped": "Image cropped",
-    "toast.imageCroppedDesc":
-      "Image has been cropped and is ready for interpretation.",
-    "toast.cropFailed": "Crop failed",
-    "toast.cropFailedDesc": "Failed to crop image. Please try again.",
-    "toast.saved": "Saved",
-    "toast.savedDesc": "Interpretation saved successfully.",
-    "toast.deleted": "Deleted",
-    "toast.deletedDesc": "Interpretation deleted.",
-    "toast.copied": "Copied",
-    "toast.copiedDesc": "Interpretation results copied to clipboard.",
-    "toast.copyFailed": "Copy failed",
-    "toast.copyFailedDesc": "Failed to copy to clipboard. Please try again.",
-    // AAC User management toasts
-    "toast.aacUserCreated": "AAC User Created",
-    "toast.aacUserCreatedDesc": "AAC user has been created successfully",
-    "toast.aacUserCreateFailed": "Creation Failed",
-    "toast.aacUserCreateFailedDesc": "Failed to create AAC user",
-    "toast.aacUserUpdated": "AAC User Updated",
-    "toast.aacUserUpdatedDesc": "AAC user has been updated successfully",
-    "toast.aacUserUpdateFailed": "Update Failed",
-    "toast.aacUserUpdateFailedDesc": "Failed to update AAC user",
-    "toast.aacUserDeleted": "AAC User Deleted",
-    "toast.aacUserDeletedDesc": "AAC user has been removed successfully",
-    "toast.aacUserDeleteFailed": "Deletion Failed",
-    "toast.aacUserDeleteFailedDesc": "Failed to delete AAC user",
-    // Profile management toasts
-    "toast.profileUpdated": "Profile Updated",
-    "toast.profileUpdatedDesc": "Your profile has been updated successfully",
-    "toast.profileUpdateFailed": "Update Failed",
-    "toast.profileUpdateFailedDesc": "Failed to update profile",
-    "toast.imageUploaded": "Image Uploaded",
-    "toast.imageUploadedDesc":
-      "Your profile image has been updated successfully",
-    "toast.imageUploadFailed": "Upload Failed",
-    "toast.imageUploadFailedDesc": "Failed to upload image",
-    // Invite code management toasts
-    "toast.inviteCreated": "Invite Code Created",
-    "toast.inviteCreatedDesc": "Invite code has been created successfully",
-    "toast.inviteCreateFailed": "Creation Failed",
-    "toast.inviteCreateFailedDesc": "Failed to create invite code",
-    "toast.inviteRedeemed": "Invite Code Redeemed",
-    "toast.inviteRedeemedDesc":
-      'AAC user "{alias}" has been added successfully',
-    "toast.inviteRedeemFailed": "Redemption Failed",
-    "toast.inviteRedeemFailedDesc": "Failed to redeem invite code",
-    "toast.inviteDeleted": "Invite Code Deleted",
-    "toast.inviteDeletedDesc": "Invite code has been removed successfully",
-    "toast.inviteDeleteFailed": "Deletion Failed",
-    "toast.inviteDeleteFailedDesc": "Failed to delete invite code",
-    // Location management toasts
-    "toast.locationSaved": "Location Saved",
-    "toast.locationSavedDesc": "Location has been saved successfully",
-    "toast.locationSaveFailed": "Save Failed",
-    "toast.locationSaveFailedDesc": "Failed to save location",
-    "toast.locationDeleted": "Location Deleted",
-    "toast.locationDeletedDesc": "Location has been removed successfully",
-    "toast.locationDeleteFailed": "Deletion Failed",
-    "toast.locationDeleteFailedDesc": "Failed to delete location",
-    // UI labels and states
-    "ui.loading": "Loading...",
-    "ui.creating": "Creating...",
-    "ui.redeeming": "Redeeming...",
-    "ui.noAacUsers": "No AAC users available",
-    "ui.createInviteCode": "Create Invite Code",
-    "ui.redeemInviteCode": "Redeem Invite Code",
-    "ui.enterInviteCode": "Enter Invite Code (8 characters)",
-    "ui.inviteCodePlaceholder": "e.g., ABC12345",
-    "ui.inviteCodeError": "Invite code must be exactly 8 characters",
-    "ui.redeemCode": "Redeem Code",
-    "ui.myInviteCodes": "My Invite Codes",
-    "ui.showHide": "Show/Hide",
-    "ui.created": "Created",
-    "ui.redeemed": "Redeemed",
-    "ui.copyInviteCode": "Copy invite code",
-    "ui.deleteInviteCode": "Delete invite code",
-    "ui.noInviteCodes": "No active invite codes",
-    "ui.close": "Close",
-    // Interpretation related toasts
-    "toast.interpretationSuccess": "Communication Interpreted",
-    "toast.interpretationSuccessDesc":
-      "The AAC communication has been successfully analyzed.",
-    "toast.interpretationFailed": "Interpretation Failed",
-    "toast.interpretationFailedDesc": "Unable to interpret the communication.",
-    "toast.imageProcessed": "Image Processed",
-    "toast.imageProcessedDesc":
-      "The image has been successfully processed and interpreted.",
-    "toast.imageProcessingFailed": "Image Processing Failed",
-    "toast.imageProcessingFailedDesc": "Unable to process the image.",
-    // Dynamic labels for AAC user info
-    "label.aacUser": "AAC User",
-    "label.age": "Age",
-    "label.gender": "Gender",
-    "label.condition": "Condition",
-    "label.backgroundContext": "Background context",
-    // Error messages
-    "error.title": "Error",
-    "error.selectAacUser":
-      "You must select an AAC user before continuing with the interpretation",
-    "error.locationUnavailable": "Location unavailable",
-    "footer.text":
-      "Specialized in AAC interpretation with speech therapy expertise",
-    "language.english": "English",
-    "language.hebrew": "עברית",
-    "credits": "Credits",
-    "auth.login": "Login",
-    "auth.logout": "Logout",
-    "auth.loginTitle": "Login",
-    "auth.loginDescription":
-      "Enter your email and password to access your account",
-    "auth.email": "Email",
-    "auth.password": "Password",
-    "auth.emailPlaceholder": "Enter your email address",
-    "auth.passwordPlaceholder": "Enter your password",
-    "auth.loginWithEmail": "Sign in with Email",
-    "auth.googleLogin": "Continue with Google",
-    "auth.or": "or",
-    "auth.inactive": "inactive",
-    "auth.googleDisabled": "Google login is currently inactive",
-    "auth.loggingIn": "Signing in...",
-    "auth.error": "Error",
-    "auth.fieldsRequired": "Please fill in all fields",
-    "auth.loginSuccess": "Login successful",
-    "auth.welcomeBack": "Welcome back!",
-    "auth.loginFailed": "Login failed",
-    "auth.invalidCredentials": "Invalid email or password",
-    "auth.loginError": "An error occurred during login",
-    "auth.noAccount": "Don't have an account? Sign up here",
-    "auth.forgotPassword": "Forgot Password",
-    "auth.registerTitle": "Create Account",
-    "auth.firstName": "First Name",
-    "auth.lastName": "Last Name",
-    "auth.firstNamePlaceholder": "First Name",
-    "auth.lastNamePlaceholder": "Last Name",
-    "auth.confirmPassword": "Confirm Password",
-    "auth.confirmPasswordPlaceholder": "Confirm Password",
-    "auth.registerButton": "Create Account",
-    "auth.registering": "Creating Account...",
-    "auth.backToLogin": "Already have an account? Sign in",
-    "auth.passwordMismatch": "Passwords do not match",
-    "auth.registerSuccess": "Account created successfully",
-    "auth.registerSuccessDesc":
-      "Your account has been created. You can now sign in.",
-    "auth.registerFailed": "Registration failed",
-    "auth.registerError": "An error occurred during registration",
-
-    // English translations
-    "board.builder": "Board Builder",
-    "board.edit": "Edit",
-    "board.preview": "Preview",
-    "board.settings": "Board Settings",
-    "board.noBoard": "No board",
-    "board.createEmptyBoard": "Create empty board",
-    "board.manageBoards": "Manage boards",
-    "board.saveBoard": "Save board",
-    "board.saving": "Saving…",
-    "board.noBoardYet": "No board yet",
-    "board.noBoardDescription": "Use the prompt panel to generate your first AAC board or create an empty board",
-    "board.grid": "Grid",
-    "board.page": "Page",
-    "board.of": "of",
-    "board.manage": "Manage",
-    "board.addPage": "Add Page",
-    "board.untitledPage": "Untitled Page",
-    "board.pagesInBoard": "Pages in this board",
-    "board.pagesDescription": "Rename, reorder, or delete pages. The first page is the home page.",
-    "board.current": "Current",
-    "board.home": "Home",
-    "board.open": "Open",
-    "board.buttons": "buttons",
-    "board.valid": "Valid",
-    "board.hasErrors": "Has errors",
-    "board.pages": "pages",
-    "board.createdPages": "Created pages with buttons for your board.",
-    "board.updated": "Board updated with new buttons.",
-    "board.pagesAdded": "Pages added",
-    "board.boardUpdated": "Board updated",
-    "board.addedPagesDesc": "Added new page(s).",
-    "board.updatedDesc": "Updated with new buttons and sub-pages.",
-    "board.generated": "Board generated",
-    "board.generatedMultiPage": "Created a new board with multiple pages.",
-    "board.generatedSinglePage": "Created a new board.",
-    "board.generateError": "Sorry, I couldn't generate that. Please try again.",
-    "board.generationFailed": "Generation failed",
-    "board.somethingWrong": "Something went wrong while generating.",
-
-    "prompt.description": "Describe the board you want to create",
-    "prompt.placeholder": "Describe your board...",
-    "prompt.hint": "Press Enter to send, Shift+Enter for new line",
-    "prompt.example1": "Basic needs board with eat, drink, bathroom, help",
-    "prompt.example2": "Emotions board with happy, sad, angry, scared",
-    "prompt.example3": "Family members board with mom, dad, sister, brother",
-    "prompt.example4": "Activities board with play, read, watch TV, music",
-
-    "button.editor": "Button Editor",
-    "button.editProperties": "Edit properties",
-    "button.newButton": "New button",
-    "button.label": "Label",
-    "button.labelPlaceholder": "Button text",
-    "button.spokenText": "Spoken Text",
-    "button.spokenTextPlaceholder": "Text to speak",
-    "button.color": "Color",
-    "button.icon": "Icon",
-    "button.iconPlaceholder": "e.g. fas fa-home",
-    "button.chooseIcon": "Choose Icon",
-    "button.upload": "Upload",
-    "button.action": "Action",
-    "button.actionSpeak": "Speak Text",
-    "button.actionJump": "Jump to Page",
-    "button.actionBack": "Go Back",
-    "button.actionHome": "Go Home",
-    "button.actionYoutube": "Play YouTube",
-    "button.textToSpeak": "Text to speak",
-    "button.videoId": "Video ID (e.g. dQw4w9WgXcQ)",
-    "button.videoTitle": "Video title",
-    "button.target": "Target",
-    "button.noBoard": "No board",
-    "button.notSet": "Not set",
-    "button.choosePage": "Choose page",
-    "button.chooseTargetPage": "Choose target page",
-    "button.selectPageToJump": "Select a page to jump to.",
-    "button.goToPage": "Go to page",
-    "button.backDescription": "Returns to the previously viewed page.",
-    "button.homeDescription": "Jumps to the first page of the board.",
-    "button.selfClosing": "Self-closing",
-    "button.selfClosingDescription": "Auto-return after press",
-    "button.position": "Position",
-    "button.row": "Row",
-    "button.column": "Column",
-    "button.duplicate": "Duplicate",
-
-    "export.uploadSuccess": "Upload successful",
-    "export.uploadSuccessDesc": "File uploaded to Dropbox",
-    "export.uploadFailed": "Upload failed",
-
-    "common.cancel": "Cancel",
-    "common.close": "Close",
-  },
-  he: {
-    "app.title": "CommuniAACte - מפרש תקשורת מסייעת",
-    "app.subtitle": 'כלי עזר מתקדם לפרוש תקשורת תומכת חלופית (תת"ח).',
-    "input.text": "טקסט",
-    "input.textAnalysis": "מה תרצו לפרש?",
-    "input.image": "תמונה",
-    "input.textPlaceholder": "הקלידו/הדביקו כאן את הטקסט לניתוח...",
-    "input.imageChoose": "בחירת קובץ",
-    "input.imageSelected": "נבחר: {filename} (לחיצה לחיתוך)",
-    "input.original": "קלט מקורי",
-    "input.imageCropped": "תצוגה מקדימה של תמונה חתוכה:",
-    "button.interpret": "פירוש תקשורת",
-    "button.processImage": "עיבוד תמונה ופירוש",
-    "button.processing": "מעבד...",
-    "button.clear": "נקה",
-    "button.save": "שמור",
-    "button.delete": "מחק",
-    "button.cancel": "ביטול",
-    "button.applyCrop": "החלת חיתוך",
-    "button.start": "התחלה",
-    "crop.title": "חיתוך תמונה לניתוח טוב יותר",
-    "crop.description":
-      "חיתכו את התמונה להתמקד באזור התקשורת המסייעת לדיוק פרשנות טוב יותר.",
-    "result.interpretation": "פרשנות",
-    "result.meaning": "משמעות מפורשת",
-    "result.meaningShort": "פרשנות",
-    "result.aacText": "טקסט תת״ח",
-    "result.analysis": "ניתוח",
-    "result.confidence": "רמת ביטחון",
-    "result.suggestedResponse": "תגובה מוצעת",
-    "result.confidenceHigh": "רמת ביטחון גבוהה",
-    "result.confidenceMedium": "רמת ביטחון בינונית",
-    "result.confidenceLow": "רמת ביטחון נמוכה",
-    "share.title": "שיתוף תוצאות",
-    "share.whatsapp": "וואטסאפ",
-    "share.copy": "העתקת טקסט",
-    "share.email": "אימייל",
-    "context.title": "הוספת מידע הקשר",
-    "context.description":
-      "מתן הקשר עוזר לשיפור דיוק הפרשנות. כל השדות הם אופציונליים.",
-    "context.time": "זמן",
-    "context.timePlaceholder": "מתי נאמרה התקשורת הזו?",
-    "context.useCurrentTime": "שימוש בזמן הנוכחי",
-    "context.location": "מיקום",
-    "context.locationPlaceholder": "איפה נאמרה התקשורת הזו?",
-    "context.useCurrentLocation": "שימוש במיקום הנוכחי (GPS)",
-    "context.background": "הקשר רקע",
-    "context.backgroundPlaceholder": "מצב כללי או סביבה כשזה התקשר...",
-    "context.previousEvents": "אירועים קודמים",
-    "context.previousEventsPlaceholder": "מה קרה לפני התקשורת הזו?",
-    "context.futureEvents": "אירועים עתידיים",
-    "context.futureEventsPlaceholder": "אירועים עתידיים שעלולים להיות קשורים?",
-    "context.cancel": "ביטול",
-    "context.continue": "המשך לפרשנות",
-    "history.title": "פרשנויות אחרונות",
-    "history.empty": "אין עדיין פרשנויות. נסה לפרש תקשורת מסייעת כלשהי!",
-    "history.origin": "מקור",
-    "history.text": "טקסט",
-    "history.image": "תמונה",
-    "toast.invalidFile": "סוג קובץ לא תקין",
-    "toast.invalidFileDesc": "אנא בחר קובץ תמונה תקין (JPG, PNG, וכו')",
-    "toast.imageRequired": "דרושה תמונה",
-    "toast.imageRequiredDesc": "אנא בחרו וחיתכו קובץ תמונה לפרשנות.",
-    "toast.textRequired": "דרוש טקסט",
-    "toast.textRequiredDesc": "אנא הכניסו טקסט לפרשנות.",
-    "toast.imageCropped": "תמונה נחתכה",
-    "toast.imageCroppedDesc": "התמונה נחתכה ומוכנה לפרשנות.",
-    "toast.cropFailed": "חיתוך נכשל",
-    "toast.cropFailedDesc": "נכשל בחיתוך התמונה. אנא נסו שוב.",
-    "toast.saved": "נשמר",
-    "toast.savedDesc": "הפרשנות נשמרה בהצלחה.",
-    "toast.deleted": "נמחק",
-    "toast.deletedDesc": "הפרשנות נמחקה.",
-    "toast.copied": "הועתק",
-    "toast.copiedDesc": "תוצאות הפרשנות הועתקו ללוח.",
-    "toast.copyFailed": "העתקה נכשלה",
-    "toast.copyFailedDesc": "כשלון בהעתקה ללוח. אנא נסו שוב.",
-    // AAC User management toasts
-    "toast.aacUserCreated": "משתמש.ת תת״ח נוצר",
-    "toast.aacUserCreatedDesc": "משתמש.ת תת״ח חדש נוסף בהצלחה",
-    "toast.aacUserCreateFailed": "יצירת משתמש.ת נכשלה",
-    "toast.aacUserCreateFailedDesc": "לא ניתן ליצור משתמש.ת תת״ח",
-    "toast.aacUserUpdated": "משתמש.ת תת״ח עודכן",
-    "toast.aacUserUpdatedDesc": "פרטי משתמש.ת תת״ח עודכנו בהצלחה",
-    "toast.aacUserUpdateFailed": "עדכון נכשל",
-    "toast.aacUserUpdateFailedDesc": "לא ניתן לעדכן משתמש.ת תת״ח",
-    "toast.aacUserDeleted": "משתמש.ת תת״ח נמחק",
-    "toast.aacUserDeletedDesc": "משתמש.ת תת״ח הוסר בהצלחה",
-    "toast.aacUserDeleteFailed": "מחיקה נכשלה",
-    "toast.aacUserDeleteFailedDesc": "לא ניתן למחוק משתמש.ת תת״ח",
-    // Profile management toasts
-    "toast.profileUpdated": "פרופיל עודכן",
-    "toast.profileUpdatedDesc": "הפרופיל שלך עודכן בהצלחה",
-    "toast.profileUpdateFailed": "עדכון נכשל",
-    "toast.profileUpdateFailedDesc": "לא ניתן לעדכן פרופיל",
-    "toast.imageUploaded": "תמונה הועלתה",
-    "toast.imageUploadedDesc": "תמונת הפרופיל שלך עודכנה בהצלחה",
-    "toast.imageUploadFailed": "העלאה נכשלה",
-    "toast.imageUploadFailedDesc": "לא ניתן להעלות תמונה",
-    // Invite code management toasts
-    "toast.inviteCreated": "קוד הזמנה נוצר",
-    "toast.inviteCreatedDesc": "קוד ההזמנה נוצר בהצלחה",
-    "toast.inviteCreateFailed": "יצירת קוד נכשלה",
-    "toast.inviteCreateFailedDesc": "לא ניתן ליצור קוד הזמנה",
-    "toast.inviteRedeemed": "קוד הזמנה מומש",
-    "toast.inviteRedeemedDesc": 'משתמש.ת תת״ח "{alias}" נוסף בהצלחה',
-    "toast.inviteRedeemFailed": "מימוש קוד נכשל",
-    "toast.inviteRedeemFailedDesc": "לא ניתן למימוש קוד הזמנה",
-    "toast.inviteDeleted": "קוד הזמנה נמחק",
-    "toast.inviteDeletedDesc": "קוד ההזמנה הוסר בהצלחה",
-    "toast.inviteDeleteFailed": "מחיקה נכשלה",
-    "toast.inviteDeleteFailedDesc": "לא ניתן למחוק קוד הזמנה",
-    // Location management toasts
-    "toast.locationSaved": "מיקום נשמר",
-    "toast.locationSavedDesc": "המיקום נשמר בהצלחה",
-    "toast.locationSaveFailed": "שמירה נכשלה",
-    "toast.locationSaveFailedDesc": "לא ניתן לשמור מיקום",
-    "toast.locationDeleted": "מיקום נמחק",
-    "toast.locationDeletedDesc": "המיקום הוסר בהצלחה",
-    "toast.locationDeleteFailed": "מחיקה נכשלה",
-    "toast.locationDeleteFailedDesc": "לא ניתן למחוק מיקום",
-    // UI labels and states
-    "ui.loading": "טוען...",
-    "ui.creating": "יוצר...",
-    "ui.redeeming": "מממש...",
-    "ui.noAacUsers": "אין משתמשי תת״ח זמינים",
-    "ui.createInviteCode": "יצירת קוד הזמנה",
-    "ui.redeemInviteCode": "מימוש קוד הזמנה",
-    "ui.enterInviteCode": "הזינו קוד הזמנה (8 תווים)",
-    "ui.inviteCodePlaceholder": "לדוגמה: ABC12345",
-    "ui.inviteCodeError": "קוד הזמנה חייב להכיל בדיוק 8 תווים",
-    "ui.redeemCode": "מימוש קוד",
-    "ui.myInviteCodes": "קודי ההזמנה שלי",
-    "ui.showHide": "הצגה/הסתרה",
-    "ui.created": "נוצר",
-    "ui.redeemed": "מומש",
-    "ui.copyInviteCode": "העתקת קוד הזמנה",
-    "ui.deleteInviteCode": "מחיקת קוד הזמנה",
-    "ui.noInviteCodes": "אין קודי הזמנה פעילים",
-    "ui.close": "סגור",
-    // Interpretation related toasts
-    "toast.interpretationSuccess": "תקשורת פורשה",
-    "toast.interpretationSuccessDesc": "התקשורת התומכת חלופית נותחה בהצלחה.",
-    "toast.interpretationFailed": "פרשנות נכשלה",
-    "toast.interpretationFailedDesc": "לא ניתן לפרש את התקשורת.",
-    "toast.imageProcessed": "תמונה עובדה",
-    "toast.imageProcessedDesc": "התמונה עובדה ופורשה בהצלחה.",
-    "toast.imageProcessingFailed": "עיבוד תמונה נכשל",
-    "toast.imageProcessingFailedDesc": "לא ניתן לעבד את התמונה.",
-    // Dynamic labels for AAC user info
-    "label.aacUser": "משתמש.ת תת״ח",
-    "label.age": "גיל",
-    "label.gender": "מגדר",
-    "label.condition": "אבחנה",
-    "label.backgroundContext": "רקע נוסף",
-    // Error messages
-    "error.title": "שגיאה",
-    "error.selectAacUser": 'חובה לבחור משתמש.ת תת"ח לפני המשך הפרשנות',
-    "error.locationUnavailable": "לא ניתן לקבל מיקום",
-    "footer.text": "מתמחה בפרשנות תקשורת מסייעת עם מומחיות בטיפול בדיבור",
-    "language.english": "English",
-    "language.hebrew": "עברית",
-    "credits": "זיכויים",
-    "auth.login": "התחברות",
-    "auth.logout": "התנתקות",
-    "auth.loginTitle": "התחברות",
-    "auth.loginDescription": "הכניסו כתובת האימייל והסיסמה כדי לגשת לחשבון",
-    "auth.email": "אימייל",
-    "auth.password": "סיסמה",
-    "auth.emailPlaceholder": "אימייל",
-    "auth.passwordPlaceholder": "סיסמה",
-    "auth.loginWithEmail": "התחברות",
-    "auth.googleLogin": "המשך עם Google",
-    "auth.or": "או",
-    "auth.inactive": "בקרוב",
-    "auth.googleDisabled": "התחברות עם Google אינה פעילה כרגע",
-    "auth.loggingIn": "מתחבר...",
-    "auth.error": "שגיאה",
-    "auth.fieldsRequired": "אנא מלאו את כל השדות",
-    "auth.loginSuccess": "התחברות הצליחה",
-    "auth.welcomeBack": "ברוך הבא!",
-    "auth.loginFailed": "ההתחברות נכשלה",
-    "auth.invalidCredentials": "אימייל או סיסמה שגויים",
-    "auth.loginError": "אירעה שגיאה במהלך ההתחברות",
-    "auth.noAccount": "אין חשבון? הירשמו כאן",
-    "auth.forgotPassword": "שחזור סיסמה",
-    "auth.registerTitle": "יצירת חשבון",
-    "auth.firstName": "שם פרטי",
-    "auth.lastName": "שם משפחה",
-    "auth.firstNamePlaceholder": "שם פרטי",
-    "auth.lastNamePlaceholder": "שם משפחה",
-    "auth.confirmPassword": "אימות סיסמה",
-    "auth.confirmPasswordPlaceholder": "אימות סיסמה",
-    "auth.registerButton": "יצירת חשבון",
-    "auth.registering": "יוצר חשבון...",
-    "auth.backToLogin": " חשבון קיים? התחברו",
-    "auth.passwordMismatch": "הסיסמאות אינן תואמות",
-    "auth.registerSuccess": "החשבון נוצר בהצלחה",
-    "auth.registerSuccessDesc": "החשבון נוצר. כעת ניתן להתחבר.",
-    "auth.registerFailed": "הרשמה נכשלה",
-    "auth.registerError": "אירעה שגיאה במהלך הרשמה",
-
-    "board.builder": "בניית לוח",
-    "board.edit": "עריכה",
-    "board.preview": "תצוגה מקדימה",
-    "board.settings": "הגדרות לוח",
-    "board.noBoard": "אין לוח",
-    "board.createEmptyBoard": "צור לוח ריק",
-    "board.manageBoards": "ניהול לוחות",
-    "board.saveBoard": "שמור לוח",
-    "board.saving": "שומר…",
-    "board.noBoardYet": "עדיין אין לוח",
-    "board.noBoardDescription": "השתמש בלוח ההנחיות כדי ליצור לוח AAC ראשון או ליצור לוח ריק",
-    "board.grid": "רשת",
-    "board.page": "עמוד",
-    "board.of": "מתוך",
-    "board.manage": "ניהול",
-    "board.addPage": "הוסף עמוד",
-    "board.untitledPage": "עמוד ללא שם",
-    "board.pagesInBoard": "העמודים בלוח זה",
-    "board.pagesDescription": "שנה שם, סדר או מחק עמודים. העמוד הראשון הוא עמוד הבית.",
-    "board.current": "נוכחי",
-    "board.home": "ראשי",
-    "board.open": "פתח",
-    "board.buttons": "כפתורים",
-    "board.valid": "תקין",
-    "board.hasErrors": "מכיל שגיאות",
-    "board.pages": "עמודים",
-    "board.createdPages": "נוצרו עמודים וכפתורים עבור הלוח שלך.",
-    "board.updated": "הלוח עודכן עם כפתורים חדשים.",
-    "board.pagesAdded": "עמודים נוספו",
-    "board.boardUpdated": "הלוח עודכן",
-    "board.addedPagesDesc": "עמוד/ים חדשים נוספו.",
-    "board.updatedDesc": "עודכן עם כפתורים ותתי־עמודים חדשים.",
-    "board.generated": "לוח נוצר",
-    "board.generatedMultiPage": "נוצר לוח חדש עם מספר עמודים.",
-    "board.generatedSinglePage": "נוצר לוח חדש.",
-    "board.generateError": "מצטער, לא הצלחתי לייצר את זה. נסה שוב.",
-    "board.generationFailed": "היצירה נכשלה",
-    "board.somethingWrong": "אירעה שגיאה במהלך היצירה.",
-
-    "prompt.description": "תאר את הלוח שתרצה ליצור",
-    "prompt.placeholder": "תאר את הלוח שלך...",
-    "prompt.hint": "לחץ Enter לשליחה, Shift+Enter לשורה חדשה",
-    "prompt.example1": "לוח צרכים בסיסיים עם לאכול, לשתות, שירותים, עזרה",
-    "prompt.example2": "לוח רגשות עם שמח, עצוב, כועס, מפוחד",
-    "prompt.example3": "לוח בני משפחה עם אמא, אבא, אחות, אח",
-    "prompt.example4": "לוח פעילויות עם משחק, קריאה, טלוויזיה, מוזיקה",
-
-    "button.editor": "עורך כפתורים",
-    "button.editProperties": "ערוך מאפיינים",
-    "button.newButton": "כפתור חדש",
-    "button.label": "תווית",
-    "button.labelPlaceholder": "טקסט הכפתור",
-    "button.spokenText": "טקסט מדובר",
-    "button.spokenTextPlaceholder": "טקסט להשמעה",
-    "button.color": "צבע",
-    "button.icon": "אייקון",
-    "button.iconPlaceholder": "לדוגמה: fas fa-home",
-    "button.chooseIcon": "בחר אייקון",
-    "button.upload": "העלה",
-    "button.action": "פעולה",
-    "button.actionSpeak": "השמע טקסט",
-    "button.actionJump": "דלג לעמוד",
-    "button.actionBack": "חזור",
-    "button.actionHome": "חזור לעמוד הבית",
-    "button.actionYoutube": "נגן YouTube",
-    "button.textToSpeak": "טקסט להשמעה",
-    "button.videoId": "מזהה סרטון (למשל dQw4w9WgXcQ)",
-    "button.videoTitle": "כותרת הסרטון",
-    "button.target": "יעד",
-    "button.noBoard": "אין לוח",
-    "button.notSet": "לא הוגדר",
-    "button.choosePage": "בחר עמוד",
-    "button.chooseTargetPage": "בחר עמוד יעד",
-    "button.selectPageToJump": "בחר עמוד לניווט.",
-    "button.goToPage": "עבור לעמוד",
-    "button.backDescription": "חזרה לעמוד שנצפה קודם.",
-    "button.homeDescription": "קפיצה לעמוד הראשון בלוח.",
-    "button.selfClosing": "סגירה עצמית",
-    "button.selfClosingDescription": "חזרה אוטומטית לאחר לחיצה",
-    "button.position": "מיקום",
-    "button.row": "שורה",
-    "button.column": "עמודה",
-    "button.duplicate": "שכפל",
-
-    "export.uploadSuccess": "העלאה הצליחה",
-    "export.uploadSuccessDesc": "הקובץ הועלה ל־Dropbox",
-    "export.uploadFailed": "העלאה נכשלה",
-
-    "common.cancel": "בטל",
-    "common.close": "סגור"
-
-  },
-};
-
-// Simple static implementation without React hooks
-let currentLanguage: Language = "he";
-
-// Initialize from localStorage on first load
-if (typeof window !== "undefined") {
-  const stored = localStorage.getItem("aac-language");
-  if (stored && (stored === "en" || stored === "he")) {
-    currentLanguage = stored as Language;
+// src/contexts/LanguageContext.tsx
+import React, { 
+    createContext, 
+    useContext, 
+    useState, 
+    useEffect, 
+    useCallback, 
+    ReactNode 
+  } from 'react';
+  import { 
+    translations, 
+    SUPPORTED_LANGUAGES, 
+    LanguageCode, 
+    Language,
+    Translations 
+  } from '@/i18n';
+  
+  // ============================================================================
+  // TYPES
+  // ============================================================================
+  
+  type TranslationValue = string | { [key: string]: TranslationValue };
+  
+  interface LanguageContextType {
+    language: LanguageCode;
+    languageInfo: Language;
+    isRTL: boolean;
+    direction: 'ltr' | 'rtl';
+    setLanguage: (code: LanguageCode) => void;
+    t: (key: string, params?: Record<string, string | number>) => string;
+    supportedLanguages: Language[];
   }
-  // Set document properties immediately
-  document.documentElement.dir = currentLanguage === "he" ? "rtl" : "ltr";
-  document.documentElement.lang = currentLanguage;
-}
-
-// Simple language management functions
-const setLanguage = (lang: Language) => {
-  currentLanguage = lang;
-  if (typeof window !== "undefined") {
-    localStorage.setItem("aac-language", lang);
-    document.documentElement.dir = lang === "he" ? "rtl" : "ltr";
-    document.documentElement.lang = lang;
-    // Force a page refresh to update all components
-    window.location.reload();
-  }
-};
-
-const t = (key: string, params?: Record<string, string>) => {
-  type TranslationKeys = keyof typeof translations[typeof currentLanguage];
-  let text =
-    translations[currentLanguage]?.[key as TranslationKeys] || translations.en[key as TranslationKeys] || key;
-
-  if (params) {
-    Object.entries(params).forEach(([param, value]) => {
-      text = text.replace(`{${param}}`, value);
-    });
-  }
-
-  return text;
-};
-
-const isRTL = currentLanguage === "he";
-
-// Export simple static context
-export function LanguageProvider({ children }: { children: any }) {
-  return children;
-}
-
-export function useLanguage(): LanguageContextType {
-  return {
-    language: currentLanguage,
-    setLanguage,
-    t,
-    isRTL,
+  
+  // ============================================================================
+  // CONTEXT
+  // ============================================================================
+  
+  const LanguageContext = createContext<LanguageContextType | null>(null);
+  
+  export const useLanguage = () => {
+    const context = useContext(LanguageContext);
+    if (!context) {
+      throw new Error('useLanguage must be used within a LanguageProvider');
+    }
+    return context;
   };
-}
+  
+  // ============================================================================
+  // HELPER: Get nested value from object by dot-notation key
+  // ============================================================================
+  
+  function getNestedValue(obj: any, path: string): string | undefined {
+    const keys = path.split('.');
+    let current = obj;
+    
+    for (const key of keys) {
+      if (current === null || current === undefined) {
+        return undefined;
+      }
+      current = current[key];
+    }
+    
+    return typeof current === 'string' ? current : undefined;
+  }
+  
+  // ============================================================================
+  // PROVIDER
+  // ============================================================================
+  
+  interface LanguageProviderProps {
+    children: ReactNode;
+    defaultLanguage?: LanguageCode;
+  }
+  
+  export const LanguageProvider = ({ 
+    children, 
+    defaultLanguage = 'en' 
+  }: LanguageProviderProps) => {
+    const [language, setLanguageState] = useState<LanguageCode>(() => {
+      if (typeof window !== 'undefined') {
+        // Check localStorage first
+        const stored = localStorage.getItem('aac-language') as LanguageCode;
+        if (stored && SUPPORTED_LANGUAGES.some(l => l.code === stored)) {
+          return stored;
+        }
+        // Try to detect from browser
+        const browserLang = navigator.language.split('-')[0] as LanguageCode;
+        if (SUPPORTED_LANGUAGES.some(l => l.code === browserLang)) {
+          return browserLang;
+        }
+      }
+      return defaultLanguage;
+    });
+  
+    const languageInfo = SUPPORTED_LANGUAGES.find(l => l.code === language) || SUPPORTED_LANGUAGES[0];
+    const isRTL = languageInfo.direction === 'rtl';
+    const direction = languageInfo.direction;
+  
+    // Apply direction to document
+    useEffect(() => {
+      document.documentElement.dir = direction;
+      document.documentElement.lang = language;
+      document.documentElement.setAttribute('data-direction', direction);
+      
+      // Add RTL/LTR class for easier CSS targeting
+      if (isRTL) {
+        document.documentElement.classList.add('rtl');
+        document.documentElement.classList.remove('ltr');
+      } else {
+        document.documentElement.classList.add('ltr');
+        document.documentElement.classList.remove('rtl');
+      }
+    }, [direction, language, isRTL]);
+  
+    const setLanguage = useCallback((code: LanguageCode) => {
+      setLanguageState(code);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('aac-language', code);
+      }
+    }, []);
+  
+    // Translation function with nested key support and parameter interpolation
+    const t = useCallback((key: string, params?: Record<string, string | number>): string => {
+      // Try current language first
+      let value = getNestedValue(translations[language], key);
+      
+      // Fallback to English if not found
+      if (value === undefined && language !== 'en') {
+        value = getNestedValue(translations.en, key);
+      }
+      
+      // Return key if still not found
+      if (value === undefined) {
+        console.warn(`Translation key not found: ${key}`);
+        return key;
+      }
+  
+      // Interpolate parameters
+      if (params) {
+        return Object.entries(params).reduce((str, [paramKey, paramValue]) => {
+          return str.replace(new RegExp(`\\{${paramKey}\\}`, 'g'), String(paramValue));
+        }, value);
+      }
+  
+      return value;
+    }, [language]);
+  
+    const contextValue: LanguageContextType = {
+      language,
+      languageInfo,
+      isRTL,
+      direction,
+      setLanguage,
+      t,
+      supportedLanguages: SUPPORTED_LANGUAGES,
+    };
+  
+    return (
+      <LanguageContext.Provider value={contextValue}>
+        {children}
+      </LanguageContext.Provider>
+    );
+  };
+  
+  // Re-export types and constants for convenience
+  export { SUPPORTED_LANGUAGES };
+  export type { LanguageCode, Language };

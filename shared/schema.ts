@@ -769,7 +769,7 @@ export const apiProviderPricing = pgTable("api_provider_pricing", {
 export const chatSessionStatusEnum = pgEnum("chat_session_status", ["open", "paused", "closed"]);
 
 // Chat mode enum for different chat behaviors
-export const chatModeEnum = pgEnum("chat_mode", ["none", "board", "interpret"]);
+// export const chatModeEnum = pgEnum("chat_mode", ["chat", "boards", "interpret", "docuslp"]);
 
 // Chat Sessions table (named chatSessions to avoid conflict with admin sessions)
 export const chatSessions = pgTable("chat_sessions", {
@@ -780,7 +780,7 @@ export const chatSessions = pgTable("chat_sessions", {
   userAacUserId: varchar("user_aac_user_id").references(() => userAacUsers.id), // The relationship record if both are provided
   
   // Chat mode determines which agent template to use
-  chatMode: chatModeEnum("chat_mode").notNull().default("none"),
+  chatMode: varchar("chat_mode").notNull().default("chat"),
   
   started: timestamp("started").notNull().defaultNow(),
   lastUpdate: timestamp("last_update").notNull().defaultNow(),
@@ -813,7 +813,7 @@ export type ChatSession = typeof chatSessions.$inferSelect;
 export type InsertChatSession = z.infer<typeof insertChatSessionSchema>;
 
 // Chat Mode type
-export type ChatMode = "none" | "board" | "interpret";
+export type ChatMode = "chat" | "boards" | "interpret" | 'docuslp';
 
 // ============================================================================
 // CHAT SYSTEM INTERFACES (for use in chat-handler.ts)

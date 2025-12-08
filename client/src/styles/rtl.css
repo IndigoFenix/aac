@@ -1,0 +1,388 @@
+/* src/styles/rtl.css */
+/* RTL Support and Animation Utilities */
+
+/* ============================================================================
+   RTL Document Setup
+   ============================================================================ */
+
+   html[dir="rtl"] {
+    direction: rtl;
+  }
+  
+  html[dir="ltr"] {
+    direction: ltr;
+  }
+  
+  /* ============================================================================
+     Logical Properties Utilities
+     Use these for RTL-aware spacing that auto-flips
+     ============================================================================ */
+  
+  /* Margin utilities using logical properties */
+  .ms-auto { margin-inline-start: auto; }
+  .me-auto { margin-inline-end: auto; }
+  .ms-0 { margin-inline-start: 0; }
+  .me-0 { margin-inline-end: 0; }
+  .ms-1 { margin-inline-start: 0.25rem; }
+  .me-1 { margin-inline-end: 0.25rem; }
+  .ms-2 { margin-inline-start: 0.5rem; }
+  .me-2 { margin-inline-end: 0.5rem; }
+  .ms-3 { margin-inline-start: 0.75rem; }
+  .me-3 { margin-inline-end: 0.75rem; }
+  .ms-4 { margin-inline-start: 1rem; }
+  .me-4 { margin-inline-end: 1rem; }
+  .ms-6 { margin-inline-start: 1.5rem; }
+  .me-6 { margin-inline-end: 1.5rem; }
+  .ms-8 { margin-inline-start: 2rem; }
+  .me-8 { margin-inline-end: 2rem; }
+  
+  /* Padding utilities using logical properties */
+  .ps-0 { padding-inline-start: 0; }
+  .pe-0 { padding-inline-end: 0; }
+  .ps-1 { padding-inline-start: 0.25rem; }
+  .pe-1 { padding-inline-end: 0.25rem; }
+  .ps-2 { padding-inline-start: 0.5rem; }
+  .pe-2 { padding-inline-end: 0.5rem; }
+  .ps-3 { padding-inline-start: 0.75rem; }
+  .pe-3 { padding-inline-end: 0.75rem; }
+  .ps-4 { padding-inline-start: 1rem; }
+  .pe-4 { padding-inline-end: 1rem; }
+  .ps-6 { padding-inline-start: 1.5rem; }
+  .pe-6 { padding-inline-end: 1.5rem; }
+  .ps-8 { padding-inline-start: 2rem; }
+  .pe-8 { padding-inline-end: 2rem; }
+  
+  /* Border utilities using logical properties */
+  .border-s { border-inline-start-width: 1px; }
+  .border-e { border-inline-end-width: 1px; }
+  .border-s-0 { border-inline-start-width: 0; }
+  .border-e-0 { border-inline-end-width: 0; }
+  
+  /* Positioning utilities using logical properties */
+  .start-0 { inset-inline-start: 0; }
+  .end-0 { inset-inline-end: 0; }
+  .start-auto { inset-inline-start: auto; }
+  .end-auto { inset-inline-end: auto; }
+  
+  /* Text alignment */
+  .text-start { text-align: start; }
+  .text-end { text-align: end; }
+  
+  /* Float utilities */
+  .float-start { float: inline-start; }
+  .float-end { float: inline-end; }
+  
+  /* ============================================================================
+     Panel Slide Animations
+     ============================================================================ */
+  
+  /* Slide from end (right in LTR, left in RTL) */
+  @keyframes slideInFromEnd {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  
+  @keyframes slideOutToEnd {
+    from {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+  
+  /* RTL versions */
+  html[dir="rtl"] .slide-in-from-end {
+    animation: slideInFromEndRTL 300ms ease-out forwards;
+  }
+  
+  html[dir="rtl"] .slide-out-to-end {
+    animation: slideOutToEndRTL 300ms ease-in forwards;
+  }
+  
+  @keyframes slideInFromEndRTL {
+    from {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  
+  @keyframes slideOutToEndRTL {
+    from {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+  }
+  
+  /* LTR versions */
+  html[dir="ltr"] .slide-in-from-end {
+    animation: slideInFromEnd 300ms ease-out forwards;
+  }
+  
+  html[dir="ltr"] .slide-out-to-end {
+    animation: slideOutToEnd 300ms ease-in forwards;
+  }
+  
+  /* Slide from start (left in LTR, right in RTL) */
+  @keyframes slideInFromStart {
+    from {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  
+  @keyframes slideOutToStart {
+    from {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+  }
+  
+  html[dir="rtl"] .slide-in-from-start {
+    animation: slideInFromStartRTL 300ms ease-out forwards;
+  }
+  
+  html[dir="rtl"] .slide-out-to-start {
+    animation: slideOutToStartRTL 300ms ease-in forwards;
+  }
+  
+  @keyframes slideInFromStartRTL {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  
+  @keyframes slideOutToStartRTL {
+    from {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+  
+  html[dir="ltr"] .slide-in-from-start {
+    animation: slideInFromStart 300ms ease-out forwards;
+  }
+  
+  html[dir="ltr"] .slide-out-to-start {
+    animation: slideOutToStart 300ms ease-in forwards;
+  }
+  
+  /* ============================================================================
+     Panel Container Classes
+     ============================================================================ */
+  
+  .panel-container {
+    transition: width 300ms ease-in-out, opacity 300ms ease-in-out;
+  }
+  
+  .panel-transitioning {
+    pointer-events: none;
+  }
+  
+  .panel-content {
+    transition: transform 300ms ease-in-out, opacity 300ms ease-in-out;
+  }
+  
+  .panel-hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+  
+  .panel-visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  
+  /* ============================================================================
+     Flex Direction RTL Support
+     ============================================================================ */
+  
+  /* RTL-aware flex row (reversed in RTL) */
+  .flex-row-rtl {
+    display: flex;
+    flex-direction: row;
+  }
+  
+  html[dir="rtl"] .flex-row-rtl {
+    flex-direction: row-reverse;
+  }
+  
+  /* Force LTR even in RTL context (for icons, etc.) */
+  .force-ltr {
+    direction: ltr;
+    unicode-bidi: embed;
+  }
+  
+  /* Force RTL */
+  .force-rtl {
+    direction: rtl;
+    unicode-bidi: embed;
+  }
+  
+  /* ============================================================================
+     Icon Mirroring
+     Some icons should be mirrored in RTL
+     ============================================================================ */
+  
+  html[dir="rtl"] .mirror-rtl {
+    transform: scaleX(-1);
+  }
+  
+  /* Common icons that should be mirrored */
+  html[dir="rtl"] .icon-arrow-right,
+  html[dir="rtl"] .icon-arrow-left,
+  html[dir="rtl"] .icon-chevron-right,
+  html[dir="rtl"] .icon-chevron-left,
+  html[dir="rtl"] .icon-send {
+    transform: scaleX(-1);
+  }
+  
+  /* ============================================================================
+     Scrollbar RTL Support
+     ============================================================================ */
+  
+  html[dir="rtl"] .scroll-area-viewport {
+    direction: rtl;
+  }
+  
+  /* Keep scrollbar on the logical end */
+  html[dir="rtl"] .scrollbar-end {
+    direction: ltr;
+  }
+  
+  html[dir="rtl"] .scrollbar-end > * {
+    direction: rtl;
+  }
+  
+  /* ============================================================================
+     Input and Form RTL Support
+     ============================================================================ */
+  
+  html[dir="rtl"] input,
+  html[dir="rtl"] textarea,
+  html[dir="rtl"] select {
+    text-align: start;
+  }
+  
+  html[dir="rtl"] input[type="number"] {
+    direction: ltr;
+    text-align: end;
+  }
+  
+  /* Placeholder alignment */
+  html[dir="rtl"] input::placeholder,
+  html[dir="rtl"] textarea::placeholder {
+    text-align: start;
+  }
+  
+  /* ============================================================================
+     Table RTL Support
+     ============================================================================ */
+  
+  html[dir="rtl"] table {
+    direction: rtl;
+  }
+  
+  html[dir="rtl"] th,
+  html[dir="rtl"] td {
+    text-align: start;
+  }
+  
+  /* ============================================================================
+     List RTL Support
+     ============================================================================ */
+  
+  html[dir="rtl"] ul,
+  html[dir="rtl"] ol {
+    padding-inline-start: 1.5em;
+    padding-inline-end: 0;
+  }
+  
+  /* ============================================================================
+     Utility Classes
+     ============================================================================ */
+  
+  /* Hide in specific directions */
+  .hide-ltr {
+    display: block;
+  }
+  
+  html[dir="ltr"] .hide-ltr {
+    display: none;
+  }
+  
+  .hide-rtl {
+    display: block;
+  }
+  
+  html[dir="rtl"] .hide-rtl {
+    display: none;
+  }
+  
+  /* Show only in specific directions */
+  .show-ltr {
+    display: none;
+  }
+  
+  html[dir="ltr"] .show-ltr {
+    display: block;
+  }
+  
+  .show-rtl {
+    display: none;
+  }
+  
+  html[dir="rtl"] .show-rtl {
+    display: block;
+  }
+  
+  /* ============================================================================
+     Elevation Effects (from original code)
+     ============================================================================ */
+  
+  .hover-elevate {
+    transition: transform 150ms ease-out, box-shadow 150ms ease-out;
+  }
+  
+  .hover-elevate:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+  
+  .active-elevate-2:active {
+    transform: translateY(0);
+    box-shadow: none;
+  }

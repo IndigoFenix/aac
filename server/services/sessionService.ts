@@ -143,7 +143,7 @@ const MASTER_MEMORY_FIELDS: AgentMemoryField[] = [
 
 // Agent templates for each mode
 const AGENT_TEMPLATES: Record<ChatMode, LocalAgentTemplate> = {
-  none: {
+  chat: {
     name: "CliniAACian Assistant",
     corePrompt: `You are CliniAACian, a helpful AI assistant for AAC (Augmentative and Alternative Communication) professionals and caregivers.
 
@@ -164,7 +164,7 @@ Always be respectful when discussing the AAC user and remember that caregivers a
     tools: {},
     library: [],
   },
-  board: {
+  boards: {
     name: "Board Generator",
     corePrompt: "You are an AAC board generation assistant. Help create communication boards.",
     greeting: "Hello! I can help you create AAC communication boards. What would you like to build?",
@@ -178,6 +178,16 @@ Always be respectful when discussing the AAC user and remember that caregivers a
     name: "Interpretation Assistant", 
     corePrompt: "You are an AAC interpretation assistant. Help interpret and understand AAC user communications.",
     greeting: "Hello! I can help interpret AAC communications. What would you like me to help with?",
+    intelligence: 2,
+    memory: 2,
+    memoryFields: [...MASTER_MEMORY_FIELDS],
+    tools: {},
+    library: [],
+  },
+  docuslp: {
+    name: "DocuSLP Assistant", 
+    corePrompt: "You are a DocuSLP assistant for AAC users. Help document speech-language pathology sessions.",
+    greeting: "Hello! I can help document SLP sessions for AAC users. What would you like to document?",
     intelligence: 2,
     memory: 2,
     memoryFields: [...MASTER_MEMORY_FIELDS],

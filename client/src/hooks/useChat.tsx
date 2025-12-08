@@ -1,13 +1,41 @@
+// src/hooks/useChat.tsx
 import { useState, useEffect, createContext, useContext, ReactNode, useCallback, useRef } from 'react';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useAacUser } from './useAacUser';
-import { useAuth } from './useAuth'; // Assuming you have an auth provider for the user
-import { ChatMessage, ChatMode, ChatSession } from '@shared/schema';
+import { useAuth } from './useAuth';
+import { useFeaturePanel, FeatureId } from '@/contexts/FeaturePanelContext';
+import { ChatMessage, ChatSession } from '@shared/schema';
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
+// Mode is now the active feature
+export type ChatMode = FeatureId;
+
+export interface ChatMessageContent {
+  text?: string;
+  html?: string;
+  // Feature-specific response data
+  boardGeneratorData?: BoardGeneratorResponse;
+  interpretData?: InterpretResponse;
+  [key: string]: any;
+}
+
+export interface BoardGeneratorResponse {
+  board?: any;
+  suggestions?: string[];
+  validation?: {
+    isValid: boolean;
+    errors?: string[];
+  };
+}
+
+export interface InterpretResponse {
+  interpretation?: string;
+  suggestions?: string[];
+  context?: any;
+}
 
 interface ChatContextType {
   // State
@@ -24,16 +52,20 @@ interface ChatContextType {
   startNewSession: (mode?: ChatMode) => Promise<boolean>;
   loadSession: (sessionId: string) => Promise<boolean>;
   clearSession: () => void;
-  setMode: (mode: ChatMode) => void;
+  
+  // Feature-specific (convenience wrappers)
+  sendBoardPrompt: (prompt: string) => Promise<ChatMessage | null>;
+  sendInterpretRequest: (content: string, context?: any) => Promise<ChatMessage | null>;
   
   // Utilities
   getLastAssistantMessage: () => ChatMessage | null;
   getLastUserMessage: () => ChatMessage | null;
+  getFeatureData: <T>(key: string) => T | null;
 }
 
 interface SendMessageOptions {
   replyType?: 'text' | 'html';
-  metadata?: Record<string, any>;
+  additionalMetadata?: Record<string, any>;
 }
 
 // ============================================================================
@@ -56,29 +88,30 @@ export const useChat = () => {
 
 interface ChatProviderProps {
   children: ReactNode;
-  defaultMode?: ChatMode;
-  persistSession?: boolean; // Whether to persist session ID in localStorage
+  persistSession?: boolean;
 }
 
 export const ChatProvider = ({ 
   children, 
-  defaultMode = 'none',
   persistSession = false 
 }: ChatProviderProps) => {
   // State
   const [session, setSession] = useState<ChatSession | null>(null);
   const [history, setHistory] = useState<ChatMessage[]>([]);
-  const [mode, setModeState] = useState<ChatMode>(defaultMode);
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Refs to track current context without causing re-renders
+  // Refs
   const currentAacUserIdRef = useRef<string | null>(null);
   
   // External hooks
   const { aacUser } = useAacUser();
   const { user } = useAuth();
+  const { activeFeature, getActiveFeatureMetadata } = useFeaturePanel();
+  
+  // Mode is derived from active feature
+  const mode = activeFeature;
   
   // Storage keys
   const getStorageKey = useCallback(() => {
@@ -103,9 +136,8 @@ export const ChatProvider = ({
         const loadedSession: ChatSession = data.session;
         setSession(loadedSession);
         setHistory(loadedSession.log as ChatMessage[] || []);
-        setModeState(loadedSession.chatMode);
+        // setModeState(loadedSession.chatMode);
         
-        // Cache in react-query
         queryClient.setQueryData(['chat-session', sessionId], loadedSession);
         
         return true;
@@ -123,25 +155,16 @@ export const ChatProvider = ({
   }, []);
 
   const startNewSession = useCallback(async (newMode?: ChatMode): Promise<boolean> => {
-    const sessionMode = newMode || mode;
-    
-    // Clear current session
     setSession(null);
     setHistory([]);
     setError(null);
     
-    if (newMode) {
-      setModeState(newMode);
-    }
-    
-    // Clear stored session ID
     if (persistSession && typeof window !== 'undefined') {
       window.localStorage.removeItem(getStorageKey());
     }
     
-    // The new session will be created on first message
     return true;
-  }, [mode, persistSession, getStorageKey]);
+  }, [persistSession, getStorageKey]);
 
   const clearSession = useCallback(() => {
     setSession(null);
@@ -152,14 +175,6 @@ export const ChatProvider = ({
       window.localStorage.removeItem(getStorageKey());
     }
   }, [persistSession, getStorageKey]);
-
-  const setMode = useCallback((newMode: ChatMode) => {
-    if (newMode !== mode) {
-      // When mode changes, we need to start a new session
-      setModeState(newMode);
-      clearSession();
-    }
-  }, [mode, clearSession]);
 
   // ============================================================================
   // MESSAGING
@@ -173,35 +188,42 @@ export const ChatProvider = ({
       return null;
     }
     
-    const { replyType = 'html', metadata } = options;
+    const { replyType = 'html', additionalMetadata } = options;
     
     setIsSending(true);
     setError(null);
+    
+    // Get feature-specific metadata from the active feature's builder
+    const featureMetadata = getActiveFeatureMetadata();
+    
+    // Combine metadata
+    const metadata = {
+      ...featureMetadata,
+      ...additionalMetadata,
+    };
     
     // Create user message
     const userMessage: ChatMessage = {
       role: 'user',
       content: content.trim(),
       timestamp: Date.now(),
-      metadata,
+      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
     };
     
-    // Optimistically add user message to history
+    // Optimistically add user message
     setHistory(prev => [...prev, userMessage]);
     
     try {
       const requestBody: Record<string, any> = {
         messages: [userMessage],
         replyType,
-        mode,
+        mode, // Send the active feature as the mode
       };
       
-      // Add session ID if we have one
       if (session?.id) {
         requestBody.sessionId = session.id;
       }
       
-      // Add user/aacUser context
       if (user?.id) {
         requestBody.userId = user.id;
       }
@@ -221,34 +243,32 @@ export const ChatProvider = ({
           error: data.message.error,
         };
         
-        // Add assistant message to history
         setHistory(prev => [...prev, assistantMessage]);
         
-        // Update session if we got a new session ID
+        // Update session
         if (data.sessionId && (!session?.id || data.sessionId !== session.id)) {
           const newSession: ChatSession = {
-              id: data.sessionId,
-              userId: user?.id || null,
-              aacUserId: aacUser?.id || null,
-              chatMode: mode,
-              started: new Date(),
-              lastUpdate: new Date(),
-              state: data.chatState || {},
-              log: [...history, userMessage, assistantMessage],
-              last: [userMessage, assistantMessage],
-              creditsUsed: data.creditsUsed || 0,
-              status: 'open',
-              createdAt: data.createdAt ? new Date(data.createdAt) : new Date(),
-              updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(),
-              userAacUserId: null,
-              deletedAt: null,
-              priority: 0,
-              useResponsesAPI: null
+            id: data.sessionId,
+            userId: user?.id || null,
+            aacUserId: aacUser?.id || null,
+            chatMode: mode,
+            started: new Date(),
+            lastUpdate: new Date(),
+            state: data.chatState || {},
+            log: [...history, userMessage, assistantMessage],
+            last: [userMessage, assistantMessage],
+            creditsUsed: data.creditsUsed || 0,
+            status: 'open',
+            createdAt: data.createdAt ? new Date(data.createdAt) : new Date(),
+            updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(),
+            userAacUserId: null,
+            deletedAt: null,
+            priority: 0,
+            useResponsesAPI: null
           };
           
           setSession(newSession);
           
-          // Persist session ID
           if (persistSession && typeof window !== 'undefined') {
             window.localStorage.setItem(getStorageKey(), data.sessionId);
           }
@@ -257,11 +277,9 @@ export const ChatProvider = ({
         return assistantMessage;
       }
       
-      // Handle error response
       if (data?.error) {
         setError(data.error);
         
-        // Add error message to history
         const errorMessage: ChatMessage = {
           role: 'system',
           content: data.error,
@@ -279,7 +297,6 @@ export const ChatProvider = ({
       const errorText = err.message || 'Failed to send message';
       setError(errorText);
       
-      // Add error message to history
       const errorMessage: ChatMessage = {
         role: 'system',
         content: errorText,
@@ -292,7 +309,27 @@ export const ChatProvider = ({
     } finally {
       setIsSending(false);
     }
-  }, [session, mode, user, aacUser, history, persistSession, getStorageKey]);
+  }, [session, mode, user, aacUser, history, persistSession, getStorageKey, getActiveFeatureMetadata]);
+
+  // ============================================================================
+  // FEATURE-SPECIFIC METHODS (convenience wrappers)
+  // ============================================================================
+
+  const sendBoardPrompt = useCallback(async (prompt: string): Promise<ChatMessage | null> => {
+    // The metadata will be automatically added by the boards feature's metadata builder
+    return sendMessage(prompt, { replyType: 'html' });
+  }, [sendMessage]);
+
+  const sendInterpretRequest = useCallback(async (
+    content: string, 
+    context?: any
+  ): Promise<ChatMessage | null> => {
+    // Pass additional context as metadata
+    return sendMessage(content, {
+      replyType: 'html',
+      additionalMetadata: context ? { interpretContext: context } : undefined
+    });
+  }, [sendMessage]);
 
   // ============================================================================
   // UTILITIES
@@ -316,17 +353,27 @@ export const ChatProvider = ({
     return null;
   }, [history]);
 
+  const getFeatureData = useCallback(<T,>(key: string): T | null => {
+    const lastMessage = getLastAssistantMessage();
+    if (!lastMessage) return null;
+    
+    const content = lastMessage.content;
+    if (typeof content === 'object' && content !== null) {
+      return (content as any)[key] || null;
+    }
+    return null;
+  }, [getLastAssistantMessage]);
+
   // ============================================================================
   // EFFECTS
   // ============================================================================
 
-  // Handle AAC user changes - start new session when AAC user changes
+  // Handle AAC user changes
   useEffect(() => {
     const newAacUserId = aacUser?.id || null;
     
     if (currentAacUserIdRef.current !== null && 
         currentAacUserIdRef.current !== newAacUserId) {
-      // AAC user changed, clear current session
       console.log('AAC user changed, clearing chat session');
       clearSession();
     }
@@ -334,7 +381,7 @@ export const ChatProvider = ({
     currentAacUserIdRef.current = newAacUserId;
   }, [aacUser?.id, clearSession]);
 
-  // Load persisted session on mount
+  // Load persisted session
   useEffect(() => {
     if (!persistSession || typeof window === 'undefined') {
       return;
@@ -345,7 +392,6 @@ export const ChatProvider = ({
     if (storedSessionId && !session) {
       loadSession(storedSessionId).catch(err => {
         console.error('Failed to load stored session:', err);
-        // Clear invalid stored session
         window.localStorage.removeItem(getStorageKey());
       });
     }
@@ -356,7 +402,6 @@ export const ChatProvider = ({
   // ============================================================================
 
   const contextValue: ChatContextType = {
-    // State
     session,
     sessionId: session?.id || null,
     history,
@@ -364,17 +409,15 @@ export const ChatProvider = ({
     isLoading,
     isSending,
     error,
-    
-    // Actions
     sendMessage,
     startNewSession,
     loadSession,
     clearSession,
-    setMode,
-    
-    // Utilities
+    sendBoardPrompt,
+    sendInterpretRequest,
     getLastAssistantMessage,
     getLastUserMessage,
+    getFeatureData,
   };
 
   return (
@@ -388,26 +431,23 @@ export const ChatProvider = ({
 // HELPER HOOKS
 // ============================================================================
 
-/**
- * Hook to get just the chat history without other context
- */
 export const useChatHistory = () => {
   const { history, isLoading } = useChat();
   return { history, isLoading };
 };
 
-/**
- * Hook to send messages with simplified interface
- */
 export const useSendMessage = () => {
   const { sendMessage, isSending, error } = useChat();
   return { sendMessage, isSending, error };
 };
 
-/**
- * Hook for managing chat sessions
- */
 export const useChatSession = () => {
   const { session, sessionId, startNewSession, loadSession, clearSession } = useChat();
   return { session, sessionId, startNewSession, loadSession, clearSession };
+};
+
+export const useBoardChat = () => {
+  const { sendBoardPrompt, getFeatureData, isSending } = useChat();
+  const boardData = getFeatureData<BoardGeneratorResponse>('boardGeneratorData');
+  return { sendBoardPrompt, boardData, isSending };
 };

@@ -1,5 +1,6 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import { apiRequest, queryClient } from '@/lib/queryClient';
+import { useAuth } from "@/hooks/useAuth";
 
 export interface AacUser {
   id: string;
@@ -39,6 +40,7 @@ export const AacUserProvider = ({ children }: { children: ReactNode }) => {
   const [aacUser, setAacUser] = useState<AacUser | null>(null);
   const [aacUsers, setAacUsers] = useState<AacUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const { user } = useAuth();
 
   // Load list of AAC users, with react-query + in‑memory cache
   const loadAacUsers = async (): Promise<AacUser[]> => {
@@ -172,10 +174,16 @@ export const AacUserProvider = ({ children }: { children: ReactNode }) => {
     await checkAacUserStatus();
   };
 
+  // Refresh AAC users whenever the logged-in user changes
   useEffect(() => {
-    checkAacUserStatus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (user) {
+      checkAacUserStatus();  // user logged in → load AAC users
+    } else {
+      // user logged out → clear state
+      setAacUsers([]);
+      setAacUser(null);
+    }
+  }, [user]);
 
   const contextValue: AacUserContextType = {
     aacUser,

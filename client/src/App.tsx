@@ -4,7 +4,7 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { LanguageProvider } from "./contexts/LanguageContext";
+import { LanguageProvider } from "@/contexts/LanguageContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { AacUserProvider, useAacUser } from "@/hooks/useAacUser";
@@ -15,6 +15,7 @@ import OnboardingFlow from "@/pages/OnboardingFlow";
 import Dashboard from "./pages/Dashboard";
 import "./i18n";
 import { ChatProvider } from "./hooks/useChat";
+import { FeaturePanelProvider } from "./contexts/FeaturePanelContext";
 
 function OnboardingGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -91,20 +92,22 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <AacUserProvider>
-          <ChatProvider>
-            <ThemeProvider defaultTheme="dark">
-              <LanguageProvider>
-                <TooltipProvider>
-                  <Toaster />
-                  <Router />
-                </TooltipProvider>
-              </LanguageProvider>
-            </ThemeProvider>
-          </ChatProvider>
-        </AacUserProvider>
-      </AuthProvider>
+      <LanguageProvider>
+        <AuthProvider>
+          <AacUserProvider>
+            <FeaturePanelProvider>
+              <ChatProvider>
+                <ThemeProvider defaultTheme="dark">
+                      <TooltipProvider>
+                        <Toaster />
+                        <Router />
+                      </TooltipProvider>
+                </ThemeProvider>
+              </ChatProvider>
+            </FeaturePanelProvider>
+          </AacUserProvider>
+        </AuthProvider>
+      </LanguageProvider>
     </QueryClientProvider>
   );
 }

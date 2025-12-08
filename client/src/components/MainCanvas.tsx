@@ -1,16 +1,10 @@
 // src/components/MainCanvas.tsx
 import { useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
-} from "@/components/ui/select";
-import { Plus, Settings2, Mic, Grid3x3, MessageCircle, FileText } from "lucide-react";
 import { CommuniAACteFeature } from "@/features/CommuniAACteFeatureWrapper";
 import { SyntAACxFeature } from "@/features/SyntAACxFeature";
 import { useLocation, useNavigate } from "react-router-dom";
-import { CliniAACianFeature } from "@/features/CliniAACianFeature";
+import { ChatFeature } from "@/features/ChatFeature";
 
 type FeatureId = "boards" | "interpret" | "docuslp" | null;
 
@@ -63,7 +57,7 @@ export function MainCanvas() {
         // Other features keep the ScrollArea
         <ScrollArea className="h-full px-6">
           <div className="py-6">
-            {activeFeature === null && <CliniAACianFeature />}
+            {activeFeature === null && <ChatFeature />}
 
             {activeFeature === "interpret" && <CommuniAACteFeature />}
 
