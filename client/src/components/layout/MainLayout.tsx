@@ -1,4 +1,6 @@
 // src/components/layout/MainLayout.tsx
+// UPDATED VERSION - includes student progress panels
+
 import { useRef } from 'react';
 import { ChatFeature } from '@/features/ChatFeature';
 import { SyntAACxPanel } from '@/features/SyntAACxPanel';
@@ -7,6 +9,9 @@ import { DocuSLPPanel } from '@/features/DocuSLPPanel';
 import { BoardSelector } from '@/components/syntAACx/BoardSelector';
 import { useFeaturePanel, FEATURE_CONFIG } from '@/contexts/FeaturePanelContext';
 import { cn } from '@/lib/utils';
+import { OverviewPanel } from '@/features/OverviewPanel';
+import { StudentsPanel } from '@/features/StudentsPanel';
+import { StudentProgressPanel } from '@/features/StudentProgressPanel';
 
 export function MainLayout() {
   const { 
@@ -29,8 +34,6 @@ export function MainLayout() {
   // Panel slides in from the 'end' direction (right in LTR, left in RTL via CSS)
   const getPanelTransform = () => {
     if (!isPanelOpen) {
-      // In LTR: slides out to right (100%)
-      // In RTL: CSS will flip the direction, so we still use 100%
       return 'translateX(100%)';
     }
     return 'translateX(0)';
@@ -39,6 +42,8 @@ export function MainLayout() {
   const renderFeaturePanel = () => {
     if (!activeFeature) return null;
 
+    console.log("Rendering panel for feature:", activeFeature, "isOpen:", isPanelOpen);
+
     switch (activeFeature) {
       case 'boards':
         return <SyntAACxPanel isOpen={isPanelOpen} />;
@@ -46,6 +51,13 @@ export function MainLayout() {
         return <CommuniAACtePanel isOpen={isPanelOpen} />;
       case 'docuslp':
         return <DocuSLPPanel isOpen={isPanelOpen} />;
+      case 'overview':
+        return <OverviewPanel isOpen={isPanelOpen} />;
+      case 'students':
+        return <StudentsPanel isOpen={isPanelOpen} />;
+      case 'progress':
+        return <StudentProgressPanel isOpen={isPanelOpen} />;
+      
       default:
         return null;
     }

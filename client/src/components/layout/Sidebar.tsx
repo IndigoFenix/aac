@@ -1,10 +1,14 @@
 // src/components/layout/Sidebar.tsx
+// Updated with student management navigation items
+
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
+import { Badge } from '@/components/ui/badge';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useFeaturePanel } from '@/contexts/FeaturePanelContext';
+import { useAacUser } from '@/hooks/useAacUser';
 import {
   MessageSquarePlus,
   FolderOpen,
@@ -15,11 +19,18 @@ import {
   User,
   Moon,
   Sun,
+  Users,
+  BarChart3,
+  ClipboardList,
+  GraduationCap,
+  ChevronRight,
 } from 'lucide-react';
 import logoImage from '@assets/cliniaccian copy_1763565136724.png';
 import { useAuth } from '@/hooks/useAuth';
 import { openUI } from '@/lib/uiEvents';
 import { cn } from '@/lib/utils';
+
+type FeatureType = 'chat' | 'interpret' | 'boards' | 'docuslp' | 'overview' | 'students' | 'progress' | 'settings';
 
 type SidebarProps = {
   isCollapsed?: boolean;
@@ -31,41 +42,97 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
   const { theme, setTheme } = useTheme();
   const { t, isRTL } = useLanguage();
   const { activeFeature, setActiveFeature } = useFeaturePanel();
+  const { aacUser, aacUsers } = useAacUser();
 
-  const workspaceItems = [
+  // Core workspace items (original features)
+  const coreWorkspaceItems = [
     {
       icon: BookOpen,
       labelKey: 'nav.main',
-      feature: 'chat' as const,
-      path: '/',
+      feature: 'chat' as FeatureType,
       testId: 'nav-main',
     },
     {
       icon: MessageSquarePlus,
       labelKey: 'nav.interpret',
-      feature: 'interpret' as const,
-      path: '/interpret',
+      feature: 'interpret' as FeatureType,
       testId: 'nav-interpret',
     },
     {
       icon: FolderOpen,
       labelKey: 'nav.boards',
-      feature: 'boards' as const,
-      path: '/boards',
+      feature: 'boards' as FeatureType,
       testId: 'nav-boards',
     },
     {
       icon: LayoutGrid,
       labelKey: 'nav.docuslp',
-      feature: 'docuslp' as const,
-      path: '/docuslp',
+      feature: 'docuslp' as FeatureType,
       testId: 'nav-docuslp',
+    },
+  ];
+
+  // Student management items
+  const studentManagementItems = [
+    {
+      icon: BarChart3,
+      labelKey: 'nav.overview',
+      feature: 'overview' as FeatureType,
+      testId: 'nav-overview',
+      badge: undefined as string | undefined,
+    },
+    {
+      icon: Users,
+      labelKey: 'nav.students',
+      feature: 'students' as FeatureType,
+      testId: 'nav-students',
+      badge: aacUsers.length > 0 ? aacUsers.length.toString() : undefined,
+    },
+    {
+      icon: ClipboardList,
+      labelKey: 'nav.progress',
+      feature: 'progress' as FeatureType,
+      testId: 'nav-progress',
+      disabled: !aacUser, // Only enabled when a student is selected
     },
   ];
 
   const positionClasses = position === 'right' 
     ? 'right-0 border-l' 
     : 'left-0 border-r';
+
+  const renderNavItem = (item: typeof coreWorkspaceItems[0] & { badge?: string; disabled?: boolean }) => {
+    const isActive = activeFeature === item.feature;
+    const isDisabled = 'disabled' in item && item.disabled;
+    
+    return (
+      <Button
+        key={item.labelKey}
+        variant={isActive ? "secondary" : "ghost"}
+        size="sm"
+        disabled={isDisabled}
+        className={cn(
+          "w-full gap-2 hover-elevate active-elevate-2",
+          isRTL ? "flex-row-reverse justify-end" : "justify-start",
+          isDisabled && "opacity-50 cursor-not-allowed"
+        )}
+        data-testid={item.testId}
+        onClick={() => !isDisabled && setActiveFeature(item.feature)}
+      >
+        <item.icon className="w-4 h-4" />
+        {!isCollapsed && (
+          <>
+            <span className="flex-1 text-left">{t(item.labelKey)}</span>
+            {'badge' in item && item.badge && (
+              <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5">
+                {item.badge}
+              </Badge>
+            )}
+          </>
+        )}
+      </Button>
+    );
+  };
 
   return (
     <div 
@@ -115,7 +182,7 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
       {/* User card */}
       {!isCollapsed && user && (
         <>
-          <div className="px-6 pb-6">
+          <div className="px-6 pb-4">
             <div 
               className="bg-card border border-card-border rounded-md p-4" 
               data-testid="card-client-context"
@@ -138,50 +205,84 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
               </div>
             </div>
           </div>
-
-          <Separator className="mx-6" />
         </>
       )}
 
-      {/* Navigation */}
-      <div className={cn("py-6 space-y-2 flex-1", isCollapsed ? "px-2" : "px-6")}>
+      {/* Current Student Context */}
+      {!isCollapsed && aacUser && (
+        <div className="px-6 pb-4">
+          <div 
+            className={cn(
+              "bg-primary/5 border border-primary/20 rounded-md p-3 cursor-pointer hover:bg-primary/10 transition-colors",
+              "group"
+            )}
+            onClick={() => setActiveFeature('progress')}
+            data-testid="card-student-context"
+          >
+            <div className={cn(
+              "flex items-center gap-3",
+              isRTL && "flex-row-reverse"
+            )}>
+              <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center">
+                <GraduationCap className="w-4 h-4 text-primary" />
+              </div>
+              <div className={cn("flex-1", isRTL ? "text-right" : "")}>
+                <p className="text-sm font-medium text-primary">
+                  {aacUser.name}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t('nav.currentStudent')}
+                </p>
+              </div>
+              <ChevronRight className={cn(
+                "w-4 h-4 text-primary/50 group-hover:text-primary transition-colors",
+                isRTL && "rotate-180"
+              )} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Separator className="mx-6" />
+
+      {/* Core Navigation */}
+      <div className={cn("py-4 space-y-1 flex-shrink-0", isCollapsed ? "px-2" : "px-6")}>
         {!isCollapsed && (
           <p className={cn(
-            "text-xs font-medium text-muted-foreground uppercase tracking-wide mb-4",
+            "text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3",
             isRTL && "text-right"
           )}>
             {t('nav.workspace')}
           </p>
         )}
         
-        <div className="space-y-2">
-          {workspaceItems.map((item) => {
-            const isActive = activeFeature === item.feature;
-            
-            return (
-              <Button
-                key={item.labelKey}
-                variant={isActive ? "secondary" : "ghost"}
-                size="sm"
-                className={cn(
-                  "w-full gap-2 hover-elevate active-elevate-2",
-                  isRTL ? "flex-row-reverse justify-end" : "justify-start"
-                )}
-                data-testid={item.testId}
-                onClick={() => setActiveFeature(item.feature)}
-              >
-                <item.icon className="w-4 h-4" />
-                {!isCollapsed && <span>{t(item.labelKey)}</span>}
-              </Button>
-            );
-          })}
+        <div className="space-y-1">
+          {coreWorkspaceItems.map(renderNavItem)}
         </div>
       </div>
 
-      {!isCollapsed && <Separator className="mx-6" />}
+      <Separator className="mx-6" />
+
+      {/* Student Management Navigation */}
+      <div className={cn("py-4 space-y-1 flex-1", isCollapsed ? "px-2" : "px-6")}>
+        {!isCollapsed && (
+          <p className={cn(
+            "text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3",
+            isRTL && "text-right"
+          )}>
+            {t('nav.studentManagement')}
+          </p>
+        )}
+        
+        <div className="space-y-1">
+          {studentManagementItems.map(renderNavItem)}
+        </div>
+      </div>
+
+      <Separator className="mx-6" />
 
       {/* Bottom section */}
-      <div className={cn("py-6 space-y-4", isCollapsed ? "px-2" : "px-6")}>
+      <div className={cn("py-6 space-y-3", isCollapsed ? "px-2" : "px-6")}>
         {/* Theme toggle */}
         {!isCollapsed ? (
           <div className={cn(
@@ -226,7 +327,7 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
 
         {/* Settings */}
         <Button
-          variant="ghost"
+          variant={activeFeature === 'settings' ? "secondary" : "ghost"}
           className={cn(
             "w-full gap-3 hover-elevate active-elevate-2",
             isCollapsed 
@@ -234,7 +335,7 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
               : (isRTL ? "flex-row-reverse justify-end" : "justify-start")
           )}
           data-testid="button-settings"
-          onClick={() => openUI("settings")}
+          onClick={() => setActiveFeature('settings')}
           title={isCollapsed ? t('nav.settings') : undefined}
         >
           <Settings className="w-5 h-5" />

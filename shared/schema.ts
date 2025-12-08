@@ -173,16 +173,27 @@ export const aacUsers = pgTable("aac_users", {
   name: text("name").notNull(), // Human-readable name (was "alias")
   gender: text("gender"), // 'male', 'female', 'other'
   birthDate: date("birth_date"), // Date of birth (was "age" as integer)
-  disabilityOrSyndrome: text("disability_or_syndrome"), // e.g., 'Rett Syndrome', 'Autism', etc.
+  diagnosis: text("diagnosis"), // Primary diagnosis
   backgroundContext: text("background_context"), // Free text background information
-  isActive: boolean("is_active").default(true).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  systemType: text("system_type").default("tala"), // 'tala' | 'us_iep'
+  country: text("country").default("IL"), // 'IL', 'US', etc.
+  school: text("school"), // School name
+  grade: text("grade"), // Grade level
+  idNumber: text("id_number"), // Student ID number
   
   // Chat system fields
   chatMemory: jsonb("chat_memory").default({}), // AAC user-specific memory values for chat
   chatCreditsUsed: real("chat_credits_used").notNull().default(0),
   chatCreditsUpdated: timestamp("chat_credits_updated").defaultNow(),
+
+  // Progress tracking fields
+  nextDeadline: date("next_deadline"), // Next deadline date
+  overallProgress: integer("overall_progress").default(0), // 0-100
+  currentPhase: text("current_phase"), // Current phase ID (e.g., 'p1', 'p2')
+  progressData: jsonb("progress_data").default({}), // Additional progress metadata
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 // Junction table for many-to-many relationship between Users and AAC Users
@@ -220,6 +231,134 @@ export const aacUserSchedules = pgTable("aac_user_schedules", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// =============================================================================
+// STUDENT PHASES TABLE - Tracks individual phase progress
+// =============================================================================
+export const studentPhases = pgTable("student_phases", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  aacUserId: varchar("aac_user_id").notNull(), // References aacUsers.id
+  phaseId: text("phase_id").notNull(), // 'p1', 'p2', 'p3', 'p4' or custom
+  phaseName: text("phase_name").notNull(), // Display name
+  phaseOrder: integer("phase_order").notNull().default(1), // Order in sequence
+  status: text("status").notNull().default("pending"), // 'pending', 'in-progress', 'completed', 'locked'
+  dueDate: date("due_date"),
+  completedAt: timestamp("completed_at"),
+  notes: text("notes"),
+  metadata: jsonb("metadata").default({}), // Additional phase data
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_student_phases_aac_user_id").on(table.aacUserId),
+  index("idx_student_phases_status").on(table.status),
+]);
+
+// =============================================================================
+// STUDENT GOALS TABLE - Tracks IEP goals and objectives
+// =============================================================================
+export const studentGoals = pgTable("student_goals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  aacUserId: varchar("aac_user_id").notNull(), // References aacUsers.id
+  phaseId: varchar("phase_id"), // References studentPhases.id (optional)
+  title: text("title").notNull(),
+  description: text("description"),
+  goalType: text("goal_type").notNull().default("general"), // 'communication', 'behavioral', 'academic', 'general'
+  
+  // SMART Goal fields (for US IEP)
+  targetBehavior: text("target_behavior"), // Specific
+  criteria: text("criteria"), // Measurable
+  criteriaPercentage: integer("criteria_percentage"), // e.g., 80%
+  measurementMethod: text("measurement_method"), // e.g., 'SLP data collection'
+  conditions: text("conditions"), // Achievable/Opportunity context
+  relevance: text("relevance"), // Relevant curriculum impact
+  targetDate: date("target_date"), // Time-bound
+  
+  status: text("status").notNull().default("draft"), // 'draft', 'active', 'achieved', 'modified', 'discontinued'
+  progress: integer("progress").default(0), // 0-100
+  
+  // Baseline data for IEP
+  baselineData: jsonb("baseline_data").default({}), // MLU, communication rate, etc.
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_student_goals_aac_user_id").on(table.aacUserId),
+  index("idx_student_goals_status").on(table.status),
+]);
+
+// =============================================================================
+// STUDENT PROGRESS ENTRIES - Tracks progress over time
+// =============================================================================
+export const studentProgressEntries = pgTable("student_progress_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  aacUserId: varchar("aac_user_id").notNull(),
+  goalId: varchar("goal_id"), // References studentGoals.id (optional)
+  phaseId: varchar("phase_id"), // References studentPhases.id (optional)
+  
+  entryType: text("entry_type").notNull(), // 'observation', 'assessment', 'milestone', 'note'
+  title: text("title").notNull(),
+  content: text("content"),
+  
+  // Quantitative metrics
+  metrics: jsonb("metrics").default({}), // e.g., { mlu: 3.2, communicationRate: 12, intelligibility: 0.75 }
+  
+  recordedBy: varchar("recorded_by"), // References users.id
+  recordedAt: timestamp("recorded_at").defaultNow().notNull(),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_progress_entries_aac_user_id").on(table.aacUserId),
+  index("idx_progress_entries_recorded_at").on(table.recordedAt),
+]);
+
+// =============================================================================
+// STUDENT COMPLIANCE CHECKLIST - For IEP compliance tracking
+// =============================================================================
+export const studentComplianceItems = pgTable("student_compliance_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  aacUserId: varchar("aac_user_id").notNull(),
+  phaseId: varchar("phase_id"), // References studentPhases.id (optional)
+  
+  itemKey: text("item_key").notNull(), // 'baseline_data', 'parent_input', 'gen_ed_consulted', etc.
+  itemLabel: text("item_label").notNull(),
+  isCompleted: boolean("is_completed").default(false).notNull(),
+  completedAt: timestamp("completed_at"),
+  completedBy: varchar("completed_by"), // References users.id
+  notes: text("notes"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_compliance_items_aac_user_id").on(table.aacUserId),
+]);
+
+// =============================================================================
+// SERVICE RECOMMENDATIONS - For IEP service planning
+// =============================================================================
+export const studentServiceRecommendations = pgTable("student_service_recommendations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  aacUserId: varchar("aac_user_id").notNull(),
+  
+  serviceName: text("service_name").notNull(), // 'Speech-Language', 'Occupational Therapy', etc.
+  serviceType: text("service_type").notNull().default("direct"), // 'direct', 'consultation', 'monitoring'
+  durationMinutes: integer("duration_minutes").notNull(),
+  frequency: text("frequency").notNull(), // 'weekly', 'bi-weekly', 'monthly'
+  frequencyCount: integer("frequency_count").notNull().default(1), // Times per frequency period
+  
+  startDate: date("start_date"),
+  endDate: date("end_date"),
+  
+  provider: text("provider"), // Provider name
+  location: text("location"), // Service delivery location
+  
+  isActive: boolean("is_active").default(true).notNull(),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_service_recs_aac_user_id").on(table.aacUserId),
+]);
+
 
 // Changed: aacUserId now references aacUsers.id
 export const interpretations = pgTable("interpretations", {
@@ -487,6 +626,49 @@ export const insertApiCallSchema = createInsertSchema(apiCalls).omit({
   createdAt: true,
 });
 
+export const insertStudentPhaseSchema = createInsertSchema(studentPhases).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateStudentPhaseSchema = createInsertSchema(studentPhases).omit({
+  id: true,
+  aacUserId: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial();
+
+export const insertStudentGoalSchema = createInsertSchema(studentGoals).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateStudentGoalSchema = createInsertSchema(studentGoals).omit({
+  id: true,
+  aacUserId: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial();
+
+export const insertProgressEntrySchema = createInsertSchema(studentProgressEntries).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertComplianceItemSchema = createInsertSchema(studentComplianceItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertServiceRecommendationSchema = createInsertSchema(studentServiceRecommendations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Pricing JSON validation schemas
 export const tokenBasedPricingSchema = z.object({
   cost_calculation: z.literal("token_based"),
@@ -572,6 +754,23 @@ export type InsertRevenuecatWebhookEvent = z.infer<typeof insertRevenuecatWebhoo
 export type RevenuecatProduct = typeof revenuecatProducts.$inferSelect;
 export type InsertRevenuecatProduct = z.infer<typeof insertRevenuecatProductSchema>;
 
+// Student progress tracking types
+export type StudentPhase = typeof studentPhases.$inferSelect;
+export type InsertStudentPhase = z.infer<typeof insertStudentPhaseSchema>;
+export type UpdateStudentPhase = z.infer<typeof updateStudentPhaseSchema>;
+
+export type StudentGoal = typeof studentGoals.$inferSelect;
+export type InsertStudentGoal = z.infer<typeof insertStudentGoalSchema>;
+export type UpdateStudentGoal = z.infer<typeof updateStudentGoalSchema>;
+
+export type StudentProgressEntry = typeof studentProgressEntries.$inferSelect;
+export type InsertProgressEntry = z.infer<typeof insertProgressEntrySchema>;
+
+export type StudentComplianceItem = typeof studentComplianceItems.$inferSelect;
+export type InsertComplianceItem = z.infer<typeof insertComplianceItemSchema>;
+
+export type StudentServiceRecommendation = typeof studentServiceRecommendations.$inferSelect;
+export type InsertServiceRecommendation = z.infer<typeof insertServiceRecommendationSchema>;
 
 export const plans = pgTable("plans", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -813,7 +1012,43 @@ export type ChatSession = typeof chatSessions.$inferSelect;
 export type InsertChatSession = z.infer<typeof insertChatSessionSchema>;
 
 // Chat Mode type
-export type ChatMode = "chat" | "boards" | "interpret" | 'docuslp';
+export type ChatMode = "chat" | "boards" | "interpret" | 'docuslp' | 'overview' | 'students' | 'progress' | 'settings';
+
+
+export type SystemType = 'tala' | 'us_iep';
+export type PhaseStatus = 'pending' | 'in-progress' | 'completed' | 'locked';
+export type GoalStatus = 'draft' | 'active' | 'achieved' | 'modified' | 'discontinued';
+
+export interface StudentWithProgress {
+  id: string;
+  name: string;
+  idNumber?: string;
+  school?: string;
+  grade?: string;
+  diagnosis?: string;
+  systemType: SystemType;
+  country?: string;
+  overallProgress: number;
+  nextDeadline?: string;
+  currentPhase?: string;
+  phases: StudentPhase[];
+  goals: StudentGoal[];
+}
+
+export interface OverviewStats {
+  totalStudents: number;
+  activeCases: number;
+  completedCases: number;
+  pendingReview: number;
+  upcomingDeadlines: number;
+}
+
+export interface PhaseDistribution {
+  phaseId: string;
+  phaseName: string;
+  count: number;
+  color: string;
+}
 
 // ============================================================================
 // CHAT SYSTEM INTERFACES (for use in chat-handler.ts)
@@ -1173,6 +1408,26 @@ export const chatSessionsRelations = relations(chatSessions, ({ one }) => ({
   userAacUser: one(userAacUsers, {
     fields: [chatSessions.userAacUserId],
     references: [userAacUsers.id]
+  }),
+}));
+
+
+// Student Progress relations
+export const studentPhasesRelations = relations(studentPhases, ({ one }) => ({
+  aacUser: one(aacUsers, {
+    fields: [studentPhases.aacUserId],
+    references: [aacUsers.id]
+  }),
+}));
+
+export const studentGoalsRelations = relations(studentGoals, ({ one }) => ({
+  aacUser: one(aacUsers, {
+    fields: [studentGoals.aacUserId],
+    references: [aacUsers.id]
+  }),
+  phase: one(studentPhases, {
+    fields: [studentGoals.phaseId],
+    references: [studentPhases.id]
   }),
 }));
 

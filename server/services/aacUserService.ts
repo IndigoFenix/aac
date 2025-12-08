@@ -23,7 +23,7 @@ export class AacUserService {
     name: string,
     gender?: string,
     birthDate?: string, // ISO date string 'YYYY-MM-DD'
-    disabilityOrSyndrome?: string,
+    diagnosis?: string,
     backgroundContext?: string,
     role: string = "owner"
   ): Promise<AacUser> {
@@ -32,7 +32,7 @@ export class AacUserService {
         name,
         gender,
         birthDate: birthDate || null,
-        disabilityOrSyndrome,
+        diagnosis,
         backgroundContext,
         isActive: true,
       },
@@ -50,7 +50,7 @@ export class AacUserService {
     name: string,
     gender?: string,
     birthDate?: string,
-    disabilityOrSyndrome?: string,
+    diagnosis?: string,
     backgroundContext?: string,
     role: string = "owner"
   ): Promise<{ aacUser: AacUser; link: UserAacUser }> {
@@ -59,7 +59,7 @@ export class AacUserService {
         name,
         gender,
         birthDate: birthDate || null,
-        disabilityOrSyndrome,
+        diagnosis,
         backgroundContext,
         isActive: true,
       },

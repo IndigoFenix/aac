@@ -30,6 +30,7 @@ import {
 import { setupUserAuth } from "./userAuth"; // Keep existing passport setup
 import { interpretationRepository, apiProviderRepository } from "./repositories";
 import { chatController } from "./controllers/chatController";
+import { studentProgressController } from "./controllers/studentProgressController";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -104,6 +105,94 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.delete("/api/aac-users/:id", requireAuth, (req, res) =>
     aacUserController.deleteAacUser(req, res)
+  );
+
+  // ============= STUDENT PROGRESS ROUTES =============
+  
+  // Overview / Dashboard
+  app.get("/api/students/overview", requireAuth, (req, res) =>
+    studentProgressController.getOverview(req, res)
+  );
+  
+  // Student list with progress summaries
+  app.get("/api/students/list", requireAuth, (req, res) =>
+    studentProgressController.getStudentsList(req, res)
+  );
+  
+  // Full student progress data
+  app.get("/api/students/:id/progress", requireAuth, (req, res) =>
+    studentProgressController.getStudentProgress(req, res)
+  );
+  
+  // Initialize progress tracking
+  app.post("/api/students/:id/initialize-progress", requireAuth, (req, res) =>
+    studentProgressController.initializeProgress(req, res)
+  );
+  
+  // Phases
+  app.get("/api/students/:id/phases", requireAuth, (req, res) =>
+    studentProgressController.getPhases(req, res)
+  );
+  app.patch("/api/phases/:id", requireAuth, (req, res) =>
+    studentProgressController.updatePhase(req, res)
+  );
+  app.post("/api/students/:id/advance-phase", requireAuth, (req, res) =>
+    studentProgressController.advancePhase(req, res)
+  );
+  
+  // Goals
+  app.get("/api/students/:id/goals", requireAuth, (req, res) =>
+    studentProgressController.getGoals(req, res)
+  );
+  app.post("/api/students/:id/goals", requireAuth, (req, res) =>
+    studentProgressController.createGoal(req, res)
+  );
+  app.patch("/api/goals/:id", requireAuth, (req, res) =>
+    studentProgressController.updateGoal(req, res)
+  );
+  app.delete("/api/goals/:id", requireAuth, (req, res) =>
+    studentProgressController.deleteGoal(req, res)
+  );
+  app.post("/api/goals/:id/generate-statement", requireAuth, (req, res) =>
+    studentProgressController.generateGoalStatement(req, res)
+  );
+  
+  // Progress Entries
+  app.get("/api/students/:id/progress-entries", requireAuth, (req, res) =>
+    studentProgressController.getProgressEntries(req, res)
+  );
+  app.post("/api/students/:id/progress-entries", requireAuth, (req, res) =>
+    studentProgressController.createProgressEntry(req, res)
+  );
+  
+  // Compliance
+  app.get("/api/students/:id/compliance", requireAuth, (req, res) =>
+    studentProgressController.getComplianceItems(req, res)
+  );
+  app.patch("/api/compliance/:id", requireAuth, (req, res) =>
+    studentProgressController.updateComplianceItem(req, res)
+  );
+  
+  // Service Recommendations
+  app.get("/api/students/:id/services", requireAuth, (req, res) =>
+    studentProgressController.getServiceRecommendations(req, res)
+  );
+  app.post("/api/students/:id/services", requireAuth, (req, res) =>
+    studentProgressController.createServiceRecommendation(req, res)
+  );
+  app.patch("/api/services/:id", requireAuth, (req, res) =>
+    studentProgressController.updateServiceRecommendation(req, res)
+  );
+  app.delete("/api/services/:id", requireAuth, (req, res) =>
+    studentProgressController.deleteServiceRecommendation(req, res)
+  );
+  
+  // Baseline Metrics
+  app.get("/api/students/:id/baseline", requireAuth, (req, res) =>
+    studentProgressController.getBaselineMetrics(req, res)
+  );
+  app.post("/api/students/:id/baseline", requireAuth, (req, res) =>
+    studentProgressController.recordBaselineMetrics(req, res)
   );
 
   // ============= SCHEDULE ROUTES =============

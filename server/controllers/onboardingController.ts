@@ -46,7 +46,7 @@ export class OnboardingController {
   async completeStep1(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as { id: string };
-      const { name, birthDate, condition, gender, disabilityOrSyndrome } = req.body;
+      const { name, birthDate, condition, gender, diagnosis } = req.body;
 
       console.log("Onboarding Step 1 - Request received:", {
         userId: currentUser.id,
@@ -54,7 +54,7 @@ export class OnboardingController {
         birthDate,
         condition,
         gender,
-        disabilityOrSyndrome,
+        diagnosis,
       });
 
       if (!name) {
@@ -73,7 +73,7 @@ export class OnboardingController {
         name,
         gender || undefined,
         birthDate || undefined, // Now accepts ISO date string 'YYYY-MM-DD'
-        disabilityOrSyndrome || undefined,
+        diagnosis || undefined,
         condition || undefined, // This maps to backgroundContext
         "owner" // The creating user is the owner
       );

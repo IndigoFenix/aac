@@ -33,6 +33,7 @@ export function ChatFeature() {
   } = useChat();
   
   const showWelcome = history.length === 0;
+  const showTools = false; // Placeholder for future tools feature
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -149,18 +150,20 @@ export function ChatFeature() {
         <Plus className="w-5 h-5" />
       </Button>
       
-      <Button
-        variant="ghost"
-        className={cn(
-          "h-8 rounded-full hover-elevate active-elevate-2",
-          isRTL && "flex-row-reverse"
-        )}
-        data-testid="button-tools"
-        onClick={() => console.log('Tools clicked')}
-      >
-        <Settings2 className={cn("w-4 h-4", isRTL ? "ml-2" : "mr-2")} />
-        <span className="text-sm">{t('chat.tools')}</span>
-      </Button>
+      {showTools && (
+        <Button
+          variant="ghost"
+          className={cn(
+            "h-8 rounded-full hover-elevate active-elevate-2",
+            isRTL && "flex-row-reverse"
+          )}
+          data-testid="button-tools"
+          onClick={() => console.log('Tools clicked')}
+        >
+          <Settings2 className={cn("w-4 h-4", isRTL ? "ml-2" : "mr-2")} />
+          <span className="text-sm">{t('chat.tools')}</span>
+        </Button>
+      )}
 
       <Input
         ref={inputRef}

@@ -133,9 +133,16 @@ export function GlobalAuthModals() {
     name: "",
     gender: "",
     birthDate: "",
-    disabilityOrSyndrome: "",
+    diagnosis: "",
+    backgroundContext: "",
+    systemType: "tala",
+    country: "IL",
+    school: "",
+    grade: "",
+    idNumber: "",
   });
   const [editingAacUser, setEditingAacUser] = useState<any>(null);
+  const [showStudentModal, setShowStudentModal] = useState(false);
   const [profileForm, setProfileForm] = useState({
     firstName: "",
     lastName: "",
@@ -180,6 +187,47 @@ export function GlobalAuthModals() {
   });
   useUIEvent("settings", () => {
     setShowSettingsDialog(true);
+  });
+
+  // Listen for createStudent event - opens student modal with empty form
+  useUIEvent("createStudent", () => {
+    // Clear any existing edit state
+    setEditingAacUser(null);
+    setAacUserForm({
+      name: "",
+      gender: "",
+      birthDate: "",
+      diagnosis: "",
+      backgroundContext: "",
+      systemType: "tala",
+      country: "IL",
+      school: "",
+      grade: "",
+      idNumber: "",
+    });
+    // Open the student modal
+    setShowStudentModal(true);
+  });
+
+  // Listen for editStudent event - opens student modal with AAC user data pre-filled
+  useUIEvent("editStudent", (studentData: any) => {
+    if (studentData) {
+      setEditingAacUser(studentData);
+      setAacUserForm({
+        name: studentData.name || "",
+        gender: studentData.gender || "",
+        birthDate: studentData.birthDate || "",
+        diagnosis: studentData.diagnosis || "",
+        backgroundContext: studentData.backgroundContext || "",
+        systemType: studentData.systemType || "tala",
+        country: studentData.country || "IL",
+        school: studentData.school || "",
+        grade: studentData.grade || "",
+        idNumber: studentData.idNumber || "",
+      });
+    }
+    // Open the student modal
+    setShowStudentModal(true);
   });
 
   // handlers (migrated from home.tsx)
@@ -268,13 +316,21 @@ export function GlobalAuthModals() {
 
       // Optional: keep this if anything else still uses the raw query
       queryClient.invalidateQueries({ queryKey: ["/api/aac-users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/students/list"] });
 
       setAacUserForm({
         name: "",
         gender: "",
         birthDate: "",
-        disabilityOrSyndrome: "",
+        diagnosis: "",
+        backgroundContext: "",
+        systemType: "tala",
+        country: "IL",
+        school: "",
+        grade: "",
+        idNumber: "",
       });
+      setShowStudentModal(false);
       toast({
         title: t("toast.aacUserCreated"),
         description: t("toast.aacUserCreatedDesc"),
@@ -298,14 +354,22 @@ export function GlobalAuthModals() {
     onSuccess: async () => {
       await refetchAacUser();
       queryClient.invalidateQueries({ queryKey: ["/api/aac-users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/students/list"] });
 
       setEditingAacUser(null);
       setAacUserForm({
         name: "",
         gender: "",
         birthDate: "",
-        disabilityOrSyndrome: "",
+        diagnosis: "",
+        backgroundContext: "",
+        systemType: "tala",
+        country: "IL",
+        school: "",
+        grade: "",
+        idNumber: "",
       });
+      setShowStudentModal(false);
       toast({
         title: t("toast.aacUserUpdated"),
         description: t("toast.aacUserUpdatedDesc"),
@@ -657,15 +721,22 @@ export function GlobalAuthModals() {
     updateAacUserMutation.mutate({ id: editingAacUser.id, data: aacUserForm });
   };
 
-  // CHANGED: Reset with birthDate instead of age
+  // Reset form and close student modal
   const handleCancelEdit = () => {
     setEditingAacUser(null);
     setAacUserForm({
       name: "",
       gender: "",
       birthDate: "",
-      disabilityOrSyndrome: "",
+      diagnosis: "",
+      backgroundContext: "",
+      systemType: "tala",
+      country: "IL",
+      school: "",
+      grade: "",
+      idNumber: "",
     });
+    setShowStudentModal(false);
   };
 
   // Initialize profile form when user data is available
@@ -1984,6 +2055,319 @@ export function GlobalAuthModals() {
               onClick={() => setShowSettingsDialog(false)}
             >
               {t("ui.close")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Student (AAC User) Create/Edit Modal */}
+      <Dialog open={showStudentModal} onOpenChange={setShowStudentModal}>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className={language === "he" ? "text-right" : ""}>
+              {editingAacUser
+                ? language === "he"
+                  ? "עריכת תלמיד"
+                  : "Edit Student"
+                : language === "he"
+                  ? "הוספת תלמיד חדש"
+                  : "Add New Student"}
+            </DialogTitle>
+            <DialogDescription className={language === "he" ? "text-right" : ""}>
+              {editingAacUser
+                ? language === "he"
+                  ? "עדכן את פרטי התלמיד"
+                  : "Update the student's information"
+                : language === "he"
+                  ? "הזן את פרטי התלמיד החדש"
+                  : "Enter the new student's information"}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4">
+            {/* Row 1: Name and ID Number */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="studentName">
+                  {language === "he" ? "שם (חובה)" : "Name (Required)"}
+                </Label>
+                <Input
+                  id="studentName"
+                  value={aacUserForm.name}
+                  onChange={(e) =>
+                    setAacUserForm((prev) => ({
+                      ...prev,
+                      name: e.target.value,
+                    }))
+                  }
+                  placeholder={
+                    language === "he"
+                      ? "לדוגמה: שרה כהן"
+                      : "e.g., Sarah Cohen"
+                  }
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="studentIdNumber">
+                  {language === "he" ? "מספר תלמיד" : "Student ID"}
+                </Label>
+                <Input
+                  id="studentIdNumber"
+                  value={aacUserForm.idNumber}
+                  onChange={(e) =>
+                    setAacUserForm((prev) => ({
+                      ...prev,
+                      idNumber: e.target.value,
+                    }))
+                  }
+                  placeholder={
+                    language === "he"
+                      ? "מספר זיהוי"
+                      : "ID number"
+                  }
+                />
+              </div>
+            </div>
+
+            {/* Row 2: Gender and Birth Date */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="studentGender">
+                  {language === "he" ? "מגדר" : "Gender"}
+                </Label>
+                <Select
+                  value={aacUserForm.gender}
+                  onValueChange={(value) =>
+                    setAacUserForm((prev) => ({ ...prev, gender: value }))
+                  }
+                >
+                  <SelectTrigger id="studentGender">
+                    <SelectValue
+                      placeholder={
+                        language === "he" ? "בחר מגדר" : "Select gender"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Male">
+                      {language === "he" ? "זכר" : "Male"}
+                    </SelectItem>
+                    <SelectItem value="Female">
+                      {language === "he" ? "נקבה" : "Female"}
+                    </SelectItem>
+                    <SelectItem value="Other">
+                      {language === "he" ? "אחר" : "Other"}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="studentBirthDate">
+                  {language === "he" ? "תאריך לידה" : "Date of Birth"}
+                </Label>
+                <Input
+                  id="studentBirthDate"
+                  type="date"
+                  value={aacUserForm.birthDate}
+                  onChange={(e) =>
+                    setAacUserForm((prev) => ({
+                      ...prev,
+                      birthDate: e.target.value,
+                    }))
+                  }
+                  max={new Date().toISOString().split('T')[0]}
+                />
+                {aacUserForm.birthDate && (
+                  <p className="text-xs text-muted-foreground">
+                    {language === "he" 
+                      ? `גיל: ${calculateAge(aacUserForm.birthDate)} שנים`
+                      : `Age: ${calculateAge(aacUserForm.birthDate)} years`}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Row 3: School and Grade */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="studentSchool">
+                  {language === "he" ? "בית ספר" : "School"}
+                </Label>
+                <Input
+                  id="studentSchool"
+                  value={aacUserForm.school}
+                  onChange={(e) =>
+                    setAacUserForm((prev) => ({
+                      ...prev,
+                      school: e.target.value,
+                    }))
+                  }
+                  placeholder={
+                    language === "he"
+                      ? "שם בית הספר"
+                      : "School name"
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="studentGrade">
+                  {language === "he" ? "כיתה" : "Grade"}
+                </Label>
+                <Input
+                  id="studentGrade"
+                  value={aacUserForm.grade}
+                  onChange={(e) =>
+                    setAacUserForm((prev) => ({
+                      ...prev,
+                      grade: e.target.value,
+                    }))
+                  }
+                  placeholder={
+                    language === "he"
+                      ? "לדוגמה: ה׳, ו׳"
+                      : "e.g., 5th, 6th"
+                  }
+                />
+              </div>
+            </div>
+
+            {/* Row 4: Diagnosis */}
+            <div className="space-y-2">
+              <Label htmlFor="studentDiagnosis">
+                {language === "he" ? "אבחנה" : "Diagnosis"}
+              </Label>
+              <Input
+                id="studentDiagnosis"
+                value={aacUserForm.diagnosis}
+                onChange={(e) =>
+                  setAacUserForm((prev) => ({
+                    ...prev,
+                    diagnosis: e.target.value,
+                  }))
+                }
+                placeholder={
+                  language === "he"
+                    ? "לדוגמה: תסמונת רט, אוטיזם"
+                    : "e.g., Rett Syndrome, Autism"
+                }
+              />
+            </div>
+
+            {/* Row 5: System Type and Country */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="studentSystemType">
+                  {language === "he" ? "סוג מערכת" : "System Type"}
+                </Label>
+                <Select
+                  value={aacUserForm.systemType}
+                  onValueChange={(value) =>
+                    setAacUserForm((prev) => ({ ...prev, systemType: value }))
+                  }
+                >
+                  <SelectTrigger id="studentSystemType">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="tala">
+                      {language === "he" ? "תל״א (ישראל)" : "TALA (Israel)"}
+                    </SelectItem>
+                    <SelectItem value="us_iep">
+                      {language === "he" ? "IEP (ארה״ב)" : "IEP (US)"}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="studentCountry">
+                  {language === "he" ? "מדינה" : "Country"}
+                </Label>
+                <Select
+                  value={aacUserForm.country}
+                  onValueChange={(value) =>
+                    setAacUserForm((prev) => ({ ...prev, country: value }))
+                  }
+                >
+                  <SelectTrigger id="studentCountry">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="IL">
+                      {language === "he" ? "ישראל" : "Israel"}
+                    </SelectItem>
+                    <SelectItem value="US">
+                      {language === "he" ? "ארצות הברית" : "United States"}
+                    </SelectItem>
+                    <SelectItem value="UK">
+                      {language === "he" ? "בריטניה" : "United Kingdom"}
+                    </SelectItem>
+                    <SelectItem value="Other">
+                      {language === "he" ? "אחר" : "Other"}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Row 6: Background Context */}
+            <div className="space-y-2">
+              <Label htmlFor="studentBackgroundContext">
+                {language === "he" ? "מידע רקע" : "Background Information"}
+              </Label>
+              <textarea
+                id="studentBackgroundContext"
+                className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                value={aacUserForm.backgroundContext}
+                onChange={(e) =>
+                  setAacUserForm((prev) => ({
+                    ...prev,
+                    backgroundContext: e.target.value,
+                  }))
+                }
+                placeholder={
+                  language === "he"
+                    ? "מידע רלוונטי נוסף על התלמיד..."
+                    : "Additional relevant information about the student..."
+                }
+              />
+            </div>
+          </div>
+
+          <DialogFooter className={language === "he" ? "flex-row-reverse" : ""}>
+            <Button
+              variant="outline"
+              onClick={handleCancelEdit}
+            >
+              {language === "he" ? "ביטול" : "Cancel"}
+            </Button>
+            <Button
+              onClick={
+                editingAacUser ? handleUpdateAacUser : handleCreateAacUser
+              }
+              disabled={
+                createAacUserMutation.isPending ||
+                updateAacUserMutation.isPending ||
+                !aacUserForm.name.trim()
+              }
+              className="flex items-center gap-2"
+            >
+              {(createAacUserMutation.isPending || updateAacUserMutation.isPending) ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  {language === "he" ? "שומר..." : "Saving..."}
+                </>
+              ) : editingAacUser ? (
+                <>
+                  <Edit className="w-4 h-4" />
+                  {language === "he" ? "עדכון" : "Update"}
+                </>
+              ) : (
+                <>
+                  <Plus className="w-4 h-4" />
+                  {language === "he" ? "הוסף תלמיד" : "Add Student"}
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

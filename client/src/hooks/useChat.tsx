@@ -3,15 +3,12 @@ import { useState, useEffect, createContext, useContext, ReactNode, useCallback,
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useAacUser } from './useAacUser';
 import { useAuth } from './useAuth';
-import { useFeaturePanel, FeatureId } from '@/contexts/FeaturePanelContext';
-import { ChatMessage, ChatSession } from '@shared/schema';
+import { useFeaturePanel } from '@/contexts/FeaturePanelContext';
+import { ChatMessage, ChatMode, ChatSession } from '@shared/schema';
 
 // ============================================================================
 // TYPES
 // ============================================================================
-
-// Mode is now the active feature
-export type ChatMode = FeatureId;
 
 export interface ChatMessageContent {
   text?: string;
@@ -108,7 +105,7 @@ export const ChatProvider = ({
   // External hooks
   const { aacUser } = useAacUser();
   const { user } = useAuth();
-  const { activeFeature, getActiveFeatureMetadata } = useFeaturePanel();
+  const { activeFeature, getFeatureMetadata } = useFeaturePanel();
   
   // Mode is derived from active feature
   const mode = activeFeature;
@@ -194,7 +191,7 @@ export const ChatProvider = ({
     setError(null);
     
     // Get feature-specific metadata from the active feature's builder
-    const featureMetadata = getActiveFeatureMetadata();
+    const featureMetadata = activeFeature ? getFeatureMetadata(activeFeature) : {};
     
     // Combine metadata
     const metadata = {
@@ -251,7 +248,7 @@ export const ChatProvider = ({
             id: data.sessionId,
             userId: user?.id || null,
             aacUserId: aacUser?.id || null,
-            chatMode: mode,
+            chatMode: mode || 'chat',
             started: new Date(),
             lastUpdate: new Date(),
             state: data.chatState || {},
@@ -309,7 +306,7 @@ export const ChatProvider = ({
     } finally {
       setIsSending(false);
     }
-  }, [session, mode, user, aacUser, history, persistSession, getStorageKey, getActiveFeatureMetadata]);
+  }, [session, mode, user, aacUser, history, persistSession, getStorageKey, getFeatureMetadata]);
 
   // ============================================================================
   // FEATURE-SPECIFIC METHODS (convenience wrappers)
@@ -405,7 +402,7 @@ export const ChatProvider = ({
     session,
     sessionId: session?.id || null,
     history,
-    mode,
+    mode: mode || 'chat',
     isLoading,
     isSending,
     error,

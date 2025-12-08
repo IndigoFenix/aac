@@ -516,7 +516,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<ChatMes
         prefix += `You are speaking with ${context.user.fullName}.\n`;
       }
     } else if (context.aacUser) {
-      prefix += `You are speaking with the AAC user ${context.aacUser.name}, who has ${context.aacUser.disabilityOrSyndrome}.\n`;
+      prefix += `You are speaking with the AAC user ${context.aacUser.name}, who has ${context.aacUser.diagnosis}.\n`;
     }
     return `${prefix}\n\n${corePrompt}`;
   }

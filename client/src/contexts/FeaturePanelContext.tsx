@@ -1,406 +1,276 @@
 // src/contexts/FeaturePanelContext.tsx
-import React, { 
-    createContext, 
-    useContext, 
-    useState, 
-    useCallback, 
-    ReactNode,
-    useEffect,
-    useRef
-  } from 'react';
-  import { useLocation, useNavigate } from 'react-router-dom';
-  import { useLanguage } from './LanguageContext';
-import { ChatMode } from '@shared/schema';
+// Updated to support student management features
+
+import React, { createContext, useContext, useState, useCallback, useMemo, ReactNode } from 'react';
+
+// Feature types including new student management features
+export type FeatureType = 
+  | 'chat' 
+  | 'interpret' 
+  | 'boards' 
+  | 'docuslp'
+  | 'overview'    // Student overview/dashboard
+  | 'students'    // Student list
+  | 'progress'    // Individual student progress
+  | 'settings';   // Settings panel
+
+// Panel configuration for each feature
+export interface FeatureConfig {
+  id: FeatureType;
+  defaultSize: number;      // Default panel width percentage
+  minSize: number;          // Minimum panel width percentage
+  maxSize: number;          // Maximum panel width percentage
+  hasBottomBar?: boolean;   // Whether to show a bottom bar below chat
+  isFullScreen?: boolean;   // Whether the feature takes the full screen
+}
+
+// Feature configurations
+export const FEATURE_CONFIG: Record<FeatureType, FeatureConfig> = {
+  chat: {
+    id: 'chat',
+    defaultSize: 0,
+    minSize: 0,
+    maxSize: 0,
+    isFullScreen: false,
+  },
+  interpret: {
+    id: 'interpret',
+    defaultSize: 50,
+    minSize: 30,
+    maxSize: 70,
+    hasBottomBar: false,
+    isFullScreen: false,
+  },
+  boards: {
+    id: 'boards',
+    defaultSize: 60,
+    minSize: 40,
+    maxSize: 80,
+    hasBottomBar: true,
+    isFullScreen: false,
+  },
+  docuslp: {
+    id: 'docuslp',
+    defaultSize: 50,
+    minSize: 30,
+    maxSize: 70,
+    hasBottomBar: false,
+    isFullScreen: false,
+  },
+  // Student management features - all full screen
+  overview: {
+    id: 'overview',
+    defaultSize: 60,
+    minSize: 40,
+    maxSize: 80,
+    isFullScreen: false,
+  },
+  students: {
+    id: 'students',
+    defaultSize: 60,
+    minSize: 40,
+    maxSize: 80,
+    isFullScreen: false,
+  },
+  progress: {
+    id: 'progress',
+    defaultSize: 60,
+    minSize: 40,
+    maxSize: 80,
+    isFullScreen: false,
+  },
+  settings: {
+    id: 'settings',
+    defaultSize: 60,
+    minSize: 40,
+    maxSize: 80,
+    isFullScreen: false,
+  },
+};
+
+// Panel state for each feature
+interface PanelState {
+  isOpen: boolean;
+  size: number;
+}
+
+// Shared state that can be passed between features
+interface SharedState {
+  boardGeneratorData?: any;
+  currentBoard?: any;
+  selectedStudentId?: string;
+  [key: string]: any;
+}
+
+// Metadata builder function type
+type MetadataBuilder = () => Record<string, any> | undefined;
+
+// Context type
+interface FeaturePanelContextType {
+  // Active feature
+  activeFeature: FeatureType | null;
+  setActiveFeature: (feature: FeatureType) => void;
   
-  // ============================================================================
-  // TYPES
-  // ============================================================================
+  // Panel states
+  panels: Record<FeatureType, PanelState>;
+  togglePanel: (feature: FeatureType) => void;
+  setPanelSize: (feature: FeatureType, size: number) => void;
+  setPanelOpen: (feature: FeatureType, isOpen: boolean) => void;
   
-  export type FeatureId = 'boards' | 'interpret' | 'docuslp' | 'chat';
+  // Feature config
+  getFeatureConfig: (feature: FeatureType) => FeatureConfig;
   
-  export type PanelPosition = 'start' | 'end' | 'top' | 'bottom';
+  // Shared state
+  sharedState: SharedState;
+  setSharedState: (updates: Partial<SharedState>) => void;
   
-  export interface FeaturePanel {
-    id: FeatureId;
-    component: React.ComponentType<FeaturePanelProps>;
-    position: PanelPosition;
-    defaultSize?: number;
-    minSize?: number;
-    maxSize?: number;
-    resizable?: boolean;
-  }
+  // Metadata builders for chat context
+  registerMetadataBuilder: (feature: FeatureType, builder: MetadataBuilder) => void;
+  unregisterMetadataBuilder: (feature: FeatureType) => void;
+  getFeatureMetadata: (feature: FeatureType) => Record<string, any> | undefined;
   
-  export interface FeaturePanelProps {
-    isOpen: boolean;
-    onClose: () => void;
-    position: PanelPosition;
-  }
+  // Animation
+  transitionDuration: number;
+}
+
+const FeaturePanelContext = createContext<FeaturePanelContextType | null>(null);
+
+// Provider component
+export function FeaturePanelProvider({ children }: { children: ReactNode }) {
+  const [activeFeature, setActiveFeatureState] = useState<FeatureType | null>('chat');
+  const [sharedState, setSharedStateInternal] = useState<SharedState>({});
+  const [metadataBuilders, setMetadataBuilders] = useState<Partial<Record<FeatureType, MetadataBuilder>>>({});
   
-  export interface PanelState {
-    isOpen: boolean;
-    size: number;
-    position: PanelPosition;
-  }
-  
-  // Metadata builder function type - each feature can define its own
-  export type MetadataBuilder = () => Record<string, any> | undefined;
-  
-  // Shared state that features can read/write
-  export interface FeatureSharedState {
-    // Board-related
-    currentBoard?: any;
-    boardGeneratorData?: any;
-    selectedButton?: any;
-    isEditMode?: boolean;
-    
-    // General
-    pendingPrompt?: string;
-    lastChatResponse?: any;
-    
-    // Custom feature data
-    [key: string]: any;
-  }
-  
-  interface FeaturePanelContextType {
-    // Current feature
-    activeFeature: ChatMode;
-    setActiveFeature: (feature: FeatureId) => void;
-    
-    // Panel states
-    panels: Record<FeatureId, PanelState | undefined>;
-    openPanel: (feature: FeatureId) => void;
-    closePanel: (feature: FeatureId) => void;
-    togglePanel: (feature: FeatureId) => void;
-    setPanelSize: (feature: FeatureId, size: number) => void;
-    
-    // Feature config helper
-    getFeatureConfig: (feature: FeatureId) => FeatureConfig;
-    
-    // Shared state between features and chat
-    sharedState: FeatureSharedState;
-    setSharedState: (updates: Partial<FeatureSharedState>) => void;
-    updateSharedState: <K extends keyof FeatureSharedState>(
-      key: K, 
-      value: FeatureSharedState[K]
-    ) => void;
-    
-    // Metadata builders for chat requests
-    registerMetadataBuilder: (feature: FeatureId, builder: MetadataBuilder) => void;
-    unregisterMetadataBuilder: (feature: FeatureId) => void;
-    getActiveFeatureMetadata: () => Record<string, any> | undefined;
-    
-    // Direction-aware positioning
-    getPhysicalPosition: (logicalPosition: PanelPosition) => 'left' | 'right' | 'top' | 'bottom';
-    
-    // Animation states
-    isTransitioning: boolean;
-    transitionDuration: number;
-  }
-  
-  // ============================================================================
-  // FEATURE CONFIGURATION
-  // ============================================================================
-  
-  export interface FeatureConfig {
-    position: PanelPosition;
-    defaultSize: number;
-    minSize: number;
-    maxSize: number;
-    path: string;
-    hasBottomBar?: boolean;
-    hasTopBar?: boolean;
-  }
-  
-  export const FEATURE_CONFIG: Record<FeatureId, FeatureConfig> = {
-    boards: { 
-      position: 'end', 
-      defaultSize: 60,
-      minSize: 40,
-      maxSize: 80,
-      path: '/boards',
-      hasBottomBar: true,
-    },
-    interpret: { 
-      position: 'end', 
-      defaultSize: 45,
-      minSize: 30,
-      maxSize: 70,
-      path: '/interpret',
-      hasBottomBar: false,
-    },
-    docuslp: { 
-      position: 'end', 
-      defaultSize: 50,
-      minSize: 30,
-      maxSize: 70,
-      path: '/docuslp',
-      hasBottomBar: false,
-    },
-    chat: { 
-      position: 'start', 
-      defaultSize: 0,
-      minSize: 0,
-      maxSize: 0,
-      path: '/',
-    },
-  };
-  
-  // ============================================================================
-  // CONTEXT
-  // ============================================================================
-  
-  const FeaturePanelContext = createContext<FeaturePanelContextType | null>(null);
-  
-  export const useFeaturePanel = () => {
-    const context = useContext(FeaturePanelContext);
-    if (!context) {
-      throw new Error('useFeaturePanel must be used within a FeaturePanelProvider');
-    }
-    return context;
-  };
-  
-  // Convenience hook for accessing shared state
-  export const useSharedState = () => {
-    const { sharedState, setSharedState, updateSharedState } = useFeaturePanel();
-    return { sharedState, setSharedState, updateSharedState };
-  };
-  
-  // ============================================================================
-  // PROVIDER
-  // ============================================================================
-  
-  interface FeaturePanelProviderProps {
-    children: ReactNode;
-    transitionDuration?: number;
-  }
-  
-  export const FeaturePanelProvider = ({ 
-    children,
-    transitionDuration = 300
-  }: FeaturePanelProviderProps) => {
-    const { isRTL } = useLanguage();
-    const location = useLocation();
-    const navigate = useNavigate();
-    
-    // State
-    const [activeFeature, setActiveFeatureState] = useState<FeatureId>('chat');
-    const [panels, setPanels] = useState<Record<FeatureId, PanelState | undefined>>({
-      boards: undefined,
-      interpret: undefined,
-      docuslp: undefined,
-      chat: undefined,
+  // Initialize panel states
+  const [panels, setPanels] = useState<Record<FeatureType, PanelState>>(() => {
+    const initial: Record<FeatureType, PanelState> = {} as any;
+    Object.keys(FEATURE_CONFIG).forEach((key) => {
+      const feature = key as FeatureType;
+      initial[feature] = {
+        isOpen: false,
+        size: FEATURE_CONFIG[feature].defaultSize,
+      };
     });
-    const [sharedState, setSharedStateInternal] = useState<FeatureSharedState>({});
-    const [isTransitioning, setIsTransitioning] = useState(false);
+    return initial;
+  });
+
+  const transitionDuration = 300;
+
+  // Set active feature
+  const setActiveFeature = useCallback((feature: FeatureType) => {
+    setActiveFeatureState(feature);
     
-    // Metadata builders registry
-    const metadataBuilders = useRef<Map<FeatureId, MetadataBuilder>>(new Map());
-    
-    // Refs for tracking
-    const previousFeature = useRef<FeatureId>('chat');
-  
-    // ============================================================================
-    // ROUTE SYNCHRONIZATION
-    // ============================================================================
-  
-    const getFeatureFromPath = useCallback((): FeatureId => {
-      const path = location.pathname;
-      
-      if (path.startsWith('/boards')) return 'boards';
-      if (path.startsWith('/interpret')) return 'interpret';
-      if (path.startsWith('/docuslp')) return 'docuslp';
-      return 'chat';
-    }, [location.pathname]);
-  
-    useEffect(() => {
-      const featureFromPath = getFeatureFromPath();
-      
-      if (featureFromPath !== activeFeature) {
-        previousFeature.current = activeFeature;
-        setIsTransitioning(true);
-        
-        if (activeFeature) {
-          setPanels(prev => ({
-            ...prev,
-            [activeFeature]: prev[activeFeature] 
-              ? { ...prev[activeFeature]!, isOpen: false }
-              : undefined
-          }));
-        }
-        
-        setTimeout(() => {
-          setActiveFeatureState(featureFromPath);
-          
-          if (featureFromPath && featureFromPath !== 'chat') {
-            const config = FEATURE_CONFIG[featureFromPath];
-            setPanels(prev => ({
-              ...prev,
-              [featureFromPath]: {
-                isOpen: true,
-                size: prev[featureFromPath]?.size || config.defaultSize,
-                position: config.position
-              }
-            }));
-          }
-          
-          setIsTransitioning(false);
-        }, transitionDuration);
-      }
-    }, [location.pathname, getFeatureFromPath, activeFeature, transitionDuration]);
-  
-    // ============================================================================
-    // FEATURE NAVIGATION
-    // ============================================================================
-  
-    const setActiveFeature = useCallback((feature: FeatureId) => {
-      const config = FEATURE_CONFIG[feature];
-      if (!config) {
-        console.error(`Feature config not found for feature: ${feature}`);
-      } else {
-        navigate(config.path);
-      }
-    }, [navigate]);
-  
-    // ============================================================================
-    // PANEL MANAGEMENT
-    // ============================================================================
-  
-    const openPanel = useCallback((feature: FeatureId) => {
-      if (!feature || feature === 'chat') return;
-      
-      const config = FEATURE_CONFIG[feature];
+    // For panel-based features, open the panel
+    const config = FEATURE_CONFIG[feature];
+    if (!config.isFullScreen && feature !== 'chat') {
       setPanels(prev => ({
         ...prev,
-        [feature]: {
-          isOpen: true,
-          size: prev[feature]?.size || config.defaultSize,
-          position: config.position
-        }
+        [feature]: { ...prev[feature], isOpen: true },
       }));
-    }, []);
-  
-    const closePanel = useCallback((feature: FeatureId) => {
-      if (!feature) return;
-      
-      setPanels(prev => ({
-        ...prev,
-        [feature]: prev[feature] 
-          ? { ...prev[feature]!, isOpen: false }
-          : undefined
-      }));
-    }, []);
-  
-    const togglePanel = useCallback((feature: FeatureId) => {
-      if (!feature) return;
-      
-      const panel = panels[feature];
-      if (panel?.isOpen) {
-        closePanel(feature);
-      } else {
-        openPanel(feature);
-      }
-    }, [panels, openPanel, closePanel]);
-  
-    const setPanelSize = useCallback((feature: FeatureId, size: number) => {
-      if (!feature) return;
-      
-      setPanels(prev => ({
-        ...prev,
-        [feature]: prev[feature]
-          ? { ...prev[feature]!, size }
-          : { isOpen: false, size, position: FEATURE_CONFIG[feature].position }
-      }));
-    }, []);
-  
-    // ============================================================================
-    // SHARED STATE MANAGEMENT
-    // ============================================================================
-  
-    const setSharedState = useCallback((updates: Partial<FeatureSharedState>) => {
-      setSharedStateInternal(prev => ({ ...prev, ...updates }));
-    }, []);
-  
-    const updateSharedState = useCallback(<K extends keyof FeatureSharedState>(
-      key: K,
-      value: FeatureSharedState[K]
-    ) => {
-      setSharedStateInternal(prev => ({ ...prev, [key]: value }));
-    }, []);
-  
-    // ============================================================================
-    // METADATA BUILDERS
-    // ============================================================================
-  
-    const registerMetadataBuilder = useCallback((feature: FeatureId, builder: MetadataBuilder) => {
-      metadataBuilders.current.set(feature, builder);
-    }, []);
-  
-    const unregisterMetadataBuilder = useCallback((feature: FeatureId) => {
-      metadataBuilders.current.delete(feature);
-    }, []);
-  
-    const getActiveFeatureMetadata = useCallback((): Record<string, any> | undefined => {
-      const builder = metadataBuilders.current.get(activeFeature);
-      if (builder) {
-        return builder();
-      }
-      return undefined;
-    }, [activeFeature]);
-  
-    // ============================================================================
-    // DIRECTION-AWARE POSITIONING
-    // ============================================================================
-  
-    const getPhysicalPosition = useCallback((logicalPosition: PanelPosition): 'left' | 'right' | 'top' | 'bottom' => {
-      switch (logicalPosition) {
-        case 'start':
-          return isRTL ? 'right' : 'left';
-        case 'end':
-          return isRTL ? 'left' : 'right';
-        case 'top':
-          return 'top';
-        case 'bottom':
-          return 'bottom';
-        default:
-          return 'right';
-      }
-    }, [isRTL]);
-  
-    // ============================================================================
-    // FEATURE CONFIG HELPER
-    // ============================================================================
-  
-    const getFeatureConfig = useCallback((feature: FeatureId): FeatureConfig => {
-      return FEATURE_CONFIG[feature];
-    }, []);
-  
-    // ============================================================================
-    // CONTEXT VALUE
-    // ============================================================================
-  
-    const contextValue: FeaturePanelContextType = {
-      activeFeature,
-      setActiveFeature,
-      panels,
-      openPanel,
-      closePanel,
-      togglePanel,
-      setPanelSize,
-      getFeatureConfig,
-      sharedState,
-      setSharedState,
-      updateSharedState,
-      registerMetadataBuilder,
-      unregisterMetadataBuilder,
-      getActiveFeatureMetadata,
-      getPhysicalPosition,
-      isTransitioning,
-      transitionDuration,
-    };
-  
-    return (
-      <FeaturePanelContext.Provider value={contextValue}>
-        {children}
-      </FeaturePanelContext.Provider>
-    );
-  };
+    }
+  }, []);
+
+  // Toggle panel
+  const togglePanel = useCallback((feature: FeatureType) => {
+    setPanels(prev => ({
+      ...prev,
+      [feature]: { ...prev[feature], isOpen: !prev[feature].isOpen },
+    }));
+  }, []);
+
+  // Set panel size
+  const setPanelSize = useCallback((feature: FeatureType, size: number) => {
+    const config = FEATURE_CONFIG[feature];
+    const clampedSize = Math.min(Math.max(size, config.minSize), config.maxSize);
+    setPanels(prev => ({
+      ...prev,
+      [feature]: { ...prev[feature], size: clampedSize },
+    }));
+  }, []);
+
+  // Set panel open state
+  const setPanelOpen = useCallback((feature: FeatureType, isOpen: boolean) => {
+    setPanels(prev => ({
+      ...prev,
+      [feature]: { ...prev[feature], isOpen },
+    }));
+  }, []);
+
+  // Get feature config
+  const getFeatureConfig = useCallback((feature: FeatureType) => {
+    return FEATURE_CONFIG[feature];
+  }, []);
+
+  // Shared state
+  const setSharedState = useCallback((updates: Partial<SharedState>) => {
+    setSharedStateInternal(prev => ({ ...prev, ...updates }));
+  }, []);
+
+  // Metadata builders
+  const registerMetadataBuilder = useCallback((feature: FeatureType, builder: MetadataBuilder) => {
+    setMetadataBuilders(prev => ({ ...prev, [feature]: builder }));
+  }, []);
+
+  const unregisterMetadataBuilder = useCallback((feature: FeatureType) => {
+    setMetadataBuilders(prev => {
+      const next = { ...prev };
+      delete next[feature];
+      return next;
+    });
+  }, []);
+
+  const getFeatureMetadata = useCallback((feature: FeatureType) => {
+    const builder = metadataBuilders[feature];
+    return builder ? builder() : undefined;
+  }, [metadataBuilders]);
+
+  const contextValue = useMemo(() => ({
+    activeFeature,
+    setActiveFeature,
+    panels,
+    togglePanel,
+    setPanelSize,
+    setPanelOpen,
+    getFeatureConfig,
+    sharedState,
+    setSharedState,
+    registerMetadataBuilder,
+    unregisterMetadataBuilder,
+    getFeatureMetadata,
+    transitionDuration,
+  }), [
+    activeFeature,
+    setActiveFeature,
+    panels,
+    togglePanel,
+    setPanelSize,
+    setPanelOpen,
+    getFeatureConfig,
+    sharedState,
+    setSharedState,
+    registerMetadataBuilder,
+    unregisterMetadataBuilder,
+    getFeatureMetadata,
+  ]);
+
+  return (
+    <FeaturePanelContext.Provider value={contextValue}>
+      {children}
+    </FeaturePanelContext.Provider>
+  );
+}
+
+// Hook to use the feature panel context
+export function useFeaturePanel() {
+  const context = useContext(FeaturePanelContext);
+  if (!context) {
+    throw new Error('useFeaturePanel must be used within a FeaturePanelProvider');
+  }
+  return context;
+}
+
+// Hook to access shared state
+export function useSharedState() {
+  const { sharedState, setSharedState } = useFeaturePanel();
+  return { sharedState, setSharedState };
+}

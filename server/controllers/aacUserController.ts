@@ -74,7 +74,7 @@ export class AacUserController {
   async createAacUser(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const { name, gender, birthDate, disabilityOrSyndrome, backgroundContext } = req.body;
+      const { name, gender, birthDate, diagnosis, backgroundContext } = req.body;
 
       if (!name) {
         res
@@ -88,7 +88,7 @@ export class AacUserController {
         name,
         gender,
         birthDate,
-        disabilityOrSyndrome,
+        diagnosis,
         backgroundContext,
         "owner" // Creating user becomes the owner
       );
@@ -117,7 +117,7 @@ export class AacUserController {
     try {
       const currentUser = req.user as any;
       const aacUserId = req.params.id;
-      const { name, gender, birthDate, disabilityOrSyndrome, backgroundContext } = req.body;
+      const { name, gender, birthDate, diagnosis, backgroundContext } = req.body;
 
       // Verify access
       const { hasAccess } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
@@ -130,7 +130,7 @@ export class AacUserController {
       if (name !== undefined) updates.name = name;
       if (gender !== undefined) updates.gender = gender;
       if (birthDate !== undefined) updates.birthDate = birthDate;
-      if (disabilityOrSyndrome !== undefined) updates.disabilityOrSyndrome = disabilityOrSyndrome;
+      if (diagnosis !== undefined) updates.diagnosis = diagnosis;
       if (backgroundContext !== undefined) updates.backgroundContext = backgroundContext;
 
       const updatedAacUser = await aacUserService.updateAacUser(aacUserId, updates);
