@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { User, Menu, Settings, LogOut, LogIn, Shield } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
-import { useAacUser } from '@/hooks/useAacUser';
+import { useStudent } from '@/hooks/useStudent';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useFeaturePanel } from '@/contexts/FeaturePanelContext';
 import { LanguageSelector } from '@/components/LanguageSelector';
@@ -16,7 +16,7 @@ type TopHeaderProps = {
 
 export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
   const { user, isAuthenticated, isLoading, logout } = useAuth();
-  const { aacUser, aacUsers, isLoading: isAacUserLoading, selectAacUser } = useAacUser();
+  const { student, students, isLoading: isStudentLoading, selectStudent } = useStudent();
   const { t, isRTL } = useLanguage();
   const { activeFeature } = useFeaturePanel();
 
@@ -56,33 +56,33 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
         {isAuthenticated && user && (
           <div className="flex items-center gap-2">
             <label
-              htmlFor="aac-user-selector"
+              htmlFor="student-selector"
               className="hidden sm:inline text-xs text-muted-foreground"
             >
               {t('header.student')}
             </label>
             <select
-              id="aac-user-selector"
+              id="student-selector"
               className={cn(
                 "max-w-[180px] text-xs sm:text-sm border border-input bg-background rounded-md px-2 py-1",
                 "focus:outline-none focus:ring-2 focus:ring-primary"
               )}
               dir="auto"
-              value={aacUser?.id ?? ''}
-              disabled={isAacUserLoading || !aacUsers.length}
+              value={student?.id ?? ''}
+              disabled={isStudentLoading || !students.length}
               onChange={(event) => {
                 const selectedId = event.target.value;
-                void selectAacUser(selectedId || undefined);
+                void selectStudent(selectedId || undefined);
               }}
             >
               <option value="">
-                {isAacUserLoading
+                {isStudentLoading
                   ? t('header.loadingStudents')
-                  : aacUsers.length
+                  : students.length
                   ? t('header.selectStudent')
                   : t('header.noStudents')}
               </option>
-              {aacUsers.map((u) => (
+              {students.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.name}
                 </option>

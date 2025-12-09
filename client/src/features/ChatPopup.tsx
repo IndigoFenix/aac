@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useChat } from '@/hooks/useChat';
-import { useAacUser } from '@/hooks/useAacUser';
+import { useStudent } from '@/hooks/useStudent';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useFeaturePanel } from '@/contexts/FeaturePanelContext';
 import { ChatMessage, ChatMessageContent } from '@shared/schema';
@@ -28,7 +28,7 @@ export function ChatPopup() {
   const inputRef = useRef<HTMLInputElement>(null);
   
   const { user } = useAuth();
-  const { aacUser } = useAacUser();
+  const { student } = useStudent();
   const { t, isRTL } = useLanguage();
   const { 
     chatMode, 
@@ -169,9 +169,9 @@ export function ChatPopup() {
             </div>
             <div className={isRTL ? "text-right" : ""}>
               <p className="text-sm font-medium">{t('chat.assistant')}</p>
-              {aacUser && (
+              {student && (
                 <p className="text-xs text-muted-foreground">
-                  {t('chat.workingWith')} {aacUser.name}
+                  {t('chat.workingWith')} {student.name}
                 </p>
               )}
             </div>

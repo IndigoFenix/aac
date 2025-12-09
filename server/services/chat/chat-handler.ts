@@ -89,7 +89,7 @@ import {
       gpt: GPT;
       maxCredits: number;
       openedTopics: string[] = [];
-      memoryValues: any = {}; // Memory values from User, AacUser, UserAacUser
+      memoryValues: any = {}; // Memory values from User, Student, UserStudent
       chatState: ChatState; // Information the LLM knows about the session
       log: ChatMessage[] = []; // Full log of all messages (including culled messages)
       intelligenceLevel: 0 | 1 | 2 | 3;

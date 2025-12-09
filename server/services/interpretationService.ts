@@ -19,7 +19,7 @@ interface InterpretationResult {
   extractedText?: string;
 }
 
-export async function interpretAACText(input: string, language: 'en' | 'he' = 'he', context?: string, aacUserInfo?: any, userId?: string, sessionId?: string): Promise<InterpretationResult> {
+export async function interpretAACText(input: string, language: 'en' | 'he' = 'he', context?: string, studentInfo?: any, userId?: string, sessionId?: string): Promise<InterpretationResult> {
   try {
     const isHebrew = language === 'he';
     
@@ -27,13 +27,13 @@ export async function interpretAACText(input: string, language: 'en' | 'he' = 'h
     const systemPromptTemplate = await storage.getSystemPrompt();
     const languagePrompt = language === 'he' ? 'Hebrew (עברית)' : 'English';
     const contextInfo = context || 'No additional context provided';
-    const userInfo = aacUserInfo ? `Name: ${aacUserInfo.alias || 'Unknown'}, Age: ${aacUserInfo.age || 'Unknown'}, Background: ${aacUserInfo.backgroundContext || 'No background info'}` : 'No user profile available';
+    const userInfo = studentInfo ? `Name: ${studentInfo.alias || 'Unknown'}, Age: ${studentInfo.age || 'Unknown'}, Background: ${studentInfo.backgroundContext || 'No background info'}` : 'No user profile available';
     
     const systemPrompt = systemPromptTemplate
       .replace('{input}', input)
       .replace('{language}', languagePrompt)
       .replace('{context}', contextInfo)
-      .replace('{aacUserInfo}', userInfo);
+      .replace('{studentInfo}', userInfo);
 
     const requestData = {
       model: "gemini-2.5-pro",
@@ -96,7 +96,7 @@ export async function interpretAACText(input: string, language: 'en' | 'he' = 'h
   }
 }
 
-export async function interpretAACImage(base64Image: string, language: 'en' | 'he' = 'he', context?: string, aacUserInfo?: any, userId?: string, sessionId?: string): Promise<InterpretationResult> {
+export async function interpretAACImage(base64Image: string, language: 'en' | 'he' = 'he', context?: string, studentInfo?: any, userId?: string, sessionId?: string): Promise<InterpretationResult> {
   try {
     const isHebrew = language === 'he';
     const systemPrompt = isHebrew ?

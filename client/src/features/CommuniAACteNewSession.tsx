@@ -141,7 +141,7 @@ type Props = {
     }) => void;
     setShowCropDialog: (v: boolean) => void;
     contextInfo: {
-      selectedAacUserId: string | null;
+      selectedStudentId: string | null;
     };
     shareInterpretation: (method: "whatsapp" | "copy" | "email") => void;
 
@@ -253,7 +253,7 @@ export function CommuniAACteNewSession(props: Props) {
 
                 {/* Historical Suggestions */}
                 {(showHistoricalSuggestions || loadingHistoricalSuggestions) &&
-                  contextInfo.selectedAacUserId &&
+                  contextInfo.selectedStudentId &&
                   inputText.trim().length >= 2 && (
                     <div className="mt-2 border border-primary/20 rounded-lg bg-primary/5 p-3">
                       <div className="flex items-center gap-2 mb-2">

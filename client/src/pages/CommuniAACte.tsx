@@ -118,7 +118,7 @@ export default function CommuniAACte() {
   const [showContextDialog, setShowContextDialog] = useState(false);
   const [showImageMenu, setShowImageMenu] = useState(false);
   const [contextInfo, setContextInfo] = useState({
-    selectedAacUserId: "" as string, // Mandatory AAC user selection
+    selectedStudentId: "" as string, // Mandatory AAC user selection
     location: "",
     locationOption: "" as string, // 'בית', 'בית ספר', 'גן', 'נסיעה', 'custom', or ''
     locationAlias: "" as string, // User-defined alias for GPS locations
@@ -161,13 +161,13 @@ export default function CommuniAACte() {
   const [loadingHistoricalSuggestions, setLoadingHistoricalSuggestions] =
     useState(false);
 
-  const [aacUserForm, setAacUserForm] = useState({
+  const [studentForm, setStudentForm] = useState({
     alias: "",
     gender: "",
     age: "",
     diagnosis: "",
   });
-  const [editingAacUser, setEditingAacUser] = useState<any>(null);
+  const [editingStudent, setEditingStudent] = useState<any>(null);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -198,8 +198,8 @@ export default function CommuniAACte() {
 
   // Schedule manager state
   const [scheduleManagerOpen, setScheduleManagerOpen] = useState(false);
-  const [scheduleAacUser, setScheduleAacUser] = useState<{
-    aacUserId: string;
+  const [scheduleStudent, setScheduleStudent] = useState<{
+    studentId: string;
     alias: string;
   } | null>(null);
 
@@ -207,7 +207,7 @@ export default function CommuniAACte() {
   const createInviteForm = useForm<InsertInviteCode>({
     resolver: zodResolver(insertInviteCodeSchema),
     defaultValues: {
-      aacUserId: undefined,
+      studentId: undefined,
       redemptionLimit: 1,
       expiresAt: null,
       isActive: true,
@@ -245,10 +245,10 @@ export default function CommuniAACte() {
   });
 
   // Fetch AAC users
-  const { data: aacUsersData, isLoading: aacUsersLoading } = useQuery({
-    queryKey: ["/api/aac-users"],
+  const { data: studentsData, isLoading: studentsLoading } = useQuery({
+    queryKey: ["/api/students"],
     queryFn: async () => {
-      const res = await fetch("/api/aac-users");
+      const res = await fetch("/api/students");
       return res.json();
     },
     enabled: isAuthenticated,
@@ -281,10 +281,10 @@ export default function CommuniAACte() {
 
   // Function to fetch historical suggestions
   const fetchHistoricalSuggestions = async (
-    aacUserId: string,
+    studentId: string,
     currentInput: string,
   ) => {
-    if (!aacUserId || !currentInput.trim() || currentInput.length < 2) {
+    if (!studentId || !currentInput.trim() || currentInput.length < 2) {
       setHistoricalSuggestions([]);
       setShowHistoricalSuggestions(false);
       return;
@@ -293,7 +293,7 @@ export default function CommuniAACte() {
     setLoadingHistoricalSuggestions(true);
     try {
       const res = await apiRequest("POST", "/api/historical-suggestions", {
-        aacUserId,
+        studentId,
         currentInput: currentInput.trim(),
       });
       const data = await res.json();
@@ -317,8 +317,8 @@ export default function CommuniAACte() {
   // Debounced effect to fetch historical suggestions when user types
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      if (contextInfo.selectedAacUserId && inputText.trim().length >= 2) {
-        fetchHistoricalSuggestions(contextInfo.selectedAacUserId, inputText);
+      if (contextInfo.selectedStudentId && inputText.trim().length >= 2) {
+        fetchHistoricalSuggestions(contextInfo.selectedStudentId, inputText);
       } else {
         setHistoricalSuggestions([]);
         setShowHistoricalSuggestions(false);
@@ -326,7 +326,7 @@ export default function CommuniAACte() {
     }, 500); // 500ms debounce
 
     return () => clearTimeout(timeoutId);
-  }, [inputText, contextInfo.selectedAacUserId]);
+  }, [inputText, contextInfo.selectedStudentId]);
 
   // Function to handle suggestion selection
   const handleSuggestionSelect = (suggestion: any) => {
@@ -396,11 +396,11 @@ export default function CommuniAACte() {
       formData.append("language", language);
 
       // Add context data to FormData
-      if (context.aacUserId) {
-        formData.append("aacUserId", context.aacUserId);
+      if (context.studentId) {
+        formData.append("studentId", context.studentId);
       }
-      if (context.aacUserAlias) {
-        formData.append("aacUserAlias", context.aacUserAlias);
+      if (context.studentName) {
+        formData.append("studentName", context.studentName);
       }
       if (context.timeContext) {
         formData.append("timeContext", context.timeContext);
@@ -483,79 +483,79 @@ export default function CommuniAACte() {
   });
 
   // Create AAC user mutation
-  const createAacUserMutation = useMutation({
-    mutationFn: async (aacUserData: any) => {
-      const res = await apiRequest("POST", "/api/aac-users", aacUserData);
+  const createStudentMutation = useMutation({
+    mutationFn: async (studentData: any) => {
+      const res = await apiRequest("POST", "/api/students", studentData);
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/aac-users"] });
-      setAacUserForm({
+      queryClient.invalidateQueries({ queryKey: ["/api/students"] });
+      setStudentForm({
         alias: "",
         gender: "",
         age: "",
         diagnosis: "",
       });
       toast({
-        title: t("toast.aacUserCreated"),
-        description: t("toast.aacUserCreatedDesc"),
+        title: t("toast.studentCreated"),
+        description: t("toast.studentCreatedDesc"),
       });
     },
     onError: (error) => {
       toast({
-        title: t("toast.aacUserCreateFailed"),
-        description: error.message || t("toast.aacUserCreateFailedDesc"),
+        title: t("toast.studentCreateFailed"),
+        description: error.message || t("toast.studentCreateFailedDesc"),
         variant: "destructive",
       });
     },
   });
 
   // Update AAC user mutation
-  const updateAacUserMutation = useMutation({
+  const updateStudentMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
-      const res = await apiRequest("PATCH", `/api/aac-users/${id}`, data);
+      const res = await apiRequest("PATCH", `/api/students/${id}`, data);
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/aac-users"] });
-      setEditingAacUser(null);
-      setAacUserForm({
+      queryClient.invalidateQueries({ queryKey: ["/api/students"] });
+      setEditingStudent(null);
+      setStudentForm({
         alias: "",
         gender: "",
         age: "",
         diagnosis: "",
       });
       toast({
-        title: t("toast.aacUserUpdated"),
-        description: t("toast.aacUserUpdatedDesc"),
+        title: t("toast.studentUpdated"),
+        description: t("toast.studentUpdatedDesc"),
       });
     },
     onError: (error) => {
       toast({
-        title: t("toast.aacUserUpdateFailed"),
-        description: error.message || t("toast.aacUserUpdateFailedDesc"),
+        title: t("toast.studentUpdateFailed"),
+        description: error.message || t("toast.studentUpdateFailedDesc"),
         variant: "destructive",
       });
     },
   });
 
   // Delete AAC user mutation
-  const deleteAacUserMutation = useMutation({
+  const deleteStudentMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await apiRequest("DELETE", `/api/aac-users/${id}`);
+      const res = await apiRequest("DELETE", `/api/students/${id}`);
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/aac-users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/students"] });
       toast({
-        title: t("toast.aacUserDeleted"),
-        description: t("toast.aacUserDeletedDesc"),
+        title: t("toast.studentDeleted"),
+        description: t("toast.studentDeletedDesc"),
       });
     },
     onError: (error) => {
       toast({
-        title: t("toast.aacUserDeleteFailed"),
-        description: error.message || t("toast.aacUserDeleteFailedDesc"),
+        title: t("toast.studentDeleteFailed"),
+        description: error.message || t("toast.studentDeleteFailedDesc"),
         variant: "destructive",
       });
     },
@@ -671,12 +671,12 @@ export default function CommuniAACte() {
       return res.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/aac-users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/students"] });
       queryClient.invalidateQueries({ queryKey: ["/api/invite-codes"] });
       redeemInviteForm.reset();
       toast({
         title: t("toast.inviteRedeemed"),
-        description: `${t("label.aacUser")} "${data.aacUserAlias}" ${language === "he" ? "נוסף בהצלחה" : "has been added successfully"}`,
+        description: `${t("label.student")} "${data.studentName}" ${language === "he" ? "נוסף בהצלחה" : "has been added successfully"}`,
       });
     },
     onError: (error: any) => {
@@ -839,13 +839,13 @@ export default function CommuniAACte() {
   const handleContextSubmit = async () => {
     // Validate that an AAC user is selected
     if (
-      !contextInfo.selectedAacUserId ||
-      contextInfo.selectedAacUserId.trim() === ""
+      !contextInfo.selectedStudentId ||
+      contextInfo.selectedStudentId.trim() === ""
     ) {
       toast({
         variant: "destructive",
         title: t("error.title"),
-        description: t("error.selectAacUser"),
+        description: t("error.selectStudent"),
       });
       return;
     }
@@ -887,29 +887,29 @@ export default function CommuniAACte() {
     }
 
     // Get selected AAC user information
-    const selectedAacUser = aacUsersData?.aacUsers?.find(
+    const selectedStudent = studentsData?.students?.find(
       (user: any) =>
-        String(user.aacUserId) === String(finalContext.selectedAacUserId),
+        String(user.studentId) === String(finalContext.selectedStudentId),
     );
 
     // Create context string to append to interpretation
-    const aacUserContext = selectedAacUser
+    const studentContext = selectedStudent
       ? [
-          `${t("label.aacUser")}: ${selectedAacUser.alias}`,
-          selectedAacUser.age && `${t("label.age")}: ${selectedAacUser.age}`,
-          selectedAacUser.gender &&
-            `${t("label.gender")}: ${selectedAacUser.gender}`,
-          selectedAacUser.diagnosis &&
-            `${t("label.condition")}: ${selectedAacUser.diagnosis}`,
-          selectedAacUser.backgroundContext &&
-            `${t("label.backgroundContext")}: ${selectedAacUser.backgroundContext}`,
+          `${t("label.student")}: ${selectedStudent.alias}`,
+          selectedStudent.age && `${t("label.age")}: ${selectedStudent.age}`,
+          selectedStudent.gender &&
+            `${t("label.gender")}: ${selectedStudent.gender}`,
+          selectedStudent.diagnosis &&
+            `${t("label.condition")}: ${selectedStudent.diagnosis}`,
+          selectedStudent.backgroundContext &&
+            `${t("label.backgroundContext")}: ${selectedStudent.backgroundContext}`,
         ]
           .filter(Boolean)
           .join(", ")
       : "";
 
     const contextString = [
-      aacUserContext,
+      studentContext,
       finalContext.timeContext &&
         `${language === "he" ? "זמן" : "Time"}: ${finalContext.timeContext}`,
       finalContext.location &&
@@ -935,8 +935,8 @@ export default function CommuniAACte() {
         input: contextualInput,
         inputType: "text",
         language,
-        aacUserId: selectedAacUser?.aacUserId || null,
-        aacUserAlias: selectedAacUser?.alias || null,
+        studentId: selectedStudent?.studentId || null,
+        studentName: selectedStudent?.alias || null,
         timeContext: finalContext.timeContext || null,
         location: finalContext.location || null,
         background: finalContext.background || null,
@@ -963,8 +963,8 @@ export default function CommuniAACte() {
       // Create context object for image interpretation
       const imageContext = {
         input: imageInput,
-        aacUserId: selectedAacUser?.aacUserId || null,
-        aacUserAlias: selectedAacUser?.alias || null,
+        studentId: selectedStudent?.studentId || null,
+        studentName: selectedStudent?.alias || null,
         timeContext: finalContext.timeContext || null,
         location: finalContext.location || null,
         background: finalContext.background || null,
@@ -982,7 +982,7 @@ export default function CommuniAACte() {
     setShowContextDialog(false);
     setPendingInterpretation(null);
     setContextInfo({
-      selectedAacUserId: "",
+      selectedStudentId: "",
       location: "",
       locationOption: "",
       locationAlias: "",
@@ -996,8 +996,8 @@ export default function CommuniAACte() {
   };
 
   // AAC User handlers
-  const handleCreateAacUser = () => {
-    if (!aacUserForm.alias.trim()) {
+  const handleCreateStudent = () => {
+    if (!studentForm.alias.trim()) {
       toast({
         title: language === "he" ? "שגיאה" : "Error",
         description:
@@ -1008,21 +1008,21 @@ export default function CommuniAACte() {
       });
       return;
     }
-    createAacUserMutation.mutate(aacUserForm);
+    createStudentMutation.mutate(studentForm);
   };
 
-  const handleEditAacUser = (aacUser: any) => {
-    setEditingAacUser(aacUser);
-    setAacUserForm({
-      alias: aacUser.alias || "",
-      gender: aacUser.gender || "",
-      age: aacUser.age || "",
-      diagnosis: aacUser.diagnosis || "",
+  const handleEditStudent = (student: any) => {
+    setEditingStudent(student);
+    setStudentForm({
+      alias: student.alias || "",
+      gender: student.gender || "",
+      age: student.age || "",
+      diagnosis: student.diagnosis || "",
     });
   };
 
-  const handleUpdateAacUser = () => {
-    if (!aacUserForm.alias.trim()) {
+  const handleUpdateStudent = () => {
+    if (!studentForm.alias.trim()) {
       toast({
         title: language === "he" ? "שגיאה" : "Error",
         description:
@@ -1033,12 +1033,12 @@ export default function CommuniAACte() {
       });
       return;
     }
-    updateAacUserMutation.mutate({ id: editingAacUser.id, data: aacUserForm });
+    updateStudentMutation.mutate({ id: editingStudent.id, data: studentForm });
   };
 
   const handleCancelEdit = () => {
-    setEditingAacUser(null);
-    setAacUserForm({
+    setEditingStudent(null);
+    setStudentForm({
       alias: "",
       gender: "",
       age: "",
@@ -1776,7 +1776,7 @@ Generated by CommuniAACte`;
 
                 {/* Historical Suggestions */}
                 {(showHistoricalSuggestions || loadingHistoricalSuggestions) &&
-                  contextInfo.selectedAacUserId &&
+                  contextInfo.selectedStudentId &&
                   inputText.trim().length >= 2 && (
                     <div className="mt-2 border border-primary/20 rounded-lg bg-primary/5 p-3">
                       <div className="flex items-center gap-2 mb-2">
@@ -2119,10 +2119,10 @@ Generated by CommuniAACte`;
                                   )}`;
                                 })()}
                               </Badge>
-                              {interpretation.aacUserAlias && (
+                              {interpretation.studentName && (
                                 <Badge variant="outline" className="text-xs">
                                   {language === "he" ? "עבור" : "For"}:{" "}
-                                  {interpretation.aacUserAlias}
+                                  {interpretation.studentName}
                                 </Badge>
                               )}
                             </div>
@@ -2294,10 +2294,10 @@ Generated by CommuniAACte`;
                       )}`;
                     })()}
                   </span>
-                  {selectedImageInterpretation.aacUserAlias && (
+                  {selectedImageInterpretation.studentName && (
                     <span>
                       {language === "he" ? "עבור" : "For"}:{" "}
-                      {selectedImageInterpretation.aacUserAlias}
+                      {selectedImageInterpretation.studentName}
                     </span>
                   )}
                 </div>
@@ -2432,7 +2432,7 @@ Generated by CommuniAACte`;
             {/* AAC User Selection - MANDATORY */}
             <div className="space-y-2 p-4 border border-orange-200 bg-orange-50/50 rounded-lg">
               <Label
-                htmlFor="aacUser"
+                htmlFor="student"
                 className="flex items-center gap-2 font-semibold text-orange-800"
               >
                 <User className="h-4 w-4" />
@@ -2442,17 +2442,17 @@ Generated by CommuniAACte`;
                 <span className="text-red-500">*</span>
               </Label>
               <Select
-                value={contextInfo.selectedAacUserId}
+                value={contextInfo.selectedStudentId}
                 onValueChange={(value) =>
                   setContextInfo((prev) => ({
                     ...prev,
-                    selectedAacUserId: value,
+                    selectedStudentId: value,
                   }))
                 }
                 required
               >
                 <SelectTrigger
-                  data-testid="select-aac-user"
+                  data-testid="select-student"
                   className="border-orange-200"
                 >
                   <SelectValue
@@ -2464,32 +2464,32 @@ Generated by CommuniAACte`;
                   />
                 </SelectTrigger>
                 <SelectContent>
-                  {aacUsersLoading ? (
+                  {studentsLoading ? (
                     <SelectItem value="loading" disabled>
                       {language === "he" ? "טוען..." : "Loading..."}
                     </SelectItem>
-                  ) : aacUsersData?.aacUsers?.length > 0 ? (
-                    aacUsersData.aacUsers
+                  ) : studentsData?.students?.length > 0 ? (
+                    studentsData.students
                       .filter(
-                        (aacUser: any) =>
-                          aacUser.aacUserId &&
-                          String(aacUser.aacUserId).trim() !== "",
+                        (student: any) =>
+                          student.studentId &&
+                          String(student.studentId).trim() !== "",
                       )
-                      .map((aacUser: any) => (
+                      .map((student: any) => (
                         <SelectItem
-                          key={aacUser.aacUserId}
-                          value={String(aacUser.aacUserId)}
+                          key={student.studentId}
+                          value={String(student.studentId)}
                         >
                           <div className="flex flex-col">
-                            <span className="font-medium">{aacUser.alias}</span>
+                            <span className="font-medium">{student.alias}</span>
                             <span className="text-xs text-muted-foreground">
                               {[
-                                aacUser.age &&
-                                  `${language === "he" ? "גיל" : "Age"}: ${aacUser.age}`,
-                                aacUser.gender &&
-                                  `${language === "he" ? "מגדר" : "Gender"}: ${aacUser.gender}`,
-                                aacUser.diagnosis &&
-                                  `${language === "he" ? "אבחנה" : "Condition"}: ${aacUser.diagnosis}`,
+                                student.age &&
+                                  `${language === "he" ? "גיל" : "Age"}: ${student.age}`,
+                                student.gender &&
+                                  `${language === "he" ? "מגדר" : "Gender"}: ${student.gender}`,
+                                student.diagnosis &&
+                                  `${language === "he" ? "אבחנה" : "Condition"}: ${student.diagnosis}`,
                               ]
                                 .filter(Boolean)
                                 .join(" • ")}
@@ -2506,7 +2506,7 @@ Generated by CommuniAACte`;
                   )}
                 </SelectContent>
               </Select>
-              {!contextInfo.selectedAacUserId && (
+              {!contextInfo.selectedStudentId && (
                 <p className="text-sm text-orange-700">
                   {language === "he"
                     ? 'חובה לבחור משתמש תת"ח לפני המשך הפרשנות'
@@ -3313,7 +3313,7 @@ Generated by CommuniAACte`;
               {/* Add New AAC User Form */}
               <div className="bg-muted/50 p-4 rounded-lg mb-4">
                 <h4 className="text-sm font-medium mb-3">
-                  {editingAacUser
+                  {editingStudent
                     ? language === "he"
                       ? "ערוך משתמש תת״ח"
                       : "Edit AAC User"
@@ -3328,9 +3328,9 @@ Generated by CommuniAACte`;
                     </Label>
                     <Input
                       id="aacAlias"
-                      value={aacUserForm.alias}
+                      value={studentForm.alias}
                       onChange={(e) =>
-                        setAacUserForm((prev) => ({
+                        setStudentForm((prev) => ({
                           ...prev,
                           alias: e.target.value,
                         }))
@@ -3348,9 +3348,9 @@ Generated by CommuniAACte`;
                       {language === "he" ? "מגדר" : "Gender"}
                     </Label>
                     <Select
-                      value={aacUserForm.gender}
+                      value={studentForm.gender}
                       onValueChange={(value) =>
-                        setAacUserForm((prev) => ({ ...prev, gender: value }))
+                        setStudentForm((prev) => ({ ...prev, gender: value }))
                       }
                     >
                       <SelectTrigger id="aacGender">
@@ -3379,9 +3379,9 @@ Generated by CommuniAACte`;
                     </Label>
                     <Input
                       id="aacAge"
-                      value={aacUserForm.age}
+                      value={studentForm.age}
                       onChange={(e) =>
-                        setAacUserForm((prev) => ({
+                        setStudentForm((prev) => ({
                           ...prev,
                           age: e.target.value,
                         }))
@@ -3401,9 +3401,9 @@ Generated by CommuniAACte`;
                     </Label>
                     <Input
                       id="aacDisability"
-                      value={aacUserForm.diagnosis}
+                      value={studentForm.diagnosis}
                       onChange={(e) =>
-                        setAacUserForm((prev) => ({
+                        setStudentForm((prev) => ({
                           ...prev,
                           diagnosis: e.target.value,
                         }))
@@ -3419,20 +3419,20 @@ Generated by CommuniAACte`;
                 <div className="flex gap-2 mt-4">
                   <Button
                     onClick={
-                      editingAacUser ? handleUpdateAacUser : handleCreateAacUser
+                      editingStudent ? handleUpdateStudent : handleCreateStudent
                     }
                     disabled={
-                      createAacUserMutation.isPending ||
-                      updateAacUserMutation.isPending
+                      createStudentMutation.isPending ||
+                      updateStudentMutation.isPending
                     }
                     className="flex items-center gap-2"
                   >
-                    {editingAacUser ? (
+                    {editingStudent ? (
                       <Edit className="w-4 h-4" />
                     ) : (
                       <Plus className="w-4 h-4" />
                     )}
-                    {editingAacUser
+                    {editingStudent
                       ? language === "he"
                         ? "עדכן"
                         : "Update"
@@ -3440,7 +3440,7 @@ Generated by CommuniAACte`;
                         ? "הוסף"
                         : "Add"}
                   </Button>
-                  {editingAacUser && (
+                  {editingStudent && (
                     <Button variant="outline" onClick={handleCancelEdit}>
                       {language === "he" ? "בטל" : "Cancel"}
                     </Button>
@@ -3450,34 +3450,34 @@ Generated by CommuniAACte`;
 
               {/* Existing AAC Users List */}
               <div className="space-y-2">
-                {aacUsersLoading ? (
+                {studentsLoading ? (
                   <div className="flex items-center justify-center py-8">
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
                   </div>
-                ) : aacUsersData?.aacUsers?.length > 0 ? (
-                  aacUsersData.aacUsers.map((aacUser: any) => (
+                ) : studentsData?.students?.length > 0 ? (
+                  studentsData.students.map((student: any) => (
                     <div
-                      key={aacUser.id}
+                      key={student.id}
                       className="border border-border rounded-lg p-3 flex justify-between items-start"
                     >
                       <div className="space-y-1">
-                        <h4 className="font-medium">{aacUser.alias}</h4>
+                        <h4 className="font-medium">{student.alias}</h4>
                         <div className="text-sm text-muted-foreground space-y-1">
-                          {aacUser.gender && (
+                          {student.gender && (
                             <p>
                               {language === "he" ? "מגדר" : "Gender"}:{" "}
-                              {aacUser.gender}
+                              {student.gender}
                             </p>
                           )}
-                          {aacUser.age && (
+                          {student.age && (
                             <p>
-                              {language === "he" ? "גיל" : "Age"}: {aacUser.age}
+                              {language === "he" ? "גיל" : "Age"}: {student.age}
                             </p>
                           )}
-                          {aacUser.diagnosis && (
+                          {student.diagnosis && (
                             <p>
                               {language === "he" ? "אבחנה" : "Condition"}:{" "}
-                              {aacUser.diagnosis}
+                              {student.diagnosis}
                             </p>
                           )}
                         </div>
@@ -3487,9 +3487,9 @@ Generated by CommuniAACte`;
                           variant="outline"
                           size="sm"
                           onClick={() => {
-                            setScheduleAacUser({
-                              aacUserId: aacUser.aacUserId,
-                              alias: aacUser.alias,
+                            setScheduleStudent({
+                              studentId: student.studentId,
+                              alias: student.alias,
                             });
                             setScheduleManagerOpen(true);
                           }}
@@ -3499,14 +3499,14 @@ Generated by CommuniAACte`;
                               ? "נהל לוח זמנים"
                               : "Manage Schedule"
                           }
-                          data-testid={`button-manage-schedule-${aacUser.id}`}
+                          data-testid={`button-manage-schedule-${student.id}`}
                         >
                           <Calendar className="w-4 h-4" />
                         </Button>
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleEditAacUser(aacUser)}
+                          onClick={() => handleEditStudent(student)}
                           className="p-2"
                         >
                           <Edit className="w-4 h-4" />
@@ -3515,9 +3515,9 @@ Generated by CommuniAACte`;
                           variant="destructive"
                           size="sm"
                           onClick={() =>
-                            deleteAacUserMutation.mutate(aacUser.id)
+                            deleteStudentMutation.mutate(student.id)
                           }
-                          disabled={deleteAacUserMutation.isPending}
+                          disabled={deleteStudentMutation.isPending}
                           className="p-2"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -3579,7 +3579,7 @@ Generated by CommuniAACte`;
                     >
                       <FormField
                         control={createInviteForm.control}
-                        name="aacUserId"
+                        name="studentId"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>
@@ -3591,12 +3591,12 @@ Generated by CommuniAACte`;
                               onValueChange={field.onChange}
                               value={field.value}
                               disabled={
-                                aacUsersLoading ||
+                                studentsLoading ||
                                 createInviteCodeMutation.isPending
                               }
                             >
                               <FormControl>
-                                <SelectTrigger data-testid="select-aac-user-for-invite">
+                                <SelectTrigger data-testid="select-student-for-invite">
                                   <SelectValue
                                     placeholder={
                                       language === "he"
@@ -3607,31 +3607,31 @@ Generated by CommuniAACte`;
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent>
-                                {aacUsersLoading ? (
+                                {studentsLoading ? (
                                   <SelectItem value="loading" disabled>
                                     {t("ui.loading")}
                                   </SelectItem>
-                                ) : aacUsersData?.aacUsers?.length > 0 ? (
-                                  aacUsersData.aacUsers
+                                ) : studentsData?.students?.length > 0 ? (
+                                  studentsData.students
                                     .filter(
-                                      (aacUser: any) =>
-                                        aacUser.aacUserId &&
-                                        String(aacUser.aacUserId).trim() !== "",
+                                      (student: any) =>
+                                        student.studentId &&
+                                        String(student.studentId).trim() !== "",
                                     )
-                                    .map((aacUser: any) => (
+                                    .map((student: any) => (
                                       <SelectItem
-                                        key={aacUser.aacUserId}
-                                        value={String(aacUser.aacUserId)}
+                                        key={student.studentId}
+                                        value={String(student.studentId)}
                                       >
-                                        {aacUser.alias}
-                                        {aacUser.age && ` (${aacUser.age})`}
-                                        {aacUser.gender &&
-                                          ` - ${aacUser.gender}`}
+                                        {student.alias}
+                                        {student.age && ` (${student.age})`}
+                                        {student.gender &&
+                                          ` - ${student.gender}`}
                                       </SelectItem>
                                     ))
                                 ) : (
                                   <SelectItem value="no-users" disabled>
-                                    {t("ui.noAacUsers")}
+                                    {t("ui.noStudents")}
                                   </SelectItem>
                                 )}
                               </SelectContent>
@@ -3645,8 +3645,8 @@ Generated by CommuniAACte`;
                         type="submit"
                         disabled={
                           createInviteCodeMutation.isPending ||
-                          aacUsersLoading ||
-                          !createInviteForm.watch("aacUserId")
+                          studentsLoading ||
+                          !createInviteForm.watch("studentId")
                         }
                         className="flex items-center gap-2"
                         data-testid="button-create-invite-code"
@@ -3838,7 +3838,7 @@ Generated by CommuniAACte`;
                                     className="text-sm font-medium"
                                     data-testid={`invite-code-alias-${inviteCode.id}`}
                                   >
-                                    {inviteCode.aacUserAlias}
+                                    {inviteCode.studentName}
                                   </span>
                                 </div>
                                 <div
@@ -4568,10 +4568,10 @@ Generated by CommuniAACte`;
       </Dialog>
 
       {/* Schedule Manager Dialog */}
-      {scheduleAacUser && (
+      {scheduleStudent && (
         <ScheduleManager
-          aacUserId={scheduleAacUser.aacUserId}
-          aacUserAlias={scheduleAacUser.alias}
+          studentId={scheduleStudent.studentId}
+          studentName={scheduleStudent.alias}
           open={scheduleManagerOpen}
           onOpenChange={setScheduleManagerOpen}
         />

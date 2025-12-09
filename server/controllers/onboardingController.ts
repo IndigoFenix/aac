@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
-import { userRepository, aacUserRepository } from "../repositories";
-import { inviteCodeService, aacUserService } from "../services";
-import { insertAacUserScheduleSchema } from "@shared/schema";
+import { userRepository, studentRepository } from "../repositories";
+import { inviteCodeService, studentService } from "../services";
+import { insertStudentScheduleSchema } from "@shared/schema";
 
 export class OnboardingController {
   /**
@@ -54,7 +54,7 @@ export class OnboardingController {
 
       // Create AAC user profile with link to the current user
       console.log("Onboarding Step 1 - Creating AAC user...");
-      const { aacUser, link } = await aacUserService.createAacUserWithLink(
+      const { student, link } = await studentService.createStudentWithLink(
         { ...req.body },
         currentUser.id,
         "owner" // The creating user is the owner
@@ -62,7 +62,7 @@ export class OnboardingController {
       
       console.log(
         "Onboarding Step 1 - AAC user created successfully:",
-        aacUser.id
+        student.id
       );
 
       // Update user's onboarding step to 1
@@ -70,13 +70,13 @@ export class OnboardingController {
       console.log("Onboarding Step 1 - Onboarding step updated to 1");
 
       // Include calculated age in response for backwards compatibility
-      const age = aacUserService.calculateAge(aacUser.birthDate);
+      const age = studentService.calculateAge(student.birthDate);
 
       res.json({
         success: true,
         message: "AAC user profile created successfully",
-        aacUser: {
-          ...aacUser,
+        student: {
+          ...student,
           age, // Calculated from birthDate for backwards compatibility
         },
         link,
@@ -107,11 +107,11 @@ export class OnboardingController {
       const scheduleData = req.body;
 
       // Validate schedule data
-      const validatedData = insertAacUserScheduleSchema.parse(scheduleData);
+      const validatedData = insertStudentScheduleSchema.parse(scheduleData);
 
       // Verify the user has access to this AAC user
-      const { hasAccess } = await aacUserService.verifyAacUserAccess(
-        validatedData.aacUserId,
+      const { hasAccess } = await studentService.verifyStudentAccess(
+        validatedData.studentId,
         currentUser.id
       );
 
@@ -124,7 +124,7 @@ export class OnboardingController {
       }
 
       // Create schedule entry
-      const schedule = await aacUserService.createScheduleEntry(validatedData);
+      const schedule = await studentService.createScheduleEntry(validatedData);
 
       // Update user's onboarding step to 3 (complete)
       await userRepository.updateUserOnboardingStep(currentUser.id, 3);
@@ -199,15 +199,15 @@ export class OnboardingController {
       console.log("Onboarding - Code redeemed successfully, onboarding completed");
 
       // Include calculated age for backwards compatibility
-      const aacUserWithAge = result.aacUser ? {
-        ...result.aacUser,
-        age: aacUserService.calculateAge(result.aacUser.birthDate),
+      const studentWithAge = result.student ? {
+        ...result.student,
+        age: studentService.calculateAge(result.student.birthDate),
       } : undefined;
 
       res.json({
         success: true,
         message: "Invite code redeemed successfully. Onboarding complete!",
-        aacUser: aacUserWithAge,
+        student: studentWithAge,
         link: result.link,
         onboardingStep: 3,
       });

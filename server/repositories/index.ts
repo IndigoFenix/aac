@@ -1,5 +1,5 @@
 export { userRepository, UserRepository } from "./userRepository";
-export { aacUserRepository, AacUserRepository } from "./aacUserRepository";
+export { studentRepository, StudentRepository } from "./studentRepository";
 export { interpretationRepository, InterpretationRepository } from "./interpretationRepository";
 export { creditRepository, CreditRepository } from "./creditRepository";
 export { inviteCodeRepository, InviteCodeRepository } from "./inviteCodeRepository";

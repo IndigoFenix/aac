@@ -126,7 +126,7 @@ export function CommuniAACteFeature() {
   const [showContextDialog, setShowContextDialog] = useState(false);
   const [showImageMenu, setShowImageMenu] = useState(false);
   const [contextInfo, setContextInfo] = useState({
-    selectedAacUserId: "" as string, // Mandatory AAC user selection
+    selectedStudentId: "" as string, // Mandatory AAC user selection
     location: "",
     locationOption: "" as string, // 'בית', 'בית ספר', 'גן', 'נסיעה', 'custom', or ''
     locationAlias: "" as string, // User-defined alias for GPS locations
@@ -207,7 +207,7 @@ export function CommuniAACteFeature() {
   // Schedule manager state
   const [scheduleManagerOpen, setScheduleManagerOpen] = useState(false);
   const [scheduleAacUser, setScheduleAacUser] = useState<{
-    aacUserId: string;
+    studentId: string;
     name: string;
   } | null>(null);
 
@@ -215,7 +215,7 @@ export function CommuniAACteFeature() {
   const createInviteForm = useForm<InsertInviteCode>({
     resolver: zodResolver(insertInviteCodeSchema),
     defaultValues: {
-      aacUserId: undefined,
+      studentId: undefined,
       redemptionLimit: 1,
       expiresAt: null,
       isActive: true,
@@ -289,10 +289,10 @@ export function CommuniAACteFeature() {
 
   // Function to fetch historical suggestions
   const fetchHistoricalSuggestions = async (
-    aacUserId: string,
+    studentId: string,
     currentInput: string,
   ) => {
-    if (!aacUserId || !currentInput.trim() || currentInput.length < 2) {
+    if (!studentId || !currentInput.trim() || currentInput.length < 2) {
       setHistoricalSuggestions([]);
       setShowHistoricalSuggestions(false);
       return;
@@ -301,7 +301,7 @@ export function CommuniAACteFeature() {
     setLoadingHistoricalSuggestions(true);
     try {
       const res = await apiRequest("POST", "/api/historical-suggestions", {
-        aacUserId,
+        studentId,
         currentInput: currentInput.trim(),
       });
       const data = await res.json();
@@ -325,8 +325,8 @@ export function CommuniAACteFeature() {
   // Debounced effect to fetch historical suggestions when user types
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      if (contextInfo.selectedAacUserId && inputText.trim().length >= 2) {
-        fetchHistoricalSuggestions(contextInfo.selectedAacUserId, inputText);
+      if (contextInfo.selectedStudentId && inputText.trim().length >= 2) {
+        fetchHistoricalSuggestions(contextInfo.selectedStudentId, inputText);
       } else {
         setHistoricalSuggestions([]);
         setShowHistoricalSuggestions(false);
@@ -334,7 +334,7 @@ export function CommuniAACteFeature() {
     }, 500); // 500ms debounce
 
     return () => clearTimeout(timeoutId);
-  }, [inputText, contextInfo.selectedAacUserId]);
+  }, [inputText, contextInfo.selectedStudentId]);
 
   // Function to handle suggestion selection
   const handleSuggestionSelect = (suggestion: any) => {
@@ -404,11 +404,11 @@ export function CommuniAACteFeature() {
       formData.append("language", language);
 
       // Add context data to FormData
-      if (context.aacUserId) {
-        formData.append("aacUserId", context.aacUserId);
+      if (context.studentId) {
+        formData.append("studentId", context.studentId);
       }
-      if (context.aacUserName) {
-        formData.append("aacUserName", context.aacUserName);
+      if (context.studentName) {
+        formData.append("studentName", context.studentName);
       }
       if (context.timeContext) {
         formData.append("timeContext", context.timeContext);
@@ -674,7 +674,7 @@ export function CommuniAACteFeature() {
       redeemInviteForm.reset();
       toast({
         title: t("toast.inviteRedeemed"),
-        description: `${t("label.aacUser")} "${data.aacUserName}" ${language === "he" ? "נוסף בהצלחה" : "has been added successfully"}`,
+        description: `${t("label.aacUser")} "${data.studentName}" ${language === "he" ? "נוסף בהצלחה" : "has been added successfully"}`,
       });
     },
     onError: (error: any) => {
@@ -837,8 +837,8 @@ export function CommuniAACteFeature() {
   const handleContextSubmit = async () => {
     // Validate that an AAC user is selected
     if (
-      !contextInfo.selectedAacUserId ||
-      contextInfo.selectedAacUserId.trim() === ""
+      !contextInfo.selectedStudentId ||
+      contextInfo.selectedStudentId.trim() === ""
     ) {
       toast({
         variant: "destructive",
@@ -887,7 +887,7 @@ export function CommuniAACteFeature() {
     // Get selected AAC user information
     const selectedAacUser = aacUsersData?.aacUsers?.find(
       (user: any) =>
-        String(user.aacUserId) === String(finalContext.selectedAacUserId),
+        String(user.studentId) === String(finalContext.selectedStudentId),
     );
 
     // Create context string to append to interpretation
@@ -933,8 +933,8 @@ export function CommuniAACteFeature() {
         input: contextualInput,
         inputType: "text",
         language,
-        aacUserId: selectedAacUser?.id || null,
-        aacUserName: selectedAacUser?.name || null,
+        studentId: selectedAacUser?.id || null,
+        studentName: selectedAacUser?.name || null,
         timeContext: finalContext.timeContext || null,
         location: finalContext.location || null,
         background: finalContext.background || null,
@@ -961,8 +961,8 @@ export function CommuniAACteFeature() {
       // Create context object for image interpretation
       const imageContext = {
         input: imageInput,
-        aacUserId: selectedAacUser?.id || null,
-        aacUserName: selectedAacUser?.name || null,
+        studentId: selectedAacUser?.id || null,
+        studentName: selectedAacUser?.name || null,
         timeContext: finalContext.timeContext || null,
         location: finalContext.location || null,
         background: finalContext.background || null,
@@ -980,7 +980,7 @@ export function CommuniAACteFeature() {
     setShowContextDialog(false);
     setPendingInterpretation(null);
     setContextInfo({
-      selectedAacUserId: "",
+      selectedStudentId: "",
       location: "",
       locationOption: "",
       locationAlias: "",
@@ -1678,7 +1678,7 @@ Generated by CommuniAACte`;
 
                 {/* Historical Suggestions */}
                 {(showHistoricalSuggestions || loadingHistoricalSuggestions) &&
-                  contextInfo.selectedAacUserId &&
+                  contextInfo.selectedStudentId &&
                   inputText.trim().length >= 2 && (
                     <div className="mt-2 border border-primary/20 rounded-lg bg-primary/5 p-3">
                       <div className="flex items-center gap-2 mb-2">
@@ -2021,10 +2021,10 @@ Generated by CommuniAACte`;
                                   )}`;
                                 })()}
                               </Badge>
-                              {interpretation.aacUserName && (
+                              {interpretation.studentName && (
                                 <Badge variant="outline" className="text-xs">
                                   {language === "he" ? "עבור" : "For"}:{" "}
-                                  {interpretation.aacUserName}
+                                  {interpretation.studentName}
                                 </Badge>
                               )}
                             </div>
@@ -2200,10 +2200,10 @@ Generated by CommuniAACte`;
                       )}`;
                     })()}
                   </span>
-                  {selectedImageInterpretation.aacUserName && (
+                  {selectedImageInterpretation.studentName && (
                     <span>
                       {language === "he" ? "עבור" : "For"}:{" "}
-                      {selectedImageInterpretation.aacUserName}
+                      {selectedImageInterpretation.studentName}
                     </span>
                   )}
                 </div>
@@ -2297,11 +2297,11 @@ Generated by CommuniAACte`;
                 <span className="text-red-500">*</span>
               </Label>
               <Select
-                value={contextInfo.selectedAacUserId}
+                value={contextInfo.selectedStudentId}
                 onValueChange={(value) =>
                   setContextInfo((prev) => ({
                     ...prev,
-                    selectedAacUserId: value,
+                    selectedStudentId: value,
                   }))
                 }
                 required
@@ -2327,13 +2327,13 @@ Generated by CommuniAACte`;
                     aacUsersData.aacUsers
                       .filter(
                         (aacUser: any) =>
-                          aacUser.aacUserId &&
-                          String(aacUser.aacUserId).trim() !== "",
+                          aacUser.studentId &&
+                          String(aacUser.studentId).trim() !== "",
                       )
                       .map((aacUser: any) => (
                         <SelectItem
-                          key={aacUser.aacUserId}
-                          value={String(aacUser.aacUserId)}
+                          key={aacUser.studentId}
+                          value={String(aacUser.studentId)}
                         >
                           <div className="flex flex-col">
                             <span className="font-medium">{aacUser.name}</span>
@@ -2361,7 +2361,7 @@ Generated by CommuniAACte`;
                   )}
                 </SelectContent>
               </Select>
-              {!contextInfo.selectedAacUserId && (
+              {!contextInfo.selectedStudentId && (
                 <p className="text-sm text-orange-700">
                   {language === "he"
                     ? 'חובה לבחור משתמש תת"ח לפני המשך הפרשנות'
@@ -3016,7 +3016,7 @@ Generated by CommuniAACte`;
                           size="sm"
                           onClick={() => {
                             setScheduleAacUser({
-                              aacUserId: aacUser.aacUserId,
+                              studentId: aacUser.studentId,
                               name: aacUser.name,
                             });
                             setScheduleManagerOpen(true);
@@ -3107,7 +3107,7 @@ Generated by CommuniAACte`;
                     >
                       <FormField
                         control={createInviteForm.control}
-                        name="aacUserId"
+                        name="studentId"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>
@@ -3143,13 +3143,13 @@ Generated by CommuniAACte`;
                                   aacUsersData.aacUsers
                                     .filter(
                                       (aacUser: any) =>
-                                        aacUser.aacUserId &&
-                                        String(aacUser.aacUserId).trim() !== "",
+                                        aacUser.studentId &&
+                                        String(aacUser.studentId).trim() !== "",
                                     )
                                     .map((aacUser: any) => (
                                       <SelectItem
-                                        key={aacUser.aacUserId}
-                                        value={String(aacUser.aacUserId)}
+                                        key={aacUser.studentId}
+                                        value={String(aacUser.studentId)}
                                       >
                                         {aacUser.name}
                                         {aacUser.age && ` (${aacUser.age})`}
@@ -3174,7 +3174,7 @@ Generated by CommuniAACte`;
                         disabled={
                           createInviteCodeMutation.isPending ||
                           aacUsersLoading ||
-                          !createInviteForm.watch("aacUserId")
+                          !createInviteForm.watch("studentId")
                         }
                         className="flex items-center gap-2"
                         data-testid="button-create-invite-code"
@@ -3366,7 +3366,7 @@ Generated by CommuniAACte`;
                                     className="text-sm font-medium"
                                     data-testid={`invite-code-alias-${inviteCode.id}`}
                                   >
-                                    {inviteCode.aacUserName}
+                                    {inviteCode.studentName}
                                   </span>
                                 </div>
                                 <div

@@ -25,6 +25,7 @@ export interface FeatureConfig {
   maxSize: number;          // Maximum panel width percentage
   hasBottomBar?: boolean;   // Whether to show a bottom bar below chat
   isFullScreen?: boolean;   // Whether the feature forces chat to popup mode
+  isFullChat?: boolean;     // Whether chat takes full width when this feature is active
 }
 
 // Feature configurations
@@ -35,6 +36,7 @@ export const FEATURE_CONFIG: Record<FeatureType, FeatureConfig> = {
     minSize: 0,
     maxSize: 0,
     isFullScreen: false,
+    isFullChat: true,
   },
   interpret: {
     id: 'interpret',
@@ -177,6 +179,11 @@ export function FeaturePanelProvider({ children }: { children: ReactNode }) {
     return FEATURE_CONFIG[activeFeature]?.isFullScreen || false;
   }, [activeFeature]);
 
+  const isFullChatFeature = useMemo(() => {
+    if (!activeFeature) return false;
+    return FEATURE_CONFIG[activeFeature]?.isFullChat || false;
+  }, [activeFeature]);
+
   // Set chat mode with validation
   const setChatMode = useCallback((mode: ChatMode) => {
     // If in full-screen feature, only allow popup or minimized
@@ -211,6 +218,10 @@ export function FeaturePanelProvider({ children }: { children: ReactNode }) {
     // If switching to a full-screen feature, force chat to popup mode
     if (config.isFullScreen) {
       setChatModeState(prev => prev === 'expanded' ? 'popup' : prev);
+    }
+
+    if (config.isFullChat) {
+      setChatModeState('expanded');
     }
     
     // For panel-based features, open the panel

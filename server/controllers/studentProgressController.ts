@@ -7,7 +7,7 @@
 
 import type { Request, Response } from "express";
 import { studentProgressService } from "../services/studentProgressService";
-import { aacUserService } from "../services/aacUserService";
+import { studentService } from "../services/studentService";
 import {
   insertStudentPhaseSchema,
   updateStudentPhaseSchema,
@@ -39,12 +39,12 @@ export class StudentProgressController {
       );
 
       // Get AAC users to enrich deadline data
-      const aacUsers = await aacUserService.getAacUsersByUserId(currentUser.id);
-      const aacUserMap = new Map(aacUsers.map(u => [u.id, u]));
+      const students = await studentService.getStudentsByUserId(currentUser.id);
+      const studentMap = new Map(students.map(u => [u.id, u]));
 
       const enrichedDeadlines = upcomingDeadlines.map(d => ({
         ...d,
-        studentName: aacUserMap.get(d.aacUserId)?.name || 'Unknown',
+        studentName: studentMap.get(d.studentId)?.name || 'Unknown',
       }));
 
       res.json({
@@ -68,17 +68,17 @@ export class StudentProgressController {
       const currentUser = req.user as any;
       
       // Get all AAC users for this user
-      const aacUsersWithLinks = await aacUserService.getAacUsersWithLinksByUserId(currentUser.id);
+      const studentsWithLinks = await studentService.getStudentsWithLinksByUserId(currentUser.id);
       
       // Enrich with progress data
       const studentsWithProgress = await Promise.all(
-        aacUsersWithLinks.map(async ({ aacUser, link }) => {
-          const progress = await studentProgressService.getFullStudentProgress(aacUser.id);
+        studentsWithLinks.map(async ({ student, link }) => {
+          const progress = await studentProgressService.getFullStudentProgress(student.id);
           const currentPhase = progress.phases.find(p => p.status === 'in-progress');
           
           return {
-            ...aacUser,
-            age: aacUserService.calculateAge(aacUser.birthDate),
+            ...student,
+            age: studentService.calculateAge(student.birthDate),
             role: link.role,
             linkId: link.id,
             progress: progress.overallProgress,
@@ -108,27 +108,27 @@ export class StudentProgressController {
   async getStudentProgress(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const aacUserId = req.params.id;
+      const studentId = req.params.id;
 
       // Verify access
-      const { hasAccess } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied to this student" });
         return;
       }
 
-      const aacUser = await aacUserService.getAacUserWithAge(aacUserId);
-      if (!aacUser) {
+      const student = await studentService.getStudentWithAge(studentId);
+      if (!student) {
         res.status(404).json({ success: false, message: "Student not found" });
         return;
       }
 
-      const progress = await studentProgressService.getFullStudentProgress(aacUserId);
-      const baselineMetrics = await studentProgressService.getBaselineMetrics(aacUserId);
+      const progress = await studentProgressService.getFullStudentProgress(studentId);
+      const baselineMetrics = await studentProgressService.getBaselineMetrics(studentId);
 
       res.json({
         success: true,
-        student: aacUser,
+        student: student,
         progress,
         baselineMetrics,
       });
@@ -145,18 +145,18 @@ export class StudentProgressController {
   async initializeProgress(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const aacUserId = req.params.id;
+      const studentId = req.params.id;
       const { systemType = 'tala' } = req.body;
 
       // Verify access
-      const { hasAccess } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied to this student" });
         return;
       }
 
-      const phases = await studentProgressService.initializeStudentPhases(aacUserId, systemType);
-      const complianceItems = await studentProgressService.initializeComplianceChecklist(aacUserId);
+      const phases = await studentProgressService.initializeStudentPhases(studentId, systemType);
+      const complianceItems = await studentProgressService.initializeComplianceChecklist(studentId);
 
       res.json({
         success: true,
@@ -181,15 +181,15 @@ export class StudentProgressController {
   async getPhases(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const aacUserId = req.params.id;
+      const studentId = req.params.id;
 
-      const { hasAccess } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied" });
         return;
       }
 
-      const phases = await studentProgressService.getPhases(aacUserId);
+      const phases = await studentProgressService.getPhases(studentId);
       res.json({ success: true, phases });
     } catch (error: any) {
       console.error("Error fetching phases:", error);
@@ -232,15 +232,15 @@ export class StudentProgressController {
   async advancePhase(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const aacUserId = req.params.id;
+      const studentId = req.params.id;
 
-      const { hasAccess } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied" });
         return;
       }
 
-      const nextPhase = await studentProgressService.advanceToNextPhase(aacUserId);
+      const nextPhase = await studentProgressService.advanceToNextPhase(studentId);
       
       if (!nextPhase) {
         res.status(400).json({ success: false, message: "Cannot advance phase - already at final phase or no active phase" });
@@ -265,15 +265,15 @@ export class StudentProgressController {
   async getGoals(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const aacUserId = req.params.id;
+      const studentId = req.params.id;
 
-      const { hasAccess } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied" });
         return;
       }
 
-      const goals = await studentProgressService.getGoals(aacUserId);
+      const goals = await studentProgressService.getGoals(studentId);
       res.json({ success: true, goals });
     } catch (error: any) {
       console.error("Error fetching goals:", error);
@@ -288,9 +288,9 @@ export class StudentProgressController {
   async createGoal(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const aacUserId = req.params.id;
+      const studentId = req.params.id;
 
-      const { hasAccess } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied" });
         return;
@@ -298,7 +298,7 @@ export class StudentProgressController {
 
       const validatedData = insertStudentGoalSchema.parse({
         ...req.body,
-        aacUserId,
+        studentId,
       });
 
       const goal = await studentProgressService.createGoal(validatedData);
@@ -370,7 +370,7 @@ export class StudentProgressController {
       const { studentName } = req.body;
 
       // Get the goal
-      const goals = await studentProgressService.getGoals(req.body.aacUserId);
+      const goals = await studentProgressService.getGoals(req.body.studentId);
       const goal = goals.find(g => g.id === goalId);
 
       if (!goal) {
@@ -401,16 +401,16 @@ export class StudentProgressController {
   async getProgressEntries(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const aacUserId = req.params.id;
+      const studentId = req.params.id;
       const limit = parseInt(req.query.limit as string) || 50;
 
-      const { hasAccess } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied" });
         return;
       }
 
-      const entries = await studentProgressService.getProgressHistory(aacUserId, limit);
+      const entries = await studentProgressService.getProgressHistory(studentId, limit);
       res.json({ success: true, entries });
     } catch (error: any) {
       console.error("Error fetching progress entries:", error);
@@ -425,9 +425,9 @@ export class StudentProgressController {
   async createProgressEntry(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const aacUserId = req.params.id;
+      const studentId = req.params.id;
 
-      const { hasAccess } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied" });
         return;
@@ -435,7 +435,7 @@ export class StudentProgressController {
 
       const validatedData = insertProgressEntrySchema.parse({
         ...req.body,
-        aacUserId,
+        studentId,
         recordedBy: currentUser.id,
       });
 
@@ -462,16 +462,16 @@ export class StudentProgressController {
   async getComplianceItems(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const aacUserId = req.params.id;
+      const studentId = req.params.id;
 
-      const { hasAccess } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied" });
         return;
       }
 
-      const items = await studentProgressService.getComplianceItems(aacUserId);
-      const percentage = await studentProgressService.calculateCompliancePercentage(aacUserId);
+      const items = await studentProgressService.getComplianceItems(studentId);
+      const percentage = await studentProgressService.calculateCompliancePercentage(studentId);
 
       res.json({ success: true, items, compliancePercentage: percentage });
     } catch (error: any) {
@@ -519,15 +519,15 @@ export class StudentProgressController {
   async getServiceRecommendations(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const aacUserId = req.params.id;
+      const studentId = req.params.id;
 
-      const { hasAccess } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied" });
         return;
       }
 
-      const services = await studentProgressService.getServiceRecommendations(aacUserId);
+      const services = await studentProgressService.getServiceRecommendations(studentId);
       res.json({ success: true, services });
     } catch (error: any) {
       console.error("Error fetching service recommendations:", error);
@@ -542,9 +542,9 @@ export class StudentProgressController {
   async createServiceRecommendation(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const aacUserId = req.params.id;
+      const studentId = req.params.id;
 
-      const { hasAccess } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied" });
         return;
@@ -552,7 +552,7 @@ export class StudentProgressController {
 
       const validatedData = insertServiceRecommendationSchema.parse({
         ...req.body,
-        aacUserId,
+        studentId,
       });
 
       const service = await studentProgressService.addServiceRecommendation(validatedData);
@@ -625,15 +625,15 @@ export class StudentProgressController {
   async getBaselineMetrics(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const aacUserId = req.params.id;
+      const studentId = req.params.id;
 
-      const { hasAccess } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied" });
         return;
       }
 
-      const metrics = await studentProgressService.getBaselineMetrics(aacUserId);
+      const metrics = await studentProgressService.getBaselineMetrics(studentId);
       res.json({ success: true, metrics });
     } catch (error: any) {
       console.error("Error fetching baseline metrics:", error);
@@ -648,9 +648,9 @@ export class StudentProgressController {
   async recordBaselineMetrics(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const aacUserId = req.params.id;
+      const studentId = req.params.id;
 
-      const { hasAccess } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied" });
         return;
@@ -663,7 +663,7 @@ export class StudentProgressController {
       }
 
       const entry = await studentProgressService.recordBaselineMetrics(
-        aacUserId, 
+        studentId, 
         metrics, 
         currentUser.id
       );

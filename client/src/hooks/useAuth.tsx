@@ -89,7 +89,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } finally {
       // Clear sensitive cached data to prevent cross-user exposure
       queryClient.removeQueries({ queryKey: ['/api/interpretations'] });
-      queryClient.removeQueries({ queryKey: ['/api/aac-users'] });
+      queryClient.removeQueries({ queryKey: ['/api/students'] });
   
       // Also clear the currently selected AAC user
       if (typeof window !== 'undefined') {

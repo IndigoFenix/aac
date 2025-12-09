@@ -3,6 +3,22 @@ import { createInsertSchema } from "drizzle-zod";
 import { sql, relations } from "drizzle-orm";
 import { z } from "zod";
 
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+export const apiTypeEnum = pgEnum("api_type", [
+  "llm", "tts", "stt", "embedding", "image", "vector", "moderation", "tool", "other"
+]);
+
+export const chatSessionStatusEnum = pgEnum("chat_session_status", ["open", "paused", "closed"]);
+
+export const instituteTypeEnum = pgEnum("institute_type", ["school", "hospital"]);
+
+// =============================================================================
+// CORE USER MANAGEMENT TABLES
+// =============================================================================
+
 // Session storage table for admin authentication
 export const sessions = pgTable(
   "sessions",
@@ -73,6 +89,289 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
   isUsed: boolean("is_used").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// =============================================================================
+// INSTITUTE MANAGEMENT TABLES
+// =============================================================================
+
+// Institutes table - Schools or Hospitals that can own licenses
+export const institutes = pgTable("institutes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  type: instituteTypeEnum("type").notNull(), // 'school' or 'hospital'
+  description: text("description"),
+  address: text("address"),
+  phone: text("phone"),
+  email: text("email"),
+  website: text("website"),
+  logoUrl: text("logo_url"),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_institutes_type").on(table.type),
+  index("idx_institutes_is_active").on(table.isActive),
+]);
+
+// Junction table for many-to-many relationship between Users and Institutes
+export const instituteUsers = pgTable("institute_users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  instituteId: varchar("institute_id").references(() => institutes.id).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  isAdmin: boolean("is_admin").default(false).notNull(), // Whether user is an admin of this institute
+  role: text("role").default("staff"), // 'staff', 'therapist', 'teacher', etc.
+  data: jsonb("data").default({}), // Private data for this relationship
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_institute_users_institute_id").on(table.instituteId),
+  index("idx_institute_users_user_id").on(table.userId),
+]);
+
+// =============================================================================
+// LICENSE MANAGEMENT TABLES
+// =============================================================================
+
+// Licenses table - Responsible for payments, can be owned by institute or private user
+export const licenses = pgTable("licenses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Ownership - if instituteId is null and userId exists, it's a private license
+  instituteId: varchar("institute_id").references(() => institutes.id), // Optional - institute that owns this license
+  userId: varchar("user_id").references(() => users.id), // Optional - user assigned to this license
+  
+  // License details
+  name: text("name"), // Optional friendly name for the license
+  licenseType: text("license_type").notNull().default("standard"), // 'standard', 'premium', 'enterprise'
+  
+  // Payment & subscription info
+  subscriptionType: text("subscription_type").default("free"), // 'free', 'monthly', 'yearly'
+  subscriptionExpiresAt: timestamp("subscription_expires_at"),
+  credits: integer("credits").default(0).notNull(),
+  
+  // Stripe/payment integration
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  
+  // Status
+  isActive: boolean("is_active").default(true).notNull(),
+  activatedAt: timestamp("activated_at"),
+  suspendedAt: timestamp("suspended_at"),
+  suspensionReason: text("suspension_reason"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_licenses_institute_id").on(table.instituteId),
+  index("idx_licenses_user_id").on(table.userId),
+  index("idx_licenses_is_active").on(table.isActive),
+]);
+
+// =============================================================================
+// STUDENT MANAGEMENT TABLES
+// =============================================================================
+
+// Student profiles table
+export const students = pgTable("students", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(), // Human-readable name (was "alias")
+  gender: text("gender"), // 'male', 'female', 'other'
+  birthDate: date("birth_date"), // Date of birth (was "age" as integer)
+  diagnosis: text("diagnosis"), // Primary diagnosis
+  backgroundContext: text("background_context"), // Free text background information
+  systemType: text("system_type").default("tala"), // 'tala' | 'us_iep'
+  country: text("country").default("IL"), // 'IL', 'US', etc.
+  school: text("school"), // School name
+  grade: text("grade"), // Grade level
+  idNumber: text("id_number"), // Student ID number
+  
+  // Chat system fields
+  chatMemory: jsonb("chat_memory").default({}), // Student-specific memory values for chat
+  chatCreditsUsed: real("chat_credits_used").notNull().default(0),
+  chatCreditsUpdated: timestamp("chat_credits_updated").defaultNow(),
+
+  // Progress tracking fields
+  nextDeadline: date("next_deadline"), // Next deadline date
+  overallProgress: integer("overall_progress").default(0), // 0-100
+  currentPhase: text("current_phase"), // Current phase ID (e.g., 'p1', 'p2')
+  progressData: jsonb("progress_data").default({}), // Additional progress metadata
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Junction table for many-to-many relationship between Users and Students
+export const userStudents = pgTable("user_students", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  studentId: varchar("student_id").references(() => students.id).notNull(),
+  role: text("role").default("caregiver"), // 'owner', 'caregiver', 'therapist', etc.
+  data: jsonb("data").default({}), // Private data for this relationship
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  
+  // Chat system fields
+  chatMemory: jsonb("chat_memory").default({}), // Relationship-specific memory values for chat
+  chatCreditsUsed: real("chat_credits_used").notNull().default(0),
+  chatCreditsUpdated: timestamp("chat_credits_updated").defaultNow(),
+}, (table) => [
+  index("idx_user_students_user_id").on(table.userId),
+  index("idx_user_students_student_id").on(table.studentId),
+]);
+
+// Junction table for many-to-many relationship between Institutes and Students
+export const instituteStudents = pgTable("institute_students", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  instituteId: varchar("institute_id").references(() => institutes.id).notNull(),
+  studentId: varchar("student_id").references(() => students.id).notNull(),
+  enrollmentDate: date("enrollment_date"),
+  data: jsonb("data").default({}), // Private data for this relationship
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_institute_students_institute_id").on(table.instituteId),
+  index("idx_institute_students_student_id").on(table.studentId),
+]);
+
+// Student Schedules table for contextual schedule management
+export const studentSchedules = pgTable("student_schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").references(() => students.id).notNull(), // FK to Student's primary key
+  dayOfWeek: integer("day_of_week").notNull(), // 0=Sunday to 6=Saturday
+  startTime: text("start_time").notNull(), // Time format 'HH:MM'
+  endTime: text("end_time").notNull(), // Time format 'HH:MM'
+  activityName: text("activity_name").notNull(), // e.g., 'School', 'Hydrotherapy', 'Dinner'
+  topicTags: text("topic_tags").array(), // e.g., ['food', 'family', 'social'] - CRITICAL for AI prompt
+  isRepeatingWeekly: boolean("is_repeating_weekly").default(true).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  dateOverride: text("date_override"), // For holidays/one-off events, format 'YYYY-MM-DD'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Student Phases table - Tracks individual phase progress
+export const studentPhases = pgTable("student_phases", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").notNull(), // References students.id
+  phaseId: text("phase_id").notNull(), // 'p1', 'p2', 'p3', 'p4' or custom
+  phaseName: text("phase_name").notNull(), // Display name
+  phaseOrder: integer("phase_order").notNull().default(1), // Order in sequence
+  status: text("status").notNull().default("pending"), // 'pending', 'in-progress', 'completed', 'locked'
+  dueDate: date("due_date"),
+  completedAt: timestamp("completed_at"),
+  notes: text("notes"),
+  metadata: jsonb("metadata").default({}), // Additional phase data
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_student_phases_student_id").on(table.studentId),
+  index("idx_student_phases_status").on(table.status),
+]);
+
+// Student Goals table - Tracks IEP goals and objectives
+export const studentGoals = pgTable("student_goals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").notNull(), // References students.id
+  phaseId: varchar("phase_id"), // References studentPhases.id (optional)
+  title: text("title").notNull(),
+  description: text("description"),
+  goalType: text("goal_type").notNull().default("general"), // 'communication', 'behavioral', 'academic', 'general'
+  
+  // SMART Goal fields (for US IEP)
+  targetBehavior: text("target_behavior"), // Specific
+  criteria: text("criteria"), // Measurable
+  criteriaPercentage: integer("criteria_percentage"), // e.g., 80%
+  measurementMethod: text("measurement_method"), // e.g., 'SLP data collection'
+  conditions: text("conditions"), // Achievable/Opportunity context
+  relevance: text("relevance"), // Relevant curriculum impact
+  targetDate: date("target_date"), // Time-bound
+  
+  status: text("status").notNull().default("draft"), // 'draft', 'active', 'achieved', 'modified', 'discontinued'
+  progress: integer("progress").default(0), // 0-100
+  
+  // Baseline data for IEP
+  baselineData: jsonb("baseline_data").default({}), // MLU, communication rate, etc.
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_student_goals_student_id").on(table.studentId),
+  index("idx_student_goals_status").on(table.status),
+]);
+
+// Student Progress Entries - Tracks progress over time
+export const studentProgressEntries = pgTable("student_progress_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").notNull(),
+  goalId: varchar("goal_id"), // References studentGoals.id (optional)
+  phaseId: varchar("phase_id"), // References studentPhases.id (optional)
+  
+  entryType: text("entry_type").notNull(), // 'observation', 'assessment', 'milestone', 'note'
+  title: text("title").notNull(),
+  content: text("content"),
+  
+  // Quantitative metrics
+  metrics: jsonb("metrics").default({}), // e.g., { mlu: 3.2, communicationRate: 12, intelligibility: 0.75 }
+  
+  recordedBy: varchar("recorded_by"), // References users.id
+  recordedAt: timestamp("recorded_at").defaultNow().notNull(),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_progress_entries_student_id").on(table.studentId),
+  index("idx_progress_entries_recorded_at").on(table.recordedAt),
+]);
+
+// Student Compliance Checklist - For IEP compliance tracking
+export const studentComplianceItems = pgTable("student_compliance_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").notNull(),
+  phaseId: varchar("phase_id"), // References studentPhases.id (optional)
+  
+  itemKey: text("item_key").notNull(), // 'baseline_data', 'parent_input', 'gen_ed_consulted', etc.
+  itemLabel: text("item_label").notNull(),
+  isCompleted: boolean("is_completed").default(false).notNull(),
+  completedAt: timestamp("completed_at"),
+  completedBy: varchar("completed_by"), // References users.id
+  notes: text("notes"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_compliance_items_student_id").on(table.studentId),
+]);
+
+// Service Recommendations - For IEP service planning
+export const studentServiceRecommendations = pgTable("student_service_recommendations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").notNull(),
+  
+  serviceName: text("service_name").notNull(), // 'Speech-Language', 'Occupational Therapy', etc.
+  serviceType: text("service_type").notNull().default("direct"), // 'direct', 'consultation', 'monitoring'
+  durationMinutes: integer("duration_minutes").notNull(),
+  frequency: text("frequency").notNull(), // 'weekly', 'bi-weekly', 'monthly'
+  frequencyCount: integer("frequency_count").notNull().default(1), // Times per frequency period
+  
+  startDate: date("start_date"),
+  endDate: date("end_date"),
+  
+  provider: text("provider"), // Provider name
+  location: text("location"), // Service delivery location
+  
+  isActive: boolean("is_active").default(true).notNull(),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_service_recs_student_id").on(table.studentId),
+]);
+
+// =============================================================================
+// CREDITS & BILLING TABLES
+// =============================================================================
 
 // Credits transactions table for tracking credit usage
 export const creditTransactions = pgTable("credit_transactions", {
@@ -165,202 +464,11 @@ export const revenuecatProducts = pgTable("revenuecat_products", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// AAC User profiles table - now without userId (many-to-many relationship)
-// Removed: userId, aacUserId
-// Changed: alias -> name, age -> birthDate
-export const aacUsers = pgTable("aac_users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  name: text("name").notNull(), // Human-readable name (was "alias")
-  gender: text("gender"), // 'male', 'female', 'other'
-  birthDate: date("birth_date"), // Date of birth (was "age" as integer)
-  diagnosis: text("diagnosis"), // Primary diagnosis
-  backgroundContext: text("background_context"), // Free text background information
-  systemType: text("system_type").default("tala"), // 'tala' | 'us_iep'
-  country: text("country").default("IL"), // 'IL', 'US', etc.
-  school: text("school"), // School name
-  grade: text("grade"), // Grade level
-  idNumber: text("id_number"), // Student ID number
-  
-  // Chat system fields
-  chatMemory: jsonb("chat_memory").default({}), // AAC user-specific memory values for chat
-  chatCreditsUsed: real("chat_credits_used").notNull().default(0),
-  chatCreditsUpdated: timestamp("chat_credits_updated").defaultNow(),
-
-  // Progress tracking fields
-  nextDeadline: date("next_deadline"), // Next deadline date
-  overallProgress: integer("overall_progress").default(0), // 0-100
-  currentPhase: text("current_phase"), // Current phase ID (e.g., 'p1', 'p2')
-  progressData: jsonb("progress_data").default({}), // Additional progress metadata
-  isActive: boolean("is_active").default(true).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
-
-// Junction table for many-to-many relationship between Users and AAC Users
-export const userAacUsers = pgTable("user_aac_users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").references(() => users.id).notNull(),
-  aacUserId: varchar("aac_user_id").references(() => aacUsers.id).notNull(),
-  role: text("role").default("caregiver"), // 'owner', 'caregiver', 'therapist', etc.
-  isActive: boolean("is_active").default(true).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  
-  // Chat system fields
-  chatMemory: jsonb("chat_memory").default({}), // Relationship-specific memory values for chat
-  chatCreditsUsed: real("chat_credits_used").notNull().default(0),
-  chatCreditsUpdated: timestamp("chat_credits_updated").defaultNow(),
-}, (table) => [
-  index("idx_user_aac_users_user_id").on(table.userId),
-  index("idx_user_aac_users_aac_user_id").on(table.aacUserId),
-]);
-
-// AAC User Schedules table for contextual schedule management
-// Changed: aacUserId now references aacUsers.id (the primary key)
-export const aacUserSchedules = pgTable("aac_user_schedules", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  aacUserId: varchar("aac_user_id").references(() => aacUsers.id).notNull(), // FK to AAC user's primary key
-  dayOfWeek: integer("day_of_week").notNull(), // 0=Sunday to 6=Saturday
-  startTime: text("start_time").notNull(), // Time format 'HH:MM'
-  endTime: text("end_time").notNull(), // Time format 'HH:MM'
-  activityName: text("activity_name").notNull(), // e.g., 'School', 'Hydrotherapy', 'Dinner'
-  topicTags: text("topic_tags").array(), // e.g., ['food', 'family', 'social'] - CRITICAL for AI prompt
-  isRepeatingWeekly: boolean("is_repeating_weekly").default(true).notNull(),
-  isActive: boolean("is_active").default(true).notNull(),
-  dateOverride: text("date_override"), // For holidays/one-off events, format 'YYYY-MM-DD'
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
-
 // =============================================================================
-// STUDENT PHASES TABLE - Tracks individual phase progress
+// CONTENT & INTERPRETATION TABLES
 // =============================================================================
-export const studentPhases = pgTable("student_phases", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  aacUserId: varchar("aac_user_id").notNull(), // References aacUsers.id
-  phaseId: text("phase_id").notNull(), // 'p1', 'p2', 'p3', 'p4' or custom
-  phaseName: text("phase_name").notNull(), // Display name
-  phaseOrder: integer("phase_order").notNull().default(1), // Order in sequence
-  status: text("status").notNull().default("pending"), // 'pending', 'in-progress', 'completed', 'locked'
-  dueDate: date("due_date"),
-  completedAt: timestamp("completed_at"),
-  notes: text("notes"),
-  metadata: jsonb("metadata").default({}), // Additional phase data
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_student_phases_aac_user_id").on(table.aacUserId),
-  index("idx_student_phases_status").on(table.status),
-]);
 
-// =============================================================================
-// STUDENT GOALS TABLE - Tracks IEP goals and objectives
-// =============================================================================
-export const studentGoals = pgTable("student_goals", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  aacUserId: varchar("aac_user_id").notNull(), // References aacUsers.id
-  phaseId: varchar("phase_id"), // References studentPhases.id (optional)
-  title: text("title").notNull(),
-  description: text("description"),
-  goalType: text("goal_type").notNull().default("general"), // 'communication', 'behavioral', 'academic', 'general'
-  
-  // SMART Goal fields (for US IEP)
-  targetBehavior: text("target_behavior"), // Specific
-  criteria: text("criteria"), // Measurable
-  criteriaPercentage: integer("criteria_percentage"), // e.g., 80%
-  measurementMethod: text("measurement_method"), // e.g., 'SLP data collection'
-  conditions: text("conditions"), // Achievable/Opportunity context
-  relevance: text("relevance"), // Relevant curriculum impact
-  targetDate: date("target_date"), // Time-bound
-  
-  status: text("status").notNull().default("draft"), // 'draft', 'active', 'achieved', 'modified', 'discontinued'
-  progress: integer("progress").default(0), // 0-100
-  
-  // Baseline data for IEP
-  baselineData: jsonb("baseline_data").default({}), // MLU, communication rate, etc.
-  
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_student_goals_aac_user_id").on(table.aacUserId),
-  index("idx_student_goals_status").on(table.status),
-]);
-
-// =============================================================================
-// STUDENT PROGRESS ENTRIES - Tracks progress over time
-// =============================================================================
-export const studentProgressEntries = pgTable("student_progress_entries", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  aacUserId: varchar("aac_user_id").notNull(),
-  goalId: varchar("goal_id"), // References studentGoals.id (optional)
-  phaseId: varchar("phase_id"), // References studentPhases.id (optional)
-  
-  entryType: text("entry_type").notNull(), // 'observation', 'assessment', 'milestone', 'note'
-  title: text("title").notNull(),
-  content: text("content"),
-  
-  // Quantitative metrics
-  metrics: jsonb("metrics").default({}), // e.g., { mlu: 3.2, communicationRate: 12, intelligibility: 0.75 }
-  
-  recordedBy: varchar("recorded_by"), // References users.id
-  recordedAt: timestamp("recorded_at").defaultNow().notNull(),
-  
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_progress_entries_aac_user_id").on(table.aacUserId),
-  index("idx_progress_entries_recorded_at").on(table.recordedAt),
-]);
-
-// =============================================================================
-// STUDENT COMPLIANCE CHECKLIST - For IEP compliance tracking
-// =============================================================================
-export const studentComplianceItems = pgTable("student_compliance_items", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  aacUserId: varchar("aac_user_id").notNull(),
-  phaseId: varchar("phase_id"), // References studentPhases.id (optional)
-  
-  itemKey: text("item_key").notNull(), // 'baseline_data', 'parent_input', 'gen_ed_consulted', etc.
-  itemLabel: text("item_label").notNull(),
-  isCompleted: boolean("is_completed").default(false).notNull(),
-  completedAt: timestamp("completed_at"),
-  completedBy: varchar("completed_by"), // References users.id
-  notes: text("notes"),
-  
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_compliance_items_aac_user_id").on(table.aacUserId),
-]);
-
-// =============================================================================
-// SERVICE RECOMMENDATIONS - For IEP service planning
-// =============================================================================
-export const studentServiceRecommendations = pgTable("student_service_recommendations", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  aacUserId: varchar("aac_user_id").notNull(),
-  
-  serviceName: text("service_name").notNull(), // 'Speech-Language', 'Occupational Therapy', etc.
-  serviceType: text("service_type").notNull().default("direct"), // 'direct', 'consultation', 'monitoring'
-  durationMinutes: integer("duration_minutes").notNull(),
-  frequency: text("frequency").notNull(), // 'weekly', 'bi-weekly', 'monthly'
-  frequencyCount: integer("frequency_count").notNull().default(1), // Times per frequency period
-  
-  startDate: date("start_date"),
-  endDate: date("end_date"),
-  
-  provider: text("provider"), // Provider name
-  location: text("location"), // Service delivery location
-  
-  isActive: boolean("is_active").default(true).notNull(),
-  
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_service_recs_aac_user_id").on(table.aacUserId),
-]);
-
-
-// Changed: aacUserId now references aacUsers.id
+// Interpretations table
 export const interpretations = pgTable("interpretations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").references(() => users.id),
@@ -374,49 +482,91 @@ export const interpretations = pgTable("interpretations", {
   context: text("context"),
   // Image storage for thumbnails and full images
   imageData: text("image_data"), // Base64 encoded image data for 'image' type interpretations
-  // AAC User identification fields - now references primary key
-  aacUserId: varchar("aac_user_id").references(() => aacUsers.id), // Reference to AAC user's primary key
-  aacUserName: text("aac_user_name"), // Human-readable name for the AAC user (was "aacUserAlias")
-  // Clinical data fields for SLP reimbursement tracking
-  caregiverFeedback: text("caregiver_feedback"), // 'confirmed', 'corrected', 'rejected' or null
-  aacUserWPM: real("aac_user_wpm"), // Words/Messages per minute for this session
-  scheduleActivity: text("schedule_activity"), // Activity name from schedule at interpretation time
+  // Student identification fields - now references primary key
+  studentId: varchar("student_id").references(() => students.id), // Reference to Student's primary key
+  studentName: text("student_name"), // Human-readable name for the Student (was "studentAlias")
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-// System settings table for storing configuration like AI prompts
-export const systemSettings = pgTable("system_settings", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  key: text("key").notNull().unique(),
-  value: text("value").notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// Invite codes table for sharing AAC users between users
-// Changed: aacUserId now references aacUsers.id
+// Invite Codes table
 export const inviteCodes = pgTable("invite_codes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  code: text("code").notNull().unique(), // 8-character alphanumeric code
+  code: varchar("code").unique().notNull(),
   createdByUserId: varchar("created_by_user_id").references(() => users.id).notNull(),
-  aacUserId: varchar("aac_user_id").references(() => aacUsers.id).notNull(), // Now references primary key
-  redemptionLimit: integer("redemption_limit").default(1), // How many times this code can be used
+  studentId: varchar("student_id").references(() => students.id).notNull(),
+  expiresAt: timestamp("expires_at"),
   timesRedeemed: integer("times_redeemed").default(0).notNull(),
-  expiresAt: timestamp("expires_at"), // Optional expiration
+  maxRedemptions: integer("max_redemptions"),
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Invite code redemptions table to track who used which codes
-// Changed: aacUserId now references aacUsers.id
+// Invite Code Redemptions table
 export const inviteCodeRedemptions = pgTable("invite_code_redemptions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   inviteCodeId: varchar("invite_code_id").references(() => inviteCodes.id).notNull(),
   redeemedByUserId: varchar("redeemed_by_user_id").references(() => users.id).notNull(),
-  aacUserId: varchar("aac_user_id").references(() => aacUsers.id).notNull(), // Now references primary key
-  redeemedAt: timestamp("redeemed_at").defaultNow().notNull(),
+  studentId: varchar("student_id").references(() => students.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// API providers table for tracking different AI service providers and their pricing
+// Saved locations table for user's GPS aliases and custom locations
+export const savedLocations = pgTable("saved_locations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  alias: text("alias").notNull(), // User-friendly name like "דיקלה's קפה" or "בית של סבתא"
+  locationType: text("location_type").notNull(), // 'gps' or 'preset' or 'custom'
+  locationName: text("location_name").notNull(), // The actual location (GPS coords or text)
+  latitude: real("latitude"), // For GPS locations
+  longitude: real("longitude"), // For GPS locations
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// =============================================================================
+// BOARDS & GENERATION TABLES
+// =============================================================================
+
+export const boards = pgTable("boards", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  imageUrl: text("image_url"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const promptHistory = pgTable("prompt_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  generatedBoardId: varchar("generated_board_id").references(() => boards.id),
+  prompt: text("prompt").notNull(),
+  category: text("category"),
+  language: text("language").default("he"),
+  tone: text("tone"),
+  ageGroup: text("age_group"),
+  context: text("context"),
+  goals: text("goals").array(),
+  userFeedback: text("user_feedback"), // positive, negative, neutral
+  createdAt: timestamp("created_at").defaultNow()
+});
+
+export const promptEvents = pgTable("prompt_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  promptId: varchar("prompt_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  eventType: text("event_type").notNull(), // prompt_created, board_generated, board_page_created, board_downloaded, error_occurred, user_feedback_submitted
+  eventData: jsonb("event_data"), // Additional event-specific data
+  createdAt: timestamp("created_at").defaultNow()
+});
+
+// =============================================================================
+// API & PRICING TABLES
+// =============================================================================
+
+// API Providers table
 export const apiProviders = pgTable("api_providers", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull().unique(),
@@ -426,10 +576,6 @@ export const apiProviders = pgTable("api_providers", {
   isActive: boolean("is_active").default(true).notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
-
-export const apiTypeEnum = pgEnum("api_type", [
-  "llm", "tts", "stt", "embedding", "image", "vector", "moderation", "tool", "other"
-]);
 
 // API calls table for tracking all API usage and costs
 export const apiCalls = pgTable("api_calls", {
@@ -460,381 +606,39 @@ export const apiCalls = pgTable("api_calls", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Saved locations table for user's GPS aliases and custom locations
-export const savedLocations = pgTable("saved_locations", {
+// API Provider Pricing table
+export const apiProviderPricing = pgTable("api_provider_pricing", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  provider: text("provider").notNull(), // 'gemini', 'openai', 'elevenlabs'
+  model: text("model").notNull(), // 'gemini-2.5-flash', 'gpt-4'
+  endpoint: text("endpoint"), // specific endpoint if pricing varies
+  pricingType: text("pricing_type").notNull(), // 'per_token', 'per_character', 'per_second', 'per_request'
+  inputPricePerUnit: varchar("input_price_per_unit", { length: 20 }), // price per input unit (USD)
+  outputPricePerUnit: varchar("output_price_per_unit", { length: 20 }), // price per output unit (USD)
+  currency: text("currency").notNull().default("USD"),
+  effectiveFrom: timestamp("effective_from").notNull(),
+  effectiveUntil: timestamp("effective_until"),
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"), // additional pricing notes
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+
+// =============================================================================
+// ANALYTICS & TRACKING TABLES
+// =============================================================================
+
+// Usage Windows table
+export const usageWindows = pgTable("usage_windows", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").references(() => users.id).notNull(),
-  alias: text("alias").notNull(), // User-friendly name like "דיקלה's קפה" or "בית של סבתא"
-  locationType: text("location_type").notNull(), // 'gps' or 'preset' or 'custom'
-  locationName: text("location_name").notNull(), // The actual location (GPS coords or text)
-  latitude: real("latitude"), // For GPS locations
-  longitude: real("longitude"), // For GPS locations
-  isActive: boolean("is_active").default(true).notNull(),
+  windowStart: timestamp("window_start").notNull(),
+  windowEnd: timestamp("window_end").notNull(),
+  requestCount: integer("request_count").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Insert schemas
-export const insertUserSchema = createInsertSchema(users).pick({
-  email: true,
-  firstName: true,
-  lastName: true,
-  password: true,
-  userType: true,
-  createdAt: true,
-  updatedAt: true
-});
-
-export const insertSavedLocationSchema = createInsertSchema(savedLocations).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const loginSchema = z.object({
-  email: z.string().email("Please enter a valid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-});
-
-export const registerSchema = z.object({
-  email: z.string().email("Please enter a valid email address"),
-  firstName: z.string().min(1, "First name is required"),
-  lastName: z.string().min(1, "Last name is required"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-  userType: z.enum(["admin", "Teacher", "Caregiver", "SLP", "Parent"], {
-    errorMap: () => ({ message: "Please select a valid user type" }),
-  }),
-});
-
-export const insertAdminUserSchema = createInsertSchema(adminUsers);
-
-export const insertInterpretationSchema = createInsertSchema(interpretations).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertCreditTransactionSchema = createInsertSchema(creditTransactions).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertSubscriptionPlanSchema = createInsertSchema(subscriptionPlans).omit({
-  id: true,
-  createdAt: true,
-});
-
-// RevenueCat insert schemas
-export const insertRevenuecatSubscriptionSchema = createInsertSchema(revenuecatSubscriptions).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertRevenuecatWebhookEventSchema = createInsertSchema(revenuecatWebhookEvents).omit({
-  id: true,
-  processed: true,
-  processedAt: true,
-  createdAt: true,
-});
-
-export const insertRevenuecatProductSchema = createInsertSchema(revenuecatProducts).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-// AAC User schemas - updated for new structure
-export const insertAacUserSchema = createInsertSchema(aacUsers).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const updateAacUserSchema = createInsertSchema(aacUsers).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-}).partial();
-
-// User-AAC User link schemas
-export const insertUserAacUserSchema = createInsertSchema(userAacUsers).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const updateUserAacUserSchema = createInsertSchema(userAacUsers).omit({
-  id: true,
-  userId: true,
-  aacUserId: true,
-  createdAt: true,
-  updatedAt: true,
-}).partial();
-
-// AAC User Schedule schemas
-export const insertAacUserScheduleSchema = createInsertSchema(aacUserSchedules).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const updateAacUserScheduleSchema = createInsertSchema(aacUserSchedules).omit({
-  id: true,
-  aacUserId: true,
-  createdAt: true,
-  updatedAt: true,
-}).partial();
-
-// Request schemas
-export const interpretRequestSchema = z.object({
-  input: z.string().min(1, "Input cannot be empty"),
-  inputType: z.enum(["text", "image"]),
-  imageData: z.string().optional(),
-});
-
-export const updateUserSchema = z.object({
-  firstName: z.string().optional(),
-  lastName: z.string().optional(),
-  userType: z.enum(["admin", "Teacher", "Caregiver", "SLP", "Parent"]).optional(),
-  credits: z.number().optional(),
-  subscriptionType: z.string().optional(),
-  subscriptionExpiresAt: z.date().optional(),
-  isActive: z.boolean().optional(),
-});
-
-export const insertInviteCodeSchema = createInsertSchema(inviteCodes).omit({
-  id: true,
-  code: true, // Auto-generated
-  timesRedeemed: true,
-  createdAt: true,
-});
-
-export const redeemInviteCodeSchema = z.object({
-  code: z.string().min(8, "Invalid invite code").max(8, "Invalid invite code"),
-});
-
-export const insertCreditPackageSchema = createInsertSchema(creditPackages).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertApiProviderSchema = createInsertSchema(apiProviders).omit({
-  id: true,
-  updatedAt: true,
-});
-
-export const insertApiCallSchema = createInsertSchema(apiCalls).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertStudentPhaseSchema = createInsertSchema(studentPhases).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const updateStudentPhaseSchema = createInsertSchema(studentPhases).omit({
-  id: true,
-  aacUserId: true,
-  createdAt: true,
-  updatedAt: true,
-}).partial();
-
-export const insertStudentGoalSchema = createInsertSchema(studentGoals).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const updateStudentGoalSchema = createInsertSchema(studentGoals).omit({
-  id: true,
-  aacUserId: true,
-  createdAt: true,
-  updatedAt: true,
-}).partial();
-
-export const insertProgressEntrySchema = createInsertSchema(studentProgressEntries).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertComplianceItemSchema = createInsertSchema(studentComplianceItems).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertServiceRecommendationSchema = createInsertSchema(studentServiceRecommendations).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-// Pricing JSON validation schemas
-export const tokenBasedPricingSchema = z.object({
-  cost_calculation: z.literal("token_based"),
-  model: z.string().optional(),
-  input_cost_per_1k_tokens: z.number().min(0),
-  output_cost_per_1k_tokens: z.number().min(0),
-});
-
-export const unitBasedPricingSchema = z.object({
-  cost_calculation: z.literal("unit_based"),
-  cost_per_unit: z.number().min(0),
-});
-
-export const fixedCostPricingSchema = z.object({
-  cost_calculation: z.literal("fixed_cost"),
-  fixed_cost: z.number().min(0),
-});
-
-export const pricingJsonSchema = z.union([
-  tokenBasedPricingSchema,
-  unitBasedPricingSchema,
-  fixedCostPricingSchema,
-]);
-
-export const insertApiProviderSchemaWithValidation = insertApiProviderSchema.extend({
-  currencyCode: z.literal("USD"), // Enforce USD-only for now
-  pricingJson: pricingJsonSchema,
-});
-
-// User type constants
-export const USER_TYPES = {
-  ADMIN: "admin",
-  TEACHER: "Teacher", 
-  CAREGIVER: "Caregiver",
-  SPEECH_THERAPIST: "SLP",
-  PARENT: "Parent"
-} as const;
-
-export type UserType = typeof USER_TYPES[keyof typeof USER_TYPES];
-
-// Type exports
-export type UpsertAdminUser = typeof adminUsers.$inferInsert;
-export type AdminUser = typeof adminUsers.$inferSelect;
-export type InsertInterpretation = z.infer<typeof insertInterpretationSchema>;
-export type Interpretation = typeof interpretations.$inferSelect;
-export type InterpretRequest = z.infer<typeof interpretRequestSchema>;
-export type CreditTransaction = typeof creditTransactions.$inferSelect;
-export type InsertCreditTransaction = z.infer<typeof insertCreditTransactionSchema>;
-export type SubscriptionPlan = typeof subscriptionPlans.$inferSelect;
-export type InsertSubscriptionPlan = z.infer<typeof insertSubscriptionPlanSchema>;
-export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
-export type InsertPasswordResetToken = typeof passwordResetTokens.$inferInsert;
-
-// AAC User types - updated
-export type AacUser = typeof aacUsers.$inferSelect;
-export type InsertAacUser = z.infer<typeof insertAacUserSchema>;
-export type UpdateAacUser = z.infer<typeof updateAacUserSchema>;
-
-// User-AAC User link types
-export type UserAacUser = typeof userAacUsers.$inferSelect;
-export type InsertUserAacUser = z.infer<typeof insertUserAacUserSchema>;
-export type UpdateUserAacUser = z.infer<typeof updateUserAacUserSchema>;
-
-export type InviteCode = typeof inviteCodes.$inferSelect;
-export type InsertInviteCode = z.infer<typeof insertInviteCodeSchema>;
-export type InviteCodeRedemption = typeof inviteCodeRedemptions.$inferSelect;
-export type RedeemInviteCode = z.infer<typeof redeemInviteCodeSchema>;
-export type CreditPackage = typeof creditPackages.$inferSelect;
-export type InsertCreditPackage = z.infer<typeof insertCreditPackageSchema>;
-export type ApiProvider = typeof apiProviders.$inferSelect;
-export type InsertApiProvider = z.infer<typeof insertApiProviderSchema>;
-export type SavedLocation = typeof savedLocations.$inferSelect;
-export type InsertSavedLocation = z.infer<typeof insertSavedLocationSchema>;
-export type AacUserSchedule = typeof aacUserSchedules.$inferSelect;
-export type InsertAacUserSchedule = z.infer<typeof insertAacUserScheduleSchema>;
-export type UpdateAacUserSchedule = z.infer<typeof updateAacUserScheduleSchema>;
-
-// RevenueCat type exports
-export type RevenuecatSubscription = typeof revenuecatSubscriptions.$inferSelect;
-export type InsertRevenuecatSubscription = z.infer<typeof insertRevenuecatSubscriptionSchema>;
-export type RevenuecatWebhookEvent = typeof revenuecatWebhookEvents.$inferSelect;
-export type InsertRevenuecatWebhookEvent = z.infer<typeof insertRevenuecatWebhookEventSchema>;
-export type RevenuecatProduct = typeof revenuecatProducts.$inferSelect;
-export type InsertRevenuecatProduct = z.infer<typeof insertRevenuecatProductSchema>;
-
-// Student progress tracking types
-export type StudentPhase = typeof studentPhases.$inferSelect;
-export type InsertStudentPhase = z.infer<typeof insertStudentPhaseSchema>;
-export type UpdateStudentPhase = z.infer<typeof updateStudentPhaseSchema>;
-
-export type StudentGoal = typeof studentGoals.$inferSelect;
-export type InsertStudentGoal = z.infer<typeof insertStudentGoalSchema>;
-export type UpdateStudentGoal = z.infer<typeof updateStudentGoalSchema>;
-
-export type StudentProgressEntry = typeof studentProgressEntries.$inferSelect;
-export type InsertProgressEntry = z.infer<typeof insertProgressEntrySchema>;
-
-export type StudentComplianceItem = typeof studentComplianceItems.$inferSelect;
-export type InsertComplianceItem = z.infer<typeof insertComplianceItemSchema>;
-
-export type StudentServiceRecommendation = typeof studentServiceRecommendations.$inferSelect;
-export type InsertServiceRecommendation = z.infer<typeof insertServiceRecommendationSchema>;
-
-export const plans = pgTable("plans", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  code: varchar("code").notNull().unique(),
-  name: text("name").notNull(),
-  monthlyGenerations: integer("monthly_generations").notNull(),
-  monthlyDownloads: integer("monthly_downloads").notNull(),
-  storedBoards: integer("stored_boards").notNull(),
-  features: jsonb("features").default("{}"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow()
-});
-
-export const usageWindows = pgTable("usage_windows", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull(),
-  windowStart: timestamp("window_start").notNull(),
-  generations: integer("generations").default(0),
-  downloads: integer("downloads").default(0),
-  storedBoards: integer("stored_boards").default(0),
-  createdAt: timestamp("created_at").defaultNow()
-});
-
-export const boards = pgTable("boards", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull(),
-  name: text("name").notNull(),
-  irData: jsonb("ir_data").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow()
-});
-
-export const promptHistory = pgTable("prompt_history", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull(),
-  prompt: text("prompt").notNull(),
-  promptExcerpt: text("prompt_excerpt"), // First 100 chars for privacy
-  topic: text("topic"), // Auto-detected topic
-  language: text("language").default("en"), // Detected language
-  model: text("model").default("gemini-2.5-flash"), // AI model used
-  outputFormat: text("output_format").default("gridset"), // gridset or snappkg
-  generatedBoardName: text("generated_board_name"),
-  generatedBoardId: varchar("generated_board_id"),
-  pagesGenerated: integer("pages_generated").default(1),
-  promptLength: integer("prompt_length"),
-  success: boolean("success").notNull().default(true),
-  errorMessage: text("error_message"),
-  errorType: text("error_type"), // categorized error types
-  processingTimeMs: integer("processing_time_ms"),
-  downloaded: boolean("downloaded").default(false),
-  downloadedAt: timestamp("downloaded_at"),
-  userFeedback: text("user_feedback"), // positive, negative, neutral
-  createdAt: timestamp("created_at").defaultNow()
-});
-
-export const promptEvents = pgTable("prompt_events", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  promptId: varchar("prompt_id").notNull(),
-  userId: varchar("user_id").notNull(),
-  eventType: text("event_type").notNull(), // prompt_created, board_generated, board_page_created, board_downloaded, error_occurred, user_feedback_submitted
-  eventData: jsonb("event_data"), // Additional event-specific data
-  createdAt: timestamp("created_at").defaultNow()
-});
-
+// Analytics Aggregates table
 export const analyticsAggregates = pgTable("analytics_aggregates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   aggregateDate: varchar("aggregate_date").notNull(), // YYYY-MM-DD format
@@ -902,6 +706,10 @@ export const userCohorts = pgTable("user_cohorts", {
   createdAt: timestamp("created_at").defaultNow()
 });
 
+// =============================================================================
+// SYSTEM CONFIGURATION TABLES
+// =============================================================================
+
 // System Prompt for AI Behavior Configuration
 export const systemPrompt = pgTable("system_prompt", {
   id: varchar("id").primaryKey().default("system_prompt"), // Single row with fixed ID
@@ -910,7 +718,22 @@ export const systemPrompt = pgTable("system_prompt", {
   updatedBy: varchar("updated_by").references(() => users.id)
 });
 
-// Dropbox Integration Tables
+// Plans table
+export const plans = pgTable("plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  credits: integer("credits").notNull(),
+  price: real("price").notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// =============================================================================
+// INTEGRATION TABLES
+// =============================================================================
+
+// Dropbox Integration - Connections
 export const dropboxConnections = pgTable("dropbox_connections", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
@@ -925,6 +748,7 @@ export const dropboxConnections = pgTable("dropbox_connections", {
   updatedAt: timestamp("updated_at").defaultNow()
 });
 
+// Dropbox Integration - Backups
 export const dropboxBackups = pgTable("dropbox_backups", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
@@ -943,40 +767,17 @@ export const dropboxBackups = pgTable("dropbox_backups", {
   completedAt: timestamp("completed_at")
 });
 
-export const apiProviderPricing = pgTable("api_provider_pricing", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  provider: text("provider").notNull(), // 'gemini', 'openai', 'elevenlabs'
-  model: text("model").notNull(), // 'gemini-2.5-flash', 'gpt-4'
-  endpoint: text("endpoint"), // specific endpoint if pricing varies
-  pricingType: text("pricing_type").notNull(), // 'per_token', 'per_character', 'per_second', 'per_request'
-  inputPricePerUnit: varchar("input_price_per_unit", { length: 20 }), // price per input unit (USD)
-  outputPricePerUnit: varchar("output_price_per_unit", { length: 20 }), // price per output unit (USD)
-  currency: text("currency").notNull().default("USD"),
-  effectiveFrom: timestamp("effective_from").notNull(),
-  effectiveUntil: timestamp("effective_until"),
-  isActive: boolean("is_active").notNull().default(true),
-  notes: text("notes"), // additional pricing notes
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow()
-});
-
-// ============================================================================
-// CHAT SYSTEM TABLES (migrated from Sequelize)
-// ============================================================================
-
-// Enums for chat sessions
-export const chatSessionStatusEnum = pgEnum("chat_session_status", ["open", "paused", "closed"]);
-
-// Chat mode enum for different chat behaviors
-// export const chatModeEnum = pgEnum("chat_mode", ["chat", "boards", "interpret", "docuslp"]);
+// =============================================================================
+// CHAT SYSTEM TABLES
+// =============================================================================
 
 // Chat Sessions table (named chatSessions to avoid conflict with admin sessions)
 export const chatSessions = pgTable("chat_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   // User context - at least one must be provided
   userId: varchar("user_id").references(() => users.id),
-  aacUserId: varchar("aac_user_id").references(() => aacUsers.id),
-  userAacUserId: varchar("user_aac_user_id").references(() => userAacUsers.id), // The relationship record if both are provided
+  studentId: varchar("student_id").references(() => students.id),
+  userStudentId: varchar("user_student_id").references(() => userStudents.id), // The relationship record if both are provided
   
   // Chat mode determines which agent template to use
   chatMode: varchar("chat_mode").notNull().default("chat"),
@@ -995,11 +796,315 @@ export const chatSessions = pgTable("chat_sessions", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_chat_sessions_user_id").on(table.userId),
-  index("idx_chat_sessions_aac_user_id").on(table.aacUserId),
+  index("idx_chat_sessions_student_id").on(table.studentId),
   index("idx_chat_sessions_status").on(table.status),
 ]);
 
-// Chat Insert Schemas
+// =============================================================================
+// INSERT SCHEMAS
+// =============================================================================
+
+// User schemas
+export const insertUserSchema = createInsertSchema(users).pick({
+  email: true,
+  firstName: true,
+  lastName: true,
+  password: true,
+  userType: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export const insertAdminUserSchema = createInsertSchema(adminUsers);
+
+// Institute schemas
+export const insertInstituteSchema = createInsertSchema(institutes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateInstituteSchema = createInsertSchema(institutes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial();
+
+export const insertInstituteUserSchema = createInsertSchema(instituteUsers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateInstituteUserSchema = createInsertSchema(instituteUsers).omit({
+  id: true,
+  instituteId: true,
+  userId: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial();
+
+export const insertInstituteStudentSchema = createInsertSchema(instituteStudents).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateInstituteStudentSchema = createInsertSchema(instituteStudents).omit({
+  id: true,
+  instituteId: true,
+  studentId: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial();
+
+// License schemas
+export const insertLicenseSchema = createInsertSchema(licenses).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateLicenseSchema = createInsertSchema(licenses).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial();
+
+// Plan schemas
+export const insertPlanSchema = createInsertSchema(plans).omit({
+  id: true,
+  createdAt: true,
+});
+
+// Board schemas
+export const insertBoardSchema = createInsertSchema(boards).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+// Usage schemas
+export const insertUsageWindowSchema = createInsertSchema(usageWindows).omit({
+  id: true,
+  createdAt: true
+});
+
+// Prompt schemas
+export const insertPromptHistorySchema = createInsertSchema(promptHistory).omit({
+  id: true,
+  createdAt: true
+});
+
+export const insertPromptEventSchema = createInsertSchema(promptEvents).omit({
+  id: true,
+  createdAt: true
+});
+
+// Analytics schemas
+export const insertAnalyticsAggregateSchema = createInsertSchema(analyticsAggregates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export const insertUserSessionSchema = createInsertSchema(userSessions).omit({
+  id: true,
+  createdAt: true
+});
+
+export const insertUserEventSchema = createInsertSchema(userEvents).omit({
+  id: true,
+  createdAt: true
+});
+
+export const insertPlanChangeSchema = createInsertSchema(planChanges).omit({
+  id: true,
+  createdAt: true
+});
+
+export const insertUserCohortSchema = createInsertSchema(userCohorts).omit({
+  id: true,
+  createdAt: true
+});
+
+// System schemas
+export const insertSystemPromptSchema = createInsertSchema(systemPrompt).omit({
+  id: true,
+  updatedAt: true
+});
+
+// Student schemas
+export const insertStudentSchema = createInsertSchema(students).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateStudentSchema = createInsertSchema(students).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial();
+
+export const insertUserStudentSchema = createInsertSchema(userStudents).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateUserStudentSchema = createInsertSchema(userStudents).omit({
+  id: true,
+  userId: true,
+  studentId: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial();
+
+export const insertStudentScheduleSchema = createInsertSchema(studentSchedules).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateStudentScheduleSchema = createInsertSchema(studentSchedules).omit({
+  id: true,
+  studentId: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial();
+
+export const insertStudentPhaseSchema = createInsertSchema(studentPhases).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateStudentPhaseSchema = createInsertSchema(studentPhases).omit({
+  id: true,
+  studentId: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial();
+
+export const insertStudentGoalSchema = createInsertSchema(studentGoals).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateStudentGoalSchema = createInsertSchema(studentGoals).omit({
+  id: true,
+  studentId: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial();
+
+export const insertProgressEntrySchema = createInsertSchema(studentProgressEntries).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertComplianceItemSchema = createInsertSchema(studentComplianceItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertServiceRecommendationSchema = createInsertSchema(studentServiceRecommendations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Content schemas
+export const insertInterpretationSchema = createInsertSchema(interpretations).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertInviteCodeSchema = createInsertSchema(inviteCodes).omit({
+  id: true,
+  code: true, // Auto-generated
+  timesRedeemed: true,
+  createdAt: true,
+});
+
+export const redeemInviteCodeSchema = z.object({
+  code: z.string().min(8, "Invalid invite code").max(8, "Invalid invite code"),
+});
+
+export const insertSavedLocationSchema = createInsertSchema(savedLocations).omit({
+  id: true,
+  createdAt: true,
+});
+
+// Credit schemas
+export const insertCreditTransactionSchema = createInsertSchema(creditTransactions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertCreditPackageSchema = createInsertSchema(creditPackages).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertSubscriptionPlanSchema = createInsertSchema(subscriptionPlans).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertRevenuecatSubscriptionSchema = createInsertSchema(revenuecatSubscriptions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertRevenuecatWebhookEventSchema = createInsertSchema(revenuecatWebhookEvents).omit({
+  id: true,
+  processed: true,
+  processedAt: true,
+  createdAt: true,
+});
+
+export const insertRevenuecatProductSchema = createInsertSchema(revenuecatProducts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// API schemas
+export const insertApiProviderSchema = createInsertSchema(apiProviders).omit({
+  id: true,
+  updatedAt: true,
+});
+
+export const insertApiCallSchema = createInsertSchema(apiCalls).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertApiProviderPricingSchema = createInsertSchema(apiProviderPricing).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+// Integration schemas
+export const insertDropboxConnectionSchema = createInsertSchema(dropboxConnections).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertDropboxBackupSchema = createInsertSchema(dropboxBackups).omit({
+  id: true,
+  createdAt: true,
+  completedAt: true
+});
+
+// Chat schemas
 export const insertChatSessionSchema = createInsertSchema(chatSessions).omit({
   id: true,
   createdAt: true,
@@ -1007,18 +1112,210 @@ export const insertChatSessionSchema = createInsertSchema(chatSessions).omit({
   deletedAt: true,
 });
 
-// Chat Types
+// Authentication schemas
+export const loginSchema = z.object({
+  email: z.string().email("Please enter a valid email address"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+});
+
+export const registerSchema = z.object({
+  email: z.string().email("Please enter a valid email address"),
+  firstName: z.string().min(1, "First name is required"),
+  lastName: z.string().min(1, "Last name is required"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  userType: z.enum(["admin", "Teacher", "Caregiver", "SLP", "Parent"], {
+    errorMap: () => ({ message: "Please select a valid user type" }),
+  }),
+});
+
+export const interpretRequestSchema = z.object({
+  input: z.string().min(1, "Input cannot be empty"),
+  inputType: z.enum(["text", "image"]),
+  imageData: z.string().optional(),
+});
+
+export const updateUserSchema = z.object({
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  userType: z.enum(["admin", "Teacher", "Caregiver", "SLP", "Parent"]).optional(),
+  credits: z.number().optional(),
+  subscriptionType: z.string().optional(),
+  subscriptionExpiresAt: z.date().optional(),
+  isActive: z.boolean().optional(),
+});
+
+// Pricing validation schemas
+export const tokenBasedPricingSchema = z.object({
+  cost_calculation: z.literal("token_based"),
+  model: z.string().optional(),
+  input_cost_per_1k_tokens: z.number().min(0),
+  output_cost_per_1k_tokens: z.number().min(0),
+});
+
+export const unitBasedPricingSchema = z.object({
+  cost_calculation: z.literal("unit_based"),
+  cost_per_unit: z.number().min(0),
+});
+
+export const fixedCostPricingSchema = z.object({
+  cost_calculation: z.literal("fixed_cost"),
+  fixed_cost: z.number().min(0),
+});
+
+export const pricingJsonSchema = z.union([
+  tokenBasedPricingSchema,
+  unitBasedPricingSchema,
+  fixedCostPricingSchema,
+]);
+
+export const insertApiProviderSchemaWithValidation = insertApiProviderSchema.extend({
+  currencyCode: z.literal("USD"), // Enforce USD-only for now
+  pricingJson: pricingJsonSchema,
+});
+
+// =============================================================================
+// TYPES
+// =============================================================================
+
+// User types
+export type User = typeof users.$inferSelect;
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type AdminUser = typeof adminUsers.$inferSelect;
+export type UpsertAdminUser = typeof adminUsers.$inferInsert;
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
+export type InsertPasswordResetToken = typeof passwordResetTokens.$inferInsert;
+
+// Institute types
+export type Institute = typeof institutes.$inferSelect;
+export type InsertInstitute = z.infer<typeof insertInstituteSchema>;
+export type UpdateInstitute = z.infer<typeof updateInstituteSchema>;
+export type InstituteUser = typeof instituteUsers.$inferSelect;
+export type InsertInstituteUser = z.infer<typeof insertInstituteUserSchema>;
+export type UpdateInstituteUser = z.infer<typeof updateInstituteUserSchema>;
+export type InstituteStudent = typeof instituteStudents.$inferSelect;
+export type InsertInstituteStudent = z.infer<typeof insertInstituteStudentSchema>;
+export type UpdateInstituteStudent = z.infer<typeof updateInstituteStudentSchema>;
+
+// License types
+export type License = typeof licenses.$inferSelect;
+export type InsertLicense = z.infer<typeof insertLicenseSchema>;
+export type UpdateLicense = z.infer<typeof updateLicenseSchema>;
+
+// Student types
+export type Student = typeof students.$inferSelect;
+export type InsertStudent = z.infer<typeof insertStudentSchema>;
+export type UpdateStudent = z.infer<typeof updateStudentSchema>;
+export type UserStudent = typeof userStudents.$inferSelect;
+export type InsertUserStudent = z.infer<typeof insertUserStudentSchema>;
+export type UpdateUserStudent = z.infer<typeof updateUserStudentSchema>;
+export type StudentSchedule = typeof studentSchedules.$inferSelect;
+export type InsertStudentSchedule = z.infer<typeof insertStudentScheduleSchema>;
+export type UpdateStudentSchedule = z.infer<typeof updateStudentScheduleSchema>;
+
+// Student progress types
+export type StudentPhase = typeof studentPhases.$inferSelect;
+export type InsertStudentPhase = z.infer<typeof insertStudentPhaseSchema>;
+export type UpdateStudentPhase = z.infer<typeof updateStudentPhaseSchema>;
+export type StudentGoal = typeof studentGoals.$inferSelect;
+export type InsertStudentGoal = z.infer<typeof insertStudentGoalSchema>;
+export type UpdateStudentGoal = z.infer<typeof updateStudentGoalSchema>;
+export type StudentProgressEntry = typeof studentProgressEntries.$inferSelect;
+export type InsertProgressEntry = z.infer<typeof insertProgressEntrySchema>;
+export type StudentComplianceItem = typeof studentComplianceItems.$inferSelect;
+export type InsertComplianceItem = z.infer<typeof insertComplianceItemSchema>;
+export type StudentServiceRecommendation = typeof studentServiceRecommendations.$inferSelect;
+export type InsertServiceRecommendation = z.infer<typeof insertServiceRecommendationSchema>;
+
+// Credit & billing types
+export type CreditTransaction = typeof creditTransactions.$inferSelect;
+export type InsertCreditTransaction = z.infer<typeof insertCreditTransactionSchema>;
+export type CreditPackage = typeof creditPackages.$inferSelect;
+export type InsertCreditPackage = z.infer<typeof insertCreditPackageSchema>;
+export type SubscriptionPlan = typeof subscriptionPlans.$inferSelect;
+export type InsertSubscriptionPlan = z.infer<typeof insertSubscriptionPlanSchema>;
+export type RevenuecatSubscription = typeof revenuecatSubscriptions.$inferSelect;
+export type InsertRevenuecatSubscription = z.infer<typeof insertRevenuecatSubscriptionSchema>;
+export type RevenuecatWebhookEvent = typeof revenuecatWebhookEvents.$inferSelect;
+export type InsertRevenuecatWebhookEvent = z.infer<typeof insertRevenuecatWebhookEventSchema>;
+export type RevenuecatProduct = typeof revenuecatProducts.$inferSelect;
+export type InsertRevenuecatProduct = z.infer<typeof insertRevenuecatProductSchema>;
+
+// Content types
+export type Interpretation = typeof interpretations.$inferSelect;
+export type InsertInterpretation = z.infer<typeof insertInterpretationSchema>;
+export type InterpretRequest = z.infer<typeof interpretRequestSchema>;
+export type InviteCode = typeof inviteCodes.$inferSelect;
+export type InsertInviteCode = z.infer<typeof insertInviteCodeSchema>;
+export type InviteCodeRedemption = typeof inviteCodeRedemptions.$inferSelect;
+export type RedeemInviteCode = z.infer<typeof redeemInviteCodeSchema>;
+export type SavedLocation = typeof savedLocations.$inferSelect;
+export type InsertSavedLocation = z.infer<typeof insertSavedLocationSchema>;
+
+// Board types
+export type Board = typeof boards.$inferSelect;
+export type InsertBoard = z.infer<typeof insertBoardSchema>;
+export type Plan = typeof plans.$inferSelect;
+export type InsertPlan = z.infer<typeof insertPlanSchema>;
+export type PromptHistory = typeof promptHistory.$inferSelect;
+export type InsertPromptHistory = z.infer<typeof insertPromptHistorySchema>;
+export type PromptEvent = typeof promptEvents.$inferSelect;
+export type InsertPromptEvent = z.infer<typeof insertPromptEventSchema>;
+
+// API types
+export type ApiProvider = typeof apiProviders.$inferSelect;
+export type InsertApiProvider = z.infer<typeof insertApiProviderSchema>;
+export type ApiCall = typeof apiCalls.$inferSelect;
+export type InsertApiCall = z.infer<typeof insertApiCallSchema>;
+export type ApiProviderPricing = typeof apiProviderPricing.$inferSelect;
+export type InsertApiProviderPricing = z.infer<typeof insertApiProviderPricingSchema>;
+
+// Analytics types
+export type UsageWindow = typeof usageWindows.$inferSelect;
+export type InsertUsageWindow = z.infer<typeof insertUsageWindowSchema>;
+export type AnalyticsAggregate = typeof analyticsAggregates.$inferSelect;
+export type InsertAnalyticsAggregate = z.infer<typeof insertAnalyticsAggregateSchema>;
+export type UserSession = typeof userSessions.$inferSelect;
+export type InsertUserSession = z.infer<typeof insertUserSessionSchema>;
+export type UserEvent = typeof userEvents.$inferSelect;
+export type InsertUserEvent = z.infer<typeof insertUserEventSchema>;
+export type PlanChange = typeof planChanges.$inferSelect;
+export type InsertPlanChange = z.infer<typeof insertPlanChangeSchema>;
+export type UserCohort = typeof userCohorts.$inferSelect;
+export type InsertUserCohort = z.infer<typeof insertUserCohortSchema>;
+
+// System types
+export type SystemPrompt = typeof systemPrompt.$inferSelect;
+export type InsertSystemPrompt = z.infer<typeof insertSystemPromptSchema>;
+
+// Integration types
+export type DropboxConnection = typeof dropboxConnections.$inferSelect;
+export type InsertDropboxConnection = z.infer<typeof insertDropboxConnectionSchema>;
+export type DropboxBackup = typeof dropboxBackups.$inferSelect;
+export type InsertDropboxBackup = z.infer<typeof insertDropboxBackupSchema>;
+
+// Chat types
 export type ChatSession = typeof chatSessions.$inferSelect;
 export type InsertChatSession = z.infer<typeof insertChatSessionSchema>;
-
-// Chat Mode type
 export type ChatMode = "chat" | "boards" | "interpret" | 'docuslp' | 'overview' | 'students' | 'progress' | 'settings';
 
-
+// Domain types
 export type SystemType = 'tala' | 'us_iep';
 export type PhaseStatus = 'pending' | 'in-progress' | 'completed' | 'locked';
 export type GoalStatus = 'draft' | 'active' | 'achieved' | 'modified' | 'discontinued';
+export type InstituteType = 'school' | 'hospital';
 
+// User type constants
+export const USER_TYPES = {
+  ADMIN: "admin",
+  TEACHER: "Teacher", 
+  CAREGIVER: "Caregiver",
+  SPEECH_THERAPIST: "SLP",
+  PARENT: "Parent"
+} as const;
+
+export type UserType = typeof USER_TYPES[keyof typeof USER_TYPES];
+
+// Interface types for complex structures
 export interface StudentWithProgress {
   id: string;
   name: string;
@@ -1050,10 +1347,7 @@ export interface PhaseDistribution {
   color: string;
 }
 
-// ============================================================================
-// CHAT SYSTEM INTERFACES (for use in chat-handler.ts)
-// ============================================================================
-
+// Chat system interfaces
 export interface ChatMessageContent {
   text?: string;
   html?: string;
@@ -1085,8 +1379,7 @@ export interface MessageResponse {
     sessionId?: string;
 }
 
-/** ===== Types kept compatible with your memory system ===== */
-
+// Memory system types
 export type MemoryPrimitiveType = 'string' | 'number' | 'integer' | 'boolean' | 'null';
 export type MemoryCompositeType  = 'object' | 'array' | 'map' | 'topic';
 export type MemoryType           = MemoryPrimitiveType | MemoryCompositeType;
@@ -1118,6 +1411,7 @@ export interface AgentMemoryFieldObject extends AgentMemoryFieldBase {
   required?: string[];
   additionalProperties?: boolean;
 }
+
 export interface AgentMemoryFieldArray extends AgentMemoryFieldBase {
   type: 'array';
   items: AgentMemoryField;
@@ -1125,6 +1419,7 @@ export interface AgentMemoryFieldArray extends AgentMemoryFieldBase {
   maxItems?: number;
   uniqueItems?: boolean;
 }
+
 export interface AgentMemoryFieldMap extends AgentMemoryFieldBase {
   type: 'map';
   values: AgentMemoryField;
@@ -1132,6 +1427,7 @@ export interface AgentMemoryFieldMap extends AgentMemoryFieldBase {
   minProperties?: number;
   maxProperties?: number;
 }
+
 export interface AgentMemoryFieldTopic extends AgentMemoryFieldBase {
   type: 'topic';
   maxDepth?: number;
@@ -1149,6 +1445,7 @@ export interface TopicNode {
   description?: string;
   subtopics: Record<string, TopicNode>;
 }
+
 export type TopicTree = Record<string, TopicNode>;
 
 export interface MemoryState {
@@ -1217,7 +1514,11 @@ export interface DisplayParams {
   sendButtonText?: string;
 }
 
-// Relations
+// =============================================================================
+// RELATIONS
+// =============================================================================
+
+// User relations
 export const usersRelations = relations(users, ({ many, one }) => ({
   boards: many(boards),
   usageWindows: many(usageWindows),
@@ -1228,42 +1529,106 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   dropboxConnection: one(dropboxConnections),
   dropboxBackups: many(dropboxBackups),
   apiCalls: many(apiCalls),
-  aacUserLinks: many(userAacUsers), // Many-to-many link to AAC users
+  studentLinks: many(userStudents),
+  instituteLinks: many(instituteUsers),
+  licenses: many(licenses),
 }));
 
-export const aacUsersRelations = relations(aacUsers, ({ many }) => ({
-  userLinks: many(userAacUsers), // Many-to-many link to users
-  schedules: many(aacUserSchedules),
+// Institute relations
+export const institutesRelations = relations(institutes, ({ many }) => ({
+  userLinks: many(instituteUsers),
+  studentLinks: many(instituteStudents),
+  licenses: many(licenses),
+}));
+
+export const instituteUsersRelations = relations(instituteUsers, ({ one }) => ({
+  institute: one(institutes, {
+    fields: [instituteUsers.instituteId],
+    references: [institutes.id]
+  }),
+  user: one(users, {
+    fields: [instituteUsers.userId],
+    references: [users.id]
+  }),
+}));
+
+export const instituteStudentsRelations = relations(instituteStudents, ({ one }) => ({
+  institute: one(institutes, {
+    fields: [instituteStudents.instituteId],
+    references: [institutes.id]
+  }),
+  student: one(students, {
+    fields: [instituteStudents.studentId],
+    references: [students.id]
+  }),
+}));
+
+// License relations
+export const licensesRelations = relations(licenses, ({ one }) => ({
+  institute: one(institutes, {
+    fields: [licenses.instituteId],
+    references: [institutes.id]
+  }),
+  user: one(users, {
+    fields: [licenses.userId],
+    references: [users.id]
+  }),
+}));
+
+// Student relations
+export const studentsRelations = relations(students, ({ many }) => ({
+  userLinks: many(userStudents),
+  instituteLinks: many(instituteStudents),
+  schedules: many(studentSchedules),
   interpretations: many(interpretations),
   inviteCodes: many(inviteCodes),
 }));
 
-export const userAacUsersRelations = relations(userAacUsers, ({ one }) => ({
+export const userStudentsRelations = relations(userStudents, ({ one }) => ({
   user: one(users, {
-    fields: [userAacUsers.userId],
+    fields: [userStudents.userId],
     references: [users.id]
   }),
-  aacUser: one(aacUsers, {
-    fields: [userAacUsers.aacUserId],
-    references: [aacUsers.id]
+  student: one(students, {
+    fields: [userStudents.studentId],
+    references: [students.id]
   }),
 }));
 
-export const aacUserSchedulesRelations = relations(aacUserSchedules, ({ one }) => ({
-  aacUser: one(aacUsers, {
-    fields: [aacUserSchedules.aacUserId],
-    references: [aacUsers.id]
+export const studentSchedulesRelations = relations(studentSchedules, ({ one }) => ({
+  student: one(students, {
+    fields: [studentSchedules.studentId],
+    references: [students.id]
   }),
 }));
 
+export const studentPhasesRelations = relations(studentPhases, ({ one }) => ({
+  student: one(students, {
+    fields: [studentPhases.studentId],
+    references: [students.id]
+  }),
+}));
+
+export const studentGoalsRelations = relations(studentGoals, ({ one }) => ({
+  student: one(students, {
+    fields: [studentGoals.studentId],
+    references: [students.id]
+  }),
+  phase: one(studentPhases, {
+    fields: [studentGoals.phaseId],
+    references: [studentPhases.id]
+  }),
+}));
+
+// Content relations
 export const interpretationsRelations = relations(interpretations, ({ one }) => ({
   user: one(users, {
     fields: [interpretations.userId],
     references: [users.id]
   }),
-  aacUser: one(aacUsers, {
-    fields: [interpretations.aacUserId],
-    references: [aacUsers.id]
+  student: one(students, {
+    fields: [interpretations.studentId],
+    references: [students.id]
   }),
 }));
 
@@ -1272,9 +1637,9 @@ export const inviteCodesRelations = relations(inviteCodes, ({ one, many }) => ({
     fields: [inviteCodes.createdByUserId],
     references: [users.id]
   }),
-  aacUser: one(aacUsers, {
-    fields: [inviteCodes.aacUserId],
-    references: [aacUsers.id]
+  student: one(students, {
+    fields: [inviteCodes.studentId],
+    references: [students.id]
   }),
   redemptions: many(inviteCodeRedemptions),
 }));
@@ -1288,38 +1653,65 @@ export const inviteCodeRedemptionsRelations = relations(inviteCodeRedemptions, (
     fields: [inviteCodeRedemptions.redeemedByUserId],
     references: [users.id]
   }),
-  aacUser: one(aacUsers, {
-    fields: [inviteCodeRedemptions.aacUserId],
-    references: [aacUsers.id]
+  student: one(students, {
+    fields: [inviteCodeRedemptions.studentId],
+    references: [students.id]
   }),
 }));
 
-export const dropboxConnectionsRelations = relations(dropboxConnections, ({ one, many }) => ({
+// Board relations
+export const boardsRelations = relations(boards, ({ one }) => ({
   user: one(users, {
-    fields: [dropboxConnections.userId],
-    references: [users.id]
-  }),
-  backups: many(dropboxBackups)
-}));
-
-export const dropboxBackupsRelations = relations(dropboxBackups, ({ one }) => ({
-  user: one(users, {
-    fields: [dropboxBackups.userId],
-    references: [users.id]
-  }),
-  connection: one(dropboxConnections, {
-    fields: [dropboxBackups.userId],
-    references: [dropboxConnections.userId]
-  })
-}));
-
-export const systemPromptRelations = relations(systemPrompt, ({ one }) => ({
-  updatedByUser: one(users, {
-    fields: [systemPrompt.updatedBy],
+    fields: [boards.userId],
     references: [users.id]
   })
 }));
 
+// Analytics relations
+export const usageWindowsRelations = relations(usageWindows, ({ one }) => ({
+  user: one(users, {
+    fields: [usageWindows.userId],
+    references: [users.id]
+  })
+}));
+
+export const promptHistoryRelations = relations(promptHistory, ({ one, many }) => ({
+  user: one(users, {
+    fields: [promptHistory.userId],
+    references: [users.id]
+  }),
+  board: one(boards, {
+    fields: [promptHistory.generatedBoardId],
+    references: [boards.id]
+  }),
+  events: many(promptEvents),
+  apiCalls: many(apiCalls)
+}));
+
+export const promptEventsRelations = relations(promptEvents, ({ one }) => ({
+  prompt: one(promptHistory, {
+    fields: [promptEvents.promptId],
+    references: [promptHistory.id]
+  }),
+  user: one(users, {
+    fields: [promptEvents.userId],
+    references: [users.id]
+  })
+}));
+
+// API relations
+export const apiCallsRelations = relations(apiCalls, ({ one }) => ({
+  user: one(users, {
+    fields: [apiCalls.userId],
+    references: [users.id]
+  }),
+  prompt: one(promptHistory, {
+    fields: [apiCalls.promptId],
+    references: [promptHistory.id]
+  })
+}));
+
+// Session relations
 export const userSessionsRelations = relations(userSessions, ({ one, many }) => ({
   user: one(users, {
     fields: [userSessions.userId],
@@ -1346,214 +1738,46 @@ export const planChangesRelations = relations(planChanges, ({ one }) => ({
   })
 }));
 
-export const boardsRelations = relations(boards, ({ one }) => ({
+// Integration relations
+export const dropboxConnectionsRelations = relations(dropboxConnections, ({ one, many }) => ({
   user: one(users, {
-    fields: [boards.userId],
+    fields: [dropboxConnections.userId],
+    references: [users.id]
+  }),
+  backups: many(dropboxBackups)
+}));
+
+export const dropboxBackupsRelations = relations(dropboxBackups, ({ one }) => ({
+  user: one(users, {
+    fields: [dropboxBackups.userId],
+    references: [users.id]
+  }),
+  connection: one(dropboxConnections, {
+    fields: [dropboxBackups.userId],
+    references: [dropboxConnections.userId]
+  })
+}));
+
+// System relations
+export const systemPromptRelations = relations(systemPrompt, ({ one }) => ({
+  updatedByUser: one(users, {
+    fields: [systemPrompt.updatedBy],
     references: [users.id]
   })
 }));
 
-export const usageWindowsRelations = relations(usageWindows, ({ one }) => ({
-  user: one(users, {
-    fields: [usageWindows.userId],
-    references: [users.id]
-  })
-}));
-
-export const promptHistoryRelations = relations(promptHistory, ({ one, many }) => ({
-  user: one(users, {
-    fields: [promptHistory.userId],
-    references: [users.id]
-  }),
-  board: one(boards, {
-    fields: [promptHistory.generatedBoardId],
-    references: [boards.id]
-  }),
-  events: many(promptEvents),
-  apiCalls: many(apiCalls)
-}));
-
-export const apiCallsRelations = relations(apiCalls, ({ one }) => ({
-  user: one(users, {
-    fields: [apiCalls.userId],
-    references: [users.id]
-  }),
-  prompt: one(promptHistory, {
-    fields: [apiCalls.promptId],
-    references: [promptHistory.id]
-  })
-}));
-
-export const promptEventsRelations = relations(promptEvents, ({ one }) => ({
-  prompt: one(promptHistory, {
-    fields: [promptEvents.promptId],
-    references: [promptHistory.id]
-  }),
-  user: one(users, {
-    fields: [promptEvents.userId],
-    references: [users.id]
-  })
-}));
-
-// Chat System Relations
+// Chat relations
 export const chatSessionsRelations = relations(chatSessions, ({ one }) => ({
   user: one(users, {
     fields: [chatSessions.userId],
     references: [users.id]
   }),
-  aacUser: one(aacUsers, {
-    fields: [chatSessions.aacUserId],
-    references: [aacUsers.id]
+  student: one(students, {
+    fields: [chatSessions.studentId],
+    references: [students.id]
   }),
-  userAacUser: one(userAacUsers, {
-    fields: [chatSessions.userAacUserId],
-    references: [userAacUsers.id]
-  }),
-}));
-
-
-// Student Progress relations
-export const studentPhasesRelations = relations(studentPhases, ({ one }) => ({
-  aacUser: one(aacUsers, {
-    fields: [studentPhases.aacUserId],
-    references: [aacUsers.id]
+  userStudent: one(userStudents, {
+    fields: [chatSessions.userStudentId],
+    references: [userStudents.id]
   }),
 }));
-
-export const studentGoalsRelations = relations(studentGoals, ({ one }) => ({
-  aacUser: one(aacUsers, {
-    fields: [studentGoals.aacUserId],
-    references: [aacUsers.id]
-  }),
-  phase: one(studentPhases, {
-    fields: [studentGoals.phaseId],
-    references: [studentPhases.id]
-  }),
-}));
-
-
-// Insert schemas
-export const insertPlanSchema = createInsertSchema(plans).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-
-export const insertBoardSchema = createInsertSchema(boards).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-
-export const insertUsageWindowSchema = createInsertSchema(usageWindows).omit({
-  id: true,
-  createdAt: true
-});
-
-export const insertPromptHistorySchema = createInsertSchema(promptHistory).omit({
-  id: true,
-  createdAt: true
-});
-
-export const insertPromptEventSchema = createInsertSchema(promptEvents).omit({
-  id: true,
-  createdAt: true
-});
-
-export const insertAnalyticsAggregateSchema = createInsertSchema(analyticsAggregates).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-
-export const insertUserSessionSchema = createInsertSchema(userSessions).omit({
-  id: true,
-  createdAt: true
-});
-
-export const insertUserEventSchema = createInsertSchema(userEvents).omit({
-  id: true,
-  createdAt: true
-});
-
-export const insertPlanChangeSchema = createInsertSchema(planChanges).omit({
-  id: true,
-  createdAt: true
-});
-
-export const insertUserCohortSchema = createInsertSchema(userCohorts).omit({
-  id: true,
-  createdAt: true
-});
-
-export const insertSystemPromptSchema = createInsertSchema(systemPrompt).omit({
-  id: true,
-  updatedAt: true
-});
-
-export const insertDropboxConnectionSchema = createInsertSchema(dropboxConnections).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-
-export const insertDropboxBackupSchema = createInsertSchema(dropboxBackups).omit({
-  id: true,
-  createdAt: true,
-  completedAt: true
-});
-
-export const insertApiProviderPricingSchema = createInsertSchema(apiProviderPricing).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-
-// Types
-export type Plan = typeof plans.$inferSelect;
-export type InsertPlan = z.infer<typeof insertPlanSchema>;
-
-export type User = typeof users.$inferSelect;
-export type InsertUser = z.infer<typeof insertUserSchema>;
-
-export type Board = typeof boards.$inferSelect;
-export type InsertBoard = z.infer<typeof insertBoardSchema>;
-
-export type UsageWindow = typeof usageWindows.$inferSelect;
-export type InsertUsageWindow = z.infer<typeof insertUsageWindowSchema>;
-
-export type PromptHistory = typeof promptHistory.$inferSelect;
-export type InsertPromptHistory = z.infer<typeof insertPromptHistorySchema>;
-
-export type PromptEvent = typeof promptEvents.$inferSelect;
-export type InsertPromptEvent = z.infer<typeof insertPromptEventSchema>;
-
-export type AnalyticsAggregate = typeof analyticsAggregates.$inferSelect;
-export type InsertAnalyticsAggregate = z.infer<typeof insertAnalyticsAggregateSchema>;
-
-export type UserSession = typeof userSessions.$inferSelect;
-export type InsertUserSession = z.infer<typeof insertUserSessionSchema>;
-
-export type UserEvent = typeof userEvents.$inferSelect;
-export type InsertUserEvent = z.infer<typeof insertUserEventSchema>;
-
-export type PlanChange = typeof planChanges.$inferSelect;
-export type InsertPlanChange = z.infer<typeof insertPlanChangeSchema>;
-
-export type UserCohort = typeof userCohorts.$inferSelect;
-export type InsertUserCohort = z.infer<typeof insertUserCohortSchema>;
-
-export type SystemPrompt = typeof systemPrompt.$inferSelect;
-export type InsertSystemPrompt = z.infer<typeof insertSystemPromptSchema>;
-
-export type DropboxConnection = typeof dropboxConnections.$inferSelect;
-export type InsertDropboxConnection = z.infer<typeof insertDropboxConnectionSchema>;
-
-export type DropboxBackup = typeof dropboxBackups.$inferSelect;
-export type InsertDropboxBackup = z.infer<typeof insertDropboxBackupSchema>;
-
-export type ApiCall = typeof apiCalls.$inferSelect;
-export type InsertApiCall = z.infer<typeof insertApiCallSchema>;
-
-export type ApiProviderPricing = typeof apiProviderPricing.$inferSelect;
-export type InsertApiProviderPricing = z.infer<typeof insertApiProviderPricingSchema>;

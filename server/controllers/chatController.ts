@@ -4,7 +4,7 @@ import { onMessage } from "../services/sessionService";
 
 // Validation schemas
 const messageSchema = z.object({
-  aacUserId: z.string().optional(),
+  studentId: z.string().optional(),
   sessionId: z.string().optional(),
   mode: z.enum(["chat", "boards", "interpret", "docuslp"]).optional(),
   messages: z
@@ -49,14 +49,14 @@ export class ChatController {
     const startTime = Date.now();
     try {
       const userId = req.user!.id;
-      const { aacUserId, sessionId, mode, messages } = messageSchema.parse(req.body);
+      const { studentId, sessionId, mode, messages } = messageSchema.parse(req.body);
       const messagesWithTimestamp = messages?.map((msg) => ({
         ...msg,
         timestamp: msg.timestamp || startTime,
       })) || [];
       const response = await onMessage({
         userId,
-        aacUserId,
+        studentId,
         sessionId,
         mode,
         messages: messagesWithTimestamp,

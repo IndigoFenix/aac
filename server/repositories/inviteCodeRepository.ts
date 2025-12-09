@@ -1,11 +1,11 @@
 import {
   inviteCodes,
   inviteCodeRedemptions,
-  aacUsers,
+  students,
   type InviteCode,
   type InsertInviteCode,
   type InviteCodeRedemption,
-  type AacUser,
+  type Student,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, desc, and, sql } from "drizzle-orm";
@@ -39,7 +39,7 @@ export class InviteCodeRepository {
   async redeemInviteCode(
     code: string,
     userId: string
-  ): Promise<{ success: boolean; aacUser?: AacUser; error?: string }> {
+  ): Promise<{ success: boolean; student?: Student; error?: string }> {
     try {
       const inviteCode = await this.getInviteCode(code);
 
@@ -78,12 +78,12 @@ export class InviteCodeRepository {
       }
 
       // Get the AAC user that this code grants access to
-      const [aacUser] = await db
+      const [student] = await db
         .select()
-        .from(aacUsers)
-        .where(eq(aacUsers.id, inviteCode.aacUserId));
+        .from(students)
+        .where(eq(students.id, inviteCode.studentId));
 
-      if (!aacUser) {
+      if (!student) {
         return { success: false, error: "AAC user not found" };
       }
 
@@ -93,7 +93,7 @@ export class InviteCodeRepository {
           inviteCodeId: inviteCode.id,
           redeemedByUserId: userId,
           redeemedAt: new Date(),
-          aacUserId: aacUser.id,
+          studentId: student.id,
         });
 
         await tx
@@ -102,7 +102,7 @@ export class InviteCodeRepository {
           .where(eq(inviteCodes.id, inviteCode.id));
       });
 
-      return { success: true, aacUser };
+      return { success: true, student };
     } catch (error) {
       console.error("Error redeeming invite code:", error);
       return { success: false, error: "Failed to redeem invite code" };

@@ -2,7 +2,7 @@ import { useState, useEffect, createContext, useContext, ReactNode } from 'react
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useAuth } from "@/hooks/useAuth";
 
-export interface AacUser {
+export interface Student {
   id: string;
   name: string;
   age?: number;
@@ -14,66 +14,66 @@ export interface AacUser {
   data: any;
 }
 
-interface AacUserContextType {
-  aacUser: AacUser | null;
-  aacUsers: AacUser[];
+interface StudentContextType {
+  student: Student | null;
+  students: Student[];
   isReady: boolean;
   isLoading: boolean;
-  selectAacUser: (aacUserId?: string | null) => Promise<boolean>;
-  refetchAacUser: () => Promise<void>;
+  selectStudent: (studentId?: string | null) => Promise<boolean>;
+  refetchStudent: () => Promise<void>;
 }
 
-const AAC_USERS_QUERY_KEY = ['/api/aac-users'];
-const aacUserDetailQueryKey = (id: string) => ['/api/aac-users', id];
+const AAC_USERS_QUERY_KEY = ['/api/students'];
+const studentDetailQueryKey = (id: string) => ['/api/students', id];
 
-const AacUserContext = createContext<AacUserContextType | null>(null);
+const StudentContext = createContext<StudentContextType | null>(null);
 
-export const useAacUser = () => {
-  const context = useContext(AacUserContext);
+export const useStudent = () => {
+  const context = useContext(StudentContext);
   if (!context) {
-    throw new Error('useAacUser must be used within an AacUserProvider');
+    throw new Error('useStudent must be used within an StudentProvider');
   }
   return context;
 };
 
-export const AacUserProvider = ({ children }: { children: ReactNode }) => {
-  const [aacUser, setAacUser] = useState<AacUser | null>(null);
-  const [aacUsers, setAacUsers] = useState<AacUser[]>([]);
+export const StudentProvider = ({ children }: { children: ReactNode }) => {
+  const [student, setStudent] = useState<Student | null>(null);
+  const [students, setStudents] = useState<Student[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { user } = useAuth();
 
   // Load list of AAC users, with react-query + in‑memory cache
-  const loadAacUsers = async (): Promise<AacUser[]> => {
-    const cached = queryClient.getQueryData<AacUser[]>(AAC_USERS_QUERY_KEY);
+  const loadStudents = async (): Promise<Student[]> => {
+    const cached = queryClient.getQueryData<Student[]>(AAC_USERS_QUERY_KEY);
     if (cached) {
-      setAacUsers(cached);
+      setStudents(cached);
       return cached;
     }
 
     try {
-      const response = await apiRequest('GET', '/api/aac-users');
+      const response = await apiRequest('GET', '/api/students');
       const data = await response.json();
 
-      const list: AacUser[] =
-        data?.success && Array.isArray(data.aacUsers) ? data.aacUsers : [];
+      const list: Student[] =
+        data?.success && Array.isArray(data.students) ? data.students : [];
 
-      setAacUsers(list);
-      queryClient.setQueryData<AacUser[]>(AAC_USERS_QUERY_KEY, list);
+      setStudents(list);
+      queryClient.setQueryData<Student[]>(AAC_USERS_QUERY_KEY, list);
 
       return list;
     } catch (error) {
       console.error('Get AAC Users failed:', error);
-      setAacUsers([]);
-      queryClient.setQueryData<AacUser[]>(AAC_USERS_QUERY_KEY, []);
+      setStudents([]);
+      queryClient.setQueryData<Student[]>(AAC_USERS_QUERY_KEY, []);
       return [];
     }
   };
 
   // Main “switch” function: use cache for instant switching, then refresh from API
-  const selectAacUser = async (aacUserId?: string | null): Promise<boolean> => {
+  const selectStudent = async (studentId?: string | null): Promise<boolean> => {
     // Allow clearing the current selection
-    if (!aacUserId) {
-      setAacUser(null);
+    if (!studentId) {
+      setStudent(null);
       if (typeof window !== 'undefined') {
         window.localStorage.removeItem('aac.currentUserId');
       }
@@ -81,34 +81,34 @@ export const AacUserProvider = ({ children }: { children: ReactNode }) => {
     }
 
     // Optimistic: use any cached data so switching feels instant
-    const cachedDetail = queryClient.getQueryData<AacUser>(
-      aacUserDetailQueryKey(aacUserId)
+    const cachedDetail = queryClient.getQueryData<Student>(
+      studentDetailQueryKey(studentId)
     );
-    const cachedFromList = aacUsers.find((u) => u.id === aacUserId);
+    const cachedFromList = students.find((u) => u.id === studentId);
     const optimisticUser = cachedDetail ?? cachedFromList;
 
     if (optimisticUser) {
-      setAacUser(optimisticUser);
+      setStudent(optimisticUser);
     }
 
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem('aac.currentUserId', aacUserId);
+      window.localStorage.setItem('aac.currentUserId', studentId);
     }
 
     // Always hit the API to refresh on selection
     try {
-      const response = await apiRequest('GET', `/api/aac-users/${aacUserId}`);
+      const response = await apiRequest('GET', `/api/students/${studentId}`);
       const data = await response.json();
 
-      if (data?.success && data.aacUser) {
-        const fresh: AacUser = data.aacUser;
+      if (data?.success && data.student) {
+        const fresh: Student = data.student;
 
-        if (fresh.id === aacUser?.id) {
-          setAacUser(fresh);
+        if (fresh.id === student?.id) {
+          setStudent(fresh);
         }
 
         // Keep the full list in sync
-        setAacUsers((prev) => {
+        setStudents((prev) => {
           const idx = prev.findIndex((u) => u.id === fresh.id);
           if (idx === -1) return [...prev, fresh];
           const next = [...prev];
@@ -117,8 +117,8 @@ export const AacUserProvider = ({ children }: { children: ReactNode }) => {
         });
 
         // Update react‑query caches
-        queryClient.setQueryData<AacUser>(aacUserDetailQueryKey(aacUserId), fresh);
-        queryClient.setQueryData<AacUser[]>(AAC_USERS_QUERY_KEY, (prev) => {
+        queryClient.setQueryData<Student>(studentDetailQueryKey(studentId), fresh);
+        queryClient.setQueryData<Student[]>(AAC_USERS_QUERY_KEY, (prev) => {
           if (!prev) return [fresh];
           const idx = prev.findIndex((u) => u.id === fresh.id);
           if (idx === -1) return [...prev, fresh];
@@ -138,14 +138,14 @@ export const AacUserProvider = ({ children }: { children: ReactNode }) => {
   };
 
   // Initial bootstrapping of AAC users + selected user
-  const checkAacUserStatus = async () => {
+  const checkStudentStatus = async () => {
     setIsLoading(true);
 
     try {
-      const users = await loadAacUsers();
+      const users = await loadStudents();
 
       if (!users.length) {
-        setAacUser(null);
+        setStudent(null);
         return;
       }
 
@@ -155,10 +155,10 @@ export const AacUserProvider = ({ children }: { children: ReactNode }) => {
       }
 
       if (storedId) {
-        await selectAacUser(storedId);
+        await selectStudent(storedId);
       } else {
         const initial = users.find((u) => u.isActive) ?? users[0];
-        setAacUser(initial ?? null);
+        setStudent(initial ?? null);
 
         if (initial && typeof window !== 'undefined') {
           window.localStorage.setItem('aac.currentUserId', initial.id);
@@ -166,39 +166,39 @@ export const AacUserProvider = ({ children }: { children: ReactNode }) => {
       }
     } catch (error) {
       console.error('AAC User status check failed:', error);
-      setAacUser(null);
+      setStudent(null);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const refetchAacUser = async () => {
-    await checkAacUserStatus();
+  const refetchStudent = async () => {
+    await checkStudentStatus();
   };
 
   // Refresh AAC users whenever the logged-in user changes
   useEffect(() => {
     if (user) {
-      checkAacUserStatus();  // user logged in → load AAC users
+      checkStudentStatus();  // user logged in → load AAC users
     } else {
       // user logged out → clear state
-      setAacUsers([]);
-      setAacUser(null);
+      setStudents([]);
+      setStudent(null);
     }
   }, [user]);
 
-  const contextValue: AacUserContextType = {
-    aacUser,
-    aacUsers,
+  const contextValue: StudentContextType = {
+    student,
+    students,
     isLoading,
-    isReady: !isLoading && !!aacUser,
-    selectAacUser,
-    refetchAacUser,
+    isReady: !isLoading && !!student,
+    selectStudent,
+    refetchStudent,
   };
 
   return (
-    <AacUserContext.Provider value={contextValue}>
+    <StudentContext.Provider value={contextValue}>
       {children}
-    </AacUserContext.Provider>
+    </StudentContext.Provider>
   );
 };

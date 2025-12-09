@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useFeaturePanel } from '@/contexts/FeaturePanelContext';
-import { useAacUser } from '@/hooks/useAacUser';
+import { useStudent } from '@/hooks/useStudent';
 import {
   MessageSquarePlus,
   FolderOpen,
@@ -42,7 +42,7 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
   const { theme, setTheme } = useTheme();
   const { t, isRTL } = useLanguage();
   const { activeFeature, setActiveFeature } = useFeaturePanel();
-  const { aacUser, aacUsers } = useAacUser();
+  const { student, students } = useStudent();
 
   // Core workspace items (original features)
   const coreWorkspaceItems = [
@@ -86,14 +86,14 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
       labelKey: 'nav.students',
       feature: 'students' as FeatureType,
       testId: 'nav-students',
-      badge: aacUsers.length > 0 ? aacUsers.length.toString() : undefined,
+      badge: students.length > 0 ? students.length.toString() : undefined,
     },
     {
       icon: ClipboardList,
       labelKey: 'nav.progress',
       feature: 'progress' as FeatureType,
       testId: 'nav-progress',
-      disabled: !aacUser, // Only enabled when a student is selected
+      disabled: !student, // Only enabled when a student is selected
     },
   ];
 
@@ -209,7 +209,7 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
       )}
 
       {/* Current Student Context */}
-      {!isCollapsed && aacUser && (
+      {!isCollapsed && student && (
         <div className="px-6 pb-4">
           <div 
             className={cn(
@@ -228,7 +228,7 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
               </div>
               <div className={cn("flex-1", isRTL ? "text-right" : "")}>
                 <p className="text-sm font-medium text-primary">
-                  {aacUser.name}
+                  {student.name}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {t('nav.currentStudent')}
@@ -243,7 +243,7 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
         </div>
       )}
 
-      <Separator className="mx-6" />
+      <Separator className="" />
 
       {/* Core Navigation */}
       <div className={cn("py-4 space-y-1 flex-shrink-0", isCollapsed ? "px-2" : "px-6")}>
@@ -261,7 +261,7 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
         </div>
       </div>
 
-      <Separator className="mx-6" />
+      <Separator className="" />
 
       {/* Student Management Navigation */}
       <div className={cn("py-4 space-y-1 flex-1", isCollapsed ? "px-2" : "px-6")}>
@@ -279,7 +279,7 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
         </div>
       </div>
 
-      <Separator className="mx-6" />
+      <Separator className="" />
 
       {/* Bottom section */}
       <div className={cn("py-6 space-y-3", isCollapsed ? "px-2" : "px-6")}>

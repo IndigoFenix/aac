@@ -65,11 +65,11 @@ export class InterpretationRepository {
         inputType: interpretations.inputType,
         language: interpretations.language,
         context: interpretations.context,
-        aacUserId: interpretations.aacUserId,
-        aacUserName: interpretations.aacUserName,
+        studentId: interpretations.studentId,
+        studentName: interpretations.studentName,
         imageData: interpretations.imageData,
         caregiverFeedback: interpretations.caregiverFeedback,
-        aacUserWPM: interpretations.aacUserWPM,
+        studentWPM: interpretations.studentWPM,
         scheduleActivity: interpretations.scheduleActivity,
         createdAt: interpretations.createdAt,
         user: {
@@ -123,7 +123,7 @@ export class InterpretationRepository {
   // Clinical data operations
   async getClinicalData(filters: {
     userId?: string;
-    aacUserId?: string;
+    studentId?: string;
     startDate?: Date;
     endDate?: Date;
   }): Promise<Interpretation[]> {
@@ -133,8 +133,8 @@ export class InterpretationRepository {
       conditions.push(eq(interpretations.userId, filters.userId));
     }
 
-    if (filters.aacUserId) {
-      conditions.push(eq(interpretations.aacUserId, filters.aacUserId));
+    if (filters.studentId) {
+      conditions.push(eq(interpretations.studentId, filters.studentId));
     }
 
     if (filters.startDate) {
@@ -160,7 +160,7 @@ export class InterpretationRepository {
 
   async getClinicalMetrics(filters: {
     userId?: string;
-    aacUserId?: string;
+    studentId?: string;
     startDate?: Date;
     endDate?: Date;
   }): Promise<{
@@ -180,8 +180,8 @@ export class InterpretationRepository {
     const totalInterpretations = data.length;
 
     const wpmValues = data
-      .filter((d) => d.aacUserWPM !== null)
-      .map((d) => d.aacUserWPM as number);
+      .filter((d) => d.studentWPM !== null)
+      .map((d) => d.studentWPM as number);
     const averageWPM =
       wpmValues.length > 0
         ? wpmValues.reduce((a, b) => a + b, 0) / wpmValues.length
@@ -218,21 +218,21 @@ export class InterpretationRepository {
   }
 
   // Historical AAC analysis
-  async getAacUserHistory(
-    aacUserId: string,
+  async getStudentHistory(
+    studentId: string,
     limit?: number
   ): Promise<Interpretation[]> {
     const query = db
       .select()
       .from(interpretations)
-      .where(eq(interpretations.aacUserId, aacUserId))
+      .where(eq(interpretations.studentId, studentId))
       .orderBy(desc(interpretations.createdAt));
 
     return limit ? await query.limit(limit) : await query;
   }
 
   async analyzeHistoricalPatterns(
-    aacUserId: string,
+    studentId: string,
     currentInput: string
   ): Promise<{
     suggestions: Array<{
@@ -244,7 +244,7 @@ export class InterpretationRepository {
     totalPatterns: number;
   }> {
     try {
-      const history = await this.getAacUserHistory(aacUserId);
+      const history = await this.getStudentHistory(studentId);
 
       if (history.length === 0) {
         return { suggestions: [], totalPatterns: 0 };

@@ -11,7 +11,7 @@ import {
   studentProgressEntries,
   studentComplianceItems,
   studentServiceRecommendations,
-  aacUsers,
+  students,
   type StudentPhase,
   type InsertStudentPhase,
   type UpdateStudentPhase,
@@ -38,7 +38,7 @@ export class StudentProgressRepository {
     return phase;
   }
 
-  async createDefaultPhases(aacUserId: string, systemType: 'tala' | 'us_iep'): Promise<StudentPhase[]> {
+  async createDefaultPhases(studentId: string, systemType: 'tala' | 'us_iep'): Promise<StudentPhase[]> {
     const defaultPhases = systemType === 'tala' 
       ? [
           { phaseId: 'p1', phaseName: 'Initial Assessment', phaseOrder: 1 },
@@ -58,7 +58,7 @@ export class StudentProgressRepository {
     const phases: StudentPhase[] = [];
     for (const p of defaultPhases) {
       const [phase] = await db.insert(studentPhases).values({
-        aacUserId,
+        studentId,
         phaseId: p.phaseId,
         phaseName: p.phaseName,
         phaseOrder: p.phaseOrder,
@@ -69,11 +69,11 @@ export class StudentProgressRepository {
     return phases;
   }
 
-  async getPhasesByAacUserId(aacUserId: string): Promise<StudentPhase[]> {
+  async getPhasesByStudentId(studentId: string): Promise<StudentPhase[]> {
     return await db
       .select()
       .from(studentPhases)
-      .where(eq(studentPhases.aacUserId, aacUserId))
+      .where(eq(studentPhases.studentId, studentId))
       .orderBy(asc(studentPhases.phaseOrder));
   }
 
@@ -94,8 +94,8 @@ export class StudentProgressRepository {
     return updated;
   }
 
-  async advancePhase(aacUserId: string, currentPhaseId: string): Promise<StudentPhase | undefined> {
-    const phases = await this.getPhasesByAacUserId(aacUserId);
+  async advancePhase(studentId: string, currentPhaseId: string): Promise<StudentPhase | undefined> {
+    const phases = await this.getPhasesByStudentId(studentId);
     const currentIndex = phases.findIndex(p => p.id === currentPhaseId);
     
     if (currentIndex === -1 || currentIndex === phases.length - 1) {
@@ -127,11 +127,11 @@ export class StudentProgressRepository {
     return goal;
   }
 
-  async getGoalsByAacUserId(aacUserId: string): Promise<StudentGoal[]> {
+  async getGoalsByStudentId(studentId: string): Promise<StudentGoal[]> {
     return await db
       .select()
       .from(studentGoals)
-      .where(eq(studentGoals.aacUserId, aacUserId))
+      .where(eq(studentGoals.studentId, studentId))
       .orderBy(desc(studentGoals.createdAt));
   }
 
@@ -174,11 +174,11 @@ export class StudentProgressRepository {
     return entry;
   }
 
-  async getProgressEntriesByAacUserId(aacUserId: string, limit = 50): Promise<StudentProgressEntry[]> {
+  async getProgressEntriesByStudentId(studentId: string, limit = 50): Promise<StudentProgressEntry[]> {
     return await db
       .select()
       .from(studentProgressEntries)
-      .where(eq(studentProgressEntries.aacUserId, aacUserId))
+      .where(eq(studentProgressEntries.studentId, studentId))
       .orderBy(desc(studentProgressEntries.recordedAt))
       .limit(limit);
   }
@@ -200,7 +200,7 @@ export class StudentProgressRepository {
     return item;
   }
 
-  async createDefaultComplianceItems(aacUserId: string, phaseId?: string): Promise<StudentComplianceItem[]> {
+  async createDefaultComplianceItems(studentId: string, phaseId?: string): Promise<StudentComplianceItem[]> {
     const defaultItems = [
       { itemKey: 'baseline_data', itemLabel: 'Baseline data collected' },
       { itemKey: 'parent_input', itemLabel: 'Parent input considered' },
@@ -211,7 +211,7 @@ export class StudentProgressRepository {
     const items: StudentComplianceItem[] = [];
     for (const item of defaultItems) {
       const [created] = await db.insert(studentComplianceItems).values({
-        aacUserId,
+        studentId,
         phaseId,
         itemKey: item.itemKey,
         itemLabel: item.itemLabel,
@@ -221,11 +221,11 @@ export class StudentProgressRepository {
     return items;
   }
 
-  async getComplianceItemsByAacUserId(aacUserId: string): Promise<StudentComplianceItem[]> {
+  async getComplianceItemsByStudentId(studentId: string): Promise<StudentComplianceItem[]> {
     return await db
       .select()
       .from(studentComplianceItems)
-      .where(eq(studentComplianceItems.aacUserId, aacUserId));
+      .where(eq(studentComplianceItems.studentId, studentId));
   }
 
   async updateComplianceItem(
@@ -255,13 +255,13 @@ export class StudentProgressRepository {
     return rec;
   }
 
-  async getServiceRecommendationsByAacUserId(aacUserId: string): Promise<StudentServiceRecommendation[]> {
+  async getServiceRecommendationsByStudentId(studentId: string): Promise<StudentServiceRecommendation[]> {
     return await db
       .select()
       .from(studentServiceRecommendations)
       .where(
         and(
-          eq(studentServiceRecommendations.aacUserId, aacUserId),
+          eq(studentServiceRecommendations.studentId, studentId),
           eq(studentServiceRecommendations.isActive, true)
         )
       );
@@ -305,8 +305,8 @@ export class StudentProgressRepository {
       .select({
         total: count(),
       })
-      .from(aacUsers)
-      .where(eq(aacUsers.isActive, true));
+      .from(students)
+      .where(eq(students.isActive, true));
 
     // Get active (in-progress) phases count
     const [activeStats] = await db
@@ -365,13 +365,13 @@ export class StudentProgressRepository {
   async getStudentsWithUpcomingDeadlines(
     userId: string, 
     daysAhead = 7
-  ): Promise<Array<{ aacUserId: string; dueDate: string; phaseName: string }>> {
+  ): Promise<Array<{ studentId: string; dueDate: string; phaseName: string }>> {
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
 
     const results = await db
       .select({
-        aacUserId: studentPhases.aacUserId,
+        studentId: studentPhases.studentId,
         dueDate: studentPhases.dueDate,
         phaseName: studentPhases.phaseName,
       })
@@ -385,7 +385,7 @@ export class StudentProgressRepository {
       .orderBy(asc(studentPhases.dueDate));
 
     return results.map(r => ({
-      aacUserId: r.aacUserId,
+      studentId: r.studentId,
       dueDate: r.dueDate || '',
       phaseName: r.phaseName,
     }));
@@ -395,7 +395,7 @@ export class StudentProgressRepository {
   // FULL STUDENT PROGRESS DATA
   // ==========================================================================
 
-  async getFullStudentProgress(aacUserId: string): Promise<{
+  async getFullStudentProgress(studentId: string): Promise<{
     phases: StudentPhase[];
     goals: StudentGoal[];
     complianceItems: StudentComplianceItem[];
@@ -403,11 +403,11 @@ export class StudentProgressRepository {
     recentProgress: StudentProgressEntry[];
   }> {
     const [phases, goals, complianceItems, serviceRecommendations, recentProgress] = await Promise.all([
-      this.getPhasesByAacUserId(aacUserId),
-      this.getGoalsByAacUserId(aacUserId),
-      this.getComplianceItemsByAacUserId(aacUserId),
-      this.getServiceRecommendationsByAacUserId(aacUserId),
-      this.getProgressEntriesByAacUserId(aacUserId, 10),
+      this.getPhasesByStudentId(studentId),
+      this.getGoalsByStudentId(studentId),
+      this.getComplianceItemsByStudentId(studentId),
+      this.getServiceRecommendationsByStudentId(studentId),
+      this.getProgressEntriesByStudentId(studentId, 10),
     ]);
 
     return {

@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction, RequestHandler } from "express";
-import { userRepository, aacUserRepository } from "../repositories";
+import { userRepository, studentRepository } from "../repositories";
 
 /**
  * Middleware that requires user to be authenticated
@@ -113,10 +113,10 @@ export const requireOnboardingComplete = async (
     // Check if user has completed onboarding
     if (user.onboardingStep < 3) {
       // Allow users who have AAC users to proceed even if onboarding not marked complete
-      const aacUsers = await aacUserRepository.getAacUsersByUserId(
+      const students = await studentRepository.getStudentsByUserId(
         (req.user as any).id
       );
-      if (!aacUsers || aacUsers.length === 0) {
+      if (!students || students.length === 0) {
         res.status(412).json({
           success: false,
           message: "Please complete onboarding first",

@@ -7,7 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
-import { AacUserProvider, useAacUser } from "@/hooks/useAacUser";
+import { StudentProvider, useStudent } from "@/hooks/useStudent";
 import NotFound from "@/pages/not-found";
 import PurchaseCredits from "@/pages/purchase-credits";
 import TermsOfService from "@/pages/terms-of-service";
@@ -19,7 +19,7 @@ import { FeaturePanelProvider } from "./contexts/FeaturePanelContext";
 
 function OnboardingGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
-  const { aacUsers, isLoading: isAacUserLoading } = useAacUser();
+  const { students, isLoading: isStudentLoading } = useStudent();
   const [location, setLocation] = useLocation();
 
   const { data: onboardingStatus } = useQuery({
@@ -31,24 +31,27 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
     // Don’t decide anything until we know:
     // - user is loaded
     // - onboarding status is loaded
-    // - AAC users have finished loading
-    if (!user || !onboardingStatus || isAacUserLoading) {
+    // - students have finished loading
+    if (!user || !onboardingStatus || isStudentLoading) {
       return;
     }
 
     const onboardingStep = (onboardingStatus as any)?.onboardingStep ?? 0;
-    const hasAacUsers = Array.isArray(aacUsers) && aacUsers.length > 0;
+    const hasStudents = Array.isArray(students) && students.length > 0;
 
-    // Only redirect to onboarding if user hasn't completed it AND has no AAC users
-    if (onboardingStep < 3 && !hasAacUsers && location !== "/onboarding") {
+    return;
+    // Ignore onboarding process for now, not important
+
+    // Only redirect to onboarding if user hasn't completed it AND has no students
+    if (onboardingStep < 3 && !hasStudents && location !== "/onboarding") {
       setLocation("/onboarding");
     }
 
-    // If user has completed onboarding or has AAC users, and is on onboarding page, redirect to home
-    if ((onboardingStep === 3 || hasAacUsers) && location === "/onboarding") {
+    // If user has completed onboarding or has students, and is on onboarding page, redirect to home
+    if ((onboardingStep === 3 || hasStudents) && location === "/onboarding") {
       setLocation("/");
     }
-  }, [user, onboardingStatus, isAacUserLoading, aacUsers, location, setLocation]);
+  }, [user, onboardingStatus, isStudentLoading, students, location, setLocation]);
 
   return <>{children}</>;
 }
@@ -94,7 +97,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <LanguageProvider>
         <AuthProvider>
-          <AacUserProvider>
+          <StudentProvider>
             <FeaturePanelProvider>
               <ChatProvider>
                 <ThemeProvider defaultTheme="dark">
@@ -105,7 +108,7 @@ function App() {
                 </ThemeProvider>
               </ChatProvider>
             </FeaturePanelProvider>
-          </AacUserProvider>
+          </StudentProvider>
         </AuthProvider>
       </LanguageProvider>
     </QueryClientProvider>

@@ -32,7 +32,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Download, TrendingUp, Activity, CheckCircle2, CalendarIcon, Crown } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
-import type { AacUser } from "@shared/schema";
+import type { Student } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 
 interface ClinicalMetrics {
@@ -50,27 +50,27 @@ interface ClinicalMetrics {
 
 export default function ClinicalDataPage() {
   const { toast } = useToast();
-  const [selectedAacUser, setSelectedAacUser] = useState<string>("all");
+  const [selectedStudent, setSelectedStudent] = useState<string>("all");
   const [startDate, setStartDate] = useState<Date>();
   const [endDate, setEndDate] = useState<Date>();
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
   // Fetch user's AAC profiles
-  const { data: aacUsersResponse, isLoading: isLoadingUsers } = useQuery<{
+  const { data: studentsResponse, isLoading: isLoadingUsers } = useQuery<{
     success: boolean;
-    aacUsers: AacUser[];
+    students: Student[];
   }>({
-    queryKey: ["/api/aac-users"],
+    queryKey: ["/api/students"],
   });
 
-  const aacUsers = aacUsersResponse?.aacUsers || [];
+  const students = studentsResponse?.students || [];
 
   // Build query params for filtering
   const buildQueryParams = () => {
     const params = new URLSearchParams();
-    if (selectedAacUser !== "all") {
-      params.append("aacUserId", selectedAacUser);
+    if (selectedStudent !== "all") {
+      params.append("studentId", selectedStudent);
     }
     if (startDate) {
       params.append("startDate", startDate.toISOString());
@@ -87,7 +87,7 @@ export default function ClinicalDataPage() {
     isLoading: isLoadingMetrics,
     error: metricsError,
   } = useQuery<{ success: boolean; metrics: ClinicalMetrics }>({
-    queryKey: ["/api/slp/clinical-metrics", selectedAacUser, startDate, endDate],
+    queryKey: ["/api/slp/clinical-metrics", selectedStudent, startDate, endDate],
     queryFn: async () => {
       const queryString = buildQueryParams();
       const response = await fetch(
@@ -207,14 +207,14 @@ export default function ClinicalDataPage() {
             {/* AAC User Selector */}
             <div>
               <label className="text-sm font-medium mb-2 block">AAC User</label>
-              <Select value={selectedAacUser} onValueChange={setSelectedAacUser}>
-                <SelectTrigger data-testid="select-aac-user">
+              <Select value={selectedStudent} onValueChange={setSelectedStudent}>
+                <SelectTrigger data-testid="select-student">
                   <SelectValue placeholder="Select AAC user" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All AAC Users</SelectItem>
-                  {aacUsers?.map((user) => (
-                    <SelectItem key={user.id} value={user.aacUserId}>
+                  {students?.map((user) => (
+                    <SelectItem key={user.id} value={user.studentId}>
                       {user.alias}
                     </SelectItem>
                   ))}

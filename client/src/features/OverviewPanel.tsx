@@ -4,7 +4,7 @@
 import { useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
-import { useAacUser } from '@/hooks/useAacUser';
+import { useStudent } from '@/hooks/useStudent';
 import { useFeaturePanel, useSharedState } from '@/contexts/FeaturePanelContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -52,19 +52,12 @@ const mockStats = {
   pendingReview: 0,
 };
 
-const mockChartData = [
-  { name: 'Goal Development', value: 12, color: 'hsl(var(--chart-2))' },
-  { name: 'Assessment', value: 8, color: 'hsl(var(--chart-1))' },
-  { name: 'Intervention', value: 6, color: 'hsl(var(--chart-3))' },
-  { name: 'Re-eval', value: 4, color: 'hsl(var(--chart-4))' },
-];
-
 export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
   const { t, isRTL } = useLanguage();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const { user } = useAuth();
-  const { aacUsers, selectAacUser } = useAacUser();
+  const { students, selectStudent } = useStudent();
   const { setActiveFeature, registerMetadataBuilder, unregisterMetadataBuilder } = useFeaturePanel();
   const { setSharedState } = useSharedState();
 
@@ -81,10 +74,10 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
   // Register metadata builder
   const buildOverviewMetadata = useCallback(() => {
     return {
-      totalStudents: overviewData?.stats?.totalStudents || aacUsers.length,
+      totalStudents: overviewData?.stats?.totalStudents || students.length,
       activeCases: overviewData?.stats?.activeCases || 0,
     };
-  }, [overviewData, aacUsers.length]);
+  }, [overviewData, students.length]);
 
   useEffect(() => {
     registerMetadataBuilder('overview', buildOverviewMetadata);
@@ -99,14 +92,14 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
         value: p.count,
         color: `hsl(var(--chart-${(i % 5) + 1}))`,
       }))
-    : mockChartData;
+    : [];
 
   const upcomingDeadlines = overviewData?.upcomingDeadlines || [];
 
   // Handle student click - navigate to student progress
-  const handleStudentClick = async (aacUserId: string) => {
-    await selectAacUser(aacUserId);
-    setSharedState({ selectedStudentId: aacUserId });
+  const handleStudentClick = async (studentId: string) => {
+    await selectStudent(studentId);
+    setSharedState({ selectedStudentId: studentId });
     setActiveFeature('progress');
   };
 
@@ -182,16 +175,16 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
                   isDark ? 'text-white' : 'text-slate-900',
                   isRTL && 'flex-row-reverse justify-end'
                 )}>
-                  {t('overview.deadline_alert') || 'Upcoming Deadlines'}
+                  {t('overview.deadlineAlert') || 'Upcoming Deadlines'}
                   <Badge variant="destructive" className="animate-pulse">
-                    {t('overview.days_left') || '7 days'}
+                    {t('overview.daysLeft') || '7 days'}
                   </Badge>
                 </h3>
                 <p className={cn(
                   'mt-1',
                   isDark ? 'text-slate-400' : 'text-slate-600'
                 )}>
-                  {(t('overview.deadline_desc') || '{count} students require attention this week')
+                  {(t('overview.deadlineDesc') || '{count} students require attention this week')
                     .replace('{count}', upcomingDeadlines.length.toString())}
                 </p>
               </div>
@@ -201,7 +194,7 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
                   className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-md"
                   onClick={handleViewAllStudents}
                 >
-                  {t('overview.review_btn') || 'Review Now'}
+                  {t('overview.reviewBtn') || 'Review Now'}
                 </Button>
               </div>
             </div>
@@ -215,7 +208,7 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
                 isRTL && 'flex-row-reverse'
               )}>
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  {t('overview.total_students') || 'Total Students'}
+                  {t('overview.totalStudents') || 'Total Students'}
                 </CardTitle>
                 <Users className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
@@ -233,14 +226,14 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
                 isRTL && 'flex-row-reverse'
               )}>
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  {t('overview.active_plans') || 'Active Plans'}
+                  {t('overview.activePlans') || 'Active Plans'}
                 </CardTitle>
                 <Activity className="w-4 h-4 text-primary" />
               </CardHeader>
               <CardContent className={isRTL ? 'text-right' : ''}>
                 <div className="text-2xl font-bold text-primary">{stats.activeCases}</div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {t('overview.from_last_month') || 'In progress'}
+                  {t('overview.fromLastMonth') || 'In progress'}
                 </p>
               </CardContent>
             </Card>
@@ -277,7 +270,7 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
                   'text-sm font-medium',
                   isDark ? 'text-amber-400' : 'text-amber-700'
                 )}>
-                  {t('overview.pending_review') || 'Pending Review'}
+                  {t('overview.pendingReview') || 'Pending Review'}
                 </CardTitle>
                 <Clock className={cn(
                   'w-4 h-4',
@@ -295,7 +288,7 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
                   'text-xs mt-1',
                   isDark ? 'text-amber-500' : 'text-amber-600/80'
                 )}>
-                  {t('overview.attention_needed') || 'Need attention'}
+                  {t('overview.attentionNeeded') || 'Need attention'}
                 </p>
               </CardContent>
             </Card>
@@ -306,9 +299,9 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
             {/* Chart */}
             <Card className="lg:col-span-2 h-full flex flex-col">
               <CardHeader>
-                <CardTitle>{t('overview.chart_title') || 'Caseload by Phase'}</CardTitle>
+                <CardTitle>{t('overview.chartTitle') || 'Caseload by Phase'}</CardTitle>
                 <CardDescription>
-                  {t('overview.chart_subtitle') || 'Distribution of students across process phases'}
+                  {t('overview.chartSubtitle') || 'Distribution of students across process phases'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex-1 min-h-[300px]">
@@ -361,16 +354,16 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
             {/* Priority Focus / Upcoming Deadlines */}
             <Card className="h-full flex flex-col">
               <CardHeader>
-                <CardTitle>{t('overview.priority_focus') || 'Priority Focus'}</CardTitle>
+                <CardTitle>{t('overview.priorityFocus') || 'Priority Focus'}</CardTitle>
                 <CardDescription>
-                  {t('overview.priority_desc') || 'Students requiring immediate attention'}
+                  {t('overview.priorityDesc') || 'Students requiring immediate attention'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex-1 flex flex-col gap-4">
-                {aacUsers.slice(0, 4).map((aacUser) => (
+                {students.slice(0, 4).map((student) => (
                   <div
-                    key={aacUser.id}
-                    onClick={() => handleStudentClick(aacUser.id)}
+                    key={student.id}
+                    onClick={() => handleStudentClick(student.id)}
                     className={cn(
                       'group flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all',
                       isRTL && 'flex-row-reverse',
@@ -389,17 +382,17 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
                           ? 'bg-slate-800 text-slate-300 group-hover:bg-primary group-hover:text-primary-foreground'
                           : 'bg-secondary text-secondary-foreground group-hover:bg-primary group-hover:text-primary-foreground'
                       )}>
-                        {aacUser.name.split(' ').map(n => n[0]).join('')}
+                        {student.name.split(' ').map(n => n[0]).join('')}
                       </div>
                       <div className={isRTL ? 'text-right' : ''}>
-                        <p className="font-medium text-sm">{aacUser.name}</p>
+                        <p className="font-medium text-sm">{student.name}</p>
                         <div className={cn(
                           'flex items-center gap-1.5',
                           isRTL && 'flex-row-reverse'
                         )}>
                           <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
                           <p className="text-xs text-muted-foreground">
-                            {t('overview.phase_goals') || 'Goal Development'}
+                            {t('overview.phaseGoals') || 'Goal Development'}
                           </p>
                         </div>
                       </div>
@@ -419,7 +412,7 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
                   className="w-full mt-auto"
                   onClick={handleViewAllStudents}
                 >
-                  {t('overview.view_all_priority') || 'View All Students'}
+                  {t('overview.viewAllPriority') || 'View All Students'}
                 </Button>
               </CardContent>
             </Card>

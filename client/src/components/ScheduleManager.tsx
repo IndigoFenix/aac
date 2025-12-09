@@ -21,24 +21,24 @@ import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { Calendar, Clock, Plus, Edit2, Trash2, Save, X } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
-import type { AacUserSchedule } from "@shared/schema";
+import type { StudentSchedule } from "@shared/schema";
 
 interface ScheduleManagerProps {
-  aacUserId: string;
-  aacUserName: string;
+  studentId: string;
+  studentName: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
 export function ScheduleManager({
-  aacUserId,
-  aacUserName,
+  studentId,
+  studentName,
   open,
   onOpenChange,
 }: ScheduleManagerProps) {
   const { t, language } = useLanguage();
   const { toast } = useToast();
-  const [editingSchedule, setEditingSchedule] = useState<AacUserSchedule | null>(null);
+  const [editingSchedule, setEditingSchedule] = useState<StudentSchedule | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [scheduleForm, setScheduleForm] = useState({
     dayOfWeek: 1,
@@ -57,18 +57,18 @@ export function ScheduleManager({
 
   // Fetch schedules for this AAC user
   const { data: schedulesData, isLoading } = useQuery({
-    queryKey: ["/api/schedules", aacUserId],
+    queryKey: ["/api/schedules", studentId],
     queryFn: async () => {
-      const res = await fetch(`/api/schedules/${aacUserId}`, {
+      const res = await fetch(`/api/schedules/${studentId}`, {
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to fetch schedules");
       return res.json();
     },
-    enabled: open && !!aacUserId,
+    enabled: open && !!studentId,
   });
 
-  const schedules: AacUserSchedule[] = schedulesData?.schedules || [];
+  const schedules: StudentSchedule[] = schedulesData?.schedules || [];
 
   // Create schedule mutation
   const createScheduleMutation = useMutation({
@@ -78,7 +78,7 @@ export function ScheduleManager({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...data,
-          aacUserId,
+          studentId,
           startTime: `${data.startTime}:00`,
           endTime: `${data.endTime}:00`,
         }),
@@ -88,7 +88,7 @@ export function ScheduleManager({
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/schedules", aacUserId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/schedules", studentId] });
       toast({
         title: language === "he" ? "נוצר בהצלחה" : "Created successfully",
         description: language === "he" ? "פעילות נוספה ללוח הזמנים" : "Activity added to schedule",
@@ -121,7 +121,7 @@ export function ScheduleManager({
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/schedules", aacUserId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/schedules", studentId] });
       toast({
         title: language === "he" ? "עודכן בהצלחה" : "Updated successfully",
         description: language === "he" ? "פעילות עודכנה" : "Activity updated",
@@ -149,7 +149,7 @@ export function ScheduleManager({
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/schedules", aacUserId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/schedules", studentId] });
       toast({
         title: language === "he" ? "נמחק בהצלחה" : "Deleted successfully",
         description: language === "he" ? "פעילות הוסרה מלוח הזמנים" : "Activity removed from schedule",
@@ -179,7 +179,7 @@ export function ScheduleManager({
     setEditingSchedule(null);
   };
 
-  const handleEdit = (schedule: AacUserSchedule) => {
+  const handleEdit = (schedule: StudentSchedule) => {
     setEditingSchedule(schedule);
     setScheduleForm({
       dayOfWeek: schedule.dayOfWeek,
@@ -239,7 +239,7 @@ export function ScheduleManager({
     if (!acc[day]) acc[day] = [];
     acc[day].push(schedule);
     return acc;
-  }, {} as Record<number, AacUserSchedule[]>);
+  }, {} as Record<number, StudentSchedule[]>);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -248,7 +248,7 @@ export function ScheduleManager({
           <DialogTitle className={language === "he" ? "text-right" : "text-left"}>
             <div className={`flex items-center gap-2 ${language === "he" ? "flex-row-reverse" : ""}`}>
               <Calendar className="w-5 h-5" />
-              {language === "he" ? `לוח זמנים - ${aacUserName}` : `Schedule - ${aacUserName}`}
+              {language === "he" ? `לוח זמנים - ${studentName}` : `Schedule - ${studentName}`}
             </div>
           </DialogTitle>
           <DialogDescription className={language === "he" ? "text-right" : "text-left"}>

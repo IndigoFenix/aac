@@ -1,32 +1,32 @@
 import type { Request, Response } from "express";
-import { aacUserService } from "../services";
+import { studentService } from "../services";
 import {
-  insertAacUserScheduleSchema,
-  updateAacUserScheduleSchema,
+  insertStudentScheduleSchema,
+  updateStudentScheduleSchema,
 } from "@shared/schema";
 
-export class AacUserController {
+export class StudentController {
   /**
-   * GET /api/aac-users
+   * GET /api/students
    * Get all AAC users for the current user
    */
-  async getAacUsers(req: Request, res: Response): Promise<void> {
+  async getStudents(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
       console.log("Getting AAC users for user ID:", currentUser.id);
       
       // Get AAC users with their link information
-      const aacUsersWithLinks = await aacUserService.getAacUsersWithLinksByUserId(currentUser.id);
+      const studentsWithLinks = await studentService.getStudentsWithLinksByUserId(currentUser.id);
       
       // Transform to include calculated age and role
-      const aacUsers = aacUsersWithLinks.map(({ aacUser, link }) => ({
-        ...aacUser,
-        age: aacUserService.calculateAge(aacUser.birthDate),
+      const students = studentsWithLinks.map(({ student, link }) => ({
+        ...student,
+        age: studentService.calculateAge(student.birthDate),
         role: link.role,
         linkId: link.id,
       }));
       
-      res.json({ success: true, aacUsers });
+      res.json({ success: true, students });
     } catch (error: any) {
       console.error("Error fetching AAC users:", error);
       res
@@ -35,25 +35,25 @@ export class AacUserController {
     }
   }
 
-  async getAacUserById(req: Request, res: Response): Promise<void> {
+  async getStudentById(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const aacUserId = req.params.id;
+      const studentId = req.params.id;
 
       // Verify access
-      const { hasAccess, link } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
+      const { hasAccess, link } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied to this AAC user" });
         return;
       }
 
-      const aacUser = await aacUserService.getAacUserById(aacUserId);
-      if (aacUser) {
+      const student = await studentService.getStudentById(studentId);
+      if (student) {
         res.json({
           success: true,
-          aacUser: {
-            ...aacUser,
-            age: aacUserService.calculateAge(aacUser.birthDate),
+          student: {
+            ...student,
+            age: studentService.calculateAge(student.birthDate),
           },
         });
       } else {
@@ -68,10 +68,10 @@ export class AacUserController {
   }
 
   /**
-   * POST /api/aac-users
+   * POST /api/students
    * Create a new AAC user
    */
-  async createAacUser(req: Request, res: Response): Promise<void> {
+  async createStudent(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
 
@@ -82,7 +82,7 @@ export class AacUserController {
         return;
       }
 
-      const aacUser = await aacUserService.createAacUser(
+      const student = await studentService.createStudent(
         { ...req.body, isActive: true },
         currentUser.id,
         "owner" // Creating user becomes the owner
@@ -91,9 +91,9 @@ export class AacUserController {
       res.json({
         success: true,
         message: "AAC user created successfully",
-        aacUser: {
-          ...aacUser,
-          age: aacUserService.calculateAge(aacUser.birthDate),
+        student: {
+          ...student,
+          age: studentService.calculateAge(student.birthDate),
         },
       });
     } catch (error: any) {
@@ -105,38 +105,30 @@ export class AacUserController {
   }
 
   /**
-   * PATCH /api/aac-users/:id
+   * PATCH /api/students/:id
    * Update an AAC user
    */
-  async updateAacUser(req: Request, res: Response): Promise<void> {
+  async updateStudent(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const aacUserId = req.params.id;
-      const { name, gender, birthDate, diagnosis, backgroundContext } = req.body;
+      const studentId = req.params.id;
 
       // Verify access
-      const { hasAccess } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied to this AAC user" });
         return;
       }
 
-      const updates: any = {};
-      if (name !== undefined) updates.name = name;
-      if (gender !== undefined) updates.gender = gender;
-      if (birthDate !== undefined) updates.birthDate = birthDate;
-      if (diagnosis !== undefined) updates.diagnosis = diagnosis;
-      if (backgroundContext !== undefined) updates.backgroundContext = backgroundContext;
-
-      const updatedAacUser = await aacUserService.updateAacUser(aacUserId, updates);
+      const updatedStudent = await studentService.updateStudent(studentId, req.body);
       
-      if (updatedAacUser) {
+      if (updatedStudent) {
         res.json({
           success: true,
           message: "AAC user updated successfully",
-          aacUser: {
-            ...updatedAacUser,
-            age: aacUserService.calculateAge(updatedAacUser.birthDate),
+          student: {
+            ...updatedStudent,
+            age: studentService.calculateAge(updatedStudent.birthDate),
           },
         });
       } else {
@@ -151,16 +143,16 @@ export class AacUserController {
   }
 
   /**
-   * DELETE /api/aac-users/:id
+   * DELETE /api/students/:id
    * Delete an AAC user (soft delete)
    */
-  async deleteAacUser(req: Request, res: Response): Promise<void> {
+  async deleteStudent(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const aacUserId = req.params.id;
+      const studentId = req.params.id;
       
       // Verify access (only owners should be able to delete)
-      const { hasAccess, link } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
+      const { hasAccess, link } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied to this AAC user" });
         return;
@@ -171,7 +163,7 @@ export class AacUserController {
         return;
       }
 
-      const deleted = await aacUserService.deleteAacUser(aacUserId);
+      const deleted = await studentService.deleteStudent(studentId);
       
       if (deleted) {
         res.json({ success: true, message: "AAC user deleted successfully" });
@@ -189,13 +181,13 @@ export class AacUserController {
   // ==================== Link Management Routes ====================
 
   /**
-   * POST /api/aac-users/:id/link
+   * POST /api/students/:id/link
    * Link another user to an AAC user
    */
   async linkUser(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const aacUserId = req.params.id;
+      const studentId = req.params.id;
       const { targetUserId, role } = req.body;
 
       if (!targetUserId) {
@@ -204,7 +196,7 @@ export class AacUserController {
       }
 
       // Verify the current user has access to this AAC user
-      const { hasAccess, link: currentLink } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
+      const { hasAccess, link: currentLink } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied to this AAC user" });
         return;
@@ -216,9 +208,9 @@ export class AacUserController {
         return;
       }
 
-      const link = await aacUserService.linkUserToAacUser(
+      const link = await studentService.linkUserToStudent(
         targetUserId,
-        aacUserId,
+        studentId,
         role || "caregiver"
       );
 
@@ -236,17 +228,17 @@ export class AacUserController {
   }
 
   /**
-   * DELETE /api/aac-users/:id/link/:userId
+   * DELETE /api/students/:id/link/:userId
    * Remove a user's link to an AAC user
    */
   async unlinkUser(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const aacUserId = req.params.id;
+      const studentId = req.params.id;
       const targetUserId = req.params.userId;
 
       // Verify the current user has access and is an owner
-      const { hasAccess, link: currentLink } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
+      const { hasAccess, link: currentLink } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied to this AAC user" });
         return;
@@ -258,13 +250,13 @@ export class AacUserController {
       }
 
       // Cannot unlink the owner
-      const targetLink = await aacUserService.getUserAacUserLink(targetUserId, aacUserId);
+      const targetLink = await studentService.getUserStudentLink(targetUserId, studentId);
       if (targetLink?.role === "owner") {
         res.status(400).json({ success: false, message: "Cannot unlink the owner" });
         return;
       }
 
-      const unlinked = await aacUserService.unlinkUserFromAacUser(targetUserId, aacUserId);
+      const unlinked = await studentService.unlinkUserFromStudent(targetUserId, studentId);
 
       if (unlinked) {
         res.json({ success: true, message: "User unlinked successfully" });
@@ -280,22 +272,22 @@ export class AacUserController {
   }
 
   /**
-   * GET /api/aac-users/:id/links
+   * GET /api/students/:id/links
    * Get all users linked to an AAC user
    */
   async getLinkedUsers(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const aacUserId = req.params.id;
+      const studentId = req.params.id;
 
       // Verify access
-      const { hasAccess } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied to this AAC user" });
         return;
       }
 
-      const links = await aacUserService.getUsersLinkedToAacUser(aacUserId);
+      const links = await studentService.getUsersLinkedToStudent(studentId);
 
       res.json({ success: true, links });
     } catch (error: any) {
@@ -309,22 +301,22 @@ export class AacUserController {
   // ==================== Schedule Routes ====================
 
   /**
-   * GET /api/aac-users/:aacUserId/schedules
+   * GET /api/students/:studentId/schedules
    * Get all schedules for an AAC user
    */
   async getSchedules(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const { aacUserId } = req.params;
+      const { studentId } = req.params;
 
       // Verify access
-      const { hasAccess } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied to this AAC user" });
         return;
       }
 
-      const schedules = await aacUserService.getSchedulesByAacUserId(aacUserId);
+      const schedules = await studentService.getSchedulesByStudentId(studentId);
       res.json({ success: true, schedules });
     } catch (error: any) {
       console.error("Error fetching schedules:", error);
@@ -333,26 +325,26 @@ export class AacUserController {
   }
 
   /**
-   * POST /api/aac-users/:aacUserId/schedules
+   * POST /api/students/:studentId/schedules
    * Create a schedule entry for an AAC user
    */
   async createSchedule(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const { aacUserId } = req.params;
+      const { studentId } = req.params;
 
       // Verify access
-      const { hasAccess } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied to this AAC user" });
         return;
       }
 
-      const validatedData = insertAacUserScheduleSchema.parse({
+      const validatedData = insertStudentScheduleSchema.parse({
         ...req.body,
-        aacUserId,
+        studentId,
       });
-      const schedule = await aacUserService.createScheduleEntry(validatedData);
+      const schedule = await studentService.createScheduleEntry(validatedData);
       res.json({
         success: true,
         message: "Schedule entry created successfully",
@@ -382,21 +374,21 @@ export class AacUserController {
       const scheduleId = req.params.id;
 
       // Get the schedule to verify access
-      const schedule = await aacUserService.getScheduleEntry(scheduleId);
+      const schedule = await studentService.getScheduleEntry(scheduleId);
       if (!schedule) {
         res.status(404).json({ success: false, message: "Schedule entry not found" });
         return;
       }
 
       // Verify access to the AAC user
-      const { hasAccess } = await aacUserService.verifyAacUserAccess(schedule.aacUserId, currentUser.id);
+      const { hasAccess } = await studentService.verifyStudentAccess(schedule.studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied to this AAC user" });
         return;
       }
 
-      const validatedData = updateAacUserScheduleSchema.parse(req.body);
-      const updated = await aacUserService.updateScheduleEntry(scheduleId, validatedData);
+      const validatedData = updateStudentScheduleSchema.parse(req.body);
+      const updated = await studentService.updateScheduleEntry(scheduleId, validatedData);
       
       if (updated) {
         res.json({
@@ -431,20 +423,20 @@ export class AacUserController {
       const scheduleId = req.params.id;
 
       // Get the schedule to verify access
-      const schedule = await aacUserService.getScheduleEntry(scheduleId);
+      const schedule = await studentService.getScheduleEntry(scheduleId);
       if (!schedule) {
         res.status(404).json({ success: false, message: "Schedule entry not found" });
         return;
       }
 
       // Verify access to the AAC user
-      const { hasAccess } = await aacUserService.verifyAacUserAccess(schedule.aacUserId, currentUser.id);
+      const { hasAccess } = await studentService.verifyStudentAccess(schedule.studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied to this AAC user" });
         return;
       }
 
-      const deleted = await aacUserService.deleteScheduleEntry(scheduleId);
+      const deleted = await studentService.deleteScheduleEntry(scheduleId);
       
       if (deleted) {
         res.json({ success: true, message: "Schedule entry deleted successfully" });
@@ -458,16 +450,16 @@ export class AacUserController {
   }
 
   /**
-   * GET /api/aac-users/:aacUserId/schedule-context
+   * GET /api/students/:studentId/schedule-context
    * Get the current schedule context for an AAC user
    */
   async getScheduleContext(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const { aacUserId } = req.params;
+      const { studentId } = req.params;
 
       // Verify access
-      const { hasAccess } = await aacUserService.verifyAacUserAccess(aacUserId, currentUser.id);
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied to this AAC user" });
         return;
@@ -476,7 +468,7 @@ export class AacUserController {
       const timestamp = req.query.timestamp
         ? new Date(req.query.timestamp as string)
         : new Date();
-      const context = await aacUserService.getCurrentScheduleContext(aacUserId, timestamp);
+      const context = await studentService.getCurrentScheduleContext(studentId, timestamp);
       res.json({ success: true, context });
     } catch (error: any) {
       console.error("Error fetching schedule context:", error);
@@ -485,4 +477,4 @@ export class AacUserController {
   }
 }
 
-export const aacUserController = new AacUserController();
+export const studentController = new StudentController();

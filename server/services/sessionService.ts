@@ -5,21 +5,21 @@
  * 
  * Key differences from the original:
  * - No agents/instances - uses "modes" (board, interpret) with local templates
- * - Memory is stored on User, AacUser, and UserAacUser objects
- * - Credits are tracked per User, AacUser, and UserAacUser
- * - Simplified input: userId, aacUserId, sessionId, mode
+ * - Memory is stored on User, Student, and UserStudent objects
+ * - Credits are tracked per User, Student, and UserStudent
+ * - Simplified input: userId, studentId, sessionId, mode
  */
 
 import { db } from "../db";
 import { eq, and, sql } from "drizzle-orm";
 import {
   users,
-  aacUsers,
-  userAacUsers,
+  students,
+  userStudents,
   chatSessions,
   type User,
-  type AacUser,
-  type UserAacUser,
+  type Student,
+  type UserStudent,
   type ChatSession,
   type InsertChatSession,
   type ChatState,
@@ -42,7 +42,7 @@ interface LocalAgentTemplate extends AgentLike {
   memoryFields: AgentMemoryField[];
 }
 
-// Memory fields that are populated from User, AacUser, and UserAacUser
+// Memory fields that are populated from User, Student, and UserStudent
 // These are FLAT top-level fields - the memory system requires arrays/maps to be at root level
 const MASTER_MEMORY_FIELDS: AgentMemoryField[] = [
   // === User fields (prefixed with User_) ===
@@ -54,9 +54,9 @@ const MASTER_MEMORY_FIELDS: AgentMemoryField[] = [
     opened: true,
   },
   
-  // === AacUser fields (prefixed with AacUser_) ===
+  // === Student fields (prefixed with Student_) ===
   {
-    id: "AacUser_People",
+    id: "Student_People",
     type: "array",
     title: "People",
     description: "Important people in the AAC user's life",
@@ -92,7 +92,7 @@ const MASTER_MEMORY_FIELDS: AgentMemoryField[] = [
     },
   },
   {
-    id: "AacUser_Interests",
+    id: "Student_Interests",
     type: "array",
     title: "Interests",
     description: "Things the AAC user enjoys or is interested in",
@@ -103,7 +103,7 @@ const MASTER_MEMORY_FIELDS: AgentMemoryField[] = [
     },
   },
   {
-    id: "AacUser_Milestones",
+    id: "Student_Milestones",
     type: "array",
     title: "Milestones",
     description: "Important milestones and goals for the AAC user",
@@ -137,7 +137,7 @@ const MASTER_MEMORY_FIELDS: AgentMemoryField[] = [
     },
   },
   
-  // === UserAacUser fields (relationship-specific, prefixed with Relationship_) ===
+  // === UserStudent fields (relationship-specific, prefixed with Relationship_) ===
   // Can be extended with relationship-specific fields as needed
 ];
 
@@ -202,18 +202,18 @@ Always be respectful when discussing the AAC user and remember that caregivers a
 
 interface MemoryContext {
   user?: User;
-  aacUser?: AacUser;
-  userAacUser?: UserAacUser;
+  student?: Student;
+  userStudent?: UserStudent;
 }
 
 // Memory values are stored flat with prefixed keys
-// e.g., { "User_AiPersonalityPreferences": "...", "AacUser_Interests": [...] }
+// e.g., { "User_AiPersonalityPreferences": "...", "Student_Interests": [...] }
 type FlatMemoryValues = Record<string, any>;
 
 // Prefixes for memory field ownership
 const MEMORY_PREFIX = {
   USER: "User_",
-  AAC_USER: "AacUser_",
+  AAC_USER: "Student_",
   RELATIONSHIP: "Relationship_",
 };
 
@@ -230,18 +230,18 @@ function buildMemoryValues(context: MemoryContext): FlatMemoryValues {
     }
   }
   
-  // Load AacUser memory values (prefixed with AacUser_)
-  if (context.aacUser) {
-    const aacUserMemory = (context.aacUser.chatMemory as Record<string, any>) || {};
-    for (const [key, value] of Object.entries(aacUserMemory)) {
+  // Load Student memory values (prefixed with Student_)
+  if (context.student) {
+    const studentMemory = (context.student.chatMemory as Record<string, any>) || {};
+    for (const [key, value] of Object.entries(studentMemory)) {
       const prefixedKey = key.startsWith(MEMORY_PREFIX.AAC_USER) ? key : `${MEMORY_PREFIX.AAC_USER}${key}`;
       values[prefixedKey] = value;
     }
   }
   
-  // Load UserAacUser relationship memory values (prefixed with Relationship_)
-  if (context.userAacUser) {
-    const relationshipMemory = (context.userAacUser.chatMemory as Record<string, any>) || {};
+  // Load UserStudent relationship memory values (prefixed with Relationship_)
+  if (context.userStudent) {
+    const relationshipMemory = (context.userStudent.chatMemory as Record<string, any>) || {};
     for (const [key, value] of Object.entries(relationshipMemory)) {
       const prefixedKey = key.startsWith(MEMORY_PREFIX.RELATIONSHIP) ? key : `${MEMORY_PREFIX.RELATIONSHIP}${key}`;
       values[prefixedKey] = value;
@@ -277,19 +277,19 @@ async function getUser(userId: string): Promise<User | undefined> {
   return user || undefined;
 }
 
-async function getAacUser(aacUserId: string): Promise<AacUser | undefined> {
-  const [aacUser] = await db.select().from(aacUsers).where(eq(aacUsers.id, aacUserId));
-  return aacUser || undefined;
+async function getStudent(studentId: string): Promise<Student | undefined> {
+  const [student] = await db.select().from(students).where(eq(students.id, studentId));
+  return student || undefined;
 }
 
-async function getUserAacUser(userId: string, aacUserId: string): Promise<UserAacUser | undefined> {
+async function getUserStudent(userId: string, studentId: string): Promise<UserStudent | undefined> {
   const [relationship] = await db
     .select()
-    .from(userAacUsers)
+    .from(userStudents)
     .where(and(
-      eq(userAacUsers.userId, userId),
-      eq(userAacUsers.aacUserId, aacUserId),
-      eq(userAacUsers.isActive, true)
+      eq(userStudents.userId, userId),
+      eq(userStudents.studentId, studentId),
+      eq(userStudents.isActive, true)
     ));
   return relationship || undefined;
 }
@@ -324,18 +324,18 @@ async function updateUserMemory(userId: string, memory: Record<string, any>): Pr
     .where(eq(users.id, userId));
 }
 
-async function updateAacUserMemory(aacUserId: string, memory: Record<string, any>): Promise<void> {
+async function updateStudentMemory(studentId: string, memory: Record<string, any>): Promise<void> {
   await db
-    .update(aacUsers)
+    .update(students)
     .set({ chatMemory: memory, updatedAt: new Date() })
-    .where(eq(aacUsers.id, aacUserId));
+    .where(eq(students.id, studentId));
 }
 
-async function updateUserAacUserMemory(id: string, memory: Record<string, any>): Promise<void> {
+async function updateUserStudentMemory(id: string, memory: Record<string, any>): Promise<void> {
   await db
-    .update(userAacUsers)
+    .update(userStudents)
     .set({ chatMemory: memory, updatedAt: new Date() })
-    .where(eq(userAacUsers.id, id));
+    .where(eq(userStudents.id, id));
 }
 
 async function spendCredits(
@@ -353,23 +353,23 @@ async function spendCredits(
       })
       .where(eq(users.id, context.user.id));
   }
-  if (context.aacUser) {
+  if (context.student) {
     await db
-      .update(aacUsers)
+      .update(students)
       .set({
-        chatCreditsUsed: sql`${aacUsers.chatCreditsUsed} + ${creditsUsed}`,
+        chatCreditsUsed: sql`${students.chatCreditsUsed} + ${creditsUsed}`,
         chatCreditsUpdated: new Date(),
       })
-      .where(eq(aacUsers.id, context.aacUser.id));
+      .where(eq(students.id, context.student.id));
   }
-  if (context.userAacUser) {
+  if (context.userStudent) {
     await db
-      .update(userAacUsers)
+      .update(userStudents)
       .set({
-        chatCreditsUsed: sql`${userAacUsers.chatCreditsUsed} + ${creditsUsed}`,
+        chatCreditsUsed: sql`${userStudents.chatCreditsUsed} + ${creditsUsed}`,
         chatCreditsUpdated: new Date(),
       })
-      .where(eq(userAacUsers.id, context.userAacUser.id));
+      .where(eq(userStudents.id, context.userStudent.id));
   }
 }
 
@@ -379,17 +379,17 @@ async function spendCredits(
 
 interface GetMessageManagerInput {
   userId?: string;
-  aacUserId?: string;
+  studentId?: string;
   sessionId?: string;
   mode?: ChatMode;
 }
 
 async function getMessageManager(input: GetMessageManagerInput): Promise<ChatMessageManager> {
-  const { userId, aacUserId, sessionId, mode = "interpret" } = input;
+  const { userId, studentId, sessionId, mode = "interpret" } = input;
 
   // Validate input - at least one identifier must be provided
-  if (!userId && !aacUserId && !sessionId) {
-    throw { status: 400, message: "Must provide userId, aacUserId, or sessionId" };
+  if (!userId && !studentId && !sessionId) {
+    throw { status: 400, message: "Must provide userId, studentId, or sessionId" };
   }
 
   // Build memory context
@@ -402,16 +402,16 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<ChatMes
     }
   }
   
-  if (aacUserId) {
-    context.aacUser = await getAacUser(aacUserId);
-    if (!context.aacUser) {
-      throw { status: 404, message: `AAC User not found: ${aacUserId}` };
+  if (studentId) {
+    context.student = await getStudent(studentId);
+    if (!context.student) {
+      throw { status: 404, message: `AAC User not found: ${studentId}` };
     }
   }
   
-  // If both user and aacUser provided, get their relationship
-  if (userId && aacUserId) {
-    context.userAacUser = await getUserAacUser(userId, aacUserId);
+  // If both user and student provided, get their relationship
+  if (userId && studentId) {
+    context.userStudent = await getUserStudent(userId, studentId);
     // Relationship is optional - they might not have one yet
   }
 
@@ -453,8 +453,8 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<ChatMes
     chatState = newChatState;
     session = await createSession({
       userId: userId || null,
-      aacUserId: aacUserId || null,
-      userAacUserId: context.userAacUser?.id || null,
+      studentId: studentId || null,
+      userStudentId: context.userStudent?.id || null,
       chatMode: sessionMode,
       state: chatState,
       log: [],
@@ -481,23 +481,23 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<ChatMes
       }
     }
     
-    // AacUser memory (fields prefixed with AacUser_)
-    if (context.aacUser) {
-      const aacUserMemory = extractMemoryForEntity(newMemoryValues, MEMORY_PREFIX.AAC_USER);
-      const currentMemory = (context.aacUser.chatMemory as Record<string, any>) || {};
-      if (Object.keys(aacUserMemory).length > 0 && JSON.stringify(currentMemory) !== JSON.stringify(aacUserMemory)) {
-        await updateAacUserMemory(context.aacUser.id, aacUserMemory);
-        context.aacUser = { ...context.aacUser, chatMemory: aacUserMemory };
+    // Student memory (fields prefixed with Student_)
+    if (context.student) {
+      const studentMemory = extractMemoryForEntity(newMemoryValues, MEMORY_PREFIX.AAC_USER);
+      const currentMemory = (context.student.chatMemory as Record<string, any>) || {};
+      if (Object.keys(studentMemory).length > 0 && JSON.stringify(currentMemory) !== JSON.stringify(studentMemory)) {
+        await updateStudentMemory(context.student.id, studentMemory);
+        context.student = { ...context.student, chatMemory: studentMemory };
       }
     }
     
-    // UserAacUser relationship memory (fields prefixed with Relationship_)
-    if (context.userAacUser) {
+    // UserStudent relationship memory (fields prefixed with Relationship_)
+    if (context.userStudent) {
       const relationshipMemory = extractMemoryForEntity(newMemoryValues, MEMORY_PREFIX.RELATIONSHIP);
-      const currentMemory = (context.userAacUser.chatMemory as Record<string, any>) || {};
+      const currentMemory = (context.userStudent.chatMemory as Record<string, any>) || {};
       if (Object.keys(relationshipMemory).length > 0 && JSON.stringify(currentMemory) !== JSON.stringify(relationshipMemory)) {
-        await updateUserAacUserMemory(context.userAacUser.id, relationshipMemory);
-        context.userAacUser = { ...context.userAacUser, chatMemory: relationshipMemory };
+        await updateUserStudentMemory(context.userStudent.id, relationshipMemory);
+        context.userStudent = { ...context.userStudent, chatMemory: relationshipMemory };
       }
     }
   };
@@ -506,17 +506,17 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<ChatMes
     // Add any additional instructions or context to the core prompt if needed
     let prefix = "";
     if (context.user) {
-      if (context.aacUser) {
-        if (context.userAacUser) {
-          prefix += `You are speaking with ${context.user.fullName}, who is a ${context.userAacUser.role} for the AAC user ${context.aacUser.name}.\n`;
+      if (context.student) {
+        if (context.userStudent) {
+          prefix += `You are speaking with ${context.user.fullName}, who is a ${context.userStudent.role} for the AAC user ${context.student.name}.\n`;
         } else {
-          prefix += `You are speaking with ${context.user.fullName}, who is connected to the AAC user ${context.aacUser.name}.\n`;
+          prefix += `You are speaking with ${context.user.fullName}, who is connected to the AAC user ${context.student.name}.\n`;
         }
       } else {
         prefix += `You are speaking with ${context.user.fullName}.\n`;
       }
-    } else if (context.aacUser) {
-      prefix += `You are speaking with the AAC user ${context.aacUser.name}, who has ${context.aacUser.diagnosis}.\n`;
+    } else if (context.student) {
+      prefix += `You are speaking with the AAC user ${context.student.name}, who has ${context.student.diagnosis}.\n`;
     }
     return `${prefix}\n\n${corePrompt}`;
   }
@@ -566,7 +566,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<ChatMes
   // Build agent-like object from template for ChatMessageManager
   const agentFromTemplate: AgentTemplate = {
     id: `template-${sessionMode}`,
-    accountId: context.user?.id || context.aacUser?.id || "system",
+    accountId: context.user?.id || context.student?.id || "system",
     name: template.name,
     corePrompt: enrichCorePrompt(context, template.corePrompt),
     greeting: template.greeting,
@@ -614,7 +614,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<ChatMes
 
 export interface OnMessageInput {
   userId?: string;
-  aacUserId?: string;
+  studentId?: string;
   sessionId?: string;
   mode?: ChatMode;
   messages?: ChatMessage[];
@@ -623,11 +623,11 @@ export interface OnMessageInput {
 
 export async function onMessage(input: OnMessageInput): Promise<MessageResponse> {
   try {
-    const { userId, aacUserId, sessionId, mode, messages, replyType } = input;
+    const { userId, studentId, sessionId, mode, messages, replyType } = input;
 
     const messageManager = await getMessageManager({
       userId,
-      aacUserId,
+      studentId,
       sessionId,
       mode,
     });
@@ -668,7 +668,7 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
 
 export async function persistMessages(params: {
   userId?: string;
-  aacUserId?: string;
+  studentId?: string;
   sessionId: string;
   items: {
     role: string;
@@ -679,7 +679,7 @@ export async function persistMessages(params: {
 }): Promise<{ ok: boolean }> {
   const manager = await getMessageManager({
     userId: params.userId,
-    aacUserId: params.aacUserId,
+    studentId: params.studentId,
     sessionId: params.sessionId,
   });
   

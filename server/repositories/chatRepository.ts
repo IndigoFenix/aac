@@ -41,30 +41,30 @@ export class ChatRepository {
       .orderBy(desc(chatSessions.lastUpdate));
   }
 
-  async getSessionsByAacUserId(aacUserId: string): Promise<ChatSession[]> {
+  async getSessionsByStudentId(studentId: string): Promise<ChatSession[]> {
     return await db
       .select()
       .from(chatSessions)
-      .where(and(eq(chatSessions.aacUserId, aacUserId), isNull(chatSessions.deletedAt)))
+      .where(and(eq(chatSessions.studentId, studentId), isNull(chatSessions.deletedAt)))
       .orderBy(desc(chatSessions.lastUpdate));
   }
 
-  async getSessionsByUserAacUserId(userAacUserId: string): Promise<ChatSession[]> {
+  async getSessionsByUserStudentId(userStudentId: string): Promise<ChatSession[]> {
     return await db
       .select()
       .from(chatSessions)
-      .where(and(eq(chatSessions.userAacUserId, userAacUserId), isNull(chatSessions.deletedAt)))
+      .where(and(eq(chatSessions.userStudentId, userStudentId), isNull(chatSessions.deletedAt)))
       .orderBy(desc(chatSessions.lastUpdate));
   }
 
-  async getOpenSessions(userId?: string, aacUserId?: string): Promise<ChatSession[]> {
+  async getOpenSessions(userId?: string, studentId?: string): Promise<ChatSession[]> {
     const conditions = [eq(chatSessions.status, "open"), isNull(chatSessions.deletedAt)];
     
     if (userId) {
       conditions.push(eq(chatSessions.userId, userId));
     }
-    if (aacUserId) {
-      conditions.push(eq(chatSessions.aacUserId, aacUserId));
+    if (studentId) {
+      conditions.push(eq(chatSessions.studentId, studentId));
     }
     
     return await db
@@ -140,22 +140,22 @@ export class ChatRepository {
 
   async getRecentSessionsForContext(
     userId?: string,
-    aacUserId?: string,
+    studentId?: string,
     limit: number = 5
   ): Promise<ChatSession[]> {
     const conditions = [isNull(chatSessions.deletedAt)];
     
-    if (userId && aacUserId) {
+    if (userId && studentId) {
       conditions.push(
         or(
           eq(chatSessions.userId, userId),
-          eq(chatSessions.aacUserId, aacUserId)
+          eq(chatSessions.studentId, studentId)
         )!
       );
     } else if (userId) {
       conditions.push(eq(chatSessions.userId, userId));
-    } else if (aacUserId) {
-      conditions.push(eq(chatSessions.aacUserId, aacUserId));
+    } else if (studentId) {
+      conditions.push(eq(chatSessions.studentId, studentId));
     }
     
     return await db

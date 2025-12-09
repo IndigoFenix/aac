@@ -1,118 +1,118 @@
 import {
-  aacUsers,
-  aacUserSchedules,
-  userAacUsers,
-  type AacUser,
-  type InsertAacUser,
-  type UpdateAacUser,
-  type AacUserSchedule,
-  type InsertAacUserSchedule,
-  type UpdateAacUserSchedule,
-  type UserAacUser,
-  type InsertUserAacUser,
-  type UpdateUserAacUser,
+  students,
+  studentSchedules,
+  userStudents,
+  type Student,
+  type InsertStudent,
+  type UpdateStudent,
+  type StudentSchedule,
+  type InsertStudentSchedule,
+  type UpdateStudentSchedule,
+  type UserStudent,
+  type InsertUserStudent,
+  type UpdateUserStudent,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, and, lte, gte, desc, sql } from "drizzle-orm";
 
-export class AacUserRepository {
+export class StudentRepository {
   // ==================== AAC User Operations ====================
 
   /**
    * Create a new AAC user (without linking to any user)
    */
-  async createAacUser(insertAacUser: InsertAacUser): Promise<AacUser> {
-    const [aacUser] = await db
-      .insert(aacUsers)
-      .values(insertAacUser)
+  async createStudent(insertStudent: InsertStudent): Promise<Student> {
+    const [student] = await db
+      .insert(students)
+      .values(insertStudent)
       .returning();
-    return aacUser;
+    return student;
   }
 
   /**
    * Create an AAC user and link it to a user in a single transaction
    */
-  async createAacUserWithLink(
-    insertAacUser: InsertAacUser,
+  async createStudentWithLink(
+    insertStudent: InsertStudent,
     userId: string,
     role: string = "owner"
-  ): Promise<{ aacUser: AacUser; link: UserAacUser }> {
+  ): Promise<{ student: Student; link: UserStudent }> {
     return await db.transaction(async (tx) => {
       // Create the AAC user
-      const [aacUser] = await tx
-        .insert(aacUsers)
-        .values(insertAacUser)
+      const [student] = await tx
+        .insert(students)
+        .values(insertStudent)
         .returning();
 
       // Create the link
       const [link] = await tx
-        .insert(userAacUsers)
+        .insert(userStudents)
         .values({
           userId,
-          aacUserId: aacUser.id,
+          studentId: student.id,
           role,
           isActive: true,
         })
         .returning();
 
-      return { aacUser, link };
+      return { student, link };
     });
   }
 
   /**
    * Get an AAC user by their primary key ID
    */
-  async getAacUserById(id: string): Promise<AacUser | undefined> {
-    const [aacUser] = await db
+  async getStudentById(id: string): Promise<Student | undefined> {
+    const [student] = await db
       .select()
-      .from(aacUsers)
-      .where(eq(aacUsers.id, id));
-    return aacUser || undefined;
+      .from(students)
+      .where(eq(students.id, id));
+    return student || undefined;
   }
 
   /**
    * Get all AAC users linked to a specific user
    */
-  async getAacUsersByUserId(userId: string): Promise<AacUser[]> {
+  async getStudentsByUserId(userId: string): Promise<Student[]> {
     const results = await db
       .select({
-        aacUser: aacUsers,
+        student: students,
       })
-      .from(userAacUsers)
-      .innerJoin(aacUsers, eq(userAacUsers.aacUserId, aacUsers.id))
+      .from(userStudents)
+      .innerJoin(students, eq(userStudents.studentId, students.id))
       .where(
         and(
-          eq(userAacUsers.userId, userId),
-          eq(userAacUsers.isActive, true),
-          eq(aacUsers.isActive, true)
+          eq(userStudents.userId, userId),
+          eq(userStudents.isActive, true),
+          eq(students.isActive, true)
         )
       )
-      .orderBy(desc(aacUsers.createdAt));
+      .orderBy(desc(students.createdAt));
 
-    return results.map((r) => r.aacUser);
+    return results.map((r) => r.student);
   }
 
   /**
    * Get all AAC users linked to a specific user with link details
    */
-  async getAacUsersWithLinksByUserId(
+  async getStudentsWithLinksByUserId(
     userId: string
-  ): Promise<{ aacUser: AacUser; link: UserAacUser }[]> {
+  ): Promise<{ student: Student; link: UserStudent }[]> {
     const results = await db
       .select({
-        aacUser: aacUsers,
-        link: userAacUsers,
+        student: students,
+        link: userStudents,
       })
-      .from(userAacUsers)
-      .innerJoin(aacUsers, eq(userAacUsers.aacUserId, aacUsers.id))
+      .from(userStudents)
+      .innerJoin(students, eq(userStudents.studentId, students.id))
       .where(
         and(
-          eq(userAacUsers.userId, userId),
-          eq(userAacUsers.isActive, true),
-          eq(aacUsers.isActive, true)
+          eq(userStudents.userId, userId),
+          eq(userStudents.isActive, true),
+          eq(students.isActive, true)
         )
       )
-      .orderBy(desc(aacUsers.createdAt));
+      .orderBy(desc(students.createdAt));
 
     return results;
   }
@@ -120,11 +120,11 @@ export class AacUserRepository {
   /**
    * Update an AAC user
    */
-  async updateAacUser(id: string, updates: UpdateAacUser): Promise<AacUser | undefined> {
+  async updateStudent(id: string, updates: UpdateStudent): Promise<Student | undefined> {
     const [updated] = await db
-      .update(aacUsers)
+      .update(students)
       .set({ ...updates, updatedAt: new Date() })
-      .where(eq(aacUsers.id, id))
+      .where(eq(students.id, id))
       .returning();
     return updated || undefined;
   }
@@ -132,11 +132,11 @@ export class AacUserRepository {
   /**
    * Soft delete an AAC user (sets isActive to false)
    */
-  async deleteAacUser(id: string): Promise<boolean> {
+  async deleteStudent(id: string): Promise<boolean> {
     const [updated] = await db
-      .update(aacUsers)
+      .update(students)
       .set({ isActive: false, updatedAt: new Date() })
-      .where(eq(aacUsers.id, id))
+      .where(eq(students.id, id))
       .returning();
     return !!updated;
   }
@@ -146,9 +146,9 @@ export class AacUserRepository {
   /**
    * Create a link between a user and an AAC user
    */
-  async createUserAacUserLink(link: InsertUserAacUser): Promise<UserAacUser> {
+  async createUserStudentLink(link: InsertUserStudent): Promise<UserStudent> {
     const [created] = await db
-      .insert(userAacUsers)
+      .insert(userStudents)
       .values(link)
       .returning();
     return created;
@@ -157,17 +157,17 @@ export class AacUserRepository {
   /**
    * Get a specific link by user ID and AAC user ID
    */
-  async getUserAacUserLink(
+  async getUserStudentLink(
     userId: string,
-    aacUserId: string
-  ): Promise<UserAacUser | undefined> {
+    studentId: string
+  ): Promise<UserStudent | undefined> {
     const [link] = await db
       .select()
-      .from(userAacUsers)
+      .from(userStudents)
       .where(
         and(
-          eq(userAacUsers.userId, userId),
-          eq(userAacUsers.aacUserId, aacUserId)
+          eq(userStudents.userId, userId),
+          eq(userStudents.studentId, studentId)
         )
       );
     return link || undefined;
@@ -176,14 +176,14 @@ export class AacUserRepository {
   /**
    * Get all users linked to an AAC user
    */
-  async getUsersByAacUserId(aacUserId: string): Promise<UserAacUser[]> {
+  async getUsersByStudentId(studentId: string): Promise<UserStudent[]> {
     return await db
       .select()
-      .from(userAacUsers)
+      .from(userStudents)
       .where(
         and(
-          eq(userAacUsers.aacUserId, aacUserId),
-          eq(userAacUsers.isActive, true)
+          eq(userStudents.studentId, studentId),
+          eq(userStudents.isActive, true)
         )
       );
   }
@@ -191,14 +191,14 @@ export class AacUserRepository {
   /**
    * Update a user-AAC user link
    */
-  async updateUserAacUserLink(
+  async updateUserStudentLink(
     id: string,
-    updates: UpdateUserAacUser
-  ): Promise<UserAacUser | undefined> {
+    updates: UpdateUserStudent
+  ): Promise<UserStudent | undefined> {
     const [updated] = await db
-      .update(userAacUsers)
+      .update(userStudents)
       .set({ ...updates, updatedAt: new Date() })
-      .where(eq(userAacUsers.id, id))
+      .where(eq(userStudents.id, id))
       .returning();
     return updated || undefined;
   }
@@ -206,17 +206,17 @@ export class AacUserRepository {
   /**
    * Deactivate a link between a user and an AAC user
    */
-  async deactivateUserAacUserLink(
+  async deactivateUserStudentLink(
     userId: string,
-    aacUserId: string
+    studentId: string
   ): Promise<boolean> {
     const [updated] = await db
-      .update(userAacUsers)
+      .update(userStudents)
       .set({ isActive: false, updatedAt: new Date() })
       .where(
         and(
-          eq(userAacUsers.userId, userId),
-          eq(userAacUsers.aacUserId, aacUserId)
+          eq(userStudents.userId, userId),
+          eq(userStudents.studentId, studentId)
         )
       )
       .returning();
@@ -226,18 +226,18 @@ export class AacUserRepository {
   /**
    * Check if a user has access to an AAC user
    */
-  async userHasAccessToAacUser(
+  async userHasAccessToStudent(
     userId: string,
-    aacUserId: string
+    studentId: string
   ): Promise<boolean> {
     const [link] = await db
       .select()
-      .from(userAacUsers)
+      .from(userStudents)
       .where(
         and(
-          eq(userAacUsers.userId, userId),
-          eq(userAacUsers.aacUserId, aacUserId),
-          eq(userAacUsers.isActive, true)
+          eq(userStudents.userId, userId),
+          eq(userStudents.studentId, studentId),
+          eq(userStudents.isActive, true)
         )
       );
     return !!link;
@@ -248,9 +248,9 @@ export class AacUserRepository {
   /**
    * Create a schedule entry for an AAC user
    */
-  async createScheduleEntry(schedule: InsertAacUserSchedule): Promise<AacUserSchedule> {
+  async createScheduleEntry(schedule: InsertStudentSchedule): Promise<StudentSchedule> {
     const [entry] = await db
-      .insert(aacUserSchedules)
+      .insert(studentSchedules)
       .values(schedule)
       .returning();
     return entry;
@@ -259,22 +259,22 @@ export class AacUserRepository {
   /**
    * Get all schedules for an AAC user
    */
-  async getSchedulesByAacUserId(aacUserId: string): Promise<AacUserSchedule[]> {
+  async getSchedulesByStudentId(studentId: string): Promise<StudentSchedule[]> {
     return await db
       .select()
-      .from(aacUserSchedules)
-      .where(eq(aacUserSchedules.aacUserId, aacUserId))
-      .orderBy(aacUserSchedules.startTime);
+      .from(studentSchedules)
+      .where(eq(studentSchedules.studentId, studentId))
+      .orderBy(studentSchedules.startTime);
   }
 
   /**
    * Get a specific schedule entry by ID
    */
-  async getScheduleEntry(id: string): Promise<AacUserSchedule | undefined> {
+  async getScheduleEntry(id: string): Promise<StudentSchedule | undefined> {
     const [entry] = await db
       .select()
-      .from(aacUserSchedules)
-      .where(eq(aacUserSchedules.id, id));
+      .from(studentSchedules)
+      .where(eq(studentSchedules.id, id));
     return entry || undefined;
   }
 
@@ -283,12 +283,12 @@ export class AacUserRepository {
    */
   async updateScheduleEntry(
     id: string,
-    updates: UpdateAacUserSchedule
-  ): Promise<AacUserSchedule | undefined> {
+    updates: UpdateStudentSchedule
+  ): Promise<StudentSchedule | undefined> {
     const [updated] = await db
-      .update(aacUserSchedules)
+      .update(studentSchedules)
       .set({ ...updates, updatedAt: new Date() })
-      .where(eq(aacUserSchedules.id, id))
+      .where(eq(studentSchedules.id, id))
       .returning();
     return updated || undefined;
   }
@@ -298,8 +298,8 @@ export class AacUserRepository {
    */
   async deleteScheduleEntry(id: string): Promise<boolean> {
     const result = await db
-      .delete(aacUserSchedules)
-      .where(eq(aacUserSchedules.id, id));
+      .delete(studentSchedules)
+      .where(eq(studentSchedules.id, id));
     return (result.rowCount ?? 0) > 0;
   }
 
@@ -307,7 +307,7 @@ export class AacUserRepository {
    * Get the current schedule context for an AAC user based on a timestamp
    */
   async getCurrentScheduleContext(
-    aacUserId: string,
+    studentId: string,
     timestamp: Date
   ): Promise<{
     activityName: string | null;
@@ -318,14 +318,14 @@ export class AacUserRepository {
 
     const [schedule] = await db
       .select()
-      .from(aacUserSchedules)
+      .from(studentSchedules)
       .where(
         and(
-          eq(aacUserSchedules.aacUserId, aacUserId),
-          eq(aacUserSchedules.isActive, true),
-          sql`${aacUserSchedules.dayOfWeek} = ${dayOfWeek}`,
-          lte(aacUserSchedules.startTime, timeString),
-          gte(aacUserSchedules.endTime, timeString)
+          eq(studentSchedules.studentId, studentId),
+          eq(studentSchedules.isActive, true),
+          sql`${studentSchedules.dayOfWeek} = ${dayOfWeek}`,
+          lte(studentSchedules.startTime, timeString),
+          gte(studentSchedules.endTime, timeString)
         )
       )
       .limit(1);
@@ -344,17 +344,17 @@ export class AacUserRepository {
   // These methods are provided for backward compatibility during migration
 
   /**
-   * @deprecated Use getAacUserById instead
+   * @deprecated Use getStudentById instead
    */
-  async getAacUserByAacUserId(aacUserId: string): Promise<AacUser | undefined> {
-    // During migration period, this might still be called with old aacUserId values
+  async getStudentByStudentId(studentId: string): Promise<Student | undefined> {
+    // During migration period, this might still be called with old studentId values
     // First try to find by id (new system)
-    const byId = await this.getAacUserById(aacUserId);
+    const byId = await this.getStudentById(studentId);
     if (byId) return byId;
     
-    // Fallback: the aacUserId might actually be an id
+    // Fallback: the studentId might actually be an id
     return undefined;
   }
 }
 
-export const aacUserRepository = new AacUserRepository();
+export const studentRepository = new StudentRepository();

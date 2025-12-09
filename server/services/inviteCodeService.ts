@@ -1,27 +1,27 @@
-import { inviteCodeRepository, aacUserRepository } from "../repositories";
+import { inviteCodeRepository, studentRepository } from "../repositories";
 import {
   type InviteCode,
   type InsertInviteCode,
   type InviteCodeRedemption,
-  type AacUser,
+  type Student,
 } from "@shared/schema";
 
 export class InviteCodeService {
   async createInviteCode(
     createdByUserId: string,
-    aacUserId: string,
+    studentId: string,
     redemptionLimit?: number,
     expiresAt?: Date
   ): Promise<InviteCode> {
     // Verify the AAC user exists and belongs to the creator
-    const aacUser = await aacUserRepository.getAacUserByAacUserId(aacUserId);
-    if (!aacUser || aacUser.userId !== createdByUserId) {
+    const student = await studentRepository.getStudentByStudentId(studentId);
+    if (!student || student.userId !== createdByUserId) {
       throw new Error("AAC user not found or not owned by you");
     }
 
     return inviteCodeRepository.createInviteCode({
       createdByUserId,
-      aacUserId,
+      studentId,
       redemptionLimit: redemptionLimit || 1,
       expiresAt: expiresAt || null,
     });
@@ -34,7 +34,7 @@ export class InviteCodeService {
   async redeemInviteCode(
     code: string,
     userId: string
-  ): Promise<{ success: boolean; aacUser?: AacUser; error?: string }> {
+  ): Promise<{ success: boolean; student?: Student; error?: string }> {
     return inviteCodeRepository.redeemInviteCode(
       code.trim().toUpperCase(),
       userId

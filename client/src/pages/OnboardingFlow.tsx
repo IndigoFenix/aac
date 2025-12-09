@@ -17,7 +17,7 @@ export default function OnboardingFlow() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [currentStep, setCurrentStep] = useState(1);
-  const [createdAacUserId, setCreatedAacUserId] = useState<string | null>(null);
+  const [createdStudentId, setCreatedStudentId] = useState<string | null>(null);
   const [showCodeRedemption, setShowCodeRedemption] = useState(false);
   const [inviteCode, setInviteCode] = useState("");
   
@@ -54,9 +54,9 @@ export default function OnboardingFlow() {
       return res.json();
     },
     onSuccess: (data) => {
-      // Now using the primary key id instead of aacUserId
-      setCreatedAacUserId(data.aacUser.id);
-      queryClient.invalidateQueries({ queryKey: ["/api/aac-users"] });
+      // Now using the primary key id instead of studentId
+      setCreatedStudentId(data.student.id);
+      queryClient.invalidateQueries({ queryKey: ["/api/students"] });
       setCurrentStep(2);
       toast({
         title: language === "he" ? "נשמר בהצלחה" : "Saved successfully",
@@ -80,7 +80,7 @@ export default function OnboardingFlow() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/onboarding/status"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/aac-users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/students"] });
       toast({
         title: language === "he" ? "הצלחה!" : "Success!",
         description: language === "he" 
@@ -105,7 +105,7 @@ export default function OnboardingFlow() {
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/onboarding/complete-step-2", {
         ...step2Form,
-        aacUserId: createdAacUserId,
+        studentId: createdStudentId,
         dateOverride: null,
       });
       return res.json();
@@ -134,7 +134,7 @@ export default function OnboardingFlow() {
         input: testInput,
         inputType: "text",
         language,
-        aacUserId: createdAacUserId,
+        studentId: createdStudentId,
       });
       return res.json();
     },
@@ -194,7 +194,7 @@ export default function OnboardingFlow() {
   const handleFinish = () => {
     // Invalidate queries to refresh onboarding status
     queryClient.invalidateQueries({ queryKey: ["/api/onboarding/status"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/aac-users"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/students"] });
     setLocation("/");
   };
 

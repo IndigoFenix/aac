@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useAuth } from "@/hooks/useAuth";
-import { useAacUser } from "@/hooks/useAacUser";
+import { useStudent } from "@/hooks/useStudent";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
 import { openUI, useUIEvent } from "@/lib/uiEvents";
@@ -83,10 +83,10 @@ export function GlobalAuthModals() {
 
   // AAC users come from the global provider
   const {
-    aacUsers,
-    isLoading: aacUsersLoading,
-    refetchAacUser,
-  } = useAacUser();
+    students,
+    isLoading: studentsLoading,
+    refetchStudent,
+  } = useStudent();
 
   // Fetch user's invite codes
   const {
@@ -129,7 +129,7 @@ export function GlobalAuthModals() {
 
   // settings
   // CHANGED: 'age' replaced with 'birthDate' (ISO date string 'YYYY-MM-DD')
-  const [aacUserForm, setAacUserForm] = useState({
+  const [studentForm, setStudentForm] = useState({
     name: "",
     gender: "",
     birthDate: "",
@@ -141,7 +141,7 @@ export function GlobalAuthModals() {
     grade: "",
     idNumber: "",
   });
-  const [editingAacUser, setEditingAacUser] = useState<any>(null);
+  const [editingStudent, setEditingStudent] = useState<any>(null);
   const [showStudentModal, setShowStudentModal] = useState(false);
   const [profileForm, setProfileForm] = useState({
     firstName: "",
@@ -153,8 +153,8 @@ export function GlobalAuthModals() {
 
   // Schedule manager state
   const [scheduleManagerOpen, setScheduleManagerOpen] = useState(false);
-  const [scheduleAacUser, setScheduleAacUser] = useState<{
-    aacUserId: string;
+  const [scheduleStudent, setScheduleStudent] = useState<{
+    studentId: string;
     name: string;
   } | null>(null);
 
@@ -162,7 +162,7 @@ export function GlobalAuthModals() {
   const createInviteForm = useForm<InsertInviteCode>({
     resolver: zodResolver(insertInviteCodeSchema),
     defaultValues: {
-      aacUserId: undefined,
+      studentId: undefined,
       redemptionLimit: 1,
       expiresAt: null,
       isActive: true,
@@ -192,8 +192,8 @@ export function GlobalAuthModals() {
   // Listen for createStudent event - opens student modal with empty form
   useUIEvent("createStudent", () => {
     // Clear any existing edit state
-    setEditingAacUser(null);
-    setAacUserForm({
+    setEditingStudent(null);
+    setStudentForm({
       name: "",
       gender: "",
       birthDate: "",
@@ -212,8 +212,8 @@ export function GlobalAuthModals() {
   // Listen for editStudent event - opens student modal with AAC user data pre-filled
   useUIEvent("editStudent", (studentData: any) => {
     if (studentData) {
-      setEditingAacUser(studentData);
-      setAacUserForm({
+      setEditingStudent(studentData);
+      setStudentForm({
         name: studentData.name || "",
         gender: studentData.gender || "",
         birthDate: studentData.birthDate || "",
@@ -305,20 +305,20 @@ export function GlobalAuthModals() {
 
 
   // Create AAC user mutation
-  const createAacUserMutation = useMutation({
-    mutationFn: async (aacUserData: any) => {
-      const res = await apiRequest("POST", "/api/aac-users", aacUserData);
+  const createStudentMutation = useMutation({
+    mutationFn: async (studentData: any) => {
+      const res = await apiRequest("POST", "/api/students", studentData);
       return res.json();
     },
     onSuccess: async () => {
       // Refresh global AAC users in the provider
-      await refetchAacUser();
+      await refetchStudent();
 
       // Optional: keep this if anything else still uses the raw query
-      queryClient.invalidateQueries({ queryKey: ["/api/aac-users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/students"] });
       queryClient.invalidateQueries({ queryKey: ["/api/students/list"] });
 
-      setAacUserForm({
+      setStudentForm({
         name: "",
         gender: "",
         birthDate: "",
@@ -332,32 +332,32 @@ export function GlobalAuthModals() {
       });
       setShowStudentModal(false);
       toast({
-        title: t("toast.aacUserCreated"),
-        description: t("toast.aacUserCreatedDesc"),
+        title: t("toast.studentCreated"),
+        description: t("toast.studentCreatedDesc"),
       });
     },
     onError: (error: any) => {
       toast({
-        title: t("toast.aacUserCreateFailed"),
-        description: error?.message || t("toast.aacUserCreateFailedDesc"),
+        title: t("toast.studentCreateFailed"),
+        description: error?.message || t("toast.studentCreateFailedDesc"),
         variant: "destructive",
       });
     },
   });
 
   // Update AAC user mutation
-  const updateAacUserMutation = useMutation({
+  const updateStudentMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
-      const res = await apiRequest("PATCH", `/api/aac-users/${id}`, data);
+      const res = await apiRequest("PATCH", `/api/students/${id}`, data);
       return res.json();
     },
     onSuccess: async () => {
-      await refetchAacUser();
-      queryClient.invalidateQueries({ queryKey: ["/api/aac-users"] });
+      await refetchStudent();
+      queryClient.invalidateQueries({ queryKey: ["/api/students"] });
       queryClient.invalidateQueries({ queryKey: ["/api/students/list"] });
 
-      setEditingAacUser(null);
-      setAacUserForm({
+      setEditingStudent(null);
+      setStudentForm({
         name: "",
         gender: "",
         birthDate: "",
@@ -371,14 +371,14 @@ export function GlobalAuthModals() {
       });
       setShowStudentModal(false);
       toast({
-        title: t("toast.aacUserUpdated"),
-        description: t("toast.aacUserUpdatedDesc"),
+        title: t("toast.studentUpdated"),
+        description: t("toast.studentUpdatedDesc"),
       });
     },
     onError: (error: any) => {
       toast({
-        title: t("toast.aacUserUpdateFailed"),
-        description: error?.message || t("toast.aacUserUpdateFailedDesc"),
+        title: t("toast.studentUpdateFailed"),
+        description: error?.message || t("toast.studentUpdateFailedDesc"),
         variant: "destructive",
       });
     },
@@ -386,24 +386,24 @@ export function GlobalAuthModals() {
 
 
   // Delete AAC user mutation
-  const deleteAacUserMutation = useMutation({
+  const deleteStudentMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await apiRequest("DELETE", `/api/aac-users/${id}`);
+      const res = await apiRequest("DELETE", `/api/students/${id}`);
       return res.json();
     },
     onSuccess: async () => {
-      await refetchAacUser();
-      queryClient.invalidateQueries({ queryKey: ["/api/aac-users"] });
+      await refetchStudent();
+      queryClient.invalidateQueries({ queryKey: ["/api/students"] });
 
       toast({
-        title: t("toast.aacUserDeleted"),
-        description: t("toast.aacUserDeletedDesc"),
+        title: t("toast.studentDeleted"),
+        description: t("toast.studentDeletedDesc"),
       });
     },
     onError: (error: any) => {
       toast({
-        title: t("toast.aacUserDeleteFailed"),
-        description: error?.message || t("toast.aacUserDeleteFailedDesc"),
+        title: t("toast.studentDeleteFailed"),
+        description: error?.message || t("toast.studentDeleteFailedDesc"),
         variant: "destructive",
       });
     },
@@ -512,13 +512,13 @@ export function GlobalAuthModals() {
       return res.json();
     },
     onSuccess: async (data) => {
-      await refetchAacUser();
+      await refetchStudent();
       queryClient.invalidateQueries({ queryKey: ["/api/invite-codes"] });
 
       redeemInviteForm.reset();
       toast({
         title: t("toast.inviteRedeemed"),
-        description: `${t("label.aacUser")} "${data.aacUserName}" ${
+        description: `${t("label.student")} "${data.studentName}" ${
           language === "he" ? "נוסף בהצלחה" : "has been added successfully"
         }`,
       });
@@ -680,8 +680,8 @@ export function GlobalAuthModals() {
   };
   
   // AAC User handlers
-  const handleCreateAacUser = () => {
-    if (!aacUserForm.name.trim()) {
+  const handleCreateStudent = () => {
+    if (!studentForm.name.trim()) {
       toast({
         title: language === "he" ? "שגיאה" : "Error",
         description:
@@ -692,22 +692,22 @@ export function GlobalAuthModals() {
       });
       return;
     }
-    createAacUserMutation.mutate(aacUserForm);
+    createStudentMutation.mutate(studentForm);
   };
 
   // CHANGED: Now uses birthDate instead of age
-  const handleEditAacUser = (aacUser: any) => {
-    setEditingAacUser(aacUser);
-    setAacUserForm({
-      name: aacUser.name || "",
-      gender: aacUser.gender || "",
-      birthDate: aacUser.birthDate || "",
-      disabilityOrSyndrome: aacUser.disabilityOrSyndrome || "",
+  const handleEditStudent = (student: any) => {
+    setEditingStudent(student);
+    setStudentForm({
+      name: student.name || "",
+      gender: student.gender || "",
+      birthDate: student.birthDate || "",
+      diagnosis: student.diagnosis || "",
     });
   };
 
-  const handleUpdateAacUser = () => {
-    if (!aacUserForm.name.trim()) {
+  const handleUpdateStudent = () => {
+    if (!studentForm.name.trim()) {
       toast({
         title: language === "he" ? "שגיאה" : "Error",
         description:
@@ -718,13 +718,13 @@ export function GlobalAuthModals() {
       });
       return;
     }
-    updateAacUserMutation.mutate({ id: editingAacUser.id, data: aacUserForm });
+    updateStudentMutation.mutate({ id: editingStudent.id, data: studentForm });
   };
 
   // Reset form and close student modal
   const handleCancelEdit = () => {
-    setEditingAacUser(null);
-    setAacUserForm({
+    setEditingStudent(null);
+    setStudentForm({
       name: "",
       gender: "",
       birthDate: "",
@@ -1423,7 +1423,7 @@ export function GlobalAuthModals() {
               {/* Add New AAC User Form */}
               <div className="bg-muted/50 p-4 rounded-lg mb-4">
                 <h4 className="text-sm font-medium mb-3">
-                  {editingAacUser
+                  {editingStudent
                     ? language === "he"
                       ? "ערוך משתמש תת״ח"
                       : "Edit AAC User"
@@ -1438,9 +1438,9 @@ export function GlobalAuthModals() {
                     </Label>
                     <Input
                       id="aacName"
-                      value={aacUserForm.name}
+                      value={studentForm.name}
                       onChange={(e) =>
-                        setAacUserForm((prev) => ({
+                        setStudentForm((prev) => ({
                           ...prev,
                           name: e.target.value,
                         }))
@@ -1458,9 +1458,9 @@ export function GlobalAuthModals() {
                       {language === "he" ? "מגדר" : "Gender"}
                     </Label>
                     <Select
-                      value={aacUserForm.gender}
+                      value={studentForm.gender}
                       onValueChange={(value) =>
-                        setAacUserForm((prev) => ({ ...prev, gender: value }))
+                        setStudentForm((prev) => ({ ...prev, gender: value }))
                       }
                     >
                       <SelectTrigger id="aacGender">
@@ -1491,36 +1491,36 @@ export function GlobalAuthModals() {
                     <Input
                       id="aacBirthDate"
                       type="date"
-                      value={aacUserForm.birthDate}
+                      value={studentForm.birthDate}
                       onChange={(e) =>
-                        setAacUserForm((prev) => ({
+                        setStudentForm((prev) => ({
                           ...prev,
                           birthDate: e.target.value,
                         }))
                       }
                       max={new Date().toISOString().split('T')[0]}
                     />
-                    {aacUserForm.birthDate && (
+                    {studentForm.birthDate && (
                       <p className="text-xs text-muted-foreground">
                         {language === "he" 
-                          ? `גיל: ${calculateAge(aacUserForm.birthDate)} שנים`
-                          : `Age: ${calculateAge(aacUserForm.birthDate)} years`}
+                          ? `גיל: ${calculateAge(studentForm.birthDate)} שנים`
+                          : `Age: ${calculateAge(studentForm.birthDate)} years`}
                       </p>
                     )}
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="aacDisability">
+                    <Label htmlFor="aacDiagnosis">
                       {language === "he"
                         ? "אבחנה/תסמונת"
                         : "Disability/Syndrome"}
                     </Label>
                     <Input
-                      id="aacDisability"
-                      value={aacUserForm.disabilityOrSyndrome}
+                      id="aacDiagnosis"
+                      value={studentForm.diagnosis}
                       onChange={(e) =>
-                        setAacUserForm((prev) => ({
+                        setStudentForm((prev) => ({
                           ...prev,
-                          disabilityOrSyndrome: e.target.value,
+                          diagnosis: e.target.value,
                         }))
                       }
                       placeholder={
@@ -1534,20 +1534,20 @@ export function GlobalAuthModals() {
                 <div className="flex gap-2 mt-4">
                   <Button
                     onClick={
-                      editingAacUser ? handleUpdateAacUser : handleCreateAacUser
+                      editingStudent ? handleUpdateStudent : handleCreateStudent
                     }
                     disabled={
-                      createAacUserMutation.isPending ||
-                      updateAacUserMutation.isPending
+                      createStudentMutation.isPending ||
+                      updateStudentMutation.isPending
                     }
                     className="flex items-center gap-2"
                   >
-                    {editingAacUser ? (
+                    {editingStudent ? (
                       <Edit className="w-4 h-4" />
                     ) : (
                       <Plus className="w-4 h-4" />
                     )}
-                    {editingAacUser
+                    {editingStudent
                       ? language === "he"
                         ? "עדכן"
                         : "Update"
@@ -1555,7 +1555,7 @@ export function GlobalAuthModals() {
                         ? "הוסף"
                         : "Add"}
                   </Button>
-                  {editingAacUser && (
+                  {editingStudent && (
                     <Button variant="outline" onClick={handleCancelEdit}>
                       {language === "he" ? "בטל" : "Cancel"}
                     </Button>
@@ -1565,35 +1565,35 @@ export function GlobalAuthModals() {
 
               {/* Existing AAC Users List */}
               <div className="space-y-2">
-                {aacUsersLoading ? (
+                {studentsLoading ? (
                   <div className="flex items-center justify-center py-8">
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
                   </div>
-                ) : aacUsers && aacUsers.length > 0 ? (
-                  aacUsers.map((aacUser: any) => (
+                ) : students && students.length > 0 ? (
+                  students.map((student: any) => (
                     <div
-                      key={aacUser.id}
+                      key={student.id}
                       className="border border-border rounded-lg p-3 flex justify-between items-start"
                     >
                       <div className="space-y-1">
-                        <h4 className="font-medium">{aacUser.name}</h4>
+                        <h4 className="font-medium">{student.name}</h4>
                         <div className="text-sm text-muted-foreground space-y-1">
-                          {aacUser.gender && (
+                          {student.gender && (
                             <p>
                               {language === "he" ? "מגדר" : "Gender"}:{" "}
-                              {aacUser.gender}
+                              {student.gender}
                             </p>
                           )}
-                          {(aacUser.birthDate || aacUser.age) && (
+                          {(student.birthDate || student.age) && (
                             <p>
                               {language === "he" ? "גיל" : "Age"}:{" "}
-                              {aacUser.age ??
-                                calculateAge(aacUser.birthDate)}
-                              {aacUser.birthDate && (
+                              {student.age ??
+                                calculateAge(student.birthDate)}
+                              {student.birthDate && (
                                 <span className="text-xs ml-2">
                                   (
                                   {new Date(
-                                    aacUser.birthDate,
+                                    student.birthDate,
                                   ).toLocaleDateString(
                                     language === "he" ? "he-IL" : "en-US",
                                   )}
@@ -1602,10 +1602,10 @@ export function GlobalAuthModals() {
                               )}
                             </p>
                           )}
-                          {aacUser.disabilityOrSyndrome && (
+                          {student.diagnosis && (
                             <p>
                               {language === "he" ? "אבחנה" : "Condition"}:{" "}
-                              {aacUser.disabilityOrSyndrome}
+                              {student.diagnosis}
                             </p>
                           )}
                         </div>
@@ -1615,9 +1615,9 @@ export function GlobalAuthModals() {
                           variant="outline"
                           size="sm"
                           onClick={() => {
-                            setScheduleAacUser({
-                              aacUserId: aacUser.id,
-                              name: aacUser.name,
+                            setScheduleStudent({
+                              studentId: student.id,
+                              name: student.name,
                             });
                             setScheduleManagerOpen(true);
                           }}
@@ -1627,14 +1627,14 @@ export function GlobalAuthModals() {
                               ? "נהל לוח זמנים"
                               : "Manage Schedule"
                           }
-                          data-testid={`button-manage-schedule-${aacUser.id}`}
+                          data-testid={`button-manage-schedule-${student.id}`}
                         >
                           <Calendar className="w-4 h-4" />
                         </Button>
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleEditAacUser(aacUser)}
+                          onClick={() => handleEditStudent(student)}
                           className="p-2"
                         >
                           <Edit className="w-4 h-4" />
@@ -1643,9 +1643,9 @@ export function GlobalAuthModals() {
                           variant="destructive"
                           size="sm"
                           onClick={() =>
-                            deleteAacUserMutation.mutate(aacUser.id)
+                            deleteStudentMutation.mutate(student.id)
                           }
-                          disabled={deleteAacUserMutation.isPending}
+                          disabled={deleteStudentMutation.isPending}
                           className="p-2"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -1658,7 +1658,7 @@ export function GlobalAuthModals() {
                     <p>
                       {language === "he"
                         ? "אין משתמשי תת״ח עדיין. הוסף את הראשון!"
-                        : "No AAC users yet. Add your first one!"}
+                        : "No students yet. Add your first one!"}
                     </p>
                   </div>
                 )}
@@ -1708,7 +1708,7 @@ export function GlobalAuthModals() {
                     >
                       <FormField
                         control={createInviteForm.control}
-                        name="aacUserId"
+                        name="studentId"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>
@@ -1720,12 +1720,12 @@ export function GlobalAuthModals() {
                               onValueChange={field.onChange}
                               value={field.value}
                               disabled={
-                                aacUsersLoading ||
+                                studentsLoading ||
                                 createInviteCodeMutation.isPending
                               }
                             >
                               <FormControl>
-                                <SelectTrigger data-testid="select-aac-user-for-invite">
+                                <SelectTrigger data-testid="select-student-for-invite">
                                   <SelectValue
                                     placeholder={
                                       language === "he"
@@ -1736,35 +1736,35 @@ export function GlobalAuthModals() {
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent>
-                                {aacUsersLoading ? (
+                                {studentsLoading ? (
                                   <SelectItem value="loading" disabled>
                                     {t("ui.loading")}
                                   </SelectItem>
-                                ) : aacUsers && aacUsers.length > 0 ? (
-                                  aacUsers
+                                ) : students && students.length > 0 ? (
+                                  students
                                     .filter(
-                                      (aacUser: any) =>
-                                        aacUser.id &&
-                                        String(aacUser.id).trim() !== "",
+                                      (student: any) =>
+                                        student.id &&
+                                        String(student.id).trim() !== "",
                                     )
-                                    .map((aacUser: any) => (
+                                    .map((student: any) => (
                                       <SelectItem
-                                        key={aacUser.id}
-                                        value={String(aacUser.id)}
+                                        key={student.id}
+                                        value={String(student.id)}
                                       >
-                                        {aacUser.name}
-                                        {(aacUser.age || aacUser.birthDate) &&
+                                        {student.name}
+                                        {(student.age || student.birthDate) &&
                                           ` (${
-                                            aacUser.age ??
-                                            calculateAge(aacUser.birthDate)
+                                            student.age ??
+                                            calculateAge(student.birthDate)
                                           })`}
-                                        {aacUser.gender &&
-                                          ` - ${aacUser.gender}`}
+                                        {student.gender &&
+                                          ` - ${student.gender}`}
                                       </SelectItem>
                                     ))
                                 ) : (
                                   <SelectItem value="no-users" disabled>
-                                    {t("ui.noAacUsers")}
+                                    {t("ui.noStudents")}
                                   </SelectItem>
                                 )}
                               </SelectContent>
@@ -1779,8 +1779,8 @@ export function GlobalAuthModals() {
                         type="submit"
                         disabled={
                           createInviteCodeMutation.isPending ||
-                          aacUsersLoading ||
-                          !createInviteForm.watch("aacUserId")
+                          studentsLoading ||
+                          !createInviteForm.watch("studentId")
                         }
                         className="flex items-center gap-2"
                         data-testid="button-create-invite-code"
@@ -1972,7 +1972,7 @@ export function GlobalAuthModals() {
                                     className="text-sm font-medium"
                                     data-testid={`invite-code-name-${inviteCode.id}`}
                                   >
-                                    {inviteCode.aacUserName}
+                                    {inviteCode.studentName}
                                   </span>
                                 </div>
                                 <div
@@ -2065,7 +2065,7 @@ export function GlobalAuthModals() {
         <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className={language === "he" ? "text-right" : ""}>
-              {editingAacUser
+              {editingStudent
                 ? language === "he"
                   ? "עריכת תלמיד"
                   : "Edit Student"
@@ -2074,7 +2074,7 @@ export function GlobalAuthModals() {
                   : "Add New Student"}
             </DialogTitle>
             <DialogDescription className={language === "he" ? "text-right" : ""}>
-              {editingAacUser
+              {editingStudent
                 ? language === "he"
                   ? "עדכן את פרטי התלמיד"
                   : "Update the student's information"
@@ -2093,9 +2093,9 @@ export function GlobalAuthModals() {
                 </Label>
                 <Input
                   id="studentName"
-                  value={aacUserForm.name}
+                  value={studentForm.name}
                   onChange={(e) =>
-                    setAacUserForm((prev) => ({
+                    setStudentForm((prev) => ({
                       ...prev,
                       name: e.target.value,
                     }))
@@ -2114,9 +2114,9 @@ export function GlobalAuthModals() {
                 </Label>
                 <Input
                   id="studentIdNumber"
-                  value={aacUserForm.idNumber}
+                  value={studentForm.idNumber}
                   onChange={(e) =>
-                    setAacUserForm((prev) => ({
+                    setStudentForm((prev) => ({
                       ...prev,
                       idNumber: e.target.value,
                     }))
@@ -2137,9 +2137,9 @@ export function GlobalAuthModals() {
                   {language === "he" ? "מגדר" : "Gender"}
                 </Label>
                 <Select
-                  value={aacUserForm.gender}
+                  value={studentForm.gender}
                   onValueChange={(value) =>
-                    setAacUserForm((prev) => ({ ...prev, gender: value }))
+                    setStudentForm((prev) => ({ ...prev, gender: value }))
                   }
                 >
                   <SelectTrigger id="studentGender">
@@ -2169,20 +2169,20 @@ export function GlobalAuthModals() {
                 <Input
                   id="studentBirthDate"
                   type="date"
-                  value={aacUserForm.birthDate}
+                  value={studentForm.birthDate}
                   onChange={(e) =>
-                    setAacUserForm((prev) => ({
+                    setStudentForm((prev) => ({
                       ...prev,
                       birthDate: e.target.value,
                     }))
                   }
                   max={new Date().toISOString().split('T')[0]}
                 />
-                {aacUserForm.birthDate && (
+                {studentForm.birthDate && (
                   <p className="text-xs text-muted-foreground">
                     {language === "he" 
-                      ? `גיל: ${calculateAge(aacUserForm.birthDate)} שנים`
-                      : `Age: ${calculateAge(aacUserForm.birthDate)} years`}
+                      ? `גיל: ${calculateAge(studentForm.birthDate)} שנים`
+                      : `Age: ${calculateAge(studentForm.birthDate)} years`}
                   </p>
                 )}
               </div>
@@ -2196,9 +2196,9 @@ export function GlobalAuthModals() {
                 </Label>
                 <Input
                   id="studentSchool"
-                  value={aacUserForm.school}
+                  value={studentForm.school}
                   onChange={(e) =>
-                    setAacUserForm((prev) => ({
+                    setStudentForm((prev) => ({
                       ...prev,
                       school: e.target.value,
                     }))
@@ -2216,9 +2216,9 @@ export function GlobalAuthModals() {
                 </Label>
                 <Input
                   id="studentGrade"
-                  value={aacUserForm.grade}
+                  value={studentForm.grade}
                   onChange={(e) =>
-                    setAacUserForm((prev) => ({
+                    setStudentForm((prev) => ({
                       ...prev,
                       grade: e.target.value,
                     }))
@@ -2239,9 +2239,9 @@ export function GlobalAuthModals() {
               </Label>
               <Input
                 id="studentDiagnosis"
-                value={aacUserForm.diagnosis}
+                value={studentForm.diagnosis}
                 onChange={(e) =>
-                  setAacUserForm((prev) => ({
+                  setStudentForm((prev) => ({
                     ...prev,
                     diagnosis: e.target.value,
                   }))
@@ -2261,9 +2261,9 @@ export function GlobalAuthModals() {
                   {language === "he" ? "סוג מערכת" : "System Type"}
                 </Label>
                 <Select
-                  value={aacUserForm.systemType}
+                  value={studentForm.systemType}
                   onValueChange={(value) =>
-                    setAacUserForm((prev) => ({ ...prev, systemType: value }))
+                    setStudentForm((prev) => ({ ...prev, systemType: value }))
                   }
                 >
                   <SelectTrigger id="studentSystemType">
@@ -2284,9 +2284,9 @@ export function GlobalAuthModals() {
                   {language === "he" ? "מדינה" : "Country"}
                 </Label>
                 <Select
-                  value={aacUserForm.country}
+                  value={studentForm.country}
                   onValueChange={(value) =>
-                    setAacUserForm((prev) => ({ ...prev, country: value }))
+                    setStudentForm((prev) => ({ ...prev, country: value }))
                   }
                 >
                   <SelectTrigger id="studentCountry">
@@ -2318,9 +2318,9 @@ export function GlobalAuthModals() {
               <textarea
                 id="studentBackgroundContext"
                 className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                value={aacUserForm.backgroundContext}
+                value={studentForm.backgroundContext}
                 onChange={(e) =>
-                  setAacUserForm((prev) => ({
+                  setStudentForm((prev) => ({
                     ...prev,
                     backgroundContext: e.target.value,
                   }))
@@ -2343,21 +2343,21 @@ export function GlobalAuthModals() {
             </Button>
             <Button
               onClick={
-                editingAacUser ? handleUpdateAacUser : handleCreateAacUser
+                editingStudent ? handleUpdateStudent : handleCreateStudent
               }
               disabled={
-                createAacUserMutation.isPending ||
-                updateAacUserMutation.isPending ||
-                !aacUserForm.name.trim()
+                createStudentMutation.isPending ||
+                updateStudentMutation.isPending ||
+                !studentForm.name.trim()
               }
               className="flex items-center gap-2"
             >
-              {(createAacUserMutation.isPending || updateAacUserMutation.isPending) ? (
+              {(createStudentMutation.isPending || updateStudentMutation.isPending) ? (
                 <>
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
                   {language === "he" ? "שומר..." : "Saving..."}
                 </>
-              ) : editingAacUser ? (
+              ) : editingStudent ? (
                 <>
                   <Edit className="w-4 h-4" />
                   {language === "he" ? "עדכון" : "Update"}

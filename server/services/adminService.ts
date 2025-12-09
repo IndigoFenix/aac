@@ -25,21 +25,21 @@ export class AdminService {
   }
 
   // User management
-  async getAllUsersWithAacUsers(): Promise<any[]> {
+  async getAllUsersWithStudents(): Promise<any[]> {
     const users = await userRepository.getAllUsers();
-    const { aacUserRepository } = await import("../repositories");
+    const { studentRepository } = await import("../repositories");
 
-    const usersWithAacUsers = await Promise.all(
+    const usersWithStudents = await Promise.all(
       users.map(async (user) => {
-        const aacUsers = await aacUserRepository.getAacUsersByUserId(user.id);
+        const students = await studentRepository.getStudentsByUserId(user.id);
         return {
           ...user,
-          aacUsers: aacUsers || [],
+          students: students || [],
         };
       })
     );
 
-    return usersWithAacUsers;
+    return usersWithStudents;
   }
 
   async updateUserAdmin(

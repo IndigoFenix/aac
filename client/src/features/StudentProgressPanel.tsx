@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
-import { useAacUser } from '@/hooks/useAacUser';
+import { useStudent } from '@/hooks/useStudent';
 import { useFeaturePanel, useSharedState } from '@/contexts/FeaturePanelContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -157,7 +157,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const { user } = useAuth();
-  const { aacUser } = useAacUser();
+  const { student } = useStudent();
   const { setActiveFeature, registerMetadataBuilder, unregisterMetadataBuilder } = useFeaturePanel();
   const { sharedState } = useSharedState();
   const { toast } = useToast();
@@ -180,30 +180,30 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
   });
 
   // Determine system type from student data
-  const systemType: SystemType = (aacUser as any)?.systemType || 
-    ((aacUser as any)?.country === 'US' ? 'us_iep' : 'tala');
+  const systemType: SystemType = (student as any)?.systemType || 
+    ((student as any)?.country === 'US' ? 'us_iep' : 'tala');
 
   // Fetch student progress data
   const { data: progressData, isLoading, error, refetch } = useQuery({
-    queryKey: ['/api/students', aacUser?.id, 'progress'],
+    queryKey: ['/api/students', student?.id, 'progress'],
     queryFn: async () => {
-      if (!aacUser?.id) throw new Error('No student selected');
-      const response = await apiRequest('GET', `/api/students/${aacUser.id}/progress`);
+      if (!student?.id) throw new Error('No student selected');
+      const response = await apiRequest('GET', `/api/students/${student.id}/progress`);
       return response.json();
     },
-    enabled: !!aacUser?.id && isOpen,
+    enabled: !!student?.id && isOpen,
   });
 
   // Initialize progress mutation
   const initializeProgressMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('POST', `/api/students/${aacUser?.id}/initialize-progress`, {
+      const response = await apiRequest('POST', `/api/students/${student?.id}/initialize-progress`, {
         systemType,
       });
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/students', aacUser?.id, 'progress'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/students', student?.id, 'progress'] });
       toast({ title: language === 'he' ? 'התקדמות אותחלה' : 'Progress initialized' });
     },
     onError: (error: any) => {
@@ -226,7 +226,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/students', aacUser?.id, 'progress'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/students', student?.id, 'progress'] });
       toast({ 
         title: language === 'he' ? 'הצלחה' : 'Success',
         description: language === 'he' ? 'שלב עודכן בהצלחה' : 'Phase updated successfully',
@@ -244,7 +244,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
   // Advance phase mutation
   const advancePhaseMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('POST', `/api/students/${aacUser?.id}/advance-phase`);
+      const response = await apiRequest('POST', `/api/students/${student?.id}/advance-phase`);
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.message || 'Failed to advance phase');
@@ -252,7 +252,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/students', aacUser?.id, 'progress'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/students', student?.id, 'progress'] });
       toast({ 
         title: language === 'he' ? 'הצלחה' : 'Success',
         description: language === 'he' ? 'עברת לשלב הבא בהצלחה' : 'Advanced to next phase successfully',
@@ -270,7 +270,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
   // Create goal mutation
   const createGoalMutation = useMutation({
     mutationFn: async (goalData: any) => {
-      const response = await apiRequest('POST', `/api/students/${aacUser?.id}/goals`, goalData);
+      const response = await apiRequest('POST', `/api/students/${student?.id}/goals`, goalData);
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.message || 'Failed to create goal');
@@ -278,7 +278,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/students', aacUser?.id, 'progress'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/students', student?.id, 'progress'] });
       toast({ 
         title: language === 'he' ? 'הצלחה' : 'Success',
         description: language === 'he' ? 'מטרה נוצרה בהצלחה' : 'Goal created successfully',
@@ -306,7 +306,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/students', aacUser?.id, 'progress'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/students', student?.id, 'progress'] });
       toast({ 
         title: language === 'he' ? 'הצלחה' : 'Success',
         description: language === 'he' ? 'מטרה עודכנה בהצלחה' : 'Goal updated successfully',
@@ -335,7 +335,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/students', aacUser?.id, 'progress'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/students', student?.id, 'progress'] });
       toast({ 
         title: language === 'he' ? 'הצלחה' : 'Success',
         description: language === 'he' ? 'מטרה נמחקה בהצלחה' : 'Goal deleted successfully',
@@ -361,7 +361,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/students', aacUser?.id, 'progress'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/students', student?.id, 'progress'] });
     },
     onError: (error: Error) => {
       toast({ 
@@ -375,7 +375,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
   // Create service recommendation mutation
   const createServiceMutation = useMutation({
     mutationFn: async (serviceData: any) => {
-      const response = await apiRequest('POST', `/api/students/${aacUser?.id}/services`, serviceData);
+      const response = await apiRequest('POST', `/api/students/${student?.id}/services`, serviceData);
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.message || 'Failed to create service');
@@ -383,7 +383,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/students', aacUser?.id, 'progress'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/students', student?.id, 'progress'] });
       toast({ 
         title: language === 'he' ? 'הצלחה' : 'Success',
         description: language === 'he' ? 'המלצת שירות נוספה בהצלחה' : 'Service added successfully',
@@ -411,7 +411,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/students', aacUser?.id, 'progress'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/students', student?.id, 'progress'] });
       toast({ 
         title: language === 'he' ? 'הצלחה' : 'Success',
         description: language === 'he' ? 'שירות עודכן בהצלחה' : 'Service updated successfully',
@@ -440,7 +440,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/students', aacUser?.id, 'progress'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/students', student?.id, 'progress'] });
       toast({ 
         title: language === 'he' ? 'הצלחה' : 'Success',
         description: language === 'he' ? 'שירות הוסר בהצלחה' : 'Service removed successfully',
@@ -458,7 +458,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
   // Record baseline metrics mutation
   const recordBaselineMutation = useMutation({
     mutationFn: async (metrics: any) => {
-      const response = await apiRequest('POST', `/api/students/${aacUser?.id}/baseline`, { metrics });
+      const response = await apiRequest('POST', `/api/students/${student?.id}/baseline`, { metrics });
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.message || 'Failed to save baseline');
@@ -466,7 +466,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/students', aacUser?.id, 'progress'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/students', student?.id, 'progress'] });
       toast({ 
         title: language === 'he' ? 'הצלחה' : 'Success',
         description: language === 'he' ? 'נתוני בסיס נשמרו בהצלחה' : 'Baseline metrics saved successfully',
@@ -486,11 +486,11 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
   // Register metadata builder
   const buildProgressMetadata = useCallback(() => {
     return {
-      studentId: aacUser?.id,
+      studentId: student?.id,
       systemType,
       currentPhase: progressData?.progress?.phases?.find((p: Phase) => p.status === 'in-progress')?.phaseName,
     };
-  }, [aacUser?.id, systemType, progressData]);
+  }, [student?.id, systemType, progressData]);
 
   useEffect(() => {
     registerMetadataBuilder('progress', buildProgressMetadata);
@@ -498,7 +498,6 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
   }, [registerMetadataBuilder, unregisterMetadataBuilder, buildProgressMetadata]);
 
   // Extract data from API response
-  const student = progressData?.student || aacUser;
   const progress: ProgressData = progressData?.progress || {
     phases: [],
     goals: [],
@@ -701,7 +700,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
 
   if (!isOpen) return null;
 
-  if (!aacUser) {
+  if (!student) {
     return (
       <div className={cn(
         'flex items-center justify-center h-full',
@@ -1475,7 +1474,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
               onClick={handleBackClick}
             >
               {isRTL ? <ArrowRight className="w-4 h-4" /> : <ArrowLeft className="w-4 h-4" />}
-              {t('tala.back_button') || 'חזרה לרשימת תלמידים'}
+              {t('tala.backButton') || 'חזרה לרשימת תלמידים'}
             </Button>
             <div className={cn('flex justify-between items-start', isRTL && 'flex-row-reverse')}>
               <div className={isRTL ? 'text-right' : ''}>
@@ -1495,12 +1494,12 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                     </Badge>
                   )}
                   <span className="w-1 h-1 bg-muted-foreground/40 rounded-full" />
-                  <span>{t('students.id_label') || 'ת.ז'}: {(student as any)?.idNumber || student?.id.slice(0, 8)}</span>
+                  <span>{t('students.idLabel') || 'ת.ז'}: {(student as any)?.idNumber || student?.id.slice(0, 8)}</span>
                   {currentPhase?.dueDate && (
                     <>
                       <span className="w-1 h-1 bg-muted-foreground/40 rounded-full" />
                       <span>
-                        {t('tala.next_deadline') || 'תאריך יעד'}:{' '}
+                        {t('tala.nextDeadline') || 'תאריך יעד'}:{' '}
                         <span className="text-amber-600 font-medium">{currentPhase.dueDate}</span>
                       </span>
                     </>
@@ -1512,7 +1511,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                   <Share2 className="w-4 h-4" /> {t('tala.share') || 'שיתוף'}
                 </Button>
                 <Button variant="outline" size="sm" className="gap-2">
-                  <Download className="w-4 h-4" /> {t('tala.export_pdf') || 'ייצוא PDF'}
+                  <Download className="w-4 h-4" /> {t('tala.exportPdf') || 'ייצוא PDF'}
                 </Button>
               </div>
             </div>
@@ -1526,7 +1525,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
             <div className={cn('flex items-center gap-4', isRTL && 'flex-row-reverse')}>
               <div className="flex-1">
                 <div className={cn('flex justify-between mb-2', isRTL && 'flex-row-reverse')}>
-                  <span className="text-sm font-medium">{t('tala.overall_progress') || 'התקדמות כללית'}</span>
+                  <span className="text-sm font-medium">{t('tala.overallProgress') || 'התקדמות כללית'}</span>
                   <span className="text-sm font-bold">{overallProgress}%</span>
                 </div>
                 <div className={cn(
@@ -1551,7 +1550,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
               <Card className="border-none shadow-none bg-transparent">
                 <CardHeader className="px-0 pt-0">
                   <CardTitle className="text-lg">{t('tala.roadmap') || 'מפת דרכים'}</CardTitle>
-                  <CardDescription>{t('tala.roadmap_desc') || 'מעקב התקדמות בכל שלב'}</CardDescription>
+                  <CardDescription>{t('tala.roadmapDesc') || 'מעקב התקדמות בכל שלב'}</CardDescription>
                 </CardHeader>
                 <CardContent className="px-0">
                   <div className="relative">
@@ -1589,12 +1588,12 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                             </h4>
                             {phase.dueDate && (
                               <p className="text-xs text-muted-foreground mt-1">
-                                {t('students.due_label') || 'תאריך יעד'}: {phase.dueDate}
+                                {t('students.dueLabel') || 'תאריך יעד'}: {phase.dueDate}
                               </p>
                             )}
                             {phase.status === 'in-progress' && (
                               <Badge variant="secondary" className="mt-2 text-[10px] h-5">
-                                {t('tala.phase_current') || 'שלב נוכחי'}
+                                {t('tala.phaseCurrent') || 'שלב נוכחי'}
                               </Badge>
                             )}
                           </div>
@@ -1620,7 +1619,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                         <CheckCircle2 className="w-4 h-4" /> {phase.phaseName}
                       </CardTitle>
                       <Button variant="ghost" size="sm" className="h-8 text-primary">
-                        {t('tala.view_data') || 'צפה בנתונים'}
+                        {t('tala.viewData') || 'צפה בנתונים'}
                       </Button>
                     </div>
                   </CardHeader>
@@ -1637,7 +1636,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                     <div className={cn('flex justify-between items-start', isRTL && 'flex-row-reverse')}>
                       <div className={isRTL ? 'text-right' : ''}>
                         <Badge className="mb-2 bg-primary/10 text-primary border-primary/20 hover:bg-primary/20">
-                          {t('tala.in_progress') || 'בתהליך'}
+                          {t('tala.inProgress') || 'בתהליך'}
                         </Badge>
                         <CardTitle className="text-2xl text-primary">
                           {currentPhase.phaseName}
@@ -1646,7 +1645,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                       {currentPhase.dueDate && (
                         <div className={cn(isRTL ? 'pl-1 text-left' : 'pr-1 text-right')}>
                           <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
-                            {t('tala.deadline_label') || 'תאריך יעד'}
+                            {t('tala.deadlineLabel') || 'תאריך יעד'}
                           </p>
                           <p className="font-bold text-foreground">{currentPhase.dueDate}</p>
                         </div>
@@ -1672,7 +1671,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                           }}
                         >
                           <Plus className="w-4 h-4" />
-                          {t('tala.add_goal') || 'הוסף מטרה'}
+                          {t('tala.addGoal') || 'הוסף מטרה'}
                         </Button>
                       </div>
 
@@ -1683,7 +1682,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                         )}>
                           <Target className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
                           <p className="text-muted-foreground">
-                            {t('tala.no_goals') || 'אין מטרות עדיין'}
+                            {t('tala.noGoals') || 'אין מטרות עדיין'}
                           </p>
                         </div>
                       ) : (
@@ -1756,7 +1755,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                         {advancePhaseMutation.isPending && (
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                         )}
-                        {t('tala.submit_approval') || 'שלח לאישור'}
+                        {t('tala.submitApproval') || 'שלח לאישור'}
                         {isRTL ? (
                           <ChevronLeft className="w-4 h-4 mr-2" />
                         ) : (

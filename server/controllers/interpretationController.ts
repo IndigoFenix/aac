@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { interpretationRepository, aacUserRepository, userRepository } from "../repositories";
+import { interpretationRepository, studentRepository, userRepository } from "../repositories";
 import { creditService } from "../services";
 import { interpretRequestSchema } from "@shared/schema";
 import { interpretAACText, interpretAACImage } from "../services/interpretationService";
@@ -51,8 +51,8 @@ export class InterpretationController {
       const validatedData = interpretRequestSchema.parse(requestData);
       const language = (req.body.language as "en" | "he") || "he";
       const context = req.body.context || null;
-      const aacUserId = req.body.aacUserId || null;
-      const aacUserName = req.body.aacUserName || null;
+      const studentId = req.body.studentId || null;
+      const studentName = req.body.studentName || null;
 
       let interpretationResult;
       let finalInput = validatedData.input;
@@ -66,15 +66,15 @@ export class InterpretationController {
         finalInput = validatedData.input + contextHeader + context;
       }
 
-      // Get AAC user info if aacUserId is provided
-      let aacUserInfo = null;
+      // Get AAC user info if studentId is provided
+      let studentInfo = null;
       let scheduleContext = "";
-      if (aacUserId) {
-        aacUserInfo = await aacUserRepository.getAacUserById(aacUserId);
+      if (studentId) {
+        studentInfo = await studentRepository.getStudentById(studentId);
 
         // Fetch current schedule context for time-based context enrichment
-        const scheduleData = await aacUserRepository.getCurrentScheduleContext(
-          aacUserId,
+        const scheduleData = await studentRepository.getCurrentScheduleContext(
+          studentId,
           new Date()
         );
         if (scheduleData.activityName) {
@@ -99,7 +99,7 @@ export class InterpretationController {
           validatedData.imageData,
           language,
           enrichedContext,
-          aacUserInfo,
+          studentInfo,
           currentUser?.id,
           req.sessionID
         );
@@ -108,7 +108,7 @@ export class InterpretationController {
           finalInput,
           language,
           enrichedContext,
-          aacUserInfo,
+          studentInfo,
           currentUser?.id,
           req.sessionID
         );
@@ -130,8 +130,8 @@ export class InterpretationController {
         language,
         context,
         imageData: imageBase64,
-        aacUserId,
-        aacUserName,
+        studentId,
+        studentName,
       });
 
       // Deduct credit if user is logged in
@@ -287,9 +287,9 @@ export class InterpretationController {
    */
   async getHistoricalSuggestions(req: Request, res: Response): Promise<void> {
     try {
-      const { aacUserId, currentInput } = req.body;
+      const { studentId, currentInput } = req.body;
 
-      if (!aacUserId || !currentInput) {
+      if (!studentId || !currentInput) {
         res.status(400).json({
           success: false,
           message: "AAC user ID and current input are required",
@@ -298,8 +298,8 @@ export class InterpretationController {
       }
 
       // Verify the AAC user belongs to the current user or is shared with them
-      const aacUser = await aacUserRepository.getAacUserByAacUserId(aacUserId);
-      if (!aacUser) {
+      const student = await studentRepository.getStudentByStudentId(studentId);
+      if (!student) {
         res.status(404).json({
           success: false,
           message: "AAC user not found",
@@ -310,8 +310,8 @@ export class InterpretationController {
       const currentUser = req.user as any;
 
       // Check if user owns this AAC user
-      const userAacUsers = await aacUserRepository.getAacUsersByUserId(currentUser.id);
-      const hasAccess = userAacUsers.some((u) => u.id === aacUserId);
+      const userStudents = await studentRepository.getStudentsByUserId(currentUser.id);
+      const hasAccess = userStudents.some((u) => u.id === studentId);
 
       if (!hasAccess) {
         res.status(403).json({
@@ -323,7 +323,7 @@ export class InterpretationController {
 
       // Get historical suggestions
       const historicalAnalysis = await interpretationRepository.analyzeHistoricalPatterns(
-        aacUserId,
+        studentId,
         currentInput
       );
 
@@ -331,7 +331,7 @@ export class InterpretationController {
         success: true,
         suggestions: historicalAnalysis.suggestions,
         totalPatterns: historicalAnalysis.totalPatterns,
-        aacUserName: aacUser.name,
+        studentName: student.name,
       });
     } catch (error: any) {
       console.error("Historical suggestions error:", error);

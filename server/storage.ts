@@ -7,7 +7,7 @@
  */
 
 import { userRepository } from "./repositories/userRepository";
-import { aacUserRepository } from "./repositories/aacUserRepository";
+import { studentRepository } from "./repositories/studentRepository";
 import { interpretationRepository } from "./repositories/interpretationRepository";
 import { creditRepository } from "./repositories/creditRepository";
 import { inviteCodeRepository } from "./repositories/inviteCodeRepository";
@@ -44,19 +44,19 @@ export const storage = {
   upsertAdminUser: settingsRepository.upsertAdminUser.bind(settingsRepository),
 
   // AAC user operations
-  createAacUser: aacUserRepository.createAacUser.bind(aacUserRepository),
-  getAacUsersByUserId: aacUserRepository.getAacUsersByUserId.bind(aacUserRepository),
-  getAacUserByAacUserId: aacUserRepository.getAacUserByAacUserId.bind(aacUserRepository),
-  updateAacUser: aacUserRepository.updateAacUser.bind(aacUserRepository),
-  deleteAacUser: aacUserRepository.deleteAacUser.bind(aacUserRepository),
+  createStudent: studentRepository.createStudent.bind(studentRepository),
+  getStudentsByUserId: studentRepository.getStudentsByUserId.bind(studentRepository),
+  getStudentByStudentId: studentRepository.getStudentByStudentId.bind(studentRepository),
+  updateStudent: studentRepository.updateStudent.bind(studentRepository),
+  deleteStudent: studentRepository.deleteStudent.bind(studentRepository),
 
   // AAC schedule operations
-  createScheduleEntry: aacUserRepository.createScheduleEntry.bind(aacUserRepository),
-  getSchedulesByAacUserId: aacUserRepository.getSchedulesByAacUserId.bind(aacUserRepository),
-  getScheduleEntry: aacUserRepository.getScheduleEntry.bind(aacUserRepository),
-  updateScheduleEntry: aacUserRepository.updateScheduleEntry.bind(aacUserRepository),
-  deleteScheduleEntry: aacUserRepository.deleteScheduleEntry.bind(aacUserRepository),
-  getCurrentScheduleContext: aacUserRepository.getCurrentScheduleContext.bind(aacUserRepository),
+  createScheduleEntry: studentRepository.createScheduleEntry.bind(studentRepository),
+  getSchedulesByStudentId: studentRepository.getSchedulesByStudentId.bind(studentRepository),
+  getScheduleEntry: studentRepository.getScheduleEntry.bind(studentRepository),
+  updateScheduleEntry: studentRepository.updateScheduleEntry.bind(studentRepository),
+  deleteScheduleEntry: studentRepository.deleteScheduleEntry.bind(studentRepository),
+  getCurrentScheduleContext: studentRepository.getCurrentScheduleContext.bind(studentRepository),
 
   // Interpretation operations
   createInterpretation: interpretationRepository.createInterpretation.bind(interpretationRepository),
@@ -68,7 +68,7 @@ export const storage = {
   getInterpretationsStats: interpretationRepository.getInterpretationsStats.bind(interpretationRepository),
   getClinicalData: interpretationRepository.getClinicalData.bind(interpretationRepository),
   getClinicalMetrics: interpretationRepository.getClinicalMetrics.bind(interpretationRepository),
-  getAacUserHistory: interpretationRepository.getAacUserHistory.bind(interpretationRepository),
+  getStudentHistory: interpretationRepository.getStudentHistory.bind(interpretationRepository),
   analyzeHistoricalPatterns: interpretationRepository.analyzeHistoricalPatterns.bind(interpretationRepository),
 
   // Credit operations
@@ -157,8 +157,8 @@ export const storage = {
   createChatSession: chatRepository.createSession.bind(chatRepository),
   getChatSession: chatRepository.getSession.bind(chatRepository),
   getChatSessionsByUserId: chatRepository.getSessionsByUserId.bind(chatRepository),
-  getChatSessionsByAacUserId: chatRepository.getSessionsByAacUserId.bind(chatRepository),
-  getChatSessionsByUserAacUserId: chatRepository.getSessionsByUserAacUserId.bind(chatRepository),
+  getChatSessionsByStudentId: chatRepository.getSessionsByStudentId.bind(chatRepository),
+  getChatSessionsByUserStudentId: chatRepository.getSessionsByUserStudentId.bind(chatRepository),
   getOpenChatSessions: chatRepository.getOpenSessions.bind(chatRepository),
   updateChatSession: chatRepository.updateSession.bind(chatRepository),
   deleteChatSession: chatRepository.deleteSession.bind(chatRepository),

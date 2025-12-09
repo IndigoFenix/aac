@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useChat } from '@/hooks/useChat';
-import { useAacUser } from '@/hooks/useAacUser';
+import { useStudent } from '@/hooks/useStudent';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useSharedState, useFeaturePanel } from '@/contexts/FeaturePanelContext';
 import { ChatMessage, ChatMessageContent } from '@shared/schema';
@@ -30,7 +30,7 @@ export function ChatFeature() {
   const inputRef = useRef<HTMLInputElement>(null);
   
   const { user } = useAuth();
-  const { aacUser } = useAacUser();
+  const { student } = useStudent();
   const { t, isRTL } = useLanguage();
   const { sharedState, setSharedState } = useSharedState();
   const { 
@@ -119,7 +119,7 @@ export function ChatFeature() {
   }, [handleSend]);
 
   const handleSuggestionClick = (promptKey: string) => {
-    const promptText = t(promptKey, { name: aacUser?.name || '' });
+    const promptText = t(promptKey, { name: student?.name || '' });
     setPrompt(promptText);
     inputRef.current?.focus();
   };
@@ -154,8 +154,8 @@ export function ChatFeature() {
   };
 
   const getPlaceholder = () => {
-    if (aacUser) {
-      return t('chat.placeholderWithUser', { name: aacUser.name });
+    if (student) {
+      return t('chat.placeholderWithUser', { name: student.name });
     }
     return t('chat.placeholder');
   };
@@ -169,7 +169,7 @@ export function ChatFeature() {
         "absolute top-4 z-10 gap-2 rounded-full shadow-sm",
         "bg-background/80 backdrop-blur-sm hover:bg-background",
         "transition-all duration-200",
-        isRTL ? "left-4" : "right-4"
+        "mx-4"
       )}
       onClick={handleSwitchToPopup}
       title={t('chat.switchToPopup')}
@@ -250,7 +250,7 @@ export function ChatFeature() {
         <Send className={cn("w-4 h-4", isRTL && "rotate-180")} />
       </Button>
     </div>
-  ), [prompt, isRecording, isSending, aacUser, isRTL, t, handleKeyDown, handleVoiceInput, handleSend, getPlaceholder]);
+  ), [prompt, isRecording, isSending, student, isRTL, t, handleKeyDown, handleVoiceInput, handleSend, getPlaceholder]);
 
   return (
     <div className="flex flex-col h-full relative">
@@ -270,14 +270,14 @@ export function ChatFeature() {
                 {getGreeting()}, {user?.firstName || 'User'}.
               </h2>
               <p className="text-base text-muted-foreground">
-                {aacUser 
-                  ? t('chat.welcomeWithUser', { name: aacUser.name })
+                {student 
+                  ? t('chat.welcomeWithUser', { name: student.name })
                   : t('chat.welcomeMessage')
                 }
               </p>
-              {aacUser && (
+              {student && (
                 <p className="text-sm text-muted-foreground/70">
-                  {t('chat.workingWith')} <span className="font-medium">{aacUser.name}</span>
+                  {t('chat.workingWith')} <span className="font-medium">{student.name}</span>
                 </p>
               )}
             </div>
@@ -292,7 +292,7 @@ export function ChatFeature() {
               "flex flex-wrap justify-center gap-2",
               isRTL && "flex-row-reverse"
             )}>
-              {aacUser && (
+              {student && (
                 <>
                   <Button
                     variant="outline"

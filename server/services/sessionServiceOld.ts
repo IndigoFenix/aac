@@ -5,21 +5,21 @@
  * 
  * Key differences from the original:
  * - No agents/instances - uses "modes" (board, interpret) with local templates
- * - Memory is stored on User, AacUser, and UserAacUser objects
- * - Credits are tracked per User, AacUser, and UserAacUser
- * - Simplified input: userId, aacUserId, sessionId, mode
+ * - Memory is stored on User, Student, and UserStudent objects
+ * - Credits are tracked per User, Student, and UserStudent
+ * - Simplified input: userId, studentId, sessionId, mode
  */
 
 import { db } from "../db";
 import { eq, and, sql } from "drizzle-orm";
 import {
   users,
-  aacUsers,
-  userAacUsers,
+  students,
+  userStudents,
   chatSessions,
   type User,
-  type AacUser,
-  type UserAacUser,
+  type Student,
+  type UserStudent,
   type ChatSession,
   type InsertChatSession,
   type ChatState,
@@ -42,7 +42,7 @@ interface LocalAgentTemplate extends AgentLike {
   memoryFields: AgentMemoryField[];
 }
 
-// Memory fields that are populated from User, AacUser, and UserAacUser
+// Memory fields that are populated from User, Student, and UserStudent
 const MASTER_MEMORY_FIELDS: AgentMemoryField[] = [
   // User memory field - stores user preferences
   {
@@ -60,9 +60,9 @@ const MASTER_MEMORY_FIELDS: AgentMemoryField[] = [
       },
     },
   },
-  // AacUser memory field - stores AAC user information
+  // Student memory field - stores AAC user information
   {
-    id: "AacUser",
+    id: "Student",
     type: "object",
     title: "AAC User",
     description: "The AAC user (person being assisted)",
@@ -148,9 +148,9 @@ const MASTER_MEMORY_FIELDS: AgentMemoryField[] = [
       },
     },
   },
-  // UserAacUser memory field - stores relationship-specific information
+  // UserStudent memory field - stores relationship-specific information
   {
-    id: "UserAacUser",
+    id: "UserStudent",
     type: "object",
     title: "User-AAC User Relationship",
     description: "Information specific to this user's relationship with this AAC user",
@@ -201,14 +201,14 @@ const AGENT_TEMPLATES: Record<ChatMode, LocalAgentTemplate> = {
 
 interface MemoryContext {
   user?: User;
-  aacUser?: AacUser;
-  userAacUser?: UserAacUser;
+  student?: Student;
+  userStudent?: UserStudent;
 }
 
 interface MemoryValues {
   User?: Record<string, any>;
-  AacUser?: Record<string, any>;
-  UserAacUser?: Record<string, any>;
+  Student?: Record<string, any>;
+  UserStudent?: Record<string, any>;
 }
 
 function buildMemoryValues(context: MemoryContext): MemoryValues {
@@ -217,11 +217,11 @@ function buildMemoryValues(context: MemoryContext): MemoryValues {
   if (context.user) {
     values.User = (context.user.chatMemory as Record<string, any>) || {};
   }
-  if (context.aacUser) {
-    values.AacUser = (context.aacUser.chatMemory as Record<string, any>) || {};
+  if (context.student) {
+    values.Student = (context.student.chatMemory as Record<string, any>) || {};
   }
-  if (context.userAacUser) {
-    values.UserAacUser = (context.userAacUser.chatMemory as Record<string, any>) || {};
+  if (context.userStudent) {
+    values.UserStudent = (context.userStudent.chatMemory as Record<string, any>) || {};
   }
   
   return values;
@@ -236,19 +236,19 @@ async function getUser(userId: string): Promise<User | undefined> {
   return user || undefined;
 }
 
-async function getAacUser(aacUserId: string): Promise<AacUser | undefined> {
-  const [aacUser] = await db.select().from(aacUsers).where(eq(aacUsers.id, aacUserId));
-  return aacUser || undefined;
+async function getStudent(studentId: string): Promise<Student | undefined> {
+  const [student] = await db.select().from(students).where(eq(students.id, studentId));
+  return student || undefined;
 }
 
-async function getUserAacUser(userId: string, aacUserId: string): Promise<UserAacUser | undefined> {
+async function getUserStudent(userId: string, studentId: string): Promise<UserStudent | undefined> {
   const [relationship] = await db
     .select()
-    .from(userAacUsers)
+    .from(userStudents)
     .where(and(
-      eq(userAacUsers.userId, userId),
-      eq(userAacUsers.aacUserId, aacUserId),
-      eq(userAacUsers.isActive, true)
+      eq(userStudents.userId, userId),
+      eq(userStudents.studentId, studentId),
+      eq(userStudents.isActive, true)
     ));
   return relationship || undefined;
 }
@@ -283,18 +283,18 @@ async function updateUserMemory(userId: string, memory: Record<string, any>): Pr
     .where(eq(users.id, userId));
 }
 
-async function updateAacUserMemory(aacUserId: string, memory: Record<string, any>): Promise<void> {
+async function updateStudentMemory(studentId: string, memory: Record<string, any>): Promise<void> {
   await db
-    .update(aacUsers)
+    .update(students)
     .set({ chatMemory: memory, updatedAt: new Date() })
-    .where(eq(aacUsers.id, aacUserId));
+    .where(eq(students.id, studentId));
 }
 
-async function updateUserAacUserMemory(id: string, memory: Record<string, any>): Promise<void> {
+async function updateUserStudentMemory(id: string, memory: Record<string, any>): Promise<void> {
   await db
-    .update(userAacUsers)
+    .update(userStudents)
     .set({ chatMemory: memory, updatedAt: new Date() })
-    .where(eq(userAacUsers.id, id));
+    .where(eq(userStudents.id, id));
 }
 
 async function spendCredits(
@@ -312,23 +312,23 @@ async function spendCredits(
       })
       .where(eq(users.id, context.user.id));
   }
-  if (context.aacUser) {
+  if (context.student) {
     await db
-      .update(aacUsers)
+      .update(students)
       .set({
-        chatCreditsUsed: sql`${aacUsers.chatCreditsUsed} + ${creditsUsed}`,
+        chatCreditsUsed: sql`${students.chatCreditsUsed} + ${creditsUsed}`,
         chatCreditsUpdated: new Date(),
       })
-      .where(eq(aacUsers.id, context.aacUser.id));
+      .where(eq(students.id, context.student.id));
   }
-  if (context.userAacUser) {
+  if (context.userStudent) {
     await db
-      .update(userAacUsers)
+      .update(userStudents)
       .set({
-        chatCreditsUsed: sql`${userAacUsers.chatCreditsUsed} + ${creditsUsed}`,
+        chatCreditsUsed: sql`${userStudents.chatCreditsUsed} + ${creditsUsed}`,
         chatCreditsUpdated: new Date(),
       })
-      .where(eq(userAacUsers.id, context.userAacUser.id));
+      .where(eq(userStudents.id, context.userStudent.id));
   }
 }
 
@@ -338,17 +338,17 @@ async function spendCredits(
 
 interface GetMessageManagerInput {
   userId?: string;
-  aacUserId?: string;
+  studentId?: string;
   sessionId?: string;
   mode?: ChatMode;
 }
 
 async function getMessageManager(input: GetMessageManagerInput): Promise<ChatMessageManager> {
-  const { userId, aacUserId, sessionId, mode = "interpret" } = input;
+  const { userId, studentId, sessionId, mode = "interpret" } = input;
 
   // Validate input - at least one identifier must be provided
-  if (!userId && !aacUserId && !sessionId) {
-    throw { status: 400, message: "Must provide userId, aacUserId, or sessionId" };
+  if (!userId && !studentId && !sessionId) {
+    throw { status: 400, message: "Must provide userId, studentId, or sessionId" };
   }
 
   // Build memory context
@@ -361,16 +361,16 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<ChatMes
     }
   }
   
-  if (aacUserId) {
-    context.aacUser = await getAacUser(aacUserId);
-    if (!context.aacUser) {
-      throw { status: 404, message: `AAC User not found: ${aacUserId}` };
+  if (studentId) {
+    context.student = await getStudent(studentId);
+    if (!context.student) {
+      throw { status: 404, message: `AAC User not found: ${studentId}` };
     }
   }
   
-  // If both user and aacUser provided, get their relationship
-  if (userId && aacUserId) {
-    context.userAacUser = await getUserAacUser(userId, aacUserId);
+  // If both user and student provided, get their relationship
+  if (userId && studentId) {
+    context.userStudent = await getUserStudent(userId, studentId);
     // Relationship is optional - they might not have one yet
   }
 
@@ -412,8 +412,8 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<ChatMes
     chatState = newChatState;
     session = await createSession({
       userId: userId || null,
-      aacUserId: aacUserId || null,
-      userAacUserId: context.userAacUser?.id || null,
+      studentId: studentId || null,
+      userStudentId: context.userStudent?.id || null,
       chatMode: sessionMode,
       state: chatState,
       log: [],
@@ -437,20 +437,20 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<ChatMes
         context.user = { ...context.user, chatMemory: updatedMemory };
       }
     }
-    if (context.aacUser && newMemoryValues.AacUser) {
-      const currentMemory = (context.aacUser.chatMemory as Record<string, any>) || {};
-      const updatedMemory = { ...currentMemory, ...newMemoryValues.AacUser };
+    if (context.student && newMemoryValues.Student) {
+      const currentMemory = (context.student.chatMemory as Record<string, any>) || {};
+      const updatedMemory = { ...currentMemory, ...newMemoryValues.Student };
       if (JSON.stringify(currentMemory) !== JSON.stringify(updatedMemory)) {
-        await updateAacUserMemory(context.aacUser.id, updatedMemory);
-        context.aacUser = { ...context.aacUser, chatMemory: updatedMemory };
+        await updateStudentMemory(context.student.id, updatedMemory);
+        context.student = { ...context.student, chatMemory: updatedMemory };
       }
     }
-    if (context.userAacUser && newMemoryValues.UserAacUser) {
-      const currentMemory = (context.userAacUser.chatMemory as Record<string, any>) || {};
-      const updatedMemory = { ...currentMemory, ...newMemoryValues.UserAacUser };
+    if (context.userStudent && newMemoryValues.UserStudent) {
+      const currentMemory = (context.userStudent.chatMemory as Record<string, any>) || {};
+      const updatedMemory = { ...currentMemory, ...newMemoryValues.UserStudent };
       if (JSON.stringify(currentMemory) !== JSON.stringify(updatedMemory)) {
-        await updateUserAacUserMemory(context.userAacUser.id, updatedMemory);
-        context.userAacUser = { ...context.userAacUser, chatMemory: updatedMemory };
+        await updateUserStudentMemory(context.userStudent.id, updatedMemory);
+        context.userStudent = { ...context.userStudent, chatMemory: updatedMemory };
       }
     }
   };
@@ -500,7 +500,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<ChatMes
   // Build agent-like object from template for ChatMessageManager
   const agentFromTemplate: AgentTemplate = {
     id: `template-${sessionMode}`,
-    accountId: context.user?.id || context.aacUser?.id || "system",
+    accountId: context.user?.id || context.student?.id || "system",
     name: template.name,
     corePrompt: template.corePrompt,
     greeting: template.greeting,
@@ -548,7 +548,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<ChatMes
 
 export interface OnMessageInput {
   userId?: string;
-  aacUserId?: string;
+  studentId?: string;
   sessionId?: string;
   mode?: ChatMode;
   messages?: ChatMessage[];
@@ -558,11 +558,11 @@ export interface OnMessageInput {
 export async function onMessage(input: OnMessageInput): Promise<MessageResponse> {
   try {
     console.log("onMessage input:", input);
-    const { userId, aacUserId, sessionId, mode, messages, replyType } = input;
+    const { userId, studentId, sessionId, mode, messages, replyType } = input;
 
     const messageManager = await getMessageManager({
       userId,
-      aacUserId,
+      studentId,
       sessionId,
       mode,
     });
@@ -605,7 +605,7 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
 
 export async function persistMessages(params: {
   userId?: string;
-  aacUserId?: string;
+  studentId?: string;
   sessionId: string;
   items: {
     role: string;
@@ -616,7 +616,7 @@ export async function persistMessages(params: {
 }): Promise<{ ok: boolean }> {
   const manager = await getMessageManager({
     userId: params.userId,
-    aacUserId: params.aacUserId,
+    studentId: params.studentId,
     sessionId: params.sessionId,
   });
   

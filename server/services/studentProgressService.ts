@@ -6,7 +6,7 @@
  */
 
 import { studentProgressRepository } from "../repositories/studentProgressRepository";
-import { aacUserService } from "./aacUserService";
+import { studentService } from "./studentService";
 import {
   type StudentPhase,
   type InsertStudentPhase,
@@ -34,30 +34,30 @@ export class StudentProgressService {
    * Initialize phases for a new student based on their system type
    */
   async initializeStudentPhases(
-    aacUserId: string, 
+    studentId: string, 
     systemType: SystemType
   ): Promise<StudentPhase[]> {
     // Check if phases already exist
-    const existingPhases = await studentProgressRepository.getPhasesByAacUserId(aacUserId);
+    const existingPhases = await studentProgressRepository.getPhasesByStudentId(studentId);
     if (existingPhases.length > 0) {
       return existingPhases;
     }
 
-    return await studentProgressRepository.createDefaultPhases(aacUserId, systemType);
+    return await studentProgressRepository.createDefaultPhases(studentId, systemType);
   }
 
   /**
    * Get all phases for a student
    */
-  async getPhases(aacUserId: string): Promise<StudentPhase[]> {
-    return await studentProgressRepository.getPhasesByAacUserId(aacUserId);
+  async getPhases(studentId: string): Promise<StudentPhase[]> {
+    return await studentProgressRepository.getPhasesByStudentId(studentId);
   }
 
   /**
    * Get current active phase for a student
    */
-  async getCurrentPhase(aacUserId: string): Promise<StudentPhase | undefined> {
-    const phases = await this.getPhases(aacUserId);
+  async getCurrentPhase(studentId: string): Promise<StudentPhase | undefined> {
+    const phases = await this.getPhases(studentId);
     return phases.find(p => p.status === 'in-progress');
   }
 
@@ -74,19 +74,19 @@ export class StudentProgressService {
   /**
    * Advance to the next phase
    */
-  async advanceToNextPhase(aacUserId: string): Promise<StudentPhase | undefined> {
-    const currentPhase = await this.getCurrentPhase(aacUserId);
+  async advanceToNextPhase(studentId: string): Promise<StudentPhase | undefined> {
+    const currentPhase = await this.getCurrentPhase(studentId);
     if (!currentPhase) {
       return undefined;
     }
-    return await studentProgressRepository.advancePhase(aacUserId, currentPhase.id);
+    return await studentProgressRepository.advancePhase(studentId, currentPhase.id);
   }
 
   /**
    * Calculate overall progress for a student based on phase completion
    */
-  async calculateOverallProgress(aacUserId: string): Promise<number> {
-    const phases = await this.getPhases(aacUserId);
+  async calculateOverallProgress(studentId: string): Promise<number> {
+    const phases = await this.getPhases(studentId);
     if (phases.length === 0) return 0;
 
     const completedCount = phases.filter(p => p.status === 'completed').length;
@@ -109,8 +109,8 @@ export class StudentProgressService {
   /**
    * Get all goals for a student
    */
-  async getGoals(aacUserId: string): Promise<StudentGoal[]> {
-    return await studentProgressRepository.getGoalsByAacUserId(aacUserId);
+  async getGoals(studentId: string): Promise<StudentGoal[]> {
+    return await studentProgressRepository.getGoalsByStudentId(studentId);
   }
 
   /**
@@ -173,10 +173,10 @@ export class StudentProgressService {
    * Get progress history for a student
    */
   async getProgressHistory(
-    aacUserId: string, 
+    studentId: string, 
     limit = 50
   ): Promise<StudentProgressEntry[]> {
-    return await studentProgressRepository.getProgressEntriesByAacUserId(aacUserId, limit);
+    return await studentProgressRepository.getProgressEntriesByStudentId(studentId, limit);
   }
 
   /**
@@ -194,21 +194,21 @@ export class StudentProgressService {
    * Initialize compliance checklist for a student
    */
   async initializeComplianceChecklist(
-    aacUserId: string, 
+    studentId: string, 
     phaseId?: string
   ): Promise<StudentComplianceItem[]> {
-    const existing = await studentProgressRepository.getComplianceItemsByAacUserId(aacUserId);
+    const existing = await studentProgressRepository.getComplianceItemsByStudentId(studentId);
     if (existing.length > 0) {
       return existing;
     }
-    return await studentProgressRepository.createDefaultComplianceItems(aacUserId, phaseId);
+    return await studentProgressRepository.createDefaultComplianceItems(studentId, phaseId);
   }
 
   /**
    * Get compliance items for a student
    */
-  async getComplianceItems(aacUserId: string): Promise<StudentComplianceItem[]> {
-    return await studentProgressRepository.getComplianceItemsByAacUserId(aacUserId);
+  async getComplianceItems(studentId: string): Promise<StudentComplianceItem[]> {
+    return await studentProgressRepository.getComplianceItemsByStudentId(studentId);
   }
 
   /**
@@ -225,8 +225,8 @@ export class StudentProgressService {
   /**
    * Calculate compliance percentage
    */
-  async calculateCompliancePercentage(aacUserId: string): Promise<number> {
-    const items = await this.getComplianceItems(aacUserId);
+  async calculateCompliancePercentage(studentId: string): Promise<number> {
+    const items = await this.getComplianceItems(studentId);
     if (items.length === 0) return 100;
     
     const completed = items.filter(i => i.isCompleted).length;
@@ -250,9 +250,9 @@ export class StudentProgressService {
    * Get service recommendations for a student
    */
   async getServiceRecommendations(
-    aacUserId: string
+    studentId: string
   ): Promise<StudentServiceRecommendation[]> {
-    return await studentProgressRepository.getServiceRecommendationsByAacUserId(aacUserId);
+    return await studentProgressRepository.getServiceRecommendationsByStudentId(studentId);
   }
 
   /**
@@ -319,7 +319,7 @@ export class StudentProgressService {
   async getStudentsWithUpcomingDeadlines(
     userId: string, 
     daysAhead = 7
-  ): Promise<Array<{ aacUserId: string; dueDate: string; phaseName: string }>> {
+  ): Promise<Array<{ studentId: string; dueDate: string; phaseName: string }>> {
     return await studentProgressRepository.getStudentsWithUpcomingDeadlines(userId, daysAhead);
   }
 
@@ -330,7 +330,7 @@ export class StudentProgressService {
   /**
    * Get complete student progress data
    */
-  async getFullStudentProgress(aacUserId: string): Promise<{
+  async getFullStudentProgress(studentId: string): Promise<{
     phases: StudentPhase[];
     goals: StudentGoal[];
     complianceItems: StudentComplianceItem[];
@@ -339,9 +339,9 @@ export class StudentProgressService {
     overallProgress: number;
     compliancePercentage: number;
   }> {
-    const data = await studentProgressRepository.getFullStudentProgress(aacUserId);
-    const overallProgress = await this.calculateOverallProgress(aacUserId);
-    const compliancePercentage = await this.calculateCompliancePercentage(aacUserId);
+    const data = await studentProgressRepository.getFullStudentProgress(studentId);
+    const overallProgress = await this.calculateOverallProgress(studentId);
+    const compliancePercentage = await this.calculateCompliancePercentage(studentId);
 
     return {
       ...data,
@@ -353,24 +353,24 @@ export class StudentProgressService {
   /**
    * Get student with progress summary for list view
    */
-  async getStudentWithProgressSummary(aacUserId: string): Promise<StudentWithProgress | null> {
-    const aacUser = await aacUserService.getAacUserById(aacUserId);
-    if (!aacUser) return null;
+  async getStudentWithProgressSummary(studentId: string): Promise<StudentWithProgress | null> {
+    const student = await studentService.getStudentById(studentId);
+    if (!student) return null;
 
-    const phases = await this.getPhases(aacUserId);
-    const goals = await this.getGoals(aacUserId);
-    const overallProgress = await this.calculateOverallProgress(aacUserId);
+    const phases = await this.getPhases(studentId);
+    const goals = await this.getGoals(studentId);
+    const overallProgress = await this.calculateOverallProgress(studentId);
     const currentPhase = phases.find(p => p.status === 'in-progress');
 
     return {
-      id: aacUser.id,
-      name: aacUser.name,
-      idNumber: (aacUser as any).idNumber,
-      school: (aacUser as any).school,
-      grade: (aacUser as any).grade,
-      diagnosis: (aacUser as any).diagnosis,
-      systemType: ((aacUser as any).systemType || 'tala') as SystemType,
-      country: (aacUser as any).country,
+      id: student.id,
+      name: student.name,
+      idNumber: (student as any).idNumber,
+      school: (student as any).school,
+      grade: (student as any).grade,
+      diagnosis: (student as any).diagnosis,
+      systemType: ((student as any).systemType || 'tala') as SystemType,
+      country: (student as any).country,
       overallProgress,
       nextDeadline: currentPhase?.dueDate || undefined,
       currentPhase: currentPhase?.phaseId,
@@ -386,14 +386,14 @@ export class StudentProgressService {
   /**
    * Get baseline metrics for a student
    */
-  async getBaselineMetrics(aacUserId: string): Promise<{
+  async getBaselineMetrics(studentId: string): Promise<{
     mlu: number | null;
     communicationRate: number | null;
     intelligibility: number | null;
     additionalMetrics: Record<string, any>;
   }> {
     // Get the most recent progress entry with metrics
-    const entries = await this.getProgressHistory(aacUserId, 10);
+    const entries = await this.getProgressHistory(studentId, 10);
     const entryWithMetrics = entries.find(e => e.metrics && Object.keys(e.metrics as object).length > 0);
 
     if (!entryWithMetrics || !entryWithMetrics.metrics) {
@@ -419,7 +419,7 @@ export class StudentProgressService {
    * Record baseline metrics
    */
   async recordBaselineMetrics(
-    aacUserId: string,
+    studentId: string,
     metrics: {
       mlu?: number;
       communicationRate?: number;
@@ -429,7 +429,7 @@ export class StudentProgressService {
     recordedBy: string
   ): Promise<StudentProgressEntry> {
     return await this.recordProgress({
-      aacUserId,
+      studentId,
       entryType: 'assessment',
       title: 'Baseline Assessment',
       content: 'Initial baseline metrics recorded',

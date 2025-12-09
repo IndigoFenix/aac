@@ -1,7 +1,7 @@
 // src/hooks/useChat.tsx
 import { useState, useEffect, createContext, useContext, ReactNode, useCallback, useRef } from 'react';
 import { apiRequest, queryClient } from '@/lib/queryClient';
-import { useAacUser } from './useAacUser';
+import { useStudent } from './useStudent';
 import { useAuth } from './useAuth';
 import { useFeaturePanel } from '@/contexts/FeaturePanelContext';
 import { ChatMessage, ChatMode, ChatSession } from '@shared/schema';
@@ -100,10 +100,10 @@ export const ChatProvider = ({
   const [error, setError] = useState<string | null>(null);
   
   // Refs
-  const currentAacUserIdRef = useRef<string | null>(null);
+  const currentStudentIdRef = useRef<string | null>(null);
   
   // External hooks
-  const { aacUser } = useAacUser();
+  const { student } = useStudent();
   const { user } = useAuth();
   const { activeFeature, getFeatureMetadata } = useFeaturePanel();
   
@@ -113,9 +113,9 @@ export const ChatProvider = ({
   // Storage keys
   const getStorageKey = useCallback(() => {
     const userPart = user?.id || 'anonymous';
-    const aacPart = aacUser?.id || 'none';
+    const aacPart = student?.id || 'none';
     return `chat.session.${userPart}.${aacPart}.${mode}`;
-  }, [user?.id, aacUser?.id, mode]);
+  }, [user?.id, student?.id, mode]);
 
   // ============================================================================
   // SESSION MANAGEMENT
@@ -224,8 +224,8 @@ export const ChatProvider = ({
       if (user?.id) {
         requestBody.userId = user.id;
       }
-      if (aacUser?.id) {
-        requestBody.aacUserId = aacUser.id;
+      if (student?.id) {
+        requestBody.studentId = student.id;
       }
       
       const response = await apiRequest('POST', '/api/chat', requestBody);
@@ -247,7 +247,7 @@ export const ChatProvider = ({
           const newSession: ChatSession = {
             id: data.sessionId,
             userId: user?.id || null,
-            aacUserId: aacUser?.id || null,
+            studentId: student?.id || null,
             chatMode: mode || 'chat',
             started: new Date(),
             lastUpdate: new Date(),
@@ -258,7 +258,7 @@ export const ChatProvider = ({
             status: 'open',
             createdAt: data.createdAt ? new Date(data.createdAt) : new Date(),
             updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(),
-            userAacUserId: null,
+            userStudentId: null,
             deletedAt: null,
             priority: 0,
             useResponsesAPI: null
@@ -306,7 +306,7 @@ export const ChatProvider = ({
     } finally {
       setIsSending(false);
     }
-  }, [session, mode, user, aacUser, history, persistSession, getStorageKey, getFeatureMetadata]);
+  }, [session, mode, user, student, history, persistSession, getStorageKey, getFeatureMetadata]);
 
   // ============================================================================
   // FEATURE-SPECIFIC METHODS (convenience wrappers)
@@ -367,16 +367,16 @@ export const ChatProvider = ({
 
   // Handle AAC user changes
   useEffect(() => {
-    const newAacUserId = aacUser?.id || null;
+    const newStudentId = student?.id || null;
     
-    if (currentAacUserIdRef.current !== null && 
-        currentAacUserIdRef.current !== newAacUserId) {
+    if (currentStudentIdRef.current !== null && 
+        currentStudentIdRef.current !== newStudentId) {
       console.log('AAC user changed, clearing chat session');
       clearSession();
     }
     
-    currentAacUserIdRef.current = newAacUserId;
-  }, [aacUser?.id, clearSession]);
+    currentStudentIdRef.current = newStudentId;
+  }, [student?.id, clearSession]);
 
   // Load persisted session
   useEffect(() => {

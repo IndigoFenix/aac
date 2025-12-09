@@ -1,5 +1,5 @@
 import {
-  systemSettings,
+  //systemSettings,
   passwordResetTokens,
   subscriptionPlans,
   adminUsers,
@@ -17,6 +17,8 @@ import { eq, sql, desc } from "drizzle-orm";
 export class SettingsRepository {
   // System settings
   async getSetting(key: string, defaultValue?: string): Promise<string | null> {
+    return null; // Temporarily disabled
+    /*
     try {
       const [setting] = await db
         .select()
@@ -28,9 +30,11 @@ export class SettingsRepository {
       console.error(`Error getting setting ${key}:`, error);
       return defaultValue || null;
     }
+    */
   }
 
   async updateSetting(key: string, value: string): Promise<void> {
+    /*
     try {
       await db
         .insert(systemSettings)
@@ -43,10 +47,13 @@ export class SettingsRepository {
       console.error(`Error updating setting ${key}:`, error);
       throw error;
     }
+    */
   }
 
   // System prompt operations
   async getSystemPrompt(): Promise<string> {
+    return ""; // Temporarily disabled
+    /*
     const [prompt] = await db
       .select()
       .from(systemPrompt)
@@ -54,10 +61,11 @@ export class SettingsRepository {
       .limit(1);
 
     return prompt?.prompt || "";
+    */
   }
 
   async updateSystemPrompt(prompt: string): Promise<void> {
-    await db.insert(systemPrompt).values({ prompt });
+    //await db.insert(systemPrompt).values({ prompt });
   }
 
   // Password reset token operations

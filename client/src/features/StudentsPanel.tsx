@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
-import { useAacUser } from '@/hooks/useAacUser';
+import { useStudent } from '@/hooks/useStudent';
 import { useFeaturePanel, useSharedState } from '@/contexts/FeaturePanelContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -67,7 +67,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const { user } = useAuth();
-  const { aacUsers, selectAacUser } = useAacUser();
+  const { students, selectStudent } = useStudent();
   const { setActiveFeature, registerMetadataBuilder, unregisterMetadataBuilder } = useFeaturePanel();
   const { sharedState, setSharedState } = useSharedState();
 
@@ -84,8 +84,8 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
     enabled: !!user && isOpen,
   });
 
-  // Use API data or fallback to aacUsers with mock progress
-  const students: StudentWithProgress[] = studentsData?.students || aacUsers.map(u => ({
+  // Use API data or fallback to students with mock progress
+  const studentsWithProgress: StudentWithProgress[] = studentsData?.students || students.map(u => ({
     ...u,
     progress: 0,
     currentPhase: '---',
@@ -93,7 +93,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
   }));
 
   // Filter students
-  const filteredStudents = students.filter(student => {
+  const filteredStudents = studentsWithProgress.filter(student => {
     const matchesSearch = !searchQuery || 
       student.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       student.idNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -122,7 +122,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
   // Handle student click - navigate to student progress
   const handleStudentClick = async (studentId: string) => {
     setSharedState({ selectedStudentId: studentId });
-    await selectAacUser(studentId);
+    await selectStudent(studentId);
     // setActiveFeature('progress');
   };
 
@@ -183,7 +183,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
             onClick={handleCreateStudent}
           >
             <Plus className="w-4 h-4" />
-            {t('students.new_student') || 'New Student'}
+            {t('students.newStudent') || 'New Student'}
           </Button>
         </div>
 
@@ -198,7 +198,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
               isRTL ? 'right-3' : 'left-3'
             )} />
             <Input
-              placeholder={t('students.search_placeholder') || 'Search students...'}
+              placeholder={t('students.searchPlaceholder') || 'Search students...'}
               className={isRTL ? 'pr-10' : 'pl-10'}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -209,12 +209,12 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
             <DropdownMenuTrigger asChild>
               <Button variant="outline" className="gap-2">
                 <Filter className="w-4 h-4" />
-                {t('students.filter_status') || 'Status'}
+                {t('students.filterStatus') || 'Status'}
                 {statusFilter && <Badge variant="secondary" className="ml-1">{statusFilter}</Badge>}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align={isRTL ? 'start' : 'end'}>
-              <DropdownMenuLabel>{t('students.filter_status') || 'Filter by Status'}</DropdownMenuLabel>
+              <DropdownMenuLabel>{t('students.filterStatus') || 'Filter by Status'}</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => setStatusFilter(null)}>
                 All
@@ -232,7 +232,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
             'text-sm text-muted-foreground',
             isRTL && 'order-first'
           )}>
-            {(t('students.found_count') || '{count} students found')
+            {(t('students.foundCount') || '{count} students found')
               .replace('{count}', filteredStudents.length.toString())}
           </span>
         </div>
@@ -329,7 +329,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                     isRTL && 'text-right'
                   )}>
                     <p className="text-xs text-muted-foreground uppercase font-semibold tracking-wider mb-1">
-                      {t('students.diagnosis_label') || 'Diagnosis'}
+                      {t('students.diagnosisLabel') || 'Diagnosis'}
                     </p>
                     <Badge variant="secondary" className="font-normal">
                       {student.diagnosis}
@@ -344,7 +344,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                     isRTL && 'flex-row-reverse'
                   )}>
                     <span className="text-muted-foreground">
-                      {t('students.progress_label') || 'Progress'}
+                      {t('students.progressLabel') || 'Progress'}
                     </span>
                     <span className="font-bold">{student.progress}%</span>
                   </div>
@@ -364,7 +364,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                     )}>
                       <AlertCircle className="w-3 h-3 text-amber-500" />
                       <span className="text-xs text-amber-600 font-medium">
-                        {t('students.due_label') || 'Due'}: {student.nextDeadline}
+                        {t('students.dueLabel') || 'Due'}: {student.nextDeadline}
                       </span>
                     </div>
                   )}
@@ -385,7 +385,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                     }}
                   >
                     <FileText className="w-4 h-4" />
-                    {t('students.open_plan') || 'Open Plan'}
+                    {t('students.openPlan') || 'Open Plan'}
                   </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -401,9 +401,9 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                           handleEditStudent(student);
                         }}
                       >
-                        {t('students.edit_details') || 'Edit Details'}
+                        {t('students.editDetails') || 'Edit Details'}
                       </DropdownMenuItem>
-                      <DropdownMenuItem>{t('students.view_history') || 'View History'}</DropdownMenuItem>
+                      <DropdownMenuItem>{t('students.viewHistory') || 'View History'}</DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem className="text-destructive">
                         {t('students.archive') || 'Archive'}
@@ -423,8 +423,8 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
               <User className="w-12 h-12 mx-auto mb-4 opacity-50" />
               <p className="text-lg font-medium">
                 {searchQuery 
-                  ? (t('students.no_results') || 'No students match your search')
-                  : (t('students.no_students') || 'No students yet')}
+                  ? (t('students.noResults') || 'No students match your search')
+                  : (t('students.noStudents') || 'No students yet')}
               </p>
               {!searchQuery && (
                 <Button 
@@ -432,7 +432,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                   onClick={handleCreateStudent}
                 >
                   <Plus className="w-4 h-4 mr-2" />
-                  {t('students.add_first') || 'Add Your First Student'}
+                  {t('students.addFirst') || 'Add Your First Student'}
                 </Button>
               )}
             </div>

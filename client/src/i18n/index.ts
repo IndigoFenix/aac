@@ -16,7 +16,7 @@ export interface Language {
 export const SUPPORTED_LANGUAGES: Language[] = [
   { code: 'en', name: 'English', nativeName: 'English', direction: 'ltr' },
   { code: 'he', name: 'Hebrew', nativeName: 'עברית', direction: 'rtl' },
-  { code: 'ar', name: 'Arabic', nativeName: 'العربية', direction: 'rtl' },
+/*  { code: 'ar', name: 'Arabic', nativeName: 'العربية', direction: 'rtl' },
   { code: 'es', name: 'Spanish', nativeName: 'Español', direction: 'ltr' },
   { code: 'fr', name: 'French', nativeName: 'Français', direction: 'ltr' },
   { code: 'de', name: 'German', nativeName: 'Deutsch', direction: 'ltr' },
@@ -24,6 +24,7 @@ export const SUPPORTED_LANGUAGES: Language[] = [
   { code: 'ja', name: 'Japanese', nativeName: '日本語', direction: 'ltr' },
   { code: 'ru', name: 'Russian', nativeName: 'Русский', direction: 'ltr' },
   { code: 'pt', name: 'Portuguese', nativeName: 'Português', direction: 'ltr' },
+*/
 ];
 
 // Type for nested translations

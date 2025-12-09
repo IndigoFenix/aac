@@ -18,7 +18,7 @@ export class AdminController {
   // User management
   async getUsers(req: Request, res: Response): Promise<void> {
     try {
-      const users = await adminService.getAllUsersWithAacUsers();
+      const users = await adminService.getAllUsersWithStudents();
       res.json({ users });
     } catch (error: any) {
       console.error("Error fetching users:", error);

@@ -7,7 +7,7 @@ import { stringify } from "csv-stringify";
 import {
   authController,
   profileController,
-  aacUserController,
+  studentController,
   inviteCodeController,
   savedLocationController,
   adminController,
@@ -88,23 +88,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.patch("/api/profile/update", requireAuth, (req, res) =>
     profileController.updateProfile(req, res)
-  );
-
-  // ============= AAC USER ROUTES =============
-  app.get("/api/aac-users", requireAuth, (req, res) =>
-    aacUserController.getAacUsers(req, res)
-  );
-  app.get("/api/aac-users/:id", requireAuth, (req, res) =>
-    aacUserController.getAacUserById(req, res)
-  );
-  app.post("/api/aac-users", requireAuth, (req, res) =>
-    aacUserController.createAacUser(req, res)
-  );
-  app.patch("/api/aac-users/:id", requireAuth, (req, res) =>
-    aacUserController.updateAacUser(req, res)
-  );
-  app.delete("/api/aac-users/:id", requireAuth, (req, res) =>
-    aacUserController.deleteAacUser(req, res)
   );
 
   // ============= STUDENT PROGRESS ROUTES =============
@@ -195,21 +178,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     studentProgressController.recordBaselineMetrics(req, res)
   );
 
+  // ============= STUDENTS ROUTES =============
+  app.get("/api/students", requireAuth, (req, res) =>
+    studentController.getStudents(req, res)
+  );
+  app.get("/api/students/:id", requireAuth, (req, res) =>
+    studentController.getStudentById(req, res)
+  );
+  app.post("/api/students", requireAuth, (req, res) =>
+    studentController.createStudent(req, res)
+  );
+  app.patch("/api/students/:id", requireAuth, (req, res) =>
+    studentController.updateStudent(req, res)
+  );
+  app.delete("/api/students/:id", requireAuth, (req, res) =>
+    studentController.deleteStudent(req, res)
+  );
+
   // ============= SCHEDULE ROUTES =============
-  app.get("/api/schedules/:aacUserId", requireAuth, (req, res) =>
-    aacUserController.getSchedules(req, res)
+  app.get("/api/schedules/:studentId", requireAuth, (req, res) =>
+    studentController.getSchedules(req, res)
   );
   app.post("/api/schedules", requireAuth, (req, res) =>
-    aacUserController.createSchedule(req, res)
+    studentController.createSchedule(req, res)
   );
   app.patch("/api/schedules/:id", requireAuth, (req, res) =>
-    aacUserController.updateSchedule(req, res)
+    studentController.updateSchedule(req, res)
   );
   app.delete("/api/schedules/:id", requireAuth, (req, res) =>
-    aacUserController.deleteSchedule(req, res)
+    studentController.deleteSchedule(req, res)
   );
-  app.get("/api/schedules/:aacUserId/context", requireAuth, (req, res) =>
-    aacUserController.getScheduleContext(req, res)
+  app.get("/api/schedules/:studentId/context", requireAuth, (req, res) =>
+    studentController.getScheduleContext(req, res)
   );
 
   // ============= SAVED LOCATIONS ROUTES =============
@@ -507,8 +507,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           sanitizeCSVCell(interpretation.interpretedMeaning || ""),
           interpretation.inputType,
           interpretation.language || "",
-          interpretation.aacUserId || "",
-          sanitizeCSVCell(interpretation.aacUserName || ""),
+          interpretation.studentId || "",
+          sanitizeCSVCell(interpretation.studentName || ""),
           sanitizeCSVCell(interpretation.context || ""),
           interpretation.confidence,
           sanitizeCSVCell(analysisText),
