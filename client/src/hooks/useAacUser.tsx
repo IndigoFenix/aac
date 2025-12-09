@@ -103,7 +103,9 @@ export const AacUserProvider = ({ children }: { children: ReactNode }) => {
       if (data?.success && data.aacUser) {
         const fresh: AacUser = data.aacUser;
 
-        setAacUser(fresh);
+        if (fresh.id === aacUser?.id) {
+          setAacUser(fresh);
+        }
 
         // Keep the full list in sync
         setAacUsers((prev) => {

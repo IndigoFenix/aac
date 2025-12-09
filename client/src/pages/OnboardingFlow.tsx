@@ -25,7 +25,7 @@ export default function OnboardingFlow() {
   const [step1Form, setStep1Form] = useState({
     name: "",
     birthDate: "", // ISO date string 'YYYY-MM-DD'
-    condition: "",
+    diagnosis: "",
   });
 
   // Step 2 form state
@@ -49,7 +49,7 @@ export default function OnboardingFlow() {
       const res = await apiRequest("POST", "/api/onboarding/complete-step-1", {
         name: step1Form.name,
         birthDate: step1Form.birthDate || null, // Send as ISO date string or null
-        condition: step1Form.condition,
+        diagnosis: step1Form.diagnosis,
       });
       return res.json();
     },
@@ -295,14 +295,14 @@ export default function OnboardingFlow() {
                   </div>
 
                   <div className={isRtl ? "text-right" : "text-left"}>
-                    <Label htmlFor="condition" className="text-base">
+                    <Label htmlFor="diagnosis" className="text-base">
                       {language === "he" ? "מצב/אבחנה" : "Condition/Diagnosis"}
                     </Label>
                     <Input
-                      id="condition"
-                      data-testid="input-condition"
-                      value={step1Form.condition}
-                      onChange={(e) => setStep1Form({ ...step1Form, condition: e.target.value })}
+                      id="diagnosis"
+                      data-testid="input-diagnosis"
+                      value={step1Form.diagnosis}
+                      onChange={(e) => setStep1Form({ ...step1Form, diagnosis: e.target.value })}
                       placeholder={language === "he" ? "לדוגמה: תסמונת רט" : "e.g., Rett Syndrome"}
                       className="mt-1"
                       dir={isRtl ? "rtl" : "ltr"}

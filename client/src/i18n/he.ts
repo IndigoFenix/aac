@@ -147,6 +147,13 @@ export const he = {
       },
       typing: "מקליד...",
       error: "שליחת ההודעה נכשלה",
+      assistant: "עוזר",
+      popupMode: "צף",
+      switchToPopup: "עבור למצב צף",
+      expandMode: "הרחב צ׳אט",
+      minimize: "מזער",
+      popupWelcome: "התחל שיחה...",
+      placeholderShort: "הקלד הודעה...",
     },
   
     // ============================================================================

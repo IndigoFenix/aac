@@ -1,14 +1,24 @@
 // src/features/ChatFeature.tsx
+// Updated with mode switch button for popup mode
+
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Bot, Plus, Settings2, Mic, Send } from 'lucide-react';
+import { 
+  Bot, 
+  Plus, 
+  Settings2, 
+  Mic, 
+  Send, 
+  PanelRightClose,
+  Minimize2 
+} from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useChat } from '@/hooks/useChat';
 import { useAacUser } from '@/hooks/useAacUser';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { useSharedState } from '@/contexts/FeaturePanelContext';
+import { useSharedState, useFeaturePanel } from '@/contexts/FeaturePanelContext';
 import { ChatMessage, ChatMessageContent } from '@shared/schema';
 import { cn } from '@/lib/utils';
 
@@ -23,6 +33,13 @@ export function ChatFeature() {
   const { aacUser } = useAacUser();
   const { t, isRTL } = useLanguage();
   const { sharedState, setSharedState } = useSharedState();
+  const { 
+    chatMode, 
+    setChatMode, 
+    activeFeature, 
+    isFullScreenFeature,
+    panels 
+  } = useFeaturePanel();
   
   const { 
     history, 
@@ -34,6 +51,12 @@ export function ChatFeature() {
   
   const showWelcome = history.length === 0;
   const showTools = false; // Placeholder for future tools feature
+  
+  // Check if a panel is currently open
+  const isPanelOpen = activeFeature && activeFeature !== 'chat' && panels[activeFeature]?.isOpen;
+  
+  // Show mode switch only when there's an open panel and we're in expanded mode
+  const showModeSwitch = isPanelOpen && chatMode === 'expanded' && !isFullScreenFeature;
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -101,6 +124,10 @@ export function ChatFeature() {
     inputRef.current?.focus();
   };
 
+  const handleSwitchToPopup = () => {
+    setChatMode('popup');
+  };
+
   // Helper to extract display content from message
   const getMessageContent = (message: ChatMessage): string => {
     if (typeof message.content === 'string') {
@@ -132,6 +159,26 @@ export function ChatFeature() {
     }
     return t('chat.placeholder');
   };
+
+  // Mode switch button component
+  const ModeSwitchButton = showModeSwitch && (
+    <Button
+      size="sm"
+      variant="outline"
+      className={cn(
+        "absolute top-4 z-10 gap-2 rounded-full shadow-sm",
+        "bg-background/80 backdrop-blur-sm hover:bg-background",
+        "transition-all duration-200",
+        isRTL ? "left-4" : "right-4"
+      )}
+      onClick={handleSwitchToPopup}
+      title={t('chat.switchToPopup')}
+      data-testid="chat-mode-switch"
+    >
+      <Minimize2 className="w-4 h-4" />
+      <span className="text-xs">{t('chat.popupMode')}</span>
+    </Button>
+  );
 
   // Input bar component
   const InputBar = useMemo(() => (
@@ -206,7 +253,10 @@ export function ChatFeature() {
   ), [prompt, isRecording, isSending, aacUser, isRTL, t, handleKeyDown, handleVoiceInput, handleSend, getPlaceholder]);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative">
+      {/* Mode switch button */}
+      {ModeSwitchButton}
+      
       {showWelcome ? (
         /* Welcome screen - centered content */
         <div className="flex-1 flex items-center justify-center px-6 overflow-y-auto">

@@ -74,9 +74,8 @@ export class AacUserController {
   async createAacUser(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      const { name, gender, birthDate, diagnosis, backgroundContext } = req.body;
 
-      if (!name) {
+      if (!req.body.name) {
         res
           .status(400)
           .json({ success: false, message: "Name is required" });
@@ -84,12 +83,8 @@ export class AacUserController {
       }
 
       const aacUser = await aacUserService.createAacUser(
+        { ...req.body, isActive: true },
         currentUser.id,
-        name,
-        gender,
-        birthDate,
-        diagnosis,
-        backgroundContext,
         "owner" // Creating user becomes the owner
       );
 

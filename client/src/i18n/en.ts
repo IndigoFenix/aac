@@ -147,6 +147,13 @@ export const en = {
       },
       typing: "Typing...",
       error: "Failed to send message",
+      assistant: "Assistant",
+      popupMode: "Popup",
+      switchToPopup: "Switch to popup mode",
+      expandMode: "Expand chat",
+      minimize: "Minimize",
+      popupWelcome: "Start a conversation...",
+      placeholderShort: "Type a message...",
     },
   
     // ============================================================================

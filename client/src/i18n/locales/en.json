@@ -134,5 +134,14 @@
     "feature2": "Visual editor with drag-and-drop functionality", 
     "feature3": "Export to .gridset and .snappkg formats",
     "feature4": "Professional accessibility features"
+  },
+  "chat": {
+    "assistant": "Assistant",
+    "popupMode": "Popup",
+    "switchToPopup": "Switch to popup mode",
+    "expandMode": "Expand chat",
+    "minimize": "Minimize",
+    "popupWelcome": "Start a conversation...",
+    "placeholderShort": "Type a message..."
   }
 }

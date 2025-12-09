@@ -38,26 +38,12 @@ export class OnboardingController {
    * POST /api/onboarding/complete-step-1
    * Complete Step 1: Create AAC User Profile
    * 
-   * Changed fields:
-   * - 'name' instead of 'alias'
-   * - 'birthDate' instead of 'age' (accepts ISO date string 'YYYY-MM-DD')
-   * - 'condition' is stored as 'backgroundContext'
    */
   async completeStep1(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as { id: string };
-      const { name, birthDate, condition, gender, diagnosis } = req.body;
 
-      console.log("Onboarding Step 1 - Request received:", {
-        userId: currentUser.id,
-        name,
-        birthDate,
-        condition,
-        gender,
-        diagnosis,
-      });
-
-      if (!name) {
+      if (!req.body.name) {
         console.error("Onboarding Step 1 - Validation failed: missing name");
         res.status(400).json({
           success: false,
@@ -69,12 +55,8 @@ export class OnboardingController {
       // Create AAC user profile with link to the current user
       console.log("Onboarding Step 1 - Creating AAC user...");
       const { aacUser, link } = await aacUserService.createAacUserWithLink(
+        { ...req.body },
         currentUser.id,
-        name,
-        gender || undefined,
-        birthDate || undefined, // Now accepts ISO date string 'YYYY-MM-DD'
-        diagnosis || undefined,
-        condition || undefined, // This maps to backgroundContext
         "owner" // The creating user is the owner
       );
       

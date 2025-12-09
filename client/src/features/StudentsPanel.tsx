@@ -69,7 +69,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
   const { user } = useAuth();
   const { aacUsers, selectAacUser } = useAacUser();
   const { setActiveFeature, registerMetadataBuilder, unregisterMetadataBuilder } = useFeaturePanel();
-  const { setSharedState } = useSharedState();
+  const { sharedState, setSharedState } = useSharedState();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
@@ -87,9 +87,9 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
   // Use API data or fallback to aacUsers with mock progress
   const students: StudentWithProgress[] = studentsData?.students || aacUsers.map(u => ({
     ...u,
-    progress: Math.floor(Math.random() * 100),
-    currentPhase: 'Goal Development',
-    nextDeadline: '11/15/2025',
+    progress: 0,
+    currentPhase: '---',
+    nextDeadline: '---',
   }));
 
   // Filter students
@@ -121,9 +121,9 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
 
   // Handle student click - navigate to student progress
   const handleStudentClick = async (studentId: string) => {
-    await selectAacUser(studentId);
     setSharedState({ selectedStudentId: studentId });
-    setActiveFeature('progress');
+    await selectAacUser(studentId);
+    // setActiveFeature('progress');
   };
 
   // Handle create new student - opens the create student modal
@@ -249,9 +249,20 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                 isRTL
                   ? 'border-r-4 border-r-transparent hover:border-r-primary'
                   : 'border-l-4 border-l-transparent hover:border-l-primary',
+                sharedState.selectedStudentId === student.id
+                  ? isRTL
+                    ? 'border-r-4 border-r-primary shadow-lg'
+                    : 'border-l-4 border-l-primary shadow-lg'
+                  : '',
                 isDark 
-                  ? 'bg-slate-900 border-slate-800 hover:border-slate-700'
-                  : 'bg-white hover:border-primary/20'
+                  ? cn(
+                      'bg-slate-900 border-slate-800 hover:border-slate-700',
+                      sharedState.selectedStudentId === student.id && 'bg-slate-800'
+                    )
+                  : cn(
+                      'bg-white hover:border-primary/20',
+                      sharedState.selectedStudentId === student.id && 'bg-primary/5 border-primary/30'
+                    )
               )}
               onClick={() => handleStudentClick(student.id)}
             >

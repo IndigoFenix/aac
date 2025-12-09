@@ -19,23 +19,12 @@ export class AacUserService {
    * This is the primary method for creating AAC users through the app
    */
   async createAacUser(
+    insert: InsertAacUser,
     userId: string,
-    name: string,
-    gender?: string,
-    birthDate?: string, // ISO date string 'YYYY-MM-DD'
-    diagnosis?: string,
-    backgroundContext?: string,
     role: string = "owner"
   ): Promise<AacUser> {
     const { aacUser } = await aacUserRepository.createAacUserWithLink(
-      {
-        name,
-        gender,
-        birthDate: birthDate || null,
-        diagnosis,
-        backgroundContext,
-        isActive: true,
-      },
+      insert,
       userId,
       role
     );
@@ -46,23 +35,12 @@ export class AacUserService {
    * Create an AAC user and return both the user and the link
    */
   async createAacUserWithLink(
+    insert: InsertAacUser,
     userId: string,
-    name: string,
-    gender?: string,
-    birthDate?: string,
-    diagnosis?: string,
-    backgroundContext?: string,
     role: string = "owner"
   ): Promise<{ aacUser: AacUser; link: UserAacUser }> {
     return await aacUserRepository.createAacUserWithLink(
-      {
-        name,
-        gender,
-        birthDate: birthDate || null,
-        diagnosis,
-        backgroundContext,
-        isActive: true,
-      },
+      insert,
       userId,
       role
     );

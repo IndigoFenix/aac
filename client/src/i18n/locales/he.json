@@ -134,5 +134,14 @@
     "feature2": "עורך ויזואלי עם פונקציונליות גרירה ושחרור",
     "feature3": "ייצוא לפורמטים .gridset ו-.snappkg",
     "feature4": "תכונות נגישות מקצועיות"
+  },
+  "chat": {
+    "assistant": "עוזר",
+    "popupMode": "צף",
+    "switchToPopup": "עבור למצב צף",
+    "expandMode": "הרחב צ׳אט",
+    "minimize": "מזער",
+    "popupWelcome": "התחל שיחה...",
+    "placeholderShort": "הקלד הודעה..."
   }
 }
