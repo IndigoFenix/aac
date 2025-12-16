@@ -832,7 +832,9 @@ export function renderMemoryVisualization(
           }
         } else {
           // Primitive
-          shown.push(`  - ${k}: ${summarizeValue(propSchema, v)}${inlineDesc(propSchema?.description)}`);
+          // Show enum options for fields with enum constraints
+          const enumHint = formatEnumHint(propSchema);
+          shown.push(`  - ${k}: ${summarizeValue(propSchema, v)}${inlineDesc(propSchema?.description)}${enumHint}`);
         }
         continue;
       }
@@ -844,7 +846,9 @@ export function renderMemoryVisualization(
           if (propSchema.type === 'object' || propSchema.type === 'map' || propSchema.type === 'array' || propSchema.type === 'topic') {
             shown.push(`  - ${k}: {${propSchema.type}}${inlineDesc(propSchema?.description)} (empty${req})`);
           } else {
-            shown.push(`  - ${k}: <${propSchema.type}>${inlineDesc(propSchema?.description)} (empty${req})`);
+            // Show enum options for empty fields with enums
+            const enumHint = formatEnumHint(propSchema);
+            shown.push(`  - ${k}: <${propSchema.type}>${inlineDesc(propSchema?.description)} (empty${req})${enumHint}`);
           }
         }
         continue;
@@ -873,6 +877,23 @@ export function renderMemoryVisualization(
   }
 
   function inlineDesc(desc?: string): string { return desc ? ` — ${desc}` : ''; }
+
+  function formatEnumHint(schema: AgentMemoryField): string {
+    if (!schema || schema.type === 'object' || schema.type === 'array' || 
+        schema.type === 'map' || schema.type === 'topic') {
+      return '';
+    }
+    const s = schema as AgentMemoryFieldBase;
+    if (!s.enum || !s.enum.length) return '';
+    
+    const maxEnumShow = 6;
+    if (s.enum.length <= maxEnumShow) {
+      return ` [options: ${s.enum.map(v => JSON.stringify(v)).join(', ')}]`;
+    } else {
+      const shown = s.enum.slice(0, maxEnumShow).map(v => JSON.stringify(v)).join(', ');
+      return ` [options: ${shown}, ... (+${s.enum.length - maxEnumShow} more)]`;
+    }
+  }
 
   function renderArray(field: AgentMemoryFieldArray, value: any[], basePath: string): string[] {
     const lines: string[] = [];
@@ -910,7 +931,8 @@ export function renderMemoryVisualization(
           }
         }
       } else {
-        lines.push(`  - [${i}]: ${summarizeValue(s, item)}`);
+        const enumHint = formatEnumHint(s);
+        lines.push(`  - [${i}]: ${summarizeValue(s, item)}${enumHint}`);
       }
     }
   
@@ -955,7 +977,8 @@ export function renderMemoryVisualization(
           }
         }
       } else {
-        lines.push(`  - ${k}: ${summarizeValue(s, v)}`);
+        const enumHint = formatEnumHint(s);
+        lines.push(`  - ${k}: ${summarizeValue(s, v)}${enumHint}`);
       }
     }
   
@@ -1103,7 +1126,16 @@ export function renderMemoryVisualization(
       if (s.multipleOf != null) out.push(`×of ${s.multipleOf}`);
     }
     if (s.const !== undefined) out.push(`const ${JSON.stringify(s.const)}`);
-    if (s.enum && s.enum.length) out.push(`enum(${s.enum.length})`);
+    if (s.enum && s.enum.length) {
+      // Show actual enum values (truncate if too many)
+      const maxEnumShow = 8;
+      if (s.enum.length <= maxEnumShow) {
+        out.push(`enum: ${s.enum.map(v => JSON.stringify(v)).join(' | ')}`);
+      } else {
+        const shown = s.enum.slice(0, maxEnumShow).map(v => JSON.stringify(v)).join(' | ');
+        out.push(`enum: ${shown} | ... (+${s.enum.length - maxEnumShow} more)`);
+      }
+    }
     return out.length ? ` [${out.join('; ')}]` : '';
   }
 

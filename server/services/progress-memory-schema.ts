@@ -1856,7 +1856,7 @@ export const PROGRESS_PROGRAM_FIELD: AgentMemoryFieldObjectWithDB = {
       id: "profileDomains",
       type: "map",
       title: "Profile Domains",
-      description: "Functional profile / PLAAFP documentation (keyed by domain type)",
+      description: "Functional profile / PLAAFP documentation (keyed by domain type). Unless requested, there should only be one domain per type.",
       opened: true,
       values: profileDomainSchema,
       db: profileDomainsOps,
@@ -1886,7 +1886,7 @@ export const PROGRESS_PROGRAM_FIELD: AgentMemoryFieldObjectWithDB = {
       id: "teamMembers",
       type: "map",
       title: "Team Members",
-      description: "IEP/TALA team members (keyed by name)",
+      description: "Program team members (keyed by name)",
       opened: true,
       values: teamMemberSchema,
       db: teamMembersOps,
@@ -1896,7 +1896,7 @@ export const PROGRESS_PROGRAM_FIELD: AgentMemoryFieldObjectWithDB = {
       id: "meetings",
       type: "map",
       title: "Meetings",
-      description: "IEP/TALA meetings (keyed by meeting type)",
+      description: "Program meetings (keyed by meeting type)",
       opened: true,
       values: meetingSchema,
       db: meetingsOps,
@@ -1932,7 +1932,7 @@ export const PROGRESS_PROGRAM_FIELD: AgentMemoryFieldObjectWithDB = {
 // SYSTEM PROMPT FOR PROGRESS MODE
 // ============================================================================
 
-export const PROGRESS_SYSTEM_PROMPT = `You are an expert IEP/TALA (Individualized Education Program / תוכנית לימודים אישית) assistant.
+export const PROGRESS_SYSTEM_PROMPT = `You are an expert Individualized Education Program assistant.
 
 ## Your Role
 You help educators, therapists, and caregivers manage educational programs for students with special needs. You can:
