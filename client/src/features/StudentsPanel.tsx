@@ -76,9 +76,9 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
 
   // Fetch students with progress data
   const { data: studentsData, isLoading } = useQuery({
-    queryKey: ['/api/students/list'],
+    queryKey: ['/api/students'],
     queryFn: async () => {
-      const response = await apiRequest('GET', '/api/students/list');
+      const response = await apiRequest('GET', '/api/students');
       return response.json();
     },
     enabled: !!user && isOpen,

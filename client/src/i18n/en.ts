@@ -291,6 +291,16 @@ export const en = {
       example3: "Family members board with mom, dad, sister, brother",
       example4: "Activities board with play, read, TV, music",
     },
+    save: "Save",
+    saved: "Saved",
+    savedDesc: "Board saved successfully",
+    saveFailed: "Save Failed",
+    saveFailedDesc: "Failed to save board",
+    unsaved: "Unsaved",
+    unsavedChanges: "Unsaved Changes",
+    unsavedChangesDesc: "You have unsaved changes to this board. What would you like to do?",
+    discardChanges: "Discard Changes",
+    saveAndSwitch: "Save & Switch",
   },
 
   // ============================================================================
@@ -485,70 +495,357 @@ export const en = {
   },
 
   // ============================================================================
-  // IEP (US)
+  // PROGRAM
   // ============================================================================
-  iep: {
-    title: "IEP Development",
-    clinicalModule: "Clinical Documentation Module",
-    plaafpTitle: "PLAAFP Baseline",
-    currentPerformance: "Current Performance",
-    impactStatement: "Adverse Impact",
-    smartGoalTitle: "SMART Goal Development",
-    smartGoalDesc: "AI-assisted goal writing with compliance checking",
-    generateDraft: "Generate Draft",
-    finalizeGoal: "Finalize Goal",
-    complianceTitle: "Compliance Checklist",
-    serviceRecommendation: "Service Recommendation",
-    export: "Export",
-    exportComponent: "Export to IEP Document",
+  program: {
+    // General
+    noStudentSelected: "No Student Selected",
+    goToStudents: "Go to Students",
+    
+    // Create Program
+    startNew: "Start New Program",
+    startNewDesc: "Create a new IEP/TALA program for {name}",
+    framework: "Program Framework",
+    frameworkTala: "TALA (Israel)",
+    frameworkIep: "US IEP",
+    year: "Program Year",
+    createAndStart: "Create Program",
+    previousPrograms: "Previous Programs",
+    
+    // Status
+    status: {
+      draft: "Draft",
+      active: "Active",
+      archived: "Archived",
+    },
+    
+    // Actions
+    activate: "Activate Program",
+    archive: "Archive Program",
+    exportPdf: "Export PDF",
+    share: "Share",
+    settings: "Settings",
+    created: "Program Created",
+    createdDesc: "Your program has been created with default profile domains.",
+    activated: "Program Activated",
+    archived: "Program Archived",
+    
+    // Tabs
+    tabs: {
+      overview: "Overview",
+      profile: "Profile",
+      goals: "Goals",
+      services: "Services",
+      progress: "Progress",
+      team: "Team",
+    },
+    
+    // Stats
+    stats: {
+      activeGoals: "Active Goals",
+      goalsAchieved: "Goals Achieved",
+      weeklyMinutes: "Weekly Minutes",
+      teamMembers: "Team Members",
+    },
+    
+    // Overview
+    overallProgress: "Overall Progress",
+    goalCompletion: "Goal Completion",
+    goalsByDomain: "Goals by Domain",
+    timeline: "Timeline",
+    dueDate: "Due Date",
+    approvedDate: "Approved Date",
+    
+    // Profile/Domains
+    functionalProfile: "Functional Profile",
+    functionalProfileDesc: "Present levels of academic achievement and functional performance",
+    domains: {
+      cognitive_academic: "Cognitive & Academic",
+      communication_language: "Communication & Language",
+      social_emotional_behavioral: "Social, Emotional & Behavioral",
+      motor_sensory: "Motor & Sensory",
+      life_skills_preparation: "Life Skills & Transition Preparation",
+      other: "Other",
+    },
+    goalsLinked: "goals linked",
+    presentLevels: "Present Levels of Performance",
+    presentLevelsPlaceholder: "Describe the student's current abilities and performance in this area...",
+    strengths: "Strengths",
+    strengthsPlaceholder: "List the student's strengths in this area...",
+    needs: "Needs",
+    needsPlaceholder: "Identify areas needing improvement...",
+    educationalImpact: "Educational Impact",
+    educationalImpactPlaceholder: "Describe how this affects the student's education...",
+    parentInput: "Parent Input",
+    parentInputPlaceholder: "Document parent concerns and priorities...",
+    
+    // Goals
+    goalsAndObjectives: "Goals & Objectives",
+    goalsAndObjectivesDesc: "Annual goals and short-term objectives for this program",
+    noGoals: "No goals have been created yet",
+    
+    // Services
+    servicesAndAccommodations: "Services & Accommodations",
+    servicesAndAccommodationsDesc: "Related services, interventions, and accommodations",
+    noServices: "No services have been added yet",
+    accommodations: "Accommodations",
+    
+    // Progress
+    progressTracking: "Progress Tracking",
+    progressTrackingDesc: "Data collection and progress monitoring",
   },
 
   // ============================================================================
-  // PROGRESS
+  // GOAL
   // ============================================================================
-  progress: {
-    noStudentSelected: "No Student Selected",
-    selectStudentDesc: "Select a student from the Students panel to view their progress",
-    goToStudents: "Go to Students",
-    backToStudents: "Back to Students",
-    talaTitle: "TALA Process",
-    iepModule: "IEP Documentation",
-    nextDeadline: "Next Deadline",
-    roadmap: "Progress Roadmap",
-    roadmapDesc: "Track progress through each phase",
-    current: "Current Phase",
-    locked: "Locked",
-    inProgress: "In Progress",
-    deadline: "Deadline",
-    editGoal: "Edit Goal",
-    addGoal: "Add Goal",
-    lastSaved: "Last saved 2 minutes ago",
-    saveDraft: "Save Draft",
-    submitApproval: "Submit for Approval",
-    plaafpTitle: "PLAAFP Baseline",
-    currentPerformance: "Current Performance",
-    impactStatement: "Adverse Impact",
-    smartGoalTitle: "SMART Goal Development",
-    smartGoalDesc: "Build measurable, achievable goals aligned with student needs",
-    generateDraft: "Generate Draft",
-    finalizeGoal: "Finalize Goal",
-    complianceTitle: "Compliance Checklist",
-    serviceRecommendation: "Service Recommendation",
-    exportComponent: "Export Component",
-    viewData: "View Data",
-    share: "Share",
-    exportPdf: "Export PDF",
-    phasesInitialized: "Workflow phases initialized",
-    phaseCompleted: "Phase completed successfully",
-    noComplianceItems: "No compliance items yet",
-    noServices: "No services configured",
-    phase1Title: "Phase 1: Assessment",
-    phase2Title: "Phase 2: Goals Development",
-    phase2Desc: "Define intervention goals and measurable objectives",
-    phase3Title: "Phase 3: Implementation",
-    goal1Title: "Goal 1: Expressive Language",
-    goal1Desc: "Improve expressive vocabulary and sentence structure using AAC device with 80% accuracy.",
-    goal2Title: "Goal 2: Social Communication",
-    goal2Desc: "Enhance pragmatic language skills during peer interactions across multiple settings.",
+  goal: {
+    add: "Add Goal",
+    addFirst: "Add Your First Goal",
+    new: "New Goal",
+    edit: "Edit Goal",
+    created: "Goal Created",
+    updated: "Goal Updated",
+    deleted: "Goal Deleted",
+    confirmDelete: "Are you sure you want to delete this goal?",
+    modalDescription: "Create a measurable annual goal aligned with the student's needs",
+    
+    // Form fields
+    title: "Goal Title",
+    titlePlaceholder: "e.g., Improve expressive communication",
+    titleRequired: "Goal title is required",
+    domain: "Profile Domain",
+    selectDomain: "Select a domain",
+    description: "Goal Description",
+    descriptionPlaceholder: "Detailed description of the goal...",
+    baseline: "Baseline Level",
+    baselinePlaceholder: "Current performance level",
+    target: "Target Level",
+    targetPlaceholder: "Expected achievement level",
+    targetDate: "Target Date",
+    currentProgress: "Current Progress",
+    
+    // Status
+    status: {
+      draft: "Draft",
+      active: "Active",
+      achieved: "Achieved",
+      modified: "Modified",
+      discontinued: "Discontinued",
+    },
   },
+
+  // ============================================================================
+  // OBJECTIVE
+  // ============================================================================
+  objective: {
+    add: "Add Objective",
+    new: "New Objective",
+    created: "Objective Created",
+    modalDescription: "Create a short-term, measurable objective for this goal",
+    title: "Objective",
+    noObjectives: "No objectives defined yet",
+
+    
+    description: "Objective Description",
+    descriptionPlaceholder: "Describe the specific, measurable objective...",
+    descriptionRequired: "Objective description is required",
+    criteria: "Success Criteria",
+    criteriaPlaceholder: "e.g., 80% accuracy over 3 consecutive sessions",
+    targetDate: "Target Date",
+    
+    status: {
+      not_started: "Not Started",
+      in_progress: "In Progress",
+      achieved: "Achieved",
+      modified: "Modified",
+      discontinued: "Discontinued",
+    },
+  },
+
+  // ============================================================================
+  // SERVICE
+  // ============================================================================
+  service: {
+    add: "Add Service",
+    addFirst: "Add Your First Service",
+    new: "New Service",
+    edit: "Edit Service",
+    created: "Service Added",
+    updated: "Service Updated",
+    deleted: "Service Removed",
+    confirmDelete: "Are you sure you want to remove this service?",
+    modalDescription: "Add a related service or intervention",
+    
+    // Form fields
+    type: "Service Type",
+    name: "Service Name",
+    namePlaceholder: "e.g., Individual Speech Therapy",
+    nameRequired: "Service name is required",
+    //frequency: "Frequency",
+    period: "Period",
+    duration: "Duration (min)",
+    setting: "Setting",
+    provider: "Provider",
+    providerPlaceholder: "Name of service provider",
+    
+    // Types
+    types: {
+      speech_language_therapy: "Speech-Language Therapy",
+      occupational_therapy: "Occupational Therapy",
+      physical_therapy: "Physical Therapy",
+      counseling: "Counseling",
+      specialized_instruction: "Specialized Instruction",
+      consultation: "Consultation",
+      aac_support: "AAC Support",
+      other: "Other",
+    },
+    
+    // Frequency
+    frequency: {
+      daily: "Daily",
+      weekly: "Weekly",
+      monthly: "Monthly",
+    },
+    
+    // Settings
+    settings: {
+      general_education: "General Education",
+      resource_room: "Resource Room",
+      self_contained: "Self-Contained",
+      therapy_room: "Therapy Room",
+      home: "Home",
+      community: "Community",
+    },
+  },
+
+  // ============================================================================
+  // ACCOMMODATION
+  // ============================================================================
+  accommodation: {
+    types: {
+      visual_support: "Visual Support",
+      aac_device: "AAC Device",
+      modified_materials: "Modified Materials",
+      extended_time: "Extended Time",
+      simplified_language: "Simplified Language",
+      environmental_modification: "Environmental Modification",
+      other: "Other",
+    },
+    required: "Required",
+  },
+
+  // ============================================================================
+  // DATA POINT
+  // ============================================================================
+  dataPoint: {
+    record: "Record Data",
+    add: "Add Data",
+    created: "Data Point Recorded",
+    quickEntry: "Quick Data Entry",
+    modalDescription: "Record progress data for this goal",
+    title: "Progress Data",
+    noDataPoints: "No data recorded yet",
+    collectedBy: "Collected by",
+    moreCount: "+{{count}} more records",
+    
+    numericValue: "Numeric Value",
+    numericPlaceholder: "e.g., 85",
+    textValue: "Text Value",
+    textPlaceholder: "e.g., Achieved with minimal prompting",
+    notes: "Session Notes",
+    notesPlaceholder: "Optional notes about this session...",
+    valueRequired: "Please enter a numeric or text value",
+  },
+
+  // ============================================================================
+  // PROGRESS REPORT
+  // ============================================================================
+  progressReport: {
+    title: "Progress Reports",
+    create: "Create Report",
+    none: "No progress reports yet",
+    shared: "Shared",
+  },
+
+  // ============================================================================
+  // TEAM
+  // ============================================================================
+  team: {
+    title: "Team Members",
+    description: "People involved in the student's program",
+    add: "Add Member",
+    addMember: "Add Team Member",
+    addMemberDescription: "Add a person to the IEP/TALA team",
+    noMembers: "No team members added yet",
+    memberAdded: "Team Member Added",
+    memberRemoved: "Team Member Removed",
+    confirmRemove: "Are you sure you want to remove this team member?",
+    coordinator: "Coordinator",
+    isCoordinator: "This person is the case coordinator",
+    
+    name: "Full Name",
+    namePlaceholder: "Enter full name",
+    nameRequired: "Name is required",
+    role: "Role",
+    email: "Email",
+    emailPlaceholder: "email@example.com",
+    phone: "Phone",
+    phonePlaceholder: "+1 234 567 8900",
+    
+    roles: {
+      parent_guardian: "Parent/Guardian",
+      student: "Student",
+      homeroom_teacher: "Homeroom Teacher",
+      special_education_teacher: "Special Education Teacher",
+      general_education_teacher: "General Education Teacher",
+      speech_language_pathologist: "Speech-Language Pathologist",
+      occupational_therapist: "Occupational Therapist",
+      physical_therapist: "Physical Therapist",
+      psychologist: "Psychologist",
+      administrator: "Administrator",
+      case_manager: "Case Manager",
+      external_provider: "External Provider",
+      other: "Other",
+    },
+  },
+
+  // ============================================================================
+  // MEETING
+  // ============================================================================
+  meeting: {
+    title: "Meetings",
+    description: "IEP/TALA team meetings",
+    schedule: "Schedule Meeting",
+    none: "No meetings scheduled",
+    
+    types: {
+      initial_evaluation: "Initial Evaluation",
+      annual_review: "Annual Review",
+      reevaluation: "Reevaluation",
+      amendment: "Amendment",
+      transition_planning: "Transition Planning",
+      progress_review: "Progress Review",
+    },
+  },
+
+  // ============================================================================
+  // CONSENT
+  // ============================================================================
+  consent: {
+    title: "Consent Forms",
+    description: "Required consent documentation",
+    none: "No consent forms required",
+    signed: "Signed",
+    pending: "Pending",
+    signedOn: "Signed on",
+    
+    types: {
+      initial_evaluation: "Initial Evaluation Consent",
+      reevaluation: "Reevaluation Consent",
+      placement: "Placement Consent",
+      release_of_information: "Release of Information",
+      service_provision: "Service Provision Consent",
+    },
+  },
+
 };

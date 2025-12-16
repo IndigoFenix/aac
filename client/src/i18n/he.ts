@@ -485,6 +485,16 @@ export const he = {
       example3: "לוח בני משפחה עם אמא, אבא, אחות, אח",
       example4: "לוח פעילויות עם משחק, קריאה, טלוויזיה, מוזיקה",
     },
+    save: "שמור לוח",
+    saved: "נשמר",
+    savedDesc: "הלוח נשמר בהצלחה",
+    saveFailed: "שמירה נכשלה",
+    saveFailedDesc: "לא ניתן לשמור את הלוח",
+    unsaved: "לא נשמר",
+    unsavedChanges: "שינויים לא נשמרו",
+    unsavedChangesDesc: "יש שינויים שלא נשמרו בלוח זה.",
+    discardChanges: "התעלם מהשינויים",
+    saveAndSwitch: "שמור והחלף",
   },
 
   // ============================================================================
@@ -677,72 +687,357 @@ export const he = {
     p3: "יישום",
     p4: "סיכום והערכה",
   },
-
+  
   // ============================================================================
-  // IEP (US)
+  // PROGRAM
   // ============================================================================
-  iep: {
-    title: "פיתוח IEP",
-    clinicalModule: "מודול תיעוד קליני",
-    plaafpTitle: "נתוני בסיס PLAAFP",
-    currentPerformance: "ביצועים נוכחיים",
-    impactStatement: "השפעה שלילית",
-    smartGoalTitle: "פיתוח מטרה SMART",
-    smartGoalDesc: "כתיבת מטרות בסיוע AI עם בדיקת תאימות",
-    generateDraft: "יצירת טיוטה",
-    finalizeGoal: "סיום המטרה",
-    complianceTitle: "רשימת תאימות",
-    serviceRecommendation: "המלצת שירות",
-    export: "ייצוא",
-    exportComponent: "ייצוא למסמך IEP",
+  program: {
+    // General
+    noStudentSelected: "לא נבחר תלמיד",
+    goToStudents: "עבור לתלמידים",
+    
+    // Create Program
+    startNew: "התחל תוכנית חדשה",
+    startNewDesc: "צור תוכנית תל״א/IEP חדשה עבור {name}",
+    framework: "מסגרת התוכנית",
+    frameworkTala: "תל״א (ישראל)",
+    frameworkIep: "IEP (ארה״ב)",
+    year: "שנת התוכנית",
+    createAndStart: "צור תוכנית",
+    previousPrograms: "תוכניות קודמות",
+    
+    // Status
+    status: {
+      draft: "טיוטה",
+      active: "פעילה",
+      archived: "בארכיון",
+    },
+    
+    // Actions
+    activate: "הפעל תוכנית",
+    archive: "העבר לארכיון",
+    exportPdf: "ייצוא PDF",
+    share: "שתף",
+    settings: "הגדרות",
+    created: "התוכנית נוצרה",
+    createdDesc: "התוכנית נוצרה עם תחומי פרופיל ברירת מחדל.",
+    activated: "התוכנית הופעלה",
+    archived: "התוכנית הועברה לארכיון",
+    
+    // Tabs
+    tabs: {
+      overview: "סקירה",
+      profile: "פרופיל",
+      goals: "מטרות",
+      services: "שירותים",
+      progress: "התקדמות",
+      team: "צוות",
+    },
+    
+    // Stats
+    stats: {
+      activeGoals: "מטרות פעילות",
+      goalsAchieved: "מטרות הושגו",
+      weeklyMinutes: "דקות שבועיות",
+      teamMembers: "חברי צוות",
+    },
+    
+    // Overview
+    overallProgress: "התקדמות כללית",
+    goalCompletion: "השלמת מטרות",
+    goalsByDomain: "מטרות לפי תחום",
+    timeline: "ציר זמן",
+    dueDate: "תאריך יעד",
+    approvedDate: "תאריך אישור",
+    
+    // Profile/Domains
+    functionalProfile: "פרופיל תפקודי",
+    functionalProfileDesc: "רמות ביצוע אקדמיות ותפקודיות נוכחיות",
+    domains: {
+      cognitive_academic: "קוגניטיבי ואקדמי",
+      communication_language: "תקשורת ושפה",
+      social_emotional_behavioral: "חברתי, רגשי והתנהגותי",
+      motor_sensory: "מוטורי וחושי",
+      life_skills_preparation: "מיומנויות חיים והכנה למעבר",
+      other: "אחר",
+    },
+    goalsLinked: "מטרות מקושרות",
+    presentLevels: "רמות ביצוע נוכחיות",
+    presentLevelsPlaceholder: "תאר את היכולות והביצועים הנוכחיים של התלמיד בתחום זה...",
+    strengths: "חוזקות",
+    strengthsPlaceholder: "רשום את החוזקות של התלמיד בתחום זה...",
+    needs: "צרכים",
+    needsPlaceholder: "זהה תחומים הדורשים שיפור...",
+    educationalImpact: "השפעה חינוכית",
+    educationalImpactPlaceholder: "תאר כיצד זה משפיע על החינוך של התלמיד...",
+    parentInput: "קלט הורים",
+    parentInputPlaceholder: "תעד דאגות ועדיפויות של ההורים...",
+    
+    // Goals
+    goalsAndObjectives: "מטרות ויעדים",
+    goalsAndObjectivesDesc: "מטרות שנתיות ויעדים קצרי טווח לתוכנית זו",
+    noGoals: "טרם נוצרו מטרות",
+    
+    // Services
+    servicesAndAccommodations: "שירותים והתאמות",
+    servicesAndAccommodationsDesc: "שירותים נלווים, התערבויות והתאמות",
+    noServices: "טרם נוספו שירותים",
+    accommodations: "התאמות",
+    
+    // Progress
+    progressTracking: "מעקב התקדמות",
+    progressTrackingDesc: "איסוף נתונים וניטור התקדמות",
   },
 
   // ============================================================================
-  // PROGRESS
+  // GOAL
   // ============================================================================
-  progress: {
-    noStudentSelected: "לא נבחר תלמיד",
-    selectStudentDesc: "בחר תלמיד מרשימת התלמידים כדי לצפות בהתקדמות",
-    goToStudents: "עבור לתלמידים",
-    backToStudents: "חזרה לתלמידים",
-    talaTitle: "תהליך תל״א",
-    iepModule: "מודול תיעוד",
-    nextDeadline: "תאריך יעד הבא",
-    roadmap: "מפת דרכים",
-    roadmapDesc: "עקוב אחר ההתקדמות בכל שלב",
-    current: "שלב נוכחי",
-    locked: "נעול",
-    inProgress: "בתהליך",
-    deadline: "תאריך יעד",
-    editGoal: "ערוך יעד",
-    addGoal: "הוסף יעד",
-    lastSaved: "נשמר לפני 2 דקות",
-    saveDraft: "שמור טיוטה",
-    submitApproval: "שלח לאישור",
-    plaafpTitle: "נתוני בסיס",
-    currentPerformance: "ביצועים נוכחיים",
-    impactStatement: "השפעה שלילית",
-    smartGoalTitle: "פיתוח יעדים",
-    smartGoalDesc: "בנה יעדים מדידים ובריאישים המותאמים לצרכי התלמיד",
-    generateDraft: "צור טיוטה",
-    finalizeGoal: "סיים יעד",
-    complianceTitle: "רשימת תאימות",
-    serviceRecommendation: "המלצת שירות",
-    exportComponent: "ייצא רכיב",
-    viewData: "צפה בנתונים",
-    share: "שתף",
-    exportPdf: "ייצא PDF",
-    phasesInitialized: "שלבי העבודה אותחלו",
-    phaseCompleted: "השלב הושלם בהצלחה",
-    noComplianceItems: "אין פריטי תאימות עדיין",
-    noServices: "אין שירותים מוגדרים",
-    phase1Title: "שלב 1: הערכה",
-    phase2Title: "שלב 2: קביעת יעדים",
-    phase2Desc: "הגדר יעדי התערבות ומטרות מדידות",
-    phase3Title: "שלב 3: יישום",
-    goal1Title: "יעד 1: שפה אקספרסיבית",
-    goal1Desc: "שיפור אוצר מילים וביטויים באמצעות מכשיר AAC בדיוק של 80%.",
-    goal2Title: "יעד 2: תקשורת חברתית",
-    goal2Desc: "שיפור מיומנויות שפה פרגמטית באינטראקציות עם בני גיל.",
+  goal: {
+    add: "הוסף מטרה",
+    addFirst: "הוסף את המטרה הראשונה",
+    new: "מטרה חדשה",
+    edit: "ערוך מטרה",
+    created: "המטרה נוצרה",
+    updated: "המטרה עודכנה",
+    deleted: "המטרה נמחקה",
+    confirmDelete: "האם אתה בטוח שברצונך למחוק מטרה זו?",
+    modalDescription: "צור מטרה שנתית מדידה המותאמת לצרכי התלמיד",
+    
+    // Form fields
+    title: "כותרת המטרה",
+    titlePlaceholder: "לדוגמה: שיפור תקשורת אקספרסיבית",
+    titleRequired: "נדרשת כותרת למטרה",
+    domain: "תחום פרופיל",
+    selectDomain: "בחר תחום",
+    description: "תיאור המטרה",
+    descriptionPlaceholder: "תיאור מפורט של המטרה...",
+    baseline: "רמת בסיס",
+    baselinePlaceholder: "רמת ביצוע נוכחית",
+    target: "רמת יעד",
+    targetPlaceholder: "רמת ההישג הצפויה",
+    targetDate: "תאריך יעד",
+    currentProgress: "התקדמות נוכחית",
+    
+    // Status
+    status: {
+      draft: "טיוטה",
+      active: "פעילה",
+      achieved: "הושגה",
+      modified: "שונתה",
+      discontinued: "הופסקה",
+    },
+  },
+
+  // ============================================================================
+  // OBJECTIVE
+  // ============================================================================
+  objective: {
+    add: "הוסף יעד",
+    new: "יעד חדש",
+    created: "היעד נוצר",
+    modalDescription: "צור יעד קצר טווח ומדיד עבור מטרה זו",
+    title: "יעדים",
+    noObjectives: "עדיין לא הוגדרו יעדים",
+    
+    description: "תיאור היעד",
+    descriptionPlaceholder: "תאר את היעד הספציפי והמדיד...",
+    descriptionRequired: "נדרש תיאור יעד",
+    criteria: "קריטריון הצלחה",
+    criteriaPlaceholder: "לדוגמה: 80% דיוק ב-3 מפגשים רצופים",
+    targetDate: "תאריך יעד",
+    
+    status: {
+      not_started: "לא התחיל",
+      in_progress: "בתהליך",
+      achieved: "הושג",
+      modified: "שונה",
+      discontinued: "הופסק",
+    },
+  },
+
+  // ============================================================================
+  // SERVICE
+  // ============================================================================
+  service: {
+    add: "הוסף שירות",
+    addFirst: "הוסף את השירות הראשון",
+    new: "שירות חדש",
+    edit: "ערוך שירות",
+    created: "השירות נוסף",
+    updated: "השירות עודכן",
+    deleted: "השירות הוסר",
+    confirmDelete: "האם אתה בטוח שברצונך להסיר שירות זה?",
+    modalDescription: "הוסף שירות נלווה או התערבות",
+    
+    // Form fields
+    type: "סוג שירות",
+    name: "שם השירות",
+    namePlaceholder: "לדוגמה: טיפול קלינאות תקשורת פרטני",
+    nameRequired: "נדרש שם שירות",
+    //frequency: "תדירות",
+    period: "תקופה",
+    duration: "משך (דקות)",
+    setting: "מיקום",
+    provider: "נותן שירות",
+    providerPlaceholder: "שם נותן השירות",
+    
+    // Types
+    types: {
+      speech_language_therapy: "קלינאות תקשורת",
+      occupational_therapy: "ריפוי בעיסוק",
+      physical_therapy: "פיזיותרפיה",
+      counseling: "ייעוץ",
+      specialized_instruction: "הוראה מותאמת",
+      consultation: "ייעוץ מקצועי",
+      aac_support: "תמיכה בתת״ח",
+      other: "אחר",
+    },
+    
+    // Frequency
+    frequency: {
+      daily: "יומי",
+      weekly: "שבועי",
+      monthly: "חודשי",
+    },
+    
+    // Settings
+    settings: {
+      general_education: "חינוך רגיל",
+      resource_room: "חדר אם",
+      self_contained: "כיתת חינוך מיוחד",
+      therapy_room: "חדר טיפולים",
+      home: "בית",
+      community: "קהילה",
+    },
+  },
+
+  // ============================================================================
+  // ACCOMMODATION
+  // ============================================================================
+  accommodation: {
+    types: {
+      visual_support: "תמיכה חזותית",
+      aac_device: "מכשיר תת״ח",
+      modified_materials: "חומרים מותאמים",
+      extended_time: "הארכת זמן",
+      simplified_language: "שפה מפושטת",
+      environmental_modification: "התאמה סביבתית",
+      other: "אחר",
+    },
+    required: "נדרש",
+  },
+
+  // ============================================================================
+  // DATA POINT
+  // ============================================================================
+  dataPoint: {
+    record: "רשום נתונים",
+    add: "הוסף נתון",
+    created: "נקודת הנתונים נרשמה",
+    quickEntry: "הזנת נתונים מהירה",
+    modalDescription: "רשום נתוני התקדמות עבור מטרה זו",
+    title: "נתוני התקדמות",
+    noDataPoints: "עדיין לא נרשמו נתונים",
+    collectedBy: "נאסף על ידי",
+    moreCount: "+{{count}} רשומות נוספות",
+    
+    numericValue: "ערך מספרי",
+    numericPlaceholder: "לדוגמה: 85",
+    textValue: "ערך טקסטואלי",
+    textPlaceholder: "לדוגמה: הושג עם הנחיה מינימלית",
+    notes: "הערות מפגש",
+    notesPlaceholder: "הערות אופציונליות על המפגש...",
+    valueRequired: "יש להזין ערך מספרי או טקסטואלי",
+  },
+
+  // ============================================================================
+  // PROGRESS REPORT
+  // ============================================================================
+  progressReport: {
+    title: "דוחות התקדמות",
+    create: "צור דוח",
+    none: "אין עדיין דוחות התקדמות",
+    shared: "שותף",
+  },
+
+  // ============================================================================
+  // TEAM
+  // ============================================================================
+  team: {
+    title: "חברי צוות",
+    description: "אנשים המעורבים בתוכנית התלמיד",
+    add: "הוסף חבר",
+    addMember: "הוסף חבר צוות",
+    addMemberDescription: "הוסף אדם לצוות התל״א/IEP",
+    noMembers: "טרם נוספו חברי צוות",
+    memberAdded: "חבר הצוות נוסף",
+    memberRemoved: "חבר הצוות הוסר",
+    confirmRemove: "האם אתה בטוח שברצונך להסיר חבר צוות זה?",
+    coordinator: "מתאם/ת",
+    isCoordinator: "אדם זה הוא מתאם/ת התיק",
+    
+    name: "שם מלא",
+    namePlaceholder: "הזן שם מלא",
+    nameRequired: "נדרש שם",
+    role: "תפקיד",
+    email: "אימייל",
+    emailPlaceholder: "email@example.com",
+    phone: "טלפון",
+    phonePlaceholder: "050-1234567",
+    
+    roles: {
+      parent_guardian: "הורה/אפוטרופוס",
+      student: "תלמיד/ה",
+      homeroom_teacher: "מחנך/ת",
+      special_education_teacher: "מורה לחינוך מיוחד",
+      general_education_teacher: "מורה בחינוך הרגיל",
+      speech_language_pathologist: "קלינאי/ת תקשורת",
+      occupational_therapist: "מרפא/ה בעיסוק",
+      physical_therapist: "פיזיותרפיסט/ית",
+      psychologist: "פסיכולוג/ית",
+      administrator: "מנהל/ת",
+      case_manager: "מנהל/ת תיק",
+      external_provider: "נותן שירות חיצוני",
+      other: "אחר",
+    },
+  },
+
+  // ============================================================================
+  // MEETING
+  // ============================================================================
+  meeting: {
+    title: "פגישות",
+    description: "פגישות צוות התל״א/IEP",
+    schedule: "קבע פגישה",
+    none: "אין פגישות מתוכננות",
+    
+    types: {
+      initial_evaluation: "הערכה ראשונית",
+      annual_review: "סיכום שנתי",
+      reevaluation: "הערכה מחדש",
+      amendment: "תיקון",
+      transition_planning: "תכנון מעבר",
+      progress_review: "סיכום התקדמות",
+    },
+  },
+
+  // ============================================================================
+  // CONSENT
+  // ============================================================================
+  consent: {
+    title: "טופסי הסכמה",
+    description: "תיעוד הסכמות נדרש",
+    none: "אין טופסי הסכמה נדרשים",
+    signed: "חתום",
+    pending: "ממתין",
+    signedOn: "נחתם בתאריך",
+    
+    types: {
+      initial_evaluation: "הסכמה להערכה ראשונית",
+      reevaluation: "הסכמה להערכה מחדש",
+      placement: "הסכמה להשמה",
+      release_of_information: "שחרור מידע",
+      service_provision: "הסכמה למתן שירות",
+    },
   },
 };

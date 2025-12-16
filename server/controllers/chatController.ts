@@ -6,7 +6,7 @@ import { onMessage } from "../services/sessionService";
 const messageSchema = z.object({
   studentId: z.string().optional(),
   sessionId: z.string().optional(),
-  mode: z.enum(["chat", "boards", "interpret", "docuslp"]).optional(),
+  mode: z.enum(["chat", "boards", "interpret", "docuslp","overview", "students", "progress", "settings"]).optional(),
   messages: z
     .array(
       z.object({

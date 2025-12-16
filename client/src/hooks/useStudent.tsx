@@ -1,18 +1,7 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useAuth } from "@/hooks/useAuth";
-
-export interface Student {
-  id: string;
-  name: string;
-  age?: number;
-  birthDate?: string;
-  gender?: string;
-  isActive: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-  data: any;
-}
+import { Student } from '@shared/schema';
 
 interface StudentContextType {
   student: Student | null;

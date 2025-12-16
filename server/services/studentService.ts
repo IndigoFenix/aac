@@ -3,9 +3,6 @@ import {
   type Student,
   type InsertStudent,
   type UpdateStudent,
-  type StudentSchedule,
-  type InsertStudentSchedule,
-  type UpdateStudentSchedule,
   type UserStudent,
   type InsertUserStudent,
   type UpdateUserStudent,
@@ -166,61 +163,6 @@ export class StudentService {
     studentId: string
   ): Promise<boolean> {
     return studentRepository.deactivateUserStudentLink(userId, studentId);
-  }
-
-  // ==================== Schedule Operations ====================
-
-  /**
-   * Create a schedule entry for an AAC user
-   */
-  async createScheduleEntry(
-    schedule: InsertStudentSchedule
-  ): Promise<StudentSchedule> {
-    return studentRepository.createScheduleEntry(schedule);
-  }
-
-  /**
-   * Get all schedules for an AAC user
-   */
-  async getSchedulesByStudentId(studentId: string): Promise<StudentSchedule[]> {
-    return studentRepository.getSchedulesByStudentId(studentId);
-  }
-
-  /**
-   * Get a specific schedule entry
-   */
-  async getScheduleEntry(id: string): Promise<StudentSchedule | undefined> {
-    return studentRepository.getScheduleEntry(id);
-  }
-
-  /**
-   * Update a schedule entry
-   */
-  async updateScheduleEntry(
-    id: string,
-    updates: UpdateStudentSchedule
-  ): Promise<StudentSchedule | undefined> {
-    return studentRepository.updateScheduleEntry(id, updates);
-  }
-
-  /**
-   * Delete a schedule entry
-   */
-  async deleteScheduleEntry(id: string): Promise<boolean> {
-    return studentRepository.deleteScheduleEntry(id);
-  }
-
-  /**
-   * Get the current schedule context for an AAC user
-   */
-  async getCurrentScheduleContext(
-    studentId: string,
-    timestamp: Date = new Date()
-  ): Promise<{
-    activityName: string | null;
-    topicTags: string[] | null;
-  }> {
-    return studentRepository.getCurrentScheduleContext(studentId, timestamp);
   }
 
   // ==================== Utility Methods ====================

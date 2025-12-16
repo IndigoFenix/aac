@@ -3,7 +3,7 @@ import { useState, useEffect, createContext, useContext, ReactNode, useCallback,
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useStudent } from './useStudent';
 import { useAuth } from './useAuth';
-import { useFeaturePanel } from '@/contexts/FeaturePanelContext';
+import { useFeaturePanel, useSharedState } from '@/contexts/FeaturePanelContext';
 import { ChatMessage, ChatMode, ChatSession } from '@shared/schema';
 
 // ============================================================================
@@ -106,16 +106,20 @@ export const ChatProvider = ({
   const { student } = useStudent();
   const { user } = useAuth();
   const { activeFeature, getFeatureMetadata } = useFeaturePanel();
-  
-  // Mode is derived from active feature
-  const mode = activeFeature;
+  const { setSharedState } = useSharedState();
+
+  // DEBUG: Track activeFeature and sendMessage recreation
+  useEffect(() => {
+    console.log('[ChatProvider] activeFeature changed to:', activeFeature);
+  }, [activeFeature]);
+
   
   // Storage keys
   const getStorageKey = useCallback(() => {
     const userPart = user?.id || 'anonymous';
     const aacPart = student?.id || 'none';
-    return `chat.session.${userPart}.${aacPart}.${mode}`;
-  }, [user?.id, student?.id, mode]);
+    return `chat.session.${userPart}.${aacPart}.${activeFeature}`;
+  }, [user?.id, student?.id, activeFeature]);
 
   // ============================================================================
   // SESSION MANAGEMENT
@@ -174,6 +178,31 @@ export const ChatProvider = ({
   }, [persistSession, getStorageKey]);
 
   // ============================================================================
+  // HANDLE CONTEXT DATA FROM RESPONSE
+  // ============================================================================
+
+  const handleContextData = useCallback((contextData: Record<string, any> | undefined) => {
+    if (!contextData) return;
+
+    // Handle board data from boards mode
+    if (contextData.board) {
+      console.log('[ChatProvider] Received board data from response:', contextData.board);
+      setSharedState({ 
+        boardGeneratorData: { 
+          board: contextData.board 
+        } 
+      });
+    }
+
+    // Handle interpret data (future)
+    if (contextData.interpret) {
+      setSharedState({ interpretData: contextData.interpret });
+    }
+
+    // Handle other context types as needed
+  }, [setSharedState]);
+
+  // ============================================================================
   // MESSAGING
   // ============================================================================
 
@@ -184,7 +213,7 @@ export const ChatProvider = ({
     if (!content.trim()) {
       return null;
     }
-    
+
     const { replyType = 'html', additionalMetadata } = options;
     
     setIsSending(true);
@@ -214,7 +243,7 @@ export const ChatProvider = ({
       const requestBody: Record<string, any> = {
         messages: [userMessage],
         replyType,
-        mode, // Send the active feature as the mode
+        mode: activeFeature, // Send the active feature as the mode
       };
       
       if (session?.id) {
@@ -226,6 +255,21 @@ export const ChatProvider = ({
       }
       if (student?.id) {
         requestBody.studentId = student.id;
+      }
+
+      // Add modeContext for boards mode (contains full board data)
+      if (activeFeature === 'boards' && featureMetadata?.modeContext) {
+        requestBody.modeContext = featureMetadata.modeContext;
+        console.log('[useChat] Sending modeContext for boards mode:', {
+          hasData: !!featureMetadata.modeContext.board?.data,
+          boardName: featureMetadata.modeContext.board?.data?.name,
+          pageCount: featureMetadata.modeContext.board?.data?.pages?.length,
+          buttonCount: featureMetadata.modeContext.board?.data?.pages?.reduce(
+            (sum: number, p: any) => sum + (p.buttons?.length || 0), 0
+          ),
+        });
+      } else if (activeFeature === 'boards') {
+        console.warn('[useChat] In boards mode but no modeContext available from metadata builder');
       }
       
       const response = await apiRequest('POST', '/api/chat', requestBody);
@@ -241,6 +285,11 @@ export const ChatProvider = ({
         };
         
         setHistory(prev => [...prev, assistantMessage]);
+
+        // Handle contextData from the response (board updates, etc.)
+        if (data.contextData) {
+          handleContextData(data.contextData);
+        }
         
         // Update session
         if (data.sessionId && (!session?.id || data.sessionId !== session.id)) {
@@ -248,7 +297,7 @@ export const ChatProvider = ({
             id: data.sessionId,
             userId: user?.id || null,
             studentId: student?.id || null,
-            chatMode: mode || 'chat',
+            chatMode: activeFeature || 'chat',
             started: new Date(),
             lastUpdate: new Date(),
             state: data.chatState || {},
@@ -306,7 +355,11 @@ export const ChatProvider = ({
     } finally {
       setIsSending(false);
     }
-  }, [session, mode, user, student, history, persistSession, getStorageKey, getFeatureMetadata]);
+  }, [session, activeFeature, user, student, history, persistSession, getStorageKey, getFeatureMetadata, handleContextData]);
+  
+  useEffect(() => {
+    console.log('[ChatProvider] sendMessage was recreated, activeFeature is:', activeFeature);
+  }, [sendMessage]);
 
   // ============================================================================
   // FEATURE-SPECIFIC METHODS (convenience wrappers)
@@ -402,7 +455,7 @@ export const ChatProvider = ({
     session,
     sessionId: session?.id || null,
     history,
-    mode: mode || 'chat',
+    mode: activeFeature || 'chat',
     isLoading,
     isSending,
     error,

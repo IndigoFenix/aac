@@ -1665,6 +1665,96 @@ export function processMemoryToolResponse(
           continue;
         }
 
+        // Handle arrays nested inside objects (objectProp with array type)
+        if (contLeaf.kind === 'objectProp' && contLeaf.propSchema.type === 'array') {
+          const tokens = splitPath(rawTarget);
+          const parentPath = joinPath(tokens.slice(0, -1));
+          const propName = tokens[tokens.length - 1];
+          
+          // Get or create parent object
+          let parentValue = parentPath === ROOT ? values : getAtPath(values, parentPath);
+          if (parentValue == null || typeof parentValue !== 'object' || Array.isArray(parentValue)) {
+            results.push({ target: rawTarget, action, ok: false, message: `Parent object not found at '${parentPath}'.` }); 
+            continue;
+          }
+          
+          // Get or create the array
+          const arr = parentValue[propName] ?? (parentValue[propName] = []);
+          if (!Array.isArray(arr)) { 
+            results.push({ target: rawTarget, action, ok: false, message: 'Expected array but found non-array.' }); 
+            continue; 
+          }
+          
+          const s = contLeaf.propSchema as AgentMemoryFieldArray;
+          if (op.value === undefined) { 
+            results.push({ target: rawTarget, action, ok: false, message: 'add to array requires value.' }); 
+            continue; 
+          }
+          const errs = validateAgainstSchema(s.items, op.value, rawTarget + '/<new>');
+          if (errs.length) { 
+            results.push({ target: rawTarget, action, ok: false, message: errs.join(' ') }); 
+            continue; 
+          }
+          if (s.maxItems != null && arr.length + 1 > s.maxItems) { 
+            results.push({ target: rawTarget, action, ok: false, message: `maxItems ${s.maxItems} exceeded.` }); 
+            continue; 
+          }
+          if (s.uniqueItems) {
+            const sv = JSON.stringify(op.value);
+            if (arr.some((x: any) => JSON.stringify(x) === sv)) { 
+              results.push({ target: rawTarget, action, ok: false, message: 'uniqueItems violated.' }); 
+              continue; 
+            }
+          }
+          arr.push(op.value);
+          autoOpenIfObject(s.items, joinPath([...tokens, String(arr.length - 1)]));
+          results.push({ target: rawTarget, action, ok: true });
+          continue;
+        }
+
+        // Handle maps nested inside objects (objectProp with map type)
+        if (contLeaf.kind === 'objectProp' && contLeaf.propSchema.type === 'map') {
+          const tokens = splitPath(rawTarget);
+          const parentPath = joinPath(tokens.slice(0, -1));
+          const propName = tokens[tokens.length - 1];
+          
+          let parentValue = parentPath === ROOT ? values : getAtPath(values, parentPath);
+          if (parentValue == null || typeof parentValue !== 'object' || Array.isArray(parentValue)) {
+            results.push({ target: rawTarget, action, ok: false, message: `Parent object not found at '${parentPath}'.` }); 
+            continue;
+          }
+          
+          const map = parentValue[propName] ?? (parentValue[propName] = {});
+          const s = contLeaf.propSchema as AgentMemoryFieldMap;
+          const key = op.key;
+          if (!key) { 
+            results.push({ target: rawTarget, action, ok: false, message: 'add to map requires key.' }); 
+            continue; 
+          }
+          if (s.keyPattern && !new RegExp(s.keyPattern).test(key)) { 
+            results.push({ target: rawTarget, action, ok: false, message: 'keyPattern violation.' }); 
+            continue; 
+          }
+          if (map[key] !== undefined) { 
+            results.push({ target: rawTarget, action, ok: false, message: 'Key already exists.' }); 
+            continue; 
+          }
+          const val = op.value;
+          const errs = validateAgainstSchema(s.values, val, rawTarget + '/' + key);
+          if (errs.length) { 
+            results.push({ target: rawTarget, action, ok: false, message: errs.join(' ') }); 
+            continue; 
+          }
+          if (s.maxProperties != null && Object.keys(map).length + 1 > s.maxProperties) { 
+            results.push({ target: rawTarget, action, ok: false, message: `maxProperties ${s.maxProperties} exceeded.` }); 
+            continue; 
+          }
+          map[key] = val;
+          autoOpenIfObject(s.values, joinPath([...tokens, key]));
+          results.push({ target: rawTarget, action, ok: true });
+          continue;
+        }
+
         console.log('ADD unsupported container kind:', contLeaf);
         results.push({ target: rawTarget, action, ok: false, message: 'Container not addable.' });
         continue;

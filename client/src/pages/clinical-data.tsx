@@ -200,22 +200,22 @@ export default function ClinicalDataPage() {
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>Filters</CardTitle>
-          <CardDescription>Filter clinical data by AAC user and date range</CardDescription>
+          <CardDescription>Filter clinical data by student and date range</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* AAC User Selector */}
+            {/* Student Selector */}
             <div>
-              <label className="text-sm font-medium mb-2 block">AAC User</label>
+              <label className="text-sm font-medium mb-2 block">Student</label>
               <Select value={selectedStudent} onValueChange={setSelectedStudent}>
                 <SelectTrigger data-testid="select-student">
                   <SelectValue placeholder="Select AAC user" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All AAC Users</SelectItem>
-                  {students?.map((user) => (
-                    <SelectItem key={user.id} value={user.studentId}>
-                      {user.alias}
+                  <SelectItem value="all">All Students</SelectItem>
+                  {students?.map((student) => (
+                    <SelectItem key={student.id} value={student.id}>
+                      {student.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

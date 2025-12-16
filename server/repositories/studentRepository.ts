@@ -1,19 +1,15 @@
 import {
   students,
-  studentSchedules,
   userStudents,
   type Student,
   type InsertStudent,
   type UpdateStudent,
-  type StudentSchedule,
-  type InsertStudentSchedule,
-  type UpdateStudentSchedule,
   type UserStudent,
   type InsertUserStudent,
   type UpdateUserStudent,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, and, lte, gte, desc, sql } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 
 export class StudentRepository {
   // ==================== AAC User Operations ====================
@@ -229,7 +225,7 @@ export class StudentRepository {
   async userHasAccessToStudent(
     userId: string,
     studentId: string
-  ): Promise<boolean> {
+  ): Promise<{ hasAccess: boolean; link?: UserStudent }> {
     const [link] = await db
       .select()
       .from(userStudents)
@@ -240,104 +236,7 @@ export class StudentRepository {
           eq(userStudents.isActive, true)
         )
       );
-    return !!link;
-  }
-
-  // ==================== AAC User Schedule Operations ====================
-
-  /**
-   * Create a schedule entry for an AAC user
-   */
-  async createScheduleEntry(schedule: InsertStudentSchedule): Promise<StudentSchedule> {
-    const [entry] = await db
-      .insert(studentSchedules)
-      .values(schedule)
-      .returning();
-    return entry;
-  }
-
-  /**
-   * Get all schedules for an AAC user
-   */
-  async getSchedulesByStudentId(studentId: string): Promise<StudentSchedule[]> {
-    return await db
-      .select()
-      .from(studentSchedules)
-      .where(eq(studentSchedules.studentId, studentId))
-      .orderBy(studentSchedules.startTime);
-  }
-
-  /**
-   * Get a specific schedule entry by ID
-   */
-  async getScheduleEntry(id: string): Promise<StudentSchedule | undefined> {
-    const [entry] = await db
-      .select()
-      .from(studentSchedules)
-      .where(eq(studentSchedules.id, id));
-    return entry || undefined;
-  }
-
-  /**
-   * Update a schedule entry
-   */
-  async updateScheduleEntry(
-    id: string,
-    updates: UpdateStudentSchedule
-  ): Promise<StudentSchedule | undefined> {
-    const [updated] = await db
-      .update(studentSchedules)
-      .set({ ...updates, updatedAt: new Date() })
-      .where(eq(studentSchedules.id, id))
-      .returning();
-    return updated || undefined;
-  }
-
-  /**
-   * Delete a schedule entry
-   */
-  async deleteScheduleEntry(id: string): Promise<boolean> {
-    const result = await db
-      .delete(studentSchedules)
-      .where(eq(studentSchedules.id, id));
-    return (result.rowCount ?? 0) > 0;
-  }
-
-  /**
-   * Get the current schedule context for an AAC user based on a timestamp
-   */
-  async getCurrentScheduleContext(
-    studentId: string,
-    timestamp: Date
-  ): Promise<{
-    activityName: string | null;
-    topicTags: string[] | null;
-  }> {
-    const dayOfWeek = timestamp.getDay();
-    const timeString = timestamp.toTimeString().substring(0, 5);
-
-    const [schedule] = await db
-      .select()
-      .from(studentSchedules)
-      .where(
-        and(
-          eq(studentSchedules.studentId, studentId),
-          eq(studentSchedules.isActive, true),
-          sql`${studentSchedules.dayOfWeek} = ${dayOfWeek}`,
-          lte(studentSchedules.startTime, timeString),
-          gte(studentSchedules.endTime, timeString)
-        )
-      )
-      .limit(1);
-
-    if (schedule) {
-      return {
-        activityName: schedule.activityName,
-        topicTags: schedule.topicTags,
-      };
-    }
-
-    return { activityName: null, topicTags: null };
+    return { hasAccess: !!link, link: link || undefined };
   }
 
   // ==================== Legacy Compatibility Methods ====================

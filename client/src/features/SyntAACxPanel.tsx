@@ -5,7 +5,7 @@ import { useEffect, useCallback } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
-import { Cloud } from 'lucide-react';
+import { Cloud, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { BoardCanvas } from '@/components/syntAACx/board-canvas';
@@ -27,23 +27,54 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
   const isDark = theme === 'dark';
   
   const { user } = useAuth();
-  const { board, currentPageId, validation, isEditMode, setBoard, updateBoard } = useBoardStore();
+  const { board, currentPageId, validation, isEditMode } = useBoardStore();
   const { toast } = useToast();
   const { sharedState, setSharedState } = useSharedState();
   const { registerMetadataBuilder, unregisterMetadataBuilder } = useFeaturePanel();
 
+  // Check if board is currently loading (set by BoardSelector)
+  const isBoardLoading = sharedState.isBoardLoading === true;
+
   // Register metadata builder for the boards feature
+  // This sends the current board state with each chat message
   const buildBoardsMetadata = useCallback(() => {
-    if (!board) return undefined;
-    
+    // Build modeContext for the backend sessionService
+    const modeContext: Record<string, any> = {
+      board: {}
+    };
+
+    if (board) {
+      // Send the full board data so the LLM can view and modify it
+      modeContext.board = {
+        data: board,
+        currentPageId: currentPageId || board.pages?.[0]?.id,
+      };
+      console.log('[SyntAACxPanel] Building metadata with board:', {
+        name: board.name,
+        pageCount: board.pages?.length,
+        buttonCount: board.pages?.reduce((sum: number, p: any) => sum + (p.buttons?.length || 0), 0),
+        currentPageId: currentPageId || board.pages?.[0]?.id,
+      });
+    } else {
+      // No board yet - request default grid size for new board creation
+      modeContext.board = {
+        requestedGridSize: { rows: 4, cols: 4 }
+      };
+      console.log('[SyntAACxPanel] Building metadata without board (new board request)');
+    }
+
     return {
-      gridSize: board.grid,
-      boardContext: {
+      // Legacy metadata for display purposes
+      gridSize: board?.grid,
+      boardContext: board ? {
         name: board.name,
         pageCount: board.pages?.length || 0,
         currentPageName: board.pages?.find((p: any) => p.id === currentPageId)?.name,
-      },
+      } : undefined,
       currentPageId: currentPageId,
+      
+      // New modeContext for backend processing
+      modeContext,
     };
   }, [board, currentPageId]);
 
@@ -56,19 +87,11 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
     };
   }, [registerMetadataBuilder, unregisterMetadataBuilder, buildBoardsMetadata]);
 
-  // Listen for board generator data from chat responses
-  useEffect(() => {
-    if (sharedState.boardGeneratorData) {
-      const boardData = sharedState.boardGeneratorData;
-      setSharedState({ boardGeneratorData: undefined });
-      
-      if (boardData.board) {
-        setBoard(boardData.board);
-      }
-    }
-  }, [sharedState.boardGeneratorData, setSharedState, setBoard]);
+  // NOTE: Board data from chat responses is now handled by BoardSelector
+  // This prevents duplicate processing and the issue of creating new boards
+  // instead of updating existing ones.
 
-  // Sync board state with shared state
+  // Sync board state with shared state (for other components that need it)
   useEffect(() => {
     if (board) {
       setSharedState({ currentBoard: board });
@@ -214,6 +237,38 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
       'flex flex-col h-full min-h-0',
       isDark ? 'bg-slate-950' : 'bg-gray-50'
     )}>
+      {/* Loading Overlay */}
+      {isBoardLoading && (
+        <div className={cn(
+          'absolute inset-0 z-50 flex flex-col items-center justify-center',
+          isDark ? 'bg-slate-950/90' : 'bg-gray-50/90'
+        )}>
+          <div className={cn(
+            'flex flex-col items-center gap-4 p-8 rounded-xl',
+            isDark ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-gray-200 shadow-lg'
+          )}>
+            <Loader2 className={cn(
+              'w-10 h-10 animate-spin',
+              isDark ? 'text-blue-400' : 'text-blue-600'
+            )} />
+            <div className="text-center">
+              <h3 className={cn(
+                'text-lg font-medium',
+                isDark ? 'text-slate-200' : 'text-gray-800'
+              )}>
+                {t('board.loadingBoard')}
+              </h3>
+              <p className={cn(
+                'text-sm mt-1',
+                isDark ? 'text-slate-400' : 'text-gray-500'
+              )}>
+                {t('board.loadingBoardDesc')}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main Content - Board Canvas with optional Button Inspector */}
       <div className="flex-1 min-h-0 overflow-hidden">
         <div className={cn('flex h-full', isRTL && 'flex-row-reverse')}>
@@ -223,7 +278,7 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
           </div>
 
           {/* Button Inspector - only in edit mode */}
-          {isEditMode && (
+          {isEditMode && !isBoardLoading && (
             <div className={cn(
               'w-72 shrink-0 border-l overflow-y-auto',
               isDark ? 'border-slate-800 bg-slate-900' : 'border-gray-200 bg-white',
@@ -241,7 +296,8 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
           'border-t px-4 py-3 flex items-center justify-between shrink-0',
           isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200',
           !isEditMode && 'opacity-90',
-          isRTL && 'flex-row-reverse'
+          isRTL && 'flex-row-reverse',
+          isBoardLoading && 'opacity-50 pointer-events-none'
         )}
       >
         {/* Status */}
@@ -280,7 +336,7 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
           <div className={cn('flex items-center gap-0.5', isRTL && 'flex-row-reverse')}>
             <Button
               onClick={handleExportGridset}
-              disabled={!board || !validation.isValid}
+              disabled={!board || !validation.isValid || isBoardLoading}
               size="sm"
               className="h-7 text-xs bg-blue-600 hover:bg-blue-700"
             >
@@ -289,7 +345,7 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
             {dropboxConnection?.connected && (
               <Button
                 onClick={handleUploadGridset}
-                disabled={!board || !validation.isValid || uploadToDropbox.isPending}
+                disabled={!board || !validation.isValid || uploadToDropbox.isPending || isBoardLoading}
                 size="icon"
                 variant="outline"
                 className={cn(
@@ -308,7 +364,7 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
           <div className={cn('flex items-center gap-0.5', isRTL && 'flex-row-reverse')}>
             <Button
               onClick={handleExportSnappkg}
-              disabled={!board || !validation.isValid}
+              disabled={!board || !validation.isValid || isBoardLoading}
               size="sm"
               className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700"
             >
@@ -317,7 +373,7 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
             {dropboxConnection?.connected && (
               <Button
                 onClick={handleUploadSnappkg}
-                disabled={!board || !validation.isValid || uploadToDropbox.isPending}
+                disabled={!board || !validation.isValid || uploadToDropbox.isPending || isBoardLoading}
                 size="icon"
                 variant="outline"
                 className={cn(
@@ -336,7 +392,7 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
           <div className={cn('flex items-center gap-0.5', isRTL && 'flex-row-reverse')}>
             <Button
               onClick={handleExportOBZ}
-              disabled={!board || !validation.isValid}
+              disabled={!board || !validation.isValid || isBoardLoading}
               size="sm"
               className="h-7 text-xs bg-orange-600 hover:bg-orange-700"
             >
@@ -345,7 +401,7 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
             {dropboxConnection?.connected && (
               <Button
                 onClick={handleUploadOBZ}
-                disabled={!board || !validation.isValid || uploadToDropbox.isPending}
+                disabled={!board || !validation.isValid || uploadToDropbox.isPending || isBoardLoading}
                 size="icon"
                 variant="outline"
                 className={cn(

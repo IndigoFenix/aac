@@ -5,7 +5,7 @@ import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { LanguageProvider } from "@/contexts/LanguageContext";
-import { ThemeProvider } from "./contexts/ThemeContext";
+import { ThemeProvider } from "@/contexts/ThemeContext";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { StudentProvider, useStudent } from "@/hooks/useStudent";
 import NotFound from "@/pages/not-found";
@@ -15,7 +15,7 @@ import OnboardingFlow from "@/pages/OnboardingFlow";
 import Dashboard from "./pages/Dashboard";
 import "./i18n";
 import { ChatProvider } from "./hooks/useChat";
-import { FeaturePanelProvider } from "./contexts/FeaturePanelContext";
+import { FeaturePanelProvider } from "@/contexts/FeaturePanelContext";
 
 function OnboardingGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();

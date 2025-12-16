@@ -52,7 +52,7 @@ import {
   LogOut,
   LogIn,
 } from "lucide-react";
-import { InsertInviteCode, insertInviteCodeSchema, Interpretation, RedeemInviteCode, redeemInviteCodeSchema } from "@shared/schema";
+import { InsertInviteCode, insertInviteCodeSchema, Interpretation, RedeemInviteCode, redeemInviteCodeSchema, Student } from "@shared/schema";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -316,7 +316,6 @@ export function GlobalAuthModals() {
 
       // Optional: keep this if anything else still uses the raw query
       queryClient.invalidateQueries({ queryKey: ["/api/students"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/students/list"] });
 
       setStudentForm({
         name: "",
@@ -696,13 +695,19 @@ export function GlobalAuthModals() {
   };
 
   // CHANGED: Now uses birthDate instead of age
-  const handleEditStudent = (student: any) => {
+  const handleEditStudent = (student: Student) => {
     setEditingStudent(student);
     setStudentForm({
       name: student.name || "",
       gender: student.gender || "",
       birthDate: student.birthDate || "",
       diagnosis: student.diagnosis || "",
+      backgroundContext: student.backgroundContext || "",
+      systemType: student.systemType || "tala",
+      country: student.country || "IL",
+      school: student.school || "",
+      grade: student.grade || "",
+      idNumber: student.idNumber || "",
     });
   };
 
@@ -1570,7 +1575,7 @@ export function GlobalAuthModals() {
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
                   </div>
                 ) : students && students.length > 0 ? (
-                  students.map((student: any) => (
+                  students.map((student) => (
                     <div
                       key={student.id}
                       className="border border-border rounded-lg p-3 flex justify-between items-start"
@@ -1588,7 +1593,7 @@ export function GlobalAuthModals() {
                             <p>
                               {language === "he" ? "גיל" : "Age"}:{" "}
                               {student.age ??
-                                calculateAge(student.birthDate)}
+                                calculateAge(student.birthDate || Date.toString())}
                               {student.birthDate && (
                                 <span className="text-xs ml-2">
                                   (

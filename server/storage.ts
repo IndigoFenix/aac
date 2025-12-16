@@ -16,6 +16,7 @@ import { savedLocationRepository } from "./repositories/savedLocationRepository"
 import { boardRepository } from "./repositories/boardRepository";
 import { settingsRepository } from "./repositories/settingsRepository";
 import { chatRepository } from "./repositories/chatRepository";
+import { programRepository } from "./repositories/programRepository";
 
 // Re-export all types
 export * from "@shared/schema";
@@ -43,20 +44,21 @@ export const storage = {
   getAdminUser: settingsRepository.getAdminUser.bind(settingsRepository),
   upsertAdminUser: settingsRepository.upsertAdminUser.bind(settingsRepository),
 
-  // AAC user operations
+  // AAC user (student) operations
   createStudent: studentRepository.createStudent.bind(studentRepository),
   getStudentsByUserId: studentRepository.getStudentsByUserId.bind(studentRepository),
+  getStudentById: studentRepository.getStudentById.bind(studentRepository),
   getStudentByStudentId: studentRepository.getStudentByStudentId.bind(studentRepository),
   updateStudent: studentRepository.updateStudent.bind(studentRepository),
   deleteStudent: studentRepository.deleteStudent.bind(studentRepository),
 
-  // AAC schedule operations
-  createScheduleEntry: studentRepository.createScheduleEntry.bind(studentRepository),
-  getSchedulesByStudentId: studentRepository.getSchedulesByStudentId.bind(studentRepository),
-  getScheduleEntry: studentRepository.getScheduleEntry.bind(studentRepository),
-  updateScheduleEntry: studentRepository.updateScheduleEntry.bind(studentRepository),
-  deleteScheduleEntry: studentRepository.deleteScheduleEntry.bind(studentRepository),
-  getCurrentScheduleContext: studentRepository.getCurrentScheduleContext.bind(studentRepository),
+  // User-Student link operations
+  createUserStudentLink: studentRepository.createUserStudentLink.bind(studentRepository),
+  getUserStudentLink: studentRepository.getUserStudentLink.bind(studentRepository),
+  getUsersByStudentId: studentRepository.getUsersByStudentId.bind(studentRepository),
+  updateUserStudentLink: studentRepository.updateUserStudentLink.bind(studentRepository),
+  deactivateUserStudentLink: studentRepository.deactivateUserStudentLink.bind(studentRepository),
+  userHasAccessToStudent: studentRepository.userHasAccessToStudent.bind(studentRepository),
 
   // Interpretation operations
   createInterpretation: interpretationRepository.createInterpretation.bind(interpretationRepository),
@@ -122,15 +124,6 @@ export const storage = {
   getBoard: boardRepository.getBoard.bind(boardRepository),
   updateBoard: boardRepository.updateBoard.bind(boardRepository),
   deleteBoard: boardRepository.deleteBoard.bind(boardRepository),
-  getPlan: boardRepository.getPlan.bind(boardRepository),
-  createOrUpdatePlan: boardRepository.createOrUpdatePlan.bind(boardRepository),
-  getOrCreateUsageWindow: boardRepository.getOrCreateUsageWindow.bind(boardRepository),
-  incrementUsage: boardRepository.incrementUsage.bind(boardRepository),
-  logPrompt: boardRepository.logPrompt.bind(boardRepository),
-  getUserPromptHistory: boardRepository.getUserPromptHistory.bind(boardRepository),
-  markPromptAsDownloaded: boardRepository.markPromptAsDownloaded.bind(boardRepository),
-  createPromptEvent: boardRepository.createPromptEvent.bind(boardRepository),
-  getAnalyticsData: boardRepository.getAnalyticsData.bind(boardRepository),
 
   // Settings operations
   getSetting: settingsRepository.getSetting.bind(settingsRepository),
@@ -167,6 +160,124 @@ export const storage = {
   updateChatSessionLast: chatRepository.updateSessionLast.bind(chatRepository),
   updateChatSessionStatus: chatRepository.updateSessionStatus.bind(chatRepository),
   getRecentChatSessionsForContext: chatRepository.getRecentSessionsForContext.bind(chatRepository),
+
+  // ============================================================================
+  // IEP/TALA PROGRAM OPERATIONS
+  // ============================================================================
+
+  // Program operations
+  createProgram: programRepository.createProgram.bind(programRepository),
+  getProgramById: programRepository.getProgramById.bind(programRepository),
+  getProgramsByStudentId: programRepository.getProgramsByStudentId.bind(programRepository),
+  getCurrentProgram: programRepository.getCurrentProgram.bind(programRepository),
+  updateProgram: programRepository.updateProgram.bind(programRepository),
+  deleteProgram: programRepository.deleteProgram.bind(programRepository),
+  getProgramWithDetails: programRepository.getProgramWithDetails.bind(programRepository),
+
+  // Profile domain operations
+  createProfileDomain: programRepository.createProfileDomain.bind(programRepository),
+  getProfileDomainById: programRepository.getProfileDomainById.bind(programRepository),
+  getProfileDomainsByProgramId: programRepository.getProfileDomainsByProgramId.bind(programRepository),
+  updateProfileDomain: programRepository.updateProfileDomain.bind(programRepository),
+  deleteProfileDomain: programRepository.deleteProfileDomain.bind(programRepository),
+
+  // Baseline measurement operations
+  createBaselineMeasurement: programRepository.createBaselineMeasurement.bind(programRepository),
+  getBaselineMeasurementsByDomainId: programRepository.getBaselineMeasurementsByDomainId.bind(programRepository),
+  deleteBaselineMeasurement: programRepository.deleteBaselineMeasurement.bind(programRepository),
+
+  // Assessment source operations
+  createAssessmentSource: programRepository.createAssessmentSource.bind(programRepository),
+  getAssessmentSourcesByDomainId: programRepository.getAssessmentSourcesByDomainId.bind(programRepository),
+  deleteAssessmentSource: programRepository.deleteAssessmentSource.bind(programRepository),
+
+  // Goal operations
+  createGoal: programRepository.createGoal.bind(programRepository),
+  getGoalById: programRepository.getGoalById.bind(programRepository),
+  getGoalsByProgramId: programRepository.getGoalsByProgramId.bind(programRepository),
+  getGoalsByDomainId: programRepository.getGoalsByDomainId.bind(programRepository),
+  updateGoal: programRepository.updateGoal.bind(programRepository),
+  deleteGoal: programRepository.deleteGoal.bind(programRepository),
+  getGoalWithContext: programRepository.getGoalWithContext.bind(programRepository),
+
+  // Objective operations
+  createObjective: programRepository.createObjective.bind(programRepository),
+  getObjectiveById: programRepository.getObjectiveById.bind(programRepository),
+  getObjectivesByGoalId: programRepository.getObjectivesByGoalId.bind(programRepository),
+  updateObjective: programRepository.updateObjective.bind(programRepository),
+  deleteObjective: programRepository.deleteObjective.bind(programRepository),
+
+  // Service operations
+  createService: programRepository.createService.bind(programRepository),
+  getServiceById: programRepository.getServiceById.bind(programRepository),
+  getServicesByProgramId: programRepository.getServicesByProgramId.bind(programRepository),
+  updateService: programRepository.updateService.bind(programRepository),
+  deleteService: programRepository.deleteService.bind(programRepository),
+  linkServiceToGoal: programRepository.linkServiceToGoal.bind(programRepository),
+  unlinkServiceFromGoal: programRepository.unlinkServiceFromGoal.bind(programRepository),
+
+  // Accommodation operations
+  createAccommodation: programRepository.createAccommodation.bind(programRepository),
+  getAccommodationsByServiceId: programRepository.getAccommodationsByServiceId.bind(programRepository),
+  getAccommodationsByProgramId: programRepository.getAccommodationsByProgramId.bind(programRepository),
+  updateAccommodation: programRepository.updateAccommodation.bind(programRepository),
+  deleteAccommodation: programRepository.deleteAccommodation.bind(programRepository),
+
+  // Progress report operations
+  createProgressReport: programRepository.createProgressReport.bind(programRepository),
+  getProgressReportById: programRepository.getProgressReportById.bind(programRepository),
+  getProgressReportsByProgramId: programRepository.getProgressReportsByProgramId.bind(programRepository),
+  updateProgressReport: programRepository.updateProgressReport.bind(programRepository),
+  deleteProgressReport: programRepository.deleteProgressReport.bind(programRepository),
+
+  // Goal progress entry operations
+  createGoalProgressEntry: programRepository.createGoalProgressEntry.bind(programRepository),
+  getGoalProgressEntriesByReportId: programRepository.getGoalProgressEntriesByReportId.bind(programRepository),
+  getGoalProgressEntriesByGoalId: programRepository.getGoalProgressEntriesByGoalId.bind(programRepository),
+
+  // Data point operations
+  createDataPoint: programRepository.createDataPoint.bind(programRepository),
+  getDataPointsByGoalId: programRepository.getDataPointsByGoalId.bind(programRepository),
+  getDataPointsByObjectiveId: programRepository.getDataPointsByObjectiveId.bind(programRepository),
+  deleteDataPoint: programRepository.deleteDataPoint.bind(programRepository),
+
+  // Transition plan operations
+  createTransitionPlan: programRepository.createTransitionPlan.bind(programRepository),
+  getTransitionPlanByProgramId: programRepository.getTransitionPlanByProgramId.bind(programRepository),
+  updateTransitionPlan: programRepository.updateTransitionPlan.bind(programRepository),
+  deleteTransitionPlan: programRepository.deleteTransitionPlan.bind(programRepository),
+
+  // Transition goal operations
+  createTransitionGoal: programRepository.createTransitionGoal.bind(programRepository),
+  getTransitionGoalsByPlanId: programRepository.getTransitionGoalsByPlanId.bind(programRepository),
+  updateTransitionGoal: programRepository.updateTransitionGoal.bind(programRepository),
+  deleteTransitionGoal: programRepository.deleteTransitionGoal.bind(programRepository),
+
+  // Team member operations
+  createTeamMember: programRepository.createTeamMember.bind(programRepository),
+  getTeamMemberById: programRepository.getTeamMemberById.bind(programRepository),
+  getTeamMembersByProgramId: programRepository.getTeamMembersByProgramId.bind(programRepository),
+  updateTeamMember: programRepository.updateTeamMember.bind(programRepository),
+  deleteTeamMember: programRepository.deleteTeamMember.bind(programRepository),
+
+  // Meeting operations
+  createMeeting: programRepository.createMeeting.bind(programRepository),
+  getMeetingById: programRepository.getMeetingById.bind(programRepository),
+  getMeetingsByProgramId: programRepository.getMeetingsByProgramId.bind(programRepository),
+  updateMeeting: programRepository.updateMeeting.bind(programRepository),
+  deleteMeeting: programRepository.deleteMeeting.bind(programRepository),
+
+  // Consent form operations
+  createConsentForm: programRepository.createConsentForm.bind(programRepository),
+  getConsentFormById: programRepository.getConsentFormById.bind(programRepository),
+  getConsentFormsByProgramId: programRepository.getConsentFormsByProgramId.bind(programRepository),
+  updateConsentForm: programRepository.updateConsentForm.bind(programRepository),
+  deleteConsentForm: programRepository.deleteConsentForm.bind(programRepository),
+
+  // Aggregate operations
+  calculateProgramProgress: programRepository.calculateProgramProgress.bind(programRepository),
+  getProgramsWithUpcomingDeadlines: programRepository.getProgramsWithUpcomingDeadlines.bind(programRepository),
+  getGoalStatusCounts: programRepository.getGoalStatusCounts.bind(programRepository),
 };
 
 export type Storage = typeof storage;

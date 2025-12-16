@@ -7,3 +7,4 @@ export { apiProviderRepository, ApiProviderRepository } from "./apiProviderRepos
 export { savedLocationRepository, SavedLocationRepository } from "./savedLocationRepository";
 export { boardRepository, BoardRepository } from "./boardRepository";
 export { settingsRepository, SettingsRepository } from "./settingsRepository";
+export { programRepository, ProgramRepository } from "./programRepository";

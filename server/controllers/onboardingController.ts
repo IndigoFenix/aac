@@ -1,7 +1,6 @@
 import type { Request, Response } from "express";
 import { userRepository, studentRepository } from "../repositories";
 import { inviteCodeService, studentService } from "../services";
-import { insertStudentScheduleSchema } from "@shared/schema";
 
 export class OnboardingController {
   /**
@@ -102,54 +101,7 @@ export class OnboardingController {
    * Complete Step 2: Create Schedule Entry
    */
   async completeStep2(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as { id: string };
-      const scheduleData = req.body;
-
-      // Validate schedule data
-      const validatedData = insertStudentScheduleSchema.parse(scheduleData);
-
-      // Verify the user has access to this AAC user
-      const { hasAccess } = await studentService.verifyStudentAccess(
-        validatedData.studentId,
-        currentUser.id
-      );
-
-      if (!hasAccess) {
-        res.status(403).json({
-          success: false,
-          message: "Access denied to this AAC user",
-        });
-        return;
-      }
-
-      // Create schedule entry
-      const schedule = await studentService.createScheduleEntry(validatedData);
-
-      // Update user's onboarding step to 3 (complete)
-      await userRepository.updateUserOnboardingStep(currentUser.id, 3);
-
-      res.json({
-        success: true,
-        message: "Schedule entry created successfully",
-        schedule,
-        onboardingStep: 3,
-      });
-    } catch (error: any) {
-      console.error("Error completing step 2:", error);
-      if (error.name === "ZodError") {
-        res.status(400).json({
-          success: false,
-          message: "Invalid schedule data",
-          errors: error.errors,
-        });
-        return;
-      }
-      res.status(500).json({
-        success: false,
-        message: "Failed to create schedule entry",
-      });
-    }
+    // deprecated - no longer needed
   }
 
   /**

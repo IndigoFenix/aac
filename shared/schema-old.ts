@@ -15,97 +15,6 @@ export const chatSessionStatusEnum = pgEnum("chat_session_status", ["open", "pau
 
 export const instituteTypeEnum = pgEnum("institute_type", ["school", "hospital"]);
 
-// IEP/TALA specific enums
-export const programFrameworkEnum = pgEnum("program_framework", ["tala", "us_iep"]);
-export const programStatusEnum = pgEnum("program_status", ["draft", "active", "archived"]);
-export const profileDomainTypeEnum = pgEnum("profile_domain_type", [
-  "cognitive_academic",
-  "communication_language", 
-  "social_emotional_behavioral",
-  "motor_sensory",
-  "life_skills_preparation",
-  "other"
-]);
-export const assessmentSourceTypeEnum = pgEnum("assessment_source_type", [
-  "standardized_test",
-  "structured_observation",
-  "parent_questionnaire",
-  "teacher_input",
-  "curriculum_based",
-  "behavioral_records"
-]);
-export const interventionLevelEnum = pgEnum("intervention_level", ["activity", "function", "participation"]);
-export const goalStatusEnum = pgEnum("goal_status", ["draft", "active", "achieved", "modified", "discontinued"]);
-export const objectiveStatusEnum = pgEnum("objective_status", ["not_started", "in_progress", "achieved", "modified", "discontinued"]);
-export const serviceTypeEnum = pgEnum("service_type", [
-  "speech_language_therapy",
-  "occupational_therapy",
-  "physical_therapy",
-  "counseling",
-  "specialized_instruction",
-  "consultation",
-  "aac_support",
-  "other"
-]);
-export const serviceDeliveryModelEnum = pgEnum("service_delivery_model", ["direct", "consultation", "collaborative", "indirect"]);
-export const serviceSettingEnum = pgEnum("service_setting", [
-  "general_education",
-  "resource_room",
-  "self_contained",
-  "home",
-  "community",
-  "therapy_room"
-]);
-export const serviceFrequencyPeriodEnum = pgEnum("service_frequency_period", ["daily", "weekly", "monthly"]);
-export const accommodationTypeEnum = pgEnum("accommodation_type", [
-  "visual_support",
-  "aac_device",
-  "modified_materials",
-  "extended_time",
-  "simplified_language",
-  "environmental_modification",
-  "other"
-]);
-export const progressStatusEnum = pgEnum("progress_status", [
-  "significant_progress",
-  "making_progress",
-  "limited_progress",
-  "no_progress",
-  "regression",
-  "goal_met"
-]);
-export const meetingTypeEnum = pgEnum("meeting_type", [
-  "initial_evaluation",
-  "annual_review",
-  "reevaluation",
-  "amendment",
-  "transition_planning",
-  "progress_review"
-]);
-export const consentTypeEnum = pgEnum("consent_type", [
-  "initial_evaluation",
-  "reevaluation",
-  "placement",
-  "release_of_information",
-  "service_provision"
-]);
-export const transitionAreaEnum = pgEnum("transition_area", ["education", "employment", "independent_living", "community"]);
-export const teamMemberRoleEnum = pgEnum("team_member_role", [
-  "parent_guardian",
-  "student",
-  "homeroom_teacher",
-  "special_education_teacher",
-  "general_education_teacher",
-  "speech_language_pathologist",
-  "occupational_therapist",
-  "physical_therapist",
-  "psychologist",
-  "administrator",
-  "case_manager",
-  "external_provider",
-  "other"
-]);
-
 // =============================================================================
 // CORE USER MANAGEMENT TABLES
 // =============================================================================
@@ -263,48 +172,34 @@ export const licenses = pgTable("licenses", {
 // STUDENT MANAGEMENT TABLES
 // =============================================================================
 
-// Student profiles table (AAC Users)
+// Student profiles table
 export const students = pgTable("students", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  name: text("name").notNull(), // Human-readable name
+  name: text("name").notNull(), // Human-readable name (was "alias")
   gender: text("gender"), // 'male', 'female', 'other'
-  birthDate: date("birth_date"), // Date of birth
-  
-  // Diagnosis and background
+  birthDate: date("birth_date"), // Date of birth (was "age" as integer)
   diagnosis: text("diagnosis"), // Primary diagnosis
-  additionalDiagnoses: text("additional_diagnoses").array(), // Secondary diagnoses
   backgroundContext: text("background_context"), // Free text background information
-  
-  // Educational framework
-  framework: programFrameworkEnum("framework").default("tala"), // 'tala' | 'us_iep'
+  systemType: text("system_type").default("tala"), // 'tala' | 'us_iep'
   country: text("country").default("IL"), // 'IL', 'US', etc.
-  primaryLanguage: text("primary_language").default("he"), // Primary language code
-  additionalLanguages: text("additional_languages").array(), // Additional language codes
-  
-  // School/Educational setting
-  educationalSetting: text("educational_setting"), // Type of educational setting
   school: text("school"), // School name
   grade: text("grade"), // Grade level
-  classroom: text("classroom"), // Classroom name/number
   idNumber: text("id_number"), // Student ID number
-  
-  // IEP-specific fields
-  disabilityClassification: text("disability_classification"), // IDEA disability category
-  leastRestrictiveEnvironment: text("least_restrictive_environment"), // LRE placement description
   
   // Chat system fields
   chatMemory: jsonb("chat_memory").default({}), // Student-specific memory values for chat
   chatCreditsUsed: real("chat_credits_used").notNull().default(0),
   chatCreditsUpdated: timestamp("chat_credits_updated").defaultNow(),
 
-  // Status and metadata
+  // Progress tracking fields
+  nextDeadline: date("next_deadline"), // Next deadline date
+  overallProgress: integer("overall_progress").default(0), // 0-100
+  currentPhase: text("current_phase"), // Current phase ID (e.g., 'p1', 'p2')
+  progressData: jsonb("progress_data").default({}), // Additional progress metadata
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_students_framework").on(table.framework),
-  index("idx_students_is_active").on(table.isActive),
-]);
+});
 
 // Junction table for many-to-many relationship between Users and Students
 export const userStudents = pgTable("user_students", {
@@ -341,468 +236,137 @@ export const instituteStudents = pgTable("institute_students", {
   index("idx_institute_students_student_id").on(table.studentId),
 ]);
 
-// =============================================================================
-// IEP/TALA PROGRAM TABLES
-// =============================================================================
-
-/**
- * Programs - The IEP/TALA document itself
- * A student can have multiple programs over their school career (one per year)
- */
-export const programs = pgTable("programs", {
+// Student Schedules table for contextual schedule management
+export const studentSchedules = pgTable("student_schedules", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  studentId: varchar("student_id").references(() => students.id).notNull(),
-  
-  // Framework and identification
-  framework: programFrameworkEnum("framework").notNull(), // 'tala' | 'us_iep'
-  programYear: text("program_year").notNull(), // e.g., "2024-2025"
-  title: text("title"), // Optional custom title
-  
-  // Status and timeline
-  status: programStatusEnum("status").default("draft").notNull(),
-  startDate: date("start_date"),
-  endDate: date("end_date"),
-  dueDate: date("due_date"), // Nov 15 for TALA, calculated for IEP
-  approvalDate: date("approval_date"),
-  
-  // IEP-specific
-  leastRestrictiveEnvironment: text("least_restrictive_environment"),
-  
-  // Metadata
+  studentId: varchar("student_id").references(() => students.id).notNull(), // FK to Student's primary key
+  dayOfWeek: integer("day_of_week").notNull(), // 0=Sunday to 6=Saturday
+  startTime: text("start_time").notNull(), // Time format 'HH:MM'
+  endTime: text("end_time").notNull(), // Time format 'HH:MM'
+  activityName: text("activity_name").notNull(), // e.g., 'School', 'Hydrotherapy', 'Dinner'
+  topicTags: text("topic_tags").array(), // e.g., ['food', 'family', 'social'] - CRITICAL for AI prompt
+  isRepeatingWeekly: boolean("is_repeating_weekly").default(true).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  dateOverride: text("date_override"), // For holidays/one-off events, format 'YYYY-MM-DD'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Student Phases table - Tracks individual phase progress
+export const studentPhases = pgTable("student_phases", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").notNull(), // References students.id
+  phaseId: text("phase_id").notNull(), // 'p1', 'p2', 'p3', 'p4' or custom
+  phaseName: text("phase_name").notNull(), // Display name
+  phaseOrder: integer("phase_order").notNull().default(1), // Order in sequence
+  status: text("status").notNull().default("pending"), // 'pending', 'in-progress', 'completed', 'locked'
+  dueDate: date("due_date"),
+  completedAt: timestamp("completed_at"),
   notes: text("notes"),
-  metadata: jsonb("metadata").default({}),
-  
+  metadata: jsonb("metadata").default({}), // Additional phase data
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
-  index("idx_programs_student_id").on(table.studentId),
-  index("idx_programs_status").on(table.status),
-  index("idx_programs_framework").on(table.framework),
+  index("idx_student_phases_student_id").on(table.studentId),
+  index("idx_student_phases_status").on(table.status),
 ]);
 
-/**
- * Profile Domains - Areas within the functional profile/PLAAFP
- */
-export const profileDomains = pgTable("profile_domains", {
+// Student Goals table - Tracks IEP goals and objectives
+export const studentGoals = pgTable("student_goals", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  programId: varchar("program_id").references(() => programs.id).notNull(),
+  studentId: varchar("student_id").notNull(), // References students.id
+  phaseId: varchar("phase_id"), // References studentPhases.id (optional)
+  title: text("title").notNull(),
+  description: text("description"),
+  goalType: text("goal_type").notNull().default("general"), // 'communication', 'behavioral', 'academic', 'general'
   
-  domainType: profileDomainTypeEnum("domain_type").notNull(),
-  customName: text("custom_name"), // For 'other' type
+  // SMART Goal fields (for US IEP)
+  targetBehavior: text("target_behavior"), // Specific
+  criteria: text("criteria"), // Measurable
+  criteriaPercentage: integer("criteria_percentage"), // e.g., 80%
+  measurementMethod: text("measurement_method"), // e.g., 'SLP data collection'
+  conditions: text("conditions"), // Achievable/Opportunity context
+  relevance: text("relevance"), // Relevant curriculum impact
+  targetDate: date("target_date"), // Time-bound
   
-  // Content
-  strengths: text("strengths"),
-  needs: text("needs"), // Areas for reinforcement/challenges
-  impactStatement: text("impact_statement"), // How disability impacts education in this domain
-  
-  // IEP-specific: adverse effect statement
-  adverseEffectStatement: text("adverse_effect_statement"),
-  
-  // Ordering
-  sortOrder: integer("sort_order").default(0).notNull(),
-  
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_profile_domains_program_id").on(table.programId),
-  index("idx_profile_domains_domain_type").on(table.domainType),
-]);
-
-/**
- * Baseline Measurements - Quantitative data within a domain
- */
-export const baselineMeasurements = pgTable("baseline_measurements", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  profileDomainId: varchar("profile_domain_id").references(() => profileDomains.id).notNull(),
-  
-  skillDescription: text("skill_description").notNull(),
-  measurementMethod: text("measurement_method").notNull(), // "standardized test", "observation", etc.
-  value: text("value").notNull(), // "10%", "3/10 trials", "below grade level"
-  numericValue: real("numeric_value"), // For graphing/comparison
-  unit: text("unit"), // "%", "trials", "words per minute", etc.
-  
-  assessedAt: date("assessed_at"),
-  assessedBy: text("assessed_by"),
-  
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_baseline_measurements_domain_id").on(table.profileDomainId),
-]);
-
-/**
- * Assessment Sources - Documentation of assessment tools used
- */
-export const assessmentSources = pgTable("assessment_sources", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  profileDomainId: varchar("profile_domain_id").references(() => profileDomains.id).notNull(),
-  
-  sourceType: assessmentSourceTypeEnum("source_type").notNull(),
-  instrumentName: text("instrument_name"), // e.g., "Goldman-Fristoe Test of Articulation"
-  assessedAt: date("assessed_at"),
-  summary: text("summary"),
-  
-  // Results data
-  resultsData: jsonb("results_data").default({}), // Flexible storage for test scores, subscores, etc.
-  
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_assessment_sources_domain_id").on(table.profileDomainId),
-]);
-
-/**
- * Goals - Long-term/annual goals with SMART structure
- */
-export const goals = pgTable("goals", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  programId: varchar("program_id").references(() => programs.id).notNull(),
-  profileDomainId: varchar("profile_domain_id").references(() => profileDomains.id), // Links goal to baseline
-  
-  // Goal statement
-  goalStatement: text("goal_statement").notNull(),
-  
-  // SMART components (structured for AI assistance)
-  smartSpecific: jsonb("smart_specific").default({}), // { targetBehavior, skill, context }
-  smartMeasurable: jsonb("smart_measurable").default({}), // { criterion, measurementMethod }
-  smartAchievable: jsonb("smart_achievable").default({}), // { justification }
-  smartRelevant: jsonb("smart_relevant").default({}), // { educationalRelevance }
-  smartTimeBound: jsonb("smart_time_bound").default({}), // { targetDate }
-  
-  // Legacy/simple fields (for quick entry)
-  targetBehavior: text("target_behavior"),
-  criteria: text("criteria"), // e.g., "80% accuracy"
-  criteriaPercentage: integer("criteria_percentage"),
-  measurementMethod: text("measurement_method"),
-  conditions: text("conditions"), // Context/opportunity
-  relevance: text("relevance"), // Educational impact
-  targetDate: date("target_date"),
-  
-  // TALA-specific: ICF intervention level
-  interventionLevel: interventionLevelEnum("intervention_level"),
-  
-  // Status tracking
-  status: goalStatusEnum("status").default("draft").notNull(),
+  status: text("status").notNull().default("draft"), // 'draft', 'active', 'achieved', 'modified', 'discontinued'
   progress: integer("progress").default(0), // 0-100
   
-  // Ordering
-  sortOrder: integer("sort_order").default(0).notNull(),
+  // Baseline data for IEP
+  baselineData: jsonb("baseline_data").default({}), // MLU, communication rate, etc.
   
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
-  index("idx_goals_program_id").on(table.programId),
-  index("idx_goals_domain_id").on(table.profileDomainId),
-  index("idx_goals_status").on(table.status),
+  index("idx_student_goals_student_id").on(table.studentId),
+  index("idx_student_goals_status").on(table.status),
 ]);
 
-/**
- * Objectives - Short-term objectives/benchmarks toward goals
- */
-export const objectives = pgTable("objectives", {
+// Student Progress Entries - Tracks progress over time
+export const studentProgressEntries = pgTable("student_progress_entries", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  goalId: varchar("goal_id").references(() => goals.id).notNull(),
+  studentId: varchar("student_id").notNull(),
+  goalId: varchar("goal_id"), // References studentGoals.id (optional)
+  phaseId: varchar("phase_id"), // References studentPhases.id (optional)
   
-  objectiveStatement: text("objective_statement").notNull(),
-  sequenceOrder: integer("sequence_order").notNull().default(1),
+  entryType: text("entry_type").notNull(), // 'observation', 'assessment', 'milestone', 'note'
+  title: text("title").notNull(),
+  content: text("content"),
   
-  // Measurable criteria
-  criterion: text("criterion"), // e.g., "3 out of 4 opportunities"
-  context: text("context"), // e.g., "during structured therapy"
+  // Quantitative metrics
+  metrics: jsonb("metrics").default({}), // e.g., { mlu: 3.2, communicationRate: 12, intelligibility: 0.75 }
   
-  // Timeline
-  targetDate: date("target_date"),
+  recordedBy: varchar("recorded_by"), // References users.id
+  recordedAt: timestamp("recorded_at").defaultNow().notNull(),
   
-  // Status tracking
-  status: objectiveStatusEnum("status").default("not_started").notNull(),
-  achievedDate: date("achieved_date"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_progress_entries_student_id").on(table.studentId),
+  index("idx_progress_entries_recorded_at").on(table.recordedAt),
+]);
+
+// Student Compliance Checklist - For IEP compliance tracking
+export const studentComplianceItems = pgTable("student_compliance_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").notNull(),
+  phaseId: varchar("phase_id"), // References studentPhases.id (optional)
+  
+  itemKey: text("item_key").notNull(), // 'baseline_data', 'parent_input', 'gen_ed_consulted', etc.
+  itemLabel: text("item_label").notNull(),
+  isCompleted: boolean("is_completed").default(false).notNull(),
+  completedAt: timestamp("completed_at"),
+  completedBy: varchar("completed_by"), // References users.id
+  notes: text("notes"),
   
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
-  index("idx_objectives_goal_id").on(table.goalId),
-  index("idx_objectives_status").on(table.status),
+  index("idx_compliance_items_student_id").on(table.studentId),
 ]);
 
-/**
- * Services - Related services and interventions
- */
-export const services = pgTable("services", {
+// Service Recommendations - For IEP service planning
+export const studentServiceRecommendations = pgTable("student_service_recommendations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  programId: varchar("program_id").references(() => programs.id).notNull(),
+  studentId: varchar("student_id").notNull(),
   
-  serviceType: serviceTypeEnum("service_type").notNull(),
-  customServiceName: text("custom_service_name"), // For 'other' type
-  description: text("description"),
+  serviceName: text("service_name").notNull(), // 'Speech-Language', 'Occupational Therapy', etc.
+  serviceType: text("service_type").notNull().default("direct"), // 'direct', 'consultation', 'monitoring'
+  durationMinutes: integer("duration_minutes").notNull(),
+  frequency: text("frequency").notNull(), // 'weekly', 'bi-weekly', 'monthly'
+  frequencyCount: integer("frequency_count").notNull().default(1), // Times per frequency period
   
-  // Provider
-  providerId: varchar("provider_id").references(() => teamMembers.id),
-  providerName: text("provider_name"), // Fallback if no linked team member
-  
-  // Frequency & Duration
-  frequencyCount: integer("frequency_count").notNull().default(1),
-  frequencyPeriod: serviceFrequencyPeriodEnum("frequency_period").notNull().default("weekly"),
-  sessionDuration: integer("session_duration").notNull(), // minutes
-  
-  // Setting (LRE consideration)
-  setting: serviceSettingEnum("setting"),
-  settingDescription: text("setting_description"),
-  
-  // Delivery model
-  deliveryModel: serviceDeliveryModelEnum("delivery_model").default("direct"),
-  
-  // Timeline
   startDate: date("start_date"),
   endDate: date("end_date"),
   
-  // Status
-  isActive: boolean("is_active").default(true).notNull(),
-  
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_services_program_id").on(table.programId),
-  index("idx_services_service_type").on(table.serviceType),
-  index("idx_services_is_active").on(table.isActive),
-]);
-
-/**
- * Service Goals Junction - Links services to the goals they address
- */
-export const serviceGoals = pgTable("service_goals", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  serviceId: varchar("service_id").references(() => services.id).notNull(),
-  goalId: varchar("goal_id").references(() => goals.id).notNull(),
-  
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_service_goals_service_id").on(table.serviceId),
-  index("idx_service_goals_goal_id").on(table.goalId),
-]);
-
-/**
- * Accommodations - Supports and modifications
- */
-export const accommodations = pgTable("accommodations", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  serviceId: varchar("service_id").references(() => services.id),
-  programId: varchar("program_id").references(() => programs.id), // Can be program-wide
-  
-  accommodationType: accommodationTypeEnum("accommodation_type").notNull(),
-  customTypeName: text("custom_type_name"), // For 'other' type
-  description: text("description").notNull(),
-  
-  // Where this accommodation applies
-  settings: text("settings").array(), // e.g., ["classroom", "testing", "therapy"]
+  provider: text("provider"), // Provider name
+  location: text("location"), // Service delivery location
   
   isActive: boolean("is_active").default(true).notNull(),
   
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
-  index("idx_accommodations_service_id").on(table.serviceId),
-  index("idx_accommodations_program_id").on(table.programId),
-]);
-
-/**
- * Progress Reports - Periodic measurement against goals
- */
-export const progressReports = pgTable("progress_reports", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  programId: varchar("program_id").references(() => programs.id).notNull(),
-  
-  reportDate: date("report_date").notNull(),
-  reportingPeriod: text("reporting_period"), // "Q1", "Semester 1", etc.
-  
-  overallSummary: text("overall_summary"),
-  recommendedChanges: text("recommended_changes"),
-  
-  // Parent communication
-  sharedWithParents: boolean("shared_with_parents").default(false),
-  sharedDate: date("shared_date"),
-  
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_progress_reports_program_id").on(table.programId),
-  index("idx_progress_reports_report_date").on(table.reportDate),
-]);
-
-/**
- * Goal Progress Entries - Progress on specific goals within a report
- */
-export const goalProgressEntries = pgTable("goal_progress_entries", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  progressReportId: varchar("progress_report_id").references(() => progressReports.id).notNull(),
-  goalId: varchar("goal_id").references(() => goals.id).notNull(),
-  
-  currentPerformance: text("current_performance"), // "45% accuracy"
-  progressStatus: progressStatusEnum("progress_status").notNull(),
-  narrative: text("narrative"),
-  
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_goal_progress_entries_report_id").on(table.progressReportId),
-  index("idx_goal_progress_entries_goal_id").on(table.goalId),
-]);
-
-/**
- * Data Points - Individual measurements for progress tracking
- */
-export const dataPoints = pgTable("data_points", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  goalProgressEntryId: varchar("goal_progress_entry_id").references(() => goalProgressEntries.id),
-  goalId: varchar("goal_id").references(() => goals.id), // Can be direct to goal without progress entry
-  objectiveId: varchar("objective_id").references(() => objectives.id),
-  
-  recordedAt: timestamp("recorded_at").notNull(),
-  value: text("value").notNull(),
-  numericValue: real("numeric_value"), // For graphing
-  context: text("context"),
-  collectedBy: text("collected_by"),
-  
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_data_points_progress_entry_id").on(table.goalProgressEntryId),
-  index("idx_data_points_goal_id").on(table.goalId),
-  index("idx_data_points_objective_id").on(table.objectiveId),
-  index("idx_data_points_recorded_at").on(table.recordedAt),
-]);
-
-/**
- * Transition Plans - For students ages 16-21
- */
-export const transitionPlans = pgTable("transition_plans", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  programId: varchar("program_id").references(() => programs.id).notNull(),
-  
-  // Vision/Goals by area
-  postSecondaryEducation: text("post_secondary_education"),
-  employment: text("employment"),
-  independentLiving: text("independent_living"),
-  communityParticipation: text("community_participation"),
-  
-  // Assessment summary
-  transitionAssessmentSummary: text("transition_assessment_summary"),
-  
-  // Agency linkages as JSON array
-  agencyLinkages: jsonb("agency_linkages").default([]), // [{ agencyName, contact, services }]
-  
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_transition_plans_program_id").on(table.programId),
-]);
-
-/**
- * Transition Goals - Specific goals within transition plan
- */
-export const transitionGoals = pgTable("transition_goals", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  transitionPlanId: varchar("transition_plan_id").references(() => transitionPlans.id).notNull(),
-  
-  area: transitionAreaEnum("area").notNull(),
-  goalStatement: text("goal_statement").notNull(),
-  activitiesServices: text("activities_services"),
-  responsibleParty: text("responsible_party"),
-  timeline: text("timeline"),
-  
-  status: goalStatusEnum("status").default("draft").notNull(),
-  
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_transition_goals_plan_id").on(table.transitionPlanId),
-  index("idx_transition_goals_area").on(table.area),
-]);
-
-/**
- * Team Members - People involved in the program
- */
-export const teamMembers = pgTable("team_members", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  programId: varchar("program_id").references(() => programs.id).notNull(),
-  
-  // Can optionally link to a user account
-  userId: varchar("user_id").references(() => users.id),
-  
-  name: text("name").notNull(),
-  role: teamMemberRoleEnum("role").notNull(),
-  customRole: text("custom_role"), // For 'other' role
-  
-  organization: text("organization"), // For external providers
-  contactEmail: text("contact_email"),
-  contactPhone: text("contact_phone"),
-  
-  responsibilities: text("responsibilities").array(),
-  isCoordinator: boolean("is_coordinator").default(false).notNull(),
-  isActive: boolean("is_active").default(true).notNull(),
-  
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_team_members_program_id").on(table.programId),
-  index("idx_team_members_user_id").on(table.userId),
-  index("idx_team_members_role").on(table.role),
-]);
-
-/**
- * Meetings - IEP/TALA meetings
- */
-export const meetings = pgTable("meetings", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  programId: varchar("program_id").references(() => programs.id).notNull(),
-  
-  meetingType: meetingTypeEnum("meeting_type").notNull(),
-  
-  scheduledDate: timestamp("scheduled_date"),
-  actualDate: timestamp("actual_date"),
-  location: text("location"),
-  
-  // Attendance tracking
-  attendeeIds: text("attendee_ids").array(), // Team member IDs
-  parentAttended: boolean("parent_attended"),
-  studentAttended: boolean("student_attended"),
-  
-  // Content
-  agenda: text("agenda"),
-  notes: text("notes"),
-  decisions: text("decisions").array(),
-  
-  // Parent input
-  parentConcerns: text("parent_concerns"),
-  parentPriorities: text("parent_priorities"),
-  
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_meetings_program_id").on(table.programId),
-  index("idx_meetings_meeting_type").on(table.meetingType),
-  index("idx_meetings_scheduled_date").on(table.scheduledDate),
-]);
-
-/**
- * Consent Forms - Compliance tracking for required consents
- */
-export const consentForms = pgTable("consent_forms", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  programId: varchar("program_id").references(() => programs.id).notNull(),
-  
-  consentType: consentTypeEnum("consent_type").notNull(),
-  
-  requestedDate: date("requested_date"),
-  responseDate: date("response_date"),
-  consentGiven: boolean("consent_given"),
-  
-  signedBy: text("signed_by"),
-  notes: text("notes"),
-  
-  // Document reference
-  documentUrl: text("document_url"),
-  
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_consent_forms_program_id").on(table.programId),
-  index("idx_consent_forms_consent_type").on(table.consentType),
+  index("idx_service_recs_student_id").on(table.studentId),
 ]);
 
 // =============================================================================
@@ -901,7 +465,7 @@ export const revenuecatProducts = pgTable("revenuecat_products", {
 });
 
 // =============================================================================
-// CONTENT TABLES
+// CONTENT & INTERPRETATION TABLES
 // =============================================================================
 
 // Interpretations table
@@ -938,7 +502,7 @@ export const inviteCodes = pgTable("invite_codes", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Invite code redemptions
+// Invite Code Redemptions table
 export const inviteCodeRedemptions = pgTable("invite_code_redemptions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   inviteCodeId: varchar("invite_code_id").references(() => inviteCodes.id).notNull(),
@@ -961,25 +525,32 @@ export const savedLocations = pgTable("saved_locations", {
 });
 
 // =============================================================================
-// BOARD TABLES
+// BOARDS & GENERATION TABLES
 // =============================================================================
 
 export const boards = pgTable("boards", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").references(() => users.id).notNull(),
-  studentId: varchar("student_id").references(() => students.id),
   name: text("name").notNull(),
   description: text("description"),
   imageUrl: text("image_url"),
   irData: jsonb("ir_data"), // Intermediate representation data for regenerations
-  language: text("language").default("en"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   loadedAt: timestamp("loaded_at").defaultNow().notNull(),
 });
 
+export const promptEvents = pgTable("prompt_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  promptId: varchar("prompt_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  eventType: text("event_type").notNull(), // prompt_created, board_generated, board_page_created, board_downloaded, error_occurred, user_feedback_submitted
+  eventData: jsonb("event_data"), // Additional event-specific data
+  createdAt: timestamp("created_at").defaultNow()
+});
+
 // =============================================================================
-// API PROVIDER TABLES
+// API & PRICING TABLES
 // =============================================================================
 
 // API Providers table
@@ -1040,6 +611,111 @@ export const apiProviderPricing = pgTable("api_provider_pricing", {
 });
 
 // =============================================================================
+// ANALYTICS & TRACKING TABLES
+// =============================================================================
+
+// Usage Windows table
+export const usageWindows = pgTable("usage_windows", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  windowStart: timestamp("window_start").notNull(),
+  windowEnd: timestamp("window_end").notNull(),
+  requestCount: integer("request_count").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Analytics Aggregates table
+export const analyticsAggregates = pgTable("analytics_aggregates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  aggregateDate: varchar("aggregate_date").notNull(), // YYYY-MM-DD format
+  aggregateType: text("aggregate_type").notNull(), // daily, weekly, monthly
+  totalPrompts: integer("total_prompts").default(0),
+  totalBoards: integer("total_boards").default(0),
+  totalPages: integer("total_pages").default(0),
+  totalDownloads: integer("total_downloads").default(0),
+  uniqueUsers: integer("unique_users").default(0),
+  successRate: integer("success_rate").default(0), // percentage * 100
+  avgProcessingTime: integer("avg_processing_time").default(0),
+  avgPagesPerBoard: integer("avg_pages_per_board").default(0), // * 100 for precision
+  topicBreakdown: jsonb("topic_breakdown"), // {topic: count} pairs
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+
+// User Sessions for tracking DAU/WAU/MAU and session analytics
+export const userSessions = pgTable("user_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  sessionStart: timestamp("session_start").notNull(),
+  sessionEnd: timestamp("session_end"),
+  durationMs: integer("duration_ms"), // Session duration in milliseconds
+  platform: text("platform").default("web"), // web, ios, android, other
+  userAgent: text("user_agent"),
+  ipAddress: text("ip_address"),
+  country: text("country"),
+  region: text("region"),
+  acquisitionSource: text("acquisition_source"), // organic, campaign, referral
+  campaignId: text("campaign_id"),
+  createdAt: timestamp("created_at").defaultNow()
+});
+
+// User Events for detailed activity tracking
+export const userEvents = pgTable("user_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  sessionId: varchar("session_id"),
+  eventType: text("event_type").notNull(), // login, logout, board_generated, board_downloaded, plan_upgrade, plan_downgrade, feature_used
+  eventCategory: text("event_category").notNull(), // auth, generation, download, subscription, feature
+  eventData: jsonb("event_data"), // Additional event-specific data
+  featureTags: jsonb("feature_tags").default("[]"), // Array of feature usage tags
+  createdAt: timestamp("created_at").defaultNow()
+});
+
+// Plan Changes for tracking conversions and churns
+export const planChanges = pgTable("plan_changes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  fromPlan: text("from_plan"),
+  toPlan: text("to_plan").notNull(),
+  changeType: text("change_type").notNull(), // signup, upgrade, downgrade, churn
+  changeReason: text("change_reason"), // user_initiated, admin_action, automatic
+  createdAt: timestamp("created_at").defaultNow()
+});
+
+// User Retention Cohorts
+export const userCohorts = pgTable("user_cohorts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  cohortPeriod: varchar("cohort_period").notNull(), // YYYY-MM-DD or YYYY-WW format
+  cohortType: text("cohort_type").notNull(), // weekly, monthly
+  totalUsers: integer("total_users").notNull(),
+  retentionData: jsonb("retention_data").notNull(), // {period: count} pairs
+  createdAt: timestamp("created_at").defaultNow()
+});
+
+// =============================================================================
+// SYSTEM CONFIGURATION TABLES
+// =============================================================================
+
+// System Prompt for AI Behavior Configuration
+export const systemPrompt = pgTable("system_prompt", {
+  id: varchar("id").primaryKey().default("system_prompt"), // Single row with fixed ID
+  prompt: text("prompt").notNull().default(""),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  updatedBy: varchar("updated_by").references(() => users.id)
+});
+
+// Plans table
+export const plans = pgTable("plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  credits: integer("credits").notNull(),
+  price: real("price").notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// =============================================================================
 // INTEGRATION TABLES
 // =============================================================================
 
@@ -1078,10 +754,10 @@ export const dropboxBackups = pgTable("dropbox_backups", {
 });
 
 // =============================================================================
-// CHAT TABLES
+// CHAT SYSTEM TABLES
 // =============================================================================
 
-// Chat sessions
+// Chat Sessions table (named chatSessions to avoid conflict with admin sessions)
 export const chatSessions = pgTable("chat_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   // User context - at least one must be provided
@@ -1111,15 +787,21 @@ export const chatSessions = pgTable("chat_sessions", {
 ]);
 
 // =============================================================================
-// INSERT/UPDATE SCHEMAS
+// INSERT SCHEMAS
 // =============================================================================
 
 // User schemas
-export const insertUserSchema = createInsertSchema(users).omit({
-  id: true,
+export const insertUserSchema = createInsertSchema(users).pick({
+  email: true,
+  firstName: true,
+  lastName: true,
+  password: true,
+  userType: true,
   createdAt: true,
-  updatedAt: true,
+  updatedAt: true
 });
+
+export const insertAdminUserSchema = createInsertSchema(adminUsers);
 
 // Institute schemas
 export const insertInstituteSchema = createInsertSchema(institutes).omit({
@@ -1175,6 +857,63 @@ export const updateLicenseSchema = createInsertSchema(licenses).omit({
   updatedAt: true,
 }).partial();
 
+// Plan schemas
+export const insertPlanSchema = createInsertSchema(plans).omit({
+  id: true,
+  createdAt: true,
+});
+
+// Board schemas
+export const insertBoardSchema = createInsertSchema(boards).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+// Usage schemas
+export const insertUsageWindowSchema = createInsertSchema(usageWindows).omit({
+  id: true,
+  createdAt: true
+});
+
+export const insertPromptEventSchema = createInsertSchema(promptEvents).omit({
+  id: true,
+  createdAt: true
+});
+
+// Analytics schemas
+export const insertAnalyticsAggregateSchema = createInsertSchema(analyticsAggregates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export const insertUserSessionSchema = createInsertSchema(userSessions).omit({
+  id: true,
+  createdAt: true
+});
+
+export const insertUserEventSchema = createInsertSchema(userEvents).omit({
+  id: true,
+  createdAt: true
+});
+
+export const insertPlanChangeSchema = createInsertSchema(planChanges).omit({
+  id: true,
+  createdAt: true
+});
+
+export const insertUserCohortSchema = createInsertSchema(userCohorts).omit({
+  id: true,
+  createdAt: true
+});
+
+// System schemas
+export const insertSystemPromptSchema = createInsertSchema(systemPrompt).omit({
+  id: true,
+  updatedAt: true
+});
+
 // Student schemas
 export const insertStudentSchema = createInsertSchema(students).omit({
   id: true,
@@ -1202,204 +941,61 @@ export const updateUserStudentSchema = createInsertSchema(userStudents).omit({
   updatedAt: true,
 }).partial();
 
-// =============================================================================
-// IEP/TALA PROGRAM SCHEMAS
-// =============================================================================
-
-// Program schemas
-export const insertProgramSchema = createInsertSchema(programs).omit({
+export const insertStudentScheduleSchema = createInsertSchema(studentSchedules).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 });
 
-export const updateProgramSchema = createInsertSchema(programs).omit({
+export const updateStudentScheduleSchema = createInsertSchema(studentSchedules).omit({
   id: true,
   studentId: true,
   createdAt: true,
   updatedAt: true,
 }).partial();
 
-// Profile domain schemas
-export const insertProfileDomainSchema = createInsertSchema(profileDomains).omit({
+export const insertStudentPhaseSchema = createInsertSchema(studentPhases).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 });
 
-export const updateProfileDomainSchema = createInsertSchema(profileDomains).omit({
+export const updateStudentPhaseSchema = createInsertSchema(studentPhases).omit({
   id: true,
-  programId: true,
+  studentId: true,
   createdAt: true,
   updatedAt: true,
 }).partial();
 
-// Baseline measurement schemas
-export const insertBaselineMeasurementSchema = createInsertSchema(baselineMeasurements).omit({
-  id: true,
-  createdAt: true,
-});
-
-// Assessment source schemas
-export const insertAssessmentSourceSchema = createInsertSchema(assessmentSources).omit({
-  id: true,
-  createdAt: true,
-});
-
-// Goal schemas
-export const insertGoalSchema = createInsertSchema(goals).omit({
+export const insertStudentGoalSchema = createInsertSchema(studentGoals).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 });
 
-export const updateGoalSchema = createInsertSchema(goals).omit({
+export const updateStudentGoalSchema = createInsertSchema(studentGoals).omit({
   id: true,
-  programId: true,
+  studentId: true,
   createdAt: true,
   updatedAt: true,
 }).partial();
 
-// Objective schemas
-export const insertObjectiveSchema = createInsertSchema(objectives).omit({
+export const insertProgressEntrySchema = createInsertSchema(studentProgressEntries).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertComplianceItemSchema = createInsertSchema(studentComplianceItems).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 });
 
-export const updateObjectiveSchema = createInsertSchema(objectives).omit({
-  id: true,
-  goalId: true,
-  createdAt: true,
-  updatedAt: true,
-}).partial();
-
-// Service schemas
-export const insertServiceSchema = createInsertSchema(services).omit({
+export const insertServiceRecommendationSchema = createInsertSchema(studentServiceRecommendations).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 });
-
-export const updateServiceSchema = createInsertSchema(services).omit({
-  id: true,
-  programId: true,
-  createdAt: true,
-  updatedAt: true,
-}).partial();
-
-// Accommodation schemas
-export const insertAccommodationSchema = createInsertSchema(accommodations).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const updateAccommodationSchema = createInsertSchema(accommodations).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-}).partial();
-
-// Progress report schemas
-export const insertProgressReportSchema = createInsertSchema(progressReports).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const updateProgressReportSchema = createInsertSchema(progressReports).omit({
-  id: true,
-  programId: true,
-  createdAt: true,
-  updatedAt: true,
-}).partial();
-
-// Goal progress entry schemas
-export const insertGoalProgressEntrySchema = createInsertSchema(goalProgressEntries).omit({
-  id: true,
-  createdAt: true,
-});
-
-// Data point schemas
-export const insertDataPointSchema = createInsertSchema(dataPoints).omit({
-  id: true,
-  createdAt: true,
-});
-
-// Transition plan schemas
-export const insertTransitionPlanSchema = createInsertSchema(transitionPlans).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const updateTransitionPlanSchema = createInsertSchema(transitionPlans).omit({
-  id: true,
-  programId: true,
-  createdAt: true,
-  updatedAt: true,
-}).partial();
-
-// Transition goal schemas
-export const insertTransitionGoalSchema = createInsertSchema(transitionGoals).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const updateTransitionGoalSchema = createInsertSchema(transitionGoals).omit({
-  id: true,
-  transitionPlanId: true,
-  createdAt: true,
-  updatedAt: true,
-}).partial();
-
-// Team member schemas
-export const insertTeamMemberSchema = createInsertSchema(teamMembers).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const updateTeamMemberSchema = createInsertSchema(teamMembers).omit({
-  id: true,
-  programId: true,
-  createdAt: true,
-  updatedAt: true,
-}).partial();
-
-// Meeting schemas
-export const insertMeetingSchema = createInsertSchema(meetings).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const updateMeetingSchema = createInsertSchema(meetings).omit({
-  id: true,
-  programId: true,
-  createdAt: true,
-  updatedAt: true,
-}).partial();
-
-// Consent form schemas
-export const insertConsentFormSchema = createInsertSchema(consentForms).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const updateConsentFormSchema = createInsertSchema(consentForms).omit({
-  id: true,
-  programId: true,
-  createdAt: true,
-  updatedAt: true,
-}).partial();
-
-// =============================================================================
-// OTHER INSERT SCHEMAS
-// =============================================================================
 
 // Content schemas
 export const insertInterpretationSchema = createInsertSchema(interpretations).omit({
@@ -1494,13 +1090,6 @@ export const insertChatSessionSchema = createInsertSchema(chatSessions).omit({
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
-});
-
-// Board schemas
-export const insertBoardSchema = createInsertSchema(boards).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
 });
 
 // Authentication schemas
@@ -1599,69 +1188,23 @@ export type UpdateStudent = z.infer<typeof updateStudentSchema>;
 export type UserStudent = typeof userStudents.$inferSelect;
 export type InsertUserStudent = z.infer<typeof insertUserStudentSchema>;
 export type UpdateUserStudent = z.infer<typeof updateUserStudentSchema>;
+export type StudentSchedule = typeof studentSchedules.$inferSelect;
+export type InsertStudentSchedule = z.infer<typeof insertStudentScheduleSchema>;
+export type UpdateStudentSchedule = z.infer<typeof updateStudentScheduleSchema>;
 
-// IEP/TALA Program types
-export type Program = typeof programs.$inferSelect;
-export type InsertProgram = z.infer<typeof insertProgramSchema>;
-export type UpdateProgram = z.infer<typeof updateProgramSchema>;
-
-export type ProfileDomain = typeof profileDomains.$inferSelect;
-export type InsertProfileDomain = z.infer<typeof insertProfileDomainSchema>;
-export type UpdateProfileDomain = z.infer<typeof updateProfileDomainSchema>;
-
-export type BaselineMeasurement = typeof baselineMeasurements.$inferSelect;
-export type InsertBaselineMeasurement = z.infer<typeof insertBaselineMeasurementSchema>;
-
-export type AssessmentSource = typeof assessmentSources.$inferSelect;
-export type InsertAssessmentSource = z.infer<typeof insertAssessmentSourceSchema>;
-
-export type Goal = typeof goals.$inferSelect;
-export type InsertGoal = z.infer<typeof insertGoalSchema>;
-export type UpdateGoal = z.infer<typeof updateGoalSchema>;
-
-export type Objective = typeof objectives.$inferSelect;
-export type InsertObjective = z.infer<typeof insertObjectiveSchema>;
-export type UpdateObjective = z.infer<typeof updateObjectiveSchema>;
-
-export type Service = typeof services.$inferSelect;
-export type InsertService = z.infer<typeof insertServiceSchema>;
-export type UpdateService = z.infer<typeof updateServiceSchema>;
-
-export type ServiceGoal = typeof serviceGoals.$inferSelect;
-
-export type Accommodation = typeof accommodations.$inferSelect;
-export type InsertAccommodation = z.infer<typeof insertAccommodationSchema>;
-export type UpdateAccommodation = z.infer<typeof updateAccommodationSchema>;
-
-export type ProgressReport = typeof progressReports.$inferSelect;
-export type InsertProgressReport = z.infer<typeof insertProgressReportSchema>;
-export type UpdateProgressReport = z.infer<typeof updateProgressReportSchema>;
-
-export type GoalProgressEntry = typeof goalProgressEntries.$inferSelect;
-export type InsertGoalProgressEntry = z.infer<typeof insertGoalProgressEntrySchema>;
-
-export type DataPoint = typeof dataPoints.$inferSelect;
-export type InsertDataPoint = z.infer<typeof insertDataPointSchema>;
-
-export type TransitionPlan = typeof transitionPlans.$inferSelect;
-export type InsertTransitionPlan = z.infer<typeof insertTransitionPlanSchema>;
-export type UpdateTransitionPlan = z.infer<typeof updateTransitionPlanSchema>;
-
-export type TransitionGoal = typeof transitionGoals.$inferSelect;
-export type InsertTransitionGoal = z.infer<typeof insertTransitionGoalSchema>;
-export type UpdateTransitionGoal = z.infer<typeof updateTransitionGoalSchema>;
-
-export type TeamMember = typeof teamMembers.$inferSelect;
-export type InsertTeamMember = z.infer<typeof insertTeamMemberSchema>;
-export type UpdateTeamMember = z.infer<typeof updateTeamMemberSchema>;
-
-export type Meeting = typeof meetings.$inferSelect;
-export type InsertMeeting = z.infer<typeof insertMeetingSchema>;
-export type UpdateMeeting = z.infer<typeof updateMeetingSchema>;
-
-export type ConsentForm = typeof consentForms.$inferSelect;
-export type InsertConsentForm = z.infer<typeof insertConsentFormSchema>;
-export type UpdateConsentForm = z.infer<typeof updateConsentFormSchema>;
+// Student progress types
+export type StudentPhase = typeof studentPhases.$inferSelect;
+export type InsertStudentPhase = z.infer<typeof insertStudentPhaseSchema>;
+export type UpdateStudentPhase = z.infer<typeof updateStudentPhaseSchema>;
+export type StudentGoal = typeof studentGoals.$inferSelect;
+export type InsertStudentGoal = z.infer<typeof insertStudentGoalSchema>;
+export type UpdateStudentGoal = z.infer<typeof updateStudentGoalSchema>;
+export type StudentProgressEntry = typeof studentProgressEntries.$inferSelect;
+export type InsertProgressEntry = z.infer<typeof insertProgressEntrySchema>;
+export type StudentComplianceItem = typeof studentComplianceItems.$inferSelect;
+export type InsertComplianceItem = z.infer<typeof insertComplianceItemSchema>;
+export type StudentServiceRecommendation = typeof studentServiceRecommendations.$inferSelect;
+export type InsertServiceRecommendation = z.infer<typeof insertServiceRecommendationSchema>;
 
 // Credit & billing types
 export type CreditTransaction = typeof creditTransactions.$inferSelect;
@@ -1691,6 +1234,10 @@ export type InsertSavedLocation = z.infer<typeof insertSavedLocationSchema>;
 // Board types
 export type Board = typeof boards.$inferSelect;
 export type InsertBoard = z.infer<typeof insertBoardSchema>;
+export type Plan = typeof plans.$inferSelect;
+export type InsertPlan = z.infer<typeof insertPlanSchema>;
+export type PromptEvent = typeof promptEvents.$inferSelect;
+export type InsertPromptEvent = z.infer<typeof insertPromptEventSchema>;
 
 // API types
 export type ApiProvider = typeof apiProviders.$inferSelect;
@@ -1699,6 +1246,24 @@ export type ApiCall = typeof apiCalls.$inferSelect;
 export type InsertApiCall = z.infer<typeof insertApiCallSchema>;
 export type ApiProviderPricing = typeof apiProviderPricing.$inferSelect;
 export type InsertApiProviderPricing = z.infer<typeof insertApiProviderPricingSchema>;
+
+// Analytics types
+export type UsageWindow = typeof usageWindows.$inferSelect;
+export type InsertUsageWindow = z.infer<typeof insertUsageWindowSchema>;
+export type AnalyticsAggregate = typeof analyticsAggregates.$inferSelect;
+export type InsertAnalyticsAggregate = z.infer<typeof insertAnalyticsAggregateSchema>;
+export type UserSession = typeof userSessions.$inferSelect;
+export type InsertUserSession = z.infer<typeof insertUserSessionSchema>;
+export type UserEvent = typeof userEvents.$inferSelect;
+export type InsertUserEvent = z.infer<typeof insertUserEventSchema>;
+export type PlanChange = typeof planChanges.$inferSelect;
+export type InsertPlanChange = z.infer<typeof insertPlanChangeSchema>;
+export type UserCohort = typeof userCohorts.$inferSelect;
+export type InsertUserCohort = z.infer<typeof insertUserCohortSchema>;
+
+// System types
+export type SystemPrompt = typeof systemPrompt.$inferSelect;
+export type InsertSystemPrompt = z.infer<typeof insertSystemPromptSchema>;
 
 // Integration types
 export type DropboxConnection = typeof dropboxConnections.$inferSelect;
@@ -1712,23 +1277,9 @@ export type InsertChatSession = z.infer<typeof insertChatSessionSchema>;
 export type ChatMode = "chat" | "boards" | "interpret" | 'docuslp' | 'overview' | 'students' | 'progress' | 'settings';
 
 // Domain types
-export type ProgramFramework = 'tala' | 'us_iep';
-export type ProgramStatus = 'draft' | 'active' | 'archived';
-export type ProfileDomainType = 'cognitive_academic' | 'communication_language' | 'social_emotional_behavioral' | 'motor_sensory' | 'life_skills_preparation' | 'other';
-export type AssessmentSourceType = 'standardized_test' | 'structured_observation' | 'parent_questionnaire' | 'teacher_input' | 'curriculum_based' | 'behavioral_records';
-export type InterventionLevel = 'activity' | 'function' | 'participation';
+export type SystemType = 'tala' | 'us_iep';
+export type PhaseStatus = 'pending' | 'in-progress' | 'completed' | 'locked';
 export type GoalStatus = 'draft' | 'active' | 'achieved' | 'modified' | 'discontinued';
-export type ObjectiveStatus = 'not_started' | 'in_progress' | 'achieved' | 'modified' | 'discontinued';
-export type ServiceType = 'speech_language_therapy' | 'occupational_therapy' | 'physical_therapy' | 'counseling' | 'specialized_instruction' | 'consultation' | 'aac_support' | 'other';
-export type ServiceDeliveryModel = 'direct' | 'consultation' | 'collaborative' | 'indirect';
-export type ServiceSetting = 'general_education' | 'resource_room' | 'self_contained' | 'home' | 'community' | 'therapy_room';
-export type ServiceFrequencyPeriod = 'daily' | 'weekly' | 'monthly';
-export type AccommodationType = 'visual_support' | 'aac_device' | 'modified_materials' | 'extended_time' | 'simplified_language' | 'environmental_modification' | 'other';
-export type ProgressStatus = 'significant_progress' | 'making_progress' | 'limited_progress' | 'no_progress' | 'regression' | 'goal_met';
-export type MeetingType = 'initial_evaluation' | 'annual_review' | 'reevaluation' | 'amendment' | 'transition_planning' | 'progress_review';
-export type ConsentType = 'initial_evaluation' | 'reevaluation' | 'placement' | 'release_of_information' | 'service_provision';
-export type TransitionArea = 'education' | 'employment' | 'independent_living' | 'community';
-export type TeamMemberRole = 'parent_guardian' | 'student' | 'homeroom_teacher' | 'special_education_teacher' | 'general_education_teacher' | 'speech_language_pathologist' | 'occupational_therapist' | 'physical_therapist' | 'psychologist' | 'administrator' | 'case_manager' | 'external_provider' | 'other';
 export type InstituteType = 'school' | 'hospital';
 
 // User type constants
@@ -1742,59 +1293,23 @@ export const USER_TYPES = {
 
 export type UserType = typeof USER_TYPES[keyof typeof USER_TYPES];
 
-// =============================================================================
-// COMPOSITE INTERFACE TYPES
-// =============================================================================
-
-/**
- * Program with all related entities loaded
- */
-export interface ProgramWithDetails {
-  program: Program;
-  student: Student;
-  profileDomains: (ProfileDomain & {
-    baselineMeasurements: BaselineMeasurement[];
-    assessmentSources: AssessmentSource[];
-  })[];
-  goals: (Goal & {
-    objectives: Objective[];
-    dataPoints: DataPoint[];
-  })[];
-  services: (Service & {
-    accommodations: Accommodation[];
-    linkedGoalIds: string[];
-  })[];
-  progressReports: (ProgressReport & {
-    entries: GoalProgressEntry[];
-  })[];
-  transitionPlan?: TransitionPlan & {
-    goals: TransitionGoal[];
-  };
-  teamMembers: TeamMember[];
-  meetings: Meeting[];
-  consentForms: ConsentForm[];
+// Interface types for complex structures
+export interface StudentWithProgress {
+  id: string;
+  name: string;
+  idNumber?: string;
+  school?: string;
+  grade?: string;
+  diagnosis?: string;
+  systemType: SystemType;
+  country?: string;
+  overallProgress: number;
+  nextDeadline?: string;
+  currentPhase?: string;
+  phases: StudentPhase[];
+  goals: StudentGoal[];
 }
 
-/**
- * Student with summary progress info for list views
- */
-export interface StudentWithProgramSummary {
-  student: Student;
-  currentProgram?: {
-    id: string;
-    programYear: string;
-    status: ProgramStatus;
-    dueDate?: string;
-    goalsCount: number;
-    goalsCompleted: number;
-    overallProgress: number;
-  };
-  role: string; // From userStudents junction
-}
-
-/**
- * Dashboard overview stats
- */
 export interface OverviewStats {
   totalStudents: number;
   activeCases: number;
@@ -1803,21 +1318,14 @@ export interface OverviewStats {
   upcomingDeadlines: number;
 }
 
-/**
- * Goal with full context for display
- */
-export interface GoalWithContext {
-  goal: Goal;
-  domainName: string;
-  objectives: Objective[];
-  latestProgress?: GoalProgressEntry;
-  dataPoints: DataPoint[];
+export interface PhaseDistribution {
+  phaseId: string;
+  phaseName: string;
+  count: number;
+  color: string;
 }
 
-// =============================================================================
-// CHAT SYSTEM INTERFACES
-// =============================================================================
-
+// Chat system interfaces
 export interface ChatMessageContent {
   text?: string;
   html?: string;
@@ -1839,14 +1347,6 @@ export interface ChatMessage {
   turnId?: string;
   metadata?: { [key: string]: any };
   error?: string;
-}
-
-/**
- * Board grid dimensions
- */
-export interface BoardGrid {
-  rows: number;
-  cols: number;
 }
 
 /**
@@ -1882,6 +1382,14 @@ export interface BoardPage {
   name: string;
   buttons: BoardButton[];
   layout?: BoardGrid;
+}
+
+/**
+ * Grid dimensions for a board
+ */
+export interface BoardGrid {
+  rows: number;
+  cols: number;
 }
 
 /**
@@ -2012,18 +1520,6 @@ export interface ChatState {
   conversationSummary: string;
   openedTopics: string[];
   memoryState: MemoryState;
-  
-  /**
-   * Cached load state for DB-backed memory fields.
-   * Persists across messages to avoid redundant database queries.
-   * Use serializeLoadState/deserializeLoadState from memory-db-bridge.ts.
-   */
-  loadStateCache?: {
-    loaded: string[];
-    stale: string[];
-    loadedAt: Record<string, number>;
-    totals: Record<string, number>;
-  };
 }
 
 export interface Topic {
@@ -2087,6 +1583,10 @@ export interface DisplayParams {
 // User relations
 export const usersRelations = relations(users, ({ many, one }) => ({
   boards: many(boards),
+  usageWindows: many(usageWindows),
+  sessions: many(userSessions),
+  events: many(userEvents),
+  planChanges: many(planChanges),
   dropboxConnection: one(dropboxConnections),
   dropboxBackups: many(dropboxBackups),
   apiCalls: many(apiCalls),
@@ -2140,7 +1640,7 @@ export const licensesRelations = relations(licenses, ({ one }) => ({
 export const studentsRelations = relations(students, ({ many }) => ({
   userLinks: many(userStudents),
   instituteLinks: many(instituteStudents),
-  programs: many(programs),
+  schedules: many(studentSchedules),
   interpretations: many(interpretations),
   inviteCodes: many(inviteCodes),
 }));
@@ -2156,178 +1656,28 @@ export const userStudentsRelations = relations(userStudents, ({ one }) => ({
   }),
 }));
 
-// Program relations
-export const programsRelations = relations(programs, ({ one, many }) => ({
+export const studentSchedulesRelations = relations(studentSchedules, ({ one }) => ({
   student: one(students, {
-    fields: [programs.studentId],
+    fields: [studentSchedules.studentId],
     references: [students.id]
   }),
-  profileDomains: many(profileDomains),
-  goals: many(goals),
-  services: many(services),
-  accommodations: many(accommodations),
-  progressReports: many(progressReports),
-  transitionPlan: one(transitionPlans),
-  teamMembers: many(teamMembers),
-  meetings: many(meetings),
-  consentForms: many(consentForms),
 }));
 
-export const profileDomainsRelations = relations(profileDomains, ({ one, many }) => ({
-  program: one(programs, {
-    fields: [profileDomains.programId],
-    references: [programs.id]
-  }),
-  baselineMeasurements: many(baselineMeasurements),
-  assessmentSources: many(assessmentSources),
-  goals: many(goals),
-}));
-
-export const baselineMeasurementsRelations = relations(baselineMeasurements, ({ one }) => ({
-  profileDomain: one(profileDomains, {
-    fields: [baselineMeasurements.profileDomainId],
-    references: [profileDomains.id]
+export const studentPhasesRelations = relations(studentPhases, ({ one }) => ({
+  student: one(students, {
+    fields: [studentPhases.studentId],
+    references: [students.id]
   }),
 }));
 
-export const assessmentSourcesRelations = relations(assessmentSources, ({ one }) => ({
-  profileDomain: one(profileDomains, {
-    fields: [assessmentSources.profileDomainId],
-    references: [profileDomains.id]
+export const studentGoalsRelations = relations(studentGoals, ({ one }) => ({
+  student: one(students, {
+    fields: [studentGoals.studentId],
+    references: [students.id]
   }),
-}));
-
-export const goalsRelations = relations(goals, ({ one, many }) => ({
-  program: one(programs, {
-    fields: [goals.programId],
-    references: [programs.id]
-  }),
-  profileDomain: one(profileDomains, {
-    fields: [goals.profileDomainId],
-    references: [profileDomains.id]
-  }),
-  objectives: many(objectives),
-  dataPoints: many(dataPoints),
-  progressEntries: many(goalProgressEntries),
-  serviceLinks: many(serviceGoals),
-}));
-
-export const objectivesRelations = relations(objectives, ({ one, many }) => ({
-  goal: one(goals, {
-    fields: [objectives.goalId],
-    references: [goals.id]
-  }),
-  dataPoints: many(dataPoints),
-}));
-
-export const servicesRelations = relations(services, ({ one, many }) => ({
-  program: one(programs, {
-    fields: [services.programId],
-    references: [programs.id]
-  }),
-  provider: one(teamMembers, {
-    fields: [services.providerId],
-    references: [teamMembers.id]
-  }),
-  accommodations: many(accommodations),
-  goalLinks: many(serviceGoals),
-}));
-
-export const serviceGoalsRelations = relations(serviceGoals, ({ one }) => ({
-  service: one(services, {
-    fields: [serviceGoals.serviceId],
-    references: [services.id]
-  }),
-  goal: one(goals, {
-    fields: [serviceGoals.goalId],
-    references: [goals.id]
-  }),
-}));
-
-export const accommodationsRelations = relations(accommodations, ({ one }) => ({
-  service: one(services, {
-    fields: [accommodations.serviceId],
-    references: [services.id]
-  }),
-  program: one(programs, {
-    fields: [accommodations.programId],
-    references: [programs.id]
-  }),
-}));
-
-export const progressReportsRelations = relations(progressReports, ({ one, many }) => ({
-  program: one(programs, {
-    fields: [progressReports.programId],
-    references: [programs.id]
-  }),
-  entries: many(goalProgressEntries),
-}));
-
-export const goalProgressEntriesRelations = relations(goalProgressEntries, ({ one, many }) => ({
-  progressReport: one(progressReports, {
-    fields: [goalProgressEntries.progressReportId],
-    references: [progressReports.id]
-  }),
-  goal: one(goals, {
-    fields: [goalProgressEntries.goalId],
-    references: [goals.id]
-  }),
-  dataPoints: many(dataPoints),
-}));
-
-export const dataPointsRelations = relations(dataPoints, ({ one }) => ({
-  goalProgressEntry: one(goalProgressEntries, {
-    fields: [dataPoints.goalProgressEntryId],
-    references: [goalProgressEntries.id]
-  }),
-  goal: one(goals, {
-    fields: [dataPoints.goalId],
-    references: [goals.id]
-  }),
-  objective: one(objectives, {
-    fields: [dataPoints.objectiveId],
-    references: [objectives.id]
-  }),
-}));
-
-export const transitionPlansRelations = relations(transitionPlans, ({ one, many }) => ({
-  program: one(programs, {
-    fields: [transitionPlans.programId],
-    references: [programs.id]
-  }),
-  goals: many(transitionGoals),
-}));
-
-export const transitionGoalsRelations = relations(transitionGoals, ({ one }) => ({
-  transitionPlan: one(transitionPlans, {
-    fields: [transitionGoals.transitionPlanId],
-    references: [transitionPlans.id]
-  }),
-}));
-
-export const teamMembersRelations = relations(teamMembers, ({ one, many }) => ({
-  program: one(programs, {
-    fields: [teamMembers.programId],
-    references: [programs.id]
-  }),
-  user: one(users, {
-    fields: [teamMembers.userId],
-    references: [users.id]
-  }),
-  providedServices: many(services),
-}));
-
-export const meetingsRelations = relations(meetings, ({ one }) => ({
-  program: one(programs, {
-    fields: [meetings.programId],
-    references: [programs.id]
-  }),
-}));
-
-export const consentFormsRelations = relations(consentForms, ({ one }) => ({
-  program: one(programs, {
-    fields: [consentForms.programId],
-    references: [programs.id]
+  phase: one(studentPhases, {
+    fields: [studentGoals.phaseId],
+    references: [studentPhases.id]
   }),
 }));
 
@@ -2375,10 +1725,41 @@ export const boardsRelations = relations(boards, ({ one }) => ({
   user: one(users, {
     fields: [boards.userId],
     references: [users.id]
+  })
+}));
+
+// Analytics relations
+export const usageWindowsRelations = relations(usageWindows, ({ one }) => ({
+  user: one(users, {
+    fields: [usageWindows.userId],
+    references: [users.id]
+  })
+}));
+
+// Session relations
+export const userSessionsRelations = relations(userSessions, ({ one, many }) => ({
+  user: one(users, {
+    fields: [userSessions.userId],
+    references: [users.id]
   }),
-  students: one(students, {
-    fields: [boards.studentId],
-    references: [students.id]
+  events: many(userEvents)
+}));
+
+export const userEventsRelations = relations(userEvents, ({ one }) => ({
+  user: one(users, {
+    fields: [userEvents.userId],
+    references: [users.id]
+  }),
+  session: one(userSessions, {
+    fields: [userEvents.sessionId],
+    references: [userSessions.id]
+  })
+}));
+
+export const planChangesRelations = relations(planChanges, ({ one }) => ({
+  user: one(users, {
+    fields: [planChanges.userId],
+    references: [users.id]
   })
 }));
 
@@ -2399,6 +1780,14 @@ export const dropboxBackupsRelations = relations(dropboxBackups, ({ one }) => ({
   connection: one(dropboxConnections, {
     fields: [dropboxBackups.userId],
     references: [dropboxConnections.userId]
+  })
+}));
+
+// System relations
+export const systemPromptRelations = relations(systemPrompt, ({ one }) => ({
+  updatedByUser: one(users, {
+    fields: [systemPrompt.updatedBy],
+    references: [users.id]
   })
 }));
 

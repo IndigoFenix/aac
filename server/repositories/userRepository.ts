@@ -1,7 +1,5 @@
 import {
   users,
-  students,
-  studentSchedules,
   inviteCodeRedemptions,
   inviteCodes,
   interpretations,
@@ -117,19 +115,6 @@ export class UserRepository {
 
   async deleteUser(id: string): Promise<boolean> {
     try {
-      // First, get all AAC users for this user to delete their schedules
-      const userStudents = await db
-        .select()
-        .from(students)
-        .where(eq(students.userId, id));
-
-      // Delete AAC user schedules (foreign key to students)
-      for (const student of userStudents) {
-        await db
-          .delete(studentSchedules)
-          .where(eq(studentSchedules.studentId, student.studentId));
-      }
-
       // Delete invite code redemptions (foreign key to users)
       await db
         .delete(inviteCodeRedemptions)
@@ -140,9 +125,6 @@ export class UserRepository {
 
       // Delete user's interpretations
       await db.delete(interpretations).where(eq(interpretations.userId, id));
-
-      // Delete user's AAC users
-      await db.delete(students).where(eq(students.userId, id));
 
       // Delete user's saved locations
       await db.delete(savedLocations).where(eq(savedLocations.userId, id));

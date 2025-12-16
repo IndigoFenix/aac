@@ -16,7 +16,7 @@ import {
   import { CreditsPerCompletionTokenByIntelligence, CreditsPerPromptTokenByIntelligence, CreditsPerSearchByIntelligence } from "./cost-helpers";
   import { GPT, GPTResponse, GPTMessage, GPTToolCall } from "./gpt";
   import { buildPromptAndTools, formValues, NlpSchema, AgentLike } from "./prompt-kit";
-  import { defaultToolRegistry, enrichToolCallMessage, makeToolCalls, ToolRegistry } from "./tool-router";
+  import { defaultToolRegistry, enrichToolCallMessage, makeToolCalls, MemoryProcessor, ToolRegistry } from "./tool-router";
   import { publish } from "./events.service";
   
   const getCullMessagesTo = (memory: number) => {
@@ -102,6 +102,7 @@ import {
       onUpdateMemoryValues?: (memoryValues: any) => Promise<void>;
       onUpdateChatState?: (chatState: ChatState, log?: ChatMessage[]) => Promise<void>;
       onCreditsUsed?: (creditsUsed: number) => Promise<void>;
+      memoryProcessor?: MemoryProcessor;
       toolRegistry: ToolRegistry;
   
       toJSON(): ChatState {
@@ -134,6 +135,7 @@ import {
           onUpdateMemoryValues: (memoryValues: any) => Promise<void>,
           onUpdateChatState: (chatState: ChatState, log?: ChatMessage[]) => Promise<void>
           onCreditsUsed: (creditsUsed: number) => Promise<void>,
+          memoryProcessor?: MemoryProcessor,
           useResponsesAPI?: boolean
       }){
           this.chatState = JSON.parse(JSON.stringify(settings.chatState));
@@ -155,6 +157,7 @@ import {
               settings.onUpdateChatState(chatState, log);
           }
           this.onCreditsUsed = settings.onCreditsUsed;
+          this.memoryProcessor = settings.memoryProcessor;
           this.toolRegistry = defaultToolRegistry({
               agent: settings.agent as any,
               openedTopics: this.chatState.openedTopics,
@@ -162,7 +165,8 @@ import {
               chatStateRef: { current: this.chatState },
               onUpdateMemoryValues: this.onUpdateMemoryValues,
               onUpdateChatState: this.onUpdateChatState,
-              onCreditsUsed: this.onCreditsUsed
+              onCreditsUsed: this.onCreditsUsed,
+              memoryProcessor: this.memoryProcessor
           });
   
           this.agent = settings.agent;
@@ -338,7 +342,6 @@ import {
           const tokensAvailableForResponse = 15000;
           const temperature = 0.7;
           const useResponsesMode: boolean = this.useResponsesAPI === true;
-          console.log('Getting structured response', messages, JSON.stringify(promptBuild.schema));
           try {
               const gptResponse: GPTResponse = await this.gpt.getStructuredResponse(
                   messages, 
@@ -376,7 +379,6 @@ import {
                               + `completion=${gptResponse.completionTokens} searchCalls=${gptResponse.searchCalls} `
                               + `rawCredits=${rawCredits} billed=${creditsUsed}`);
               }
-              console.log(`Messages: ${JSON.stringify(messages)}\nSchema: ${JSON.stringify(promptBuild.schema)}\nResponse: ${JSON.stringify(gptResponse)}`);
               if (gptResponse.toolCalls?.length){
                   let toolCallMessage: ChatMessage = {
                       role: 'assistant',
@@ -446,14 +448,12 @@ import {
           for (let message of messages){
               await this.addMessage(message);
           }
-          console.log('Called tools, updating conversation');
           if (this.onUpdateChatState) this.onUpdateChatState(this.chatState, this.log);
           return messages;
       }
   
       async uponGPTResponse(response: string, creditsUsed: number): Promise<ChatMessage> {
           let parsedResponse;
-          console.log('Parsed response');
           try {
               parsedResponse = JSON.parse(response);
           } catch (e) {

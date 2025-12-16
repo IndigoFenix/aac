@@ -16,7 +16,6 @@ import {
   boardController,
   onboardingController,
   slpClinicalController,
-  programController,
 } from "./controllers";
 
 import {
@@ -31,6 +30,7 @@ import {
 import { setupUserAuth } from "./userAuth"; // Keep existing passport setup
 import { interpretationRepository, apiProviderRepository } from "./repositories";
 import { chatController } from "./controllers/chatController";
+import { studentProgressController } from "./controllers/studentProgressController";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -90,171 +90,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
     profileController.updateProfile(req, res)
   );
 
-  // ============= IEP/TALA PROGRAM ROUTES =============
+  // ============= STUDENT PROGRESS ROUTES =============
   
-  // Overview & Dashboard
-  app.get("/api/programs/overview", requireAuth, (req, res) =>
-    programController.getOverview(req, res)
+  // Overview / Dashboard
+  app.get("/api/students/overview", requireAuth, (req, res) =>
+    studentProgressController.getOverview(req, res)
   );
-  app.get("/api/programs/students", requireAuth, (req, res) =>
-    programController.getStudentsWithPrograms(req, res)
+  
+  // Student list with progress summaries
+  app.get("/api/students/list", requireAuth, (req, res) =>
+    studentProgressController.getStudentsList(req, res)
   );
-
-  // Program CRUD
-  app.get("/api/programs/:id", requireAuth, (req, res) =>
-    programController.getProgram(req, res)
+  
+  // Full student progress data
+  app.get("/api/students/:id/progress", requireAuth, (req, res) =>
+    studentProgressController.getStudentProgress(req, res)
   );
-  app.get("/api/programs/:id/full", requireAuth, (req, res) =>
-    programController.getProgramWithDetails(req, res)
+  
+  // Initialize progress tracking
+  app.post("/api/students/:id/initialize-progress", requireAuth, (req, res) =>
+    studentProgressController.initializeProgress(req, res)
   );
-  app.patch("/api/programs/:id", requireAuth, (req, res) =>
-    programController.updateProgram(req, res)
+  
+  // Phases
+  app.get("/api/students/:id/phases", requireAuth, (req, res) =>
+    studentProgressController.getPhases(req, res)
   );
-  app.post("/api/programs/:id/activate", requireAuth, (req, res) =>
-    programController.activateProgram(req, res)
+  app.patch("/api/phases/:id", requireAuth, (req, res) =>
+    studentProgressController.updatePhase(req, res)
   );
-  app.post("/api/programs/:id/archive", requireAuth, (req, res) =>
-    programController.archiveProgram(req, res)
+  app.post("/api/students/:id/advance-phase", requireAuth, (req, res) =>
+    studentProgressController.advancePhase(req, res)
   );
-  app.delete("/api/programs/:id", requireAuth, (req, res) =>
-    programController.deleteProgram(req, res)
-  );
-
-  // Student Programs
-  app.get("/api/students/:studentId/programs", requireAuth, (req, res) =>
-    programController.getStudentPrograms(req, res)
-  );
-  app.get("/api/students/:studentId/programs/current", requireAuth, (req, res) =>
-    programController.getCurrentProgram(req, res)
-  );
-  app.post("/api/students/:studentId/programs", requireAuth, (req, res) =>
-    programController.createProgram(req, res)
-  );
-
-  // Profile Domains
-  app.get("/api/programs/:programId/domains", requireAuth, (req, res) =>
-    programController.getProfileDomains(req, res)
-  );
-  app.post("/api/programs/:programId/domains", requireAuth, (req, res) =>
-    programController.createProfileDomain(req, res)
-  );
-  app.patch("/api/domains/:id", requireAuth, (req, res) =>
-    programController.updateProfileDomain(req, res)
-  );
-  app.delete("/api/domains/:id", requireAuth, (req, res) =>
-    programController.deleteProfileDomain(req, res)
-  );
-
+  
   // Goals
-  app.get("/api/programs/:programId/goals", requireAuth, (req, res) =>
-    programController.getGoals(req, res)
+  app.get("/api/students/:id/goals", requireAuth, (req, res) =>
+    studentProgressController.getGoals(req, res)
   );
-  app.post("/api/programs/:programId/goals", requireAuth, (req, res) =>
-    programController.createGoal(req, res)
-  );
-  app.get("/api/goals/:id", requireAuth, (req, res) =>
-    programController.getGoal(req, res)
+  app.post("/api/students/:id/goals", requireAuth, (req, res) =>
+    studentProgressController.createGoal(req, res)
   );
   app.patch("/api/goals/:id", requireAuth, (req, res) =>
-    programController.updateGoal(req, res)
+    studentProgressController.updateGoal(req, res)
   );
   app.delete("/api/goals/:id", requireAuth, (req, res) =>
-    programController.deleteGoal(req, res)
+    studentProgressController.deleteGoal(req, res)
   );
-  app.post("/api/goals/:id/achieve", requireAuth, (req, res) =>
-    programController.achieveGoal(req, res)
+  app.post("/api/goals/:id/generate-statement", requireAuth, (req, res) =>
+    studentProgressController.generateGoalStatement(req, res)
   );
-
-  // Objectives
-  app.get("/api/goals/:goalId/objectives", requireAuth, (req, res) =>
-    programController.getObjectives(req, res)
+  
+  // Progress Entries
+  app.get("/api/students/:id/progress-entries", requireAuth, (req, res) =>
+    studentProgressController.getProgressEntries(req, res)
   );
-  app.post("/api/goals/:goalId/objectives", requireAuth, (req, res) =>
-    programController.createObjective(req, res)
+  app.post("/api/students/:id/progress-entries", requireAuth, (req, res) =>
+    studentProgressController.createProgressEntry(req, res)
   );
-  app.patch("/api/objectives/:id", requireAuth, (req, res) =>
-    programController.updateObjective(req, res)
+  
+  // Compliance
+  app.get("/api/students/:id/compliance", requireAuth, (req, res) =>
+    studentProgressController.getComplianceItems(req, res)
   );
-  app.delete("/api/objectives/:id", requireAuth, (req, res) =>
-    programController.deleteObjective(req, res)
+  app.patch("/api/compliance/:id", requireAuth, (req, res) =>
+    studentProgressController.updateComplianceItem(req, res)
   );
-
-  // Services
-  app.get("/api/programs/:programId/services", requireAuth, (req, res) =>
-    programController.getServices(req, res)
+  
+  // Service Recommendations
+  app.get("/api/students/:id/services", requireAuth, (req, res) =>
+    studentProgressController.getServiceRecommendations(req, res)
   );
-  app.post("/api/programs/:programId/services", requireAuth, (req, res) =>
-    programController.createService(req, res)
+  app.post("/api/students/:id/services", requireAuth, (req, res) =>
+    studentProgressController.createServiceRecommendation(req, res)
   );
   app.patch("/api/services/:id", requireAuth, (req, res) =>
-    programController.updateService(req, res)
+    studentProgressController.updateServiceRecommendation(req, res)
   );
   app.delete("/api/services/:id", requireAuth, (req, res) =>
-    programController.deleteService(req, res)
+    studentProgressController.deleteServiceRecommendation(req, res)
   );
-
-  // Data Points
-  app.get("/api/goals/:goalId/data-points", requireAuth, (req, res) =>
-    programController.getDataPoints(req, res)
+  
+  // Baseline Metrics
+  app.get("/api/students/:id/baseline", requireAuth, (req, res) =>
+    studentProgressController.getBaselineMetrics(req, res)
   );
-  app.post("/api/goals/:goalId/data-points", requireAuth, (req, res) =>
-    programController.createDataPoint(req, res)
-  );
-  app.delete("/api/data-points/:id", requireAuth, (req, res) =>
-    programController.deleteDataPoint(req, res)
-  );
-
-  // Progress Reports
-  app.get("/api/programs/:programId/progress-reports", requireAuth, (req, res) =>
-    programController.getProgressReports(req, res)
-  );
-  app.post("/api/programs/:programId/progress-reports", requireAuth, (req, res) =>
-    programController.createProgressReport(req, res)
-  );
-  app.patch("/api/progress-reports/:id", requireAuth, (req, res) =>
-    programController.updateProgressReport(req, res)
-  );
-
-  // Team Members
-  app.get("/api/programs/:programId/team", requireAuth, (req, res) =>
-    programController.getTeamMembers(req, res)
-  );
-  app.post("/api/programs/:programId/team", requireAuth, (req, res) =>
-    programController.createTeamMember(req, res)
-  );
-  app.patch("/api/team-members/:id", requireAuth, (req, res) =>
-    programController.updateTeamMember(req, res)
-  );
-  app.delete("/api/team-members/:id", requireAuth, (req, res) =>
-    programController.deleteTeamMember(req, res)
-  );
-
-  // Meetings
-  app.get("/api/programs/:programId/meetings", requireAuth, (req, res) =>
-    programController.getMeetings(req, res)
-  );
-  app.post("/api/programs/:programId/meetings", requireAuth, (req, res) =>
-    programController.createMeeting(req, res)
-  );
-  app.patch("/api/meetings/:id", requireAuth, (req, res) =>
-    programController.updateMeeting(req, res)
-  );
-  app.delete("/api/meetings/:id", requireAuth, (req, res) =>
-    programController.deleteMeeting(req, res)
-  );
-
-  // Compliance & Consents
-  app.get("/api/programs/:programId/compliance", requireAuth, (req, res) =>
-    programController.checkCompliance(req, res)
-  );
-  app.get("/api/programs/:programId/consents", requireAuth, (req, res) =>
-    programController.getConsentForms(req, res)
-  );
-  app.post("/api/programs/:programId/consents", requireAuth, (req, res) =>
-    programController.createConsentForm(req, res)
-  );
-  app.patch("/api/consents/:id", requireAuth, (req, res) =>
-    programController.updateConsentForm(req, res)
+  app.post("/api/students/:id/baseline", requireAuth, (req, res) =>
+    studentProgressController.recordBaselineMetrics(req, res)
   );
 
   // ============= STUDENTS ROUTES =============
@@ -272,6 +193,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.delete("/api/students/:id", requireAuth, (req, res) =>
     studentController.deleteStudent(req, res)
+  );
+
+  // ============= SCHEDULE ROUTES =============
+  app.get("/api/schedules/:studentId", requireAuth, (req, res) =>
+    studentController.getSchedules(req, res)
+  );
+  app.post("/api/schedules", requireAuth, (req, res) =>
+    studentController.createSchedule(req, res)
+  );
+  app.patch("/api/schedules/:id", requireAuth, (req, res) =>
+    studentController.updateSchedule(req, res)
+  );
+  app.delete("/api/schedules/:id", requireAuth, (req, res) =>
+    studentController.deleteSchedule(req, res)
+  );
+  app.get("/api/schedules/:studentId/context", requireAuth, (req, res) =>
+    studentController.getScheduleContext(req, res)
   );
 
   // ============= SAVED LOCATIONS ROUTES =============
@@ -295,35 +233,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/invite-codes/redeem", requireAuth, (req, res) =>
     inviteCodeController.redeemInviteCode(req, res)
   );
+  app.get("/api/invite-codes/redemptions", requireAuth, (req, res) =>
+    inviteCodeController.getRedemptions(req, res)
+  );
+  app.patch("/api/invite-codes/:id/deactivate", requireAuth, (req, res) =>
+    inviteCodeController.deactivateInviteCode(req, res)
+  );
 
-  // ============= INTERPRETATION ROUTES =============
+  // ============= ONBOARDING ROUTES =============
+  app.get("/api/onboarding/status", requireAuth, (req, res) =>
+    onboardingController.getStatus(req, res)
+  );
+  app.post("/api/onboarding/complete-step-1", requireAuth, (req, res) =>
+    onboardingController.completeStep1(req, res)
+  );
+  app.post("/api/onboarding/complete-step-2", requireAuth, (req, res) =>
+    onboardingController.completeStep2(req, res)
+  );
+  app.post("/api/onboarding/redeem-code", requireAuth, (req, res) =>
+    onboardingController.redeemCode(req, res)
+  );
+
+  // ============= MAIN APPLICATION ROUTES (CHAT) =============
+  app.post("/api/chat", optionalAuth, requireOnboardingComplete, (req, res) =>
+    chatController.onMessage(req, res)
+  );
+
+  // ============= MAIN APPLICATION ROUTES (INTERPRETATION) =============
   app.post(
     "/api/interpret",
-    requireAuth,
-    upload.single("photo"),
+    optionalAuth,
+    requireOnboardingComplete,
+    upload.single("image"),
     (req, res) => interpretationController.interpret(req as any, res)
   );
+
   app.get("/api/interpretations", requireAuth, (req, res) =>
     interpretationController.getInterpretations(req, res)
   );
-  app.get("/api/interpretations/:id", requireAuth, (req, res) =>
+
+  app.get("/api/interpretations/:id", (req, res) =>
     interpretationController.getInterpretation(req, res)
   );
+
   app.delete("/api/interpretations/:id", requireAuth, (req, res) =>
     interpretationController.deleteInterpretation(req, res)
   );
 
-  // ============= SLP CLINICAL DATA ROUTES =============
-  app.get("/api/slp/clinical-log", requireSLPPlan, (req, res) =>
-    slpClinicalController.getClinicalLog(req, res)
-  );
-
-  app.get("/api/slp/clinical-metrics", requireSLPPlan, (req, res) =>
-    slpClinicalController.getClinicalMetrics(req, res)
-  );
-
-  app.get("/api/slp/export-csv", requireSLPPlan, (req, res) =>
-    slpClinicalController.exportCsv(req, res)
+  app.post("/api/historical-suggestions", requireAuth, (req, res) =>
+    interpretationController.getHistoricalSuggestions(req, res)
   );
 
   // ============= BOARD GENERATION ROUTES =============
@@ -348,31 +306,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     boardController.exportSnappkg(req, res)
   );
 
-  // ============= ONBOARDING ROUTES =============
-  app.get("/api/onboarding/status", requireAuth, (req, res) =>
-    onboardingController.getStatus(req, res)
-  );
-  app.post("/api/onboarding/complete-step-1", requireAuth, (req, res) =>
-    onboardingController.completeStep1(req, res)
-  );
-  app.post("/api/onboarding/complete-step-2", requireAuth, (req, res) =>
-    onboardingController.completeStep2(req, res)
-  );
-  app.post("/api/onboarding/redeem-code", requireAuth, (req, res) =>
-    onboardingController.redeemCode(req, res)
+  // ============= SLP CLINICAL DATA ROUTES =============
+  app.get("/api/slp/clinical-log", requireSLPPlan, (req, res) =>
+    slpClinicalController.getClinicalLog(req, res)
   );
 
-  // ============= CREDIT PACKAGE ROUTES =============
-  app.get("/api/credit-packages", requireAuth, (req, res) =>
+  app.get("/api/slp/clinical-metrics", requireSLPPlan, (req, res) =>
+    slpClinicalController.getClinicalMetrics(req, res)
+  );
+
+  app.get("/api/slp/export-csv", requireSLPPlan, (req, res) =>
+    slpClinicalController.exportCsv(req, res)
+  );
+
+  // ============= CREDIT PURCHASE ROUTES =============
+  app.get("/api/stripe-config", (req, res) =>
+    creditPackageController.getStripeConfig(req, res)
+  );
+  app.get("/api/credit-packages", (req, res) =>
     creditPackageController.getCreditPackages(req, res)
   );
-
-  // ============= CHAT ROUTES =============
-  app.post("/api/chat", optionalAuth, requireOnboardingComplete, (req, res) =>
-    chatController.onMessage(req, res)
+  app.post("/api/create-payment-intent", requireAuth, (req, res) =>
+    creditPackageController.createPaymentIntent(req, res)
+  );
+  app.post("/api/confirm-payment", requireAuth, (req, res) =>
+    creditPackageController.confirmPayment(req, res)
   );
 
   // ============= ADMIN ROUTES =============
+  // Apply CSRF protection to all admin routes (except GET)
+  app.use("/api/admin", (req, res, next) => {
+    if (req.method === "GET") {
+      return next();
+    }
+    return validateCSRF(req, res, next);
+  });
+
+  // Admin auth
+  app.get("/api/admin/auth/user", requireAdmin, (req, res) =>
+    adminController.getCurrentAdmin(req, res)
+  );
+
+  // Dashboard
+  app.get("/api/admin/stats", requireAdmin, (req, res) =>
+    adminController.getStats(req, res)
+  );
+
   // Users
   app.get("/api/admin/users", requireAdmin, (req, res) =>
     adminController.getUsers(req, res)
@@ -383,19 +362,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/admin/users/:id", requireAdmin, (req, res) =>
     adminController.updateUser(req, res)
   );
-  app.delete("/api/admin/users/:id", requireAdmin, async (req, res) => {
+  app.delete("/api/admin/users/:id", requireAdmin, (req, res) =>
+    adminController.deleteUser(req, res)
+  );
+
+  // Credits
+  app.post("/api/admin/users/:id/credits", requireAdmin, (req, res) =>
+    adminController.updateCredits(req, res)
+  );
+  app.get("/api/admin/users/:id/transactions", requireAdmin, (req, res) =>
+    adminController.getUserTransactions(req, res)
+  );
+
+  // SMTP check
+  app.get("/api/admin/smtp-check", requireAdmin, async (req, res) => {
     try {
-      const { id } = req.params;
-      const { userRepository } = await import("./repositories/userRepository");
-      const deleted = await userRepository.deleteUser(id);
-      if (deleted) {
-        res.json({ success: true, message: "User deleted successfully" });
+      res.json({
+        host: process.env.SMTP_HOST || "Not set",
+        port: process.env.SMTP_PORT || "Not set",
+        user: process.env.SMTP_USER || "Not set",
+        from: process.env.SMTP_FROM || "Not set",
+        configured: !!(
+          process.env.SMTP_HOST &&
+          process.env.SMTP_PORT &&
+          process.env.SMTP_USER &&
+          process.env.SMTP_PASS
+        ),
+      });
+    } catch (error: any) {
+      console.error("Error checking SMTP settings:", error);
+      res.status(500).json({ message: "Failed to check SMTP settings" });
+    }
+  });
+
+  // Test email
+  app.post("/api/admin/test-email", requireAdmin, async (req, res) => {
+    try {
+      const emailService = await import("./services/emailService");
+      const { email } = req.body;
+
+      if (!email) {
+        return res.status(400).json({ message: "Email address required" });
+      }
+
+      const testToken = emailService.generateResetToken();
+      const success = await emailService.sendPasswordResetEmail(email, testToken);
+
+      if (success) {
+        res.json({
+          success: true,
+          message: "Reset email sent successfully to " + email,
+        });
       } else {
-        res.status(404).json({ success: false, message: "User not found" });
+        res.status(500).json({
+          success: false,
+          message: "Failed to send test email",
+        });
       }
     } catch (error: any) {
-      console.error("Admin delete user error:", error);
-      res.status(500).json({ success: false, message: "Failed to delete user" });
+      console.error("Error sending test email:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error sending test email: " + (error as Error).message,
+      });
     }
   });
 
