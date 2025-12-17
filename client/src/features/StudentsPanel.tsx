@@ -126,6 +126,12 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
     // setActiveFeature('progress');
   };
 
+  const goToProgress = async (studentId: string) => {
+    setSharedState({ selectedStudentId: studentId });
+    selectStudent(studentId);
+    setActiveFeature('progress');
+  }
+
   // Handle create new student - opens the create student modal
   const handleCreateStudent = () => {
     openUI('createStudent');
@@ -381,7 +387,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                     className="gap-2 hover:bg-primary/10 hover:text-primary"
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleStudentClick(student.id);
+                      goToProgress(student.id);
                     }}
                   >
                     <FileText className="w-4 h-4" />

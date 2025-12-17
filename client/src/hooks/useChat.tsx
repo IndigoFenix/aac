@@ -199,12 +199,38 @@ export const ChatProvider = ({
       setSharedState({ interpretData: contextData.interpret });
     }
 
-    if (contextData.program) {
+    // Handle program updates from progress mode
+    // When AI makes changes via memory system, invalidate queries to refresh UI
+    if (contextData.program || contextData.programUpdated) {
+      console.log('[ChatProvider] Program data updated by AI, invalidating queries:', contextData.program);
       
+      const programId = contextData.program?.id || contextData.programUpdated?.programId;
+      const studentId = student?.id;
+      
+      // Invalidate program-related queries to trigger refetch
+      if (programId) {
+        queryClient.invalidateQueries({ queryKey: ['/api/programs', programId, 'full'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/programs', programId] });
+      }
+      
+      if (studentId) {
+        queryClient.invalidateQueries({ queryKey: ['/api/students', studentId, 'programs'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/students', studentId, 'programs', 'current'] });
+      }
+      
+      // Also invalidate any goal/service specific queries that might be cached
+      if (contextData.programUpdated?.goalId) {
+        queryClient.invalidateQueries({ queryKey: ['/api/goals', contextData.programUpdated.goalId] });
+      }
+      
+      // Optionally update shared state with new program data
+      if (contextData.program) {
+        setSharedState({ programData: contextData.program });
+      }
     }
 
     // Handle other context types as needed
-  }, [setSharedState]);
+  }, [setSharedState, student?.id]);
 
   // ============================================================================
   // MESSAGING

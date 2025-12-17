@@ -134,38 +134,45 @@ function sanitizeForKey(str: string | null | undefined, maxLen: number = 20): st
 
 /** TeamMember key: {shortId}_{name} → "ba1e0ce7_frank_smith" */
 function teamMemberKey(m: { id: string; name: string }): string {
-  return `${shortId(m.id)}_${sanitizeForKey(m.name)}`;
+  return m.id;
+  // return `${shortId(m.id)}_${sanitizeForKey(m.name)}`;
 }
 
 /** Goal key: {shortId}_{first_words} → "abc12345_student_will_use" */
 function goalKey(g: { id: string; goalStatement: string }): string {
-  return `${shortId(g.id)}_${sanitizeForKey(g.goalStatement, 25)}`;
+  return g.id;
+  // return `${shortId(g.id)}_${sanitizeForKey(g.goalStatement, 25)}`;
 }
 
 /** Service key: {shortId}_{serviceType} → "def67890_speech_language" */
 function serviceKey(s: { id: string; serviceType: string }): string {
-  return `${shortId(s.id)}_${sanitizeForKey(s.serviceType)}`;
+  return s.id;
+  // return `${shortId(s.id)}_${sanitizeForKey(s.serviceType)}`;
 }
 
 /** Meeting key: {shortId}_{meetingType} → "111aaabb_annual_review" */
 function meetingKey(m: { id: string; meetingType: string }): string {
-  return `${shortId(m.id)}_${sanitizeForKey(m.meetingType)}`;
+  return m.id;
+  // return `${shortId(m.id)}_${sanitizeForKey(m.meetingType)}`;
 }
 
 /** ProfileDomain key: {shortId}_{domainType} → "222bbbcc_communication" */
 function profileDomainKey(d: { id: string; domainType: string }): string {
-  return `${shortId(d.id)}_${sanitizeForKey(d.domainType)}`;
+  return d.id;
+  // return `${shortId(d.id)}_${sanitizeForKey(d.domainType)}`;
 }
 
 /** ConsentForm key: {shortId}_{consentType} → "333cccdd_initial_eval" */
 function consentFormKey(c: { id: string; consentType: string }): string {
-  return `${shortId(c.id)}_${sanitizeForKey(c.consentType)}`;
+  return c.id;
+  // return `${shortId(c.id)}_${sanitizeForKey(c.consentType)}`;
 }
 
 /** ProgressReport key: {shortId}_{date} → "444dddee_2025_03_15" */
 function progressReportKey(r: { id: string; reportDate: string | null }): string {
-  const dateStr = r.reportDate?.slice(0, 10).replace(/-/g, '_') || 'undated';
-  return `${shortId(r.id)}_${dateStr}`;
+  return r.id;
+  // const dateStr = r.reportDate?.slice(0, 10).replace(/-/g, '_') || 'undated';
+  // return `${shortId(r.id)}_${dateStr}`;
 }
 
 /**
@@ -253,10 +260,22 @@ const programOps: MemoryDBOperations<Program> = {
     }
   },
 
-  fromDB: (record) => toMemoryValue(record),
+  fromDB: (record) => ({
+    ...toMemoryValue(record),
+    // Initialize empty collections for DB-backed children
+    // These will be populated when viewed/opened
+    profileDomains: {},
+    goals: {},
+    services: {},
+    teamMembers: {},
+    meetings: {},
+    consentForms: {},
+    progressReports: {},
+  }),
 
+  // Extract programId for child operations (goals, services, etc.)
   extractChildContext: (value) => ({
-    programId: value.id,
+    programId: value?.id,
   }),
 
   getDBKey: (value) => value.id,
@@ -338,8 +357,10 @@ const profileDomainsOps: MemoryDBOperations<ProfileDomain> = {
 
   fromDB: (record) => toMemoryValue(record),
 
-  extractChildContext: (value) => ({
-    profileDomainId: value.id,
+  // Extract profileDomainId for child operations (baselines, assessments)
+  // Use key as fallback when value isn't loaded in memory yet
+  extractChildContext: (value, key) => ({
+    profileDomainId: value?.id ?? key,
   }),
 
   getDBKey: (value) => profileDomainKey(value),
@@ -529,8 +550,10 @@ const goalsOps: MemoryDBOperations<Goal> = {
 
   fromDB: (record) => toMemoryValue(record),
 
-  extractChildContext: (value) => ({
-    goalId: value.id,
+  // Extract goalId for child operations (objectives, dataPoints)
+  // Use key as fallback when value isn't loaded in memory yet
+  extractChildContext: (value, key) => ({
+    goalId: value?.id ?? key,
   }),
 
   getDBKey: (value) => goalKey(value),
@@ -615,8 +638,10 @@ const objectivesOps: MemoryDBOperations<Objective> = {
 
   fromDB: (record) => toMemoryValue(record),
 
+  // Extract objectiveId for child operations (dataPoints)
+  // Note: For arrays, key is the index, not useful as ID fallback
   extractChildContext: (value) => ({
-    objectiveId: value.id,
+    objectiveId: value?.id,
   }),
 
   getDBKey: (value) => value.id,
@@ -773,8 +798,10 @@ const servicesOps: MemoryDBOperations<Service> = {
 
   fromDB: (record) => toMemoryValue(record),
 
-  extractChildContext: (value) => ({
-    serviceId: value.id,
+  // Extract serviceId for child operations (accommodations)
+  // Use key as fallback when value isn't loaded in memory yet
+  extractChildContext: (value, key) => ({
+    serviceId: value?.id ?? key,
   }),
 
   getDBKey: (value) => serviceKey(value),
@@ -1185,8 +1212,10 @@ const progressReportsOps: MemoryDBOperations<ProgressReport> = {
 
   fromDB: (record) => toMemoryValue(record),
 
-  extractChildContext: (value) => ({
-    progressReportId: value.id,
+  // Extract progressReportId for child operations (entries)
+  // Use key as fallback when value isn't loaded in memory yet
+  extractChildContext: (value, key) => ({
+    progressReportId: value?.id ?? key,
   }),
 
   getDBKey: (value) => progressReportKey(value),
@@ -1276,8 +1305,9 @@ const transitionPlanOps: MemoryDBOperations<TransitionPlan> = {
 
   fromDB: (record) => toMemoryValue(record),
 
-  extractChildContext: (value) => ({
-    transitionPlanId: value.id,
+  // Extract transitionPlanId for child operations (goals)
+  extractChildContext: (value, key) => ({
+    transitionPlanId: value?.id ?? key,
   }),
 
   getDBKey: (value) => value.id,
@@ -1370,7 +1400,7 @@ const baselineMeasurementSchema: AgentMemoryFieldObjectWithDB = {
   opened: true,
   properties: {
     id: { id: "id", type: "string" },
-    skillDescription: { id: "skillDescription", type: "string", description: "Description of the skill being measured" },
+    skillDescription: { id: "skillDescription", type: "string", description: "Description of the skill being measured", opened: true },
     measurementMethod: { id: "measurementMethod", type: "string", description: "How the measurement was taken" },
     value: { id: "value", type: "string", description: "The measurement value (e.g., '10%', '3/10 trials')" },
     numericValue: { id: "numericValue", type: "number", description: "Numeric value for graphing" },
@@ -1416,8 +1446,9 @@ const profileDomainSchema: AgentMemoryFieldObjectWithDB = {
       id: "domainType",
       type: "string",
       enum: ["cognitive_academic", "communication_language", "social_emotional_behavioral", "motor_sensory", "life_skills_preparation", "other"],
+      opened: true
     },
-    customName: { id: "customName", type: "string" },
+    customName: { id: "customName", type: "string", opened: true },
     strengths: { id: "strengths", type: "string", description: "Student's strengths in this domain" },
     needs: { id: "needs", type: "string", description: "Areas needing reinforcement" },
     impactStatement: { id: "impactStatement", type: "string", description: "How disability impacts education" },
@@ -1453,7 +1484,7 @@ const dataPointSchema: AgentMemoryFieldObjectWithDB = {
   properties: {
     id: { id: "id", type: "string" },
     recordedAt: { id: "recordedAt", type: "string", format: "date-time" },
-    value: { id: "value", type: "string", description: "The recorded value" },
+    value: { id: "value", type: "string", description: "The recorded value", opened: true },
     numericValue: { id: "numericValue", type: "number" },
     context: { id: "context", type: "string" },
     collectedBy: { id: "collectedBy", type: "string" },
@@ -1470,7 +1501,7 @@ const objectiveSchema: AgentMemoryFieldObjectWithDB = {
   opened: true,
   properties: {
     id: { id: "id", type: "string" },
-    objectiveStatement: { id: "objectiveStatement", type: "string", description: "The short-term objective" },
+    objectiveStatement: { id: "objectiveStatement", type: "string", description: "The short-term objective", opened: true },
     sequenceOrder: { id: "sequenceOrder", type: "integer" },
     criterion: { id: "criterion", type: "string", description: "Measurable criterion (e.g., '3 out of 4 opportunities')" },
     context: { id: "context", type: "string" },
@@ -1501,29 +1532,32 @@ const goalSchema: AgentMemoryFieldObjectWithDB = {
   type: "object",
   opened: true,
   properties: {
+    // Most important fields first for truncated display
     id: { id: "id", type: "string" },
-    goalStatement: { id: "goalStatement", type: "string", description: "The annual goal statement" },
-    profileDomainId: { id: "profileDomainId", type: "string", description: "Link to profile domain" },
-    targetBehavior: { id: "targetBehavior", type: "string" },
-    criteria: { id: "criteria", type: "string", description: "Success criteria (e.g., '80% accuracy')" },
-    criteriaPercentage: { id: "criteriaPercentage", type: "integer", minimum: 0, maximum: 100 },
-    measurementMethod: { id: "measurementMethod", type: "string" },
-    conditions: { id: "conditions", type: "string" },
-    relevance: { id: "relevance", type: "string" },
-    targetDate: { id: "targetDate", type: "string", format: "date" },
-    interventionLevel: {
-      id: "interventionLevel",
-      type: "string",
-      enum: ["activity", "function", "participation"],
-      description: "TALA-specific ICF intervention level",
-    },
+    goalStatement: { id: "goalStatement", type: "string", description: "The annual goal statement", opened: true },
     status: {
       id: "status",
       type: "string",
       enum: ["draft", "active", "achieved", "modified", "discontinued"],
     },
     progress: { id: "progress", type: "integer", minimum: 0, maximum: 100 },
+    targetDate: { id: "targetDate", type: "string", format: "date" },
+    // Less frequently accessed fields
+    profileDomainId: { id: "profileDomainId", type: "string", description: "Link to profile domain" },
+    criteria: { id: "criteria", type: "string", description: "Success criteria (e.g., '80% accuracy')" },
+    criteriaPercentage: { id: "criteriaPercentage", type: "integer", minimum: 0, maximum: 100 },
+    targetBehavior: { id: "targetBehavior", type: "string" },
+    measurementMethod: { id: "measurementMethod", type: "string" },
+    conditions: { id: "conditions", type: "string" },
+    relevance: { id: "relevance", type: "string" },
+    interventionLevel: {
+      id: "interventionLevel",
+      type: "string",
+      enum: ["activity", "function", "participation"],
+      description: "TALA-specific ICF intervention level",
+    },
     sortOrder: { id: "sortOrder", type: "integer" },
+    // Nested collections last
     objectives: {
       id: "objectives",
       type: "array",
@@ -1579,8 +1613,9 @@ const serviceSchema: AgentMemoryFieldObjectWithDB = {
       id: "serviceType",
       type: "string",
       enum: ["speech_language_therapy", "occupational_therapy", "physical_therapy", "counseling", "specialized_instruction", "consultation", "aac_support", "other"],
+      opened: true
     },
-    customServiceName: { id: "customServiceName", type: "string" },
+    customServiceName: { id: "customServiceName", type: "string", opened: true },
     description: { id: "description", type: "string" },
     providerName: { id: "providerName", type: "string" },
     frequencyCount: { id: "frequencyCount", type: "integer", minimum: 1 },
@@ -1589,11 +1624,12 @@ const serviceSchema: AgentMemoryFieldObjectWithDB = {
       type: "string",
       enum: ["daily", "weekly", "monthly"],
     },
-    sessionDuration: { id: "sessionDuration", type: "integer", description: "Duration in minutes" },
+    sessionDuration: { id: "sessionDuration", type: "integer", description: "Duration in minutes", opened: true },
     setting: {
       id: "setting",
       type: "string",
       enum: ["general_education", "resource_room", "self_contained", "home", "community", "therapy_room"],
+      opened: true
     },
     settingDescription: { id: "settingDescription", type: "string" },
     deliveryModel: {
@@ -1625,19 +1661,20 @@ const teamMemberSchema: AgentMemoryFieldObjectWithDB = {
   opened: true,
   properties: {
     id: { id: "id", type: "string" },
-    name: { id: "name", type: "string" },
+    name: { id: "name", type: "string", opened: true },
     role: {
       id: "role",
       type: "string",
       enum: ["parent_guardian", "student", "homeroom_teacher", "special_education_teacher", "general_education_teacher", "speech_language_pathologist", "occupational_therapist", "physical_therapist", "psychologist", "administrator", "case_manager", "external_provider", "other"],
+      opened: true
     },
     customRole: { id: "customRole", type: "string" },
     organization: { id: "organization", type: "string" },
     contactEmail: { id: "contactEmail", type: "string", format: "email" },
     contactPhone: { id: "contactPhone", type: "string" },
     responsibilities: { id: "responsibilities", type: "array", items: { id: "responsibility", type: "string" } },
-    isCoordinator: { id: "isCoordinator", type: "boolean", default: false },
-    isActive: { id: "isActive", type: "boolean", default: true },
+    isCoordinator: { id: "isCoordinator", type: "boolean", default: false, opened: true },
+    isActive: { id: "isActive", type: "boolean", default: true, opened: true },
   },
   required: ["name", "role"],
 };
@@ -1655,8 +1692,9 @@ const meetingSchema: AgentMemoryFieldObjectWithDB = {
       id: "meetingType",
       type: "string",
       enum: ["initial_evaluation", "annual_review", "reevaluation", "amendment", "transition_planning", "progress_review"],
+      opened: true
     },
-    scheduledDate: { id: "scheduledDate", type: "string", format: "date-time" },
+    scheduledDate: { id: "scheduledDate", type: "string", format: "date-time", opened: true },
     actualDate: { id: "actualDate", type: "string", format: "date-time" },
     location: { id: "location", type: "string" },
     attendeeIds: { id: "attendeeIds", type: "array", items: { id: "attendeeId", type: "string" } },
@@ -1704,7 +1742,7 @@ const goalProgressEntrySchema: AgentMemoryFieldObjectWithDB = {
   opened: true,
   properties: {
     id: { id: "id", type: "string" },
-    goalId: { id: "goalId", type: "string" },
+    goalId: { id: "goalId", type: "string", opened: true },
     currentPerformance: { id: "currentPerformance", type: "string" },
     progressStatus: {
       id: "progressStatus",

@@ -37,6 +37,7 @@ export const he = {
     refresh: "רענן",
     start: "התחלה",
     continue: "המשך",
+    add: "הוסף",
   },
 
   // ============================================================================
@@ -762,6 +763,8 @@ export const he = {
       other: "אחר",
     },
     goalsLinked: "מטרות מקושרות",
+    impactStatement: "הצהרת השפעה",
+    impactStatementPlaceholder: "תאר כיצד תחום זה משפיע על החינוך של התלמיד...",
     presentLevels: "רמות ביצוע נוכחיות",
     presentLevelsPlaceholder: "תאר את היכולות והביצועים הנוכחיים של התלמיד בתחום זה...",
     strengths: "חוזקות",

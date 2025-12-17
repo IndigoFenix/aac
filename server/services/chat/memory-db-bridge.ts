@@ -106,6 +106,29 @@ export function extendContext(
   );
 }
 
+/**
+ * Merges inherited context (parent IDs) into a value for add/insert operations.
+ * This automatically includes parent identifiers (like goalId, studentId) when
+ * adding child records, so the AI doesn't need to specify them explicitly.
+ * 
+ * @param value The value being added
+ * @param context The operation context with inherited parent info
+ * @returns Value with inherited context merged in (inherited values won't override explicit ones)
+ */
+export function mergeInheritedContext(
+  value: any,
+  context: DBOperationContext
+): any {
+  // Only merge for object values
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return value;
+  }
+  
+  // Merge inherited context, but let explicit values in the original value take precedence
+  // This means if AI explicitly sets goalId, it won't be overwritten
+  return { ...context.inherited, ...value };
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Database Operations Interface
 // ──────────────────────────────────────────────────────────────────────────────
@@ -451,51 +474,6 @@ export function createMemoryLoadState(): MemoryLoadState {
   };
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Load State Serialization (for persistence in ChatState)
-// ──────────────────────────────────────────────────────────────────────────────
-
-/**
- * JSON-serializable version of MemoryLoadState.
- * Used for storing in ChatState between messages.
- */
-export interface SerializedLoadState {
-  /** Paths that have been loaded (as array for JSON compatibility) */
-  loaded: string[];
-  /** Paths that need refresh */
-  stale: string[];
-  /** Timestamp of last load for each path */
-  loadedAt: Record<string, number>;
-  /** Total counts for paginated containers */
-  totals: Record<string, number>;
-}
-
-/**
- * Converts MemoryLoadState to a JSON-serializable format.
- * Use this before storing in ChatState.
- */
-export function serializeLoadState(loadState: MemoryLoadState): SerializedLoadState {
-  return {
-    loaded: Array.from(loadState.loaded),
-    stale: Array.from(loadState.stale),
-    loadedAt: Object.fromEntries(loadState.loadedAt),
-    totals: Object.fromEntries(loadState.totals),
-  };
-}
-
-/**
- * Converts a serialized load state back to MemoryLoadState.
- * Use this when retrieving from ChatState.
- */
-export function deserializeLoadState(stored: SerializedLoadState): MemoryLoadState {
-  return {
-    loaded: new Set(stored.loaded),
-    stale: new Set(stored.stale),
-    loadedAt: new Map(Object.entries(stored.loadedAt)),
-    totals: new Map(Object.entries(stored.totals)),
-  };
-}
-
 /**
  * Marks a path as loaded.
  */
@@ -619,6 +597,14 @@ export interface SchemaResolution {
   parentSchema?: AgentMemoryFieldWithDB;
   /** Path tokens consumed */
   tokensConsumed: string[];
+  
+  // === NEW: Track parent container with db.update for nested property sets ===
+  /** The nearest parent container (array/map) that has db.update operation */
+  parentContainerDbOps?: MemoryDBOperations;
+  /** The key/index used to access the current item in the parent container */
+  parentContainerKey?: string | number;
+  /** The path to the parent container */
+  parentContainerPath?: string;
 }
 
 /**
@@ -657,6 +643,8 @@ export function resolveSchemaWithContext(
   }
 
   ctx = extendContext(ctx, {}, '/' + escapeToken(fieldId));
+
+  console.log('Resolving path:', path, 'Tokens:', tokens, 'ctx', ctx);
   
   if (tokens.length === 1) {
     return {
@@ -671,6 +659,11 @@ export function resolveSchemaWithContext(
   let current: AgentMemoryFieldWithDB = rootField;
   let currentValue: any = memoryValues?.[fieldId];
   let consumedTokens: string[] = [fieldId];
+  
+  // Track the most recent container (array/map) with db.update ops
+  let parentContainerDbOps: MemoryDBOperations | undefined;
+  let parentContainerKey: string | number | undefined;
+  let parentContainerPath: string | undefined;
 
   for (let i = 1; i < tokens.length; i++) {
     const token = tokens[i];
@@ -678,14 +671,20 @@ export function resolveSchemaWithContext(
     const nextPath = joinPath([...consumedTokens, token]);
 
     // Extract context from current value if available
-    if (currentValue !== undefined && current.db?.extractChildContext) {
+    // IMPORTANT: Skip maps and arrays here - they handle extraction AFTER retrieving the specific item
+    // For maps/arrays, currentValue is the container (the whole map/array), not a specific item,
+    // so extractChildContext would receive the wrong value
+    if (currentValue !== undefined && current.db?.extractChildContext && current.type !== 'map' && current.type !== 'array') {
       const extractedCtx = current.db.extractChildContext(currentValue, consumedTokens[consumedTokens.length - 1]);
+      console.log('Extracted context at', currentPath, ':', extractedCtx);
       if (extractedCtx) {
         ctx = extendContext(ctx, extractedCtx, nextPath, token);
       }
     } else {
       ctx = extendContext(ctx, {}, nextPath, token);
     }
+
+    console.log('At token:', token, 'Current type:', current.type, 'ctx:', ctx);
 
     consumedTokens.push(token);
 
@@ -697,7 +696,10 @@ export function resolveSchemaWithContext(
         return {
           context: ctx,
           tokensConsumed: consumedTokens,
-          error: `Property '${token}' not allowed in object.`
+          error: `Property '${token}' not allowed in object.`,
+          parentContainerDbOps,
+          parentContainerKey,
+          parentContainerPath
         };
       }
 
@@ -711,7 +713,10 @@ export function resolveSchemaWithContext(
           dbOps: undefined,
           context: ctx,
           tokensConsumed: consumedTokens,
-          parentSchema: objSchema
+          parentSchema: objSchema,
+          parentContainerDbOps,
+          parentContainerKey,
+          parentContainerPath
         };
       }
     } else if (current.type === 'array') {
@@ -722,8 +727,18 @@ export function resolveSchemaWithContext(
         return {
           context: ctx,
           tokensConsumed: consumedTokens,
-          error: `Expected array index, got '${token}'.`
+          error: `Expected array index, got '${token}'.`,
+          parentContainerDbOps,
+          parentContainerKey,
+          parentContainerPath
         };
+      }
+
+      // Track this array as the parent container if it has update ops
+      if (arrSchema.db?.update) {
+        parentContainerDbOps = arrSchema.db;
+        parentContainerKey = index;
+        parentContainerPath = currentPath;
       }
 
       current = arrSchema.items;
@@ -738,11 +753,21 @@ export function resolveSchemaWithContext(
       }
     } else if (current.type === 'map') {
       const mapSchema = current as AgentMemoryFieldMapWithDB;
+      
+      // Track this map as the parent container if it has update ops
+      if (mapSchema.db?.update) {
+        parentContainerDbOps = mapSchema.db;
+        parentContainerKey = token;
+        parentContainerPath = currentPath;
+      }
+      
       current = mapSchema.values;
       currentValue = currentValue?.[token];
       
       // Extract context from the map value
-      if (currentValue !== undefined && mapSchema.db?.extractChildContext) {
+      // IMPORTANT: Call even if value is undefined - extractChildContext can use the key as fallback
+      // This handles cases where the item exists in DB but isn't loaded into memory yet
+      if (mapSchema.db?.extractChildContext) {
         const valCtx = mapSchema.db.extractChildContext(currentValue, token);
         if (valCtx) {
           ctx = extendContext(ctx, valCtx, nextPath, token);
@@ -755,14 +780,20 @@ export function resolveSchemaWithContext(
         schema: current,
         dbOps: current.db,
         context: ctx,
-        tokensConsumed: consumedTokens
+        tokensConsumed: consumedTokens,
+        parentContainerDbOps,
+        parentContainerKey,
+        parentContainerPath
       };
     } else {
       // Primitive type - can't traverse further
       return {
         context: ctx,
         tokensConsumed: consumedTokens.slice(0, -1),
-        error: `Cannot traverse into primitive at '${currentPath}'.`
+        error: `Cannot traverse into primitive at '${currentPath}'.`,
+        parentContainerDbOps,
+        parentContainerKey,
+        parentContainerPath
       };
     }
   }
@@ -772,7 +803,10 @@ export function resolveSchemaWithContext(
     dbOps: current.db,
     context: ctx,
     tokensConsumed: consumedTokens,
-    parentSchema: consumedTokens.length > 1 ? findFieldById(fields, consumedTokens[0]) : undefined
+    parentSchema: consumedTokens.length > 1 ? findFieldById(fields, consumedTokens[0]) : undefined,
+    parentContainerDbOps,
+    parentContainerKey,
+    parentContainerPath
   };
 }
 
@@ -1139,6 +1173,13 @@ export interface MemoryOperationResult {
   dbSynced?: boolean;
 }
 
+export interface DbOperationResult {
+  dbResult?: any;
+  error?: string;
+  shouldUpdateMemory: boolean;
+  dbSynced?: boolean;
+}
+
 /**
  * Processes database operations for a memory tool action.
  * This should be called BEFORE processMemoryToolResponse to sync with DB.
@@ -1155,11 +1196,7 @@ export async function processDBOperation(
   loadState: MemoryLoadState,
   op: MemoryToolInput,
   baseContext: Record<string, any>
-): Promise<{
-  dbResult?: any;
-  error?: string;
-  shouldUpdateMemory: boolean;
-}> {
+): Promise<DbOperationResult> {
   const { action, path, value, key, newKey, index } = op;
   
   // View/hide operations don't need DB sync
@@ -1171,16 +1208,59 @@ export async function processDBOperation(
     return { error: 'Path required for mutation operations', shouldUpdateMemory: false };
   }
 
+  console.log(`[processDBOperation] Action: ${action}, Path: ${path}`);
+  console.log(`[processDBOperation] Initial baseContext:`, baseContext);
+
   const resolution = resolveSchemaWithContext(fields, memoryValues, path, baseContext);
   
   if (resolution.error) {
     return { error: resolution.error, shouldUpdateMemory: false };
   }
 
-  const { schema, dbOps, context } = resolution;
+  const { schema, dbOps, context, parentContainerDbOps, parentContainerKey, parentContainerPath } = resolution;
 
-  // If no DB operations defined, just let the in-memory system handle it
+  // If no DB operations defined at the target path, check if we can use parent container operations
   if (!dbOps) {
+    // For 'set' action on a property, try to use parent container's update operation
+    if (action === 'set' && parentContainerDbOps?.update && parentContainerKey !== undefined) {
+      try {
+        // Extract the property name being set (last token in the path)
+        const tokens = splitPath(path);
+        const propertyName = tokens[tokens.length - 1];
+        
+        // Call the parent container's update with the partial value
+        const partialUpdate = { [propertyName]: value };
+        await parentContainerDbOps.update(context, parentContainerKey, partialUpdate);
+        
+        if (parentContainerPath) {
+          markLoaded(loadState, parentContainerPath);
+        }
+        
+        return { dbResult: value, shouldUpdateMemory: true, dbSynced: true };
+      } catch (err: any) {
+        console.error('[processDBOperation] Parent container update failed:', err);
+        return { error: err.message || 'DB update failed', shouldUpdateMemory: false, dbSynced: false };
+      }
+    }
+    
+    // For 'delete' action, try to use parent container's delete operation
+    if (action === 'delete' && parentContainerDbOps?.delete && parentContainerKey !== undefined) {
+      try {
+        await parentContainerDbOps.delete(context, parentContainerKey);
+        
+        if (parentContainerPath) {
+          clearLoadState(loadState, parentContainerPath);
+        }
+        
+        return { shouldUpdateMemory: true, dbSynced: true };
+      } catch (err: any) {
+        console.error('[processDBOperation] Parent container delete failed:', err);
+        return { error: err.message || 'DB delete failed', shouldUpdateMemory: false, dbSynced: false };
+      }
+    }
+    
+    // No db ops and no parent operation available - just let in-memory system handle it
+    // Note: dbSynced is NOT set (undefined) because no DB operation happened
     return { shouldUpdateMemory: true };
   }
 
@@ -1199,12 +1279,15 @@ export async function processDBOperation(
 
       case 'upsert':
         if (dbOps.upsert) {
-          const dbValue = dbOps.toDB ? dbOps.toDB(value) : value;
+          // Merge inherited context (parent IDs) into the value before DB transformation
+          const valueWithContext = mergeInheritedContext(value, context);
+          const dbValue = dbOps.toDB ? dbOps.toDB(valueWithContext) : valueWithContext;
           dbResult = await dbOps.upsert(context, dbValue, key ?? index);
           if (dbOps.fromDB) dbResult = dbOps.fromDB(dbResult);
           markLoaded(loadState, path);
         } else if (dbOps.write) {
-          const dbValue = dbOps.toDB ? dbOps.toDB(value) : value;
+          const valueWithContext = mergeInheritedContext(value, context);
+          const dbValue = dbOps.toDB ? dbOps.toDB(valueWithContext) : valueWithContext;
           await dbOps.write(context, dbValue);
           dbResult = value;
           markLoaded(loadState, path);
@@ -1213,7 +1296,10 @@ export async function processDBOperation(
 
       case 'add':
         if (dbOps.add) {
-          const dbValue = dbOps.toDB ? dbOps.toDB(value) : value;
+          // Merge inherited context (parent IDs like goalId, studentId) into the value
+          // This allows AI to add child records without explicitly specifying parent IDs
+          const valueWithContext = mergeInheritedContext(value, context);
+          const dbValue = dbOps.toDB ? dbOps.toDB(valueWithContext) : valueWithContext;
           dbResult = await dbOps.add(context, dbValue, { key, index });
           if (dbOps.fromDB) dbResult = dbOps.fromDB(dbResult);
           // Invalidate the container's total count
@@ -1223,12 +1309,14 @@ export async function processDBOperation(
 
       case 'insert':
         if (dbOps.insert && index !== undefined) {
-          const dbValue = dbOps.toDB ? dbOps.toDB(value) : value;
+          const valueWithContext = mergeInheritedContext(value, context);
+          const dbValue = dbOps.toDB ? dbOps.toDB(valueWithContext) : valueWithContext;
           dbResult = await dbOps.insert(context, dbValue, index);
           if (dbOps.fromDB) dbResult = dbOps.fromDB(dbResult);
           markStale(loadState, path, false);
         } else if (dbOps.add) {
-          const dbValue = dbOps.toDB ? dbOps.toDB(value) : value;
+          const valueWithContext = mergeInheritedContext(value, context);
+          const dbValue = dbOps.toDB ? dbOps.toDB(valueWithContext) : valueWithContext;
           dbResult = await dbOps.add(context, dbValue, { index });
           if (dbOps.fromDB) dbResult = dbOps.fromDB(dbResult);
           markStale(loadState, path, false);
@@ -1263,10 +1351,11 @@ export async function processDBOperation(
         break;
     }
 
-    return { dbResult, shouldUpdateMemory: true };
+    // dbResult is set when a DB operation was successfully performed
+    return { dbResult, shouldUpdateMemory: true, dbSynced: dbResult !== undefined };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return { error: `Database error: ${message}`, shouldUpdateMemory: false };
+    return { error: `Database error: ${message}`, shouldUpdateMemory: false, dbSynced: false };
   }
 }
 
@@ -1312,7 +1401,7 @@ export async function processMemoryToolWithDB(
       ? input.operations
       : [input as MemoryToolInput];
 
-  const dbResults: Map<number, { dbResult?: any; error?: string }> = new Map();
+  const dbResults: Map<number, DbOperationResult> = new Map();
 
   // Process DB operations first for mutations
   for (let i = 0; i < ops.length; i++) {
@@ -1337,11 +1426,36 @@ export async function processMemoryToolWithDB(
   const memResult = originalProcessor(fields as any[], memoryValues, memoryState, input);
 
   // Enhance results with DB sync status
-  const enhancedResults = memResult.results.map((result, i) => ({
-    ...result,
-    dbSynced: dbResults.has(i) ? !dbResults.get(i)?.error : undefined,
-    message: dbResults.get(i)?.error ?? result.message
-  }));
+  // IMPORTANT: If DB operation succeeded (dbSynced: true), report overall success
+  // even if in-memory operation failed (e.g., parent not loaded in memory)
+  const enhancedResults = memResult.results.map((result, i) => {
+    const dbResult = dbResults.get(i);
+    const dbSynced = dbResult?.dbSynced;
+    const op = ops[i];
+    
+    // If DB operation succeeded, the operation is successful from user's perspective
+    // The in-memory state will catch up on the next view/load
+    const ok = dbSynced === true ? true : result.ok;
+    
+    // Only show error message if both DB and in-memory failed, or if only in-memory ran and failed
+    const message = dbResult?.error ?? (dbSynced === true ? undefined : result.message);
+    
+    // If DB succeeded but in-memory failed, mark the parent container as stale
+    // so it gets refreshed from DB on next access
+    if (dbSynced === true && !result.ok && op.path) {
+      const parentPath = op.path.split('/').slice(0, -1).join('/');
+      if (parentPath) {
+        markStale(loadState, parentPath, false);
+      }
+    }
+    
+    return {
+      ...result,
+      ok,
+      dbSynced,
+      message
+    };
+  });
 
   // For view operations, load data from DB if needed
   for (const op of ops) {
@@ -1559,6 +1673,40 @@ export function createDrizzleOperations<T = any>(
     getDBKey: (value) => {
       return (value as any)?.[primaryKey];
     }
+  };
+}
+
+/**
+ * Convert MemoryLoadState to a JSON-serializable format for storage.
+ */
+export function serializeLoadState(loadState: MemoryLoadState): {
+  loaded: string[];
+  stale: string[];
+  loadedAt: Record<string, number>;
+  totals: Record<string, number>;
+} {
+  return {
+    loaded: Array.from(loadState.loaded),
+    stale: Array.from(loadState.stale),
+    loadedAt: Object.fromEntries(loadState.loadedAt),
+    totals: Object.fromEntries(loadState.totals),
+  };
+}
+
+/**
+ * Convert stored load state back to MemoryLoadState.
+ */
+export function deserializeLoadState(stored: {
+  loaded?: string[];
+  stale?: string[];
+  loadedAt?: Record<string, number>;
+  totals?: Record<string, number>;
+}): MemoryLoadState {
+  return {
+    loaded: new Set(stored.loaded ?? []),
+    stale: new Set(stored.stale ?? []),
+    loadedAt: new Map(Object.entries(stored.loadedAt ?? {})),
+    totals: new Map(Object.entries(stored.totals ?? {})),
   };
 }
 

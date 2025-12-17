@@ -749,13 +749,8 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     // Get memory fields with DB operations
     progressMemoryFields = progressManager.getMemoryFields();
     
-    // Add student and program info to the core prompt
-    const studentInfo = progressManager.getStudentInfo();
-    const programSummary = progressManager.getProgramSummary();
-    
     // Update template with dynamic memory fields
     template.memoryFields = progressMemoryFields as AgentMemoryField[];
-    template.corePrompt = `${template.corePrompt}\n\n## Current Context\n\n${studentInfo}\n\n${programSummary}`;
   }
 
   // Build memory values from context
@@ -830,6 +825,10 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
       }
     } else if (context.student) {
       prefix += `You are speaking with the AAC user ${context.student.name}, who has ${context.student.diagnosis}.\n`;
+    }
+    if (progressManager){
+      prefix += progressManager.getStudentInfo();
+      prefix += progressManager.getProgramSummary();
     }
     return `${prefix}\n\n${corePrompt}`;
   }

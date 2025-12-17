@@ -37,6 +37,7 @@ export const en = {
     refresh: "Refresh",
     start: "Start",
     continue: "Continue",
+    add: "Add",
   },
 
   // ============================================================================
@@ -568,6 +569,8 @@ export const en = {
       other: "Other",
     },
     goalsLinked: "goals linked",
+    impactStatement: "Impact Statement",
+    impactStatementPlaceholder: "Describe how the disability affects the student's involvement and progress in the general curriculum...",
     presentLevels: "Present Levels of Performance",
     presentLevelsPlaceholder: "Describe the student's current abilities and performance in this area...",
     strengths: "Strengths",
