@@ -199,6 +199,10 @@ export const ChatProvider = ({
       setSharedState({ interpretData: contextData.interpret });
     }
 
+    if (contextData.program) {
+      
+    }
+
     // Handle other context types as needed
   }, [setSharedState]);
 

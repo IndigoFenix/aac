@@ -1,3 +1,4 @@
+// src/hooks/useAuth.tsx
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 
@@ -83,21 +84,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const logout = async () => {
     try {
-      const response = await apiRequest("POST", "/auth/logout", {});
+      await apiRequest("POST", "/auth/logout", {});
     } catch (error) {
       console.error('Logout failed:', error);
     } finally {
       // Clear sensitive cached data to prevent cross-user exposure
       queryClient.removeQueries({ queryKey: ['/api/interpretations'] });
       queryClient.removeQueries({ queryKey: ['/api/students'] });
+      queryClient.removeQueries({ queryKey: ['/api/onboarding/status'] });
+      queryClient.removeQueries({ queryKey: ['/api/invite-codes'] });
+      
+      // Clear all queries to be safe
+      queryClient.clear();
   
       // Also clear the currently selected AAC user
       if (typeof window !== 'undefined') {
         window.localStorage.removeItem('aac.currentUserId');
       }
   
+      // Clear user state
       setUser(null);
-      window.location.href = '/';
+      
+      // Redirect to login page
+      window.location.href = '/login';
     }
   };
   

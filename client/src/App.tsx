@@ -1,5 +1,6 @@
+// src/App.tsx
 import React, { useEffect } from "react";
-import { Switch, Route, useLocation } from "wouter";
+import { Switch, Route, useLocation, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -12,10 +13,32 @@ import NotFound from "@/pages/not-found";
 import PurchaseCredits from "@/pages/purchase-credits";
 import TermsOfService from "@/pages/terms-of-service";
 import OnboardingFlow from "@/pages/OnboardingFlow";
+import LoginPage from "@/pages/LoginPage";
 import Dashboard from "./pages/Dashboard";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 import "./i18n";
 import { ChatProvider } from "./hooks/useChat";
 import { FeaturePanelProvider } from "@/contexts/FeaturePanelContext";
+
+// Component to redirect authenticated users away from login page
+function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth();
+  
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+  
+  // If already authenticated, redirect to home
+  if (isAuthenticated) {
+    return <Redirect to="/" />;
+  }
+  
+  return <>{children}</>;
+}
 
 function OnboardingGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -28,7 +51,7 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
   });
 
   useEffect(() => {
-    // Don’t decide anything until we know:
+    // Don't decide anything until we know:
     // - user is loaded
     // - onboarding status is loaded
     // - students have finished loading
@@ -58,37 +81,73 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
 
 function Router() {
   return (
-    <OnboardingGuard>
-      <Switch>
-        {/* Non-shell pages */}
-        <Route path="/onboarding" component={OnboardingFlow} />
-        <Route path="/purchase-credits" component={PurchaseCredits} />
-        <Route path="/terms-of-service" component={TermsOfService} />
+    <Switch>
+      {/* Public routes - accessible without authentication */}
+      <Route path="/login">
+        <PublicOnlyRoute>
+          <LoginPage />
+        </PublicOnlyRoute>
+      </Route>
+      <Route path="/terms-of-service" component={TermsOfService} />
 
-        {/*
-          Shell (Dashboard) for all in-app feature routes.
-          IMPORTANT: these paths must match what is used inside MainCanvas
-        */}
+      {/* Protected routes - require authentication */}
+      <Route path="/onboarding">
+        <ProtectedRoute>
+          <OnboardingFlow />
+        </ProtectedRoute>
+      </Route>
+      
+      <Route path="/purchase-credits">
+        <ProtectedRoute>
+          <PurchaseCredits />
+        </ProtectedRoute>
+      </Route>
 
-        {/* SyntAACx feature */}
-        <Route path="/boards" component={Dashboard} />
+      {/* Dashboard routes - all protected */}
+      <Route path="/boards">
+        <ProtectedRoute>
+          <OnboardingGuard>
+            <Dashboard />
+          </OnboardingGuard>
+        </ProtectedRoute>
+      </Route>
 
-        {/* CommuniAACte feature root (list / main view) */}
-        <Route path="/interpret" component={Dashboard} />
+      <Route path="/interpret">
+        <ProtectedRoute>
+          <OnboardingGuard>
+            <Dashboard />
+          </OnboardingGuard>
+        </ProtectedRoute>
+      </Route>
 
-        {/* Example: single conversation/session detail */}
-        <Route path="/interpret/sessions/:sessionId" component={Dashboard} />
+      <Route path="/interpret/sessions/:sessionId">
+        <ProtectedRoute>
+          <OnboardingGuard>
+            <Dashboard />
+          </OnboardingGuard>
+        </ProtectedRoute>
+      </Route>
 
-        {/* DocuSLP feature */}
-        <Route path="/docuslp" component={Dashboard} />
+      <Route path="/docuslp">
+        <ProtectedRoute>
+          <OnboardingGuard>
+            <Dashboard />
+          </OnboardingGuard>
+        </ProtectedRoute>
+      </Route>
 
-        {/* Default home/welcome inside the shell */}
-        <Route path="/" component={Dashboard} />
+      {/* Default home route - protected */}
+      <Route path="/">
+        <ProtectedRoute>
+          <OnboardingGuard>
+            <Dashboard />
+          </OnboardingGuard>
+        </ProtectedRoute>
+      </Route>
 
-        {/* 404 fallback for anything else */}
-        <Route component={NotFound} />
-      </Switch>
-    </OnboardingGuard>
+      {/* 404 fallback */}
+      <Route component={NotFound} />
+    </Switch>
   );
 }
 
@@ -101,10 +160,10 @@ function App() {
             <FeaturePanelProvider>
               <ChatProvider>
                 <ThemeProvider defaultTheme="dark">
-                      <TooltipProvider>
-                        <Toaster />
-                        <Router />
-                      </TooltipProvider>
+                  <TooltipProvider>
+                    <Toaster />
+                    <Router />
+                  </TooltipProvider>
                 </ThemeProvider>
               </ChatProvider>
             </FeaturePanelProvider>
