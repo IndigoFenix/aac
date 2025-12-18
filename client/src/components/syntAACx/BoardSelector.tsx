@@ -92,25 +92,30 @@ export function BoardSelector() {
   // ============================================================================
   
   // Watch for board data from chat responses and update the current board
+  // IMPORTANT: We only depend on boardGeneratorData changing, NOT on board store state.
+  // Accessing store state directly via getState() prevents the update->effect->update loop.
   useEffect(() => {
     const boardData = sharedState?.boardGeneratorData?.board;
     if (!boardData) return;
     
+    // Clear immediately to prevent re-processing on subsequent renders
+    setSharedState({ boardGeneratorData: undefined });
+    
+    // Access current store state directly (not via hook dependencies)
+    const { activeBoardId: currentActiveBoardId, board: currentBoard } = useBoardStore.getState();
+    
     console.log('[BoardSelector] Received board data from chat:', boardData);
     
     // If we have an active board, update it instead of creating a new one
-    if (activeBoardId && board) {
-      console.log('[BoardSelector] Updating existing board:', activeBoardId);
+    if (currentActiveBoardId && currentBoard) {
+      console.log('[BoardSelector] Updating existing board:', currentActiveBoardId);
       updateBoard(boardData);
     } else {
       // No active board - create a new one
       console.log('[BoardSelector] Creating new board from chat response');
       setBoard(boardData);
     }
-    
-    // Clear the shared state to prevent re-processing
-    setSharedState({ boardGeneratorData: undefined });
-  }, [sharedState?.boardGeneratorData, activeBoardId, board, updateBoard, setBoard, setSharedState]);
+  }, [sharedState?.boardGeneratorData, setSharedState, updateBoard, setBoard]);
 
   // ============================================================================
   // LOAD FULL BOARD DATA (with irData)

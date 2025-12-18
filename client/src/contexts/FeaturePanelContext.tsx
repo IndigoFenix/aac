@@ -1,7 +1,7 @@
 // src/contexts/FeaturePanelContext.tsx
 // Updated to support chat popup mode and full-screen features
 
-import React, { createContext, useContext, useState, useCallback, useMemo, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, ReactNode, useEffect, useRef } from 'react';
 
 // Feature types including new student management features
 export type FeatureType = 
@@ -154,7 +154,10 @@ const FeaturePanelContext = createContext<FeaturePanelContextType | null>(null);
 export function FeaturePanelProvider({ children }: { children: ReactNode }) {
   const [activeFeature, setActiveFeatureState] = useState<FeatureType | null>('chat');
   const [sharedState, setSharedStateInternal] = useState<SharedState>({});
-  const [metadataBuilders, setMetadataBuilders] = useState<Partial<Record<FeatureType, MetadataBuilder>>>({});
+  // Use a ref instead of state for metadata builders to avoid triggering re-renders
+  // when builders are registered/unregistered. The builders are only accessed when
+  // getFeatureMetadata is called, not on every render.
+  const metadataBuildersRef = useRef<Partial<Record<FeatureType, MetadataBuilder>>>({});
   const [chatMode, setChatModeState] = useState<ChatMode>('expanded');
   const [chatSize, setChatSizeState] = useState<number>(50); // Default 50% width for chat
   
@@ -279,23 +282,21 @@ export function FeaturePanelProvider({ children }: { children: ReactNode }) {
     setSharedStateInternal(prev => ({ ...prev, ...updates }));
   }, []);
 
-  // Metadata builders
+  // Metadata builders - use ref mutation (no state updates, no re-renders)
   const registerMetadataBuilder = useCallback((feature: FeatureType, builder: MetadataBuilder) => {
-    setMetadataBuilders(prev => ({ ...prev, [feature]: builder }));
+    metadataBuildersRef.current = { ...metadataBuildersRef.current, [feature]: builder };
   }, []);
 
   const unregisterMetadataBuilder = useCallback((feature: FeatureType) => {
-    setMetadataBuilders(prev => {
-      const next = { ...prev };
-      delete next[feature];
-      return next;
-    });
+    const next = { ...metadataBuildersRef.current };
+    delete next[feature];
+    metadataBuildersRef.current = next;
   }, []);
 
   const getFeatureMetadata = useCallback((feature: FeatureType) => {
-    const builder = metadataBuilders[feature];
+    const builder = metadataBuildersRef.current[feature];
     return builder ? builder() : undefined;
-  }, [metadataBuilders]);
+  }, []);
 
   const contextValue = useMemo(() => ({
     activeFeature,
