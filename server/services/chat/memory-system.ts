@@ -832,9 +832,7 @@ export function renderMemoryVisualization(
           }
         } else {
           // Primitive
-          // Show enum options for fields with enum constraints
-          const enumHint = formatEnumHint(propSchema);
-          shown.push(`  - ${k}: ${summarizeValue(propSchema, v)}${inlineDesc(propSchema?.description)}${enumHint}`);
+          shown.push(`  - ${k}: ${summarizeValue(propSchema, v)}${inlineDesc(propSchema?.description)}`);
         }
         continue;
       }
@@ -846,9 +844,7 @@ export function renderMemoryVisualization(
           if (propSchema.type === 'object' || propSchema.type === 'map' || propSchema.type === 'array' || propSchema.type === 'topic') {
             shown.push(`  - ${k}: {${propSchema.type}}${inlineDesc(propSchema?.description)} (empty${req})`);
           } else {
-            // Show enum options for empty fields with enums
-            const enumHint = formatEnumHint(propSchema);
-            shown.push(`  - ${k}: <${propSchema.type}>${inlineDesc(propSchema?.description)} (empty${req})${enumHint}`);
+            shown.push(`  - ${k}: <${propSchema.type}>${inlineDesc(propSchema?.description)} (empty${req})`);
           }
         }
         continue;
@@ -878,21 +874,41 @@ export function renderMemoryVisualization(
 
   function inlineDesc(desc?: string): string { return desc ? ` — ${desc}` : ''; }
 
-  function formatEnumHint(schema: AgentMemoryField): string {
-    if (!schema || schema.type === 'object' || schema.type === 'array' || 
-        schema.type === 'map' || schema.type === 'topic') {
-      return '';
-    }
-    const s = schema as AgentMemoryFieldBase;
-    if (!s.enum || !s.enum.length) return '';
+  /**
+   * Renders a compact summary of an object showing only fields with `opened: true`.
+   * Used when items in arrays/maps aren't explicitly opened but we want to show key identifying info.
+   * Returns empty array if no opened fields or no value.
+   */
+  function renderOpenedFieldsSummary(
+    schema: AgentMemoryFieldObject,
+    value: any,
+    maxFields: number = 5
+  ): string[] {
+    if (!value || typeof value !== 'object') return [];
     
-    const maxEnumShow = 6;
-    if (s.enum.length <= maxEnumShow) {
-      return ` [options: ${s.enum.map(v => JSON.stringify(v)).join(', ')}]`;
-    } else {
-      const shown = s.enum.slice(0, maxEnumShow).map(v => JSON.stringify(v)).join(', ');
-      return ` [options: ${shown}, ... (+${s.enum.length - maxEnumShow} more)]`;
+    const props = schema.properties ?? {};
+    const lines: string[] = [];
+    
+    for (const [key, propSchema] of Object.entries(props)) {
+      if (lines.length >= maxFields) {
+        lines.push(`… +more`);
+        break;
+      }
+      
+      // Only show fields that have opened: true
+      if (!(propSchema as AgentMemoryFieldBase).opened) continue;
+      
+      const v = value[key];
+      if (v === undefined || v === null) continue;
+      
+      // For primitive types, show inline
+      if (propSchema.type !== 'object' && propSchema.type !== 'array' && propSchema.type !== 'map' && propSchema.type !== 'topic') {
+        lines.push(`- ${key}: ${summarizeValue(propSchema, v)}`);
+      }
+      // Skip complex types in summary - they'd need their own expansion
     }
+    
+    return lines;
   }
 
   function renderArray(field: AgentMemoryFieldArray, value: any[], basePath: string): string[] {
@@ -913,8 +929,8 @@ export function renderMemoryVisualization(
   
       if (s.type === 'object' || s.type === 'map' || s.type === 'array' || s.type === 'topic') {
         const vis = isOpen(itemPath);
-        lines.push(`  - [${i}]: {${s.type}} ${vis ? '' : '(hidden)'}`);
         if (vis) {
+          lines.push(`  - [${i}]: {${s.type}}`);
           // Recursively render the child container when the item itself is visible.
           if (s.type === 'object') {
             const child = renderObject(s as AgentMemoryFieldObject, item, itemPath);
@@ -929,10 +945,23 @@ export function renderMemoryVisualization(
             const child = renderTopic(s as AgentMemoryFieldTopic, (item && typeof item === 'object' && !Array.isArray(item)) ? item as TopicTree : {}, itemPath);
             lines.push(...indent(child.slice(1)));
           }
+        } else {
+          // Not explicitly opened - show summary of opened fields if it's an object
+          if (s.type === 'object') {
+            const summary = renderOpenedFieldsSummary(s as AgentMemoryFieldObject, item);
+            if (summary.length > 0) {
+              lines.push(`  - [${i}]: {${s.type}}`);
+              lines.push(...indent(summary));
+              lines.push(`      … +more (view to expand)`);
+            } else {
+              lines.push(`  - [${i}]: {${s.type}} (view to expand)`);
+            }
+          } else {
+            lines.push(`  - [${i}]: {${s.type}} (view to expand)`);
+          }
         }
       } else {
-        const enumHint = formatEnumHint(s);
-        lines.push(`  - [${i}]: ${summarizeValue(s, item)}${enumHint}`);
+        lines.push(`  - [${i}]: ${summarizeValue(s, item)}`);
       }
     }
   
@@ -960,8 +989,8 @@ export function renderMemoryVisualization(
   
       if (s.type === 'object' || s.type === 'map' || s.type === 'array' || s.type === 'topic') {
         const vis = isOpen(entryPath);
-        lines.push(`  - ${k}: {${s.type}} ${vis ? '' : '(hidden)'}`);
         if (vis) {
+          lines.push(`  - ${k}: {${s.type}}`);
           if (s.type === 'object') {
             const child = renderObject(s as AgentMemoryFieldObject, v, entryPath);
             lines.push(...indent(child.slice(1)));
@@ -975,10 +1004,23 @@ export function renderMemoryVisualization(
             const child = renderTopic(s as AgentMemoryFieldTopic, (v && typeof v === 'object' && !Array.isArray(v)) ? v as TopicTree : {}, entryPath);
             lines.push(...indent(child.slice(1)));
           }
+        } else {
+          // Not explicitly opened - show summary of opened fields if it's an object
+          if (s.type === 'object') {
+            const summary = renderOpenedFieldsSummary(s as AgentMemoryFieldObject, v);
+            if (summary.length > 0) {
+              lines.push(`  - ${k}: {${s.type}}`);
+              lines.push(...indent(summary));
+              lines.push(`      … +more (view to expand)`);
+            } else {
+              lines.push(`  - ${k}: {${s.type}} (view to expand)`);
+            }
+          } else {
+            lines.push(`  - ${k}: {${s.type}} (view to expand)`);
+          }
         }
       } else {
-        const enumHint = formatEnumHint(s);
-        lines.push(`  - ${k}: ${summarizeValue(s, v)}${enumHint}`);
+        lines.push(`  - ${k}: ${summarizeValue(s, v)}`);
       }
     }
   
@@ -1126,16 +1168,7 @@ export function renderMemoryVisualization(
       if (s.multipleOf != null) out.push(`×of ${s.multipleOf}`);
     }
     if (s.const !== undefined) out.push(`const ${JSON.stringify(s.const)}`);
-    if (s.enum && s.enum.length) {
-      // Show actual enum values (truncate if too many)
-      const maxEnumShow = 8;
-      if (s.enum.length <= maxEnumShow) {
-        out.push(`enum: ${s.enum.map(v => JSON.stringify(v)).join(' | ')}`);
-      } else {
-        const shown = s.enum.slice(0, maxEnumShow).map(v => JSON.stringify(v)).join(' | ');
-        out.push(`enum: ${shown} | ... (+${s.enum.length - maxEnumShow} more)`);
-      }
-    }
+    if (s.enum && s.enum.length) out.push(`enum(${s.enum.length})`);
     return out.length ? ` [${out.join('; ')}]` : '';
   }
 
@@ -1694,96 +1727,6 @@ export function processMemoryToolResponse(
           }
           openPath(state, joinPath([fieldId, ...nodePath, key]));
           results.push({ target: joinPath([fieldId, ...nodePath, key]), action, ok: true });
-          continue;
-        }
-
-        // Handle arrays nested inside objects (objectProp with array type)
-        if (contLeaf.kind === 'objectProp' && contLeaf.propSchema.type === 'array') {
-          const tokens = splitPath(rawTarget);
-          const parentPath = joinPath(tokens.slice(0, -1));
-          const propName = tokens[tokens.length - 1];
-          
-          // Get or create parent object
-          let parentValue = parentPath === ROOT ? values : getAtPath(values, parentPath);
-          if (parentValue == null || typeof parentValue !== 'object' || Array.isArray(parentValue)) {
-            results.push({ target: rawTarget, action, ok: false, message: `Parent object not found at '${parentPath}'.` }); 
-            continue;
-          }
-          
-          // Get or create the array
-          const arr = parentValue[propName] ?? (parentValue[propName] = []);
-          if (!Array.isArray(arr)) { 
-            results.push({ target: rawTarget, action, ok: false, message: 'Expected array but found non-array.' }); 
-            continue; 
-          }
-          
-          const s = contLeaf.propSchema as AgentMemoryFieldArray;
-          if (op.value === undefined) { 
-            results.push({ target: rawTarget, action, ok: false, message: 'add to array requires value.' }); 
-            continue; 
-          }
-          const errs = validateAgainstSchema(s.items, op.value, rawTarget + '/<new>');
-          if (errs.length) { 
-            results.push({ target: rawTarget, action, ok: false, message: errs.join(' ') }); 
-            continue; 
-          }
-          if (s.maxItems != null && arr.length + 1 > s.maxItems) { 
-            results.push({ target: rawTarget, action, ok: false, message: `maxItems ${s.maxItems} exceeded.` }); 
-            continue; 
-          }
-          if (s.uniqueItems) {
-            const sv = JSON.stringify(op.value);
-            if (arr.some((x: any) => JSON.stringify(x) === sv)) { 
-              results.push({ target: rawTarget, action, ok: false, message: 'uniqueItems violated.' }); 
-              continue; 
-            }
-          }
-          arr.push(op.value);
-          autoOpenIfObject(s.items, joinPath([...tokens, String(arr.length - 1)]));
-          results.push({ target: rawTarget, action, ok: true });
-          continue;
-        }
-
-        // Handle maps nested inside objects (objectProp with map type)
-        if (contLeaf.kind === 'objectProp' && contLeaf.propSchema.type === 'map') {
-          const tokens = splitPath(rawTarget);
-          const parentPath = joinPath(tokens.slice(0, -1));
-          const propName = tokens[tokens.length - 1];
-          
-          let parentValue = parentPath === ROOT ? values : getAtPath(values, parentPath);
-          if (parentValue == null || typeof parentValue !== 'object' || Array.isArray(parentValue)) {
-            results.push({ target: rawTarget, action, ok: false, message: `Parent object not found at '${parentPath}'.` }); 
-            continue;
-          }
-          
-          const map = parentValue[propName] ?? (parentValue[propName] = {});
-          const s = contLeaf.propSchema as AgentMemoryFieldMap;
-          const key = op.key;
-          if (!key) { 
-            results.push({ target: rawTarget, action, ok: false, message: 'add to map requires key.' }); 
-            continue; 
-          }
-          if (s.keyPattern && !new RegExp(s.keyPattern).test(key)) { 
-            results.push({ target: rawTarget, action, ok: false, message: 'keyPattern violation.' }); 
-            continue; 
-          }
-          if (map[key] !== undefined) { 
-            results.push({ target: rawTarget, action, ok: false, message: 'Key already exists.' }); 
-            continue; 
-          }
-          const val = op.value;
-          const errs = validateAgainstSchema(s.values, val, rawTarget + '/' + key);
-          if (errs.length) { 
-            results.push({ target: rawTarget, action, ok: false, message: errs.join(' ') }); 
-            continue; 
-          }
-          if (s.maxProperties != null && Object.keys(map).length + 1 > s.maxProperties) { 
-            results.push({ target: rawTarget, action, ok: false, message: `maxProperties ${s.maxProperties} exceeded.` }); 
-            continue; 
-          }
-          map[key] = val;
-          autoOpenIfObject(s.values, joinPath([...tokens, key]));
-          results.push({ target: rawTarget, action, ok: true });
           continue;
         }
 

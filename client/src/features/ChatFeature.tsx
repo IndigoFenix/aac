@@ -1,5 +1,5 @@
 // src/features/ChatFeature.tsx
-// Updated with mode switch button for popup mode
+// Updated with mode switch button for popup mode and proper RTL support
 
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -169,7 +169,7 @@ export function ChatFeature() {
         "absolute top-4 z-10 gap-2 rounded-full shadow-sm",
         "bg-background/80 backdrop-blur-sm hover:bg-background",
         "transition-all duration-200",
-        "mx-4"
+        isRTL ? "right-4" : "left-4"
       )}
       onClick={handleSwitchToPopup}
       title={t('chat.switchToPopup')}
@@ -182,10 +182,10 @@ export function ChatFeature() {
 
   // Input bar component
   const InputBar = useMemo(() => (
-    <div className={cn(
-      "relative bg-card border border-card-border rounded-full px-6 py-4 flex items-center gap-3",
-      isRTL && "flex-row-reverse"
-    )}>
+    <div 
+      dir={isRTL ? 'rtl' : 'ltr'}
+      className="relative bg-card border border-card-border rounded-full px-6 py-4 flex items-center gap-3"
+    >
       <Button
         size="icon"
         variant="ghost"
@@ -200,15 +200,12 @@ export function ChatFeature() {
       {showTools && (
         <Button
           variant="ghost"
-          className={cn(
-            "h-8 rounded-full hover-elevate active-elevate-2",
-            isRTL && "flex-row-reverse"
-          )}
+          className="h-8 rounded-full hover-elevate active-elevate-2"
           data-testid="button-tools"
           onClick={() => console.log('Tools clicked')}
         >
-          <Settings2 className={cn("w-4 h-4", isRTL ? "ml-2" : "mr-2")} />
-          <span className="text-sm">{t('chat.tools')}</span>
+          <Settings2 className="w-4 h-4" />
+          <span className="text-sm ms-2">{t('chat.tools')}</span>
         </Button>
       )}
 
@@ -217,10 +214,7 @@ export function ChatFeature() {
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
         placeholder={getPlaceholder()}
-        className={cn(
-          "flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-base h-8 px-2",
-          isRTL && "text-right"
-        )}
+        className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-base h-8 px-2"
         dir={isRTL ? 'rtl' : 'ltr'}
         data-testid="input-prompt"
         onKeyDown={handleKeyDown}
@@ -229,13 +223,16 @@ export function ChatFeature() {
 
       <Button
         size="icon"
-        variant={isRecording ? 'default' : 'ghost'}
-        className="h-8 w-8 rounded-full hover-elevate active-elevate-2"
+        variant="ghost"
+        className={cn(
+          "h-8 w-8 rounded-full hover-elevate active-elevate-2",
+          isRecording && "bg-destructive/10 text-destructive"
+        )}
         onClick={handleVoiceInput}
-        data-testid="button-voice-input"
+        data-testid="button-voice"
         aria-label={t('chat.voiceInput')}
       >
-        <Mic className={cn("w-4 h-4", isRecording && "animate-pulse")} />
+        <Mic className="w-4 h-4" />
       </Button>
 
       <Button
@@ -262,7 +259,7 @@ export function ChatFeature() {
         <div className="flex-1 flex items-center justify-center px-6 overflow-y-auto">
           <div className="w-full max-w-3xl space-y-8 py-12">
             {/* Welcome message */}
-            <div className={cn("text-center space-y-2", isRTL && "rtl")}>
+            <div className="text-center space-y-2">
               <h2 
                 className="text-3xl font-medium text-foreground" 
                 data-testid="text-welcome"
@@ -288,10 +285,7 @@ export function ChatFeature() {
             </div>
 
             {/* Quick action suggestions */}
-            <div className={cn(
-              "flex flex-wrap justify-center gap-2",
-              isRTL && "flex-row-reverse"
-            )}>
+            <div className="flex flex-wrap justify-center gap-2">
               {student && (
                 <>
                   <Button
@@ -335,12 +329,10 @@ export function ChatFeature() {
               {history.map((message, index) => (
                 <div
                   key={`${message.timestamp}-${index}`}
+                  dir={isRTL ? 'rtl' : 'ltr'}
                   className={cn(
                     "flex gap-4",
-                    message.role === 'user' 
-                      ? (isRTL ? "justify-start" : "justify-end") 
-                      : (isRTL ? "justify-end" : "justify-start"),
-                    isRTL && "flex-row-reverse"
+                    message.role === 'user' ? "justify-end" : "justify-start"
                   )}
                   data-testid={`message-${message.role}-${index}`}
                 >
@@ -351,10 +343,7 @@ export function ChatFeature() {
                       </AvatarFallback>
                     </Avatar>
                   )}
-                  <div className={cn(
-                    "max-w-2xl",
-                    message.role === 'user' && (isRTL ? "text-left" : "text-right")
-                  )}>
+                  <div className="max-w-2xl">
                     <div
                       className={cn(
                         "rounded-2xl px-4 py-3",
@@ -367,26 +356,17 @@ export function ChatFeature() {
                     >
                       {isHtmlContent(message) ? (
                         <div 
-                          className={cn(
-                            "text-sm prose prose-sm dark:prose-invert max-w-none",
-                            isRTL && "text-right"
-                          )}
+                          className="text-sm prose prose-sm dark:prose-invert max-w-none"
                           dir={isRTL ? 'rtl' : 'ltr'}
                           dangerouslySetInnerHTML={{ __html: getMessageContent(message) }}
                         />
                       ) : (
-                        <p className={cn(
-                          "text-sm whitespace-pre-wrap",
-                          isRTL && "text-right"
-                        )}>
+                        <p className="text-sm whitespace-pre-wrap">
                           {getMessageContent(message)}
                         </p>
                       )}
                     </div>
-                    <p className={cn(
-                      "text-xs text-muted-foreground mt-2 opacity-70",
-                      isRTL && "text-right"
-                    )}>
+                    <p className="text-xs text-muted-foreground mt-2 opacity-70">
                       {formatTimestamp(message.timestamp)}
                     </p>
                   </div>
@@ -396,10 +376,8 @@ export function ChatFeature() {
               {/* Typing indicator */}
               {isSending && (
                 <div 
-                  className={cn(
-                    "flex gap-4",
-                    isRTL ? "justify-end flex-row-reverse" : "justify-start"
-                  )} 
+                  dir={isRTL ? 'rtl' : 'ltr'}
+                  className="flex gap-4 justify-start"
                   data-testid="typing-indicator"
                 >
                   <Avatar className="w-8 h-8 mt-1 flex-shrink-0">

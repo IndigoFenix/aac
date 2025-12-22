@@ -800,7 +800,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
             className={cn('gap-2 text-muted-foreground hover:text-foreground', isRTL && 'flex-row-reverse')}
             onClick={handleBackClick}
           >
-            {isRTL ? <ArrowRight className="w-4 h-4" /> : <ArrowLeft className="w-4 h-4" />}
+            <ArrowLeft className="w-4 h-4 icon-arrow-left" />
             {t('common.back')}
           </Button>
         </div>
@@ -905,18 +905,18 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
         'p-4 border-b shrink-0',
         isDark ? 'border-slate-800 bg-slate-900' : 'border-gray-200 bg-white'
       )}>
-        <div className={cn('flex justify-between items-start', isRTL && 'flex-row-reverse')}>
-          <div className={cn('flex items-center gap-3', isRTL && 'flex-row-reverse')}>
+        <div className={cn('flex justify-between items-start')}>
+          <div className={cn('flex items-center gap-3')}>
             <Button
               variant="ghost"
               size="icon"
               className="shrink-0"
               onClick={handleBackClick}
             >
-              {isRTL ? <ArrowRight className="w-4 h-4" /> : <ArrowLeft className="w-4 h-4" />}
+              <ArrowLeft className="w-4 h-4 icon-arrow-left" />
             </Button>
-            <div className={isRTL ? 'text-right' : ''}>
-              <div className={cn('flex items-center gap-2', isRTL && 'flex-row-reverse')}>
+            <div>
+              <div className={cn('flex items-center gap-2')}>
                 <h1 className={cn('text-xl font-bold', isDark ? 'text-white' : 'text-slate-900')}>
                   {student?.name}
                 </h1>
@@ -930,7 +930,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
             </div>
           </div>
 
-          <div className={cn('flex items-center gap-2', isRTL && 'flex-row-reverse')}>
+          <div className={cn('flex items-center gap-2')}>
             {program.status === 'draft' && (
               <Button
                 variant="default"
@@ -990,14 +990,13 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
       </div>
 
       {/* Tabs Navigation */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
+      <Tabs dir={isRTL ? 'rtl' : 'ltr'} value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
         <div className={cn(
           'border-b px-4 shrink-0',
           isDark ? 'border-slate-800 bg-slate-900/50' : 'border-gray-200 bg-white'
         )}>
           <TabsList className={cn(
-            'h-12 bg-transparent gap-1',
-            isRTL && 'flex-row-reverse'
+            'h-12 bg-transparent gap-1'
           )}>
             <TabsTrigger value="overview" className="gap-2 data-[state=active]:bg-primary/10">
               <BarChart3 className="w-4 h-4" />
@@ -1167,8 +1166,8 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
           {/* ============================================================= */}
           {/* PROFILE TAB */}
           {/* ============================================================= */}
-          <TabsContent value="profile" className="p-4 space-y-4 mt-0">
-            <div className={cn('flex justify-between items-center', isRTL && 'flex-row-reverse')}>
+          <TabsContent dir={isRTL ? 'rtl' : 'ltr'} value="profile" className="p-4 space-y-4 mt-0">
+            <div className={cn('flex justify-between items-center')}>
               <div>
                 <h2 className="text-lg font-semibold">{t('program.functionalProfile')}</h2>
                 <p className="text-sm text-muted-foreground">{t('program.functionalProfileDesc')}</p>
@@ -1278,8 +1277,8 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
           {/* ============================================================= */}
           {/* GOALS TAB */}
           {/* ============================================================= */}
-          <TabsContent value="goals" className="p-4 space-y-4 mt-0">
-            <div className={cn('flex justify-between items-center', isRTL && 'flex-row-reverse')}>
+          <TabsContent dir={isRTL ? 'rtl' : 'ltr'} value="goals" className="p-4 space-y-4 mt-0">
+            <div className={cn('flex justify-between items-center')}>
               <div>
                 <h2 className="text-lg font-semibold">{t('program.goalsAndObjectives')}</h2>
                 <p className="text-sm text-muted-foreground">{t('program.goalsAndObjectivesDesc')}</p>
@@ -1334,8 +1333,8 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                     )}>
                       <CollapsibleTrigger asChild>
                         <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
-                          <div className={cn('flex items-start justify-between gap-4', isRTL && 'flex-row-reverse')}>
-                            <div className={cn('flex items-start gap-3', isRTL && 'flex-row-reverse')}>
+                          <div className={cn('flex items-start justify-between gap-4')}>
+                            <div className={cn('flex items-start gap-3')}>
                               <div className={cn(
                                 'w-10 h-10 rounded-lg flex items-center justify-center font-bold text-sm shrink-0',
                                 goal.status === 'achieved' 
@@ -1347,11 +1346,11 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                               <div className={isRTL ? 'text-right' : ''}>
                                 {/* goalStatement is the main field in schema (NOT title) */}
                                 <CardTitle className="text-base">{goal.goalStatement}</CardTitle>
-                                <div className={cn('flex items-center gap-2 mt-1', isRTL && 'flex-row-reverse')}>
+                                <div className={cn('flex items-center gap-2 mt-1')}>
                                   {domain && (
                                     <Badge variant="outline" className="text-xs">
                                       {DOMAIN_ICONS[domain.domainType]}
-                                      <span className="ml-1">{t(`program.domains.${domain.domainType}`)}</span>
+                                      <span className="ms-1">{t(`program.domains.${domain.domainType}`)}</span>
                                     </Badge>
                                   )}
                                   <Badge className={STATUS_COLORS[goal.status]}>
@@ -1360,7 +1359,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                                 </div>
                               </div>
                             </div>
-                            <div className={cn('flex items-center gap-2', isRTL && 'flex-row-reverse')}>
+                            <div className={cn('flex items-center gap-2')}>
                               {program.status !== 'archived' && (
                                 <>
                                   <Button
@@ -1429,7 +1428,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                           {/* progress is the schema field (0-100), NOT currentProgress */}
                           {goal.progress !== null && goal.progress > 0 && (
                             <div className="space-y-2">
-                              <div className={cn('flex justify-between text-sm', isRTL && 'flex-row-reverse')}>
+                              <div className={cn('flex justify-between text-sm')}>
                                 <span>{t('goal.currentProgress')}</span>
                                 <span className="font-medium">{goal.progress}%</span>
                               </div>
@@ -1439,7 +1438,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
 
                           {/* =========== OBJECTIVES SECTION =========== */}
                           <div className="space-y-3">
-                            <div className={cn('flex items-center justify-between', isRTL && 'flex-row-reverse')}>
+                            <div className={cn('flex items-center justify-between')}>
                               <h4 className="text-sm font-medium flex items-center gap-2">
                                 <Target className="w-4 h-4 text-muted-foreground" />
                                 {t('objective.title')}
@@ -1476,8 +1475,8 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                                       isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-gray-50 border-gray-200'
                                     )}
                                   >
-                                    <div className={cn('flex items-start justify-between gap-2', isRTL && 'flex-row-reverse')}>
-                                      <div className={cn('flex items-start gap-2', isRTL && 'flex-row-reverse')}>
+                                    <div className={cn('flex items-start justify-between gap-2')}>
+                                      <div className={cn('flex items-start gap-2')}>
                                         <span className={cn(
                                           'flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium mt-0.5',
                                           objective.status === 'achieved' 
@@ -1521,7 +1520,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
 
                           {/* =========== DATA POINTS SECTION =========== */}
                           <div className="space-y-3">
-                            <div className={cn('flex items-center justify-between', isRTL && 'flex-row-reverse')}>
+                            <div className={cn('flex items-center justify-between')}>
                               <h4 className="text-sm font-medium flex items-center gap-2">
                                 <Activity className="w-4 h-4 text-muted-foreground" />
                                 {t('dataPoint.title')}
@@ -1559,8 +1558,8 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                                       isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-gray-50 border-gray-200'
                                     )}
                                   >
-                                    <div className={cn('flex items-center justify-between', isRTL && 'flex-row-reverse')}>
-                                      <div className={cn('flex items-center gap-3', isRTL && 'flex-row-reverse')}>
+                                    <div className={cn('flex items-center justify-between')}>
+                                      <div className={cn('flex items-center gap-3')}>
                                         {dp.numericValue !== null && dp.numericValue !== undefined && (
                                           <span className={cn(
                                             'text-lg font-semibold px-2 py-1 rounded',
@@ -1580,7 +1579,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                                           )}
                                         </div>
                                       </div>
-                                      <div className={cn('text-xs text-muted-foreground flex items-center gap-1', isRTL && 'flex-row-reverse')}>
+                                      <div className={cn('text-xs text-muted-foreground flex items-center gap-1')}>
                                         <Clock className="w-3 h-3" />
                                         {new Date(dp.recordedAt).toLocaleDateString()}
                                       </div>
@@ -1617,8 +1616,8 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
           {/* ============================================================= */}
           {/* SERVICES TAB */}
           {/* ============================================================= */}
-          <TabsContent value="services" className="p-4 space-y-4 mt-0">
-            <div className={cn('flex justify-between items-center', isRTL && 'flex-row-reverse')}>
+          <TabsContent dir={isRTL ? 'rtl' : 'ltr'} value="services" className="p-4 space-y-4 mt-0">
+            <div className={cn('flex justify-between items-center')}>
               <div>
                 <h2 className="text-lg font-semibold">{t('program.servicesAndAccommodations')}</h2>
                 <p className="text-sm text-muted-foreground">{t('program.servicesAndAccommodationsDesc')}</p>
@@ -1638,7 +1637,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
             </div>
 
             {services.length === 0 ? (
-              <Card>
+              <Card dir={isRTL ? 'rtl' : 'ltr'}>
                 <CardContent className="py-12">
                   <div className="text-center">
                     <Briefcase className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
@@ -1662,10 +1661,10 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
             ) : (
               <div className="grid gap-4">
                 {services.map((service) => (
-                  <Card key={service.id} className={cn(!service.isActive && 'opacity-60')}>
+                  <Card dir={isRTL ? 'rtl' : 'ltr'} key={service.id} className={cn(!service.isActive && 'opacity-60')}>
                     <CardContent className="p-4">
-                      <div className={cn('flex items-start justify-between gap-4', isRTL && 'flex-row-reverse')}>
-                        <div className={cn('flex items-start gap-3', isRTL && 'flex-row-reverse')}>
+                      <div className={cn('flex items-start justify-between gap-4')}>
+                        <div className={cn('flex items-start gap-3')}>
                           <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                             {SERVICE_ICONS[service.serviceType]}
                           </div>
@@ -1675,7 +1674,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                             <p className="text-sm text-muted-foreground">
                               {t(`service.types.${service.serviceType}`)}
                             </p>
-                            <div className={cn('flex items-center gap-3 mt-2 text-xs text-muted-foreground', isRTL && 'flex-row-reverse')}>
+                            <div className={cn('flex items-center gap-3 mt-2 text-xs text-muted-foreground')}>
                               <span className="flex items-center gap-1">
                                 <Clock className="w-3 h-3" />
                                 {/* sessionDuration is schema field (NOT durationMinutes) */}
@@ -1705,7 +1704,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                           </div>
                         </div>
                         {program.status !== 'archived' && (
-                          <div className={cn('flex items-center gap-1', isRTL && 'flex-row-reverse')}>
+                          <div className={cn('flex items-center gap-1')}>
                             <Button
                               variant="ghost"
                               size="icon"
@@ -1757,9 +1756,9 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                   <h3 className="text-base font-semibold mb-4">{t('program.accommodations')}</h3>
                   <div className="grid gap-3">
                     {accommodations.map((acc) => (
-                      <Card key={acc.id}>
+                      <Card dir={isRTL ? 'rtl' : 'ltr'} key={acc.id}>
                         <CardContent className="p-3">
-                          <div className={cn('flex items-start gap-3', isRTL && 'flex-row-reverse')}>
+                          <div className={cn('flex items-start gap-3')}>
                             <Badge variant="outline">{t(`accommodation.types.${acc.accommodationType}`)}</Badge>
                             <p className="text-sm flex-1">{acc.description}</p>
                           </div>
@@ -1775,8 +1774,8 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
           {/* ============================================================= */}
           {/* PROGRESS TAB */}
           {/* ============================================================= */}
-          <TabsContent value="progress" className="p-4 space-y-4 mt-0">
-            <div className={cn('flex justify-between items-center', isRTL && 'flex-row-reverse')}>
+          <TabsContent dir={isRTL ? 'rtl' : 'ltr'} value="progress" className="p-4 space-y-4 mt-0">
+            <div className={cn('flex justify-between items-center')}>
               <div>
                 <h2 className="text-lg font-semibold">{t('program.progressMonitoring')}</h2>
                 <p className="text-sm text-muted-foreground">{t('program.progressMonitoringDesc')}</p>
@@ -1784,7 +1783,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
             </div>
 
             {/* Quick Data Entry */}
-            <Card>
+            <Card dir={isRTL ? 'rtl' : 'ltr'}>
               <CardHeader>
                 <CardTitle className="text-base">{t('progress.quickDataEntry')}</CardTitle>
               </CardHeader>
@@ -1796,6 +1795,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                     {goals.filter((g) => g.status === 'active').map((goal) => (
                       <div 
                         key={goal.id}
+                        dir={isRTL ? 'rtl' : 'ltr'}
                         className={cn(
                           'flex items-center justify-between p-3 rounded-lg border',
                           isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-gray-50 border-gray-200'
@@ -1823,7 +1823,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
             </Card>
 
             {/* Progress Reports */}
-            <Card>
+            <Card dir={isRTL ? 'rtl' : 'ltr'}>
               <CardHeader>
                 <CardTitle className="text-base">{t('progress.reports')}</CardTitle>
               </CardHeader>
@@ -1835,6 +1835,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                     {progressReports.map((report) => (
                       <div 
                         key={report.id}
+                        dir={isRTL ? 'rtl' : 'ltr'}
                         className={cn(
                           'flex items-center justify-between p-3 rounded-lg border',
                           isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-gray-50 border-gray-200'
@@ -1845,7 +1846,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                             {new Date(report.reportDate).toLocaleDateString()}
                           </span>
                           {report.reportingPeriod && (
-                            <span className="text-xs text-muted-foreground ml-2">
+                            <span className="text-xs text-muted-foreground ms-2">
                               ({report.reportingPeriod})
                             </span>
                           )}
@@ -1853,7 +1854,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                         <div className="flex items-center gap-2">
                           {report.sharedWithParents && (
                             <Badge variant="outline" className="text-xs">
-                              <Share2 className="w-3 h-3 mr-1" />
+                              <Share2 className="w-3 h-3 me-1" />
                               {t('progress.shared')}
                             </Badge>
                           )}
@@ -1869,8 +1870,8 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
           {/* ============================================================= */}
           {/* TEAM TAB */}
           {/* ============================================================= */}
-          <TabsContent value="team" className="p-4 space-y-4 mt-0">
-            <div className={cn('flex justify-between items-center', isRTL && 'flex-row-reverse')}>
+          <TabsContent dir={isRTL ? 'rtl' : 'ltr'} value="team" className="p-4 space-y-4 mt-0">
+            <div className={cn('flex justify-between items-center')}>
               <div>
                 <h2 className="text-lg font-semibold">{t('program.teamAndCompliance')}</h2>
                 <p className="text-sm text-muted-foreground">{t('program.teamAndComplianceDesc')}</p>
@@ -1996,9 +1997,9 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                             </div>
                             <Badge variant={consent.consentGiven ? 'default' : 'outline'}>
                               {consent.consentGiven ? (
-                                <CheckCircle2 className="w-3 h-3 mr-1" />
+                                <CheckCircle2 className="w-3 h-3 me-1" />
                               ) : (
-                                <Circle className="w-3 h-3 mr-1" />
+                                <Circle className="w-3 h-3 me-1" />
                               )}
                               {consent.consentGiven ? t('consent.signed') : t('consent.pending')}
                             </Badge>
@@ -2115,7 +2116,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
               disabled={createGoalMutation.isPending || updateGoalMutation.isPending}
             >
               {(createGoalMutation.isPending || updateGoalMutation.isPending) && (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                <Loader2 className="w-4 h-4 me-2 animate-spin" />
               )}
               {editingGoal ? t('common.save') : t('common.create')}
             </Button>
@@ -2187,7 +2188,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
               }}
               disabled={createObjectiveMutation.isPending}
             >
-              {createObjectiveMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {createObjectiveMutation.isPending && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
               {t('common.create')}
             </Button>
           </DialogFooter>
@@ -2342,7 +2343,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
               disabled={createServiceMutation.isPending || updateServiceMutation.isPending}
             >
               {(createServiceMutation.isPending || updateServiceMutation.isPending) && (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                <Loader2 className="w-4 h-4 me-2 animate-spin" />
               )}
               {editingService ? t('common.save') : t('common.create')}
             </Button>
@@ -2414,7 +2415,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
               }}
               disabled={createDataPointMutation.isPending}
             >
-              {createDataPointMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {createDataPointMutation.isPending && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
               {t('common.save')}
             </Button>
           </DialogFooter>
@@ -2522,7 +2523,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
               }}
               disabled={createTeamMemberMutation.isPending}
             >
-              {createTeamMemberMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {createTeamMemberMutation.isPending && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
               {t('team.add')}
             </Button>
           </DialogFooter>

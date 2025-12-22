@@ -1503,13 +1503,14 @@ const objectiveSchema: AgentMemoryFieldObjectWithDB = {
     id: { id: "id", type: "string" },
     objectiveStatement: { id: "objectiveStatement", type: "string", description: "The short-term objective", opened: true },
     sequenceOrder: { id: "sequenceOrder", type: "integer" },
-    criterion: { id: "criterion", type: "string", description: "Measurable criterion (e.g., '3 out of 4 opportunities')" },
+    criterion: { id: "criterion", type: "string", description: "Measurable criterion (e.g., '3 out of 4 opportunities')", opened: true },
     context: { id: "context", type: "string" },
     targetDate: { id: "targetDate", type: "string", format: "date" },
     status: {
       id: "status",
       type: "string",
       enum: ["not_started", "in_progress", "achieved", "modified", "discontinued"],
+      opened: true,
     },
     achievedDate: { id: "achievedDate", type: "string", format: "date" },
     dataPoints: {
@@ -1539,9 +1540,10 @@ const goalSchema: AgentMemoryFieldObjectWithDB = {
       id: "status",
       type: "string",
       enum: ["draft", "active", "achieved", "modified", "discontinued"],
+      opened: true,
     },
-    progress: { id: "progress", type: "integer", minimum: 0, maximum: 100 },
-    targetDate: { id: "targetDate", type: "string", format: "date" },
+    progress: { id: "progress", type: "integer", minimum: 0, maximum: 100, opened: true },
+    targetDate: { id: "targetDate", type: "string", format: "date", opened: true },
     // Less frequently accessed fields
     profileDomainId: { id: "profileDomainId", type: "string", description: "Link to profile domain" },
     criteria: { id: "criteria", type: "string", description: "Success criteria (e.g., '80% accuracy')" },

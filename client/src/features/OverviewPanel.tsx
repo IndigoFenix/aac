@@ -1,5 +1,6 @@
 // src/features/OverviewPanel.tsx
 // Overview dashboard panel showing all students and statistics
+// Simplified RTL support using dir attribute at container level
 
 import { useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -111,16 +112,19 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
   if (!isOpen) return null;
 
   return (
-    <div className={cn(
-      'flex flex-col h-full min-h-0',
-      isDark ? 'bg-slate-950' : 'bg-gray-50'
-    )}>
-      <ScrollArea className="flex-1">
+    <div 
+      dir={isRTL ? 'rtl' : 'ltr'}
+      className={cn(
+        'flex flex-col h-full min-h-0',
+        isDark ? 'bg-slate-950' : 'bg-gray-50'
+      )}
+    >
+      <ScrollArea dir={isRTL ? 'rtl' : 'ltr'} className="flex-1">
         <div className="p-6 space-y-6">
           {/* Header */}
           <header className="space-y-2">
-            <div className={cn('flex justify-between items-start', isRTL && 'flex-row-reverse')}>
-              <div className={isRTL ? 'text-right' : ''}>
+            <div className="flex justify-between items-start">
+              <div>
                 <h1 className={cn(
                   'text-2xl font-bold',
                   isDark ? 'text-white' : 'text-slate-900'
@@ -134,7 +138,7 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
                   {t('overview.subtitle') || 'Monitor student progress and upcoming deadlines'}
                 </p>
               </div>
-              <div className={cn('flex gap-2', isRTL && 'flex-row-reverse')}>
+              <div className="flex gap-2">
                 <Button variant="outline" size="sm" className="gap-2">
                   <CalendarDays className="w-4 h-4" />
                   {new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
@@ -144,9 +148,8 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
                   className="gap-2 shadow-lg shadow-primary/20"
                   onClick={handleViewAllStudents}
                 >
-                  {isRTL ? <ArrowLeft className="w-4 h-4" /> : null}
                   {t('nav.students') || 'Students'}
-                  {!isRTL ? <ArrowRight className="w-4 h-4" /> : null}
+                  <ArrowRight className="w-4 h-4 icon-arrow-right" />
                 </Button>
               </div>
             </div>
@@ -156,7 +159,6 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
           {upcomingDeadlines.length > 0 && (
             <div className={cn(
               'rounded-xl p-6 flex items-center gap-6 relative overflow-hidden',
-              isRTL && 'flex-row-reverse',
               isDark 
                 ? 'bg-gradient-to-l from-primary/20 to-transparent border border-primary/30'
                 : 'bg-gradient-to-l from-primary/10 to-transparent border border-primary/20'
@@ -169,11 +171,10 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
               )}>
                 <AlertCircle className="w-8 h-8 text-primary" />
               </div>
-              <div className={cn('flex-1 z-10', isRTL && 'text-right')}>
+              <div className="flex-1 z-10">
                 <h3 className={cn(
                   'text-lg font-bold flex items-center gap-2',
-                  isDark ? 'text-white' : 'text-slate-900',
-                  isRTL && 'flex-row-reverse justify-end'
+                  isDark ? 'text-white' : 'text-slate-900'
                 )}>
                   {t('overview.deadlineAlert') || 'Upcoming Deadlines'}
                   <Badge variant="destructive" className="animate-pulse">
@@ -201,36 +202,31 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
           )}
 
           {/* Stats Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <Card className="hover:shadow-md transition-shadow">
-              <CardHeader className={cn(
-                'flex flex-row items-center justify-between pb-2 space-y-0',
-                isRTL && 'flex-row-reverse'
-              )}>
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
                   {t('overview.totalStudents') || 'Total Students'}
                 </CardTitle>
                 <Users className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
-              <CardContent className={isRTL ? 'text-right' : ''}>
+              <CardContent>
                 <div className="text-2xl font-bold">{stats.totalStudents}</div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {t('overview.enrolled') || 'Currently enrolled'}
+                <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                  <TrendingUp className="w-3 h-3 text-green-500" />
+                  {t('overview.growth') || '+2 this month'}
                 </p>
               </CardContent>
             </Card>
 
-            <Card className="hover:shadow-md transition-shadow">
-              <CardHeader className={cn(
-                'flex flex-row items-center justify-between pb-2 space-y-0',
-                isRTL && 'flex-row-reverse'
-              )}>
+            <Card className="hover:shadow-md transition-shadow border-primary/20">
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
                   {t('overview.activePlans') || 'Active Plans'}
                 </CardTitle>
                 <Activity className="w-4 h-4 text-primary" />
               </CardHeader>
-              <CardContent className={isRTL ? 'text-right' : ''}>
+              <CardContent>
                 <div className="text-2xl font-bold text-primary">{stats.activeCases}</div>
                 <p className="text-xs text-muted-foreground mt-1">
                   {t('overview.fromLastMonth') || 'In progress'}
@@ -239,16 +235,13 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
             </Card>
 
             <Card className="hover:shadow-md transition-shadow">
-              <CardHeader className={cn(
-                'flex flex-row items-center justify-between pb-2 space-y-0',
-                isRTL && 'flex-row-reverse'
-              )}>
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
                   {t('overview.completed') || 'Completed'}
                 </CardTitle>
                 <CheckCircle2 className="w-4 h-4 text-green-500" />
               </CardHeader>
-              <CardContent className={isRTL ? 'text-right' : ''}>
+              <CardContent>
                 <div className="text-2xl font-bold text-green-600">{stats.completedCases}</div>
                 <p className="text-xs text-muted-foreground mt-1">
                   {t('overview.ytd') || 'Year to date'}
@@ -262,10 +255,7 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
                 ? 'border-amber-800 bg-amber-900/10' 
                 : 'border-amber-200 bg-amber-50/30'
             )}>
-              <CardHeader className={cn(
-                'flex flex-row items-center justify-between pb-2 space-y-0',
-                isRTL && 'flex-row-reverse'
-              )}>
+              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
                 <CardTitle className={cn(
                   'text-sm font-medium',
                   isDark ? 'text-amber-400' : 'text-amber-700'
@@ -277,7 +267,7 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
                   isDark ? 'text-amber-400' : 'text-amber-600'
                 )} />
               </CardHeader>
-              <CardContent className={isRTL ? 'text-right' : ''}>
+              <CardContent>
                 <div className={cn(
                   'text-2xl font-bold',
                   isDark ? 'text-amber-400' : 'text-amber-700'
@@ -363,19 +353,16 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
                 {students.slice(0, 4).map((student) => (
                   <div
                     key={student.id}
+                    dir={isRTL ? 'rtl' : 'ltr'}
                     onClick={() => handleStudentClick(student.id)}
                     className={cn(
                       'group flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all',
-                      isRTL && 'flex-row-reverse',
                       isDark 
                         ? 'border-slate-800 hover:border-primary/30 hover:bg-primary/5'
                         : 'border-border hover:border-primary/30 hover:bg-primary/5'
                     )}
                   >
-                    <div className={cn(
-                      'flex items-center gap-3',
-                      isRTL && 'flex-row-reverse'
-                    )}>
+                    <div className="flex items-center gap-3">
                       <div className={cn(
                         'w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs transition-colors',
                         isDark 
@@ -384,12 +371,9 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
                       )}>
                         {student.name.split(' ').map(n => n[0]).join('')}
                       </div>
-                      <div className={isRTL ? 'text-right' : ''}>
+                      <div>
                         <p className="font-medium text-sm">{student.name}</p>
-                        <div className={cn(
-                          'flex items-center gap-1.5',
-                          isRTL && 'flex-row-reverse'
-                        )}>
+                        <div className="flex items-center gap-1.5">
                           <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
                           <p className="text-xs text-muted-foreground">
                             {t('overview.phaseGoals') || 'Goal Development'}

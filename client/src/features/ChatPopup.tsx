@@ -1,5 +1,5 @@
 // src/features/ChatPopup.tsx
-// Floating chat popup component for minimized chat mode
+// Floating chat popup component for minimized chat mode with proper RTL support
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -149,25 +149,21 @@ export function ChatPopup() {
         "w-96 max-w-[calc(100vw-2rem)]"
       )}
     >
-      <div className={cn(
-        "bg-background border border-border rounded-2xl shadow-2xl overflow-hidden",
-        "flex flex-col",
-        "animate-in slide-in-from-bottom-4 duration-300"
-      )}>
+      <div 
+        dir={isRTL ? 'rtl' : 'ltr'}
+        className={cn(
+          "bg-background border border-border rounded-2xl shadow-2xl overflow-hidden",
+          "flex flex-col",
+          "animate-in slide-in-from-bottom-4 duration-300"
+        )}
+      >
         {/* Header */}
-        <div className={cn(
-          "flex items-center justify-between px-4 py-3",
-          "bg-card border-b border-border",
-          isRTL && "flex-row-reverse"
-        )}>
-          <div className={cn(
-            "flex items-center gap-2",
-            isRTL && "flex-row-reverse"
-          )}>
+        <div className="flex items-center justify-between px-4 py-3 bg-card border-b border-border">
+          <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
               <Bot className="w-4 h-4 text-primary" />
             </div>
-            <div className={isRTL ? "text-right" : ""}>
+            <div>
               <p className="text-sm font-medium">{t('chat.assistant')}</p>
               {student && (
                 <p className="text-xs text-muted-foreground">
@@ -177,10 +173,7 @@ export function ChatPopup() {
             </div>
           </div>
           
-          <div className={cn(
-            "flex items-center gap-1",
-            isRTL && "flex-row-reverse"
-          )}>
+          <div className="flex items-center gap-1">
             {/* Expand to full mode (only if not full-screen feature) */}
             {!isFullScreenFeature && (
               <Button
@@ -227,10 +220,7 @@ export function ChatPopup() {
                   key={`${message.timestamp}-${index}`}
                   className={cn(
                     "flex gap-2",
-                    message.role === 'user' 
-                      ? (isRTL ? "justify-start" : "justify-end") 
-                      : (isRTL ? "justify-end" : "justify-start"),
-                    isRTL && "flex-row-reverse"
+                    message.role === 'user' ? "justify-end" : "justify-start"
                   )}
                 >
                   {message.role === 'assistant' && (
@@ -240,10 +230,7 @@ export function ChatPopup() {
                       </AvatarFallback>
                     </Avatar>
                   )}
-                  <div className={cn(
-                    "max-w-[80%]",
-                    message.role === 'user' && (isRTL ? "text-left" : "text-right")
-                  )}>
+                  <div className="max-w-[80%]">
                     <div
                       className={cn(
                         "rounded-xl px-3 py-2 text-sm",
@@ -269,10 +256,7 @@ export function ChatPopup() {
               
               {/* Typing indicator */}
               {isSending && (
-                <div className={cn(
-                  "flex gap-2",
-                  isRTL ? "justify-end flex-row-reverse" : "justify-start"
-                )}>
+                <div className="flex gap-2 justify-start">
                   <Avatar className="w-6 h-6 flex-shrink-0">
                     <AvatarFallback className="bg-primary/10 text-xs">
                       <Bot className="w-3 h-3 text-primary" />
@@ -295,19 +279,13 @@ export function ChatPopup() {
 
         {/* Input area */}
         <div className="px-3 py-3 border-t border-border bg-card">
-          <div className={cn(
-            "flex items-center gap-2 bg-muted rounded-full px-3 py-1",
-            isRTL && "flex-row-reverse"
-          )}>
+          <div className="flex items-center gap-2 bg-muted rounded-full px-3 py-1">
             <Input
               ref={inputRef}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder={t('chat.placeholderShort')}
-              className={cn(
-                "flex-1 border-0 bg-transparent focus-visible:ring-0 text-sm h-8 px-1",
-                isRTL && "text-right"
-              )}
+              className="flex-1 border-0 bg-transparent focus-visible:ring-0 text-sm h-8 px-1"
               dir={isRTL ? 'rtl' : 'ltr'}
               data-testid="chat-popup-input"
               onKeyDown={handleKeyDown}

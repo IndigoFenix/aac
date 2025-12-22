@@ -1,5 +1,6 @@
 // src/components/layout/Sidebar.tsx
-// Updated with student management navigation items
+// Updated with student management navigation items and proper RTL support
+// Fixed theme toggle alignment to match other buttons
 
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -112,9 +113,9 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
         size="sm"
         disabled={isDisabled}
         className={cn(
-          "w-full gap-2 hover-elevate active-elevate-2",
-          isRTL ? "flex-row-reverse justify-end" : "justify-start",
-          isDisabled && "opacity-50 cursor-not-allowed"
+          "w-full hover-elevate active-elevate-2",
+          isDisabled && "opacity-50 cursor-not-allowed",
+          isCollapsed ? "justify-center px-0" : "justify-start"
         )}
         data-testid={item.testId}
         onClick={() => !isDisabled && setActiveFeature(item.feature)}
@@ -122,9 +123,9 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
         <item.icon className="w-4 h-4" />
         {!isCollapsed && (
           <>
-            <span className="flex-1 text-left">{t(item.labelKey)}</span>
+            <span className="">{t(item.labelKey)}</span>
             {'badge' in item && item.badge && (
-              <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5">
+              <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5 ms-auto">
                 {item.badge}
               </Badge>
             )}
@@ -136,6 +137,7 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
 
   return (
     <div 
+      dir={isRTL ? 'rtl' : 'ltr'}
       className={cn(
         "fixed top-0 h-screen bg-sidebar border-sidebar-border flex flex-col transition-all duration-300",
         positionClasses,
@@ -145,10 +147,7 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
       {/* Logo */}
       <div className="p-6">
         {!isCollapsed ? (
-          <div className={cn(
-            "flex items-start gap-3",
-            isRTL && "flex-row-reverse"
-          )}>
+          <div className="flex items-start gap-3">
             <img 
               src={logoImage} 
               alt="CliniAACian Logo" 
@@ -157,10 +156,7 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
             />
             <div className="flex-1">
               <h1 
-                className={cn(
-                  "text-2xl font-semibold text-sidebar-foreground leading-8",
-                  isRTL && "text-right"
-                )} 
+                className="text-2xl font-semibold text-sidebar-foreground leading-8"
                 data-testid="text-logo"
               >
                 CliniAACian
@@ -187,14 +183,11 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
               className="bg-card border border-card-border rounded-md p-4" 
               data-testid="card-client-context"
             >
-              <div className={cn(
-                "flex items-center gap-3",
-                isRTL && "flex-row-reverse"
-              )}>
+              <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
                   <User className="w-5 h-5 text-primary" />
                 </div>
-                <div className={isRTL ? "text-right" : ""}>
+                <div>
                   <p className="text-sm font-medium text-card-foreground">
                     {user.fullName}
                   </p>
@@ -219,14 +212,11 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
             onClick={() => setActiveFeature('progress')}
             data-testid="card-student-context"
           >
-            <div className={cn(
-              "flex items-center gap-3",
-              isRTL && "flex-row-reverse"
-            )}>
+            <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center">
                 <GraduationCap className="w-4 h-4 text-primary" />
               </div>
-              <div className={cn("flex-1", isRTL ? "text-right" : "")}>
+              <div className="flex-1">
                 <p className="text-sm font-medium text-primary">
                   {student.name}
                 </p>
@@ -234,10 +224,7 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
                   {t('nav.currentStudent')}
                 </p>
               </div>
-              <ChevronRight className={cn(
-                "w-4 h-4 text-primary/50 group-hover:text-primary transition-colors",
-                isRTL && "rotate-180"
-              )} />
+              <ChevronRight className="w-4 h-4 text-primary/50 group-hover:text-primary transition-colors" />
             </div>
           </div>
         </div>
@@ -246,12 +233,9 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
       <Separator className="" />
 
       {/* Core Navigation */}
-      <div className={cn("py-4 space-y-1 flex-shrink-0", isCollapsed ? "px-2" : "px-6")}>
+      <div className={cn("py-4 space-y-3 flex-shrink-0", isCollapsed ? "px-2" : "px-6")}>
         {!isCollapsed && (
-          <p className={cn(
-            "text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3",
-            isRTL && "text-right"
-          )}>
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
             {t('nav.workspace')}
           </p>
         )}
@@ -264,12 +248,9 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
       <Separator className="" />
 
       {/* Student Management Navigation */}
-      <div className={cn("py-4 space-y-1 flex-1", isCollapsed ? "px-2" : "px-6")}>
+      <div className={cn("py-4 space-y-3 flex-1", isCollapsed ? "px-2" : "px-6")}>
         {!isCollapsed && (
-          <p className={cn(
-            "text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3",
-            isRTL && "text-right"
-          )}>
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
             {t('nav.studentManagement')}
           </p>
         )}
@@ -285,42 +266,39 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
       <div className={cn("py-6 space-y-3", isCollapsed ? "px-2" : "px-6")}>
         {/* Theme toggle */}
         {!isCollapsed ? (
-          <div className={cn(
-            "flex items-center justify-between",
-            isRTL && "flex-row-reverse"
-          )}>
-            <div className={cn(
-              "flex items-center gap-3",
-              isRTL && "flex-row-reverse"
-            )}>
-              {theme === "dark" ? (
-                <Moon className="w-4 h-4 text-sidebar-foreground" />
-              ) : (
-                <Sun className="w-4 h-4 text-sidebar-foreground" />
-              )}
-              <span className="text-sm text-sidebar-foreground">
-                {t('settings.darkMode')}
-              </span>
-            </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start hover-elevate active-elevate-2"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            data-testid="button-theme"
+          >
+            {theme === "dark" ? (
+              <Moon className="w-4 h-4 shrink-0" />
+            ) : (
+              <Sun className="w-4 h-4 shrink-0" />
+            )}
+            <span className="">{t('settings.darkMode')}</span>
             <Switch
               checked={theme === "dark"}
+              className="ms-auto"
               onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
               data-testid="switch-theme"
             />
-          </div>
+          </Button>
         ) : (
           <Button
-            size="icon"
+            size="sm"
             variant="ghost"
-            className="w-full hover-elevate active-elevate-2"
+            className="w-full justify-center px-0 hover-elevate active-elevate-2"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             data-testid="button-theme-collapsed"
             title={t('settings.darkMode')}
           >
             {theme === "dark" ? (
-              <Moon className="w-5 h-5 text-sidebar-foreground" />
+              <Moon className="w-4 h-4" />
             ) : (
-              <Sun className="w-5 h-5 text-sidebar-foreground" />
+              <Sun className="w-4 h-4" />
             )}
           </Button>
         )}
@@ -328,35 +306,33 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
         {/* Settings */}
         <Button
           variant={activeFeature === 'settings' ? "secondary" : "ghost"}
+          size="sm"
           className={cn(
-            "w-full gap-3 hover-elevate active-elevate-2",
-            isCollapsed 
-              ? "justify-center px-0" 
-              : (isRTL ? "flex-row-reverse justify-end" : "justify-start")
+            "w-full hover-elevate active-elevate-2",
+            isCollapsed ? "justify-center px-0" : "justify-start"
           )}
           data-testid="button-settings"
           onClick={() => setActiveFeature('settings')}
           title={isCollapsed ? t('nav.settings') : undefined}
         >
-          <Settings className="w-5 h-5" />
-          {!isCollapsed && <span className="text-sm">{t('nav.settings')}</span>}
+          <Settings className="w-4 h-4" />
+          {!isCollapsed && <span className="">{t('nav.settings')}</span>}
         </Button>
 
         {/* Logout */}
         <Button
           variant="ghost"
+          size="sm"
           className={cn(
-            "w-full gap-3 hover-elevate active-elevate-2",
-            isCollapsed 
-              ? "justify-center px-0" 
-              : (isRTL ? "flex-row-reverse justify-end" : "justify-start")
+            "w-full hover-elevate active-elevate-2",
+            isCollapsed ? "justify-center px-0" : "justify-start"
           )}
           data-testid="button-logout"
           onClick={logout}
           title={isCollapsed ? t('auth.logout') : undefined}
         >
-          <LogOut className="w-5 h-5" />
-          {!isCollapsed && <span className="text-sm">{t('auth.logout')}</span>}
+          <LogOut className="w-4 h-4" />
+          {!isCollapsed && <span className="">{t('auth.logout')}</span>}
         </Button>
       </div>
     </div>

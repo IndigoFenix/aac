@@ -1,5 +1,6 @@
 // src/features/StudentsPanel.tsx
 // Panel showing list of all students (AAC users) with filtering and search
+// Simplified RTL support using dir attribute at container level
 
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -157,20 +158,20 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
   if (!isOpen) return null;
 
   return (
-    <div className={cn(
-      'flex flex-col h-full min-h-0',
-      isDark ? 'bg-slate-950' : 'bg-gray-50'
-    )}>
+    <div 
+      dir={isRTL ? 'rtl' : 'ltr'}
+      className={cn(
+        'flex flex-col h-full min-h-0',
+        isDark ? 'bg-slate-950' : 'bg-gray-50'
+      )}
+    >
       {/* Header */}
       <div className={cn(
         'p-4 border-b shrink-0',
         isDark ? 'border-slate-800 bg-slate-900' : 'border-gray-200 bg-white'
       )}>
-        <div className={cn(
-          'flex justify-between items-center mb-4',
-          isRTL && 'flex-row-reverse'
-        )}>
-          <div className={isRTL ? 'text-right' : ''}>
+        <div className="flex justify-between items-center mb-4">
+          <div>
             <h1 className={cn(
               'text-xl font-bold',
               isDark ? 'text-white' : 'text-slate-900'
@@ -194,11 +195,8 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
         </div>
 
         {/* Filters */}
-        <div className={cn(
-          'flex gap-3 items-center',
-          isRTL && 'flex-row-reverse'
-        )}>
-          <div className={cn('relative flex-1 max-w-sm', isRTL && 'text-right')}>
+        <div className="flex gap-3 items-center">
+          <div className="relative flex-1 max-w-sm">
             <Search className={cn(
               'absolute top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground',
               isRTL ? 'right-3' : 'left-3'
@@ -215,29 +213,25 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
             <DropdownMenuTrigger asChild>
               <Button variant="outline" className="gap-2">
                 <Filter className="w-4 h-4" />
-                {t('students.filterStatus') || 'Status'}
-                {statusFilter && <Badge variant="secondary" className="ml-1">{statusFilter}</Badge>}
+                {t('students.filterBy') || 'Filter'}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align={isRTL ? 'start' : 'end'}>
-              <DropdownMenuLabel>{t('students.filterStatus') || 'Filter by Status'}</DropdownMenuLabel>
+              <DropdownMenuLabel>{t('students.status') || 'Status'}</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => setStatusFilter(null)}>
-                All
+                {t('students.allStatus') || 'All'}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setStatusFilter('active')}>
-                Active
+                {t('students.activeStatus') || 'Active'}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setStatusFilter('completed')}>
-                Completed
+                {t('students.completedStatus') || 'Completed'}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <span className={cn(
-            'text-sm text-muted-foreground',
-            isRTL && 'order-first'
-          )}>
+          <span className="text-sm text-muted-foreground">
             {(t('students.foundCount') || '{count} students found')
               .replace('{count}', filteredStudents.length.toString())}
           </span>
@@ -250,6 +244,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
           {filteredStudents.map((student) => (
             <Card
               key={student.id}
+              dir={isRTL ? 'rtl' : 'ltr'}
               className={cn(
                 'group cursor-pointer transition-all duration-200 hover:shadow-md',
                 isRTL
@@ -272,10 +267,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
               )}
               onClick={() => handleStudentClick(student.id)}
             >
-              <CardContent className={cn(
-                'p-4 flex items-center gap-4',
-                isRTL && 'flex-row-reverse'
-              )}>
+              <CardContent className="p-4 flex items-center gap-4">
                 {/* Avatar */}
                 <div className={cn(
                   'w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg shrink-0 transition-colors',
@@ -287,14 +279,8 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                 </div>
 
                 {/* Main Info */}
-                <div className={cn(
-                  'flex-1 min-w-[150px]',
-                  isRTL && 'text-right'
-                )}>
-                  <div className={cn(
-                    'flex items-center gap-2 mb-1',
-                    isRTL && 'flex-row-reverse justify-end'
-                  )}>
+                <div className="flex-1 min-w-[150px]">
+                  <div className="flex items-center gap-2 mb-1">
                     <h3 className={cn(
                       'font-bold text-base transition-colors',
                       isDark ? 'text-white' : 'text-slate-900',
@@ -308,10 +294,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                       </Badge>
                     )}
                   </div>
-                  <div className={cn(
-                    'flex items-center gap-2 text-sm text-muted-foreground',
-                    isRTL && 'flex-row-reverse justify-end'
-                  )}>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     {student.grade && (
                       <>
                         <GraduationCap className="w-3 h-3" />
@@ -330,10 +313,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
 
                 {/* Diagnosis */}
                 {student.diagnosis && (
-                  <div className={cn(
-                    'w-[150px] hidden md:block',
-                    isRTL && 'text-right'
-                  )}>
+                  <div className="w-[150px] hidden md:block">
                     <p className="text-xs text-muted-foreground uppercase font-semibold tracking-wider mb-1">
                       {t('students.diagnosisLabel') || 'Diagnosis'}
                     </p>
@@ -345,10 +325,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
 
                 {/* Progress */}
                 <div className="w-[160px] flex flex-col gap-2">
-                  <div className={cn(
-                    'flex justify-between text-xs mb-1',
-                    isRTL && 'flex-row-reverse'
-                  )}>
+                  <div className="flex justify-between text-xs mb-1">
                     <span className="text-muted-foreground">
                       {t('students.progressLabel') || 'Progress'}
                     </span>
@@ -364,10 +341,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                     />
                   </div>
                   {student.nextDeadline && student.nextDeadline !== '-' && (
-                    <div className={cn(
-                      'flex items-center gap-1.5 mt-1',
-                      isRTL && 'flex-row-reverse'
-                    )}>
+                    <div className="flex items-center gap-1.5 mt-1">
                       <AlertCircle className="w-3 h-3 text-amber-500" />
                       <span className="text-xs text-amber-600 font-medium">
                         {t('students.dueLabel') || 'Due'}: {student.nextDeadline}
@@ -377,10 +351,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                 </div>
 
                 {/* Actions */}
-                <div className={cn(
-                  'flex items-center gap-2',
-                  isRTL ? 'mr-2' : 'ml-2'
-                )}>
+                <div className="flex items-center gap-2">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -437,7 +408,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                   className="mt-4"
                   onClick={handleCreateStudent}
                 >
-                  <Plus className="w-4 h-4 mr-2" />
+                  <Plus className="w-4 h-4 me-2" />
                   {t('students.addFirst') || 'Add Your First Student'}
                 </Button>
               )}

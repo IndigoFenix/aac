@@ -1,5 +1,5 @@
 // src/components/layout/MainLayout.tsx
-// UPDATED VERSION - includes resizable panels and chat popup mode
+// UPDATED VERSION - includes resizable panels and chat popup mode with proper RTL support
 
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { ChatFeature } from '@/features/ChatFeature';
@@ -137,7 +137,7 @@ export function MainLayout() {
         isResizing && "bg-primary/50"
       )}
       style={{
-        [isRTL ? 'right' : 'left']: `${chatSize}%`,
+        left: `${chatSize}%`,
         transform: 'translateX(-50%)',
       }}
       onMouseDown={handleResizeStart}
@@ -183,7 +183,7 @@ export function MainLayout() {
     <div
       className={cn(
         "h-full overflow-hidden flex-shrink-0",
-        showChatInline && isPanelOpen && "border-s border-border"
+        showChatInline && isPanelOpen && (isRTL ? "border-e" : "border-s") + " border-border"
       )}
       style={{
         width: getPanelWidth(),
@@ -197,11 +197,12 @@ export function MainLayout() {
   return (
     <div 
       ref={containerRef}
+      dir={isRTL ? 'rtl' : 'ltr'}
       className="flex-1 flex flex-col min-h-0 relative overflow-hidden"
     >
       {/* Main horizontal layout */}
       <div className="flex-1 flex min-h-0 relative">
-        {/* In RTL mode, the order is reversed via CSS dir attribute */}
+        {/* In RTL mode, the order is automatically reversed via dir attribute */}
         {ChatSection}
         {ResizeHandle}
         {PanelSection}
