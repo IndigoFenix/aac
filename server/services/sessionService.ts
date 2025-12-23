@@ -755,18 +755,30 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
 
   // Build memory values from context
   let memoryValues = buildMemoryValues(context);
+  console.log('[DEBUG] After buildMemoryValues:');
+  console.log('  - context.student?.chatMemory:', JSON.stringify(context.student?.chatMemory));
+  console.log('  - memoryValues keys:', Object.keys(memoryValues));
+  console.log('  - memoryValues:', JSON.stringify(memoryValues, null, 2));
 
   // For progress mode, load program data from database
   if (mode === "progress" && progressManager) {
-    const populateResult = await injectProgressModeContext(
-      memoryValues,
-      chatState.memoryState,
-      progressManager
-    );
-    memoryValues = populateResult;
-    
-    console.log('[getMessageManager] Progress mode - loaded program data');
+      console.log('[DEBUG] Progress mode - calling injectProgressModeContext');
+      console.log('  - studentId:', context.student?.id);
+      console.log('  - baseContext:', progressManager.getBaseContext());
+      
+      const populateResult = await injectProgressModeContext(
+        memoryValues,
+        chatState.memoryState,
+        progressManager
+      );
+      memoryValues = populateResult;
+      
+      console.log('[DEBUG] After injectProgressModeContext:');
+      console.log('  - memoryValues keys:', Object.keys(memoryValues));
+      console.log('  - Context_Program:', memoryValues['Context_Program']);
   }
+
+  console.log('[getMessageManager] Initial memory values:', memoryValues);
 
   // Inject mode-specific context into memory values
   injectModeContext(memoryValues, sessionMode, modeContext);
@@ -816,9 +828,9 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     if (context.user) {
       if (context.student) {
         if (context.userStudent) {
-          prefix += `You are speaking with ${context.user.fullName}, who is a ${context.userStudent.role} for the AAC user ${context.student.name}.\n`;
+          prefix += `You are speaking with ${context.user.fullName}, who is a ${context.userStudent.role} for the student ${context.student.name}.\n`;
         } else {
-          prefix += `You are speaking with ${context.user.fullName}, who is connected to the AAC user ${context.student.name}.\n`;
+          prefix += `You are speaking with ${context.user.fullName}, who is connected to the student ${context.student.name}.\n`;
         }
       } else {
         prefix += `You are speaking with ${context.user.fullName}.\n`;
@@ -830,7 +842,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
       prefix += progressManager.getStudentInfo();
       prefix += progressManager.getProgramSummary();
     }
-    return `${prefix}\n\n${corePrompt}`;
+    return `${prefix}\n${corePrompt}`;
   }
 
   const onUpdateChatState = async (state: ChatState, newLog?: ChatMessage[]) => {
@@ -1058,7 +1070,6 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
 
     // Debug: Log what we injected
     console.log('[onMessage] After getMessageManager, memoryValues keys:', Object.keys(memoryValues));
-    console.log('[onMessage] Context_Board present:', !!memoryValues['Context_Board']);
 
     // Persist any incoming messages
     if (messages && messages.length > 0) {
@@ -1073,7 +1084,6 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
       
       // Debug: Log what's in response.memoryValues
       console.log('[onMessage] After getResponse, response.memoryValues keys:', Object.keys(response.memoryValues || {}));
-      console.log('[onMessage] response.memoryValues.Context_Board present:', !!(response.memoryValues?.['Context_Board']));
       
       // Merge: our injected values + any updates from LLM
       // This ensures Context_Board is included even if memory system doesn't return it
@@ -1082,8 +1092,6 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
         ...(response.memoryValues || {}),
       };
       
-      console.log('[onMessage] After merge, mergedMemoryValues keys:', Object.keys(mergedMemoryValues));
-      console.log('[onMessage] mergedMemoryValues.Context_Board present:', !!mergedMemoryValues['Context_Board']);
       console.log('[onMessage] Complete mergedMemoryValues:', JSON.stringify(mergedMemoryValues));
       
       // Extract context data (boards, documents, etc.) from memory values

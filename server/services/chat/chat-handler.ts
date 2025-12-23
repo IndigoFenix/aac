@@ -237,7 +237,7 @@ import {
                   sessionId: isReadableMessage ? this.session?.id : undefined,
                   message
               });
-              console.log('Message published', message, this.session?.id);
+              console.log('Message published', message.content, this.session?.id);
           } catch (error) {
               console.error('Message failed to publish', error);
           }

@@ -615,6 +615,11 @@ export const he = {
     title: "תלמידים",
     subtitle: "ניהול רשומות תלמידים ומעקב התקדמות",
     searchPlaceholder: "חיפוש תלמידים...",
+    filterBy: "סינון לפי",
+    status: "סטטוס",
+    allStatus: "כל הסטטוסים",
+    activeStatus: "פעיל",
+    completedStatus: "הושלם",
     filterStatus: "סטטוס",
     filterSchool: "בית ספר",
     filterAll: "כל התלמידים",
@@ -790,6 +795,16 @@ export const he = {
     // Progress
     progressTracking: "מעקב התקדמות",
     progressTrackingDesc: "איסוף נתונים וניטור התקדמות",
+    progress: {
+      quickDataEntry: "הזנת נתונים מהירה",
+      reports: "דוחות",
+      noActiveGoals: "אין מטרות פעילות",
+      noReports: "אין דוחות זמינים",
+    },
+
+    // Team
+    teamAndCompliance: "צוות וציות",
+    teamAndComplianceDesc: "ניהול חברי צוות ודרישות ציות",
   },
 
   // ============================================================================

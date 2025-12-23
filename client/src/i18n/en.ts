@@ -421,6 +421,11 @@ export const en = {
     title: "Students",
     subtitle: "Manage student records and progress tracking",
     searchPlaceholder: "Search students...",
+    filterBy: "Filter by",
+    status: "Status",
+    allStatus: "All",
+    activeStatus: "Active",
+    completedStatus: "Completed",
     filterStatus: "Status",
     filterSchool: "School",
     filterAll: "All Students",
@@ -596,6 +601,16 @@ export const en = {
     // Progress
     progressTracking: "Progress Tracking",
     progressTrackingDesc: "Data collection and progress monitoring",
+    progress: {
+      quickDataEntry: "Quick Data Entry",
+      reports: "Progress Reports",
+      noActiveGoals: "No active goals to record data for",
+      noReports: "No progress reports have been created yet",
+    },
+
+    // Team
+    teamAndCompliance: "Team & Compliance",
+    teamAndComplianceDesc: "Team members and compliance documentation",
   },
 
   // ============================================================================

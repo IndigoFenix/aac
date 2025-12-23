@@ -89,6 +89,22 @@ export interface ToolRegistryDeps {
  * @returns ToolRegistry with all tools configured
  */
 export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
+  // =========================================================================
+  // RACE CONDITION FIX: Persistent accumulator for visible paths
+  // =========================================================================
+  // When parallel tool calls happen (e.g., Promise.all on multiple manageMemory calls),
+  // each call reads the same initial state and writes back independently.
+  // Without this accumulator, the last call to finish would overwrite all others.
+  // 
+  // By using a persistent Set that lives for the lifetime of this registry,
+  // we ensure all parallel calls accumulate their visible paths safely.
+  // Set.add() is atomic in single-threaded JS event loop, so concurrent calls
+  // will correctly add their paths without overwriting each other.
+  // =========================================================================
+  const visiblePathsAccumulator = new Set<string>(
+    deps.chatStateRef.current.memoryState?.visible || []
+  );
+
   return {
     apiCall: async (toolCall: GPTFunctionToolCall) => {
       const functionToolCall = toolCall as GPTFunctionToolCall;
@@ -125,11 +141,35 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
       // Use custom processor if provided, otherwise use default
       if (deps.memoryProcessor) {
         console.log(`[manageMemory] memoryValuesRef before processing: ${JSON.stringify(deps.memoryValuesRef.current)}`);
+        console.log(`[manageMemory] visiblePathsAccumulator before: [${[...visiblePathsAccumulator].join(', ')}]`);
+        
         const result = await deps.memoryProcessor(input);
         
-        // Update refs with new values
-        deps.memoryValuesRef.current = result.updatedMemoryValues;
-        deps.chatStateRef.current.memoryState = result.updatedMemoryState;
+        // MERGE memoryValues instead of replacing
+        // This ensures parallel calls don't overwrite each other's data
+        deps.memoryValuesRef.current = {
+          ...deps.memoryValuesRef.current,
+          ...result.updatedMemoryValues
+        };
+        
+        // ACCUMULATE visible paths into the persistent Set
+        // This is the key fix for the race condition - Set.add is safe for concurrent calls
+        for (const path of result.updatedMemoryState?.visible || []) {
+          visiblePathsAccumulator.add(path);
+        }
+        
+        // Also preserve any paths that were already in the chat state
+        // (in case chatStateRef was updated elsewhere)
+        for (const path of deps.chatStateRef.current.memoryState?.visible || []) {
+          visiblePathsAccumulator.add(path);
+        }
+        
+        // Write back the accumulated visible paths to the chat state
+        deps.chatStateRef.current.memoryState = {
+          ...deps.chatStateRef.current.memoryState,
+          ...result.updatedMemoryState,
+          visible: [...visiblePathsAccumulator]
+        };
         
         // Notify callbacks
         if (deps.onUpdateMemoryValues) {
@@ -140,6 +180,7 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
         }
 
         console.log('[manageMemory] After - result:', result);
+        console.log(`[manageMemory] visiblePathsAccumulator after: [${[...visiblePathsAccumulator].join(', ')}]`);
         console.log(`[manageMemory] memoryValuesRef after processing: ${JSON.stringify(deps.memoryValuesRef.current)}`);
         
         return result.results;
@@ -153,8 +194,22 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
         input
       );
       
-      deps.memoryValuesRef.current = result.updatedMemoryValues;
-      deps.chatStateRef.current.memoryState = result.updatedMemoryState;
+      // Apply same merge logic for default processor
+      deps.memoryValuesRef.current = {
+        ...deps.memoryValuesRef.current,
+        ...result.updatedMemoryValues
+      };
+      
+      // Accumulate visible paths
+      for (const path of result.updatedMemoryState?.visible || []) {
+        visiblePathsAccumulator.add(path);
+      }
+      
+      deps.chatStateRef.current.memoryState = {
+        ...deps.chatStateRef.current.memoryState,
+        ...result.updatedMemoryState,
+        visible: [...visiblePathsAccumulator]
+      };
       
       if (deps.onUpdateMemoryValues) {
         await deps.onUpdateMemoryValues(deps.memoryValuesRef.current);

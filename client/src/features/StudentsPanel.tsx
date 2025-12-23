@@ -362,7 +362,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                     }}
                   >
                     <FileText className="w-4 h-4" />
-                    {t('students.openPlan') || 'Open Plan'}
+                    {t('students.openProgress') || 'Open Plan'}
                   </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>

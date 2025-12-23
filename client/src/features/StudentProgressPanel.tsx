@@ -1777,19 +1777,19 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
           <TabsContent dir={isRTL ? 'rtl' : 'ltr'} value="progress" className="p-4 space-y-4 mt-0">
             <div className={cn('flex justify-between items-center')}>
               <div>
-                <h2 className="text-lg font-semibold">{t('program.progressMonitoring')}</h2>
-                <p className="text-sm text-muted-foreground">{t('program.progressMonitoringDesc')}</p>
+                <h2 className="text-lg font-semibold">{t('program.progressTracking')}</h2>
+                <p className="text-sm text-muted-foreground">{t('program.progressTrackingDesc')}</p>
               </div>
             </div>
 
             {/* Quick Data Entry */}
             <Card dir={isRTL ? 'rtl' : 'ltr'}>
               <CardHeader>
-                <CardTitle className="text-base">{t('progress.quickDataEntry')}</CardTitle>
+                <CardTitle className="text-base">{t('program.progress.quickDataEntry')}</CardTitle>
               </CardHeader>
               <CardContent>
                 {goals.filter((g) => g.status === 'active').length === 0 ? (
-                  <p className="text-sm text-muted-foreground">{t('progress.noActiveGoals')}</p>
+                  <p className="text-sm text-muted-foreground">{t('program.progress.noActiveGoals')}</p>
                 ) : (
                   <div className="space-y-2">
                     {goals.filter((g) => g.status === 'active').map((goal) => (
@@ -1825,11 +1825,11 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
             {/* Progress Reports */}
             <Card dir={isRTL ? 'rtl' : 'ltr'}>
               <CardHeader>
-                <CardTitle className="text-base">{t('progress.reports')}</CardTitle>
+                <CardTitle className="text-base">{t('program.progress.reports')}</CardTitle>
               </CardHeader>
               <CardContent>
                 {progressReports.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">{t('progress.noReports')}</p>
+                  <p className="text-sm text-muted-foreground">{t('program.progress.noReports')}</p>
                 ) : (
                   <div className="space-y-2">
                     {progressReports.map((report) => (
@@ -2372,21 +2372,21 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
 
             {/* value - schema field (NOT textValue) */}
             <div className="space-y-2">
-              <Label>{t('dataPoint.value')}</Label>
+              <Label>{t('dataPoint.textValue')}</Label>
               <Input
                 value={dataPointForm.value}
                 onChange={(e) => setDataPointForm(prev => ({ ...prev, value: e.target.value }))}
-                placeholder={t('dataPoint.valuePlaceholder')}
+                placeholder={t('dataPoint.textPlaceholder')}
               />
             </div>
 
             {/* context - schema field (NOT sessionNotes) */}
             <div className="space-y-2">
-              <Label>{t('dataPoint.context')}</Label>
+              <Label>{t('dataPoint.notes')}</Label>
               <Textarea
                 value={dataPointForm.context}
                 onChange={(e) => setDataPointForm(prev => ({ ...prev, context: e.target.value }))}
-                placeholder={t('dataPoint.contextPlaceholder')}
+                placeholder={t('dataPoint.notesPlaceholder')}
               />
             </div>
           </div>

@@ -260,9 +260,7 @@ export class ProgressModeManager {
     return `Current Program: ${p.title || p.programYear} (${p.framework.toUpperCase()})
 Status: ${p.status}
 Year: ${p.programYear}
-${p.startDate ? `Start: ${p.startDate}` : ""}
-${p.endDate ? `End: ${p.endDate}` : ""}
-${p.dueDate ? `Due: ${p.dueDate}` : ""}`;
+${p.startDate ? `Start: ${p.startDate}\n` : ""}${p.endDate ? `End: ${p.endDate}\n` : ""}${p.dueDate ? `Due: ${p.dueDate}\n` : ""}`;
   }
 
   /**
@@ -275,10 +273,7 @@ ${p.dueDate ? `Due: ${p.dueDate}` : ""}`;
 
     const s = this.state.student;
     return `Student: ${s.name || "Unknown"}
-${s.birthDate ? `DOB: ${s.birthDate}` : ""}
-${s.diagnosis ? `Diagnosis: ${s.diagnosis}` : ""}
-${s.grade ? `Grade: ${s.grade}` : ""}
-${s.school ? `School: ${s.school}` : ""}`;
+${s.birthDate ? `DOB: ${s.birthDate}\n` : ""}${s.diagnosis ? `Diagnosis: ${s.diagnosis}\n` : ""}${s.grade ? `Grade: ${s.grade}\n` : ""}${s.school ? `School: ${s.school}\n` : ""}`;
   }
 }
 
@@ -314,8 +309,14 @@ export async function injectProgressModeContext(
   memoryState: { visible: string[]; page: Record<string, any> } | undefined,
   manager: ProgressModeManager
 ): Promise<Record<string, any>> {
-  // Populate the Context_Program field from the database
+  console.log('[injectProgressModeContext] Input memoryValues keys:', Object.keys(memoryValues));
+  
   const result = await manager.populateMemory(memoryValues, memoryState);
+  
+  console.log('[injectProgressModeContext] Results:');
+  console.log('  - loadedPaths:', result.loadedPaths);
+  console.log('  - errors:', result.errors);
+  console.log('  - output memoryValues keys:', Object.keys(result.memoryValues));
   
   if (result.errors.length > 0) {
     console.warn('[injectProgressModeContext] Errors loading data:', result.errors);

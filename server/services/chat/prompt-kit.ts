@@ -83,7 +83,8 @@ export interface NlpSchema {
         const memoryPrompt = renderMemoryVisualization(
             ctx.agent.memoryFields,
             ctx.memoryValues,
-            ctx.memoryState
+            ctx.memoryState,
+            { maxPreviewScalars: 100 }
         );
         startPrompt += memoryPrompt;
     }
