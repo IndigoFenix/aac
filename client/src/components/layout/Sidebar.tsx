@@ -139,7 +139,7 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
       )}
     >
       {/* Logo */}
-      <div className="p-6" onClick={() => setActiveFeature('chat' as FeatureType)}>
+      <div className="p-6 cursor-pointer" onClick={() => setActiveFeature('chat' as FeatureType)}>
         {!isCollapsed ? (
           <div className="flex items-start gap-3">
             <img 

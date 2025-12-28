@@ -93,9 +93,9 @@ export const en = {
   // ============================================================================
   nav: {
     main: "CliniAACian",
-    interpret: "Interpret",
-    boards: "AAC Boards",
-    docuslp: "Create reports",
+    interpret: "Interpret Communication",
+    boards: "Generate AAC Boards",
+    docuslp: "Create Reports",
     settings: "Settings",
     workspace: "Workspace",
     toggleSidebar: "Toggle Sidebar",
