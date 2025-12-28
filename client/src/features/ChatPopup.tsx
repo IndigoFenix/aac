@@ -241,7 +241,7 @@ export function ChatPopup() {
                     >
                       {isHtmlContent(message) ? (
                         <div 
-                          className="prose prose-sm dark:prose-invert max-w-none text-xs"
+                          className="prose prose-sm dark:prose-invert max-w-none text-xs whitespace-pre-wrap"
                           dangerouslySetInnerHTML={{ __html: getMessageContent(message) }}
                         />
                       ) : (

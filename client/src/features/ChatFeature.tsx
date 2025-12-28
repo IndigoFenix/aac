@@ -356,7 +356,7 @@ export function ChatFeature() {
                     >
                       {isHtmlContent(message) ? (
                         <div 
-                          className="text-sm prose prose-sm dark:prose-invert max-w-none"
+                          className="text-sm prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap"
                           dir={isRTL ? 'rtl' : 'ltr'}
                           dangerouslySetInnerHTML={{ __html: getMessageContent(message) }}
                         />
