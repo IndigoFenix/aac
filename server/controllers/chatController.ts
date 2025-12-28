@@ -60,7 +60,7 @@ export class ChatController {
         sessionId,
         mode,
         messages: messagesWithTimestamp,
-        replyType: "text"
+        replyType: "html"
       })
       res.json(response);
     } catch (error: any) {
