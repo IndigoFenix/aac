@@ -93,9 +93,9 @@ export const he = {
   // ============================================================================
   nav: {
     main: "קליניאאקיאן",
-    interpret: "קומיוניאאקט",
-    boards: "לוחות סינטאאקס",
-    docuslp: "דוחות דוקיוסאלפי",
+    interpret: "פרש תקשורת",
+    boards: 'צור לוחות תת"ח',
+    docuslp: "צור דוחות",
     settings: "הגדרות",
     workspace: "סביבת עבודה",
     toggleSidebar: "החלף סרגל צד",
@@ -110,7 +110,7 @@ export const he = {
   // HEADER
   // ============================================================================
   header: {
-    title: "סביבת עבודה AAC",
+    title: "CliniAACian",
     student: "תלמיד",
     selectStudent: "בחר תלמיד",
     noStudents: "אין משתמשי AAC",

@@ -48,12 +48,6 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
   // Core workspace items (original features)
   const coreWorkspaceItems = [
     {
-      icon: BookOpen,
-      labelKey: 'nav.main',
-      feature: 'chat' as FeatureType,
-      testId: 'nav-main',
-    },
-    {
       icon: MessageSquarePlus,
       labelKey: 'nav.interpret',
       feature: 'interpret' as FeatureType,
@@ -145,7 +139,7 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
       )}
     >
       {/* Logo */}
-      <div className="p-6">
+      <div className="p-6" onClick={() => setActiveFeature('chat' as FeatureType)}>
         {!isCollapsed ? (
           <div className="flex items-start gap-3">
             <img 

@@ -93,9 +93,9 @@ export const en = {
   // ============================================================================
   nav: {
     main: "CliniAACian",
-    interpret: "CommuniAACte",
-    boards: "SyntAACx Boards",
-    docuslp: "DocuSLP Reports",
+    interpret: "Interpret",
+    boards: "AAC Boards",
+    docuslp: "Create reports",
     settings: "Settings",
     workspace: "Workspace",
     toggleSidebar: "Toggle Sidebar",
@@ -110,7 +110,7 @@ export const en = {
   // HEADER
   // ============================================================================
   header: {
-    title: "AAC Workspace",
+    title: "CliniAACian",
     student: "Student",
     selectStudent: "Select student",
     noStudents: "No students",
