@@ -64,9 +64,9 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
 
   // Fetch overview data
   const { data: overviewData, isLoading } = useQuery({
-    queryKey: ['/api/students/overview'],
+    queryKey: ['/api/programs/overview'],
     queryFn: async () => {
-      const response = await apiRequest('GET', '/api/students/overview');
+      const response = await apiRequest('GET', '/api/programs/overview');
       return response.json();
     },
     enabled: !!user && isOpen,

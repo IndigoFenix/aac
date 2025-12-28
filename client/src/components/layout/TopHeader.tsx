@@ -94,7 +94,7 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
                 ? t('header.selectStudent')
                 : t('header.noStudents')}
             </option>
-            {students.map((u) => (
+            {students && students.map((u) => (
               <option key={u.id} value={u.id}>
                 {u.name}
               </option>

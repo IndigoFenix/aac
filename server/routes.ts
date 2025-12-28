@@ -17,6 +17,7 @@ import {
   onboardingController,
   slpClinicalController,
   programController,
+  recordsController,
 } from "./controllers";
 
 import {
@@ -272,6 +273,107 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.delete("/api/students/:id", requireAuth, (req, res) =>
     studentController.deleteStudent(req, res)
+  );
+
+  // ============= MEDICAL RECORDS ROUTES =============
+  
+  // Get medical record for a student
+  app.get("/api/students/:studentId/medical-record", requireAuth, (req, res) =>
+    recordsController.getMedicalRecord(req, res)
+  );
+  
+  // Create medical record for a student
+  app.post("/api/students/:studentId/medical-record", requireAuth, (req, res) =>
+    recordsController.createMedicalRecord(req, res)
+  );
+  
+  // Update medical record
+  app.patch("/api/medical-records/:id", requireAuth, (req, res) =>
+    recordsController.updateMedicalRecord(req, res)
+  );
+  
+  // Delete medical record (admin only)
+  app.delete("/api/medical-records/:id", requireAuth, (req, res) =>
+    recordsController.deleteMedicalRecord(req, res)
+  );
+
+  // ============= FUNCTIONAL REPORTS ROUTES =============
+  
+  // Get functional reports for a student
+  app.get("/api/students/:studentId/functional-reports", requireAuth, (req, res) =>
+    recordsController.getFunctionalReports(req, res)
+  );
+  
+  // Get single functional report
+  app.get("/api/functional-reports/:id", requireAuth, (req, res) =>
+    recordsController.getFunctionalReport(req, res)
+  );
+  
+  // Create functional report
+  app.post("/api/students/:studentId/functional-reports", requireAuth, (req, res) =>
+    recordsController.createFunctionalReport(req, res)
+  );
+  
+  // Update functional report
+  app.patch("/api/functional-reports/:id", requireAuth, (req, res) =>
+    recordsController.updateFunctionalReport(req, res)
+  );
+  
+  // Submit functional report for review
+  app.post("/api/functional-reports/:id/submit", requireAuth, (req, res) =>
+    recordsController.submitFunctionalReport(req, res)
+  );
+  
+  // Finalize functional report
+  app.post("/api/functional-reports/:id/finalize", requireAuth, (req, res) =>
+    recordsController.finalizeFunctionalReport(req, res)
+  );
+  
+  // Delete functional report
+  app.delete("/api/functional-reports/:id", requireAuth, (req, res) =>
+    recordsController.deleteFunctionalReport(req, res)
+  );
+
+  // ============= EDUCATIONAL REPORTS ROUTES =============
+  
+  // Get educational reports for a student
+  app.get("/api/students/:studentId/educational-reports", requireAuth, (req, res) =>
+    recordsController.getEducationalReports(req, res)
+  );
+  
+  // Get single educational report
+  app.get("/api/educational-reports/:id", requireAuth, (req, res) =>
+    recordsController.getEducationalReport(req, res)
+  );
+  
+  // Create educational report
+  app.post("/api/students/:studentId/educational-reports", requireAuth, (req, res) =>
+    recordsController.createEducationalReport(req, res)
+  );
+  
+  // Update educational report
+  app.patch("/api/educational-reports/:id", requireAuth, (req, res) =>
+    recordsController.updateEducationalReport(req, res)
+  );
+  
+  // Share educational report with guardians
+  app.post("/api/educational-reports/:id/share", requireAuth, (req, res) =>
+    recordsController.shareEducationalReport(req, res)
+  );
+  
+  // Acknowledge educational report (guardian)
+  app.post("/api/educational-reports/:id/acknowledge", requireAuth, (req, res) =>
+    recordsController.acknowledgeEducationalReport(req, res)
+  );
+  
+  // Finalize educational report
+  app.post("/api/educational-reports/:id/finalize", requireAuth, (req, res) =>
+    recordsController.finalizeEducationalReport(req, res)
+  );
+  
+  // Delete educational report
+  app.delete("/api/educational-reports/:id", requireAuth, (req, res) =>
+    recordsController.deleteEducationalReport(req, res)
   );
 
   // ============= SAVED LOCATIONS ROUTES =============

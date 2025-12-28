@@ -668,8 +668,9 @@ export class ProgramService {
    * Get overview stats for a user's students
    */
   async getOverviewStats(userId: string): Promise<OverviewStats> {
+    console.log('Get overview tats for user:', userId);
     const studentsWithLinks = await studentRepository.getStudentsWithLinksByUserId(userId);
-    
+    console.log('Found students:', studentsWithLinks.length);
     let activeCases = 0;
     let completedCases = 0;
     let pendingReview = 0;
@@ -680,7 +681,9 @@ export class ProgramService {
     thirtyDaysFromNow.setDate(today.getDate() + 30);
 
     for (const { student } of studentsWithLinks) {
+      console.log('Processing student:', student.id);
       const currentProgram = await programRepository.getCurrentProgram(student.id);
+      console.log('Current program:', currentProgram);
       
       if (currentProgram) {
         if (currentProgram.status === "active") {

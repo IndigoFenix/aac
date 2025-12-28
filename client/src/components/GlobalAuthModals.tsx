@@ -133,13 +133,8 @@ export function GlobalAuthModals() {
     name: "",
     gender: "",
     birthDate: "",
-    diagnosis: "",
-    backgroundContext: "",
-    systemType: "tala",
-    country: "IL",
-    school: "",
-    grade: "",
-    idNumber: "",
+    framework: "tala",
+    country: "IL"
   });
   const [editingStudent, setEditingStudent] = useState<any>(null);
   const [showStudentModal, setShowStudentModal] = useState(false);
@@ -163,7 +158,6 @@ export function GlobalAuthModals() {
     resolver: zodResolver(insertInviteCodeSchema),
     defaultValues: {
       studentId: undefined,
-      redemptionLimit: 1,
       expiresAt: null,
       isActive: true,
     },
@@ -197,13 +191,8 @@ export function GlobalAuthModals() {
       name: "",
       gender: "",
       birthDate: "",
-      diagnosis: "",
-      backgroundContext: "",
-      systemType: "tala",
+      framework: "tala",
       country: "IL",
-      school: "",
-      grade: "",
-      idNumber: "",
     });
     // Open the student modal
     setShowStudentModal(true);
@@ -217,13 +206,8 @@ export function GlobalAuthModals() {
         name: studentData.name || "",
         gender: studentData.gender || "",
         birthDate: studentData.birthDate || "",
-        diagnosis: studentData.diagnosis || "",
-        backgroundContext: studentData.backgroundContext || "",
-        systemType: studentData.systemType || "tala",
+        framework: studentData.framework || "tala",
         country: studentData.country || "IL",
-        school: studentData.school || "",
-        grade: studentData.grade || "",
-        idNumber: studentData.idNumber || "",
       });
     }
     // Open the student modal
@@ -321,13 +305,8 @@ export function GlobalAuthModals() {
         name: "",
         gender: "",
         birthDate: "",
-        diagnosis: "",
-        backgroundContext: "",
-        systemType: "tala",
+        framework: "tala",
         country: "IL",
-        school: "",
-        grade: "",
-        idNumber: "",
       });
       setShowStudentModal(false);
       toast({
@@ -360,13 +339,8 @@ export function GlobalAuthModals() {
         name: "",
         gender: "",
         birthDate: "",
-        diagnosis: "",
-        backgroundContext: "",
-        systemType: "tala",
+        framework: "tala",
         country: "IL",
-        school: "",
-        grade: "",
-        idNumber: "",
       });
       setShowStudentModal(false);
       toast({
@@ -701,13 +675,8 @@ export function GlobalAuthModals() {
       name: student.name || "",
       gender: student.gender || "",
       birthDate: student.birthDate || "",
-      diagnosis: student.diagnosis || "",
-      backgroundContext: student.backgroundContext || "",
-      systemType: student.systemType || "tala",
+      framework: student.framework || "tala",
       country: student.country || "IL",
-      school: student.school || "",
-      grade: student.grade || "",
-      idNumber: student.idNumber || "",
     });
   };
 
@@ -733,13 +702,8 @@ export function GlobalAuthModals() {
       name: "",
       gender: "",
       birthDate: "",
-      diagnosis: "",
-      backgroundContext: "",
-      systemType: "tala",
+      framework: "tala",
       country: "IL",
-      school: "",
-      grade: "",
-      idNumber: "",
     });
     setShowStudentModal(false);
   };
@@ -1415,643 +1379,6 @@ export function GlobalAuthModals() {
                 </div>
               </div>
             </div>
-
-            {/* AAC Users Section */}
-            <div>
-              <h3
-                className={`text-lg font-medium mb-4 flex items-center gap-2 ${language === "he" ? "text-right flex-row-reverse" : "text-left"}`}
-              >
-                <User className="w-5 h-5" />
-                {language === "he" ? "משתמשי תת״ח" : "AAC Users"}
-              </h3>
-
-              {/* Add New AAC User Form */}
-              <div className="bg-muted/50 p-4 rounded-lg mb-4">
-                <h4 className="text-sm font-medium mb-3">
-                  {editingStudent
-                    ? language === "he"
-                      ? "ערוך משתמש תת״ח"
-                      : "Edit AAC User"
-                    : language === "he"
-                      ? "הוסף משתמש תת״ח חדש"
-                      : "Add New AAC User"}
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="aacName">
-                      {language === "he" ? "כינוי (חובה)" : "Name (Required)"}
-                    </Label>
-                    <Input
-                      id="aacName"
-                      value={studentForm.name}
-                      onChange={(e) =>
-                        setStudentForm((prev) => ({
-                          ...prev,
-                          name: e.target.value,
-                        }))
-                      }
-                      placeholder={
-                        language === "he"
-                          ? "לדוגמה: שרה, דני"
-                          : "e.g., Sarah, Danny"
-                      }
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="aacGender">
-                      {language === "he" ? "מגדר" : "Gender"}
-                    </Label>
-                    <Select
-                      value={studentForm.gender}
-                      onValueChange={(value) =>
-                        setStudentForm((prev) => ({ ...prev, gender: value }))
-                      }
-                    >
-                      <SelectTrigger id="aacGender">
-                        <SelectValue
-                          placeholder={
-                            language === "he" ? "בחר מגדר" : "Select gender"
-                          }
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Male">
-                          {language === "he" ? "זכר" : "Male"}
-                        </SelectItem>
-                        <SelectItem value="Female">
-                          {language === "he" ? "נקבה" : "Female"}
-                        </SelectItem>
-                        <SelectItem value="Other">
-                          {language === "he" ? "אחר" : "Other"}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {/* CHANGED: Replaced age text input with birthDate date picker */}
-                  <div className="space-y-2">
-                    <Label htmlFor="aacBirthDate">
-                      {language === "he" ? "תאריך לידה" : "Date of Birth"}
-                    </Label>
-                    <Input
-                      id="aacBirthDate"
-                      type="date"
-                      value={studentForm.birthDate}
-                      onChange={(e) =>
-                        setStudentForm((prev) => ({
-                          ...prev,
-                          birthDate: e.target.value,
-                        }))
-                      }
-                      max={new Date().toISOString().split('T')[0]}
-                    />
-                    {studentForm.birthDate && (
-                      <p className="text-xs text-muted-foreground">
-                        {language === "he" 
-                          ? `גיל: ${calculateAge(studentForm.birthDate)} שנים`
-                          : `Age: ${calculateAge(studentForm.birthDate)} years`}
-                      </p>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="aacDiagnosis">
-                      {language === "he"
-                        ? "אבחנה/תסמונת"
-                        : "Disability/Syndrome"}
-                    </Label>
-                    <Input
-                      id="aacDiagnosis"
-                      value={studentForm.diagnosis}
-                      onChange={(e) =>
-                        setStudentForm((prev) => ({
-                          ...prev,
-                          diagnosis: e.target.value,
-                        }))
-                      }
-                      placeholder={
-                        language === "he"
-                          ? "לדוגמה: תסמונת רט"
-                          : "e.g., Rett Syndrome"
-                      }
-                    />
-                  </div>
-                </div>
-                <div className="flex gap-2 mt-4">
-                  <Button
-                    onClick={
-                      editingStudent ? handleUpdateStudent : handleCreateStudent
-                    }
-                    disabled={
-                      createStudentMutation.isPending ||
-                      updateStudentMutation.isPending
-                    }
-                    className="flex items-center gap-2"
-                  >
-                    {editingStudent ? (
-                      <Edit className="w-4 h-4" />
-                    ) : (
-                      <Plus className="w-4 h-4" />
-                    )}
-                    {editingStudent
-                      ? language === "he"
-                        ? "עדכן"
-                        : "Update"
-                      : language === "he"
-                        ? "הוסף"
-                        : "Add"}
-                  </Button>
-                  {editingStudent && (
-                    <Button variant="outline" onClick={handleCancelEdit}>
-                      {language === "he" ? "בטל" : "Cancel"}
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              {/* Existing AAC Users List */}
-              <div className="space-y-2">
-                {studentsLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
-                  </div>
-                ) : students && students.length > 0 ? (
-                  students.map((student) => (
-                    <div
-                      key={student.id}
-                      className="border border-border rounded-lg p-3 flex justify-between items-start"
-                    >
-                      <div className="space-y-1">
-                        <h4 className="font-medium">{student.name}</h4>
-                        <div className="text-sm text-muted-foreground space-y-1">
-                          {student.gender && (
-                            <p>
-                              {language === "he" ? "מגדר" : "Gender"}:{" "}
-                              {student.gender}
-                            </p>
-                          )}
-                          {(student.birthDate || student.age) && (
-                            <p>
-                              {language === "he" ? "גיל" : "Age"}:{" "}
-                              {student.age ??
-                                calculateAge(student.birthDate || Date.toString())}
-                              {student.birthDate && (
-                                <span className="text-xs ml-2">
-                                  (
-                                  {new Date(
-                                    student.birthDate,
-                                  ).toLocaleDateString(
-                                    language === "he" ? "he-IL" : "en-US",
-                                  )}
-                                  )
-                                </span>
-                              )}
-                            </p>
-                          )}
-                          {student.diagnosis && (
-                            <p>
-                              {language === "he" ? "אבחנה" : "Condition"}:{" "}
-                              {student.diagnosis}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setScheduleStudent({
-                              studentId: student.id,
-                              name: student.name,
-                            });
-                            setScheduleManagerOpen(true);
-                          }}
-                          className="p-2"
-                          title={
-                            language === "he"
-                              ? "נהל לוח זמנים"
-                              : "Manage Schedule"
-                          }
-                          data-testid={`button-manage-schedule-${student.id}`}
-                        >
-                          <Calendar className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEditStudent(student)}
-                          className="p-2"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() =>
-                            deleteStudentMutation.mutate(student.id)
-                          }
-                          disabled={deleteStudentMutation.isPending}
-                          className="p-2"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <p>
-                      {language === "he"
-                        ? "אין משתמשי תת״ח עדיין. הוסף את הראשון!"
-                        : "No students yet. Add your first one!"}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-            </div>
-
-            {/* AAC User Sharing Section */}
-            <div>
-              <h3
-                className={`text-lg font-medium mb-4 flex items-center gap-2 ${language === "he" ? "text-right flex-row-reverse" : "text-left"}`}
-              >
-                <Users className="w-5 h-5" />
-                {language === "he" ? "שיתוף משתמשי תת״ח" : "AAC User Sharing"}
-              </h3>
-
-              <div className="space-y-4">
-                {/* Show invite codes query error */}
-                {inviteCodesError && (
-                  <Alert
-                    variant="destructive"
-                    data-testid="alert-invite-codes-error"
-                  >
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertDescription>
-                      {language === "he"
-                        ? "שגיאה בטעינת קודי הזמנה"
-                        : "Error loading invite codes"}
-                    </AlertDescription>
-                  </Alert>
-                )}
-
-                {/* Create Invite Code Section */}
-                <div className="bg-muted/50 p-4 rounded-lg">
-                  <h4 className="text-sm font-medium mb-3">
-                    {language === "he"
-                      ? "צור קוד הזמנה לשיתוף משתמש תת״ח"
-                      : "Create Invite Code to Share AAC User"}
-                  </h4>
-
-                  <Form {...createInviteForm}>
-                    <form
-                      onSubmit={createInviteForm.handleSubmit(
-                        handleCreateInviteCode,
-                      )}
-                      className="space-y-4"
-                    >
-                      <FormField
-                        control={createInviteForm.control}
-                        name="studentId"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              {language === "he"
-                                ? "בחר משתמש תת״ח לשיתוף"
-                                : "Select AAC User to Share"}
-                            </FormLabel>
-                            <Select
-                              onValueChange={field.onChange}
-                              value={field.value}
-                              disabled={
-                                studentsLoading ||
-                                createInviteCodeMutation.isPending
-                              }
-                            >
-                              <FormControl>
-                                <SelectTrigger data-testid="select-student-for-invite">
-                                  <SelectValue
-                                    placeholder={
-                                      language === "he"
-                                        ? "בחר משתמש תת״ח"
-                                        : "Select AAC user"
-                                    }
-                                  />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {studentsLoading ? (
-                                  <SelectItem value="loading" disabled>
-                                    {t("ui.loading")}
-                                  </SelectItem>
-                                ) : students && students.length > 0 ? (
-                                  students
-                                    .filter(
-                                      (student: any) =>
-                                        student.id &&
-                                        String(student.id).trim() !== "",
-                                    )
-                                    .map((student: any) => (
-                                      <SelectItem
-                                        key={student.id}
-                                        value={String(student.id)}
-                                      >
-                                        {student.name}
-                                        {(student.age || student.birthDate) &&
-                                          ` (${
-                                            student.age ??
-                                            calculateAge(student.birthDate)
-                                          })`}
-                                        {student.gender &&
-                                          ` - ${student.gender}`}
-                                      </SelectItem>
-                                    ))
-                                ) : (
-                                  <SelectItem value="no-users" disabled>
-                                    {t("ui.noStudents")}
-                                  </SelectItem>
-                                )}
-                              </SelectContent>
-                            </Select>
-
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <Button
-                        type="submit"
-                        disabled={
-                          createInviteCodeMutation.isPending ||
-                          studentsLoading ||
-                          !createInviteForm.watch("studentId")
-                        }
-                        className="flex items-center gap-2"
-                        data-testid="button-create-invite-code"
-                      >
-                        {createInviteCodeMutation.isPending ? (
-                          <>
-                            <div
-                              className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"
-                              data-testid="spinner-create-invite"
-                            ></div>
-                            {t("ui.creating")}
-                          </>
-                        ) : (
-                          <>
-                            <Share2 className="w-4 h-4" />
-                            {t("ui.createInviteCode")}
-                          </>
-                        )}
-                      </Button>
-                    </form>
-                  </Form>
-                </div>
-
-                {/* Redeem Invite Code Section */}
-                <div className="bg-muted/50 p-4 rounded-lg">
-                  <h4 className="text-sm font-medium mb-3">
-                    {t("ui.redeemInviteCode")}
-                  </h4>
-
-                  <Form {...redeemInviteForm}>
-                    <form
-                      onSubmit={redeemInviteForm.handleSubmit(
-                        handleRedeemInviteCode,
-                      )}
-                      className="space-y-4"
-                    >
-                      <FormField
-                        control={redeemInviteForm.control}
-                        name="code"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t("ui.enterInviteCode")}</FormLabel>
-                            <FormControl>
-                              <div className="relative">
-                                <Input
-                                  {...field}
-                                  onChange={(e) =>
-                                    field.onChange(e.target.value.toUpperCase())
-                                  }
-                                  placeholder={t("ui.inviteCodePlaceholder")}
-                                  maxLength={8}
-                                  className={`font-mono ${isRTL ? "text-right" : "text-left"}`}
-                                  data-testid="input-redeem-invite-code"
-                                  disabled={redeemInviteCodeMutation.isPending}
-                                />
-                                <div
-                                  className={`absolute top-1/2 transform -translate-y-1/2 text-xs text-muted-foreground ${isRTL ? "left-3" : "right-3"}`}
-                                >
-                                  <span data-testid="character-counter">
-                                    {field.value?.length || 0}/8
-                                  </span>
-                                </div>
-                              </div>
-                            </FormControl>
-                            <FormDescription>
-                              {t("ui.inviteCodeError")}
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <Button
-                        type="submit"
-                        disabled={
-                          redeemInviteCodeMutation.isPending ||
-                          !redeemInviteForm.watch("code")?.trim()
-                        }
-                        className="flex items-center gap-2"
-                        data-testid="button-redeem-invite-code"
-                      >
-                        {redeemInviteCodeMutation.isPending ? (
-                          <>
-                            <div
-                              className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"
-                              data-testid="spinner-redeem-invite"
-                            ></div>
-                            {t("ui.redeeming")}
-                          </>
-                        ) : (
-                          <>
-                            <Plus className="w-4 h-4" />
-                            {t("ui.redeemCode")}
-                          </>
-                        )}
-                      </Button>
-                    </form>
-                  </Form>
-                </div>
-
-                {/* Referral Code Section */}
-                <div className="bg-muted/50 p-4 rounded-lg">
-                  <h4 className="text-sm font-medium mb-3">
-                    {language === "he" ? "קוד ההפניה שלך" : "Your Referral Code"}
-                  </h4>
-                  <p className="text-xs text-muted-foreground mb-3">
-                    {language === "he"
-                      ? "שתף את קוד ההפניה שלך עם חברים. כשהם נרשמים באמצעות הקוד, שניכם תקבלו בונוס קרדיטים!"
-                      : "Share your referral code with friends. When they sign up using your code, you'll both receive bonus credits!"}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 text-sm font-mono bg-background px-3 py-2 rounded border select-all text-center font-bold tracking-wide">
-                      {user?.referralCode || ""}
-                    </code>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        if (user?.referralCode) {
-                          navigator.clipboard.writeText(user.referralCode);
-                          toast({
-                            title: language === "he" ? "הועתק!" : "Copied!",
-                            description:
-                              language === "he"
-                                ? "קוד ההפניה הועתק ללוח"
-                                : "Referral code copied to clipboard",
-                          });
-                        }
-                      }}
-                      className="flex items-center gap-2"
-                      data-testid="button-copy-referral-code"
-                    >
-                      <Copy className="w-4 h-4" />
-                      {language === "he" ? "העתק" : "Copy"}
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Active Invite Codes Section */}
-                <div className="bg-muted/50 p-4 rounded-lg">
-                  <div
-                    className={`flex items-center justify-between mb-3 ${language === "he" ? "flex-row-reverse" : ""}`}
-                  >
-                    <h4 className="text-sm font-medium">
-                      {t("ui.myInviteCodes")}
-                    </h4>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        setShowActiveInviteCodes(!showActiveInviteCodes)
-                      }
-                      className="flex items-center gap-1 text-xs"
-                      data-testid="button-toggle-invite-codes"
-                    >
-                      <ChevronUp
-                        className={`w-3 h-3 transition-transform ${showActiveInviteCodes ? "rotate-180" : ""}`}
-                      />
-                      {t("ui.showHide")}
-                    </Button>
-                  </div>
-
-                  {showActiveInviteCodes && (
-                    <div className="space-y-2">
-                      {inviteCodesLoading ? (
-                        <div className="flex items-center justify-center py-4">
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-                        </div>
-                      ) : inviteCodesData?.inviteCodes?.length > 0 ? (
-                        inviteCodesData.inviteCodes
-                          .filter((code: any) => code.isActive)
-                          .map((inviteCode: any) => (
-                            <div
-                              key={inviteCode.id}
-                              className="border border-border rounded-lg p-3 flex justify-between items-center"
-                              data-testid={`invite-code-item-${inviteCode.id}`}
-                            >
-                              <div className="space-y-1">
-                                <div
-                                  className={`flex items-center gap-2 ${language === "he" ? "flex-row-reverse" : ""}`}
-                                >
-                                  <code
-                                    className="text-sm font-mono bg-background px-2 py-1 rounded border select-all"
-                                    data-testid={`invite-code-display-${inviteCode.id}`}
-                                  >
-                                    {inviteCode.code}
-                                  </code>
-                                  <span
-                                    className="text-sm font-medium"
-                                    data-testid={`invite-code-name-${inviteCode.id}`}
-                                  >
-                                    {inviteCode.studentName}
-                                  </span>
-                                </div>
-                                <div
-                                  className="text-xs text-muted-foreground"
-                                  data-testid={`invite-code-meta-${inviteCode.id}`}
-                                >
-                                  {t("ui.created")}:{" "}
-                                  {new Date(
-                                    inviteCode.createdAt,
-                                  ).toLocaleDateString(
-                                    language === "he" ? "he-IL" : "en-US",
-                                  )}
-                                  {inviteCode.timesRedeemed > 0 && (
-                                    <>
-                                      {" • "}
-                                      {t("ui.redeemed")}:{" "}
-                                      {inviteCode.timesRedeemed}
-                                      {inviteCode.redemptionLimit > 1 &&
-                                        `/${inviteCode.redemptionLimit}`}
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex gap-2">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() =>
-                                    handleCopyInviteCode(inviteCode.code)
-                                  }
-                                  className="p-2"
-                                  data-testid={`button-copy-invite-${inviteCode.id}`}
-                                  title={t("ui.copyInviteCode")}
-                                >
-                                  <Copy className="w-4 h-4" />
-                                </Button>
-                                <Button
-                                  variant="destructive"
-                                  size="sm"
-                                  onClick={() =>
-                                    deleteInviteCodeMutation.mutate(
-                                      inviteCode.id,
-                                    )
-                                  }
-                                  disabled={deleteInviteCodeMutation.isPending}
-                                  className="p-2"
-                                  data-testid={`button-delete-invite-${inviteCode.id}`}
-                                  title={t("ui.deleteInviteCode")}
-                                >
-                                  {deleteInviteCodeMutation.isPending ? (
-                                    <div
-                                      className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"
-                                      data-testid={`spinner-delete-invite-${inviteCode.id}`}
-                                    ></div>
-                                  ) : (
-                                    <Trash2 className="w-4 h-4" />
-                                  )}
-                                </Button>
-                              </div>
-                            </div>
-                          ))
-                      ) : (
-                        <div
-                          className="text-center py-4 text-muted-foreground text-sm"
-                          data-testid="no-invite-codes-message"
-                        >
-                          <p>{t("ui.noInviteCodes")}</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
           </div>
 
           <DialogFooter>
@@ -2111,26 +1438,6 @@ export function GlobalAuthModals() {
                       : "e.g., Sarah Cohen"
                   }
                   required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="studentIdNumber">
-                  {language === "he" ? "מספר תלמיד" : "Student ID"}
-                </Label>
-                <Input
-                  id="studentIdNumber"
-                  value={studentForm.idNumber}
-                  onChange={(e) =>
-                    setStudentForm((prev) => ({
-                      ...prev,
-                      idNumber: e.target.value,
-                    }))
-                  }
-                  placeholder={
-                    language === "he"
-                      ? "מספר זיהוי"
-                      : "ID number"
-                  }
                 />
               </div>
             </div>
@@ -2193,85 +1500,19 @@ export function GlobalAuthModals() {
               </div>
             </div>
 
-            {/* Row 3: School and Grade */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="studentSchool">
-                  {language === "he" ? "בית ספר" : "School"}
-                </Label>
-                <Input
-                  id="studentSchool"
-                  value={studentForm.school}
-                  onChange={(e) =>
-                    setStudentForm((prev) => ({
-                      ...prev,
-                      school: e.target.value,
-                    }))
-                  }
-                  placeholder={
-                    language === "he"
-                      ? "שם בית הספר"
-                      : "School name"
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="studentGrade">
-                  {language === "he" ? "כיתה" : "Grade"}
-                </Label>
-                <Input
-                  id="studentGrade"
-                  value={studentForm.grade}
-                  onChange={(e) =>
-                    setStudentForm((prev) => ({
-                      ...prev,
-                      grade: e.target.value,
-                    }))
-                  }
-                  placeholder={
-                    language === "he"
-                      ? "לדוגמה: ה׳, ו׳"
-                      : "e.g., 5th, 6th"
-                  }
-                />
-              </div>
-            </div>
-
-            {/* Row 4: Diagnosis */}
-            <div className="space-y-2">
-              <Label htmlFor="studentDiagnosis">
-                {language === "he" ? "אבחנה" : "Diagnosis"}
-              </Label>
-              <Input
-                id="studentDiagnosis"
-                value={studentForm.diagnosis}
-                onChange={(e) =>
-                  setStudentForm((prev) => ({
-                    ...prev,
-                    diagnosis: e.target.value,
-                  }))
-                }
-                placeholder={
-                  language === "he"
-                    ? "לדוגמה: תסמונת רט, אוטיזם"
-                    : "e.g., Rett Syndrome, Autism"
-                }
-              />
-            </div>
-
             {/* Row 5: System Type and Country */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="studentSystemType">
+                <Label htmlFor="studentFramework">
                   {language === "he" ? "סוג מערכת" : "System Type"}
                 </Label>
                 <Select
-                  value={studentForm.systemType}
+                  value={studentForm.framework}
                   onValueChange={(value) =>
-                    setStudentForm((prev) => ({ ...prev, systemType: value }))
+                    setStudentForm((prev) => ({ ...prev, framework: value }))
                   }
                 >
-                  <SelectTrigger id="studentSystemType">
+                  <SelectTrigger id="studentFramework">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -2313,29 +1554,6 @@ export function GlobalAuthModals() {
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-
-            {/* Row 6: Background Context */}
-            <div className="space-y-2">
-              <Label htmlFor="studentBackgroundContext">
-                {language === "he" ? "מידע רקע" : "Background Information"}
-              </Label>
-              <textarea
-                id="studentBackgroundContext"
-                className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                value={studentForm.backgroundContext}
-                onChange={(e) =>
-                  setStudentForm((prev) => ({
-                    ...prev,
-                    backgroundContext: e.target.value,
-                  }))
-                }
-                placeholder={
-                  language === "he"
-                    ? "מידע רלוונטי נוסף על התלמיד..."
-                    : "Additional relevant information about the student..."
-                }
-              />
             </div>
           </div>
 

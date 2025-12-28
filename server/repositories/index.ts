@@ -8,3 +8,9 @@ export { savedLocationRepository, SavedLocationRepository } from "./savedLocatio
 export { boardRepository, BoardRepository } from "./boardRepository";
 export { settingsRepository, SettingsRepository } from "./settingsRepository";
 export { programRepository, ProgramRepository } from "./programRepository";
+export { medicalRecordRepository } from "./medicalRecordRepository";
+export { functionalReportRepository } from "./functionalReportRepository";
+export { educationalReportRepository } from "./educationalReportRepository";
+
+// Re-export types
+export type { SecurityContext } from "./medicalRecordRepository";

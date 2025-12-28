@@ -124,7 +124,7 @@ export const he = {
   // CHAT
   // ============================================================================
   chat: {
-    placeholder: "שאל את קליניאאקיאן",
+    placeholder: "שאל את CliniAACian",
     placeholderWithUser: "שאל על {name}...",
     greeting: {
       morning: "בוקר טוב",

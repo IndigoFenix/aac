@@ -105,6 +105,31 @@ export const teamMemberRoleEnum = pgEnum("team_member_role", [
   "external_provider",
   "other"
 ]);
+export const sensitivityCategoryEnum = pgEnum("sensitivity_category", [
+  "medical",
+  "psychological",
+  "behavioral",
+  "educational",
+  "legal",
+  "financial"
+]);
+export const reportStatusEnum = pgEnum("report_status", [
+  "draft",
+  "pending_review",
+  "final",
+  "superseded"
+]);
+export const auditActionEnum = pgEnum("audit_action", [
+  "read",
+  "create",
+  "update",
+  "delete",
+  "export",
+  "login",
+  "logout",
+  "login_failed",
+  "access_denied"
+]);
 
 // =============================================================================
 // CORE USER MANAGEMENT TABLES
@@ -221,6 +246,217 @@ export const instituteUsers = pgTable("institute_users", {
 ]);
 
 // =============================================================================
+// MEDICAL RECORDS TABLE (Separated from students)
+// =============================================================================
+
+export const medicalRecords = pgTable("medical_records", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").notNull(),
+  instituteId: varchar("institute_id"), // Tenant scope
+  
+  // Sensitivity markers
+  isSensitive: boolean("is_sensitive").default(true).notNull(),
+  sensitivityCategory: sensitivityCategoryEnum("sensitivity_category").default("medical").notNull(),
+  
+  // Diagnoses
+  primaryDiagnosis: text("primary_diagnosis"),
+  primaryDiagnosisCode: text("primary_diagnosis_code"),
+  diagnosisDate: date("diagnosis_date"),
+  diagnostician: text("diagnostician"),
+  secondaryDiagnoses: jsonb("secondary_diagnoses").default([]),
+  
+  // IDEA classification
+  ideaClassification: text("idea_classification"),
+  classificationDate: date("classification_date"),
+  
+  // Medical needs
+  allergies: jsonb("allergies").default([]),
+  medications: jsonb("medications").default([]),
+  medicalEquipment: text("medical_equipment").array(),
+  dietaryRestrictions: text("dietary_restrictions").array(),
+  
+  // Emergency info
+  emergencyPlan: text("emergency_plan"),
+  seizureProtocol: text("seizure_protocol"),
+  hospitalPreference: text("hospital_preference"),
+  
+  // Healthcare providers
+  primaryPhysician: jsonb("primary_physician").default({}),
+  specialists: jsonb("specialists").default([]),
+  
+  // Access tracking
+  lastAccessedBy: varchar("last_accessed_by"),
+  lastAccessedAt: timestamp("last_accessed_at"),
+  
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_medical_records_student_id").on(table.studentId),
+  index("idx_medical_records_institute_id").on(table.instituteId),
+]);
+
+// =============================================================================
+// FUNCTIONAL REPORTS TABLE
+// =============================================================================
+
+export const functionalReports = pgTable("functional_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").notNull(),
+  instituteId: varchar("institute_id"),
+  programId: varchar("program_id"),
+  
+  isSensitive: boolean("is_sensitive").default(true).notNull(),
+  sensitivityCategory: sensitivityCategoryEnum("sensitivity_category").default("behavioral").notNull(),
+  
+  reportType: text("report_type").notNull(),
+  reportTitle: text("report_title"),
+  reportDate: date("report_date").notNull(),
+  evaluationPeriodStart: date("evaluation_period_start"),
+  evaluationPeriodEnd: date("evaluation_period_end"),
+  
+  authorUserId: varchar("author_user_id"),
+  authorName: text("author_name"),
+  authorCredentials: text("author_credentials"),
+  
+  referralReason: text("referral_reason"),
+  referralSource: text("referral_source"),
+  
+  backgroundContext: text("background_context"),
+  relevantHistory: text("relevant_history"),
+  
+  assessmentMethods: text("assessment_methods").array(),
+  instrumentsUsed: text("instruments_used").array(),
+  assessmentScores: jsonb("assessment_scores").default({}),
+  observationData: jsonb("observation_data").default({}),
+  
+  findings: text("findings"),
+  strengths: text("strengths"),
+  areasOfConcern: text("areas_of_concern"),
+  functionalLimitations: text("functional_limitations"),
+  
+  recommendations: text("recommendations"),
+  recommendedServices: jsonb("recommended_services").default([]),
+  recommendedGoals: jsonb("recommended_goals").default([]),
+  
+  status: reportStatusEnum("status").default("draft").notNull(),
+  submittedAt: timestamp("submitted_at"),
+  reviewedBy: varchar("reviewed_by"),
+  reviewedAt: timestamp("reviewed_at"),
+  finalizedAt: timestamp("finalized_at"),
+  finalizedBy: varchar("finalized_by"),
+  
+  documentUrl: text("document_url"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_functional_reports_student_id").on(table.studentId),
+  index("idx_functional_reports_institute_id").on(table.instituteId),
+  index("idx_functional_reports_program_id").on(table.programId),
+  index("idx_functional_reports_report_type").on(table.reportType),
+  index("idx_functional_reports_status").on(table.status),
+]);
+
+// =============================================================================
+// EDUCATIONAL REPORTS TABLE
+// =============================================================================
+
+export const educationalReports = pgTable("educational_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").notNull(),
+  instituteId: varchar("institute_id"),
+  programId: varchar("program_id"),
+  
+  isSensitive: boolean("is_sensitive").default(true).notNull(),
+  sensitivityCategory: sensitivityCategoryEnum("sensitivity_category").default("educational").notNull(),
+  
+  reportType: text("report_type").notNull(),
+  reportTitle: text("report_title"),
+  reportDate: date("report_date").notNull(),
+  gradingPeriod: text("grading_period"),
+  academicYear: text("academic_year"),
+  
+  authorUserId: varchar("author_user_id"),
+  authorName: text("author_name"),
+  
+  academicPerformance: jsonb("academic_performance").default({}),
+  standardsProgress: jsonb("standards_progress").default([]),
+  testScores: jsonb("test_scores").default([]),
+  
+  classroomBehavior: text("classroom_behavior"),
+  participationLevel: text("participation_level"),
+  socialInteractions: text("social_interactions"),
+  attendanceSummary: jsonb("attendance_summary").default({}),
+  
+  teacherNotes: text("teacher_notes"),
+  areasOfStrength: text("areas_of_strength"),
+  areasForGrowth: text("areas_for_growth"),
+  recommendedSupports: text("recommended_supports"),
+  
+  sharedWithGuardians: boolean("shared_with_guardians").default(false),
+  sharedAt: timestamp("shared_at"),
+  guardianAcknowledgedAt: timestamp("guardian_acknowledged_at"),
+  
+  status: reportStatusEnum("status").default("draft").notNull(),
+  finalizedAt: timestamp("finalized_at"),
+  
+  documentUrl: text("document_url"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_educational_reports_student_id").on(table.studentId),
+  index("idx_educational_reports_institute_id").on(table.instituteId),
+  index("idx_educational_reports_program_id").on(table.programId),
+  index("idx_educational_reports_status").on(table.status),
+]);
+
+// =============================================================================
+// AUDIT LOGS TABLE (No PII)
+// =============================================================================
+
+export const auditLogs = pgTable("audit_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Actor (IDs only, no names)
+  actorUserId: varchar("actor_user_id"),
+  actorIpHash: text("actor_ip_hash"),
+  
+  // Action
+  action: auditActionEnum("action").notNull(),
+  resourceType: text("resource_type"),
+  resourceId: varchar("resource_id"),
+  
+  // Tenant context
+  instituteId: varchar("institute_id"),
+  sessionId: text("session_id"),
+  
+  // Change tracking (field names only, no values for sensitive fields)
+  changedFields: text("changed_fields").array(),
+  
+  // Request metadata
+  requestPath: text("request_path"),
+  requestMethod: text("request_method"),
+  
+  // Outcome
+  success: boolean("success").notNull(),
+  statusCode: integer("status_code"),
+  errorCode: text("error_code"),
+  errorMessage: text("error_message"),
+  
+  durationMs: integer("duration_ms"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_audit_logs_actor_user_id").on(table.actorUserId),
+  index("idx_audit_logs_action").on(table.action),
+  index("idx_audit_logs_resource").on(table.resourceType, table.resourceId),
+  index("idx_audit_logs_institute_id").on(table.instituteId),
+  index("idx_audit_logs_created_at").on(table.createdAt),
+]);
+
+// =============================================================================
 // LICENSE MANAGEMENT TABLES
 // =============================================================================
 
@@ -270,27 +506,11 @@ export const students = pgTable("students", {
   gender: text("gender"), // 'male', 'female', 'other'
   birthDate: date("birth_date"), // Date of birth
   
-  // Diagnosis and background
-  diagnosis: text("diagnosis"), // Primary diagnosis
-  additionalDiagnoses: text("additional_diagnoses").array(), // Secondary diagnoses
-  backgroundContext: text("background_context"), // Free text background information
-  
   // Educational framework
   framework: programFrameworkEnum("framework").default("tala"), // 'tala' | 'us_iep'
   country: text("country").default("IL"), // 'IL', 'US', etc.
   primaryLanguage: text("primary_language").default("he"), // Primary language code
   additionalLanguages: text("additional_languages").array(), // Additional language codes
-  
-  // School/Educational setting
-  educationalSetting: text("educational_setting"), // Type of educational setting
-  school: text("school"), // School name
-  grade: text("grade"), // Grade level
-  classroom: text("classroom"), // Classroom name/number
-  idNumber: text("id_number"), // Student ID number
-  
-  // IEP-specific fields
-  disabilityClassification: text("disability_classification"), // IDEA disability category
-  leastRestrictiveEnvironment: text("least_restrictive_environment"), // LRE placement description
   
   // Chat system fields
   chatMemory: jsonb("chat_memory").default({}), // Student-specific memory values for chat
@@ -316,6 +536,9 @@ export const userStudents = pgTable("user_students", {
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+
+  hasEducationalRights: boolean("has_educational_rights").default(true).notNull(),
+  hasMedicalRights: boolean("has_medical_rights").default(true).notNull(),
   
   // Chat system fields
   chatMemory: jsonb("chat_memory").default({}), // Relationship-specific memory values for chat
@@ -332,6 +555,11 @@ export const instituteStudents = pgTable("institute_students", {
   instituteId: varchar("institute_id").references(() => institutes.id).notNull(),
   studentId: varchar("student_id").references(() => students.id).notNull(),
   enrollmentDate: date("enrollment_date"),
+  educationalSetting: text("educational_setting"), // Type of educational setting
+  school: text("school"), // School name
+  grade: text("grade"), // Grade level
+  classroom: text("classroom"), // Classroom name/number
+  idNumber: text("id_number"), // Student ID number
   data: jsonb("data").default({}), // Private data for this relationship
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -352,6 +580,7 @@ export const instituteStudents = pgTable("institute_students", {
 export const programs = pgTable("programs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   studentId: varchar("student_id").references(() => students.id).notNull(),
+  instituteId: varchar("institute_id").references(() => institutes.id),
   
   // Framework and identification
   framework: programFrameworkEnum("framework").notNull(), // 'tala' | 'us_iep'
@@ -1162,6 +1391,22 @@ export const updateInstituteStudentSchema = createInsertSchema(instituteStudents
   updatedAt: true,
 }).partial();
 
+// Records schemas
+export const insertMedicalRecordSchema = createInsertSchema(medicalRecords).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export const updateMedicalRecordSchema = insertMedicalRecordSchema.partial();
+
+export const insertFunctionalReportSchema = createInsertSchema(functionalReports).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export const updateFunctionalReportSchema = insertFunctionalReportSchema.partial();
+
+export const insertEducationalReportSchema = createInsertSchema(educationalReports).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export const updateEducationalReportSchema = insertEducationalReportSchema.partial();
+
 // License schemas
 export const insertLicenseSchema = createInsertSchema(licenses).omit({
   id: true,
@@ -1662,6 +1907,26 @@ export type UpdateMeeting = z.infer<typeof updateMeetingSchema>;
 export type ConsentForm = typeof consentForms.$inferSelect;
 export type InsertConsentForm = z.infer<typeof insertConsentFormSchema>;
 export type UpdateConsentForm = z.infer<typeof updateConsentFormSchema>;
+
+// Medical and report types
+export type MedicalRecord = typeof medicalRecords.$inferSelect;
+export type InsertMedicalRecord = typeof medicalRecords.$inferInsert;
+export type UpdateMedicalRecord = Partial<Omit<InsertMedicalRecord, 'studentId'>>;
+
+export type FunctionalReport = typeof functionalReports.$inferSelect;
+export type InsertFunctionalReport = typeof functionalReports.$inferInsert;
+export type UpdateFunctionalReport = Partial<Omit<InsertFunctionalReport, 'studentId'>>;
+
+export type EducationalReport = typeof educationalReports.$inferSelect;
+export type InsertEducationalReport = typeof educationalReports.$inferInsert;
+export type UpdateEducationalReport = Partial<Omit<InsertEducationalReport, 'studentId'>>;
+
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type InsertAuditLog = typeof auditLogs.$inferInsert;
+
+export type SensitivityCategory = typeof sensitivityCategoryEnum.enumValues[number];
+export type ReportStatus = typeof reportStatusEnum.enumValues[number];
+export type AuditAction = typeof auditActionEnum.enumValues[number];
 
 // Credit & billing types
 export type CreditTransaction = typeof creditTransactions.$inferSelect;

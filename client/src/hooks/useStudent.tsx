@@ -12,7 +12,7 @@ interface StudentContextType {
   refetchStudent: () => Promise<void>;
 }
 
-const AAC_USERS_QUERY_KEY = ['/api/students'];
+const STUDENTS_QUERY_KEY = ['/api/students'];
 const studentDetailQueryKey = (id: string) => ['/api/students', id];
 
 const StudentContext = createContext<StudentContextType | null>(null);
@@ -31,9 +31,9 @@ export const StudentProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
   const { user } = useAuth();
 
-  // Load list of AAC users, with react-query + in‑memory cache
+  // Load list of students, with react-query + in‑memory cache
   const loadStudents = async (): Promise<Student[]> => {
-    const cached = queryClient.getQueryData<Student[]>(AAC_USERS_QUERY_KEY);
+    const cached = queryClient.getQueryData<Student[]>(STUDENTS_QUERY_KEY);
     if (cached) {
       setStudents(cached);
       return cached;
@@ -47,13 +47,13 @@ export const StudentProvider = ({ children }: { children: ReactNode }) => {
         data?.success && Array.isArray(data.students) ? data.students : [];
 
       setStudents(list);
-      queryClient.setQueryData<Student[]>(AAC_USERS_QUERY_KEY, list);
+      queryClient.setQueryData<Student[]>(STUDENTS_QUERY_KEY, list);
 
       return list;
     } catch (error) {
       console.error('Get AAC Users failed:', error);
       setStudents([]);
-      queryClient.setQueryData<Student[]>(AAC_USERS_QUERY_KEY, []);
+      queryClient.setQueryData<Student[]>(STUDENTS_QUERY_KEY, []);
       return [];
     }
   };
@@ -107,7 +107,7 @@ export const StudentProvider = ({ children }: { children: ReactNode }) => {
 
         // Update react‑query caches
         queryClient.setQueryData<Student>(studentDetailQueryKey(studentId), fresh);
-        queryClient.setQueryData<Student[]>(AAC_USERS_QUERY_KEY, (prev) => {
+        queryClient.setQueryData<Student[]>(STUDENTS_QUERY_KEY, (prev) => {
           if (!prev) return [fresh];
           const idx = prev.findIndex((u) => u.id === fresh.id);
           if (idx === -1) return [...prev, fresh];

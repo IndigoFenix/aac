@@ -57,9 +57,18 @@ interface LocalAgentTemplate extends AgentLike {
   memoryFields: AgentMemoryField[];
 }
 
-// Memory fields that are populated from User, Student, and UserStudent
-// These are FLAT top-level fields - the memory system requires arrays/maps to be at root level
-const MASTER_MEMORY_FIELDS: AgentMemoryField[] = [
+/**
+ * Memory fields that are populated from User, Student, and UserStudent
+ * These are FLAT top-level fields - the memory system requires arrays/maps to be at root level
+ * 
+ * PRIVACY COMPLIANCE:
+ * - NO medical diagnoses
+ * - NO disability classifications  
+ * - NO behavioral/psychological notes
+ * - NO insurance or financial info
+ * - NO detailed evaluation data
+ */
+export const MASTER_MEMORY_FIELDS: AgentMemoryField[] = [
   // === User fields (prefixed with User_) ===
   {
     id: "User_AiPersonalityPreferences",
@@ -68,13 +77,20 @@ const MASTER_MEMORY_FIELDS: AgentMemoryField[] = [
     description: "User's preferences for how the AI should communicate (tone, style, etc.)",
     opened: true,
   },
+  {
+    id: "User_Language",
+    type: "string",
+    title: "Preferred Language",
+    description: "User's preferred language for communication",
+    opened: true,
+  },
   
-  // === Student fields (prefixed with Student_) ===
+  // === Student fields (prefixed with Student_) - NON-SENSITIVE ONLY ===
   {
     id: "Student_People",
     type: "array",
     title: "People",
-    description: "Important people in the AAC user's life",
+    description: "Important people in the student's life (names and relationships only)",
     opened: true,
     items: {
       id: "Person",
@@ -90,18 +106,9 @@ const MASTER_MEMORY_FIELDS: AgentMemoryField[] = [
           id: "Relationship",
           type: "string",
           title: "Relationship",
-          description: "Relationship to the AAC user (e.g., mother, teacher, friend)",
+          description: "Relationship to the student (e.g., mother, teacher, friend)",
         },
-        Notes: {
-          id: "Notes",
-          type: "array",
-          title: "Notes",
-          description: "Additional notes about this person",
-          items: {
-            id: "Note",
-            type: "string",
-          },
-        },
+        // NOTE: Removed "Notes" array - could contain sensitive information
       },
       required: ["Name"],
     },
@@ -110,7 +117,7 @@ const MASTER_MEMORY_FIELDS: AgentMemoryField[] = [
     id: "Student_Interests",
     type: "array",
     title: "Interests",
-    description: "Things the AAC user enjoys or is interested in",
+    description: "Things the student enjoys or is interested in",
     opened: true,
     items: {
       id: "Interest",
@@ -118,43 +125,156 @@ const MASTER_MEMORY_FIELDS: AgentMemoryField[] = [
     },
   },
   {
-    id: "Student_Milestones",
-    type: "array",
-    title: "Milestones",
-    description: "Important milestones and goals for the AAC user",
+    id: "Student_CommunicationStyle",
+    type: "object",
+    title: "Communication Style",
+    description: "How the student communicates (method only, not detailed abilities)",
     opened: true,
-    items: {
-      id: "Milestone",
-      type: "object",
-      properties: {
-        Title: {
-          id: "Title",
-          type: "string",
-          title: "Title",
-          description: "Milestone title/description",
-        },
-        Date: {
-          id: "Date",
-          type: "string",
-          title: "Date",
-          description: "Target or achieved date",
-          format: "date",
-        },
-        Achieved: {
-          id: "Achieved",
-          type: "boolean",
-          title: "Achieved",
-          description: "Whether the milestone has been achieved",
-          default: false,
-        },
+    properties: {
+      PrimaryMethod: {
+        id: "PrimaryMethod",
+        type: "string",
+        title: "Primary Method",
+        description: "verbal, nonverbal, AAC, or mixed",
       },
-      required: ["Title"],
+      PreferredModality: {
+        id: "PreferredModality",
+        type: "string",
+        title: "Preferred Modality",
+        description: "If AAC, which type (symbols, text, combined)",
+      },
+    },
+  },
+  {
+    id: "Student_Preferences",
+    type: "object",
+    title: "Preferences",
+    description: "Student's preferences for activities, rewards, and engagement",
+    opened: true,
+    properties: {
+      FavoriteActivities: {
+        id: "FavoriteActivities",
+        type: "array",
+        title: "Favorite Activities",
+        items: { id: "Activity", type: "string" },
+      },
+      RewardPreferences: {
+        id: "RewardPreferences",
+        type: "array",
+        title: "Reward Preferences",
+        items: { id: "Reward", type: "string" },
+      },
+      AvoidTopics: {
+        id: "AvoidTopics",
+        type: "array",
+        title: "Topics to Avoid",
+        description: "Topics that should be avoided in conversation",
+        items: { id: "Topic", type: "string" },
+      },
     },
   },
   
-  // === UserStudent fields (relationship-specific, prefixed with Relationship_) ===
-  // Can be extended with relationship-specific fields as needed
+  // === Relationship fields (prefixed with Relationship_) ===
+  {
+    id: "Relationship_Notes",
+    type: "array",
+    title: "Session Notes",
+    description: "General notes about sessions with this student (non-sensitive)",
+    opened: false,
+    items: {
+      id: "Note",
+      type: "object",
+      properties: {
+        Date: { id: "Date", type: "string", format: "date" },
+        Content: { id: "Content", type: "string" },
+      },
+    },
+  },
 ];
+
+/**
+ * Fields that have been REMOVED for privacy compliance:
+ * 
+ * REMOVED: Student_Milestones
+ * - Reason: Could contain developmental/medical milestone information
+ * - Alternative: Use the Goals system in the IEP/TALA program
+ * 
+ * REMOVED: Student_People.Notes
+ * - Reason: Could contain sensitive information about family situations
+ * - Alternative: Keep notes in secure Records section
+ * 
+ * NOT ADDED: Student_MedicalInfo
+ * - Reason: Medical information must stay in medicalRecords table
+ * - Alternative: Access through Records API with proper authorization
+ * 
+ * NOT ADDED: Student_Diagnosis
+ * - Reason: HIPAA/FERPA protected information
+ * - Alternative: Access through Records API with proper authorization
+ * 
+ * NOT ADDED: Student_BehavioralNotes
+ * - Reason: Sensitive behavioral/psychological information
+ * - Alternative: Use functionalReports with proper access control
+ */
+
+/**
+ * Sensitive field patterns that should NEVER be added to AI memory
+ */
+export const SENSITIVE_FIELD_PATTERNS = [
+  /diagnosis/i,
+  /medication/i,
+  /allergy/i,
+  /medical/i,
+  /disability/i,
+  /classification/i,
+  /behavioral.*history/i,
+  /psychiatric/i,
+  /psychological/i,
+  /health.*condition/i,
+  /insurance/i,
+  /ssn/i,
+  /social.*security/i,
+  /custody/i,
+  /abuse/i,
+  /neglect/i,
+  /restraint/i,
+  /incident/i,
+  /hospitalization/i,
+];
+
+/**
+ * Check if a field ID contains sensitive information
+ */
+export function isSensitiveFieldId(fieldId: string): boolean {
+  return SENSITIVE_FIELD_PATTERNS.some(pattern => pattern.test(fieldId));
+}
+
+/**
+ * Filter memory values to remove any sensitive data that might have been
+ * accidentally included
+ */
+export function filterSensitiveMemoryValues(
+  values: Record<string, any>
+): Record<string, any> {
+  const filtered: Record<string, any> = {};
+  
+  for (const [key, value] of Object.entries(values)) {
+    // Skip sensitive keys
+    if (isSensitiveFieldId(key)) {
+      console.warn(`[Privacy] Filtered sensitive field from AI memory: ${key}`);
+      continue;
+    }
+    
+    // Recursively filter objects
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      filtered[key] = filterSensitiveMemoryValues(value);
+    } else {
+      filtered[key] = value;
+    }
+  }
+  
+  return filtered;
+}
+
 
 // ============================================================================
 // CONTEXT MEMORY FIELDS (Session-scoped, not persisted to DB)
@@ -313,7 +433,7 @@ When creating/modifying boards, use manageMemory and explain your changes.`;
 const BOARD_CREATION_PROMPT = `You are starting with a new communication board. The user will tell you what kind of board they want to create.
 
 If no board exists yet, you should:
-1. Ask clarifying questions about the AAC user's needs
+1. Ask clarifying questions about the student's needs
 2. Create an appropriate board structure
 3. Add relevant buttons based on the topic
 
@@ -329,16 +449,18 @@ const AGENT_TEMPLATES: Record<ChatMode, LocalAgentTemplate> = {
     name: "CliniAACian Assistant",
     corePrompt: `You are CliniAACian, a helpful AI assistant for AAC (Augmentative and Alternative Communication) professionals and caregivers.
 
-You have access to information about the AAC user you're helping with. Use the memory system to store and retrieve important information about them.
+You have access to information about the student you're helping with. Use the memory system to store and retrieve important information about them.
+You should not have access to the student's name or personally identifiable information unless explicitly provided in the conversation.
+Refer to the student using neutral terms like "the student" or "your student".
 
 Be warm, supportive, and knowledgeable about AAC practices. Help users with questions about:
 - Communication strategies
 - AAC device usage and setup
-- Supporting AAC users in daily activities
+- Supporting students in daily activities
 - Tracking progress and milestones
-- Understanding the AAC user's needs and preferences
+- Understanding the student's needs and preferences
 
-Always be respectful when discussing the AAC user and remember that caregivers and professionals are working hard to support communication access.`,
+Always be respectful when discussing the student and remember that caregivers and professionals are working hard to support communication access.`,
     greeting: "Hello! I'm CliniAACian, your AAC assistant. How can I help you today?",
     intelligence: 2,
     memory: 2,
@@ -358,7 +480,7 @@ Always be respectful when discussing the AAC user and remember that caregivers a
   },
   interpret: {
     name: "Interpretation Assistant", 
-    corePrompt: "You are an AAC interpretation assistant. Help interpret and understand AAC user communications.",
+    corePrompt: "You are an AAC interpretation assistant. Help interpret and understand student communications.",
     greeting: "Hello! I can help interpret AAC communications. What would you like me to help with?",
     intelligence: 2,
     memory: 2,
@@ -368,8 +490,8 @@ Always be respectful when discussing the AAC user and remember that caregivers a
   },
   docuslp: {
     name: "DocuSLP Assistant", 
-    corePrompt: "You are a DocuSLP assistant for AAC users. Help document speech-language pathology sessions.",
-    greeting: "Hello! I can help document SLP sessions for AAC users. What would you like to document?",
+    corePrompt: "You are a DocuSLP assistant for students. Help document speech-language pathology sessions.",
+    greeting: "Hello! I can help document SLP sessions for students. What would you like to document?",
     intelligence: 2,
     memory: 2,
     memoryFields: [...MASTER_MEMORY_FIELDS],
@@ -388,7 +510,7 @@ Always be respectful when discussing the AAC user and remember that caregivers a
   },
   students: {
     name: "Student Management Assistant",
-    corePrompt: "You are a student management assistant. Help users manage AAC user profiles and information.",
+    corePrompt: "You are a student management assistant. Help users manage student profiles and information.",
     greeting: "Hello! How can I help you manage student profiles?",
     intelligence: 1,
     memory: 1,
@@ -437,11 +559,15 @@ type FlatMemoryValues = Record<string, any>;
 // Prefixes for memory field ownership
 const MEMORY_PREFIX = {
   USER: "User_",
-  AAC_USER: "Student_",
+  STUDENT: "Student_",
   RELATIONSHIP: "Relationship_",
   CONTEXT: "Context_", // Session-scoped context (not persisted to DB)
 };
 
+
+/**
+ * Build memory values from context, filtering sensitive data
+ */
 function buildMemoryValues(context: MemoryContext): FlatMemoryValues {
   const values: FlatMemoryValues = {};
   
@@ -449,8 +575,11 @@ function buildMemoryValues(context: MemoryContext): FlatMemoryValues {
   if (context.user) {
     const userMemory = (context.user.chatMemory as Record<string, any>) || {};
     for (const [key, value] of Object.entries(userMemory)) {
-      // Store with prefix if not already prefixed
       const prefixedKey = key.startsWith(MEMORY_PREFIX.USER) ? key : `${MEMORY_PREFIX.USER}${key}`;
+      
+      // Skip sensitive fields
+      if (isSensitiveFieldId(prefixedKey)) continue;
+      
       values[prefixedKey] = value;
     }
   }
@@ -459,7 +588,11 @@ function buildMemoryValues(context: MemoryContext): FlatMemoryValues {
   if (context.student) {
     const studentMemory = (context.student.chatMemory as Record<string, any>) || {};
     for (const [key, value] of Object.entries(studentMemory)) {
-      const prefixedKey = key.startsWith(MEMORY_PREFIX.AAC_USER) ? key : `${MEMORY_PREFIX.AAC_USER}${key}`;
+      const prefixedKey = key.startsWith(MEMORY_PREFIX.STUDENT) ? key : `${MEMORY_PREFIX.STUDENT}${key}`;
+      
+      // Skip sensitive fields
+      if (isSensitiveFieldId(prefixedKey)) continue;
+      
       values[prefixedKey] = value;
     }
   }
@@ -469,6 +602,10 @@ function buildMemoryValues(context: MemoryContext): FlatMemoryValues {
     const relationshipMemory = (context.userStudent.chatMemory as Record<string, any>) || {};
     for (const [key, value] of Object.entries(relationshipMemory)) {
       const prefixedKey = key.startsWith(MEMORY_PREFIX.RELATIONSHIP) ? key : `${MEMORY_PREFIX.RELATIONSHIP}${key}`;
+      
+      // Skip sensitive fields
+      if (isSensitiveFieldId(prefixedKey)) continue;
+      
       values[prefixedKey] = value;
     }
   }
@@ -668,7 +805,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   if (studentId) {
     context.student = await getStudent(studentId);
     if (!context.student) {
-      throw { status: 404, message: `AAC User not found: ${studentId}` };
+      throw { status: 404, message: `student not found: ${studentId}` };
     }
   }
   
@@ -800,7 +937,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     
     // Student memory (fields prefixed with Student_)
     if (context.student) {
-      const studentMemory = extractMemoryForEntity(newMemoryValues, MEMORY_PREFIX.AAC_USER);
+      const studentMemory = extractMemoryForEntity(newMemoryValues, MEMORY_PREFIX.STUDENT);
       const currentMemory = (context.student.chatMemory as Record<string, any>) || {};
       if (Object.keys(studentMemory).length > 0 && JSON.stringify(currentMemory) !== JSON.stringify(studentMemory)) {
         await updateStudentMemory(context.student.id, studentMemory);
@@ -828,15 +965,15 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     if (context.user) {
       if (context.student) {
         if (context.userStudent) {
-          prefix += `You are speaking with ${context.user.fullName}, who is a ${context.userStudent.role} for the student ${context.student.name}.\n`;
+          prefix += `You are speaking with ${context.user.fullName}, who is a ${context.userStudent.role} for the student.\n`;
         } else {
-          prefix += `You are speaking with ${context.user.fullName}, who is connected to the student ${context.student.name}.\n`;
+          prefix += `You are speaking with ${context.user.fullName}, who is connected to the student.\n`;
         }
       } else {
         prefix += `You are speaking with ${context.user.fullName}.\n`;
       }
     } else if (context.student) {
-      prefix += `You are speaking with the AAC user ${context.student.name}, who has ${context.student.diagnosis}.\n`;
+      prefix += `You are speaking with the student.\n`;
     }
     if (progressManager){
       prefix += progressManager.getStudentInfo();

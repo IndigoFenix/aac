@@ -50,7 +50,6 @@ interface StudentWithProgress {
   school?: string;
   grade?: string;
   diagnosis?: string;
-  disabilityOrSyndrome?: string;
   progress: number;
   currentPhase?: string;
   nextDeadline?: string;
@@ -59,7 +58,7 @@ interface StudentWithProgress {
   gender?: string;
   birthDate?: string;
   backgroundContext?: string;
-  systemType?: string;
+  framework?: string;
   country?: string;
 }
 
@@ -80,18 +79,21 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
     queryKey: ['/api/students'],
     queryFn: async () => {
       const response = await apiRequest('GET', '/api/students');
-      return response.json();
+      const data = await response.json();
+      return data?.success && Array.isArray(data.students) ? data.students : [];
     },
     enabled: !!user && isOpen,
   });
 
   // Use API data or fallback to students with mock progress
-  const studentsWithProgress: StudentWithProgress[] = studentsData?.students || students.map(u => ({
-    ...u,
-    progress: 0,
-    currentPhase: '---',
-    nextDeadline: '---',
-  }));
+  const studentsWithProgress: StudentWithProgress[] = (studentsData || []).length > 0 
+  ? studentsData 
+  : students.map(u => ({
+      ...u,
+      progress: 0,
+      currentPhase: '---',
+      nextDeadline: '---',
+    }));
 
   // Filter students
   const filteredStudents = studentsWithProgress.filter(student => {
@@ -145,13 +147,8 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
       name: student.name,
       gender: student.gender,
       birthDate: student.birthDate,
-      diagnosis: student.diagnosis || student.disabilityOrSyndrome,
-      backgroundContext: student.backgroundContext,
-      systemType: student.systemType,
+      framework: student.framework,
       country: student.country,
-      school: student.school,
-      grade: student.grade,
-      idNumber: student.idNumber,
     });
   };
 

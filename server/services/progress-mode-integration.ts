@@ -272,9 +272,23 @@ ${p.startDate ? `Start: ${p.startDate}\n` : ""}${p.endDate ? `End: ${p.endDate}\
     }
 
     const s = this.state.student;
-    return `Student: ${s.name || "Unknown"}
-${s.birthDate ? `DOB: ${s.birthDate}\n` : ""}${s.diagnosis ? `Diagnosis: ${s.diagnosis}\n` : ""}${s.grade ? `Grade: ${s.grade}\n` : ""}${s.school ? `School: ${s.school}\n` : ""}`;
+    return `Student: ${obfuscatedStudentName(s) || "Unknown"}`
+    // Replace with general student information that the user has access to (no PII)
   }
+}
+
+export function obfuscatedStudentName(student: Student) {
+  return `STUDENT-${student.id}`;
+}
+
+export function deobfuscateStudentName(text: string, students: Student[]) {
+  for (const student of students) {
+    const obfuscated = obfuscatedStudentName(student);
+    if (text.includes(obfuscated)) {
+      return text.replace(obfuscated, student.name || "Unknown");
+    }
+  }
+  return text;
 }
 
 // ============================================================================

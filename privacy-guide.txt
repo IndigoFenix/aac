@@ -1,0 +1,305 @@
+1. Data architecture and segregation
+Define clear data models
+
+Separate tables/collections for: students, parents, staff, institutions, educational reports, functional reports, medical reports.
+
+Add explicit flags for “sensitive” fields (medical/functional details, diagnoses, etc.).
+
+Enforce tenant isolation
+
+Every record must be scoped by institution/organization ID.
+
+All queries must be filtered by institution ID from the authenticated context.
+
+No PII in logs
+
+Prohibit logging of names, IDs, addresses, full report texts.
+
+Use internal IDs only in logs.
+
+2. AWS configuration
+Regions and networking
+
+Use a single approved region for all student data (e.g., EU/Israel if available).
+
+Place compute and databases in private subnets; public subnets only for load balancers/API gateways.
+
+Database and storage
+
+Enable encryption at rest for all data stores (RDS/DynamoDB, S3, backups).
+
+Turn on automatic backups and point‑in‑time recovery.
+
+Ensure S3 buckets with any student data are private, with bucket policies + block public access.
+
+Access control (IAM)
+
+Use IAM roles with least‑privilege policies for services and CI/CD.
+
+No long‑lived access keys on servers; use instance roles or workload identity.
+
+Separate roles for production vs staging/dev.
+
+Network and edge security
+
+All external access via HTTPS only (TLS 1.2+).
+
+Use WAF on public endpoints; define rules for common attacks and basic rate limiting.
+
+3. Authentication and authorization
+Authentication
+
+Implement a central auth service (or managed identity provider) for users (staff/admin).
+
+Enforce strong password policy; add MFA for admins and institution managers.
+
+Authorization
+
+Role‑based access control (RBAC): roles like Admin, Principal, Teacher, Therapist, Psychologist, Support.
+
+Enforce resource‑level checks: a user can only access students tied to their institution and assignments.
+
+Add field‑level restrictions: e.g., medical fields visible only to medical/psychological roles.
+
+4. API and backend hardening
+Input and output handling
+
+Validate all input (size, type, format, allowed values).
+
+Enforce maximum request body size and pagination limits.
+
+Output filtering
+
+For every API response, explicitly control which fields are returned per caller role.
+
+Never expose internal IDs or system metadata unnecessarily.
+
+Logging and monitoring
+
+Log security‑relevant events (logins, permission denials, data exports) with internal IDs only.
+
+Centralize logs and set alerts for anomalies (many failed logins, unusual data access patterns).
+
+5. Using OpenAI / Gemini safely
+Data minimization
+
+Implement a “redaction layer” before calling the model:
+
+Strip student names, IDs, addresses, parent names, phone numbers, emails.
+
+Replace with pseudonyms (e.g., “Student_123”).
+
+Only send the minimal text necessary to get useful AI output (no entire history if not needed).
+
+API client configuration
+
+Store API keys in a secret manager (not in code or configs).
+
+Use serverside calls only; never call the AI provider directly from the browser.
+
+Implement request timeouts and strict error handling.
+
+Separation of concerns
+
+Wrap all AI calls in a single internal service/module (e.g., aiClient) so policy can be enforced centrally.
+
+Add unit tests ensuring PII redaction before the request is sent.
+
+6. Frontend rules
+Data display constraints
+
+Hide medical details by default; show only to authorized roles.
+
+Implement clear separation between “educational info” and “medical/functional info” in the UI.
+
+Prevent data leakage
+
+Disable auto‑completion where sensitive data is typed.
+
+Avoid embedding sensitive data in HTML attributes or client‑side logs.
+
+Session security
+
+Use secure, HTTP‑only, same‑site cookies for sessions.
+
+Implement session timeout and re‑authentication for sensitive actions.
+
+7. Dev, test, and CI/CD
+Environments
+
+No real student data in dev/test. Use synthetic or anonymized data only.
+
+Separate AWS accounts or projects for dev/stage/prod.
+
+Secure CI/CD
+
+CI/CD must deploy with least privilege; no admin keys in pipelines.
+
+Run security checks (dependency scanning, SAST/Linting) as part of the pipeline.
+
+Configuration management
+
+All configs (except secrets) in version control.
+
+Secrets in dedicated secret manager; rotated regularly.
+
+8. Auditing and access reviews
+Access reviews
+
+Implement a monthly script/report listing users and roles per institution; support manual review.
+
+Automatic deactivation of users that have not logged in for X days (configurable).
+
+Data access audit
+
+Keep an audit trail for “who accessed which student record” with timestamps.
+
+Provide an internal API or admin UI to query access history per student.
+
+
+Tickets Breakdown
+Here are 15 prioritized Jira tickets you can implement in sprints. Each includes acceptance criteria.
+
+Sprint 1: Core Data & AWS Setup
+TICKET 1: AWS Infrastructure Baseline
+Priority: Highest
+
+Create AWS account structure (separate prod/stage/dev).
+
+Set up VPC with private/public subnets, RDS (Postgres/MySQL) encrypted at rest, S3 private buckets.
+
+Enable GuardDuty, WAF, CloudTrail logging.
+Acceptance: Infrastructure-as-Code (Terraform/CloudFormation) deploys compliant stack; penetration test passes basic checks.
+
+TICKET 2: Multi-Tenant Database Schema
+
+Design schema: institutions, users, students, reports (with institution_id foreign key on all).
+
+Add sensitive_flag boolean on report fields.
+
+All queries MUST filter by institution_id from JWT context.
+Acceptance: Unit tests fail if tenant isolation broken; sample data queryable only by owning institution.
+
+TICKET 3: IAM Least Privilege Policies
+
+Define 10+ IAM roles (app-server, db-reader, ci-cd-deploy, etc.).
+
+No static keys; use instance roles/workload identity.
+Acceptance: AWS IAM Access Analyzer shows no overly permissive policies.
+
+Sprint 2: Auth & RBAC
+TICKET 4: Central Auth Service
+
+Implement JWT-based auth (Cognito/Auth0 or custom).
+
+MFA required for Admin/Principal roles.
+Acceptance: Login flow works; MFA enforced where required.
+
+TICKET 5: RBAC Middleware
+
+Roles: admin, principal, teacher, therapist, psychologist, support.
+
+Permissions matrix: teacher sees educational reports only; psychologist sees medical.
+Acceptance: API returns 403 when unauthorized user accesses student/medical data.
+
+TICKET 6: Field-Level Access Control
+
+API responses filter fields by caller role (e.g., no diagnosis field for teachers).
+Acceptance: Swagger docs show role-based schemas; integration tests pass.
+
+Sprint 3: API Security & AI Redaction
+TICKET 7: API Input Validation & Rate Limiting
+
+Validate all inputs (Joi/Zod); max 10MB request body.
+
+Rate limit by IP/user (100 req/min).
+Acceptance: Fuzzing tests don't crash; rate limit triggers.
+
+TICKET 8: PII Redaction Layer for AI
+
+Create redactPII(text) function: remove names/IDs/emails/phones, replace with STUDENT_X.
+
+Unit tests with 50+ PII patterns.
+Acceptance: 100% test coverage; redacted text passes regex checks.
+
+TICKET 9: Secure AI Client Service
+
+Single aiService module wraps OpenAI/Gemini calls.
+
+API keys from AWS Secrets Manager; server-side only.
+
+Always redact before sending.
+Acceptance: Logs show redacted payloads; timeout/retry logic works.
+
+Sprint 4: Logging, Frontend, Testing
+TICKET 10: Security Logging
+
+Log auth events, permission denials, data exports (internal IDs only).
+
+CloudWatch/ELK dashboard with anomaly alerts.
+Acceptance: 7-day log retention; alerts fire on 10 failed logins.
+
+TICKET 11: Frontend Security Rules
+
+React/Vue: role-based field hiding, secure cookies, no PII in localStorage.
+
+Session timeout after 30min inactivity.
+Acceptance: Browser devtools show no PII leakage; CSP headers enforced.
+
+TICKET 12: Synthetic Test Data Generator
+
+Script generates 1000 fake students/institutions/reports.
+
+No real PII in dev/test environments.
+Acceptance: npm run seed:test populates clean data.
+
+Sprint 5: Compliance & Monitoring
+TICKET 13: Access Audit Trail
+
+Table access_logs: user_id, student_id, action, timestamp.
+
+Admin API /audit/{studentId} shows who accessed what.
+Acceptance: Query returns 90-day history.
+
+TICKET 14: Monthly Access Review Report
+
+Cron job generates CSV: inactive users, role counts per institution.
+Acceptance: Report downloadable from admin UI.
+
+TICKET 15: Security Checklist Automation
+
+CI/CD pipeline runs: SAST, dependency scan, IaC validation, pen-test API.
+
+Fail build if critical issues found.
+Acceptance: Green builds require all checks pass.
+
+Minimal Architecture Diagram
+[Internet] --> WAF + ALB (HTTPS only)
+              |
+              v
+[Public Subnet] --> API Gateway/Load Balancer
+              |
+              v
+[Private Subnet] 
+  - App Servers (EC2/Fargate) w/ IAM Roles
+  - RDS (encrypted) <-- Multi-tenant schema
+  - Redis (sessions)
+  |
+  +--> [S3 Private Buckets] (encrypted backups)
+  |
+  +--> [Secrets Manager] --> AI Client --> [OpenAI/Gemini]
+                            (redacted payloads only)
+  |
+  +--> [CloudWatch/GuardDuty] (logs/alerts)
+Key flows:
+
+User authenticates → JWT with institution_id + roles
+
+API call → Middleware validates tenant + RBAC → Query filters by institution_id
+
+AI request → Redact PII → Send → Process response → Store result
+
+All data encrypted at rest/transit; audit logged
+
+This gets us production-ready in 5 sprints (~10 weeks). If we start with Tickets 1-3 immediately.
+

@@ -10,3 +10,4 @@ export { boardController, BoardController } from "./boardController";
 export { onboardingController, OnboardingController } from "./onboardingController";
 export { slpClinicalController, SlpClinicalController } from "./slpClinicalController";
 export { programController, ProgramController } from "./programController";
+export { recordsController, RecordsController } from "./recordsController";

@@ -1,7 +1,7 @@
 // src/i18n/index.ts
 // Central export for all translations
 
-import { en, TranslationKeys } from './en';
+import { en } from './en';
 import { he } from './he';
 
 export type LanguageCode = 'en' | 'he' | 'ar' | 'es' | 'fr' | 'de' | 'zh' | 'ja' | 'ru' | 'pt';
@@ -46,4 +46,3 @@ export const translations: Record<LanguageCode, Translations> = {
 };
 
 export { en, he };
-export type { TranslationKeys };
