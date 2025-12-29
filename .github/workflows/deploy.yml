@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 env:
-  AWS_REGION: il-central-1  # Change to your preferred region (il-central-1 for Ireland/EU compliance)
+  AWS_REGION: il-central-1  # Change to your preferred region
   ECR_REPOSITORY: cliniaccian
   ECS_SERVICE: cliniaccian-service
   ECS_CLUSTER: cliniaccian-cluster
