@@ -23,6 +23,11 @@ resource "aws_cloudtrail" "main" {
     }
   }
 
+  # Ensure bucket policy is created first
+  depends_on = [
+    aws_s3_bucket_policy.logs
+  ]
+
   tags = {
     Name = "${local.name_prefix}-cloudtrail"
   }

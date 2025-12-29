@@ -19,7 +19,7 @@ resource "aws_db_subnet_group" "main" {
 # RDS Parameter Group (for PostgreSQL tuning)
 # =============================================================================
 resource "aws_db_parameter_group" "main" {
-  family = "postgres16"
+  family = "postgres15"
   name   = "${local.name_prefix}-pg-params"
 
   # Force SSL connections (HIPAA requirement)
@@ -55,9 +55,9 @@ resource "aws_db_parameter_group" "main" {
 resource "aws_db_instance" "main" {
   identifier = "${local.name_prefix}-postgres"
 
-  # Engine
+  # Engine - using PostgreSQL 15 for better regional availability
   engine               = "postgres"
-  engine_version       = "16.4"
+  engine_version       = "15.4"
   instance_class       = var.db_instance_class
   
   # Storage
