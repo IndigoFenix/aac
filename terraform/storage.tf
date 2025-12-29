@@ -111,10 +111,15 @@ resource "aws_s3_bucket_policy" "logs" {
         Sid    = "AllowALBLogs"
         Effect = "Allow"
         Principal = {
-          AWS = "arn:aws:iam::${data.aws_elb_service_account.main.id}:root"
+          Service = "logdelivery.elasticloadbalancing.amazonaws.com"
         }
         Action   = "s3:PutObject"
         Resource = "${aws_s3_bucket.logs.arn}/alb-logs/*"
+        Condition = {
+          StringEquals = {
+            "s3:x-amz-acl" = "bucket-owner-full-control"
+          }
+        }
       },
       {
         Sid    = "AWSLogDeliveryWrite"
@@ -142,8 +147,6 @@ resource "aws_s3_bucket_policy" "logs" {
     ]
   })
 }
-
-data "aws_elb_service_account" "main" {}
 
 # Lifecycle policy for logs (retain for compliance, then transition to cheaper storage)
 resource "aws_s3_bucket_lifecycle_configuration" "logs" {
