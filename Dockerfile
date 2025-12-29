@@ -1,61 +1,76 @@
 # =============================================================================
-# Multi-stage Dockerfile for CliniAACian
+# CliniAACian Production Dockerfile
 # =============================================================================
 
-# Stage 1: Build
+# Build stage
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Install build dependencies (needed for some npm packages)
+RUN apk add --no-cache python3 make g++
+
 # Copy package files
 COPY package*.json ./
 
-# Install all dependencies (including dev for build)
+# Install ALL dependencies (including devDependencies for build)
 RUN npm ci
 
 # Copy source code
-COPY . .
+COPY client/ ./client/
+COPY server/ ./server/
+COPY shared/ ./shared/
+COPY vite.config.ts ./
+COPY tsconfig.json ./
+COPY tailwind.config.* ./
+COPY postcss.config.* ./
+COPY drizzle.config.ts ./
 
 # Build the application
+# 1. Vite builds client to dist/public
+# 2. esbuild bundles server to dist/index.js
 RUN npm run build
 
 # =============================================================================
-# Stage 2: Production
+# Production stage
 # =============================================================================
 FROM node:20-alpine AS production
 
-# Security: Run as non-root user
+WORKDIR /app
+
+# Copy package files and install production dependencies only
+COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+# Copy built artifacts from builder
+COPY --from=builder /app/dist ./dist
+
+# Copy shared schema (may be needed at runtime for Drizzle)
+COPY --from=builder /app/shared ./shared
+
+# Download AWS RDS CA certificate bundle for SSL connections
+RUN apk add --no-cache wget && \
+    wget -O rds-ca-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem && \
+    apk del wget
+
+# Create non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
 
-WORKDIR /app
+# Change ownership of app files
+RUN chown -R nodejs:nodejs /app
 
-# Copy package files
-COPY package*.json ./
+USER nodejs
 
-# Install production dependencies only
-RUN npm ci --only=production && npm cache clean --force
-
-# Copy built assets from builder
-COPY --from=builder /app/dist ./dist
-
-# Copy any other necessary files
-# Adjust these based on your actual project structure
-COPY --from=builder /app/drizzle ./drizzle
-
-# Set environment variables
+# Environment
 ENV NODE_ENV=production
 ENV PORT=5000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT}/health || exit 1
-
-# Change to non-root user
-USER nodejs
-
-# Expose port
 EXPOSE 5000
 
-# Start the application
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:5000/health || exit 1
+
+# Start the server
 CMD ["node", "dist/index.js"]
