@@ -8,8 +8,8 @@
 environment = "prod"
 
 # AWS Region - Choose an EU region for GDPR/data residency compliance
-# il-central-1 (Ireland) or eu-central-1 (Frankfurt) are good choices
-aws_region = "il-central-1"
+# eu-west-1 (Ireland) or eu-central-1 (Frankfurt) are good choices
+aws_region = "eu-west-1"
 
 # Your domain name (leave empty to use ALB DNS with HTTP only)
 # When you get a domain, add it here and Terraform will set up HTTPS

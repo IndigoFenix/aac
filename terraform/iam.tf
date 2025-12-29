@@ -2,27 +2,16 @@
 # IAM Roles - Least Privilege Principle
 # =============================================================================
 
-# =============================================================================
-# GitHub Actions OIDC Provider (for secure CI/CD)
-# =============================================================================
-resource "aws_iam_openid_connect_provider" "github" {
-  url = "https://token.actions.githubusercontent.com"
-
-  client_id_list = ["sts.amazonaws.com"]
-
-  thumbprint_list = [
-    "6938fd4d98bab03faadb97b34396831e3780aea1",
-    "1c58a3a8518e8759bf075b76b750d4f2df264fcd"
-  ]
-
-  tags = {
-    Name = "${local.name_prefix}-github-oidc"
-  }
-}
+# NOTE: The GitHub OIDC Provider is created manually during bootstrap
+# to avoid chicken-and-egg problem. See SETUP_GUIDE.md
 
 # =============================================================================
 # GitHub Actions Role (for CI/CD deployments)
 # =============================================================================
+data "aws_iam_openid_connect_provider" "github" {
+  url = "https://token.actions.githubusercontent.com"
+}
+
 resource "aws_iam_role" "github_actions" {
   name = "${local.name_prefix}-github-actions-role"
 
@@ -32,7 +21,7 @@ resource "aws_iam_role" "github_actions" {
       {
         Effect = "Allow"
         Principal = {
-          Federated = aws_iam_openid_connect_provider.github.arn
+          Federated = data.aws_iam_openid_connect_provider.github.arn
         }
         Action = "sts:AssumeRoleWithWebIdentity"
         Condition = {

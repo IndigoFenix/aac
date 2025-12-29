@@ -49,18 +49,9 @@ resource "aws_security_group" "ecs" {
   description = "Security group for ECS tasks"
   vpc_id      = aws_vpc.main.id
 
-  # Only allow traffic from ALB
+  # Only allow traffic from ALB (includes health checks on same port)
   ingress {
     description     = "Traffic from ALB"
-    from_port       = var.container_port
-    to_port         = var.container_port
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-  }
-
-  # Allow health check port if different
-  ingress {
-    description     = "Health check from ALB"
     from_port       = var.container_port
     to_port         = var.container_port
     protocol        = "tcp"

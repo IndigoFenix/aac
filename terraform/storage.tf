@@ -100,7 +100,7 @@ resource "aws_s3_bucket_public_access_block" "logs" {
   restrict_public_buckets = true
 }
 
-# Policy to allow ALB to write logs
+# Policy to allow ALB and CloudTrail to write logs
 resource "aws_s3_bucket_policy" "logs" {
   bucket = aws_s3_bucket.logs.id
 
@@ -143,6 +143,35 @@ resource "aws_s3_bucket_policy" "logs" {
         }
         Action   = "s3:GetBucketAcl"
         Resource = aws_s3_bucket.logs.arn
+      },
+      {
+        Sid    = "AWSCloudTrailAclCheck"
+        Effect = "Allow"
+        Principal = {
+          Service = "cloudtrail.amazonaws.com"
+        }
+        Action   = "s3:GetBucketAcl"
+        Resource = aws_s3_bucket.logs.arn
+        Condition = {
+          StringEquals = {
+            "AWS:SourceArn" = "arn:aws:cloudtrail:${var.aws_region}:${data.aws_caller_identity.current.account_id}:trail/${local.name_prefix}-trail"
+          }
+        }
+      },
+      {
+        Sid    = "AWSCloudTrailWrite"
+        Effect = "Allow"
+        Principal = {
+          Service = "cloudtrail.amazonaws.com"
+        }
+        Action   = "s3:PutObject"
+        Resource = "${aws_s3_bucket.logs.arn}/cloudtrail/AWSLogs/${data.aws_caller_identity.current.account_id}/*"
+        Condition = {
+          StringEquals = {
+            "s3:x-amz-acl"  = "bucket-owner-full-control"
+            "AWS:SourceArn" = "arn:aws:cloudtrail:${var.aws_region}:${data.aws_caller_identity.current.account_id}:trail/${local.name_prefix}-trail"
+          }
+        }
       }
     ]
   })
@@ -156,7 +185,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "logs" {
     id     = "log-retention"
     status = "Enabled"
 
-    filter {}
+    filter {}  # Empty filter applies to all objects
 
     transition {
       days          = 30
@@ -176,57 +205,12 @@ resource "aws_s3_bucket_lifecycle_configuration" "logs" {
 }
 
 # =============================================================================
-# Terraform State Bucket
+# NOTE: Terraform State Bucket and DynamoDB Lock Table
 # =============================================================================
-resource "aws_s3_bucket" "terraform_state" {
-  bucket = "${local.name_prefix}-terraform-state"
-
-  tags = {
-    Name = "${local.name_prefix}-terraform-state"
-  }
-}
-
-resource "aws_s3_bucket_versioning" "terraform_state" {
-  bucket = aws_s3_bucket.terraform_state.id
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
-
-resource "aws_s3_bucket_server_side_encryption_configuration" "terraform_state" {
-  bucket = aws_s3_bucket.terraform_state.id
-
-  rule {
-    apply_server_side_encryption_by_default {
-      kms_master_key_id = aws_kms_key.main.arn
-      sse_algorithm     = "aws:kms"
-    }
-  }
-}
-
-resource "aws_s3_bucket_public_access_block" "terraform_state" {
-  bucket = aws_s3_bucket.terraform_state.id
-
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
-}
-
-# =============================================================================
-# DynamoDB for Terraform State Locking
-# =============================================================================
-resource "aws_dynamodb_table" "terraform_lock" {
-  name         = "terraform-state-lock"
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "LockID"
-
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
-
-  tags = {
-    Name = "${local.name_prefix}-terraform-lock"
-  }
-}
+# These are created MANUALLY during bootstrap (before Terraform can run).
+# See SETUP_GUIDE.md for creation instructions.
+# 
+# - S3 Bucket: cliniaccian-prod-terraform-state (or with account ID suffix)
+# - DynamoDB Table: terraform-state-lock
+#
+# DO NOT add these to Terraform - it creates a chicken-and-egg problem.

@@ -127,7 +127,7 @@ output "github_secrets_summary" {
     ========================================
     
     AWS_ROLE_ARN: ${aws_iam_role.github_actions.arn}
-    TF_STATE_BUCKET: ${aws_s3_bucket.terraform_state.bucket}
+    TF_STATE_BUCKET: (use your bootstrap bucket name)
     
     ========================================
     Application URL:
