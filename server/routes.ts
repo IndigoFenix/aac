@@ -57,6 +57,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Setup user authentication (passport)
   await setupUserAuth(app);
 
+  // ============ HEALTH CHECK =============
+  app.get("/health", (req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
   // ============= AUTH ROUTES =============
   app.post("/auth/register", (req, res) => authController.register(req, res));
   app.post("/auth/login", (req, res, next) => authController.login(req, res, next));

@@ -1,0 +1,51 @@
+# Dependencies
+node_modules
+npm-debug.log
+
+# Build outputs (we'll build in Docker)
+dist
+build
+
+# Development files
+.git
+.gitignore
+.env
+.env.*
+*.md
+!README.md
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Test files
+coverage
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+__tests__
+
+# Terraform
+terraform
+*.tfstate
+*.tfstate.*
+.terraform
+
+# Docker
+Dockerfile
+docker-compose*
+.docker
+
+# CI/CD
+.github
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.log
+*.tmp
