@@ -135,6 +135,8 @@ jobs:
 
       - name: Terraform Plan
         working-directory: terraform
+        env:
+          TF_LOG: DEBUG
         run: |
           terraform plan \
             -var="environment=${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}" \
