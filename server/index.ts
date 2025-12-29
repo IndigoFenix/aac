@@ -15,7 +15,6 @@ app.use(
   }),
 );
 
-// Simple log function (avoiding vite.ts import)
 function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -28,7 +27,7 @@ function log(message: string, source = "express") {
 
 app.use((req, res, next) => {
   const start = Date.now();
-  const path = req.path;
+  const reqPath = req.path;
   let capturedJsonResponse: Record<string, any> | undefined = undefined;
 
   const originalResJson = res.json;
@@ -39,8 +38,8 @@ app.use((req, res, next) => {
 
   res.on("finish", () => {
     const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+    if (reqPath.startsWith("/api")) {
+      let logLine = `${req.method} ${reqPath} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
@@ -56,7 +55,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Health check endpoint - BEFORE routes
+// Health check endpoint
 app.get('/health', (_req, res) => {
   res.status(200).json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
@@ -67,27 +66,34 @@ app.get('/health', (_req, res) => {
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
-
     res.status(status).json({ message });
     throw err;
   });
 
-  // Setup Vite for React development OR serve static files
-  if (app.get("env") === "development") {
-    // Dynamic import - vite.ts is only loaded in development
+  // DEVELOPMENT: Use Vite dev server
+  if (process.env.NODE_ENV === "development") {
+    // Dynamic import keeps vite out of production bundle
     const { setupVite } = await import("./vite");
     await setupVite(app, server);
-  } else {
-    // Dynamic import - static.ts for production
-    const { serveStatic } = await import("./static");
-    serveStatic(app);
+  } 
+  // PRODUCTION: Serve static files directly
+  else {
+    const distPath = path.resolve(import.meta.dirname, "public");
+
+    if (!fs.existsSync(distPath)) {
+      throw new Error(`Could not find the build directory: ${distPath}`);
+    }
+
+    app.use(express.static(distPath));
+
+    // SPA fallback - serve index.html for all unmatched routes
+    app.use("*", (_req, res) => {
+      res.sendFile(path.resolve(distPath, "index.html"));
+    });
   }
 
   const port = 5000;
-  server.listen({
-    port,
-    host: "0.0.0.0",
-  }, () => {
+  server.listen({ port, host: "0.0.0.0" }, () => {
     log(`serving on port ${port}`);
   });
 })();
