@@ -3,6 +3,14 @@
 # =============================================================================
 
 # =============================================================================
+# Find available PostgreSQL version for this region
+# =============================================================================
+data "aws_rds_engine_version" "postgres" {
+  engine             = "postgres"
+  preferred_versions = ["16.11", "16.10", "16.9", "16.8", "16.6", "15.15", "15.14", "15.13", "15.12", "15.10", "14.20", "14.19"]
+}
+
+# =============================================================================
 # DB Subnet Group
 # =============================================================================
 resource "aws_db_subnet_group" "main" {
@@ -19,7 +27,7 @@ resource "aws_db_subnet_group" "main" {
 # RDS Parameter Group (for PostgreSQL tuning)
 # =============================================================================
 resource "aws_db_parameter_group" "main" {
-  family = "postgres15"
+  family = data.aws_rds_engine_version.postgres.parameter_group_family
   name   = "${local.name_prefix}-pg-params"
 
   # Force SSL connections (HIPAA requirement)
@@ -55,9 +63,9 @@ resource "aws_db_parameter_group" "main" {
 resource "aws_db_instance" "main" {
   identifier = "${local.name_prefix}-postgres"
 
-  # Engine - using PostgreSQL 15 for better regional availability
+  # Engine - using data source to find available version in this region
   engine               = "postgres"
-  engine_version       = "15.4"
+  engine_version       = data.aws_rds_engine_version.postgres.version
   instance_class       = var.db_instance_class
   
   # Storage
