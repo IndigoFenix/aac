@@ -1,7 +1,6 @@
 import 'dotenv/config';
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
 import fs from "fs";
 import path from "path";
 import cors from "cors";
@@ -15,6 +14,17 @@ app.use(
     credentials: true,
   }),
 );
+
+// Simple log function (avoiding vite.ts import)
+function log(message: string, source = "express") {
+  const formattedTime = new Date().toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+  console.log(`${formattedTime} [${source}] ${message}`);
+}
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -46,12 +56,9 @@ app.use((req, res, next) => {
   next();
 });
 
+// Health check endpoint - BEFORE routes
 app.get('/health', (_req, res) => {
-  res.status(200).json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-  });
+  res.status(200).json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
 (async () => {
@@ -65,21 +72,21 @@ app.get('/health', (_req, res) => {
     throw err;
   });
 
-  // Setup Vite for React development
+  // Setup Vite for React development OR serve static files
   if (app.get("env") === "development") {
+    // Dynamic import - vite.ts is only loaded in development
+    const { setupVite } = await import("./vite");
     await setupVite(app, server);
   } else {
+    // Dynamic import - static.ts for production
+    const { serveStatic } = await import("./static");
     serveStatic(app);
   }
 
-  // ALWAYS serve the app on port 5000
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
   const port = 5000;
   server.listen({
     port,
     host: "0.0.0.0",
-    // reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
   });
