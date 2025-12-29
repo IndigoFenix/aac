@@ -140,6 +140,8 @@ jobs:
       - name: Terraform Apply
         if: github.event_name == 'push'
         working-directory: terraform
+        env:
+          TF_LOG: DEBUG
         run: terraform apply -auto-approve tfplan
 
   # ===========================================
