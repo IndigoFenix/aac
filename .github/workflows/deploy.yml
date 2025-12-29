@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 env:
-  AWS_REGION: il-central-1  # Change to your preferred region
+  AWS_REGION: eu-west-1  # Change to your preferred region (eu-west-1 for Ireland/EU compliance)
   ECR_REPOSITORY: cliniaccian
   ECS_SERVICE: cliniaccian-service
   ECS_CLUSTER: cliniaccian-cluster
@@ -130,14 +130,8 @@ jobs:
             -backend-config="key=cliniaccian/${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}/terraform.tfstate" \
             -backend-config="region=${{ env.AWS_REGION }}"
 
-      - name: Terraform Validate
-        working-directory: terraform
-        run: terraform validate
-
       - name: Terraform Plan
         working-directory: terraform
-        env:
-          TF_LOG: DEBUG
         run: |
           terraform plan \
             -var="environment=${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}" \
@@ -147,8 +141,6 @@ jobs:
       - name: Terraform Apply
         if: github.event_name == 'push'
         working-directory: terraform
-        env:
-          TF_LOG: DEBUG
         run: terraform apply -auto-approve tfplan
 
   # ===========================================
@@ -160,6 +152,8 @@ jobs:
     needs: [build, infrastructure]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
     environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+    env:
+      ENV_SUFFIX: ${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -203,7 +197,7 @@ jobs:
       - name: Get current task definition
         run: |
           aws ecs describe-task-definition \
-            --task-definition ${{ env.ECS_SERVICE }}-${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }} \
+            --task-definition cliniaccian-${{ env.ENV_SUFFIX }}-task \
             --query taskDefinition > task-definition.json
 
       - name: Update task definition with new image
@@ -218,8 +212,8 @@ jobs:
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           task-definition: ${{ steps.task-def.outputs.task-definition }}
-          service: ${{ env.ECS_SERVICE }}-${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}
-          cluster: ${{ env.ECS_CLUSTER }}-${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}
+          service: cliniaccian-${{ env.ENV_SUFFIX }}-service
+          cluster: cliniaccian-${{ env.ENV_SUFFIX }}-cluster
           wait-for-service-stability: true
 
       - name: Verify deployment
@@ -249,7 +243,7 @@ jobs:
         run: |
           ENV_SUFFIX=${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}
           ALB_DNS=$(aws elbv2 describe-load-balancers \
-            --names "cliniaccian-alb-${ENV_SUFFIX}" \
+            --names "cliniaccian-${ENV_SUFFIX}-alb" \
             --query 'LoadBalancers[0].DNSName' \
             --output text)
           echo "alb_dns=${ALB_DNS}" >> $GITHUB_OUTPUT
