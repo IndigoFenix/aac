@@ -131,6 +131,50 @@ resource "aws_ecs_task_definition" "main" {
         {
           name      = "OPENAI_API_KEY"
           valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:OPENAI_API_KEY::"
+        },
+        {
+          name      = "JWT_SECRET"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:JWT_SECRET::"
+        },
+        {
+          name      = "ENCRYPTION_KEY"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:ENCRYPTION_KEY::"
+        },
+        {
+          name      = "STRIPE_SECRET_KEY"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:STRIPE_SECRET_KEY::"
+        },
+        {
+          name      = "VITE_STRIPE_PUBLIC_KEY"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:VITE_STRIPE_PUBLIC_KEY::"
+        },
+        {
+          name      = "SMTP_PASS"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_PASS::"
+        },
+        {
+          name      = "SMTP_FROM"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_FROM::"
+        },
+        {
+          name      = "SMTP_HOST"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_HOST::"
+        },
+        {
+          name      = "SMTP_USER"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_USER::"
+        },
+        {
+          name      = "SMTP_PORT"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_PORT::"
+        },
+        {
+          name      = "DROPBOX_CLIENT_ID"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_PORT::"
+        },
+        {
+          name      = "DROPBOX_CLIENT_SECRET"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_PORT::"
         }
       ]
 
