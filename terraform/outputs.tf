@@ -87,6 +87,16 @@ output "acm_certificate_arn" {
   value       = var.domain_name != "" ? aws_acm_certificate.main[0].arn : null
 }
 
+output "nameservers" {
+  description = "Nameservers for the domain"
+  value       = var.domain_name != "" ? data.aws_route53_zone.main[0].name_servers : null
+}
+
+output "domain_url" {
+  description = "Your application URL"
+  value       = var.domain_name != "" ? "https://${var.domain_name}" : "http://${aws_lb.main.dns_name}"
+}
+
 output "sns_alerts_topic_arn" {
   description = "ARN of the SNS topic for alerts"
   value       = aws_sns_topic.alerts.arn

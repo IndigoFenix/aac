@@ -9,11 +9,11 @@ environment = "prod"
 
 # AWS Region - Choose an EU region for GDPR/data residency compliance
 # eu-west-1 (Ireland) or eu-central-1 (Frankfurt) are good choices
-aws_region = "eu-west-1"
+aws_region = "il-central-1"
 
 # Your domain name (leave empty to use ALB DNS with HTTP only)
 # When you get a domain, add it here and Terraform will set up HTTPS
-domain_name = ""
+domain_name = "cliniaccian.com"
 
 # =============================================================================
 # ECS Configuration
@@ -29,7 +29,7 @@ ecs_task_memory = 1024
 
 # Number of containers to run
 # Production should have at least 2 for high availability
-ecs_desired_count = 2
+ecs_desired_count = 1
 
 # Port your application listens on
 container_port = 5000

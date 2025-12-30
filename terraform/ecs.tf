@@ -120,10 +120,12 @@ resource "aws_ecs_task_definition" "main" {
       ]
 
       secrets = [
+        # Database
         {
           name      = "DATABASE_URL"
           valueFrom = "${aws_secretsmanager_secret.database.arn}:DATABASE_URL::"
         },
+        # App secrets
         {
           name      = "SESSION_SECRET"
           valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SESSION_SECRET::"
@@ -140,41 +142,27 @@ resource "aws_ecs_task_definition" "main" {
           name      = "ENCRYPTION_KEY"
           valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:ENCRYPTION_KEY::"
         },
+        # Stripe
         {
           name      = "STRIPE_SECRET_KEY"
           valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:STRIPE_SECRET_KEY::"
         },
         {
-          name      = "VITE_STRIPE_PUBLIC_KEY"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:VITE_STRIPE_PUBLIC_KEY::"
+          name      = "STRIPE_PUBLISHABLE_KEY"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:STRIPE_PUBLISHABLE_KEY::"
         },
         {
-          name      = "SMTP_PASS"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_PASS::"
+          name      = "STRIPE_WEBHOOK_SECRET"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:STRIPE_WEBHOOK_SECRET::"
+        },
+        # Google OAuth (if used)
+        {
+          name      = "GOOGLE_CLIENT_ID"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:GOOGLE_CLIENT_ID::"
         },
         {
-          name      = "SMTP_FROM"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_FROM::"
-        },
-        {
-          name      = "SMTP_HOST"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_HOST::"
-        },
-        {
-          name      = "SMTP_USER"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_USER::"
-        },
-        {
-          name      = "SMTP_PORT"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_PORT::"
-        },
-        {
-          name      = "DROPBOX_CLIENT_ID"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:DROPBOX_CLIENT_ID::"
-        },
-        {
-          name      = "DROPBOX_CLIENT_SECRET"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:DROPBOX_CLIENT_SECRET::"
+          name      = "GOOGLE_CLIENT_SECRET"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:GOOGLE_CLIENT_SECRET::"
         }
       ]
 
@@ -374,12 +362,14 @@ resource "aws_lb_listener" "https" {
   port              = 443
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"  # TLS 1.2+ only
-  certificate_arn   = aws_acm_certificate.main[0].arn
+  certificate_arn   = aws_acm_certificate_validation.main[0].certificate_arn
 
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.main.arn
   }
+
+  depends_on = [aws_acm_certificate_validation.main]
 }
 
 # =============================================================================
@@ -388,8 +378,9 @@ resource "aws_lb_listener" "https" {
 resource "aws_acm_certificate" "main" {
   count = var.domain_name != "" ? 1 : 0
 
-  domain_name       = var.domain_name
-  validation_method = "DNS"
+  domain_name               = var.domain_name
+  subject_alternative_names = ["www.${var.domain_name}"]
+  validation_method         = "DNS"
 
   lifecycle {
     create_before_destroy = true
