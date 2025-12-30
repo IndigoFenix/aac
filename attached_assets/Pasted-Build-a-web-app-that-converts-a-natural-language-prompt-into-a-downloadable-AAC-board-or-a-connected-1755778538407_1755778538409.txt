@@ -663,8 +663,6 @@ JWT_SECRET
 
 STRIPE_SECRET_KEY
 
-STRIPE_SECRET_KEY
-
 APP_URL
 
 prisma migrate deploy on startup

@@ -151,10 +151,6 @@ resource "aws_ecs_task_definition" "main" {
           name      = "VITE_STRIPE_PUBLIC_KEY"
           valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:VITE_STRIPE_PUBLIC_KEY::"
         },
-        {
-          name      = "STRIPE_SECRET_KEY"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:STRIPE_SECRET_KEY::"
-        },
         # Google OAuth (if used)
         {
           name      = "GOOGLE_CLIENT_ID"
@@ -163,6 +159,34 @@ resource "aws_ecs_task_definition" "main" {
         {
           name      = "GOOGLE_CLIENT_SECRET"
           valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:GOOGLE_CLIENT_SECRET::"
+        },
+        {
+          name      = "SMTP_PASS"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_PASS::"
+        },
+        {
+          name      = "SMTP_FROM"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_FROM::"
+        },
+        {
+          name      = "SMTP_HOST"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_HOST::"
+        },
+        {
+          name      = "SMTP_USER"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_USER::"
+        },
+        {
+          name      = "SMTP_PORT"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_PORT::"
+        },
+        {
+          name      = "DROPBOX_CLIENT_ID"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_PASS::"
+        },
+        {
+          name      = "DROPBOX_CLIENT_SECRET"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_PASS::"
         }
       ]
 
