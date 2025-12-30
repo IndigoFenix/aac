@@ -21,6 +21,7 @@ COPY client/ ./client/
 COPY server/ ./server/
 COPY shared/ ./shared/
 COPY attached_assets/ ./attached_assets/
+COPY drizzle/ ./drizzle/
 COPY vite.config.ts ./
 COPY tsconfig.json ./
 COPY tailwind.config.* ./
@@ -29,7 +30,7 @@ COPY drizzle.config.ts ./
 
 # Build the application
 # 1. Vite builds client to dist/public
-# 2. esbuild bundles server to dist/index.js
+# 2. esbuild bundles server/index.prod.ts to dist/index.prod.js
 RUN npm run build
 
 # =============================================================================
@@ -51,6 +52,9 @@ COPY --from=builder /app/shared ./shared
 
 # Copy attached assets (in case server references them)
 COPY --from=builder /app/attached_assets ./attached_assets
+
+# Copy drizzle migrations
+COPY --from=builder /app/drizzle ./drizzle
 
 # Download AWS RDS CA certificate bundle for SSL connections
 RUN apk add --no-cache wget && \
