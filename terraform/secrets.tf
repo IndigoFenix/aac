@@ -128,7 +128,7 @@ resource "aws_secretsmanager_secret_version" "app_secrets" {
     
     # Stripe (payment processing)
     STRIPE_SECRET_KEY      = "CHANGE_ME"
-    STRIPE_PUBLISHABLE_KEY = "CHANGE_ME"
+    VITE_STRIPE_PUBLIC_KEY = "CHANGE_ME"
     STRIPE_WEBHOOK_SECRET  = "CHANGE_ME"
     
     # Google OAuth (if used)

@@ -148,8 +148,8 @@ resource "aws_ecs_task_definition" "main" {
           valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:STRIPE_SECRET_KEY::"
         },
         {
-          name      = "STRIPE_PUBLISHABLE_KEY"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:STRIPE_PUBLISHABLE_KEY::"
+          name      = "VITE_STRIPE_PUBLIC_KEY"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:VITE_STRIPE_PUBLIC_KEY::"
         },
         {
           name      = "STRIPE_WEBHOOK_SECRET"
