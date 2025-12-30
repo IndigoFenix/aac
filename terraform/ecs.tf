@@ -152,8 +152,8 @@ resource "aws_ecs_task_definition" "main" {
           valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:VITE_STRIPE_PUBLIC_KEY::"
         },
         {
-          name      = "STRIPE_WEBHOOK_SECRET"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:STRIPE_WEBHOOK_SECRET::"
+          name      = "STRIPE_SECRET_KEY"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:STRIPE_SECRET_KEY::"
         },
         # Google OAuth (if used)
         {
