@@ -14,7 +14,7 @@ variable "environment" {
 variable "aws_region" {
   description = "AWS region for resources"
   type        = string
-  default     = "il-central-1"
+  default     = "eu-west-1"
 }
 
 variable "domain_name" {

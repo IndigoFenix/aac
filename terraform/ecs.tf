@@ -170,11 +170,11 @@ resource "aws_ecs_task_definition" "main" {
         },
         {
           name      = "DROPBOX_CLIENT_ID"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_PORT::"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:DROPBOX_CLIENT_ID::"
         },
         {
           name      = "DROPBOX_CLIENT_SECRET"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_PORT::"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:DROPBOX_CLIENT_SECRET::"
         }
       ]
 
@@ -188,11 +188,11 @@ resource "aws_ecs_task_definition" "main" {
       }
 
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -f http://localhost:${var.container_port}/health || exit 1"]
+        command     = ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:${var.container_port}/health || exit 1"]
         interval    = 30
-        timeout     = 5
+        timeout     = 10
         retries     = 3
-        startPeriod = 60
+        startPeriod = 120  # 2 minutes for migrations to complete
       }
 
       essential = true
@@ -228,6 +228,7 @@ resource "aws_ecs_service" "main" {
 
   deployment_maximum_percent         = 200
   deployment_minimum_healthy_percent = 100
+  health_check_grace_period_seconds  = 120  # Wait 2 minutes before ALB health checks
 
   deployment_circuit_breaker {
     enable   = true
@@ -329,9 +330,12 @@ resource "aws_lb_target_group" "main" {
     path                = "/health"
     port                = "traffic-port"
     protocol            = "HTTP"
-    timeout             = 5
-    unhealthy_threshold = 3
+    timeout             = 10
+    unhealthy_threshold = 5  # More lenient - 5 failures before unhealthy
   }
+
+  # Give containers time to drain connections before deregistration
+  deregistration_delay = 30
 
   tags = {
     Name = "${local.name_prefix}-tg"

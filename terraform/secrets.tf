@@ -118,10 +118,22 @@ resource "aws_secretsmanager_secret" "app_secrets" {
 resource "aws_secretsmanager_secret_version" "app_secrets" {
   secret_id = aws_secretsmanager_secret.app_secrets.id
   secret_string = jsonencode({
+    # Authentication
     SESSION_SECRET  = "CHANGE_ME_GENERATE_RANDOM_STRING"
-    OPENAI_API_KEY  = "CHANGE_ME"
     JWT_SECRET      = "CHANGE_ME_GENERATE_RANDOM_STRING"
     ENCRYPTION_KEY  = "CHANGE_ME_GENERATE_RANDOM_STRING"
+    
+    # AI
+    OPENAI_API_KEY  = "CHANGE_ME"
+    
+    # Stripe (payment processing)
+    STRIPE_SECRET_KEY      = "CHANGE_ME"
+    STRIPE_PUBLISHABLE_KEY = "CHANGE_ME"
+    STRIPE_WEBHOOK_SECRET  = "CHANGE_ME"
+    
+    # Google OAuth (if used)
+    GOOGLE_CLIENT_ID     = "CHANGE_ME"
+    GOOGLE_CLIENT_SECRET = "CHANGE_ME"
   })
 
   lifecycle {

@@ -134,7 +134,8 @@ resource "aws_db_instance" "main" {
 resource "random_password" "db_password" {
   length           = 32
   special          = true
-  override_special = "!#$%&*()-_=+[]{}<>:?"
+  # Only use URL-safe special characters to avoid breaking DATABASE_URL
+  override_special = "-_"
 }
 
 # =============================================================================
