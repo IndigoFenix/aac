@@ -4,6 +4,9 @@ import { registerRoutes } from "./routes";
 import fs from "fs";
 import path from "path";
 import cors from "cors";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { pool } from "./db";
 
 const app = express();
 app.use(express.json());
@@ -54,6 +57,20 @@ app.get('/health', (_req, res) => {
 });
 
 (async () => {
+    try {
+        log("Running database migrations...");
+        const db = drizzle(pool);
+        await migrate(db, { migrationsFolder: "./drizzle" });
+        log("Migrations completed!");
+    } catch (error: any) {
+        if (error.message?.includes("already exists")) {
+            log("Tables already exist, skipping migrations");
+        } else {
+            console.error("Migration error:", error);
+            process.exit(1);  // Exit so ECS knows it failed
+        }
+    }
+    
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
