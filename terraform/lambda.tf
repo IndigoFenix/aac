@@ -159,9 +159,9 @@ resource "aws_lambda_function" "api" {
 
   environment {
     variables = {
-      NODE_ENV   = var.environment == "prod" ? "production" : var.environment
-      PORT       = "8080"  # Lambda Web Adapter default
-      AWS_REGION = var.aws_region
+      NODE_ENV    = var.environment == "prod" ? "production" : var.environment
+      PORT        = "8080"  # Lambda Web Adapter default
+      ENVIRONMENT = var.environment  # For loading correct secrets
     }
   }
 
