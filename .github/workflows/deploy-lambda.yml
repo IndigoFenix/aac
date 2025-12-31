@@ -105,6 +105,7 @@ jobs:
           if [ -n "$RDS_SG" ] && [ -n "$LAMBDA_SG" ] && [ "$RDS_SG" != "None" ] && [ "$LAMBDA_SG" != "None" ]; then
             echo "Importing RDS from Lambda security group rule: ${RDS_SG}_ingress_tcp_5432_5432_${LAMBDA_SG}"
             terraform import "aws_security_group_rule.rds_from_lambda[0]" "${RDS_SG}_ingress_tcp_5432_5432_${LAMBDA_SG}" 2>/dev/null || true
+          fi
 
       - name: Terraform Plan
         working-directory: terraform
