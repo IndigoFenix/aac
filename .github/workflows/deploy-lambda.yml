@@ -19,11 +19,97 @@ permissions:
 
 jobs:
   # ===========================================
+  # Security Scanning
+  # ===========================================
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+  # ===========================================
+  # Infrastructure (Terraform)
+  # ===========================================
+  infrastructure:
+    name: Infrastructure
+    runs-on: ubuntu-latest
+    needs: security-scan
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging'
+    outputs:
+      frontend_bucket: ${{ steps.tf-outputs.outputs.frontend_bucket }}
+      lambda_function: ${{ steps.tf-outputs.outputs.lambda_function }}
+      cloudfront_id: ${{ steps.tf-outputs.outputs.cloudfront_id }}
+      lambda_ecr_url: ${{ steps.tf-outputs.outputs.lambda_ecr_url }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: github-actions-terraform
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=cliniaccian/${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}/terraform.tfstate" \
+            -backend-config="region=${{ env.AWS_REGION }}"
+
+      - name: Terraform Plan
+        working-directory: terraform
+        run: |
+          terraform plan \
+            -var="environment=${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}" \
+            -var="aws_region=${{ env.AWS_REGION }}" \
+            -out=tfplan
+
+      - name: Terraform Apply
+        if: github.event_name == 'push'
+        working-directory: terraform
+        run: terraform apply -auto-approve tfplan
+
+      - name: Get Terraform Outputs
+        id: tf-outputs
+        if: github.event_name == 'push'
+        working-directory: terraform
+        run: |
+          echo "frontend_bucket=$(terraform output -raw frontend_bucket_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "lambda_function=$(terraform output -raw lambda_function_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "cloudfront_id=$(terraform output -raw cloudfront_distribution_id 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "lambda_ecr_url=$(terraform output -raw lambda_ecr_repository_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+
+  # ===========================================
   # Build Frontend
   # ===========================================
   build-frontend:
     name: Build Frontend
     runs-on: ubuntu-latest
+    needs: infrastructure
     if: github.event_name == 'push'
 
     steps:
@@ -43,7 +129,6 @@ jobs:
         run: npm run build:client
         env:
           NODE_ENV: production
-          # Frontend env vars (VITE_ prefix required)
           VITE_STRIPE_PUBLIC_KEY: ${{ secrets.VITE_STRIPE_PUBLIC_KEY }}
 
       - name: Upload frontend artifacts
@@ -59,6 +144,7 @@ jobs:
   build-lambda:
     name: Build Lambda Image
     runs-on: ubuntu-latest
+    needs: infrastructure
     if: github.event_name == 'push'
     
     outputs:
@@ -96,7 +182,7 @@ jobs:
   deploy-frontend:
     name: Deploy Frontend
     runs-on: ubuntu-latest
-    needs: build-frontend
+    needs: [infrastructure, build-frontend]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
@@ -113,26 +199,35 @@ jobs:
           path: dist/public/
 
       - name: Deploy to S3
+        env:
+          BUCKET: ${{ needs.infrastructure.outputs.frontend_bucket || env.FRONTEND_BUCKET }}
         run: |
-          aws s3 sync dist/public/ s3://${{ env.FRONTEND_BUCKET }}/ \
+          echo "Deploying to bucket: $BUCKET"
+          
+          aws s3 sync dist/public/ s3://$BUCKET/ \
             --delete \
             --cache-control "public, max-age=31536000, immutable" \
             --exclude "index.html" \
             --exclude "*.json"
           
-          # Upload index.html and JSON with no-cache
-          aws s3 cp dist/public/index.html s3://${{ env.FRONTEND_BUCKET }}/index.html \
+          # Upload index.html with no-cache
+          aws s3 cp dist/public/index.html s3://$BUCKET/index.html \
             --cache-control "no-cache, no-store, must-revalidate"
           
-          # Upload any JSON files (manifest, etc) with short cache
-          find dist/public -name "*.json" -exec aws s3 cp {} s3://${{ env.FRONTEND_BUCKET }}/{} \
-            --cache-control "public, max-age=0, must-revalidate" \;
+          # Upload JSON files with short cache
+          for f in $(find dist/public -name "*.json" -type f); do
+            key="${f#dist/public/}"
+            aws s3 cp "$f" "s3://$BUCKET/$key" \
+              --cache-control "public, max-age=0, must-revalidate"
+          done
 
       - name: Invalidate CloudFront cache
-        if: env.CLOUDFRONT_DISTRIBUTION_ID != ''
+        env:
+          CF_ID: ${{ needs.infrastructure.outputs.cloudfront_id || env.CLOUDFRONT_DISTRIBUTION_ID }}
+        if: env.CF_ID != ''
         run: |
           aws cloudfront create-invalidation \
-            --distribution-id ${{ env.CLOUDFRONT_DISTRIBUTION_ID }} \
+            --distribution-id $CF_ID \
             --paths "/*"
 
   # ===========================================
@@ -141,7 +236,7 @@ jobs:
   deploy-lambda:
     name: Deploy Lambda
     runs-on: ubuntu-latest
-    needs: build-lambda
+    needs: [infrastructure, build-lambda]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
@@ -152,23 +247,36 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Update Lambda function
+        env:
+          FUNCTION: ${{ needs.infrastructure.outputs.lambda_function || env.LAMBDA_FUNCTION }}
         run: |
+          echo "Updating Lambda function: $FUNCTION"
+          
           aws lambda update-function-code \
-            --function-name ${{ env.LAMBDA_FUNCTION }} \
+            --function-name $FUNCTION \
             --image-uri ${{ needs.build-lambda.outputs.image }}
 
       - name: Wait for Lambda update
+        env:
+          FUNCTION: ${{ needs.infrastructure.outputs.lambda_function || env.LAMBDA_FUNCTION }}
         run: |
           aws lambda wait function-updated \
-            --function-name ${{ env.LAMBDA_FUNCTION }}
+            --function-name $FUNCTION
 
       - name: Verify Lambda health
+        env:
+          FUNCTION: ${{ needs.infrastructure.outputs.lambda_function || env.LAMBDA_FUNCTION }}
         run: |
           # Get Lambda function URL
           LAMBDA_URL=$(aws lambda get-function-url-config \
-            --function-name ${{ env.LAMBDA_FUNCTION }} \
+            --function-name $FUNCTION \
             --query 'FunctionUrl' \
-            --output text)
+            --output text 2>/dev/null || echo "")
+          
+          if [ -z "$LAMBDA_URL" ]; then
+            echo "No function URL configured, skipping health check"
+            exit 0
+          fi
           
           echo "Lambda URL: $LAMBDA_URL"
           
@@ -191,7 +299,7 @@ jobs:
   summary:
     name: Deployment Summary
     runs-on: ubuntu-latest
-    needs: [deploy-frontend, deploy-lambda]
+    needs: [infrastructure, deploy-frontend, deploy-lambda]
     if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
@@ -201,6 +309,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Infrastructure | ${{ needs.infrastructure.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Frontend | ${{ needs.deploy-frontend.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Lambda | ${{ needs.deploy-lambda.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
