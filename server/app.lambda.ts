@@ -1,5 +1,5 @@
 // server/app.lambda.ts
-// Express app for Lambda - based on index.prod.ts but without static file serving
+// Express app for Lambda - starts HTTP server immediately, then initializes DB
 // This is imported AFTER secrets are loaded by index.lambda.ts
 
 import express, { type Request, Response, NextFunction } from "express";
@@ -10,7 +10,7 @@ import { pool } from "./db";
 
 const app = express();
 
-// Track if app is ready to serve traffic
+// Track initialization state
 let isReady = false;
 let startupError: Error | null = null;
 
@@ -56,16 +56,17 @@ app.use((req, res, next) => {
   next();
 });
 
-// Health check - only returns healthy when app is fully initialized
+// Health check - returns 200 immediately so Lambda Adapter knows we're alive
+// The "ready" status indicates if DB is connected and routes are registered
 app.get('/health', (_req, res) => {
   if (startupError) {
-    res.status(503).json({ 
+    res.status(200).json({ 
       status: 'error', 
       error: startupError.message,
       timestamp: new Date().toISOString() 
     });
   } else if (!isReady) {
-    res.status(503).json({ 
+    res.status(200).json({ 
       status: 'starting', 
       timestamp: new Date().toISOString() 
     });
@@ -78,8 +79,8 @@ app.get('/health', (_req, res) => {
 });
 
 async function runMigrations(): Promise<void> {
-  const maxRetries = 5;
-  const retryDelay = 2000;
+  const maxRetries = 3;
+  const retryDelay = 1000;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -89,19 +90,17 @@ async function runMigrations(): Promise<void> {
       log("Migrations completed successfully!");
       return;
     } catch (error: any) {
-      // Check if it's a "already exists" error (table already created)
       if (error.message?.includes("already exists") || 
           error.message?.includes("duplicate key") ||
-          error.message?.includes("relation") && error.message?.includes("already exists")) {
+          (error.message?.includes("relation") && error.message?.includes("already exists"))) {
         log("Tables already exist, continuing...");
         return;
       }
       
-      // Check if it's a connection/lock error
       if (error.message?.includes("lock") || 
           error.message?.includes("concurrent") ||
           error.code === '55P03') {
-        log(`Migration locked by another process, retrying in ${retryDelay}ms...`);
+        log(`Migration locked, retrying in ${retryDelay}ms...`);
         await new Promise(resolve => setTimeout(resolve, retryDelay));
         continue;
       }
@@ -117,8 +116,8 @@ async function runMigrations(): Promise<void> {
 }
 
 async function waitForDatabase(): Promise<void> {
-  const maxRetries = 10;
-  const retryDelay = 2000;
+  const maxRetries = 5;
+  const retryDelay = 1000;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -136,54 +135,62 @@ async function waitForDatabase(): Promise<void> {
   }
 }
 
-async function startServer(): Promise<void> {
+async function initializeApp(): Promise<void> {
   try {
-    // Step 1: Wait for database to be available
+    // Step 1: Wait for database
     await waitForDatabase();
 
     // Step 2: Run migrations
     await runMigrations();
 
-    // Step 3: Small delay to ensure tables are fully committed
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // Step 4: Now register routes (which may query the database on init)
+    // Step 3: Register routes
     log("Registering routes...");
     const { registerRoutes } = await import("./routes");
-    const server = await registerRoutes(app);
+    await registerRoutes(app);
     log("Routes registered successfully!");
 
-    // Error handler
-    app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-      const status = err.status || err.statusCode || 500;
-      const message = err.message || "Internal Server Error";
-      res.status(status).json({ message });
-      console.error("Request error:", err);
-    });
-
-    // Lambda doesn't serve static files - CloudFront/S3 handles that
-    // Return 404 for unknown routes
-    app.use("*", (_req, res) => {
-      res.status(404).json({ error: "Not found" });
-    });
-
-    const port = process.env.PORT || 8080;
-    server.listen({ port: Number(port), host: "0.0.0.0" }, () => {
-      log(`Server listening on port ${port}`);
-      // Mark as ready AFTER server is listening
-      isReady = true;
-      log("Application ready to accept traffic!");
-    });
+    // Mark as ready
+    isReady = true;
+    log("Application fully initialized!");
 
   } catch (error: any) {
-    console.error("Startup failed:", error);
+    console.error("Initialization failed:", error);
     startupError = error;
-    // Don't exit immediately - let health checks report the error
-    setTimeout(() => {
-      process.exit(1);
-    }, 30000);
   }
 }
 
-// Start the server
-startServer();
+// Error handler (must be after routes are registered, so we add it dynamically)
+function addErrorHandler() {
+  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    const status = err.status || err.statusCode || 500;
+    const message = err.message || "Internal Server Error";
+    res.status(status).json({ message });
+    console.error("Request error:", err);
+  });
+
+  // 404 handler for unknown routes
+  app.use("*", (_req, res) => {
+    if (!isReady) {
+      res.status(503).json({ error: "Service starting up" });
+    } else {
+      res.status(404).json({ error: "Not found" });
+    }
+  });
+}
+
+// START SERVER IMMEDIATELY - then initialize DB in background
+const port = process.env.PORT || 8080;
+const server = app.listen(Number(port), "0.0.0.0", () => {
+  log(`Server listening on port ${port}`);
+  
+  // Initialize app in background AFTER server is listening
+  initializeApp().then(() => {
+    addErrorHandler();
+  }).catch((error) => {
+    console.error("Failed to initialize:", error);
+    startupError = error;
+    addErrorHandler();
+  });
+});
+
+export { app, server };
