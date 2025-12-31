@@ -182,11 +182,11 @@ resource "aws_ecs_task_definition" "main" {
         },
         {
           name      = "DROPBOX_CLIENT_ID"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_PASS::"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:DROPBOX_CLIENT_ID::"
         },
         {
           name      = "DROPBOX_CLIENT_SECRET"
-          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:SMTP_PASS::"
+          valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:DROPBOX_CLIENT_SECRET::"
         }
       ]
 

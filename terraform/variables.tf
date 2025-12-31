@@ -24,6 +24,16 @@ variable "domain_name" {
 }
 
 # =============================================================================
+# ARCHITECTURE VARIABLES
+# =============================================================================
+
+variable "use_lambda" {
+  description = "Use Lambda + S3 instead of ECS (for cost savings during low traffic)"
+  type        = bool
+  default     = false
+}
+
+# =============================================================================
 # VPC Variables
 # =============================================================================
 variable "vpc_cidr" {
