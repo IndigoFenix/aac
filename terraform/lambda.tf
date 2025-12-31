@@ -7,7 +7,7 @@
 # ECR Repository for Lambda (reuse existing or create new)
 # =============================================================================
 resource "aws_ecr_repository" "lambda" {
-  name                 = "cliniaccian-lambda"
+  name                 = "cliniaacian-lambda"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {

@@ -59,18 +59,18 @@ export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
 # Create S3 bucket for Terraform state
 aws s3api create-bucket \
-    --bucket cliniaccian-prod-terraform-state \
+    --bucket cliniaacian-prod-terraform-state \
     --region $AWS_REGION \
     --create-bucket-configuration LocationConstraint=$AWS_REGION
 
 # Enable versioning
 aws s3api put-bucket-versioning \
-    --bucket cliniaccian-prod-terraform-state \
+    --bucket cliniaacian-prod-terraform-state \
     --versioning-configuration Status=Enabled
 
 # Enable encryption
 aws s3api put-bucket-encryption \
-    --bucket cliniaccian-prod-terraform-state \
+    --bucket cliniaacian-prod-terraform-state \
     --server-side-encryption-configuration '{
         "Rules": [{
             "ApplyServerSideEncryptionByDefault": {
@@ -81,7 +81,7 @@ aws s3api put-bucket-encryption \
 
 # Block public access
 aws s3api put-public-access-block \
-    --bucket cliniaccian-prod-terraform-state \
+    --bucket cliniaacian-prod-terraform-state \
     --public-access-block-configuration '{
         "BlockPublicAcls": true,
         "IgnorePublicAcls": true,
@@ -143,12 +143,12 @@ Create a file `github-actions-trust-policy.json`:
 ```bash
 # Create the role
 aws iam create-role \
-    --role-name cliniaccian-github-actions-bootstrap \
+    --role-name cliniaacian-github-actions-bootstrap \
     --assume-role-policy-document file://github-actions-trust-policy.json
 
 # Attach AdministratorAccess temporarily (Terraform will create more restricted roles)
 aws iam attach-role-policy \
-    --role-name cliniaccian-github-actions-bootstrap \
+    --role-name cliniaacian-github-actions-bootstrap \
     --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
 ```
 
@@ -161,8 +161,8 @@ cd terraform
 
 # Initialize Terraform
 terraform init \
-    -backend-config="bucket=cliniaccian-prod-terraform-state" \
-    -backend-config="key=cliniaccian/prod/terraform.tfstate" \
+    -backend-config="bucket=cliniaacian-prod-terraform-state" \
+    -backend-config="key=cliniaacian/prod/terraform.tfstate" \
     -backend-config="region=il-central-1"
 
 # Plan the deployment (no domain initially - HTTP only)
@@ -186,7 +186,7 @@ You only need to update the application secrets:
 ```bash
 # Update application secrets (database credentials are auto-generated)
 aws secretsmanager put-secret-value \
-    --secret-id cliniaccian-prod/app-secrets \
+    --secret-id cliniaacian-prod/app-secrets \
     --secret-string '{
         "SESSION_SECRET": "'$(openssl rand -base64 32)'",
         "OPENAI_API_KEY": "sk-your-api-key",
@@ -196,7 +196,7 @@ aws secretsmanager put-secret-value \
 
 # View the auto-generated database credentials (if needed)
 aws secretsmanager get-secret-value \
-    --secret-id cliniaccian-prod/database \
+    --secret-id cliniaacian-prod/database \
     --query SecretString --output text | jq .
 ```
 
@@ -232,8 +232,8 @@ Add these secrets:
 
 | Secret Name | Value |
 |-------------|-------|
-| `AWS_ROLE_ARN` | `arn:aws:iam::YOUR_ACCOUNT_ID:role/cliniaccian-prod-github-actions-role` |
-| `TF_STATE_BUCKET` | `cliniaccian-prod-terraform-state` |
+| `AWS_ROLE_ARN` | `arn:aws:iam::YOUR_ACCOUNT_ID:role/cliniaacian-prod-github-actions-role` |
+| `TF_STATE_BUCKET` | `cliniaacian-prod-terraform-state` |
 
 ### Step 2: Create Environments
 
@@ -250,9 +250,9 @@ Update line 8-11 with your settings:
 ```yaml
 env:
   AWS_REGION: il-central-1  # Your region
-  ECR_REPOSITORY: cliniaccian
-  ECS_SERVICE: cliniaccian-service
-  ECS_CLUSTER: cliniaccian-cluster
+  ECR_REPOSITORY: cliniaacian
+  ECS_SERVICE: cliniaacian-service
+  ECS_CLUSTER: cliniaacian-cluster
 ```
 
 ---
@@ -268,9 +268,9 @@ Before the first ECS deployment can work, you need an image in ECR:
 aws ecr get-login-password --region il-central-1 | docker login --username AWS --password-stdin YOUR_ACCOUNT_ID.dkr.ecr.il-central-1.amazonaws.com
 
 # Build and push
-docker build -t cliniaccian .
-docker tag cliniaccian:latest YOUR_ACCOUNT_ID.dkr.ecr.il-central-1.amazonaws.com/cliniaccian:latest
-docker push YOUR_ACCOUNT_ID.dkr.ecr.il-central-1.amazonaws.com/cliniaccian:latest
+docker build -t cliniaacian .
+docker tag cliniaacian:latest YOUR_ACCOUNT_ID.dkr.ecr.il-central-1.amazonaws.com/cliniaacian:latest
+docker push YOUR_ACCOUNT_ID.dkr.ecr.il-central-1.amazonaws.com/cliniaacian:latest
 ```
 
 ### Step 2: Trigger Deployment
@@ -293,7 +293,7 @@ Without a domain, access your application via the ALB DNS:
 ```bash
 # Get the ALB DNS name
 aws elbv2 describe-load-balancers \
-    --names cliniaccian-prod-alb \
+    --names cliniaacian-prod-alb \
     --query 'LoadBalancers[0].DNSName' \
     --output text
 
@@ -305,7 +305,7 @@ curl http://<ALB_DNS>/health
 
 When you have a domain, add a CNAME record:
 ```
-app.yourdomain.com → cliniaccian-prod-alb-XXXXX.il-central-1.elb.amazonaws.com
+app.yourdomain.com → cliniaacian-prod-alb-XXXXX.il-central-1.elb.amazonaws.com
 ```
 
 Then update Terraform with the domain_name variable to enable HTTPS.
@@ -315,7 +315,7 @@ Then update Terraform with the domain_name variable to enable HTTPS.
 Update the SNS subscription to receive alerts:
 ```bash
 aws sns subscribe \
-    --topic-arn arn:aws:sns:il-central-1:YOUR_ACCOUNT_ID:cliniaccian-prod-alerts \
+    --topic-arn arn:aws:sns:il-central-1:YOUR_ACCOUNT_ID:cliniaacian-prod-alerts \
     --protocol email \
     --notification-endpoint your-email@example.com
 ```
@@ -334,7 +334,7 @@ aws cloudtrail describe-trails
 aws wafv2 list-web-acls --scope REGIONAL --region il-central-1
 
 # Check S3 buckets are private
-aws s3api get-public-access-block --bucket cliniaccian-prod-uploads-YOUR_ACCOUNT_ID
+aws s3api get-public-access-block --bucket cliniaacian-prod-uploads-YOUR_ACCOUNT_ID
 ```
 
 ---
@@ -345,11 +345,11 @@ aws s3api get-public-access-block --bucket cliniaccian-prod-uploads-YOUR_ACCOUNT
 
 ```bash
 # Application logs
-aws logs tail /ecs/cliniaccian-prod --follow
+aws logs tail /ecs/cliniaacian-prod --follow
 
 # View specific time range
 aws logs filter-log-events \
-    --log-group-name /ecs/cliniaccian-prod \
+    --log-group-name /ecs/cliniaacian-prod \
     --start-time $(date -d "1 hour ago" +%s000) \
     --filter-pattern "ERROR"
 ```
@@ -359,9 +359,9 @@ aws logs filter-log-events \
 ```bash
 # Enable ECS Exec (already configured in Terraform)
 aws ecs execute-command \
-    --cluster cliniaccian-prod-cluster \
+    --cluster cliniaacian-prod-cluster \
     --task TASK_ID \
-    --container cliniaccian-app \
+    --container cliniaacian-app \
     --command "/bin/sh" \
     --interactive
 ```
@@ -374,13 +374,13 @@ NEW_SECRET=$(openssl rand -base64 32)
 
 # Update in Secrets Manager
 aws secretsmanager put-secret-value \
-    --secret-id cliniaccian-prod/app-secrets \
+    --secret-id cliniaacian-prod/app-secrets \
     --secret-string "{\"SESSION_SECRET\": \"$NEW_SECRET\", ...}"
 
 # Force ECS to pick up new secrets
 aws ecs update-service \
-    --cluster cliniaccian-prod-cluster \
-    --service cliniaccian-prod-service \
+    --cluster cliniaacian-prod-cluster \
+    --service cliniaacian-prod-service \
     --force-new-deployment
 ```
 
@@ -448,7 +448,7 @@ Once you have a domain:
 - Wait up to 30 minutes for propagation
 
 ### ECS Tasks Keep Failing
-- Check CloudWatch logs: `/ecs/cliniaccian-prod`
+- Check CloudWatch logs: `/ecs/cliniaacian-prod`
 - Verify secrets are correctly configured
 - Check security groups allow necessary traffic
 

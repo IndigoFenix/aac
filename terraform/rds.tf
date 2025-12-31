@@ -76,8 +76,8 @@ resource "aws_db_instance" "main" {
   kms_key_id            = aws_kms_key.main.arn
 
   # Database
-  db_name  = "cliniaccian"
-  username = "cliniaccian_admin"
+  db_name  = "cliniaacian"
+  username = "cliniaacian_admin"
   password = random_password.db_password.result
 
   # Network

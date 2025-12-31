@@ -44,7 +44,7 @@ data "aws_region" "current" {}
 # Local Variables
 # =============================================================================
 locals {
-  name_prefix = "cliniaccian-${var.environment}"
+  name_prefix = "cliniaacian-${var.environment}"
   
   common_tags = {
     Project     = "CliniAACian"

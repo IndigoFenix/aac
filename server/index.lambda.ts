@@ -80,8 +80,8 @@ async function loadSecrets(): Promise<void> {
   
   const environment = process.env.ENVIRONMENT || "prod";
   const secretIds = [
-    `cliniaccian-${environment}/database`,
-    `cliniaccian-${environment}/app-secrets`
+    `cliniaacian-${environment}/database`,
+    `cliniaacian-${environment}/app-secrets`
   ];
 
   for (const secretId of secretIds) {

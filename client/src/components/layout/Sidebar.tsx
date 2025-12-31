@@ -26,7 +26,7 @@ import {
   GraduationCap,
   ChevronRight,
 } from 'lucide-react';
-import logoImage from '@assets/cliniaccian copy_1763565136724.png';
+import logoImage from '@assets/cliniaacian copy_1763565136724.png';
 import { useAuth } from '@/hooks/useAuth';
 import { openUI } from '@/lib/uiEvents';
 import { cn } from '@/lib/utils';

@@ -8,10 +8,10 @@ on:
 
 env:
   AWS_REGION: il-central-1  # Change to your preferred region (eu-west-1 for Ireland/EU compliance)
-  ECR_REPOSITORY: cliniaccian
-  ECS_SERVICE: cliniaccian-service
-  ECS_CLUSTER: cliniaccian-cluster
-  CONTAINER_NAME: cliniaccian-app
+  ECR_REPOSITORY: cliniaacian
+  ECS_SERVICE: cliniaacian-service
+  ECS_CLUSTER: cliniaacian-cluster
+  CONTAINER_NAME: cliniaacian-app
 
 permissions:
   id-token: write   # Required for OIDC authentication
@@ -127,7 +127,7 @@ jobs:
         run: |
           terraform init \
             -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
-            -backend-config="key=cliniaccian/${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}/terraform.tfstate" \
+            -backend-config="key=cliniaacian/${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}/terraform.tfstate" \
             -backend-config="region=${{ env.AWS_REGION }}"
 
       - name: Terraform Plan
@@ -197,7 +197,7 @@ jobs:
       - name: Get current task definition
         run: |
           aws ecs describe-task-definition \
-            --task-definition cliniaccian-${{ env.ENV_SUFFIX }}-task \
+            --task-definition cliniaacian-${{ env.ENV_SUFFIX }}-task \
             --query taskDefinition > task-definition.json
 
       - name: Update task definition with new image
@@ -212,8 +212,8 @@ jobs:
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           task-definition: ${{ steps.task-def.outputs.task-definition }}
-          service: cliniaccian-${{ env.ENV_SUFFIX }}-service
-          cluster: cliniaccian-${{ env.ENV_SUFFIX }}-cluster
+          service: cliniaacian-${{ env.ENV_SUFFIX }}-service
+          cluster: cliniaacian-${{ env.ENV_SUFFIX }}-cluster
           wait-for-service-stability: true
 
       - name: Verify deployment
@@ -243,7 +243,7 @@ jobs:
         run: |
           ENV_SUFFIX=${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}
           ALB_DNS=$(aws elbv2 describe-load-balancers \
-            --names "cliniaccian-${ENV_SUFFIX}-alb" \
+            --names "cliniaacian-${ENV_SUFFIX}-alb" \
             --query 'LoadBalancers[0].DNSName' \
             --output text)
           echo "alb_dns=${ALB_DNS}" >> $GITHUB_OUTPUT

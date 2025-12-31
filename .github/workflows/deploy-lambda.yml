@@ -8,9 +8,9 @@ on:
 
 env:
   AWS_REGION: il-central-1
-  FRONTEND_BUCKET: cliniaccian-prod-frontend
-  LAMBDA_FUNCTION: cliniaccian-prod-api
-  ECR_REPOSITORY: cliniaccian-lambda
+  FRONTEND_BUCKET: cliniaacian-prod-frontend
+  LAMBDA_FUNCTION: cliniaacian-prod-api
+  ECR_REPOSITORY: cliniaacian-lambda
   CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
 
 permissions:
@@ -77,7 +77,7 @@ jobs:
         run: |
           terraform init \
             -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
-            -backend-config="key=cliniaccian/${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}/terraform.tfstate" \
+            -backend-config="key=cliniaacian/${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}/terraform.tfstate" \
             -backend-config="region=${{ env.AWS_REGION }}"
 
       - name: Terraform Plan
