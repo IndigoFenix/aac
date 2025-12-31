@@ -240,9 +240,20 @@ resource "aws_lambda_function" "api" {
 
 # =============================================================================
 # Lambda Function URL (created in Phase 2)
+# Note: If Function URL doesn't work in your region, set use_api_gateway = true
 # =============================================================================
-resource "aws_lambda_function_url" "api" {
+
+# Wait for Lambda to be fully ready
+resource "time_sleep" "wait_for_lambda" {
   count = var.use_lambda && var.lambda_image_exists ? 1 : 0
+
+  depends_on      = [aws_lambda_function.api[0]]
+  create_duration = "30s"
+}
+
+# Option 1: Lambda Function URL (simpler, no extra cost)
+resource "aws_lambda_function_url" "api" {
+  count = var.use_lambda && var.lambda_image_exists && !var.use_api_gateway ? 1 : 0
 
   function_name      = aws_lambda_function.api[0].function_name
   authorization_type = "NONE"
@@ -255,4 +266,75 @@ resource "aws_lambda_function_url" "api" {
     expose_headers    = ["*"]
     max_age           = 86400
   }
+
+  depends_on = [time_sleep.wait_for_lambda[0]]
+}
+
+# Option 2: API Gateway HTTP API (more reliable across regions)
+resource "aws_apigatewayv2_api" "lambda" {
+  count = var.use_lambda && var.lambda_image_exists && var.use_api_gateway ? 1 : 0
+
+  name          = "${local.name_prefix}-api"
+  protocol_type = "HTTP"
+
+  cors_configuration {
+    allow_credentials = true
+    allow_headers     = ["*"]
+    allow_methods     = ["*"]
+    allow_origins     = var.domain_name != "" ? ["https://${var.domain_name}"] : ["*"]
+    expose_headers    = ["*"]
+    max_age           = 86400
+  }
+
+  tags = {
+    Name = "${local.name_prefix}-api-gateway"
+  }
+}
+
+resource "aws_apigatewayv2_stage" "lambda" {
+  count = var.use_lambda && var.lambda_image_exists && var.use_api_gateway ? 1 : 0
+
+  api_id      = aws_apigatewayv2_api.lambda[0].id
+  name        = "$default"
+  auto_deploy = true
+
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.lambda[0].arn
+    format = jsonencode({
+      requestId      = "$context.requestId"
+      ip             = "$context.identity.sourceIp"
+      requestTime    = "$context.requestTime"
+      httpMethod     = "$context.httpMethod"
+      routeKey       = "$context.routeKey"
+      status         = "$context.status"
+      responseLength = "$context.responseLength"
+    })
+  }
+}
+
+resource "aws_apigatewayv2_integration" "lambda" {
+  count = var.use_lambda && var.lambda_image_exists && var.use_api_gateway ? 1 : 0
+
+  api_id                 = aws_apigatewayv2_api.lambda[0].id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.api[0].invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "lambda" {
+  count = var.use_lambda && var.lambda_image_exists && var.use_api_gateway ? 1 : 0
+
+  api_id    = aws_apigatewayv2_api.lambda[0].id
+  route_key = "$default"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda[0].id}"
+}
+
+resource "aws_lambda_permission" "api_gateway" {
+  count = var.use_lambda && var.lambda_image_exists && var.use_api_gateway ? 1 : 0
+
+  statement_id  = "AllowAPIGatewayInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.api[0].function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.lambda[0].execution_arn}/*/*"
 }

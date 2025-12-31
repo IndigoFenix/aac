@@ -95,6 +95,16 @@ resource "aws_acm_certificate_validation" "cloudfront" {
 # =============================================================================
 # CloudFront Distribution (created in Phase 2 - needs Lambda URL)
 # =============================================================================
+
+# Local to determine the API endpoint URL
+locals {
+  api_endpoint = var.use_lambda && var.lambda_image_exists ? (
+    var.use_api_gateway 
+    ? replace(replace(aws_apigatewayv2_api.lambda[0].api_endpoint, "https://", ""), "/", "")
+    : replace(replace(aws_lambda_function_url.api[0].function_url, "https://", ""), "/", "")
+  ) : ""
+}
+
 resource "aws_cloudfront_distribution" "frontend" {
   count = var.use_lambda && var.lambda_image_exists ? 1 : 0
 
@@ -112,9 +122,9 @@ resource "aws_cloudfront_distribution" "frontend" {
     origin_access_control_id = aws_cloudfront_origin_access_control.frontend[0].id
   }
 
-  # Lambda Origin for API
+  # Lambda/API Gateway Origin for API
   origin {
-    domain_name = replace(replace(aws_lambda_function_url.api[0].function_url, "https://", ""), "/", "")
+    domain_name = local.api_endpoint
     origin_id   = "Lambda-api"
 
     custom_origin_config {

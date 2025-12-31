@@ -65,6 +65,17 @@ resource "aws_iam_role_policy" "github_actions_lambda_phase1" {
         ]
         Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${local.name_prefix}-api"
       },
+      # API Gateway management (if using API Gateway instead of Function URL)
+      {
+        Effect = "Allow"
+        Action = [
+          "apigateway:*"
+        ]
+        Resource = [
+          "arn:aws:apigateway:${var.aws_region}::/apis",
+          "arn:aws:apigateway:${var.aws_region}::/apis/*"
+        ]
+      },
       # CloudFront management
       {
         Effect = "Allow"

@@ -47,7 +47,7 @@ output "lambda_function_name" {
 # Lambda function URL (only when Lambda exists)
 output "lambda_function_url" {
   description = "Lambda function URL for API"
-  value       = var.use_lambda && var.lambda_image_exists ? aws_lambda_function_url.api[0].function_url : null
+  value       = var.use_lambda && var.lambda_image_exists ? (var.use_api_gateway ? aws_apigatewayv2_api.lambda[0].api_endpoint : aws_lambda_function_url.api[0].function_url) : null
 }
 
 # Frontend bucket (only when using Lambda)
