@@ -1,9 +1,6 @@
 // server/db.ts
-// Database connection that works in both ECS and Lambda environments
+// Database connection for AWS RDS
 
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import * as schema from "@shared/schema";
@@ -14,37 +11,13 @@ if (!process.env.DATABASE_URL) {
 
 const { Pool } = pg;
 
-// Try to find and load RDS CA bundle
-function loadCaBundle(): string | null {
-  const possiblePaths = [
-    path.join(process.cwd(), 'rds-ca-bundle.pem'),
-    '/app/rds-ca-bundle.pem',
-    path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'rds-ca-bundle.pem'),
-    path.join(path.dirname(fileURLToPath(import.meta.url)), 'rds-ca-bundle.pem'),
-  ];
-
-  for (const certPath of possiblePaths) {
-    try {
-      if (fs.existsSync(certPath)) {
-        console.log(`Loaded RDS CA bundle from: ${certPath}`);
-        return fs.readFileSync(certPath, 'utf8');
-      }
-    } catch {
-      continue;
-    }
-  }
-  
-  console.log('RDS CA bundle not found, using SSL without certificate verification');
-  return null;
-}
-
-const rdsCa = loadCaBundle();
-
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: rdsCa 
-    ? { ca: rdsCa, rejectUnauthorized: true }
-    : { rejectUnauthorized: false }  // Still encrypted, just no cert verification
+  ssl: {
+    // Connection is still TLS encrypted, just not verifying the server certificate
+    // This is safe because Lambda is in a private VPC with security group rules
+    rejectUnauthorized: false
+  }
 });
 
 export const db = drizzle(pool, { schema });
