@@ -102,13 +102,18 @@ resource "aws_wafv2_web_acl" "main" {
   rule {
     name     = "AWSManagedRulesCommonRuleSet"
     priority = 1
-    override_action { none {} }
+
+    override_action {
+      none {}
+    }
+
     statement {
       managed_rule_group_statement {
         name        = "AWSManagedRulesCommonRuleSet"
         vendor_name = "AWS"
       }
     }
+
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "AWSManagedRulesCommonRuleSet"
@@ -119,13 +124,18 @@ resource "aws_wafv2_web_acl" "main" {
   rule {
     name     = "AWSManagedRulesKnownBadInputsRuleSet"
     priority = 2
-    override_action { none {} }
+
+    override_action {
+      none {}
+    }
+
     statement {
       managed_rule_group_statement {
         name        = "AWSManagedRulesKnownBadInputsRuleSet"
         vendor_name = "AWS"
       }
     }
+
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "AWSManagedRulesKnownBadInputsRuleSet"
@@ -136,13 +146,18 @@ resource "aws_wafv2_web_acl" "main" {
   rule {
     name     = "AWSManagedRulesSQLiRuleSet"
     priority = 3
-    override_action { none {} }
+
+    override_action {
+      none {}
+    }
+
     statement {
       managed_rule_group_statement {
         name        = "AWSManagedRulesSQLiRuleSet"
         vendor_name = "AWS"
       }
     }
+
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "AWSManagedRulesSQLiRuleSet"
@@ -153,13 +168,18 @@ resource "aws_wafv2_web_acl" "main" {
   rule {
     name     = "RateLimitRule"
     priority = 4
-    action { block {} }
+
+    action {
+      block {}
+    }
+
     statement {
       rate_based_statement {
         limit              = 2000
         aggregate_key_type = "IP"
       }
     }
+
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "RateLimitRule"
