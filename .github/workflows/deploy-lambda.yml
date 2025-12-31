@@ -77,6 +77,23 @@ jobs:
             -backend-config="key=cliniaacian/${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}/terraform.tfstate" \
             -backend-config="region=${{ env.AWS_REGION }}"
 
+      - name: Migrate State for Lambda Resources
+        working-directory: terraform
+        continue-on-error: true
+        run: |
+          # Migrate resources that changed from non-indexed to indexed
+          # These commands will fail silently if resources don't exist or are already migrated
+          terraform state mv aws_ecr_repository.lambda aws_ecr_repository.lambda[0] 2>/dev/null || true
+          terraform state mv aws_ecr_lifecycle_policy.lambda aws_ecr_lifecycle_policy.lambda[0] 2>/dev/null || true
+          terraform state mv aws_iam_role.lambda_execution aws_iam_role.lambda_execution[0] 2>/dev/null || true
+          terraform state mv aws_iam_role_policy_attachment.lambda_basic aws_iam_role_policy_attachment.lambda_basic[0] 2>/dev/null || true
+          terraform state mv aws_iam_role_policy_attachment.lambda_vpc aws_iam_role_policy_attachment.lambda_vpc[0] 2>/dev/null || true
+          terraform state mv aws_iam_role_policy.lambda_secrets aws_iam_role_policy.lambda_secrets[0] 2>/dev/null || true
+          terraform state mv aws_iam_role_policy.lambda_s3 aws_iam_role_policy.lambda_s3[0] 2>/dev/null || true
+          terraform state mv aws_security_group.lambda aws_security_group.lambda[0] 2>/dev/null || true
+          terraform state mv aws_security_group_rule.rds_from_lambda aws_security_group_rule.rds_from_lambda[0] 2>/dev/null || true
+          terraform state mv aws_cloudwatch_log_group.lambda aws_cloudwatch_log_group.lambda[0] 2>/dev/null || true
+
       - name: Terraform Plan
         working-directory: terraform
         run: |

@@ -363,22 +363,27 @@ resource "aws_lb_listener" "http" {
   port              = 80
   protocol          = "HTTP"
 
-  default_action {
-    # Redirect to HTTPS only when: domain is set AND NOT using Lambda
-    type = var.domain_name != "" && !var.use_lambda ? "redirect" : "forward"
+  # When NOT using Lambda and we have a domain, redirect to HTTPS
+  dynamic "default_action" {
+    for_each = var.domain_name != "" && !var.use_lambda ? [1] : []
+    content {
+      type = "redirect"
 
-    # Redirect to HTTPS when we have a domain and NOT using Lambda
-    dynamic "redirect" {
-      for_each = var.domain_name != "" && !var.use_lambda ? [1] : []
-      content {
+      redirect {
         port        = "443"
         protocol    = "HTTPS"
         status_code = "HTTP_301"
       }
     }
+  }
 
-    # Forward to target group when: no domain OR using Lambda
-    target_group_arn = var.domain_name == "" || var.use_lambda ? aws_lb_target_group.main.arn : null
+  # When using Lambda OR no domain, forward to target group
+  dynamic "default_action" {
+    for_each = var.domain_name == "" || var.use_lambda ? [1] : []
+    content {
+      type             = "forward"
+      target_group_arn = aws_lb_target_group.main.arn
+    }
   }
 }
 

@@ -4,13 +4,14 @@
 # =============================================================================
 
 # =============================================================================
-# ECR Repository for Lambda (created in Phase 1)
+# ECR Repository for Lambda
 # =============================================================================
 resource "aws_ecr_repository" "lambda" {
   count = var.use_lambda ? 1 : 0
 
-  name                 = "${local.name_prefix}-lambda"
+  name                 = "cliniaacian-lambda"  # Keep consistent name
   image_tag_mutability = "MUTABLE"
+  force_delete         = true  # Allow deletion even with images
 
   image_scanning_configuration {
     scan_on_push = true
