@@ -1,0 +1,23 @@
+{
+  "name": "rest-express",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "dev": "cross-env NODE_ENV=development tsx server/index.ts",
+    "client:dev": "vite",
+    
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "vite build",
+    "build:server": "esbuild server/index.prod.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+    "build:lambda": "npm run build:client && esbuild server/index.lambda.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+    
+    "start": "NODE_ENV=production node dist/index.prod.js",
+    "check": "tsc",
+    "db:generate": "npx drizzle-kit generate",
+    "db:push": "drizzle-kit push"
+  },
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.x.x"
+  }
+}
