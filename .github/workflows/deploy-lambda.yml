@@ -8,10 +8,6 @@ on:
 
 env:
   AWS_REGION: il-central-1
-  FRONTEND_BUCKET: cliniaacian-prod-frontend
-  LAMBDA_FUNCTION: cliniaacian-prod-api
-  ECR_REPOSITORY: cliniaacian-lambda
-  CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
 
 permissions:
   id-token: write
@@ -54,6 +50,7 @@ jobs:
       lambda_function: ${{ steps.tf-outputs.outputs.lambda_function }}
       cloudfront_id: ${{ steps.tf-outputs.outputs.cloudfront_id }}
       lambda_ecr_url: ${{ steps.tf-outputs.outputs.lambda_ecr_url }}
+      lambda_exists: ${{ steps.tf-outputs.outputs.lambda_exists }}
     
     steps:
       - name: Checkout code
@@ -102,6 +99,12 @@ jobs:
           echo "lambda_function=$(terraform output -raw lambda_function_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "cloudfront_id=$(terraform output -raw cloudfront_distribution_id 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "lambda_ecr_url=$(terraform output -raw lambda_ecr_repository_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          # Check if Lambda function exists
+          if [ -n "$(terraform output -raw lambda_function_name 2>/dev/null || echo '')" ]; then
+            echo "lambda_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "lambda_exists=false" >> $GITHUB_OUTPUT
+          fi
 
   # ===========================================
   # Build Frontend
@@ -110,7 +113,7 @@ jobs:
     name: Build Frontend
     runs-on: ubuntu-latest
     needs: infrastructure
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && needs.infrastructure.outputs.frontend_bucket != ''
 
     steps:
       - name: Checkout code
@@ -145,7 +148,7 @@ jobs:
     name: Build Lambda Image
     runs-on: ubuntu-latest
     needs: infrastructure
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && needs.infrastructure.outputs.lambda_ecr_url != ''
     
     outputs:
       image: ${{ steps.build-image.outputs.image }}
@@ -167,14 +170,14 @@ jobs:
       - name: Build and push Docker image
         id: build-image
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_URL: ${{ needs.infrastructure.outputs.lambda_ecr_url }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -f Dockerfile.lambda -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          docker build -f Dockerfile.lambda -t $ECR_URL:$IMAGE_TAG .
+          docker push $ECR_URL:$IMAGE_TAG
+          docker tag $ECR_URL:$IMAGE_TAG $ECR_URL:latest
+          docker push $ECR_URL:latest
+          echo "image=$ECR_URL:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
   # ===========================================
   # Deploy Frontend to S3
@@ -183,7 +186,7 @@ jobs:
     name: Deploy Frontend
     runs-on: ubuntu-latest
     needs: [infrastructure, build-frontend]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.infrastructure.outputs.frontend_bucket != ''
 
     steps:
       - name: Configure AWS credentials
@@ -200,7 +203,7 @@ jobs:
 
       - name: Deploy to S3
         env:
-          BUCKET: ${{ needs.infrastructure.outputs.frontend_bucket || env.FRONTEND_BUCKET }}
+          BUCKET: ${{ needs.infrastructure.outputs.frontend_bucket }}
         run: |
           echo "Deploying to bucket: $BUCKET"
           
@@ -215,7 +218,7 @@ jobs:
             --cache-control "no-cache, no-store, must-revalidate"
           
           # Upload JSON files with short cache
-          for f in $(find dist/public -name "*.json" -type f); do
+          for f in $(find dist/public -name "*.json" -type f 2>/dev/null); do
             key="${f#dist/public/}"
             aws s3 cp "$f" "s3://$BUCKET/$key" \
               --cache-control "public, max-age=0, must-revalidate"
@@ -223,7 +226,7 @@ jobs:
 
       - name: Invalidate CloudFront cache
         env:
-          CF_ID: ${{ needs.infrastructure.outputs.cloudfront_id || env.CLOUDFRONT_DISTRIBUTION_ID }}
+          CF_ID: ${{ needs.infrastructure.outputs.cloudfront_id }}
         if: env.CF_ID != ''
         run: |
           aws cloudfront create-invalidation \
@@ -237,7 +240,7 @@ jobs:
     name: Deploy Lambda
     runs-on: ubuntu-latest
     needs: [infrastructure, build-lambda]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.infrastructure.outputs.lambda_exists == 'true'
 
     steps:
       - name: Configure AWS credentials
@@ -248,7 +251,7 @@ jobs:
 
       - name: Update Lambda function
         env:
-          FUNCTION: ${{ needs.infrastructure.outputs.lambda_function || env.LAMBDA_FUNCTION }}
+          FUNCTION: ${{ needs.infrastructure.outputs.lambda_function }}
         run: |
           echo "Updating Lambda function: $FUNCTION"
           
@@ -258,14 +261,14 @@ jobs:
 
       - name: Wait for Lambda update
         env:
-          FUNCTION: ${{ needs.infrastructure.outputs.lambda_function || env.LAMBDA_FUNCTION }}
+          FUNCTION: ${{ needs.infrastructure.outputs.lambda_function }}
         run: |
           aws lambda wait function-updated \
             --function-name $FUNCTION
 
       - name: Verify Lambda health
         env:
-          FUNCTION: ${{ needs.infrastructure.outputs.lambda_function || env.LAMBDA_FUNCTION }}
+          FUNCTION: ${{ needs.infrastructure.outputs.lambda_function }}
         run: |
           # Get Lambda function URL
           LAMBDA_URL=$(aws lambda get-function-url-config \
@@ -279,18 +282,14 @@ jobs:
           fi
           
           echo "Lambda URL: $LAMBDA_URL"
-          
-          # Wait for Lambda to warm up
           sleep 10
           
-          # Check health endpoint
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${LAMBDA_URL}health" || echo "000")
           
           if [ "$HTTP_STATUS" = "200" ]; then
             echo "✅ Lambda is healthy!"
           else
-            echo "⚠️ Health check returned: $HTTP_STATUS"
-            # Don't fail - Lambda might need more time on first cold start
+            echo "⚠️ Health check returned: $HTTP_STATUS (may need warm-up time)"
           fi
 
   # ===========================================
@@ -299,7 +298,7 @@ jobs:
   summary:
     name: Deployment Summary
     runs-on: ubuntu-latest
-    needs: [infrastructure, deploy-frontend, deploy-lambda]
+    needs: [infrastructure, build-frontend, build-lambda, deploy-frontend, deploy-lambda]
     if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
@@ -310,7 +309,14 @@ jobs:
           echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Infrastructure | ${{ needs.infrastructure.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Frontend | ${{ needs.deploy-frontend.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Lambda | ${{ needs.deploy-lambda.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Frontend | ${{ needs.build-frontend.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Lambda | ${{ needs.build-lambda.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy Frontend | ${{ needs.deploy-frontend.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy Lambda | ${{ needs.deploy-lambda.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Domain:** https://cliniaacian.com" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.infrastructure.outputs.lambda_exists }}" != "true" ]; then
+            echo "⚠️ **Lambda not yet created.** Set \`lambda_image_exists = true\` in terraform.tfvars and re-run." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Domain:** https://cliniaacian.com" >> $GITHUB_STEP_SUMMARY
+          fi

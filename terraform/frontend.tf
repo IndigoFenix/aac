@@ -57,7 +57,7 @@ resource "aws_cloudfront_origin_access_control" "frontend" {
 # S3 Bucket Policy for CloudFront
 # =============================================================================
 resource "aws_s3_bucket_policy" "frontend" {
-  count  = var.use_lambda ? 1 : 0
+  count  = var.use_lambda && var.lambda_image_exists ? 1 : 0
   bucket = aws_s3_bucket.frontend[0].id
 
   policy = jsonencode({
@@ -83,9 +83,10 @@ resource "aws_s3_bucket_policy" "frontend" {
 
 # =============================================================================
 # CloudFront Distribution
+# Only created when Lambda image exists (because it needs Lambda URL)
 # =============================================================================
 resource "aws_cloudfront_distribution" "frontend" {
-  count = var.use_lambda ? 1 : 0
+  count = var.use_lambda && var.lambda_image_exists ? 1 : 0
 
   enabled             = true
   is_ipv6_enabled     = true
@@ -261,7 +262,7 @@ resource "aws_acm_certificate_validation" "cloudfront" {
 # Route 53 Records for CloudFront (when using Lambda)
 # =============================================================================
 resource "aws_route53_record" "cloudfront_app" {
-  count = var.use_lambda && var.domain_name != "" ? 1 : 0
+  count = var.use_lambda && var.lambda_image_exists && var.domain_name != "" ? 1 : 0
 
   zone_id = data.aws_route53_zone.main[0].zone_id
   name    = var.domain_name
@@ -275,7 +276,7 @@ resource "aws_route53_record" "cloudfront_app" {
 }
 
 resource "aws_route53_record" "cloudfront_www" {
-  count = var.use_lambda && var.domain_name != "" ? 1 : 0
+  count = var.use_lambda && var.lambda_image_exists && var.domain_name != "" ? 1 : 0
 
   zone_id = data.aws_route53_zone.main[0].zone_id
   name    = "www.${var.domain_name}"

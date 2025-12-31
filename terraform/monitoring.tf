@@ -82,40 +82,52 @@ resource "aws_iam_role_policy" "cloudtrail" {
 # =============================================================================
 # GuardDuty (Threat Detection)
 # =============================================================================
-resource "aws_guardduty_detector" "main" {
+# GuardDuty can only have one detector per account/region
+# Use data source to find existing detector, or create new one
+
+# Try to find existing detector
+data "aws_guardduty_detector" "existing" {
   count = var.enable_guardduty ? 1 : 0
-
-  enable                       = true
-  finding_publishing_frequency = "FIFTEEN_MINUTES"
-
-  datasources {
-    s3_logs {
-      enable = true
-    }
-    kubernetes {
-      audit_logs {
-        enable = false
-      }
-    }
-    malware_protection {
-      scan_ec2_instance_with_findings {
-        ebs_volumes {
-          enable = true
-        }
-      }
-    }
-  }
-
-  tags = {
-    Name = "${local.name_prefix}-guardduty"
-  }
 }
+
+# Note: If GuardDuty is already enabled in your account, the detector 
+# already exists. We just reference it via the data source above.
+# If you need to create a new one (fresh account), uncomment below:
+#
+# resource "aws_guardduty_detector" "main" {
+#   count = var.enable_guardduty ? 1 : 0
+#
+#   enable                       = true
+#   finding_publishing_frequency = "FIFTEEN_MINUTES"
+#
+#   datasources {
+#     s3_logs {
+#       enable = true
+#     }
+#     kubernetes {
+#       audit_logs {
+#         enable = false
+#       }
+#     }
+#     malware_protection {
+#       scan_ec2_instance_with_findings {
+#         ebs_volumes {
+#           enable = true
+#         }
+#       }
+#     }
+#   }
+#
+#   tags = {
+#     Name = "${local.name_prefix}-guardduty"
+#   }
+# }
 
 # =============================================================================
 # WAF (Web Application Firewall)
 # =============================================================================
 resource "aws_wafv2_web_acl" "main" {
-  count = var.enable_waf ? 1 : 0
+  count = var.enable_waf && !var.use_lambda ? 1 : 0
 
   name        = "${local.name_prefix}-waf"
   description = "WAF for CliniAACian ALB"
@@ -228,20 +240,22 @@ resource "aws_wafv2_web_acl" "main" {
   }
 }
 
-# Associate WAF with ALB
+# Associate WAF with ALB (only when not using Lambda)
 resource "aws_wafv2_web_acl_association" "main" {
-  count = var.enable_waf ? 1 : 0
+  count = var.enable_waf && !var.use_lambda ? 1 : 0
 
   resource_arn = aws_lb.main.arn
   web_acl_arn  = aws_wafv2_web_acl.main[0].arn
 }
 
 # =============================================================================
-# CloudWatch Alarms
+# CloudWatch Alarms (ECS-specific - only when not using Lambda)
 # =============================================================================
 
-# High CPU alarm
+# High CPU alarm (ECS)
 resource "aws_cloudwatch_metric_alarm" "high_cpu" {
+  count = !var.use_lambda ? 1 : 0
+
   alarm_name          = "${local.name_prefix}-high-cpu"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 2
@@ -265,8 +279,10 @@ resource "aws_cloudwatch_metric_alarm" "high_cpu" {
   }
 }
 
-# High memory alarm
+# High memory alarm (ECS)
 resource "aws_cloudwatch_metric_alarm" "high_memory" {
+  count = !var.use_lambda ? 1 : 0
+
   alarm_name          = "${local.name_prefix}-high-memory"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 2
@@ -290,8 +306,10 @@ resource "aws_cloudwatch_metric_alarm" "high_memory" {
   }
 }
 
-# 5XX error alarm
+# 5XX error alarm (ALB - only when not using Lambda)
 resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
+  count = !var.use_lambda ? 1 : 0
+
   alarm_name          = "${local.name_prefix}-alb-5xx"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 2
@@ -315,7 +333,7 @@ resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
   }
 }
 
-# Failed login attempts alarm (for security)
+# Failed login attempts alarm (for security - works for both)
 resource "aws_cloudwatch_metric_alarm" "failed_logins" {
   alarm_name          = "${local.name_prefix}-failed-logins"
   comparison_operator = "GreaterThanThreshold"
@@ -332,6 +350,58 @@ resource "aws_cloudwatch_metric_alarm" "failed_logins" {
 
   tags = {
     Name = "${local.name_prefix}-failed-logins-alarm"
+  }
+}
+
+# =============================================================================
+# Lambda-specific Alarms
+# =============================================================================
+resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
+  count = var.use_lambda ? 1 : 0
+
+  alarm_name          = "${local.name_prefix}-lambda-errors"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "Errors"
+  namespace           = "AWS/Lambda"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 5
+  alarm_description   = "Lambda function errors"
+
+  dimensions = {
+    FunctionName = aws_lambda_function.api[0].function_name
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+  ok_actions    = [aws_sns_topic.alerts.arn]
+
+  tags = {
+    Name = "${local.name_prefix}-lambda-errors-alarm"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "lambda_duration" {
+  count = var.use_lambda ? 1 : 0
+
+  alarm_name          = "${local.name_prefix}-lambda-duration"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "Duration"
+  namespace           = "AWS/Lambda"
+  period              = 300
+  statistic           = "Average"
+  threshold           = 25000  # 25 seconds (Lambda timeout is 30s)
+  alarm_description   = "Lambda function approaching timeout"
+
+  dimensions = {
+    FunctionName = aws_lambda_function.api[0].function_name
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+
+  tags = {
+    Name = "${local.name_prefix}-lambda-duration-alarm"
   }
 }
 
@@ -358,6 +428,8 @@ resource "aws_sns_topic" "alerts" {
 # CloudWatch Dashboard
 # =============================================================================
 resource "aws_cloudwatch_dashboard" "main" {
+  count = !var.use_lambda ? 1 : 0
+
   dashboard_name = "${local.name_prefix}-dashboard"
 
   dashboard_body = jsonencode({
@@ -424,6 +496,82 @@ resource "aws_cloudwatch_dashboard" "main" {
           ]
           period = 60
           stat   = "Average"
+        }
+      }
+    ]
+  })
+}
+
+# Lambda dashboard
+resource "aws_cloudwatch_dashboard" "lambda" {
+  count = var.use_lambda ? 1 : 0
+
+  dashboard_name = "${local.name_prefix}-lambda-dashboard"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric"
+        x      = 0
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          title   = "Lambda Invocations"
+          region  = var.aws_region
+          metrics = [
+            ["AWS/Lambda", "Invocations", "FunctionName", aws_lambda_function.api[0].function_name]
+          ]
+          period = 300
+          stat   = "Sum"
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          title   = "Lambda Duration"
+          region  = var.aws_region
+          metrics = [
+            ["AWS/Lambda", "Duration", "FunctionName", aws_lambda_function.api[0].function_name]
+          ]
+          period = 300
+          stat   = "Average"
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          title   = "Lambda Errors"
+          region  = var.aws_region
+          metrics = [
+            ["AWS/Lambda", "Errors", "FunctionName", aws_lambda_function.api[0].function_name]
+          ]
+          period = 300
+          stat   = "Sum"
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          title   = "Lambda Concurrent Executions"
+          region  = var.aws_region
+          metrics = [
+            ["AWS/Lambda", "ConcurrentExecutions", "FunctionName", aws_lambda_function.api[0].function_name]
+          ]
+          period = 60
+          stat   = "Maximum"
         }
       }
     ]

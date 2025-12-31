@@ -8,9 +8,10 @@ data "aws_route53_zone" "main" {
   name  = var.domain_name
 }
 
-# A record pointing to ALB
+# A record pointing to ALB (only when NOT using Lambda)
+# When using Lambda, CloudFront records are created in frontend.tf
 resource "aws_route53_record" "app" {
-  count = var.domain_name != "" ? 1 : 0
+  count = var.domain_name != "" && !var.use_lambda ? 1 : 0
 
   zone_id = data.aws_route53_zone.main[0].zone_id
   name    = var.domain_name
@@ -23,9 +24,9 @@ resource "aws_route53_record" "app" {
   }
 }
 
-# WWW subdomain pointing to ALB
+# WWW subdomain pointing to ALB (only when NOT using Lambda)
 resource "aws_route53_record" "www" {
-  count = var.domain_name != "" ? 1 : 0
+  count = var.domain_name != "" && !var.use_lambda ? 1 : 0
 
   zone_id = data.aws_route53_zone.main[0].zone_id
   name    = "www.${var.domain_name}"
@@ -39,11 +40,11 @@ resource "aws_route53_record" "www" {
 }
 
 # =============================================================================
-# ACM Certificate DNS Validation
+# ACM Certificate DNS Validation (for ALB - il-central-1)
 # =============================================================================
 
 resource "aws_route53_record" "cert_validation" {
-  for_each = var.domain_name != "" ? {
+  for_each = var.domain_name != "" && !var.use_lambda ? {
     for dvo in aws_acm_certificate.main[0].domain_validation_options : dvo.domain_name => {
       name   = dvo.resource_record_name
       record = dvo.resource_record_value
@@ -59,11 +60,10 @@ resource "aws_route53_record" "cert_validation" {
   zone_id         = data.aws_route53_zone.main[0].zone_id
 }
 
-# Wait for certificate validation
+# Wait for certificate validation (for ALB)
 resource "aws_acm_certificate_validation" "main" {
-  count = var.domain_name != "" ? 1 : 0
+  count = var.domain_name != "" && !var.use_lambda ? 1 : 0
 
   certificate_arn         = aws_acm_certificate.main[0].arn
   validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
 }
-

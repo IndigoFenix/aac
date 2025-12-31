@@ -4,10 +4,12 @@
 # =============================================================================
 
 # =============================================================================
-# ECR Repository for Lambda (reuse existing or create new)
+# ECR Repository for Lambda
 # =============================================================================
 resource "aws_ecr_repository" "lambda" {
-  name                 = "cliniaacian-lambda"
+  count = var.use_lambda ? 1 : 0
+
+  name                 = "${local.name_prefix}-lambda"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -25,7 +27,9 @@ resource "aws_ecr_repository" "lambda" {
 }
 
 resource "aws_ecr_lifecycle_policy" "lambda" {
-  repository = aws_ecr_repository.lambda.name
+  count = var.use_lambda ? 1 : 0
+
+  repository = aws_ecr_repository.lambda[0].name
 
   policy = jsonencode({
     rules = [
@@ -49,6 +53,8 @@ resource "aws_ecr_lifecycle_policy" "lambda" {
 # Lambda Execution Role
 # =============================================================================
 resource "aws_iam_role" "lambda_execution" {
+  count = var.use_lambda ? 1 : 0
+
   name = "${local.name_prefix}-lambda-execution"
 
   assume_role_policy = jsonencode({
@@ -71,20 +77,26 @@ resource "aws_iam_role" "lambda_execution" {
 
 # Basic Lambda execution policy (CloudWatch Logs)
 resource "aws_iam_role_policy_attachment" "lambda_basic" {
-  role       = aws_iam_role.lambda_execution.name
+  count = var.use_lambda ? 1 : 0
+
+  role       = aws_iam_role.lambda_execution[0].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
 # VPC access for Lambda (to reach RDS)
 resource "aws_iam_role_policy_attachment" "lambda_vpc" {
-  role       = aws_iam_role.lambda_execution.name
+  count = var.use_lambda ? 1 : 0
+
+  role       = aws_iam_role.lambda_execution[0].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
 # Secrets Manager access
 resource "aws_iam_role_policy" "lambda_secrets" {
+  count = var.use_lambda ? 1 : 0
+
   name = "${local.name_prefix}-lambda-secrets"
-  role = aws_iam_role.lambda_execution.id
+  role = aws_iam_role.lambda_execution[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -114,8 +126,10 @@ resource "aws_iam_role_policy" "lambda_secrets" {
 
 # S3 access for uploads bucket
 resource "aws_iam_role_policy" "lambda_s3" {
+  count = var.use_lambda ? 1 : 0
+
   name = "${local.name_prefix}-lambda-s3"
-  role = aws_iam_role.lambda_execution.id
+  role = aws_iam_role.lambda_execution[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -139,14 +153,19 @@ resource "aws_iam_role_policy" "lambda_s3" {
 
 # =============================================================================
 # Lambda Function
+# NOTE: Requires an image to exist in ECR before creation.
+# First run: Set use_lambda = true, lambda_image_exists = false
+#            This creates ECR but not Lambda
+# After pushing image: Set lambda_image_exists = true
+#            This creates the Lambda function
 # =============================================================================
 resource "aws_lambda_function" "api" {
-  count = var.use_lambda ? 1 : 0
+  count = var.use_lambda && var.lambda_image_exists ? 1 : 0
 
   function_name = "${local.name_prefix}-api"
-  role          = aws_iam_role.lambda_execution.arn
+  role          = aws_iam_role.lambda_execution[0].arn
   package_type  = "Image"
-  image_uri     = "${aws_ecr_repository.lambda.repository_url}:latest"
+  image_uri     = "${aws_ecr_repository.lambda[0].repository_url}:latest"
   
   timeout     = 30
   memory_size = 1024
@@ -154,7 +173,7 @@ resource "aws_lambda_function" "api" {
   # VPC configuration to access RDS
   vpc_config {
     subnet_ids         = aws_subnet.private[*].id
-    security_group_ids = [aws_security_group.lambda.id]
+    security_group_ids = [aws_security_group.lambda[0].id]
   }
 
   environment {
@@ -180,7 +199,7 @@ resource "aws_lambda_function" "api" {
 # Lambda Function URL (simpler than API Gateway, no extra cost)
 # =============================================================================
 resource "aws_lambda_function_url" "api" {
-  count = var.use_lambda ? 1 : 0
+  count = var.use_lambda && var.lambda_image_exists ? 1 : 0
 
   function_name      = aws_lambda_function.api[0].function_name
   authorization_type = "NONE"  # Public API
@@ -199,6 +218,8 @@ resource "aws_lambda_function_url" "api" {
 # Lambda Security Group
 # =============================================================================
 resource "aws_security_group" "lambda" {
+  count = var.use_lambda ? 1 : 0
+
   name        = "${local.name_prefix}-lambda-sg"
   description = "Security group for Lambda function"
   vpc_id      = aws_vpc.main.id
@@ -228,11 +249,13 @@ resource "aws_security_group" "lambda" {
 
 # Allow Lambda to connect to RDS
 resource "aws_security_group_rule" "rds_from_lambda" {
+  count = var.use_lambda ? 1 : 0
+
   type                     = "ingress"
   from_port                = 5432
   to_port                  = 5432
   protocol                 = "tcp"
-  source_security_group_id = aws_security_group.lambda.id
+  source_security_group_id = aws_security_group.lambda[0].id
   security_group_id        = aws_security_group.rds.id
   description              = "PostgreSQL from Lambda"
 }
@@ -241,6 +264,8 @@ resource "aws_security_group_rule" "rds_from_lambda" {
 # CloudWatch Log Group for Lambda
 # =============================================================================
 resource "aws_cloudwatch_log_group" "lambda" {
+  count = var.use_lambda ? 1 : 0
+
   name              = "/aws/lambda/${local.name_prefix}-api"
   retention_in_days = var.app_log_retention_days
   kms_key_id        = aws_kms_key.main.arn
@@ -249,9 +274,3 @@ resource "aws_cloudwatch_log_group" "lambda" {
     Name = "${local.name_prefix}-lambda-logs"
   }
 }
-
-# =============================================================================
-# Secrets Access for Lambda (fetch at runtime)
-# =============================================================================
-# Lambda will fetch secrets from Secrets Manager at startup
-# This avoids the ECS-style secret injection and gives more flexibility

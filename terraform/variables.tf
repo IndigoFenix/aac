@@ -33,6 +33,12 @@ variable "use_lambda" {
   default     = false
 }
 
+variable "lambda_image_exists" {
+  description = "Set to true after first deploying Lambda image to ECR. Required because Lambda can't be created without an image."
+  type        = bool
+  default     = false
+}
+
 # =============================================================================
 # VPC Variables
 # =============================================================================
