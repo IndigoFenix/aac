@@ -59,8 +59,8 @@ async function main() {
     await loadSecrets();
     
     // Now dynamically import the app (db.ts will now have DATABASE_URL)
-    const { startServer } = await import('./app.lambda');
-    await startServer();
+    // We import app.lambda.ts which has Lambda-specific adjustments
+    await import('./app.lambda');
   } catch (error) {
     console.error('Failed to start Lambda:', error);
     throw error;
