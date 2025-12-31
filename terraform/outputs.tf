@@ -1,160 +1,160 @@
 # =============================================================================
-# Outputs
+# Outputs - Fixed for Lambda conditional mode
 # =============================================================================
 
-output "vpc_id" {
-  description = "ID of the VPC"
-  value       = aws_vpc.main.id
+# Application URL
+output "app_url" {
+  description = "URL to access the application"
+  value       = var.domain_name != "" ? "https://${var.domain_name}" : (var.use_lambda && var.lambda_image_exists ? aws_cloudfront_distribution.frontend[0].domain_name : "http://${aws_lb.main.dns_name}")
 }
 
-output "private_subnet_ids" {
-  description = "IDs of private subnets"
-  value       = aws_subnet.private[*].id
-}
-
-output "public_subnet_ids" {
-  description = "IDs of public subnets"
-  value       = aws_subnet.public[*].id
-}
-
-output "ecr_repository_url" {
-  description = "URL of the ECR repository"
-  value       = aws_ecr_repository.main.repository_url
-}
-
-output "ecs_cluster_name" {
-  description = "Name of the ECS cluster"
-  value       = aws_ecs_cluster.main.name
-}
-
-output "ecs_service_name" {
-  description = "Name of the ECS service"
-  value       = aws_ecs_service.main.name
-}
-
+# ALB DNS (only when not using Lambda)
 output "alb_dns_name" {
   description = "DNS name of the Application Load Balancer"
   value       = aws_lb.main.dns_name
 }
 
-output "alb_zone_id" {
-  description = "Zone ID of the Application Load Balancer"
-  value       = aws_lb.main.zone_id
+# RDS
+output "rds_endpoint" {
+  description = "RDS endpoint"
+  value       = aws_db_instance.main.endpoint
+  sensitive   = true
 }
 
+output "rds_identifier" {
+  description = "RDS instance identifier"
+  value       = aws_db_instance.main.identifier
+}
+
+# ECR
+output "ecr_repository_url" {
+  description = "ECR repository URL for ECS"
+  value       = aws_ecr_repository.main.repository_url
+}
+
+# Lambda ECR (only when using Lambda)
+output "lambda_ecr_repository_url" {
+  description = "ECR repository URL for Lambda images"
+  value       = var.use_lambda ? aws_ecr_repository.lambda[0].repository_url : null
+}
+
+# Lambda function name (only when Lambda exists)
+output "lambda_function_name" {
+  description = "Lambda function name"
+  value       = var.use_lambda && var.lambda_image_exists ? aws_lambda_function.api[0].function_name : null
+}
+
+# Lambda function URL (only when Lambda exists)
+output "lambda_function_url" {
+  description = "Lambda function URL for API"
+  value       = var.use_lambda && var.lambda_image_exists ? aws_lambda_function_url.api[0].function_url : null
+}
+
+# Frontend bucket (only when using Lambda)
+output "frontend_bucket_name" {
+  description = "S3 bucket for frontend static files"
+  value       = var.use_lambda ? aws_s3_bucket.frontend[0].bucket : null
+}
+
+# CloudFront distribution (only when Lambda exists)
+output "cloudfront_distribution_id" {
+  description = "CloudFront distribution ID (for cache invalidation)"
+  value       = var.use_lambda && var.lambda_image_exists ? aws_cloudfront_distribution.frontend[0].id : null
+}
+
+output "cloudfront_domain_name" {
+  description = "CloudFront distribution domain name"
+  value       = var.use_lambda && var.lambda_image_exists ? aws_cloudfront_distribution.frontend[0].domain_name : null
+}
+
+# S3 Buckets
+output "uploads_bucket" {
+  description = "S3 bucket for user uploads"
+  value       = aws_s3_bucket.uploads.bucket
+}
+
+output "logs_bucket" {
+  description = "S3 bucket for logs"
+  value       = aws_s3_bucket.logs.bucket
+}
+
+# Secrets
 output "database_secret_arn" {
-  description = "ARN of the database secrets in Secrets Manager"
+  description = "ARN of the database credentials secret"
   value       = aws_secretsmanager_secret.database.arn
 }
 
 output "app_secrets_arn" {
-  description = "ARN of the application secrets in Secrets Manager"
+  description = "ARN of the application secrets"
   value       = aws_secretsmanager_secret.app_secrets.arn
 }
 
-output "uploads_bucket_name" {
-  description = "Name of the S3 bucket for uploads"
-  value       = aws_s3_bucket.uploads.bucket
+# WAF (only when WAF enabled AND not using Lambda)
+output "waf_web_acl_arn" {
+  description = "WAF Web ACL ARN"
+  value       = var.enable_waf && !var.use_lambda ? aws_wafv2_web_acl.main[0].arn : null
 }
 
-output "logs_bucket_name" {
-  description = "Name of the S3 bucket for logs"
-  value       = aws_s3_bucket.logs.bucket
-}
-
+# KMS
 output "kms_key_arn" {
-  description = "ARN of the KMS key"
+  description = "KMS key ARN for encryption"
   value       = aws_kms_key.main.arn
 }
 
-output "github_actions_role_arn" {
-  description = "ARN of the GitHub Actions IAM role"
-  value       = aws_iam_role.github_actions.arn
+# VPC
+output "vpc_id" {
+  description = "VPC ID"
+  value       = aws_vpc.main.id
 }
 
-output "cloudwatch_log_group" {
-  description = "Name of the CloudWatch log group for the application"
-  value       = aws_cloudwatch_log_group.app.name
+output "private_subnet_ids" {
+  description = "Private subnet IDs"
+  value       = aws_subnet.private[*].id
 }
 
-output "waf_web_acl_arn" {
-  description = "ARN of the WAF Web ACL"
-  value       = var.enable_waf ? aws_wafv2_web_acl.main[0].arn : null
+output "public_subnet_ids" {
+  description = "Public subnet IDs"
+  value       = aws_subnet.public[*].id
 }
 
-output "acm_certificate_arn" {
-  description = "ARN of the ACM certificate"
-  value       = var.domain_name != "" ? aws_acm_certificate.main[0].arn : null
-}
-
-output "nameservers" {
-  description = "Nameservers for the domain"
-  value       = var.domain_name != "" ? data.aws_route53_zone.main[0].name_servers : null
-}
-
-output "domain_url" {
-  description = "Your application URL"
-  value       = var.domain_name != "" ? "https://${var.domain_name}" : "http://${aws_lb.main.dns_name}"
-}
-
-output "sns_alerts_topic_arn" {
-  description = "ARN of the SNS topic for alerts"
-  value       = aws_sns_topic.alerts.arn
-}
-
-# =============================================================================
-# RDS Outputs
-# =============================================================================
-output "rds_endpoint" {
-  description = "RDS instance endpoint"
-  value       = aws_db_instance.main.endpoint
-}
-
-output "rds_address" {
-  description = "RDS instance address (hostname only)"
-  value       = aws_db_instance.main.address
-}
-
-output "rds_port" {
-  description = "RDS instance port"
-  value       = aws_db_instance.main.port
-}
-
-output "rds_database_name" {
-  description = "Name of the database"
-  value       = aws_db_instance.main.db_name
-}
-
-# =============================================================================
-# Values needed for GitHub Actions secrets
-# =============================================================================
-output "github_secrets_summary" {
-  description = "Summary of values needed for GitHub Actions secrets"
-  value = <<-EOT
-    
-    ========================================
-    GitHub Actions Secrets to Configure:
-    ========================================
-    
-    AWS_ROLE_ARN: ${aws_iam_role.github_actions.arn}
-    TF_STATE_BUCKET: (use your bootstrap bucket name)
-    
-    ========================================
-    Application URL:
-    ========================================
-    
-    ${var.domain_name != "" ? "HTTPS: https://${var.domain_name}" : "HTTP: http://${aws_lb.main.dns_name}"}
-    ALB DNS: ${aws_lb.main.dns_name}
-    
-    ========================================
-    Database:
-    ========================================
-    
-    Endpoint: ${aws_db_instance.main.endpoint}
-    Database: ${aws_db_instance.main.db_name}
-    Credentials: Stored in Secrets Manager (${aws_secretsmanager_secret.database.name})
-    
-    ${var.domain_name != "" ? "========================================\nACM Certificate Validation:\n========================================\n\nCertificate ARN: ${aws_acm_certificate.main[0].arn}\n(Validate via DNS in AWS Console)\n" : "========================================\nNote: Running in HTTP-only mode.\nAdd a domain_name variable to enable HTTPS.\n========================================"}
-    
-  EOT
+# Deployment summary
+output "deployment_summary" {
+  description = "Current deployment configuration"
+  value = var.use_lambda ? (
+    var.lambda_image_exists ? join("\n", [
+      "",
+      "========================================",
+      "Deployment: Lambda + S3 (Serverless)",
+      "========================================",
+      "",
+      "Frontend URL: https://${var.domain_name}",
+      "API URL: ${aws_lambda_function_url.api[0].function_url}",
+      "CloudFront: ${aws_cloudfront_distribution.frontend[0].domain_name}",
+      "S3 Bucket: ${aws_s3_bucket.frontend[0].bucket}",
+      ""
+    ]) : join("\n", [
+      "",
+      "========================================",
+      "Deployment: Lambda Setup Phase 1",
+      "========================================",
+      "",
+      "ECR Repository: ${aws_ecr_repository.lambda[0].repository_url}",
+      "S3 Bucket: ${aws_s3_bucket.frontend[0].bucket}",
+      "",
+      "NEXT STEPS:",
+      "1. Push Lambda image to ECR (GitHub Actions will do this)",
+      "2. Set lambda_image_exists = true in terraform.tfvars",
+      "3. Run terraform apply again",
+      ""
+    ])
+  ) : join("\n", [
+    "",
+    "========================================",
+    "Deployment: ECS (Containers)",
+    "========================================",
+    "",
+    "URL: https://${var.domain_name}",
+    "ALB: ${aws_lb.main.dns_name}",
+    ""
+  ])
 }

@@ -1,5 +1,5 @@
 # =============================================================================
-# IAM Policy for Lambda Deployment - Add to existing iam.tf
+# IAM Policy for Lambda Deployment via GitHub Actions
 # =============================================================================
 
 # Phase 1 permissions - ECR and S3 only (before Lambda exists)
@@ -25,7 +25,7 @@ resource "aws_iam_role_policy" "github_actions_lambda_phase1" {
           "${aws_s3_bucket.frontend[0].arn}/*"
         ]
       },
-      # ECR for Lambda images
+      # ECR for Lambda images (include * for GetAuthorizationToken)
       {
         Effect = "Allow"
         Action = [
@@ -35,13 +35,14 @@ resource "aws_iam_role_policy" "github_actions_lambda_phase1" {
           "ecr:PutImage",
           "ecr:InitiateLayerUpload",
           "ecr:UploadLayerPart",
-          "ecr:CompleteLayerUpload",
-          "ecr:GetAuthorizationToken"
+          "ecr:CompleteLayerUpload"
         ]
-        Resource = [
-          aws_ecr_repository.lambda[0].arn,
-          "*"  # GetAuthorizationToken requires *
-        ]
+        Resource = aws_ecr_repository.lambda[0].arn
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
+        Resource = "*"
       }
     ]
   })

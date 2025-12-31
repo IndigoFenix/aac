@@ -95,19 +95,26 @@ jobs:
         if: github.event_name == 'push'
         working-directory: terraform
         run: |
-          echo "frontend_bucket=$(terraform output -raw frontend_bucket_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "lambda_function=$(terraform output -raw lambda_function_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "cloudfront_id=$(terraform output -raw cloudfront_distribution_id 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "lambda_ecr_url=$(terraform output -raw lambda_ecr_repository_url 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          # Get outputs, defaulting to empty string if not found
+          FRONTEND_BUCKET=$(terraform output -raw frontend_bucket_name 2>/dev/null || echo '')
+          LAMBDA_FUNCTION=$(terraform output -raw lambda_function_name 2>/dev/null || echo '')
+          CLOUDFRONT_ID=$(terraform output -raw cloudfront_distribution_id 2>/dev/null || echo '')
+          LAMBDA_ECR_URL=$(terraform output -raw lambda_ecr_repository_url 2>/dev/null || echo '')
+          
+          echo "frontend_bucket=$FRONTEND_BUCKET" >> $GITHUB_OUTPUT
+          echo "lambda_function=$LAMBDA_FUNCTION" >> $GITHUB_OUTPUT
+          echo "cloudfront_id=$CLOUDFRONT_ID" >> $GITHUB_OUTPUT
+          echo "lambda_ecr_url=$LAMBDA_ECR_URL" >> $GITHUB_OUTPUT
+          
           # Check if Lambda function exists
-          if [ -n "$(terraform output -raw lambda_function_name 2>/dev/null || echo '')" ]; then
+          if [ -n "$LAMBDA_FUNCTION" ]; then
             echo "lambda_exists=true" >> $GITHUB_OUTPUT
           else
             echo "lambda_exists=false" >> $GITHUB_OUTPUT
           fi
 
   # ===========================================
-  # Build Frontend
+  # Build Frontend (Phase 1+)
   # ===========================================
   build-frontend:
     name: Build Frontend
@@ -142,7 +149,7 @@ jobs:
           retention-days: 1
 
   # ===========================================
-  # Build and Push Lambda Image
+  # Build and Push Lambda Image (Phase 1+)
   # ===========================================
   build-lambda:
     name: Build Lambda Image
@@ -180,7 +187,7 @@ jobs:
           echo "image=$ECR_URL:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
   # ===========================================
-  # Deploy Frontend to S3
+  # Deploy Frontend to S3 (Phase 1+)
   # ===========================================
   deploy-frontend:
     name: Deploy Frontend
@@ -207,6 +214,7 @@ jobs:
         run: |
           echo "Deploying to bucket: $BUCKET"
           
+          # Sync all files except index.html and JSON
           aws s3 sync dist/public/ s3://$BUCKET/ \
             --delete \
             --cache-control "public, max-age=31536000, immutable" \
@@ -234,7 +242,7 @@ jobs:
             --paths "/*"
 
   # ===========================================
-  # Deploy Lambda
+  # Deploy Lambda (Phase 2 only)
   # ===========================================
   deploy-lambda:
     name: Deploy Lambda
@@ -270,7 +278,6 @@ jobs:
         env:
           FUNCTION: ${{ needs.infrastructure.outputs.lambda_function }}
         run: |
-          # Get Lambda function URL
           LAMBDA_URL=$(aws lambda get-function-url-config \
             --function-name $FUNCTION \
             --query 'FunctionUrl' \
@@ -316,7 +323,15 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           
           if [ "${{ needs.infrastructure.outputs.lambda_exists }}" != "true" ]; then
-            echo "⚠️ **Lambda not yet created.** Set \`lambda_image_exists = true\` in terraform.tfvars and re-run." >> $GITHUB_STEP_SUMMARY
+            echo "### ⚠️ Phase 1 Complete" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Lambda image has been pushed to ECR." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Next steps:**" >> $GITHUB_STEP_SUMMARY
+            echo "1. Set \`lambda_image_exists = true\` in \`terraform/terraform.tfvars\`" >> $GITHUB_STEP_SUMMARY
+            echo "2. Commit and push to trigger Phase 2 deployment" >> $GITHUB_STEP_SUMMARY
           else
+            echo "### ✅ Phase 2 Complete" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
             echo "**Domain:** https://cliniaacian.com" >> $GITHUB_STEP_SUMMARY
           fi

@@ -4,7 +4,7 @@
 # =============================================================================
 
 # =============================================================================
-# ECR Repository for Lambda
+# ECR Repository for Lambda (created in Phase 1)
 # =============================================================================
 resource "aws_ecr_repository" "lambda" {
   count = var.use_lambda ? 1 : 0
@@ -50,7 +50,7 @@ resource "aws_ecr_lifecycle_policy" "lambda" {
 }
 
 # =============================================================================
-# Lambda Execution Role
+# Lambda Execution Role (created in Phase 1)
 # =============================================================================
 resource "aws_iam_role" "lambda_execution" {
   count = var.use_lambda ? 1 : 0
@@ -75,7 +75,6 @@ resource "aws_iam_role" "lambda_execution" {
   }
 }
 
-# Basic Lambda execution policy (CloudWatch Logs)
 resource "aws_iam_role_policy_attachment" "lambda_basic" {
   count = var.use_lambda ? 1 : 0
 
@@ -83,7 +82,6 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# VPC access for Lambda (to reach RDS)
 resource "aws_iam_role_policy_attachment" "lambda_vpc" {
   count = var.use_lambda ? 1 : 0
 
@@ -91,7 +89,6 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
-# Secrets Manager access
 resource "aws_iam_role_policy" "lambda_secrets" {
   count = var.use_lambda ? 1 : 0
 
@@ -103,28 +100,21 @@ resource "aws_iam_role_policy" "lambda_secrets" {
     Statement = [
       {
         Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue"
-        ]
+        Action = ["secretsmanager:GetSecretValue"]
         Resource = [
           aws_secretsmanager_secret.database.arn,
           aws_secretsmanager_secret.app_secrets.arn
         ]
       },
       {
-        Effect = "Allow"
-        Action = [
-          "kms:Decrypt"
-        ]
-        Resource = [
-          aws_kms_key.main.arn
-        ]
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = [aws_kms_key.main.arn]
       }
     ]
   })
 }
 
-# S3 access for uploads bucket
 resource "aws_iam_role_policy" "lambda_s3" {
   count = var.use_lambda ? 1 : 0
 
@@ -152,12 +142,65 @@ resource "aws_iam_role_policy" "lambda_s3" {
 }
 
 # =============================================================================
-# Lambda Function
-# NOTE: Requires an image to exist in ECR before creation.
-# First run: Set use_lambda = true, lambda_image_exists = false
-#            This creates ECR but not Lambda
-# After pushing image: Set lambda_image_exists = true
-#            This creates the Lambda function
+# Lambda Security Group (created in Phase 1)
+# =============================================================================
+resource "aws_security_group" "lambda" {
+  count = var.use_lambda ? 1 : 0
+
+  name        = "${local.name_prefix}-lambda-sg"
+  description = "Security group for Lambda function"
+  vpc_id      = aws_vpc.main.id
+
+  egress {
+    description     = "PostgreSQL to RDS"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.rds.id]
+  }
+
+  egress {
+    description = "HTTPS outbound"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${local.name_prefix}-lambda-sg"
+  }
+}
+
+resource "aws_security_group_rule" "rds_from_lambda" {
+  count = var.use_lambda ? 1 : 0
+
+  type                     = "ingress"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.lambda[0].id
+  security_group_id        = aws_security_group.rds.id
+  description              = "PostgreSQL from Lambda"
+}
+
+# =============================================================================
+# CloudWatch Log Group for Lambda (created in Phase 1)
+# =============================================================================
+resource "aws_cloudwatch_log_group" "lambda" {
+  count = var.use_lambda ? 1 : 0
+
+  name              = "/aws/lambda/${local.name_prefix}-api"
+  retention_in_days = var.app_log_retention_days
+  kms_key_id        = aws_kms_key.main.arn
+
+  tags = {
+    Name = "${local.name_prefix}-lambda-logs"
+  }
+}
+
+# =============================================================================
+# Lambda Function (created in Phase 2 - after image exists)
 # =============================================================================
 resource "aws_lambda_function" "api" {
   count = var.use_lambda && var.lambda_image_exists ? 1 : 0
@@ -170,7 +213,6 @@ resource "aws_lambda_function" "api" {
   timeout     = 30
   memory_size = 1024
 
-  # VPC configuration to access RDS
   vpc_config {
     subnet_ids         = aws_subnet.private[*].id
     security_group_ids = [aws_security_group.lambda[0].id]
@@ -179,8 +221,8 @@ resource "aws_lambda_function" "api" {
   environment {
     variables = {
       NODE_ENV    = var.environment == "prod" ? "production" : var.environment
-      PORT        = "8080"  # Lambda Web Adapter default
-      ENVIRONMENT = var.environment  # For loading correct secrets
+      PORT        = "8080"
+      ENVIRONMENT = var.environment
     }
   }
 
@@ -196,13 +238,13 @@ resource "aws_lambda_function" "api" {
 }
 
 # =============================================================================
-# Lambda Function URL (simpler than API Gateway, no extra cost)
+# Lambda Function URL (created in Phase 2)
 # =============================================================================
 resource "aws_lambda_function_url" "api" {
   count = var.use_lambda && var.lambda_image_exists ? 1 : 0
 
   function_name      = aws_lambda_function.api[0].function_name
-  authorization_type = "NONE"  # Public API
+  authorization_type = "NONE"
 
   cors {
     allow_credentials = true
@@ -211,66 +253,5 @@ resource "aws_lambda_function_url" "api" {
     allow_origins     = var.domain_name != "" ? ["https://${var.domain_name}"] : ["*"]
     expose_headers    = ["*"]
     max_age           = 86400
-  }
-}
-
-# =============================================================================
-# Lambda Security Group
-# =============================================================================
-resource "aws_security_group" "lambda" {
-  count = var.use_lambda ? 1 : 0
-
-  name        = "${local.name_prefix}-lambda-sg"
-  description = "Security group for Lambda function"
-  vpc_id      = aws_vpc.main.id
-
-  # Outbound to RDS
-  egress {
-    description     = "PostgreSQL to RDS"
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [aws_security_group.rds.id]
-  }
-
-  # Outbound HTTPS (for Secrets Manager, external APIs)
-  egress {
-    description = "HTTPS outbound"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "${local.name_prefix}-lambda-sg"
-  }
-}
-
-# Allow Lambda to connect to RDS
-resource "aws_security_group_rule" "rds_from_lambda" {
-  count = var.use_lambda ? 1 : 0
-
-  type                     = "ingress"
-  from_port                = 5432
-  to_port                  = 5432
-  protocol                 = "tcp"
-  source_security_group_id = aws_security_group.lambda[0].id
-  security_group_id        = aws_security_group.rds.id
-  description              = "PostgreSQL from Lambda"
-}
-
-# =============================================================================
-# CloudWatch Log Group for Lambda
-# =============================================================================
-resource "aws_cloudwatch_log_group" "lambda" {
-  count = var.use_lambda ? 1 : 0
-
-  name              = "/aws/lambda/${local.name_prefix}-api"
-  retention_in_days = var.app_log_retention_days
-  kms_key_id        = aws_kms_key.main.arn
-
-  tags = {
-    Name = "${local.name_prefix}-lambda-logs"
   }
 }

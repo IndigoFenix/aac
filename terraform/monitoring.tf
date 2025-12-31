@@ -23,7 +23,6 @@ resource "aws_cloudtrail" "main" {
     }
   }
 
-  # Ensure bucket policy is created first
   depends_on = [
     aws_s3_bucket_policy.logs
   ]
@@ -80,51 +79,14 @@ resource "aws_iam_role_policy" "cloudtrail" {
 }
 
 # =============================================================================
-# GuardDuty (Threat Detection)
+# GuardDuty (Threat Detection) - Use data source for existing detector
 # =============================================================================
-# GuardDuty can only have one detector per account/region
-# Use data source to find existing detector, or create new one
-
-# Try to find existing detector
 data "aws_guardduty_detector" "existing" {
   count = var.enable_guardduty ? 1 : 0
 }
 
-# Note: If GuardDuty is already enabled in your account, the detector 
-# already exists. We just reference it via the data source above.
-# If you need to create a new one (fresh account), uncomment below:
-#
-# resource "aws_guardduty_detector" "main" {
-#   count = var.enable_guardduty ? 1 : 0
-#
-#   enable                       = true
-#   finding_publishing_frequency = "FIFTEEN_MINUTES"
-#
-#   datasources {
-#     s3_logs {
-#       enable = true
-#     }
-#     kubernetes {
-#       audit_logs {
-#         enable = false
-#       }
-#     }
-#     malware_protection {
-#       scan_ec2_instance_with_findings {
-#         ebs_volumes {
-#           enable = true
-#         }
-#       }
-#     }
-#   }
-#
-#   tags = {
-#     Name = "${local.name_prefix}-guardduty"
-#   }
-# }
-
 # =============================================================================
-# WAF (Web Application Firewall)
+# WAF (Web Application Firewall) - Only for ECS/ALB mode
 # =============================================================================
 resource "aws_wafv2_web_acl" "main" {
   count = var.enable_waf && !var.use_lambda ? 1 : 0
@@ -137,22 +99,16 @@ resource "aws_wafv2_web_acl" "main" {
     allow {}
   }
 
-  # AWS Managed Rules - Common Rule Set
   rule {
     name     = "AWSManagedRulesCommonRuleSet"
     priority = 1
-
-    override_action {
-      none {}
-    }
-
+    override_action { none {} }
     statement {
       managed_rule_group_statement {
         name        = "AWSManagedRulesCommonRuleSet"
         vendor_name = "AWS"
       }
     }
-
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "AWSManagedRulesCommonRuleSet"
@@ -160,22 +116,16 @@ resource "aws_wafv2_web_acl" "main" {
     }
   }
 
-  # AWS Managed Rules - Known Bad Inputs
   rule {
     name     = "AWSManagedRulesKnownBadInputsRuleSet"
     priority = 2
-
-    override_action {
-      none {}
-    }
-
+    override_action { none {} }
     statement {
       managed_rule_group_statement {
         name        = "AWSManagedRulesKnownBadInputsRuleSet"
         vendor_name = "AWS"
       }
     }
-
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "AWSManagedRulesKnownBadInputsRuleSet"
@@ -183,22 +133,16 @@ resource "aws_wafv2_web_acl" "main" {
     }
   }
 
-  # AWS Managed Rules - SQL Injection
   rule {
     name     = "AWSManagedRulesSQLiRuleSet"
     priority = 3
-
-    override_action {
-      none {}
-    }
-
+    override_action { none {} }
     statement {
       managed_rule_group_statement {
         name        = "AWSManagedRulesSQLiRuleSet"
         vendor_name = "AWS"
       }
     }
-
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "AWSManagedRulesSQLiRuleSet"
@@ -206,22 +150,16 @@ resource "aws_wafv2_web_acl" "main" {
     }
   }
 
-  # Rate limiting rule
   rule {
     name     = "RateLimitRule"
     priority = 4
-
-    action {
-      block {}
-    }
-
+    action { block {} }
     statement {
       rate_based_statement {
-        limit              = 2000  # Requests per 5 minutes per IP
+        limit              = 2000
         aggregate_key_type = "IP"
       }
     }
-
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "RateLimitRule"
@@ -240,7 +178,6 @@ resource "aws_wafv2_web_acl" "main" {
   }
 }
 
-# Associate WAF with ALB (only when not using Lambda)
 resource "aws_wafv2_web_acl_association" "main" {
   count = var.enable_waf && !var.use_lambda ? 1 : 0
 
@@ -249,10 +186,8 @@ resource "aws_wafv2_web_acl_association" "main" {
 }
 
 # =============================================================================
-# CloudWatch Alarms (ECS-specific - only when not using Lambda)
+# CloudWatch Alarms (ECS-specific)
 # =============================================================================
-
-# High CPU alarm (ECS)
 resource "aws_cloudwatch_metric_alarm" "high_cpu" {
   count = !var.use_lambda ? 1 : 0
 
@@ -274,12 +209,9 @@ resource "aws_cloudwatch_metric_alarm" "high_cpu" {
   alarm_actions = [aws_sns_topic.alerts.arn]
   ok_actions    = [aws_sns_topic.alerts.arn]
 
-  tags = {
-    Name = "${local.name_prefix}-high-cpu-alarm"
-  }
+  tags = { Name = "${local.name_prefix}-high-cpu-alarm" }
 }
 
-# High memory alarm (ECS)
 resource "aws_cloudwatch_metric_alarm" "high_memory" {
   count = !var.use_lambda ? 1 : 0
 
@@ -301,12 +233,9 @@ resource "aws_cloudwatch_metric_alarm" "high_memory" {
   alarm_actions = [aws_sns_topic.alerts.arn]
   ok_actions    = [aws_sns_topic.alerts.arn]
 
-  tags = {
-    Name = "${local.name_prefix}-high-memory-alarm"
-  }
+  tags = { Name = "${local.name_prefix}-high-memory-alarm" }
 }
 
-# 5XX error alarm (ALB - only when not using Lambda)
 resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
   count = !var.use_lambda ? 1 : 0
 
@@ -328,12 +257,10 @@ resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
   alarm_actions = [aws_sns_topic.alerts.arn]
   ok_actions    = [aws_sns_topic.alerts.arn]
 
-  tags = {
-    Name = "${local.name_prefix}-5xx-alarm"
-  }
+  tags = { Name = "${local.name_prefix}-5xx-alarm" }
 }
 
-# Failed login attempts alarm (for security - works for both)
+# Failed login attempts alarm (works for both modes)
 resource "aws_cloudwatch_metric_alarm" "failed_logins" {
   alarm_name          = "${local.name_prefix}-failed-logins"
   comparison_operator = "GreaterThanThreshold"
@@ -348,16 +275,14 @@ resource "aws_cloudwatch_metric_alarm" "failed_logins" {
 
   alarm_actions = [aws_sns_topic.alerts.arn]
 
-  tags = {
-    Name = "${local.name_prefix}-failed-logins-alarm"
-  }
+  tags = { Name = "${local.name_prefix}-failed-logins-alarm" }
 }
 
 # =============================================================================
-# Lambda-specific Alarms
+# Lambda-specific Alarms (only when Lambda function exists)
 # =============================================================================
 resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
-  count = var.use_lambda ? 1 : 0
+  count = var.use_lambda && var.lambda_image_exists ? 1 : 0
 
   alarm_name          = "${local.name_prefix}-lambda-errors"
   comparison_operator = "GreaterThanThreshold"
@@ -376,13 +301,11 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
   alarm_actions = [aws_sns_topic.alerts.arn]
   ok_actions    = [aws_sns_topic.alerts.arn]
 
-  tags = {
-    Name = "${local.name_prefix}-lambda-errors-alarm"
-  }
+  tags = { Name = "${local.name_prefix}-lambda-errors-alarm" }
 }
 
 resource "aws_cloudwatch_metric_alarm" "lambda_duration" {
-  count = var.use_lambda ? 1 : 0
+  count = var.use_lambda && var.lambda_image_exists ? 1 : 0
 
   alarm_name          = "${local.name_prefix}-lambda-duration"
   comparison_operator = "GreaterThanThreshold"
@@ -391,7 +314,7 @@ resource "aws_cloudwatch_metric_alarm" "lambda_duration" {
   namespace           = "AWS/Lambda"
   period              = 300
   statistic           = "Average"
-  threshold           = 25000  # 25 seconds (Lambda timeout is 30s)
+  threshold           = 25000
   alarm_description   = "Lambda function approaching timeout"
 
   dimensions = {
@@ -400,9 +323,7 @@ resource "aws_cloudwatch_metric_alarm" "lambda_duration" {
 
   alarm_actions = [aws_sns_topic.alerts.arn]
 
-  tags = {
-    Name = "${local.name_prefix}-lambda-duration-alarm"
-  }
+  tags = { Name = "${local.name_prefix}-lambda-duration-alarm" }
 }
 
 # =============================================================================
@@ -412,20 +333,11 @@ resource "aws_sns_topic" "alerts" {
   name              = "${local.name_prefix}-alerts"
   kms_master_key_id = aws_kms_key.main.id
 
-  tags = {
-    Name = "${local.name_prefix}-alerts"
-  }
+  tags = { Name = "${local.name_prefix}-alerts" }
 }
 
-# Add email subscription (update with your email)
-# resource "aws_sns_topic_subscription" "email" {
-#   topic_arn = aws_sns_topic.alerts.arn
-#   protocol  = "email"
-#   endpoint  = "your-email@example.com"
-# }
-
 # =============================================================================
-# CloudWatch Dashboard
+# CloudWatch Dashboard (ECS mode)
 # =============================================================================
 resource "aws_cloudwatch_dashboard" "main" {
   count = !var.use_lambda ? 1 : 0
@@ -435,143 +347,71 @@ resource "aws_cloudwatch_dashboard" "main" {
   dashboard_body = jsonencode({
     widgets = [
       {
-        type   = "metric"
-        x      = 0
-        y      = 0
-        width  = 12
-        height = 6
+        type = "metric", x = 0, y = 0, width = 12, height = 6
         properties = {
-          title   = "ECS CPU Utilization"
-          region  = var.aws_region
-          metrics = [
-            ["AWS/ECS", "CPUUtilization", "ClusterName", aws_ecs_cluster.main.name, "ServiceName", aws_ecs_service.main.name]
-          ]
-          period = 300
-          stat   = "Average"
+          title = "ECS CPU Utilization", region = var.aws_region, period = 300, stat = "Average"
+          metrics = [["AWS/ECS", "CPUUtilization", "ClusterName", aws_ecs_cluster.main.name, "ServiceName", aws_ecs_service.main.name]]
         }
       },
       {
-        type   = "metric"
-        x      = 12
-        y      = 0
-        width  = 12
-        height = 6
+        type = "metric", x = 12, y = 0, width = 12, height = 6
         properties = {
-          title   = "ECS Memory Utilization"
-          region  = var.aws_region
-          metrics = [
-            ["AWS/ECS", "MemoryUtilization", "ClusterName", aws_ecs_cluster.main.name, "ServiceName", aws_ecs_service.main.name]
-          ]
-          period = 300
-          stat   = "Average"
+          title = "ECS Memory Utilization", region = var.aws_region, period = 300, stat = "Average"
+          metrics = [["AWS/ECS", "MemoryUtilization", "ClusterName", aws_ecs_cluster.main.name, "ServiceName", aws_ecs_service.main.name]]
         }
       },
       {
-        type   = "metric"
-        x      = 0
-        y      = 6
-        width  = 12
-        height = 6
+        type = "metric", x = 0, y = 6, width = 12, height = 6
         properties = {
-          title   = "ALB Request Count"
-          region  = var.aws_region
-          metrics = [
-            ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", aws_lb.main.arn_suffix]
-          ]
-          period = 60
-          stat   = "Sum"
+          title = "ALB Request Count", region = var.aws_region, period = 60, stat = "Sum"
+          metrics = [["AWS/ApplicationELB", "RequestCount", "LoadBalancer", aws_lb.main.arn_suffix]]
         }
       },
       {
-        type   = "metric"
-        x      = 12
-        y      = 6
-        width  = 12
-        height = 6
+        type = "metric", x = 12, y = 6, width = 12, height = 6
         properties = {
-          title   = "ALB Response Time"
-          region  = var.aws_region
-          metrics = [
-            ["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", aws_lb.main.arn_suffix]
-          ]
-          period = 60
-          stat   = "Average"
+          title = "ALB Response Time", region = var.aws_region, period = 60, stat = "Average"
+          metrics = [["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", aws_lb.main.arn_suffix]]
         }
       }
     ]
   })
 }
 
-# Lambda dashboard
+# Lambda dashboard (only when Lambda function exists)
 resource "aws_cloudwatch_dashboard" "lambda" {
-  count = var.use_lambda ? 1 : 0
+  count = var.use_lambda && var.lambda_image_exists ? 1 : 0
 
   dashboard_name = "${local.name_prefix}-lambda-dashboard"
 
   dashboard_body = jsonencode({
     widgets = [
       {
-        type   = "metric"
-        x      = 0
-        y      = 0
-        width  = 12
-        height = 6
+        type = "metric", x = 0, y = 0, width = 12, height = 6
         properties = {
-          title   = "Lambda Invocations"
-          region  = var.aws_region
-          metrics = [
-            ["AWS/Lambda", "Invocations", "FunctionName", aws_lambda_function.api[0].function_name]
-          ]
-          period = 300
-          stat   = "Sum"
+          title = "Lambda Invocations", region = var.aws_region, period = 300, stat = "Sum"
+          metrics = [["AWS/Lambda", "Invocations", "FunctionName", aws_lambda_function.api[0].function_name]]
         }
       },
       {
-        type   = "metric"
-        x      = 12
-        y      = 0
-        width  = 12
-        height = 6
+        type = "metric", x = 12, y = 0, width = 12, height = 6
         properties = {
-          title   = "Lambda Duration"
-          region  = var.aws_region
-          metrics = [
-            ["AWS/Lambda", "Duration", "FunctionName", aws_lambda_function.api[0].function_name]
-          ]
-          period = 300
-          stat   = "Average"
+          title = "Lambda Duration", region = var.aws_region, period = 300, stat = "Average"
+          metrics = [["AWS/Lambda", "Duration", "FunctionName", aws_lambda_function.api[0].function_name]]
         }
       },
       {
-        type   = "metric"
-        x      = 0
-        y      = 6
-        width  = 12
-        height = 6
+        type = "metric", x = 0, y = 6, width = 12, height = 6
         properties = {
-          title   = "Lambda Errors"
-          region  = var.aws_region
-          metrics = [
-            ["AWS/Lambda", "Errors", "FunctionName", aws_lambda_function.api[0].function_name]
-          ]
-          period = 300
-          stat   = "Sum"
+          title = "Lambda Errors", region = var.aws_region, period = 300, stat = "Sum"
+          metrics = [["AWS/Lambda", "Errors", "FunctionName", aws_lambda_function.api[0].function_name]]
         }
       },
       {
-        type   = "metric"
-        x      = 12
-        y      = 6
-        width  = 12
-        height = 6
+        type = "metric", x = 12, y = 6, width = 12, height = 6
         properties = {
-          title   = "Lambda Concurrent Executions"
-          region  = var.aws_region
-          metrics = [
-            ["AWS/Lambda", "ConcurrentExecutions", "FunctionName", aws_lambda_function.api[0].function_name]
-          ]
-          period = 60
-          stat   = "Maximum"
+          title = "Lambda Concurrent Executions", region = var.aws_region, period = 60, stat = "Maximum"
+          metrics = [["AWS/Lambda", "ConcurrentExecutions", "FunctionName", aws_lambda_function.api[0].function_name]]
         }
       }
     ]

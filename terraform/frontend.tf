@@ -1,17 +1,6 @@
 # =============================================================================
-# S3 Bucket for Static Frontend
+# S3 Bucket for Static Frontend (created in Phase 1)
 # =============================================================================
-# 
-# NOTE: This file requires adding a us-east-1 provider to main.tf:
-#
-#   provider "aws" {
-#     alias  = "us_east_1"
-#     region = "us-east-1"
-#   }
-#
-# This is required because CloudFront certificates must be in us-east-1.
-# =============================================================================
-
 resource "aws_s3_bucket" "frontend" {
   count  = var.use_lambda ? 1 : 0
   bucket = "${local.name_prefix}-frontend"
@@ -41,7 +30,7 @@ resource "aws_s3_bucket_versioning" "frontend" {
 }
 
 # =============================================================================
-# CloudFront Origin Access Control
+# CloudFront Origin Access Control (created in Phase 1)
 # =============================================================================
 resource "aws_cloudfront_origin_access_control" "frontend" {
   count = var.use_lambda ? 1 : 0
@@ -54,36 +43,57 @@ resource "aws_cloudfront_origin_access_control" "frontend" {
 }
 
 # =============================================================================
-# S3 Bucket Policy for CloudFront
+# ACM Certificate for CloudFront (must be in us-east-1) - created in Phase 1
 # =============================================================================
-resource "aws_s3_bucket_policy" "frontend" {
-  count  = var.use_lambda && var.lambda_image_exists ? 1 : 0
-  bucket = aws_s3_bucket.frontend[0].id
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+}
 
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "AllowCloudFrontServicePrincipal"
-        Effect = "Allow"
-        Principal = {
-          Service = "cloudfront.amazonaws.com"
-        }
-        Action   = "s3:GetObject"
-        Resource = "${aws_s3_bucket.frontend[0].arn}/*"
-        Condition = {
-          StringEquals = {
-            "AWS:SourceArn" = aws_cloudfront_distribution.frontend[0].arn
-          }
-        }
-      }
-    ]
-  })
+resource "aws_acm_certificate" "cloudfront" {
+  count    = var.use_lambda && var.domain_name != "" ? 1 : 0
+  provider = aws.us_east_1
+
+  domain_name               = var.domain_name
+  subject_alternative_names = ["www.${var.domain_name}"]
+  validation_method         = "DNS"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = {
+    Name = "${local.name_prefix}-cloudfront-cert"
+  }
+}
+
+resource "aws_route53_record" "cloudfront_cert_validation" {
+  for_each = var.use_lambda && var.domain_name != "" ? {
+    for dvo in aws_acm_certificate.cloudfront[0].domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      record = dvo.resource_record_value
+      type   = dvo.resource_record_type
+    }
+  } : {}
+
+  allow_overwrite = true
+  name            = each.value.name
+  records         = [each.value.record]
+  ttl             = 60
+  type            = each.value.type
+  zone_id         = data.aws_route53_zone.main[0].zone_id
+}
+
+resource "aws_acm_certificate_validation" "cloudfront" {
+  count    = var.use_lambda && var.domain_name != "" ? 1 : 0
+  provider = aws.us_east_1
+
+  certificate_arn         = aws_acm_certificate.cloudfront[0].arn
+  validation_record_fqdns = [for record in aws_route53_record.cloudfront_cert_validation : record.fqdn]
 }
 
 # =============================================================================
-# CloudFront Distribution
-# Only created when Lambda image exists (because it needs Lambda URL)
+# CloudFront Distribution (created in Phase 2 - needs Lambda URL)
 # =============================================================================
 resource "aws_cloudfront_distribution" "frontend" {
   count = var.use_lambda && var.lambda_image_exists ? 1 : 0
@@ -91,7 +101,7 @@ resource "aws_cloudfront_distribution" "frontend" {
   enabled             = true
   is_ipv6_enabled     = true
   default_root_object = "index.html"
-  price_class         = "PriceClass_100"  # US, Canada, Europe only (cheaper)
+  price_class         = "PriceClass_100"
   
   aliases = var.domain_name != "" ? [var.domain_name, "www.${var.domain_name}"] : []
 
@@ -153,7 +163,7 @@ resource "aws_cloudfront_distribution" "frontend" {
     viewer_protocol_policy = "redirect-to-https"
     min_ttl                = 0
     default_ttl            = 0
-    max_ttl                = 0  # No caching for API
+    max_ttl                = 0
   }
 
   # Health check endpoint
@@ -176,7 +186,7 @@ resource "aws_cloudfront_distribution" "frontend" {
     max_ttl                = 0
   }
 
-  # SPA fallback - return index.html for client-side routing
+  # SPA fallback
   custom_error_response {
     error_code         = 404
     response_code      = 200
@@ -196,7 +206,6 @@ resource "aws_cloudfront_distribution" "frontend" {
   }
 
   viewer_certificate {
-    # Use ACM certificate if domain is configured, otherwise CloudFront default
     acm_certificate_arn            = var.domain_name != "" ? aws_acm_certificate_validation.cloudfront[0].certificate_arn : null
     cloudfront_default_certificate = var.domain_name == ""
     ssl_support_method             = var.domain_name != "" ? "sni-only" : null
@@ -209,57 +218,35 @@ resource "aws_cloudfront_distribution" "frontend" {
 }
 
 # =============================================================================
-# ACM Certificate for CloudFront (must be in us-east-1)
+# S3 Bucket Policy for CloudFront (created in Phase 2)
 # =============================================================================
-provider "aws" {
-  alias  = "us_east_1"
-  region = "us-east-1"
-}
+resource "aws_s3_bucket_policy" "frontend" {
+  count  = var.use_lambda && var.lambda_image_exists ? 1 : 0
+  bucket = aws_s3_bucket.frontend[0].id
 
-resource "aws_acm_certificate" "cloudfront" {
-  count    = var.use_lambda && var.domain_name != "" ? 1 : 0
-  provider = aws.us_east_1
-
-  domain_name               = var.domain_name
-  subject_alternative_names = ["www.${var.domain_name}"]
-  validation_method         = "DNS"
-
-  lifecycle {
-    create_before_destroy = true
-  }
-
-  tags = {
-    Name = "${local.name_prefix}-cloudfront-cert"
-  }
-}
-
-resource "aws_route53_record" "cloudfront_cert_validation" {
-  for_each = var.use_lambda && var.domain_name != "" ? {
-    for dvo in aws_acm_certificate.cloudfront[0].domain_validation_options : dvo.domain_name => {
-      name   = dvo.resource_record_name
-      record = dvo.resource_record_value
-      type   = dvo.resource_record_type
-    }
-  } : {}
-
-  allow_overwrite = true
-  name            = each.value.name
-  records         = [each.value.record]
-  ttl             = 60
-  type            = each.value.type
-  zone_id         = data.aws_route53_zone.main[0].zone_id
-}
-
-resource "aws_acm_certificate_validation" "cloudfront" {
-  count    = var.use_lambda && var.domain_name != "" ? 1 : 0
-  provider = aws.us_east_1
-
-  certificate_arn         = aws_acm_certificate.cloudfront[0].arn
-  validation_record_fqdns = [for record in aws_route53_record.cloudfront_cert_validation : record.fqdn]
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowCloudFrontServicePrincipal"
+        Effect = "Allow"
+        Principal = {
+          Service = "cloudfront.amazonaws.com"
+        }
+        Action   = "s3:GetObject"
+        Resource = "${aws_s3_bucket.frontend[0].arn}/*"
+        Condition = {
+          StringEquals = {
+            "AWS:SourceArn" = aws_cloudfront_distribution.frontend[0].arn
+          }
+        }
+      }
+    ]
+  })
 }
 
 # =============================================================================
-# Route 53 Records for CloudFront (when using Lambda)
+# Route 53 Records for CloudFront (created in Phase 2)
 # =============================================================================
 resource "aws_route53_record" "cloudfront_app" {
   count = var.use_lambda && var.lambda_image_exists && var.domain_name != "" ? 1 : 0

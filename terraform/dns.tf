@@ -40,9 +40,8 @@ resource "aws_route53_record" "www" {
 }
 
 # =============================================================================
-# ACM Certificate DNS Validation (for ALB - il-central-1)
+# ACM Certificate DNS Validation (for ALB - only when NOT using Lambda)
 # =============================================================================
-
 resource "aws_route53_record" "cert_validation" {
   for_each = var.domain_name != "" && !var.use_lambda ? {
     for dvo in aws_acm_certificate.main[0].domain_validation_options : dvo.domain_name => {
@@ -60,7 +59,7 @@ resource "aws_route53_record" "cert_validation" {
   zone_id         = data.aws_route53_zone.main[0].zone_id
 }
 
-# Wait for certificate validation (for ALB)
+# Wait for certificate validation (for ALB - only when NOT using Lambda)
 resource "aws_acm_certificate_validation" "main" {
   count = var.domain_name != "" && !var.use_lambda ? 1 : 0
 

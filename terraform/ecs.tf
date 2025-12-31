@@ -223,7 +223,7 @@ resource "aws_ecs_service" "main" {
   name            = "${local.name_prefix}-service"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.main.arn
-  desired_count   = var.ecs_desired_count
+  desired_count   = var.use_lambda ? 0 : var.ecs_desired_count  # Scale to 0 when using Lambda
   launch_type     = "FARGATE"
 
   network_configuration {
@@ -263,8 +263,8 @@ resource "aws_ecs_service" "main" {
 # Auto Scaling
 # =============================================================================
 resource "aws_appautoscaling_target" "ecs" {
-  max_capacity       = 10
-  min_capacity       = var.environment == "prod" ? 2 : 1
+  max_capacity       = var.use_lambda ? 0 : 10
+  min_capacity       = var.use_lambda ? 0 : (var.environment == "prod" ? 2 : 1)
   resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.main.name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
@@ -314,7 +314,7 @@ resource "aws_lb" "main" {
   security_groups    = [aws_security_group.alb.id]
   subnets            = aws_subnet.public[*].id
 
-  enable_deletion_protection = var.environment == "prod"
+  enable_deletion_protection = var.environment == "prod" && !var.use_lambda
 
   access_logs {
     bucket  = aws_s3_bucket.logs.bucket
@@ -354,18 +354,22 @@ resource "aws_lb_target_group" "main" {
   }
 }
 
-# HTTP to HTTPS redirect (only when we have a certificate)
+# HTTP listener
+# - When using Lambda: Just forward to target group (no redirect needed, CloudFront handles HTTPS)
+# - When using ECS with domain: Redirect HTTP to HTTPS
+# - When using ECS without domain: Forward to target group
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = 80
   protocol          = "HTTP"
 
   default_action {
-    type = var.domain_name != "" ? "redirect" : "forward"
+    # Redirect to HTTPS only when: domain is set AND NOT using Lambda
+    type = var.domain_name != "" && !var.use_lambda ? "redirect" : "forward"
 
-    # Redirect to HTTPS when we have a domain
+    # Redirect to HTTPS when we have a domain and NOT using Lambda
     dynamic "redirect" {
-      for_each = var.domain_name != "" ? [1] : []
+      for_each = var.domain_name != "" && !var.use_lambda ? [1] : []
       content {
         port        = "443"
         protocol    = "HTTPS"
@@ -373,14 +377,15 @@ resource "aws_lb_listener" "http" {
       }
     }
 
-    # Forward to target group when no domain (HTTP only mode)
-    target_group_arn = var.domain_name == "" ? aws_lb_target_group.main.arn : null
+    # Forward to target group when: no domain OR using Lambda
+    target_group_arn = var.domain_name == "" || var.use_lambda ? aws_lb_target_group.main.arn : null
   }
 }
 
-# HTTPS listener (only when we have a domain/certificate)
+# HTTPS listener (only when we have a domain AND NOT using Lambda)
+# When using Lambda, CloudFront handles HTTPS termination
 resource "aws_lb_listener" "https" {
-  count = var.domain_name != "" ? 1 : 0
+  count = var.domain_name != "" && !var.use_lambda ? 1 : 0
 
   load_balancer_arn = aws_lb.main.arn
   port              = 443
@@ -397,10 +402,11 @@ resource "aws_lb_listener" "https" {
 }
 
 # =============================================================================
-# ACM Certificate (for HTTPS - only when domain is provided)
+# ACM Certificate (for HTTPS - only when domain is provided AND NOT using Lambda)
+# When using Lambda, CloudFront uses a separate certificate in us-east-1
 # =============================================================================
 resource "aws_acm_certificate" "main" {
-  count = var.domain_name != "" ? 1 : 0
+  count = var.domain_name != "" && !var.use_lambda ? 1 : 0
 
   domain_name               = var.domain_name
   subject_alternative_names = ["www.${var.domain_name}"]
