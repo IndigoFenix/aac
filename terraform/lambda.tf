@@ -152,19 +152,12 @@ resource "aws_security_group" "lambda" {
   description = "Security group for Lambda function"
   vpc_id      = aws_vpc.main.id
 
+  # Allow all outbound (simpler, no cycle)
   egress {
-    description     = "PostgreSQL to RDS"
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [aws_security_group.rds.id]
-  }
-
-  egress {
-    description = "HTTPS outbound"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
+    description = "All outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
