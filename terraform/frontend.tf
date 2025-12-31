@@ -162,6 +162,27 @@ resource "aws_cloudfront_distribution" "frontend" {
     compress               = true
   }
 
+  # Auth routes - forward to Lambda (no caching)
+  ordered_cache_behavior {
+    path_pattern     = "/auth/*"
+    allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "Lambda-api"
+
+    forwarded_values {
+      query_string = true
+      headers      = ["Authorization", "Origin", "Accept", "Content-Type"]
+      cookies {
+        forward = "all"
+      }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 0
+    max_ttl                = 0
+  }
+
   # API behavior - forward to Lambda
   ordered_cache_behavior {
     path_pattern     = "/api/*"
