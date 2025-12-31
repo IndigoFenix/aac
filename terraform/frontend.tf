@@ -96,12 +96,19 @@ resource "aws_acm_certificate_validation" "cloudfront" {
 # CloudFront Distribution (created in Phase 2 - needs Lambda URL)
 # =============================================================================
 
-# Local to determine the API endpoint URL
+# Local to determine the API endpoint URL - uses one() to safely handle either resource
 locals {
-  api_endpoint = var.use_lambda && var.lambda_image_exists ? (
-    var.use_api_gateway 
-    ? replace(replace(aws_apigatewayv2_api.lambda[0].api_endpoint, "https://", ""), "/", "")
-    : replace(replace(aws_lambda_function_url.api[0].function_url, "https://", ""), "/", "")
+  # Get endpoints from whichever resource exists (one will be null)
+  function_url_raw = one(aws_lambda_function_url.api[*].function_url)
+  api_gateway_raw  = one(aws_apigatewayv2_api.lambda[*].api_endpoint)
+  
+  # Clean the URL to just the domain (remove https:// and trailing /)
+  api_endpoint = var.use_lambda && var.lambda_image_exists ? replace(
+    replace(
+      coalesce(local.api_gateway_raw, local.function_url_raw, ""),
+      "https://", ""
+    ),
+    "/", ""
   ) : ""
 }
 

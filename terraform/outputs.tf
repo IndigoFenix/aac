@@ -44,10 +44,12 @@ output "lambda_function_name" {
   value       = var.use_lambda && var.lambda_image_exists ? aws_lambda_function.api[0].function_name : null
 }
 
-# Lambda function URL (only when Lambda exists)
+# Lambda/API Gateway URL (only when Lambda exists)
 output "lambda_function_url" {
-  description = "Lambda function URL for API"
-  value       = var.use_lambda && var.lambda_image_exists ? (var.use_api_gateway ? aws_apigatewayv2_api.lambda[0].api_endpoint : aws_lambda_function_url.api[0].function_url) : null
+  description = "Lambda API endpoint URL (Function URL or API Gateway)"
+  value = var.use_lambda && var.lambda_image_exists ? (
+    var.use_api_gateway ? aws_apigatewayv2_api.lambda[0].api_endpoint : aws_lambda_function_url.api[0].function_url
+  ) : null
 }
 
 # Frontend bucket (only when using Lambda)
@@ -117,6 +119,20 @@ output "public_subnet_ids" {
   value       = aws_subnet.public[*].id
 }
 
+# Local to get the API URL - uses one() to safely get from either resource
+locals {
+  # one() returns null if the list is empty, the element if it has one item
+  function_url_endpoint = one(aws_lambda_function_url.api[*].function_url)
+  api_gateway_endpoint  = one(aws_apigatewayv2_api.lambda[*].api_endpoint)
+  
+  # coalesce() returns the first non-null value
+  api_url_output = var.use_lambda && var.lambda_image_exists ? coalesce(
+    local.api_gateway_endpoint,
+    local.function_url_endpoint,
+    "No API endpoint"
+  ) : "N/A"
+}
+
 # Deployment summary
 output "deployment_summary" {
   description = "Current deployment configuration"
@@ -128,7 +144,8 @@ output "deployment_summary" {
       "========================================",
       "",
       "Frontend URL: https://${var.domain_name}",
-      "API URL: ${aws_lambda_function_url.api[0].function_url}",
+      "API URL: ${local.api_url_output}",
+      "API Type: ${var.use_api_gateway ? "API Gateway HTTP API" : "Lambda Function URL"}",
       "CloudFront: ${aws_cloudfront_distribution.frontend[0].domain_name}",
       "S3 Bucket: ${aws_s3_bucket.frontend[0].bucket}",
       ""

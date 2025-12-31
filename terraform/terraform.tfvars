@@ -37,7 +37,7 @@ ecs_task_memory = 1024
 
 # Number of containers to run
 # Production should have at least 2 for high availability
-ecs_desired_count = 1
+ecs_desired_count = 0  # Deactivate ECS for current phase
 
 # Port your application listens on
 container_port = 5000
