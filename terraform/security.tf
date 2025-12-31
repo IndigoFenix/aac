@@ -72,7 +72,7 @@ resource "aws_security_group" "ecs" {
 }
 
 # =============================================================================
-# RDS Security Group (Private - only from ECS)
+# RDS Security Group (Private - only from ECS and Lambda)
 # =============================================================================
 resource "aws_security_group" "rds" {
   name        = "${local.name_prefix}-rds-sg"
@@ -86,6 +86,18 @@ resource "aws_security_group" "rds" {
     to_port         = 5432
     protocol        = "tcp"
     security_groups = [aws_security_group.ecs.id]
+  }
+
+  # Allow traffic from Lambda (only when Lambda is enabled)
+  dynamic "ingress" {
+    for_each = var.use_lambda ? [1] : []
+    content {
+      description     = "PostgreSQL from Lambda"
+      from_port       = 5432
+      to_port         = 5432
+      protocol        = "tcp"
+      security_groups = [aws_security_group.lambda[0].id]
+    }
   }
 
   egress {
