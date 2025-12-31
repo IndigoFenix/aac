@@ -20,7 +20,7 @@ domain_name = "cliniaacian.com"
 # =============================================================================
 
 use_lambda = true
-lambda_image_exists = false   # ← Change this from false to true for phase 2
+lambda_image_exists = true   # ← Change this from false to true for phase 2
 
 # =============================================================================
 # ECS Configuration
