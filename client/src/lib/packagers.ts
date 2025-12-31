@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import { BoardIR } from '@/types/board-ir';
-import syntaacxLogoUrl from '@assets/SyntAACx logo_1755866035430_1756745771494.png';
+import syntaacxLogoUrl from '@assets/SyntAACx_logo.png';
 
 export class GridsetPackager {
   static async package(board: BoardIR): Promise<Blob> {

@@ -2,7 +2,7 @@ import JSZip from 'jszip';
 import { BoardIR } from '@/types/board-ir';
 import { AacMaster, AacMasterSchema, validateAacMaster } from '@shared/aac-master-schema';
 import { AacMasterConverter } from './aac-master-converter';
-import syntaacxLogoUrl from '@assets/SyntAACx logo_1755866035430_1756745771494.png';
+import syntaacxLogoUrl from '@assets/SyntAACx_logo.png';
 
 // Download utility function
 export function downloadFile(blob: Blob, filename: string) {
