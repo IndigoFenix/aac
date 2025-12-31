@@ -1,6 +1,5 @@
 // server/app.lambda.ts
-// Express app for Lambda - starts HTTP server immediately, then initializes DB
-// This is imported AFTER secrets are loaded by index.lambda.ts
+// Express app for Lambda - ensures initialization completes
 
 import express, { type Request, Response, NextFunction } from "express";
 import cors from "cors";
@@ -10,8 +9,9 @@ import { pool } from "./db";
 
 const app = express();
 
-// Track initialization state
+// Initialization state
 let isReady = false;
+let initPromise: Promise<void> | null = null;
 let startupError: Error | null = null;
 
 app.use(express.json());
@@ -28,6 +28,71 @@ function log(message: string, source = "lambda") {
   console.log(`${formattedTime} [${source}] ${message}`);
 }
 
+// Health check - always responds (required for Lambda Adapter)
+app.get('/health', (_req, res) => {
+  if (startupError) {
+    res.status(200).json({ 
+      status: 'error', 
+      error: startupError.message,
+      timestamp: new Date().toISOString() 
+    });
+  } else if (!isReady) {
+    res.status(200).json({ 
+      status: 'starting', 
+      timestamp: new Date().toISOString() 
+    });
+  } else {
+    res.status(200).json({ 
+      status: 'healthy', 
+      timestamp: new Date().toISOString() 
+    });
+  }
+});
+
+// Middleware: Wait for initialization on ALL non-health requests
+app.use(async (req, res, next) => {
+  if (req.path === '/health') {
+    return next();
+  }
+  
+  // If already ready, continue
+  if (isReady) {
+    return next();
+  }
+  
+  // If there was a startup error, return 503
+  if (startupError) {
+    return res.status(503).json({ 
+      error: "Service failed to start", 
+      details: startupError.message 
+    });
+  }
+  
+  // Wait for initialization to complete (with timeout)
+  try {
+    if (initPromise) {
+      await Promise.race([
+        initPromise,
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("Initialization timeout")), 25000)
+        )
+      ]);
+    }
+    
+    if (isReady) {
+      return next();
+    } else {
+      return res.status(503).json({ error: "Service not ready" });
+    }
+  } catch (error: any) {
+    return res.status(503).json({ 
+      error: "Service initialization failed", 
+      details: error.message 
+    });
+  }
+});
+
+// Request logging
 app.use((req, res, next) => {
   const start = Date.now();
   const reqPath = req.path;
@@ -54,28 +119,6 @@ app.use((req, res, next) => {
   });
 
   next();
-});
-
-// Health check - returns 200 immediately so Lambda Adapter knows we're alive
-// The "ready" status indicates if DB is connected and routes are registered
-app.get('/health', (_req, res) => {
-  if (startupError) {
-    res.status(200).json({ 
-      status: 'error', 
-      error: startupError.message,
-      timestamp: new Date().toISOString() 
-    });
-  } else if (!isReady) {
-    res.status(200).json({ 
-      status: 'starting', 
-      timestamp: new Date().toISOString() 
-    });
-  } else {
-    res.status(200).json({ 
-      status: 'healthy', 
-      timestamp: new Date().toISOString() 
-    });
-  }
 });
 
 async function runMigrations(): Promise<void> {
@@ -126,6 +169,7 @@ async function waitForDatabase(): Promise<void> {
       log("Database connection established!");
       return;
     } catch (error: any) {
+      log(`Database error: ${error.message}`);
       if (attempt === maxRetries) {
         throw new Error(`Could not connect to database after ${maxRetries} attempts: ${error.message}`);
       }
@@ -136,6 +180,10 @@ async function waitForDatabase(): Promise<void> {
 }
 
 async function initializeApp(): Promise<void> {
+  if (isReady) return;
+  
+  log("Starting initialization...");
+  
   try {
     // Step 1: Wait for database
     await waitForDatabase();
@@ -149,48 +197,36 @@ async function initializeApp(): Promise<void> {
     await registerRoutes(app);
     log("Routes registered successfully!");
 
-    // Mark as ready
+    // Add error handlers AFTER routes
+    app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+      const status = err.status || err.statusCode || 500;
+      const message = err.message || "Internal Server Error";
+      res.status(status).json({ message });
+      console.error("Request error:", err);
+    });
+
+    app.use("*", (_req, res) => {
+      res.status(404).json({ error: "Not found" });
+    });
+
     isReady = true;
     log("Application fully initialized!");
 
   } catch (error: any) {
     console.error("Initialization failed:", error);
     startupError = error;
+    throw error;
   }
 }
 
-// Error handler (must be after routes are registered, so we add it dynamically)
-function addErrorHandler() {
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-    res.status(status).json({ message });
-    console.error("Request error:", err);
-  });
-
-  // 404 handler for unknown routes
-  app.use("*", (_req, res) => {
-    if (!isReady) {
-      res.status(503).json({ error: "Service starting up" });
-    } else {
-      res.status(404).json({ error: "Not found" });
-    }
-  });
-}
-
-// START SERVER IMMEDIATELY - then initialize DB in background
+// Start server immediately for Lambda Adapter
 const port = process.env.PORT || 8080;
-const server = app.listen(Number(port), "0.0.0.0", () => {
+app.listen(Number(port), "0.0.0.0", () => {
   log(`Server listening on port ${port}`);
   
-  // Initialize app in background AFTER server is listening
-  initializeApp().then(() => {
-    addErrorHandler();
-  }).catch((error) => {
-    console.error("Failed to initialize:", error);
+  // Start initialization and store the promise
+  initPromise = initializeApp().catch((error) => {
+    console.error("Background init failed:", error);
     startupError = error;
-    addErrorHandler();
   });
 });
-
-export { app, server };
