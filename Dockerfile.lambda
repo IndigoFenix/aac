@@ -29,7 +29,7 @@ COPY postcss.config.* ./
 COPY drizzle.config.ts ./
 
 # Build the application (server only for Lambda, frontend goes to S3)
-RUN npm run build:server
+RUN npm run build:server:lambda
 
 # =============================================================================
 # Production stage - Lambda
