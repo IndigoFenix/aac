@@ -268,9 +268,10 @@ resource "aws_s3_bucket_policy" "frontend" {
 resource "aws_route53_record" "cloudfront_app" {
   count = var.use_lambda && var.lambda_image_exists && var.domain_name != "" ? 1 : 0
 
-  zone_id = data.aws_route53_zone.main[0].zone_id
-  name    = var.domain_name
-  type    = "A"
+  zone_id         = data.aws_route53_zone.main[0].zone_id
+  name            = var.domain_name
+  type            = "A"
+  allow_overwrite = true  # Allows overwriting existing ALB record
 
   alias {
     name                   = aws_cloudfront_distribution.frontend[0].domain_name
@@ -282,9 +283,10 @@ resource "aws_route53_record" "cloudfront_app" {
 resource "aws_route53_record" "cloudfront_www" {
   count = var.use_lambda && var.lambda_image_exists && var.domain_name != "" ? 1 : 0
 
-  zone_id = data.aws_route53_zone.main[0].zone_id
-  name    = "www.${var.domain_name}"
-  type    = "A"
+  zone_id         = data.aws_route53_zone.main[0].zone_id
+  name            = "www.${var.domain_name}"
+  type            = "A"
+  allow_overwrite = true  # Allows overwriting existing ALB record
 
   alias {
     name                   = aws_cloudfront_distribution.frontend[0].domain_name
