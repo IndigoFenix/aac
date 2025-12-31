@@ -221,9 +221,16 @@ resource "aws_lambda_function" "api" {
 
   environment {
     variables = {
-      NODE_ENV    = var.environment == "prod" ? "production" : var.environment
-      PORT        = "8080"
-      ENVIRONMENT = var.environment
+      NODE_ENV                = var.environment == "prod" ? "production" : var.environment
+      PORT                    = "8080"
+      ENVIRONMENT             = var.environment
+      # Secret ARNs - the app fetches these at runtime
+      DATABASE_SECRET_ARN     = aws_secretsmanager_secret.database.arn
+      APP_SECRETS_ARN         = aws_secretsmanager_secret.app_secrets.arn
+      # AWS region for SDK
+      AWS_SECRETS_REGION      = var.aws_region
+      # S3 bucket for uploads
+      S3_UPLOADS_BUCKET       = aws_s3_bucket.uploads.bucket
     }
   }
 

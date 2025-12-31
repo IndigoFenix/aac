@@ -27,6 +27,7 @@ COPY tsconfig.json ./
 COPY tailwind.config.* ./
 COPY postcss.config.* ./
 COPY drizzle.config.ts ./
+COPY rds-ca-bundle.pem ./
 
 # Build the application (server only for Lambda, frontend goes to S3)
 RUN npm run build:server:lambda
@@ -51,6 +52,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/shared ./shared
 COPY --from=builder /app/drizzle ./drizzle
+COPY --from=builder /app/rds-ca-bundle.pem ./rds-ca-bundle.pem
 
 # Lambda Web Adapter configuration
 ENV PORT=8080
