@@ -39,6 +39,12 @@ variable "lambda_image_exists" {
   default     = false
 }
 
+variable "use_api_gateway" {
+  description = "Use API Gateway HTTP API instead of Lambda Function URL. Enable if Function URLs don't work in your region (e.g., il-central-1)."
+  type        = bool
+  default     = false
+}
+
 # =============================================================================
 # VPC Variables
 # =============================================================================
