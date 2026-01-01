@@ -173,7 +173,179 @@ export const MASTER_MEMORY_FIELDS: AgentMemoryField[] = [
       },
     },
   },
-  
+  {
+    id: "Student_Notes",
+    type: "array",
+    title: "General Notes",
+    description: "General notes about the student (non-sensitive)",
+    opened: false,
+    items: {
+      id: "Note",
+      type: "string"
+    }
+  },
+  // === SENSITIVE FIELDS BELOW (These will be removed and separated into the database. They are included only for the demo.)===
+  /*
+  Medical Records:	Primary Diagnosis, Co-morbidities, Medications, Birth Date, ID Number, Safety Alerts (Allergies, Seizures, Cardiac issues).
+  Functional Reports: Mobility, ADL Status (Eating, Toileting, Dressing), Sensory Profile (Hypersensitivity), Safety Risks (Choking, Fall risk).
+  Educational Reports: Communication Mode, Receptive Language, Assistive Tools (AAC), Reinforcers/Interests, Preferred Activities, Behavioral Strategies.
+  */
+  {
+    id: "Student_Medical",
+    type: "object",
+    title: "Medical Information",
+    description: "Medical information (sensitive)",
+    opened: false,
+    properties: {
+      primaryDiagnosis: {
+        id: "primaryDiagnosis",
+        type: "string",
+        title: "Primary Diagnosis",
+        description: "The student's primary medical diagnosis",
+      },
+      coMorbidities: {
+        id: "coMorbidities",
+        type: "array",
+        title: "Co-morbidities",
+        description: "List of co-morbid medical conditions",
+        items: { id: "Condition", type: "string" },
+      },
+      medications: {
+        id: "medications",
+        type: "array",
+        title: "Medications",
+        description: "List of current medications",
+        items: { id: "Medication", type: "string" },
+      },
+      birthDate: {
+        id: "birthDate",
+        type: "string",
+        format: "date",
+        title: "Birth Date",
+        description: "The student's date of birth",
+      },
+      idNumber: {
+        id: "idNumber",
+        type: "string",
+        title: "ID Number",
+        description: "Student identification number",
+      },
+      safetyAlerts: {
+        id: "safetyAlerts",
+        type: "object",
+        title: "Safety Alerts",
+        description: "Important safety alerts (allergies, seizures, cardiac issues)",
+        properties: {
+          allergies: {
+            id: "allergies",
+            type: "array",
+            title: "Allergies",
+            items: { id: "Allergy", type: "string" },
+          },
+          seizures: {
+            id: "seizures",
+            type: "string",
+            title: "Seizure Information",
+            description: "Details about seizure types and management",
+          },
+          cardiacIssues: {
+            id: "cardiacIssues",
+            type: "string",
+            title: "Cardiac Issues",
+            description: "Details about any cardiac conditions",
+          },
+        },
+      },
+    }
+  },
+  {
+    id: "Student_FunctionalReports",
+    type: "object",
+    title: "Functional Reports",
+    description: "Functional assessment reports (sensitive)",
+    opened: false,
+    properties: {
+      mobility: {
+        id: "mobility",
+        type: "string",
+        title: "Mobility",
+        description: "Student's mobility status",
+      },
+      adlStatus: {
+        id: "adlStatus",
+        type: "object",
+        title: "ADL Status",
+        description: "Activities of Daily Living status",
+        properties: {
+          eating: { id: "eating", type: "string", title: "Eating" },
+          toileting: { id: "toileting", type: "string", title: "Toileting" },
+          dressing: { id: "dressing", type: "string", title: "Dressing" },
+        },
+      },
+      sensoryProfile: {
+        id: "sensoryProfile",
+        type: "string",
+        title: "Sensory Profile",
+        description: "Sensory processing profile (e.g., hypersensitivity)",
+      },
+      safetyRisks: {
+        id: "safetyRisks",
+        type: "array",
+        title: "Safety Risks",
+        description: "Identified safety risks (choking, fall risk)",
+        items: { id: "Risk", type: "string" },
+      },
+    }
+  },
+  {
+    id: "Student_EducationalReports",
+    type: "object",
+    title: "Educational Reports",
+    description: "Educational assessment reports (sensitive)",
+    opened: false,
+    properties: {
+      communicationMode: {
+        id: "communicationMode",
+        type: "string",
+        title: "Communication Mode",
+        description: "Student's mode of communication",
+      },
+      receptiveLanguage: {
+        id: "receptiveLanguage",
+        type: "string",
+        title: "Receptive Language",
+        description: "Student's receptive language abilities",
+      },
+      assistiveTools: {
+        id: "assistiveTools",
+        type: "array",
+        title: "Assistive Tools",
+        description: "List of assistive tools used (AAC devices)",
+        items: { id: "Tool", type: "string" },
+      },
+      reinforcersInterests: {
+        id: "reinforcersInterests",
+        type: "array",
+        title: "Reinforcers/Interests",
+        description: "Effective reinforcers and interests",
+        items: { id: "Item", type: "string" },
+      },
+      preferredActivities: {
+        id: "preferredActivities",
+        type: "array",
+        title: "Preferred Activities",
+        description: "Activities the student prefers",
+        items: { id: "Activity", type: "string" },
+      },
+      behavioralStrategies: {
+        id: "behavioralStrategies",
+        type: "array",
+        title: "Behavioral Strategies",
+        description: "Effective behavioral strategies used with the student",
+        items: { id: "Strategy", type: "string" },
+      },
+    }
+  },
   // === Relationship fields (prefixed with Relationship_) ===
   {
     id: "Relationship_Notes",
@@ -835,7 +1007,8 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     openedTopics: [],
   };
   
-  // Add greeting if template has one
+  // Add greeting if template has one (Disabled for now)
+  /*
   if (template.greeting) {
     newChatState.history.push({
       role: "assistant",
@@ -844,6 +1017,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
       credits: 0,
     });
   }
+  */
 
   if (sessionId) {
     session = await getSession(sessionId);
