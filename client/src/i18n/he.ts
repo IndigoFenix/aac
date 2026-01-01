@@ -38,6 +38,7 @@ export const he = {
     start: "התחלה",
     continue: "המשך",
     add: "הוסף",
+    reset: "איפוס",
   },
 
   // ============================================================================
@@ -118,6 +119,36 @@ export const he = {
     credits: "קרדיטים",
     active: "פעיל",
     admin: "פאנל ניהול",
+  },
+
+  // ============================================================================
+  // STUDENT
+  // ============================================================================
+
+  student: {
+    addNew: "הוספת תלמיד חדש",
+    edit: "עריכת תלמיד",
+    addNewDescription: "הזן את פרטי התלמיד החדש",
+    editDescription: "עדכן את פרטי התלמיד",
+    nameRequired: "שם (חובה)",
+    namePlaceholder: "לדוגמה: שרה כהן",
+    nameIsRequired: "נדרש כינוי למשתמש תת״ח",
+    gender: "מגדר",
+    genderPlaceholder: "בחר מגדר",
+    genderMale: "זכר",
+    genderFemale: "נקבה",
+    genderOther: "אחר",
+    dateOfBirth: "תאריך לידה",
+    ageDisplay: "גיל: {{age}} שנים",
+    systemType: "סוג מערכת",
+    frameworkTala: "תל״א (ישראל)",
+    frameworkIep: "IEP (ארה״ב)",
+    country: "מדינה",
+    countryIsrael: "ישראל",
+    countryUS: "ארצות הברית",
+    countryUK: "בריטניה",
+    countryOther: "אחר",
+    addStudent: "הוסף תלמיד"
   },
 
   // ============================================================================
@@ -550,6 +581,22 @@ export const he = {
     securityDesc: "נהל את אבטחת החשבון שלך",
     changePassword: "שנה סיסמה",
     manageSessions: "נהל הפעלות",
+    description: "נהל את משתמשי תת״ח שלך והגדרות אישיות",
+    personalProfile: "פרופיל אישי",
+    profileImage: "תמונת פרופיל",
+    newImageSelected: "תמונה חדשה נבחרה",
+    selectImage: "בחר תמונה",
+    imageHint: "JPG, PNG, GIF עד 5MB",
+    firstNameRequired: "שם פרטי (חובה)",
+    firstName: "שם פרטי",
+    lastName: "שם משפחה",
+    email: "אימייל",
+    emailCannotChange: "לא ניתן לשנות כתובת אימייל",
+    updateProfile: "עדכן פרופיל",
+    updating: "מעדכן...",
+    firstNameIsRequired: "שם פרטי נדרש",
+    selectValidImage: "נא לבחור קובץ תמונה תקין (JPG, PNG, GIF)",
+    imageSizeLimit: "גודל התמונה חייב להיות פחות מ-10MB"
   },
 
   // ============================================================================

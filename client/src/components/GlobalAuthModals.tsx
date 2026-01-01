@@ -491,9 +491,7 @@ export function GlobalAuthModals() {
       redeemInviteForm.reset();
       toast({
         title: t("toast.inviteRedeemed"),
-        description: `${t("label.student")} "${data.studentName}" ${
-          language === "he" ? "נוסף בהצלחה" : "has been added successfully"
-        }`,
+        description: `${t("label.student")} "${data.studentName}" ${t("auth.addedSuccessfully")}`,
       });
     },
     onError: (error: any) => {
@@ -656,11 +654,8 @@ export function GlobalAuthModals() {
   const handleCreateStudent = () => {
     if (!studentForm.name.trim()) {
       toast({
-        title: language === "he" ? "שגיאה" : "Error",
-        description:
-          language === "he"
-            ? "נדרש כינוי למשתמש תת״ח"
-            : "AAC user name is required",
+        title: t("common.error"),
+        description: t("student.nameIsRequired"),
         variant: "destructive",
       });
       return;
@@ -683,11 +678,8 @@ export function GlobalAuthModals() {
   const handleUpdateStudent = () => {
     if (!studentForm.name.trim()) {
       toast({
-        title: language === "he" ? "שגיאה" : "Error",
-        description:
-          language === "he"
-            ? "נדרש כינוי למשתמש תת״ח"
-            : "AAC user name is required",
+        title: t("common.error"),
+        description: t("student.nameIsRequired"),
         variant: "destructive",
       });
       return;
@@ -727,9 +719,8 @@ export function GlobalAuthModals() {
   const handleUpdateProfile = () => {
     if (!profileForm.firstName.trim()) {
       toast({
-        title: language === "he" ? "שגיאה" : "Error",
-        description:
-          language === "he" ? "שם פרטי נדרש" : "First name is required",
+        title: t("common.error"),
+        description: t("settings.firstNameIsRequired"),
         variant: "destructive",
       });
       return;
@@ -744,11 +735,8 @@ export function GlobalAuthModals() {
       // Validate file type
       if (!file.type.startsWith("image/")) {
         toast({
-          title: language === "he" ? "שגיאה" : "Error",
-          description:
-            language === "he"
-              ? "נא לבחור קובץ תמונה תקין (JPG, PNG, GIF)"
-              : "Please select a valid image file (JPG, PNG, GIF)",
+          title: t("common.error"),
+          description: t("settings.selectValidImage"),
           variant: "destructive",
         });
         e.target.value = ""; // Clear the input
@@ -758,11 +746,8 @@ export function GlobalAuthModals() {
       // Validate file size (10MB limit to match server)
       if (file.size > 10 * 1024 * 1024) {
         toast({
-          title: language === "he" ? "שגיאה" : "Error",
-          description:
-            language === "he"
-              ? "גודל התמונה חייב להיות פחות מ-10MB"
-              : "Image size must be less than 10MB",
+          title: t("common.error"),
+          description: t("settings.imageSizeLimit"),
           variant: "destructive",
         });
         e.target.value = ""; // Clear the input
@@ -811,54 +796,6 @@ export function GlobalAuthModals() {
     }
   };
 
-  // Invite code form handlers
-  const handleCreateInviteCode = (data: InsertInviteCode) => {
-    createInviteCodeMutation.mutate(data);
-  };
-
-  const handleRedeemInviteCode = (data: RedeemInviteCode) => {
-    redeemInviteCodeMutation.mutate(data);
-  };
-
-  const handleCopyInviteCode = async (code: string) => {
-    try {
-      await navigator.clipboard.writeText(code);
-      toast({
-        title: language === "he" ? "✅ קוד הועתק" : "✅ Code Copied",
-        description:
-          language === "he"
-            ? `קוד ההזמנה ${code} הועתק ללוח העתקות`
-            : `Invite code ${code} copied to clipboard`,
-      });
-    } catch (error) {
-      // Fallback for browsers that don't support clipboard API
-      try {
-        const textArea = document.createElement("textarea");
-        textArea.value = code;
-        document.body.appendChild(textArea);
-        textArea.select();
-        document.execCommand("copy");
-        document.body.removeChild(textArea);
-        toast({
-          title: language === "he" ? "✅ קוד הועתק" : "✅ Code Copied",
-          description:
-            language === "he"
-              ? `קוד ההזמנה ${code} הועתק ללוח העתקות`
-              : `Invite code ${code} copied to clipboard`,
-        });
-      } catch (fallbackError) {
-        toast({
-          title: language === "he" ? "❌ העתקה נכשלה" : "❌ Copy Failed",
-          description:
-            language === "he"
-              ? "לא ניתן להעתיק קוד הזמנה"
-              : "Failed to copy invite code",
-          variant: "destructive",
-        });
-      }
-    }
-  };
-
   return (
     <>
       {/* Login Dialog (GLOBAL) */}
@@ -871,9 +808,7 @@ export function GlobalAuthModals() {
               {t("auth.loginTitle")}
             </DialogTitle>
             <DialogDescription className="w-full text-center">
-              {language === "he"
-                ? "הכניסו את פרטי ההתחברות"
-                : "Enter your login credentials"}
+              {t("auth.loginDescription")}
             </DialogDescription>
           </DialogHeader>
 
@@ -991,9 +926,7 @@ export function GlobalAuthModals() {
               {t("auth.registerTitle")}
             </DialogTitle>
             <DialogDescription className="w-full text-center">
-              {language === "he"
-                ? "צור חשבון חדש כדי להתחיל להשתמש במערכת"
-                : "Create a new account to start using the system"}
+              {t("auth.registerDescription")}
             </DialogDescription>
           </DialogHeader>
 
@@ -1094,7 +1027,7 @@ export function GlobalAuthModals() {
 
             <div className="space-y-2">
               <Label htmlFor="userType">
-                {language === "he" ? "סוג משתמש" : "User Type"}
+                {t("auth.userType")}
               </Label>
               <Select
                 value={registerData.userType}
@@ -1108,23 +1041,21 @@ export function GlobalAuthModals() {
               >
                 <SelectTrigger>
                   <SelectValue
-                    placeholder={
-                      language === "he" ? "בחר סוג משתמש" : "Select user type"
-                    }
+                    placeholder={t("auth.userTypePlaceholder")}
                   />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Caregiver">
-                    {language === "he" ? "מטפל/ת" : "Caregiver"}
+                    {t("auth.userTypeCaregiver")}
                   </SelectItem>
                   <SelectItem value="Parent">
-                    {language === "he" ? "הורה" : "Parent"}
+                    {t("auth.userTypeParent")}
                   </SelectItem>
                   <SelectItem value="Teacher">
-                    {language === "he" ? "מורה" : "Teacher"}
+                    {t("auth.userTypeTeacher")}
                   </SelectItem>
                   <SelectItem value="SLP">
-                    {language === "he" ? "קלינאי תקשורת" : "SLP"}
+                    {t("auth.userTypeSLP")}
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -1163,35 +1094,33 @@ export function GlobalAuthModals() {
         <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle
-              className={`flex items-center gap-2 ${language === "he" ? "text-right flex-row-reverse" : "text-left"}`}
+              className={`flex items-center gap-2 ${isRTL ? "text-right flex-row-reverse" : "text-left"}`}
             >
               <Settings className="w-5 h-5" />
-              {language === "he" ? "הגדרות משתמש" : "User Settings"}
+              {t("settings.title")}
             </DialogTitle>
           </DialogHeader>
           <DialogDescription
-            className={language === "he" ? "text-right" : "text-left"}
+            className={isRTL ? "text-right" : "text-left"}
           >
-            {language === "he"
-              ? "נהל את משתמשי תת״ח שלך והגדרות אישיות"
-              : "Manage your AAC users and personal settings"}
+            {t("settings.description")}
           </DialogDescription>
 
           <div className="space-y-6">
             {/* Personal Profile Section */}
             <div>
               <h3
-                className={`text-lg font-medium mb-4 flex items-center gap-2 ${language === "he" ? "text-right flex-row-reverse" : "text-left"}`}
+                className={`text-lg font-medium mb-4 flex items-center gap-2 ${isRTL ? "text-right flex-row-reverse" : "text-left"}`}
               >
                 <User className="w-5 h-5" />
-                {language === "he" ? "פרופיל אישי" : "Personal Profile"}
+                {t("settings.personalProfile")}
               </h3>
 
               <div className="bg-muted/50 p-4 rounded-lg mb-4">
                 {/* Profile Image Section */}
                 <div className="mb-6">
                   <h4 className="text-sm font-medium mb-3">
-                    {language === "he" ? "תמונת פרופיל" : "Profile Image"}
+                    {t("settings.profileImage")}
                   </h4>
                   <div className="flex items-center gap-4">
                     {/* Current Profile Image */}
@@ -1220,9 +1149,7 @@ export function GlobalAuthModals() {
                               className="w-12 h-12 rounded-full object-cover border"
                             />
                             <span className="text-sm text-foreground">
-                              {language === "he"
-                                ? "תמונה חדשה נבחרה"
-                                : "New image selected"}
+                              {t("settings.newImageSelected")}
                             </span>
                           </div>
                           <div className="flex gap-2">
@@ -1236,14 +1163,12 @@ export function GlobalAuthModals() {
                               {uploadProfileImageMutation.isPending ? (
                                 <>
                                   <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
-                                  {language === "he"
-                                    ? "מעלה..."
-                                    : "Uploading..."}
+                                  {t("common.uploading")}
                                 </>
                               ) : (
                                 <>
                                   <Upload className="w-4 h-4" />
-                                  {language === "he" ? "העלה" : "Upload"}
+                                  {t("common.upload")}
                                 </>
                               )}
                             </Button>
@@ -1276,14 +1201,13 @@ export function GlobalAuthModals() {
                             }
                             className="flex items-center gap-2"
                             data-testid="button-select-profile-image"
+                            disabled={true}
                           >
                             <Camera className="w-4 h-4" />
-                            {language === "he" ? "בחר תמונה" : "Select Image"}
+                            {t("settings.selectImage")}
                           </Button>
                           <p className="text-xs text-muted-foreground mt-1">
-                            {language === "he"
-                              ? "JPG, PNG, GIF עד 5MB"
-                              : "JPG, PNG, GIF up to 5MB"}
+                            {t("settings.imageHint")}
                           </p>
                         </div>
                       )}
@@ -1295,9 +1219,7 @@ export function GlobalAuthModals() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="profileFirstName">
-                      {language === "he"
-                        ? "שם פרטי (חובה)"
-                        : "First Name (Required)"}
+                      {t("settings.firstNameRequired")}
                     </Label>
                     <Input
                       id="profileFirstName"
@@ -1308,14 +1230,14 @@ export function GlobalAuthModals() {
                           firstName: e.target.value,
                         }))
                       }
-                      placeholder={language === "he" ? "שם פרטי" : "First Name"}
+                      placeholder={t("settings.firstName")}
                       required
                       data-testid="input-profile-first-name"
                     />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="profileLastName">
-                      {language === "he" ? "שם משפחה" : "Last Name"}
+                      {t("settings.lastName")}
                     </Label>
                     <Input
                       id="profileLastName"
@@ -1326,13 +1248,13 @@ export function GlobalAuthModals() {
                           lastName: e.target.value,
                         }))
                       }
-                      placeholder={language === "he" ? "שם משפחה" : "Last Name"}
+                      placeholder={t("settings.lastName")}
                       data-testid="input-profile-last-name"
                     />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="profileEmail">
-                      {language === "he" ? "אימייל" : "Email"}
+                      {t("settings.email")}
                     </Label>
                     <Input
                       id="profileEmail"
@@ -1342,9 +1264,7 @@ export function GlobalAuthModals() {
                       data-testid="input-profile-email"
                     />
                     <p className="text-xs text-muted-foreground">
-                      {language === "he"
-                        ? "לא ניתן לשנות כתובת אימייל"
-                        : "Email address cannot be changed"}
+                      {t("settings.emailCannotChange")}
                     </p>
                   </div>
                 </div>
@@ -1359,12 +1279,12 @@ export function GlobalAuthModals() {
                     {updateProfileMutation.isPending ? (
                       <>
                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                        {language === "he" ? "מעדכן..." : "Updating..."}
+                        {t("settings.updating")}
                       </>
                     ) : (
                       <>
                         <Save className="w-4 h-4" />
-                        {language === "he" ? "עדכן פרופיל" : "Update Profile"}
+                        {t("settings.updateProfile")}
                       </>
                     )}
                   </Button>
@@ -1374,7 +1294,7 @@ export function GlobalAuthModals() {
                     disabled={updateProfileMutation.isPending}
                     data-testid="button-reset-profile"
                   >
-                    {language === "he" ? "איפוס" : "Reset"}
+                    {t("common.reset")}
                   </Button>
                 </div>
               </div>
@@ -1386,7 +1306,7 @@ export function GlobalAuthModals() {
               variant="outline"
               onClick={() => setShowSettingsDialog(false)}
             >
-              {t("ui.close")}
+              {t("common.close")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1396,23 +1316,15 @@ export function GlobalAuthModals() {
       <Dialog open={showStudentModal} onOpenChange={setShowStudentModal}>
         <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className={language === "he" ? "text-right" : ""}>
+            <DialogTitle className={isRTL ? "text-right" : ""}>
               {editingStudent
-                ? language === "he"
-                  ? "עריכת תלמיד"
-                  : "Edit Student"
-                : language === "he"
-                  ? "הוספת תלמיד חדש"
-                  : "Add New Student"}
+                ? t("student.edit")
+                : t("student.addNew")}
             </DialogTitle>
-            <DialogDescription className={language === "he" ? "text-right" : ""}>
+            <DialogDescription className={isRTL ? "text-right" : ""}>
               {editingStudent
-                ? language === "he"
-                  ? "עדכן את פרטי התלמיד"
-                  : "Update the student's information"
-                : language === "he"
-                  ? "הזן את פרטי התלמיד החדש"
-                  : "Enter the new student's information"}
+                ? t("student.editDescription")
+                : t("student.addNewDescription")}
             </DialogDescription>
           </DialogHeader>
 
@@ -1421,7 +1333,7 @@ export function GlobalAuthModals() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="studentName">
-                  {language === "he" ? "שם (חובה)" : "Name (Required)"}
+                  {t("student.nameRequired")}
                 </Label>
                 <Input
                   id="studentName"
@@ -1432,11 +1344,7 @@ export function GlobalAuthModals() {
                       name: e.target.value,
                     }))
                   }
-                  placeholder={
-                    language === "he"
-                      ? "לדוגמה: שרה כהן"
-                      : "e.g., Sarah Cohen"
-                  }
+                  placeholder={t("student.namePlaceholder")}
                   required
                 />
               </div>
@@ -1446,7 +1354,7 @@ export function GlobalAuthModals() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="studentGender">
-                  {language === "he" ? "מגדר" : "Gender"}
+                  {t("student.gender")}
                 </Label>
                 <Select
                   value={studentForm.gender}
@@ -1456,27 +1364,25 @@ export function GlobalAuthModals() {
                 >
                   <SelectTrigger id="studentGender">
                     <SelectValue
-                      placeholder={
-                        language === "he" ? "בחר מגדר" : "Select gender"
-                      }
+                      placeholder={t("student.genderPlaceholder")}
                     />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Male">
-                      {language === "he" ? "זכר" : "Male"}
+                      {t("student.genderMale")}
                     </SelectItem>
                     <SelectItem value="Female">
-                      {language === "he" ? "נקבה" : "Female"}
+                      {t("student.genderFemale")}
                     </SelectItem>
                     <SelectItem value="Other">
-                      {language === "he" ? "אחר" : "Other"}
+                      {t("student.genderOther")}
                     </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="studentBirthDate">
-                  {language === "he" ? "תאריך לידה" : "Date of Birth"}
+                  {t("student.dateOfBirth")}
                 </Label>
                 <Input
                   id="studentBirthDate"
@@ -1492,9 +1398,7 @@ export function GlobalAuthModals() {
                 />
                 {studentForm.birthDate && (
                   <p className="text-xs text-muted-foreground">
-                    {language === "he" 
-                      ? `גיל: ${calculateAge(studentForm.birthDate)} שנים`
-                      : `Age: ${calculateAge(studentForm.birthDate)} years`}
+                    {t("student.ageDisplay").replace("{{age}}", String(calculateAge(studentForm.birthDate)))}
                   </p>
                 )}
               </div>
@@ -1504,7 +1408,7 @@ export function GlobalAuthModals() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="studentFramework">
-                  {language === "he" ? "סוג מערכת" : "System Type"}
+                  {t("student.systemType")}
                 </Label>
                 <Select
                   value={studentForm.framework}
@@ -1517,17 +1421,17 @@ export function GlobalAuthModals() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="tala">
-                      {language === "he" ? "תל״א (ישראל)" : "TALA (Israel)"}
+                      {t("student.frameworkTala")}
                     </SelectItem>
                     <SelectItem value="us_iep">
-                      {language === "he" ? "IEP (ארה״ב)" : "IEP (US)"}
+                      {t("student.frameworkIep")}
                     </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="studentCountry">
-                  {language === "he" ? "מדינה" : "Country"}
+                  {t("student.country")}
                 </Label>
                 <Select
                   value={studentForm.country}
@@ -1540,16 +1444,16 @@ export function GlobalAuthModals() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="IL">
-                      {language === "he" ? "ישראל" : "Israel"}
+                      {t("student.countryIsrael")}
                     </SelectItem>
                     <SelectItem value="US">
-                      {language === "he" ? "ארצות הברית" : "United States"}
+                      {t("student.countryUS")}
                     </SelectItem>
                     <SelectItem value="UK">
-                      {language === "he" ? "בריטניה" : "United Kingdom"}
+                      {t("student.countryUK")}
                     </SelectItem>
                     <SelectItem value="Other">
-                      {language === "he" ? "אחר" : "Other"}
+                      {t("student.countryOther")}
                     </SelectItem>
                   </SelectContent>
                 </Select>
@@ -1557,12 +1461,12 @@ export function GlobalAuthModals() {
             </div>
           </div>
 
-          <DialogFooter className={language === "he" ? "flex-row-reverse" : ""}>
+          <DialogFooter className={isRTL ? "flex-row-reverse" : ""}>
             <Button
               variant="outline"
               onClick={handleCancelEdit}
             >
-              {language === "he" ? "ביטול" : "Cancel"}
+              {t("common.cancel")}
             </Button>
             <Button
               onClick={
@@ -1578,17 +1482,17 @@ export function GlobalAuthModals() {
               {(createStudentMutation.isPending || updateStudentMutation.isPending) ? (
                 <>
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  {language === "he" ? "שומר..." : "Saving..."}
+                  {t("common.saving")}
                 </>
               ) : editingStudent ? (
                 <>
                   <Edit className="w-4 h-4" />
-                  {language === "he" ? "עדכון" : "Update"}
+                  {t("common.update")}
                 </>
               ) : (
                 <>
                   <Plus className="w-4 h-4" />
-                  {language === "he" ? "הוסף תלמיד" : "Add Student"}
+                  {t("student.addStudent")}
                 </>
               )}
             </Button>

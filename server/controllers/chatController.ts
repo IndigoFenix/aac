@@ -49,7 +49,15 @@ export class ChatController {
     const startTime = Date.now();
     try {
       const userId = req.user!.id;
-      const { studentId, sessionId, mode, messages } = messageSchema.parse(req.body);
+      let { studentId, sessionId, mode, messages } = messageSchema.parse(req.body);
+      /* Temporary solution until we have proper mode management */
+      if (mode !== "boards"){
+        if (studentId) {
+          mode = "progress";
+        } else {
+          mode = "chat";
+        }
+      }
       const messagesWithTimestamp = messages?.map((msg) => ({
         ...msg,
         timestamp: msg.timestamp || startTime,
