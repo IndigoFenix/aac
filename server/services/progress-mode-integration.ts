@@ -272,13 +272,14 @@ ${p.startDate ? `Start: ${p.startDate}\n` : ""}${p.endDate ? `End: ${p.endDate}\
     }
 
     const s = this.state.student;
-    return `Student: ${obfuscatedStudentName(s) || "Unknown"}`
+    return `Student: ${obfuscatedStudentName(s) || "Unknown"}\nGender: ${s.gender}\n${s.primaryLanguage ? `Primary Language: ${s.primaryLanguage}\n` : ""}`;
     // Replace with general student information that the user has access to (no PII)
   }
 }
 
 export function obfuscatedStudentName(student: Student) {
-  return `STUDENT-${student.id}`;
+  return student.name;
+  // return `STUDENT-${student.id}`;
 }
 
 export function deobfuscateStudentName(text: string, students: Student[]) {
