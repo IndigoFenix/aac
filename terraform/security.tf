@@ -100,6 +100,15 @@ resource "aws_security_group" "rds" {
     }
   }
 
+  # Allow traffic from bastion/tunnel host for database administration
+  ingress {
+    description     = "PostgreSQL from bastion"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.bastion.id]
+  }
+
   egress {
     description = "Allow outbound"
     from_port   = 0
