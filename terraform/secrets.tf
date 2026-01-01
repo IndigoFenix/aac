@@ -115,31 +115,6 @@ resource "aws_secretsmanager_secret" "app_secrets" {
   }
 }
 
-resource "aws_secretsmanager_secret_version" "app_secrets" {
-  secret_id = aws_secretsmanager_secret.app_secrets.id
-  secret_string = jsonencode({
-    # Authentication
-    SESSION_SECRET  = "CHANGE_ME_GENERATE_RANDOM_STRING"
-    JWT_SECRET      = "CHANGE_ME_GENERATE_RANDOM_STRING"
-    ENCRYPTION_KEY  = "CHANGE_ME_GENERATE_RANDOM_STRING"
-    
-    # AI
-    OPENAI_API_KEY  = "CHANGE_ME"
-    
-    # Stripe (payment processing)
-    STRIPE_SECRET_KEY      = "CHANGE_ME"
-    VITE_STRIPE_PUBLIC_KEY = "CHANGE_ME"
-    
-    # Google OAuth (if used)
-    GOOGLE_CLIENT_ID     = "CHANGE_ME"
-    GOOGLE_CLIENT_SECRET = "CHANGE_ME"
-  })
-
-  lifecycle {
-    ignore_changes = [secret_string]  # Don't overwrite after initial creation
-  }
-}
-
 # =============================================================================
 # Secrets rotation (optional - for database passwords)
 # =============================================================================

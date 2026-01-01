@@ -11,6 +11,8 @@
     "build:server:lambda": "esbuild server/index.lambda.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "start": "NODE_ENV=production node dist/index.prod.js",
     "check": "tsc",
+    "get-ec2": "aws ssm describe-instance-information --query \"InstanceInformationList[*].InstanceId\"",
+    "db-tunnel": "aws ssm start-session --target i-058774f45dcc97bc1 --document-name AWS-StartPortForwardingSessionToRemoteHost --parameters host=cliniaacian-prod-postgres.cpea2as2c1xa.il-central-1.rds.amazonaws.com,portNumber=5432,localPortNumber=5432",
     "db:generate": "npx drizzle-kit generate",
     "db:push": "drizzle-kit push"
   },
