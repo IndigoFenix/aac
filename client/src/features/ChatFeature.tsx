@@ -231,6 +231,7 @@ export function ChatFeature() {
         onClick={handleVoiceInput}
         data-testid="button-voice"
         aria-label={t('chat.voiceInput')}
+        disabled={true} // Voice input disabled for now
       >
         <Mic className="w-4 h-4" />
       </Button>

@@ -38,6 +38,7 @@ export const en = {
     start: "Start",
     continue: "Continue",
     add: "Add",
+    reset: "Reset",
   },
 
   // ============================================================================
@@ -118,6 +119,36 @@ export const en = {
     credits: "credits",
     active: "Active",
     admin: "Admin Panel",
+  },
+
+  // ============================================================================
+  // STUDENT
+  // ============================================================================
+
+  student: {
+    addNew: "Add New Student",
+    edit: "Edit Student",
+    addNewDescription: "Enter the new student's information",
+    editDescription: "Update the student's information",
+    nameRequired: "Name (Required)",
+    namePlaceholder: "e.g., Sarah Cohen",
+    nameIsRequired: "AAC user name is required",
+    gender: "Gender",
+    genderPlaceholder: "Select gender",
+    genderMale: "Male",
+    genderFemale: "Female",
+    genderOther: "Other",
+    dateOfBirth: "Date of Birth",
+    ageDisplay: "Age: {{age}} years",
+    systemType: "System Type",
+    frameworkTala: "TALA (Israel)",
+    frameworkIep: "IEP (US)",
+    country: "Country",
+    countryIsrael: "Israel",
+    countryUS: "United States",
+    countryUK: "United Kingdom",
+    countryOther: "Other",
+    addStudent: "Add Student"
   },
 
   // ============================================================================
@@ -356,6 +387,22 @@ export const en = {
     securityDesc: "Manage your account security",
     changePassword: "Change Password",
     manageSessions: "Manage Sessions",
+    description: "Manage your AAC users and personal settings",
+    personalProfile: "Personal Profile",
+    profileImage: "Profile Image",
+    newImageSelected: "New image selected",
+    selectImage: "Select Image",
+    imageHint: "JPG, PNG, GIF up to 5MB",
+    firstNameRequired: "First Name (Required)",
+    firstName: "First Name",
+    lastName: "Last Name",
+    email: "Email",
+    emailCannotChange: "Email address cannot be changed",
+    updateProfile: "Update Profile",
+    updating: "Updating...",
+    firstNameIsRequired: "First name is required",
+    selectValidImage: "Please select a valid image file (JPG, PNG, GIF)",
+    imageSizeLimit: "Image size must be less than 10MB"
   },
 
   // ============================================================================
