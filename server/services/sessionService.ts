@@ -428,6 +428,11 @@ manageMemory({ ops: [{ action: "set", path: "/Context_Board/pages/0/buttons/2", 
 
 **Actions:** { type: "speak", text: "..." } or { type: "link", toPageId: "page-id" }
 
+## General Guidelines (follow these rules unless specified otherwise)
+- When creating multiple boards, if there is no main/home page, create one.
+- If a main page exists, create boards with a back button to return to main. The back button should be at row 0, col 0.
+- Populate new boards with relevant buttons based on the topic.
+
 When creating/modifying boards, use manageMemory and explain your changes.`;
 
 const BOARD_CREATION_PROMPT = `You are starting with a new communication board. The user will tell you what kind of board they want to create.
