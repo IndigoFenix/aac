@@ -417,7 +417,8 @@ export const SENSITIVE_FIELD_PATTERNS = [
  * Check if a field ID contains sensitive information
  */
 export function isSensitiveFieldId(fieldId: string): boolean {
-  return SENSITIVE_FIELD_PATTERNS.some(pattern => pattern.test(fieldId));
+  return false; // Temporarily disable sensitive field filtering
+  // return SENSITIVE_FIELD_PATTERNS.some(pattern => pattern.test(fieldId));
 }
 
 /**
