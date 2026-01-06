@@ -1,87 +1,158 @@
-import { settingsRepository, userRepository } from "../repositories";
+// server/services/passwordResetService.ts
+// Business logic for password reset operations
+
+import { passwordResetRepository } from "../repositories/passwordResetRepository";
+import { userRepository } from "../repositories";
+import { emailService } from "./emailService";
 import bcrypt from "bcryptjs";
-import crypto from "crypto";
+
+interface PasswordResetResult {
+  success: boolean;
+  error?: string;
+}
 
 export class PasswordResetService {
-  generateResetToken(): string {
-    return crypto.randomBytes(32).toString("hex");
+  private readonly TOKEN_EXPIRY_MINUTES = 60; // 1 hour
+  private readonly SALT_ROUNDS = 10;
+
+  /**
+   * Request a password reset
+   * Creates a token and sends an email
+   */
+  async requestPasswordReset(
+    email: string,
+    baseUrl: string = "https://cliniaacian.com"
+  ): Promise<PasswordResetResult> {
+    try {
+      // Find user by email
+      const user = await userRepository.getUserByEmail(email.toLowerCase());
+      
+      if (!user) {
+        // Don't reveal if user exists or not
+        console.log(`Password reset requested for non-existent email: ${email}`);
+        return { success: true }; // Silent success for security
+      }
+
+      // Check if user has a password (not OAuth-only)
+      // OAuth users might not have a password set
+      
+      // Create reset token
+      const { token, expiresAt } = await passwordResetRepository.createToken(
+        user.id,
+        this.TOKEN_EXPIRY_MINUTES
+      );
+
+      // Build reset link
+      const resetLink = `${baseUrl}/reset-password/${token}`;
+
+      // Send email
+      const emailResult = await emailService.sendPasswordResetEmail({
+        email: user.email,
+        firstName: user.firstName || user.fullName || undefined,
+        resetLink,
+        expiresAt,
+      });
+
+      if (!emailResult.success) {
+        console.error(`Failed to send password reset email to ${email}:`, emailResult.error);
+        // Don't expose email sending failures to user
+      } else {
+        console.log(`Password reset email sent to ${email}`);
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error("Password reset request error:", error);
+      return { success: false, error: "Failed to process password reset request" };
+    }
   }
 
+  /**
+   * Create a password reset token (for use by authController)
+   * Returns the plain token to be sent via email
+   */
   async createPasswordResetToken(userId: string): Promise<string> {
-    // Cleanup expired tokens first
-    await settingsRepository.cleanupExpiredTokens();
-
-    const resetToken = this.generateResetToken();
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-
-    await settingsRepository.createPasswordResetToken({
+    const { token } = await passwordResetRepository.createToken(
       userId,
-      token: resetToken,
-      expiresAt,
-      isUsed: false,
-    });
-
-    return resetToken;
+      this.TOKEN_EXPIRY_MINUTES
+    );
+    return token;
   }
 
-  async validateResetToken(token: string): Promise<{
+  /**
+   * Validate a reset token
+   */
+  async validateToken(token: string): Promise<{
     valid: boolean;
-    userId?: string;
+    email?: string;
     error?: string;
   }> {
-    const resetToken = await settingsRepository.getPasswordResetToken(token);
-
-    if (!resetToken) {
-      return { valid: false, error: "Invalid or expired reset token" };
+    const result = await passwordResetRepository.validateToken(token);
+    
+    if (!result.valid) {
+      return { valid: false, error: result.error };
     }
 
-    if (resetToken.expiresAt < new Date()) {
-      return { valid: false, error: "Reset token has expired" };
-    }
-
-    if (resetToken.isUsed) {
-      return { valid: false, error: "Reset token has already been used" };
-    }
-
-    return { valid: true, userId: resetToken.userId };
+    return {
+      valid: true,
+      email: result.user?.email,
+    };
   }
 
+  /**
+   * Reset password using a token
+   */
   async resetPassword(
     token: string,
     newPassword: string
-  ): Promise<{ success: boolean; error?: string }> {
-    const validation = await this.validateResetToken(token);
-    if (!validation.valid) {
-      return { success: false, error: validation.error };
+  ): Promise<PasswordResetResult> {
+    try {
+      // Validate password strength
+      if (newPassword.length < 6) {
+        return { success: false, error: "Password must be at least 6 characters" };
+      }
+
+      // Validate token
+      const tokenResult = await passwordResetRepository.validateToken(token);
+      
+      if (!tokenResult.valid || !tokenResult.user || !tokenResult.tokenRecord) {
+        return { success: false, error: tokenResult.error || "Invalid or expired reset link" };
+      }
+
+      const { user, tokenRecord } = tokenResult;
+
+      // Hash new password
+      const hashedPassword = await bcrypt.hash(newPassword, this.SALT_ROUNDS);
+
+      // Update user's password
+      const updated = await userRepository.updateUser(user.id, {
+        password: hashedPassword,
+      });
+
+      if (!updated) {
+        return { success: false, error: "Failed to update password" };
+      }
+
+      // Mark token as used
+      await passwordResetRepository.markTokenUsed(tokenRecord.id);
+
+      // Invalidate any other tokens for this user
+      await passwordResetRepository.invalidateUserTokens(user.id);
+
+      console.log(`Password reset successful for user ${user.id}`);
+
+      return { success: true };
+    } catch (error) {
+      console.error("Password reset error:", error);
+      return { success: false, error: "Failed to reset password" };
     }
-
-    const user = await userRepository.getUser(validation.userId!);
-    if (!user) {
-      return { success: false, error: "User not found" };
-    }
-
-    // Hash new password
-    const hashedPassword = await bcrypt.hash(newPassword, 12);
-
-    // Update user password
-    await userRepository.updateUser(user.id, {
-      password: hashedPassword,
-      updatedAt: new Date(),
-    });
-
-    // Mark token as used
-    const resetToken = await settingsRepository.getPasswordResetToken(token);
-    if (resetToken) {
-      await settingsRepository.markTokenAsUsed(resetToken.id);
-    }
-
-    console.log(`Password successfully reset for user: ${user.email} (ID: ${user.id})`);
-
-    return { success: true };
   }
 
-  async cleanupExpiredTokens(): Promise<void> {
-    return settingsRepository.cleanupExpiredTokens();
+  /**
+   * Clean up expired tokens (for scheduled job)
+   */
+  async cleanupExpiredTokens(): Promise<number> {
+    return passwordResetRepository.cleanupExpiredTokens();
   }
 }
 

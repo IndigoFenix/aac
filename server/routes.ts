@@ -18,6 +18,7 @@ import {
   slpClinicalController,
   programController,
   recordsController,
+  instituteController
 } from "./controllers";
 
 import {
@@ -32,6 +33,7 @@ import {
 import { setupUserAuth } from "./userAuth"; // Keep existing passport setup
 import { interpretationRepository, apiProviderRepository } from "./repositories";
 import { chatController } from "./controllers/chatController";
+import { reportController } from "./controllers/reportController";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -66,8 +68,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/auth/register", (req, res) => authController.register(req, res));
   app.post("/auth/login", (req, res, next) => authController.login(req, res, next));
   app.post("/auth/logout", (req, res) => authController.logout(req, res));
-  app.post("/auth/forgot-password", (req, res) => authController.forgotPassword(req, res));
-  app.post("/auth/reset-password", (req, res) => authController.resetPassword(req, res));
+  app.post("/auth/reset-password", (req, res) => authController.resetPassword(req, res));// Request password reset (sends email)
+  app.post("/auth/forgot-password", (req, res) =>
+    authController.forgotPassword(req, res)
+  );
+  // Validate reset token (check if valid before showing form)
+  app.get("/auth/reset-password/:token", (req, res) => authController.validateResetToken(req, res));
+  
   app.get("/auth/user", optionalAuth, (req, res) => authController.getCurrentUser(req, res));
 
   // Google OAuth routes (only if credentials are configured)
@@ -95,6 +102,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/profile/update", requireAuth, (req, res) =>
     profileController.updateProfile(req, res)
   );
+
+  // ============= INSTITUTE ROUTES =============
+  
+  // Institute CRUD
+  app.get("/api/institutes", requireAuth, (req, res) =>
+    instituteController.getInstitutes(req, res)
+  );
+  app.get("/api/institutes/:id", requireAuth, (req, res) =>
+    instituteController.getInstitute(req, res)
+  );
+  app.post("/api/institutes", requireAuth, (req, res) =>
+    instituteController.createInstitute(req, res)
+  );
+  app.patch("/api/institutes/:id", requireAuth, (req, res) =>
+    instituteController.updateInstitute(req, res)
+  );
+  app.delete("/api/institutes/:id", requireAuth, (req, res) =>
+    instituteController.deleteInstitute(req, res)
+  );
+  
+  // Institute Members
+  app.get("/api/institutes/:id/members", requireAuth, (req, res) =>
+    instituteController.getMembers(req, res)
+  );
+  app.patch("/api/institutes/:id/members/:userId", requireAuth, (req, res) =>
+    instituteController.updateMember(req, res)
+  );
+  app.delete("/api/institutes/:id/members/:userId", requireAuth, (req, res) =>
+    instituteController.removeMember(req, res)
+  );
+  app.post("/api/institutes/:id/leave", requireAuth, (req, res) =>
+    instituteController.leaveInstitute(req, res)
+  );
+  
+  // Institute Invites (admin actions)
+  app.post("/api/institutes/:id/invites", requireAuth, (req, res) =>
+    instituteController.sendInvite(req, res)
+  );
+  app.get("/api/institutes/:id/invites", requireAuth, (req, res) =>
+    instituteController.getInvites(req, res)
+  );
+  app.delete("/api/institutes/:id/invites/:inviteId", requireAuth, (req, res) =>
+    instituteController.cancelInvite(req, res)
+  );
+  app.post("/api/institutes/:id/invites/:inviteId/resend", requireAuth, (req, res) =>
+    instituteController.resendInvite(req, res)
+  );
+  
+  // User's Pending Invites
+  app.get("/api/invites/pending", requireAuth, (req, res) =>
+    instituteController.getPendingInvites(req, res)
+  );
+  app.post("/api/invites/:inviteId/accept", requireAuth, (req, res) =>
+    instituteController.acceptInvite(req, res)
+  );
+  app.post("/api/invites/:inviteId/decline", requireAuth, (req, res) =>
+    instituteController.declineInvite(req, res)
+  );
+  
+  // Public Invite Routes (for signup via invite link)
+  app.get("/api/invites/token/:token", (req, res) =>
+    instituteController.getInviteByToken(req, res)
+  );
+  app.post("/api/invites/token/:token/accept", requireAuth, (req, res) =>
+    instituteController.acceptInviteByToken(req, res)
+  );
+  app.post("/api/invites/token/:token/register", (req, res) =>
+    instituteController.registerWithInvite(req, res)
+  );
+  
 
   // ============= IEP/TALA PROGRAM ROUTES =============
   
@@ -280,105 +357,223 @@ export async function registerRoutes(app: Express): Promise<Server> {
     studentController.deleteStudent(req, res)
   );
 
-  // ============= MEDICAL RECORDS ROUTES =============
-  
-  // Get medical record for a student
-  app.get("/api/students/:studentId/medical-record", requireAuth, (req, res) =>
-    recordsController.getMedicalRecord(req, res)
-  );
-  
-  // Create medical record for a student
-  app.post("/api/students/:studentId/medical-record", requireAuth, (req, res) =>
-    recordsController.createMedicalRecord(req, res)
-  );
-  
-  // Update medical record
-  app.patch("/api/medical-records/:id", requireAuth, (req, res) =>
-    recordsController.updateMedicalRecord(req, res)
-  );
-  
-  // Delete medical record (admin only)
-  app.delete("/api/medical-records/:id", requireAuth, (req, res) =>
-    recordsController.deleteMedicalRecord(req, res)
+  // ==========================================================================
+  // COMPOSITE ENDPOINTS (must come before specific type endpoints)
+  // ==========================================================================
+
+  // Get all reports for a student
+  app.get(
+    "/api/students/:studentId/reports",
+    requireAuth,
+    (req, res) => reportController.getAllReports(req, res)
   );
 
-  // ============= FUNCTIONAL REPORTS ROUTES =============
-  
-  // Get functional reports for a student
-  app.get("/api/students/:studentId/functional-reports", requireAuth, (req, res) =>
-    recordsController.getFunctionalReports(req, res)
-  );
-  
-  // Get single functional report
-  app.get("/api/functional-reports/:id", requireAuth, (req, res) =>
-    recordsController.getFunctionalReport(req, res)
-  );
-  
-  // Create functional report
-  app.post("/api/students/:studentId/functional-reports", requireAuth, (req, res) =>
-    recordsController.createFunctionalReport(req, res)
-  );
-  
-  // Update functional report
-  app.patch("/api/functional-reports/:id", requireAuth, (req, res) =>
-    recordsController.updateFunctionalReport(req, res)
-  );
-  
-  // Submit functional report for review
-  app.post("/api/functional-reports/:id/submit", requireAuth, (req, res) =>
-    recordsController.submitFunctionalReport(req, res)
-  );
-  
-  // Finalize functional report
-  app.post("/api/functional-reports/:id/finalize", requireAuth, (req, res) =>
-    recordsController.finalizeFunctionalReport(req, res)
-  );
-  
-  // Delete functional report
-  app.delete("/api/functional-reports/:id", requireAuth, (req, res) =>
-    recordsController.deleteFunctionalReport(req, res)
+  // Get current (non-archived) reports for a student
+  app.get(
+    "/api/students/:studentId/reports/current",
+    requireAuth,
+    (req, res) => reportController.getCurrentReports(req, res)
   );
 
-  // ============= EDUCATIONAL REPORTS ROUTES =============
-  
-  // Get educational reports for a student
-  app.get("/api/students/:studentId/educational-reports", requireAuth, (req, res) =>
-    recordsController.getEducationalReports(req, res)
+  // ==========================================================================
+  // MEDICAL RECORD ENDPOINTS
+  // ==========================================================================
+
+  // Get all medical records for a student
+  app.get(
+    "/api/students/:studentId/reports/medical",
+    requireAuth,
+    (req, res) => reportController.getMedicalRecords(req, res)
   );
-  
-  // Get single educational report
-  app.get("/api/educational-reports/:id", requireAuth, (req, res) =>
-    recordsController.getEducationalReport(req, res)
+
+  // Get current medical record for a student
+  app.get(
+    "/api/students/:studentId/reports/medical/current",
+    requireAuth,
+    (req, res) => reportController.getCurrentMedicalRecord(req, res)
   );
-  
-  // Create educational report
-  app.post("/api/students/:studentId/educational-reports", requireAuth, (req, res) =>
-    recordsController.createEducationalReport(req, res)
+
+  // Get archived medical records for a student
+  app.get(
+    "/api/students/:studentId/reports/medical/archived",
+    requireAuth,
+    (req, res) => reportController.getArchivedMedicalRecords(req, res)
   );
-  
-  // Update educational report
-  app.patch("/api/educational-reports/:id", requireAuth, (req, res) =>
-    recordsController.updateEducationalReport(req, res)
+
+  // Create a new medical record for a student
+  app.post(
+    "/api/students/:studentId/reports/medical",
+    requireAuth,
+    (req, res) => reportController.createMedicalRecord(req, res)
   );
-  
-  // Share educational report with guardians
-  app.post("/api/educational-reports/:id/share", requireAuth, (req, res) =>
-    recordsController.shareEducationalReport(req, res)
+
+  // Get a specific medical record by ID
+  app.get(
+    "/api/medical-records/:id",
+    requireAuth,
+    (req, res) => reportController.getMedicalRecordById(req, res)
   );
-  
-  // Acknowledge educational report (guardian)
-  app.post("/api/educational-reports/:id/acknowledge", requireAuth, (req, res) =>
-    recordsController.acknowledgeEducationalReport(req, res)
+
+  // Update a medical record
+  app.patch(
+    "/api/medical-records/:id",
+    requireAuth,
+    (req, res) => reportController.updateMedicalRecord(req, res)
   );
-  
-  // Finalize educational report
-  app.post("/api/educational-reports/:id/finalize", requireAuth, (req, res) =>
-    recordsController.finalizeEducationalReport(req, res)
+
+  // Finalize a medical record
+  app.post(
+    "/api/medical-records/:id/finalize",
+    requireAuth,
+    (req, res) => reportController.finalizeMedicalRecord(req, res)
   );
-  
-  // Delete educational report
-  app.delete("/api/educational-reports/:id", requireAuth, (req, res) =>
-    recordsController.deleteEducationalReport(req, res)
+
+  // Create a revision of a medical record
+  app.post(
+    "/api/medical-records/:id/revision",
+    requireAuth,
+    (req, res) => reportController.createMedicalRecordRevision(req, res)
+  );
+
+  // Delete a medical record (draft only)
+  app.delete(
+    "/api/medical-records/:id",
+    requireAuth,
+    (req, res) => reportController.deleteMedicalRecord(req, res)
+  );
+
+  // ==========================================================================
+  // FUNCTIONAL REPORT ENDPOINTS
+  // ==========================================================================
+
+  // Get all functional reports for a student
+  app.get(
+    "/api/students/:studentId/reports/functional",
+    requireAuth,
+    (req, res) => reportController.getFunctionalReports(req, res)
+  );
+
+  // Get current functional report for a student
+  app.get(
+    "/api/students/:studentId/reports/functional/current",
+    requireAuth,
+    (req, res) => reportController.getCurrentFunctionalReport(req, res)
+  );
+
+  // Get archived functional reports for a student
+  app.get(
+    "/api/students/:studentId/reports/functional/archived",
+    requireAuth,
+    (req, res) => reportController.getArchivedFunctionalReports(req, res)
+  );
+
+  // Create a new functional report for a student
+  app.post(
+    "/api/students/:studentId/reports/functional",
+    requireAuth,
+    (req, res) => reportController.createFunctionalReport(req, res)
+  );
+
+  // Get a specific functional report by ID
+  app.get(
+    "/api/functional-reports/:id",
+    requireAuth,
+    (req, res) => reportController.getFunctionalReportById(req, res)
+  );
+
+  // Update a functional report
+  app.patch(
+    "/api/functional-reports/:id",
+    requireAuth,
+    (req, res) => reportController.updateFunctionalReport(req, res)
+  );
+
+  // Finalize a functional report
+  app.post(
+    "/api/functional-reports/:id/finalize",
+    requireAuth,
+    (req, res) => reportController.finalizeFunctionalReport(req, res)
+  );
+
+  // Create a revision of a functional report
+  app.post(
+    "/api/functional-reports/:id/revision",
+    requireAuth,
+    (req, res) => reportController.createFunctionalReportRevision(req, res)
+  );
+
+  // Delete a functional report (draft only)
+  app.delete(
+    "/api/functional-reports/:id",
+    requireAuth,
+    (req, res) => reportController.deleteFunctionalReport(req, res)
+  );
+
+  // ==========================================================================
+  // EDUCATIONAL REPORT ENDPOINTS
+  // ==========================================================================
+
+  // Get all educational reports for a student
+  app.get(
+    "/api/students/:studentId/reports/educational",
+    requireAuth,
+    (req, res) => reportController.getEducationalReports(req, res)
+  );
+
+  // Get current educational report for a student
+  app.get(
+    "/api/students/:studentId/reports/educational/current",
+    requireAuth,
+    (req, res) => reportController.getCurrentEducationalReport(req, res)
+  );
+
+  // Get archived educational reports for a student
+  app.get(
+    "/api/students/:studentId/reports/educational/archived",
+    requireAuth,
+    (req, res) => reportController.getArchivedEducationalReports(req, res)
+  );
+
+  // Create a new educational report for a student
+  app.post(
+    "/api/students/:studentId/reports/educational",
+    requireAuth,
+    (req, res) => reportController.createEducationalReport(req, res)
+  );
+
+  // Get a specific educational report by ID
+  app.get(
+    "/api/educational-reports/:id",
+    requireAuth,
+    (req, res) => reportController.getEducationalReportById(req, res)
+  );
+
+  // Update an educational report
+  app.patch(
+    "/api/educational-reports/:id",
+    requireAuth,
+    (req, res) => reportController.updateEducationalReport(req, res)
+  );
+
+  // Finalize an educational report
+  app.post(
+    "/api/educational-reports/:id/finalize",
+    requireAuth,
+    (req, res) => reportController.finalizeEducationalReport(req, res)
+  );
+
+  // Create a revision of an educational report
+  app.post(
+    "/api/educational-reports/:id/revision",
+    requireAuth,
+    (req, res) => reportController.createEducationalReportRevision(req, res)
+  );
+
+  // Delete an educational report (draft only)
+  app.delete(
+    "/api/educational-reports/:id",
+    requireAuth,
+    (req, res) => reportController.deleteEducationalReport(req, res)
   );
 
   // ============= SAVED LOCATIONS ROUTES =============

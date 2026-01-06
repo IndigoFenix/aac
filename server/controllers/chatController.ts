@@ -1,12 +1,15 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { onMessage } from "../services/sessionService";
+import { FeatureType, onMessage } from "../services/sessionService";
+import { ChatPersona } from "@shared/schema";
 
 // Validation schemas
 const messageSchema = z.object({
   studentId: z.string().optional(),
   sessionId: z.string().optional(),
-  mode: z.enum(["chat", "boards", "interpret", "docuslp","overview", "students", "progress", "settings"]).optional(),
+  activeFeature: z.string().optional(),
+  persona: z.string().optional(),
+  featureContext: z.record(z.any()).optional(),
   messages: z
     .array(
       z.object({
@@ -49,14 +52,9 @@ export class ChatController {
     const startTime = Date.now();
     try {
       const userId = req.user!.id;
-      let { studentId, sessionId, mode, messages } = messageSchema.parse(req.body);
-      /* Temporary solution until we have proper mode management */
-      if (mode !== "boards"){
-        if (studentId) {
-          mode = "progress";
-        } else {
-          mode = "chat";
-        }
+      let { studentId, sessionId, activeFeature, persona, messages, featureContext } = messageSchema.parse(req.body);
+      if (!persona) {
+        persona = "assistant";
       }
       const messagesWithTimestamp = messages?.map((msg) => ({
         ...msg,
@@ -66,8 +64,10 @@ export class ChatController {
         userId,
         studentId,
         sessionId,
-        mode,
+        activeFeature: activeFeature as FeatureType,
+        persona: persona as ChatPersona,
         messages: messagesWithTimestamp,
+        featureContext,
         replyType: "html"
       })
       res.json(response);

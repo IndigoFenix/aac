@@ -5,3 +5,5 @@ export { creditService, CreditService } from "./creditService";
 export { inviteCodeService, InviteCodeService } from "./inviteCodeService";
 export { passwordResetService, PasswordResetService } from "./passwordResetService";
 export { adminService, AdminService } from "./adminService";
+export { instituteService, InstituteService } from "./instituteService";
+export { reportService, ReportService } from "./reportService";

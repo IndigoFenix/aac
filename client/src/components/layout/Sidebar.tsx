@@ -25,13 +25,13 @@ import {
   ClipboardList,
   GraduationCap,
   ChevronRight,
+  Building2,
 } from 'lucide-react';
 import logoImage from '@assets/cliniaacian_logo.png';
 import { useAuth } from '@/hooks/useAuth';
 import { openUI } from '@/lib/uiEvents';
 import { cn } from '@/lib/utils';
-
-type FeatureType = 'chat' | 'interpret' | 'boards' | 'docuslp' | 'overview' | 'students' | 'progress' | 'settings';
+import { FeatureType } from '@shared/schema';
 
 type SidebarProps = {
   isCollapsed?: boolean;
@@ -48,33 +48,17 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
   // Core workspace items (original features)
   const coreWorkspaceItems = [
     {
-      icon: MessageSquarePlus,
-      labelKey: 'nav.interpret',
-      feature: 'interpret' as FeatureType,
-      testId: 'nav-interpret',
-    },
-    {
-      icon: FolderOpen,
-      labelKey: 'nav.boards',
-      feature: 'boards' as FeatureType,
-      testId: 'nav-boards',
-    },
-    {
-      icon: LayoutGrid,
-      labelKey: 'nav.docuslp',
-      feature: 'docuslp' as FeatureType,
-      testId: 'nav-docuslp',
-    },
-  ];
-
-  // Student management items
-  const studentManagementItems = [
-    {
       icon: BarChart3,
       labelKey: 'nav.overview',
       feature: 'overview' as FeatureType,
       testId: 'nav-overview',
       badge: undefined as string | undefined,
+    },
+    {
+      icon: Building2,
+      labelKey: 'nav.institute',
+      feature: 'institute' as FeatureType,
+      testId: 'nav-institute',
     },
     {
       icon: Users,
@@ -83,6 +67,24 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
       testId: 'nav-students',
       badge: students.length > 0 ? students.length.toString() : undefined,
     },
+  ];
+
+  // Student management items
+  const studentManagementItems = [
+    {
+      icon: MessageSquarePlus,
+      labelKey: 'nav.interpret',
+      feature: 'interpret' as FeatureType,
+      testId: 'nav-interpret',
+      disabled: !student, // Only enabled when a student is selected
+    },
+    {
+      icon: LayoutGrid,
+      labelKey: 'nav.boards',
+      feature: 'boards' as FeatureType,
+      testId: 'nav-boards',
+      disabled: !student, // Only enabled when a student is selected
+    },
     {
       icon: ClipboardList,
       labelKey: 'nav.progress',
@@ -90,6 +92,13 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
       testId: 'nav-progress',
       disabled: !student, // Only enabled when a student is selected
     },
+    {
+      icon: ClipboardList,
+      labelKey: 'nav.reports',
+      feature: 'reports' as FeatureType,
+      testId: 'nav-reports',
+      disabled: !student, // Only enabled when a student is selected
+    }
   ];
 
   const positionClasses = position === 'right' 
@@ -169,43 +178,17 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
         )}
       </div>
 
-      {/* User card */}
-      {!isCollapsed && user && (
-        <>
-          <div className="px-6 pb-4">
-            <div 
-              className="bg-card border border-card-border rounded-md p-4" 
-              data-testid="card-client-context"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                  <User className="w-5 h-5 text-primary" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-card-foreground">
-                    {user.fullName}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {t('header.active')}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-
       {/* Current Student Context */}
-      {!isCollapsed && student && (
+      {!isCollapsed && (
         <div className="px-6 pb-4">
           <div 
             className={cn(
               "bg-primary/5 border border-primary/20 rounded-md p-3 cursor-pointer hover:bg-primary/10 transition-colors",
               "group"
             )}
-            onClick={() => setActiveFeature('progress')}
+            onClick={() => {if (student) {setActiveFeature('progress')}}}
             data-testid="card-student-context"
-          >
+          > {student ? (
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center">
                 <GraduationCap className="w-4 h-4 text-primary" />
@@ -218,8 +201,22 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
                   {t('nav.currentStudent')}
                 </p>
               </div>
-              <ChevronRight className="w-4 h-4 text-primary/50 group-hover:text-primary transition-colors" />
             </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center">
+                <GraduationCap className="w-4 h-4 text-primary" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-primary">
+                  {t('nav.noStudentSelected')}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  ---
+                </p>
+              </div>
+            </div>
+          )}
           </div>
         </div>
       )}

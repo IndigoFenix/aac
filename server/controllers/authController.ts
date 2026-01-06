@@ -1,8 +1,10 @@
+// server/controllers/authController.ts
+// Complete auth controller with password reset functionality
+
 import type { Request, Response, NextFunction } from "express";
 import passport from "passport";
 import { userService, passwordResetService } from "../services";
 import { registerSchema, loginSchema } from "@shared/schema";
-import emailService from "../services/emailService";
 
 export class AuthController {
   async register(req: Request, res: Response): Promise<void> {
@@ -95,6 +97,10 @@ export class AuthController {
     });
   }
 
+  /**
+   * POST /auth/forgot-password
+   * Request a password reset email
+   */
   async forgotPassword(req: Request, res: Response): Promise<void> {
     try {
       const { email } = req.body;
@@ -107,43 +113,72 @@ export class AuthController {
         return;
       }
 
-      // Always return success for security reasons
+      // Get base URL from request
+      const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+      const host = req.headers["x-forwarded-host"] || req.get("host");
+      const baseUrl = `${protocol}://${host}`;
+
+      // Always return success for security reasons (don't reveal if email exists)
       res.json({
         success: true,
-        message:
-          "If an account with this email exists, a reset link has been sent",
+        message: "If an account with this email exists, a reset link has been sent",
       });
 
-      // Only send email if user actually exists
-      const user = await userService.getUserByEmail(email);
-      if (user) {
-        console.log(`Password reset requested for user: ${email} (ID: ${user.id})`);
-
-        const resetToken = await passwordResetService.createPasswordResetToken(
-          user.id
-        );
-
-        const emailSent = await emailService.sendPasswordResetEmail(
-          user.email,
-          resetToken,
-          user.firstName || user.fullName || undefined
-        );
-
-        if (emailSent) {
-          console.log(`Password reset email sent successfully to: ${email}`);
-        } else {
-          console.error(`Failed to send password reset email to: ${email}`);
-        }
-      }
+      // Process in background (already responded to user)
+      await passwordResetService.requestPasswordReset(email, baseUrl);
     } catch (error: any) {
       console.error("Forgot password error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Password reset request failed",
+      // Still return success for security
+      res.json({
+        success: true,
+        message: "If an account with this email exists, a reset link has been sent",
       });
     }
   }
 
+  /**
+   * GET /auth/reset-password/:token
+   * Validate a password reset token
+   */
+  async validateResetToken(req: Request, res: Response): Promise<void> {
+    try {
+      const { token } = req.params;
+
+      if (!token) {
+        res.status(400).json({
+          success: false,
+          message: "Token is required",
+        });
+        return;
+      }
+
+      const result = await passwordResetService.validateToken(token);
+
+      if (!result.valid) {
+        res.status(400).json({
+          success: false,
+          message: result.error || "Invalid or expired reset link",
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        email: result.email, // Show masked email for user confirmation
+      });
+    } catch (error: any) {
+      console.error("Validate reset token error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to validate reset link",
+      });
+    }
+  }
+
+  /**
+   * POST /auth/reset-password
+   * Reset password using a token
+   */
   async resetPassword(req: Request, res: Response): Promise<void> {
     try {
       const { token, newPassword } = req.body;
@@ -169,12 +204,12 @@ export class AuthController {
       if (result.success) {
         res.json({
           success: true,
-          message: "Password reset successful",
+          message: "Password reset successful. You can now log in with your new password.",
         });
       } else {
         res.status(400).json({
           success: false,
-          message: result.error,
+          message: result.error || "Password reset failed",
         });
       }
     } catch (error: any) {

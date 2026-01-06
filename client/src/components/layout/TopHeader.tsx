@@ -31,10 +31,14 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
         return t('nav.docuslp');
       case 'overview':
         return t('nav.overview');
+      case 'institute':
+        return t('nav.institute');
       case 'students':
         return t('nav.students');
       case 'progress':
         return t('nav.progress');
+      case 'reports':
+        return t('nav.reports');
       default:
         return t('header.title');
     }

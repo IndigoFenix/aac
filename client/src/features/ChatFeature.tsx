@@ -1,30 +1,31 @@
 // src/features/ChatFeature.tsx
-// Updated with mode switch button for popup mode and proper RTL support
+// Updated with persona selector buttons and proper RTL support
 
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { 
-  Bot, 
   Plus, 
   Settings2, 
   Mic, 
   Send, 
-  PanelRightClose,
-  Minimize2 
+  Minimize2,
+  Sparkles,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
-import { useChat } from '@/hooks/useChat';
+import { useChat, CHAT_PERSONAS } from '@/hooks/useChat';
 import { useStudent } from '@/hooks/useStudent';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useSharedState, useFeaturePanel } from '@/contexts/FeaturePanelContext';
-import { ChatMessage, ChatMessageContent } from '@shared/schema';
+import { ChatMessage, ChatMessageContent, ChatPersona } from '@shared/schema';
+import { PersonaIcon, getPersonaColorClasses } from '@/components/chat/PersonaIcon';
 import { cn } from '@/lib/utils';
 
 export function ChatFeature() {
   const [prompt, setPrompt] = useState('');
   const [isRecording, setIsRecording] = useState(false);
+  const [showPersonaSelector, setShowPersonaSelector] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -46,7 +47,10 @@ export function ChatFeature() {
     sendMessage, 
     isSending, 
     error,
-    startNewSession 
+    startNewSession,
+    persona,
+    setPersona,
+    getPersonaInfo
   } = useChat();
   
   const showWelcome = history.length === 0;
@@ -57,6 +61,9 @@ export function ChatFeature() {
   
   // Show mode switch only when there's an open panel and we're in expanded mode
   const showModeSwitch = isPanelOpen && chatMode === 'expanded' && !isFullScreenFeature;
+
+  // Current persona info
+  const currentPersonaInfo = getPersonaInfo(persona);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -128,6 +135,11 @@ export function ChatFeature() {
     setChatMode('popup');
   };
 
+  const handlePersonaChange = (newPersona: ChatPersona) => {
+    setPersona(newPersona);
+    setShowPersonaSelector(false);
+  };
+
   // Helper to extract display content from message
   const getMessageContent = (message: ChatMessage): string => {
     if (typeof message.content === 'string') {
@@ -160,6 +172,53 @@ export function ChatFeature() {
     return t('chat.placeholder');
   };
 
+  // Persona selector component
+  const PersonaSelector = useMemo(() => (
+    <div className="flex items-center gap-2 mb-4">
+      <span className="text-xs text-muted-foreground">{t('chat.selectPersona')}:</span>
+      <div className="flex gap-1 flex-wrap">
+        {CHAT_PERSONAS.map((p) => (
+          <Button
+            key={p.id}
+            size="sm"
+            variant={persona === p.id ? "default" : "outline"}
+            className={cn(
+              "h-8 gap-1.5 text-xs rounded-full transition-all",
+              persona === p.id && "ring-2 ring-offset-2 ring-primary"
+            )}
+            onClick={() => handlePersonaChange(p.id)}
+            title={t(p.descriptionKey)}
+          >
+            <PersonaIcon persona={p} size="sm" />
+            <span>{t(p.labelKey)}</span>
+          </Button>
+        ))}
+      </div>
+    </div>
+  ), [persona, t]);
+
+  // Current persona indicator (shows in chat header when conversation has started)
+  const PersonaIndicator = currentPersonaInfo && !showWelcome && (
+    <div 
+      className={cn(
+        "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs",
+        getPersonaColorClasses(currentPersonaInfo)
+      )}
+    >
+      <PersonaIcon persona={currentPersonaInfo} size="sm" />
+      <span>{t(currentPersonaInfo.labelKey)}</span>
+      <Button
+        size="icon"
+        variant="ghost"
+        className="h-5 w-5 rounded-full hover:bg-background/50"
+        onClick={() => setShowPersonaSelector(!showPersonaSelector)}
+        title={t('chat.changePersona')}
+      >
+        <Sparkles className="w-3 h-3" />
+      </Button>
+    </div>
+  );
+
   // Mode switch button component
   const ModeSwitchButton = showModeSwitch && (
     <Button
@@ -169,7 +228,6 @@ export function ChatFeature() {
         "absolute top-4 z-10 gap-2 rounded-full shadow-sm",
         "bg-background/80 backdrop-blur-sm hover:bg-background",
         "transition-all duration-200",
-        isRTL ? "right-4" : "left-4"
       )}
       onClick={handleSwitchToPopup}
       title={t('chat.switchToPopup')}
@@ -280,6 +338,11 @@ export function ChatFeature() {
               )}
             </div>
 
+            {/* Persona selector */}
+            <div className="flex justify-center">
+              {PersonaSelector}
+            </div>
+
             {/* Input bar */}
             <div className="space-y-4">
               {InputBar}
@@ -321,6 +384,29 @@ export function ChatFeature() {
       ) : (
         /* Chat conversation view */
         <>
+          {/* Header with persona indicator */}
+          <div className="flex-shrink-0 border-b border-border px-6 py-3 flex items-center justify-between">
+            {PersonaIndicator}
+            
+            {/* Inline persona selector when toggled */}
+            {showPersonaSelector && (
+              <div className="flex gap-1 ms-auto">
+                {CHAT_PERSONAS.map((p) => (
+                  <Button
+                    key={p.id}
+                    size="sm"
+                    variant={persona === p.id ? "default" : "ghost"}
+                    className="h-7 gap-1 text-xs rounded-full"
+                    onClick={() => handlePersonaChange(p.id)}
+                    title={t(p.descriptionKey)}
+                  >
+                    <PersonaIcon persona={p} size="sm" />
+                  </Button>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Scrollable messages area */}
           <div 
             ref={scrollAreaRef}
@@ -339,8 +425,8 @@ export function ChatFeature() {
                 >
                   {message.role === 'assistant' && (
                     <Avatar className="w-8 h-8 mt-1 flex-shrink-0">
-                      <AvatarFallback className="bg-primary/10">
-                        <Bot className="w-4 h-4 text-primary" />
+                      <AvatarFallback className={cn("bg-primary/10", currentPersonaInfo && getPersonaColorClasses(currentPersonaInfo))}>
+                        <PersonaIcon persona={persona} size="md" />
                       </AvatarFallback>
                     </Avatar>
                   )}
@@ -382,8 +468,8 @@ export function ChatFeature() {
                   data-testid="typing-indicator"
                 >
                   <Avatar className="w-8 h-8 mt-1 flex-shrink-0">
-                    <AvatarFallback className="bg-primary/10">
-                      <Bot className="w-4 h-4 text-primary" />
+                    <AvatarFallback className={cn("bg-primary/10", currentPersonaInfo && getPersonaColorClasses(currentPersonaInfo))}>
+                      <PersonaIcon persona={persona} size="md" />
                     </AvatarFallback>
                   </Avatar>
                   <div className="max-w-2xl">

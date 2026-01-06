@@ -24,11 +24,14 @@ import {
   type InsertChatSession,
   type ChatState,
   type ChatMessage,
-  type ChatMode,
+  type FeatureType,
   type AgentMemoryField,
   type Topic,
   MessageResponse,
   BoardGrid,
+  Institute,
+  InstituteStudent,
+  ChatPersona,
 } from "@shared/schema";
 import { ChatMessageManager, AgentTemplate } from "./chat/chat-handler";
 import { AgentLike } from "./chat/prompt-kit";
@@ -41,11 +44,21 @@ import {
   ProgressModeManager,
   createProgressModeManager,
   injectProgressModeContext,
-  PROGRESS_AGENT_CONFIG,
-  getProgressMemoryFields,
+  getReportPermissionsFromRights,
+  buildProgressSystemPrompt,
 } from "./progress-mode-integration";
+import {
+  BOARD_SYSTEM_PROMPT,
+  getSystemPrompt,
+} from "./system-prompts";
 
-import { deserializeLoadState, processMemoryToolWithDB, serializeLoadState, type AgentMemoryFieldWithDB } from "./chat/memory-db-bridge";
+import { 
+  createMemoryLoadState,
+  deserializeLoadState, 
+  processMemoryToolWithDB, 
+  serializeLoadState, 
+  type AgentMemoryFieldWithDB 
+} from "./chat/memory-db-bridge";
 import { createDBMemoryProcessor, MemoryProcessor } from "./chat/tool-router";
 // ============================================================================
 // AGENT TEMPLATES (Mode-based, stored locally)
@@ -182,168 +195,6 @@ export const MASTER_MEMORY_FIELDS: AgentMemoryField[] = [
     items: {
       id: "Note",
       type: "string"
-    }
-  },
-  // === SENSITIVE FIELDS BELOW (These will be removed and separated into the database. They are included only for the demo.)===
-  /*
-  Medical Records:	Primary Diagnosis, Co-morbidities, Medications, Birth Date, ID Number, Safety Alerts (Allergies, Seizures, Cardiac issues).
-  Functional Reports: Mobility, ADL Status (Eating, Toileting, Dressing), Sensory Profile (Hypersensitivity), Safety Risks (Choking, Fall risk).
-  Educational Reports: Communication Mode, Receptive Language, Assistive Tools (AAC), Reinforcers/Interests, Preferred Activities, Behavioral Strategies.
-  */
-  {
-    id: "Student_Medical",
-    type: "object",
-    title: "Medical Information",
-    description: "Medical information (sensitive)",
-    opened: false,
-    properties: {
-      primaryDiagnosis: {
-        id: "primaryDiagnosis",
-        type: "string",
-        title: "Primary Diagnosis",
-        description: "The student's primary medical diagnosis",
-      },
-      coMorbidities: {
-        id: "coMorbidities",
-        type: "array",
-        title: "Co-morbidities",
-        description: "List of co-morbid medical conditions",
-        items: { id: "Condition", type: "string" },
-      },
-      medications: {
-        id: "medications",
-        type: "array",
-        title: "Medications",
-        description: "List of current medications",
-        items: { id: "Medication", type: "string" },
-      },
-      birthDate: {
-        id: "birthDate",
-        type: "string",
-        format: "date",
-        title: "Birth Date",
-        description: "The student's date of birth",
-      },
-      idNumber: {
-        id: "idNumber",
-        type: "string",
-        title: "ID Number",
-        description: "Student identification number",
-      },
-      safetyAlerts: {
-        id: "safetyAlerts",
-        type: "object",
-        title: "Safety Alerts",
-        description: "Important safety alerts (allergies, seizures, cardiac issues)",
-        properties: {
-          allergies: {
-            id: "allergies",
-            type: "array",
-            title: "Allergies",
-            items: { id: "Allergy", type: "string" },
-          },
-          seizures: {
-            id: "seizures",
-            type: "string",
-            title: "Seizure Information",
-            description: "Details about seizure types and management",
-          },
-          cardiacIssues: {
-            id: "cardiacIssues",
-            type: "string",
-            title: "Cardiac Issues",
-            description: "Details about any cardiac conditions",
-          },
-        },
-      },
-    }
-  },
-  {
-    id: "Student_FunctionalReports",
-    type: "object",
-    title: "Functional Reports",
-    description: "Functional assessment reports (sensitive)",
-    opened: false,
-    properties: {
-      mobility: {
-        id: "mobility",
-        type: "string",
-        title: "Mobility",
-        description: "Student's mobility status",
-      },
-      adlStatus: {
-        id: "adlStatus",
-        type: "object",
-        title: "ADL Status",
-        description: "Activities of Daily Living status",
-        properties: {
-          eating: { id: "eating", type: "string", title: "Eating" },
-          toileting: { id: "toileting", type: "string", title: "Toileting" },
-          dressing: { id: "dressing", type: "string", title: "Dressing" },
-        },
-      },
-      sensoryProfile: {
-        id: "sensoryProfile",
-        type: "string",
-        title: "Sensory Profile",
-        description: "Sensory processing profile (e.g., hypersensitivity)",
-      },
-      safetyRisks: {
-        id: "safetyRisks",
-        type: "array",
-        title: "Safety Risks",
-        description: "Identified safety risks (choking, fall risk)",
-        items: { id: "Risk", type: "string" },
-      },
-    }
-  },
-  {
-    id: "Student_EducationalReports",
-    type: "object",
-    title: "Educational Reports",
-    description: "Educational assessment reports (sensitive)",
-    opened: false,
-    properties: {
-      communicationMode: {
-        id: "communicationMode",
-        type: "string",
-        title: "Communication Mode",
-        description: "Student's mode of communication",
-      },
-      receptiveLanguage: {
-        id: "receptiveLanguage",
-        type: "string",
-        title: "Receptive Language",
-        description: "Student's receptive language abilities",
-      },
-      assistiveTools: {
-        id: "assistiveTools",
-        type: "array",
-        title: "Assistive Tools",
-        description: "List of assistive tools used (AAC devices)",
-        items: { id: "Tool", type: "string" },
-      },
-      reinforcersInterests: {
-        id: "reinforcersInterests",
-        type: "array",
-        title: "Reinforcers/Interests",
-        description: "Effective reinforcers and interests",
-        items: { id: "Item", type: "string" },
-      },
-      preferredActivities: {
-        id: "preferredActivities",
-        type: "array",
-        title: "Preferred Activities",
-        description: "Activities the student prefers",
-        items: { id: "Activity", type: "string" },
-      },
-      behavioralStrategies: {
-        id: "behavioralStrategies",
-        type: "array",
-        title: "Behavioral Strategies",
-        description: "Effective behavioral strategies used with the student",
-        items: { id: "Strategy", type: "string" },
-      },
     }
   },
   // === Relationship fields (prefixed with Relationship_) ===
@@ -536,189 +387,19 @@ const BOARD_MEMORY_FIELD: AgentMemoryField = {
 } as AgentMemoryField;
 
 // ============================================================================
-// BOARD MODE PROMPTS
-// ============================================================================
-
-const BOARD_SYSTEM_PROMPT = `You are an expert AAC (Augmentative and Alternative Communication) board designer.
-
-## Board Structure
-
-The board is stored at /Context_Board with this structure:
-- name: Board name
-- grid: { rows, cols }
-- currentPageId: Which page is active
-- pages: Array of pages, each containing:
-  - id, name
-  - buttons: Array of buttons with id, row, col, label, spokenText, color, iconRef, action
-
-## Operations
-
-### Initialize/replace board:
-\`\`\`
-manageMemory({ ops: [{ action: "set", path: "/Context_Board", value: {
-  name: "My Board",
-  grid: { rows: 3, cols: 3 },
-  currentPageId: "page-main",
-  pages: [{
-    id: "page-main",
-    name: "Main",
-    buttons: [
-      { id: "btn-1", row: 0, col: 0, label: "Hello", spokenText: "Hello!", color: "#3B82F6", iconRef: "fas fa-hand-wave", action: { type: "speak", text: "Hello!" } }
-    ]
-  }]
-}}]})
-\`\`\`
-
-### View pages/buttons:
-\`\`\`
-manageMemory({ ops: [{ action: "view", path: "/Context_Board/pages/0/buttons" }]})
-\`\`\`
-
-### Edit a button property:
-\`\`\`
-manageMemory({ ops: [{ action: "set", path: "/Context_Board/pages/0/buttons/0/label", value: "Hi" }]})
-\`\`\`
-
-### Delete a button:
-\`\`\`
-manageMemory({ ops: [{ action: "delete", path: "/Context_Board/pages/0/buttons/0" }]})
-\`\`\`
-
-### Add a button (set at next index):
-\`\`\`
-manageMemory({ ops: [{ action: "set", path: "/Context_Board/pages/0/buttons/2", value: {
-  id: "btn-new", row: 1, col: 0, label: "New", spokenText: "New button", color: "#F59E0B", iconRef: "fas fa-plus", action: { type: "speak", text: "New button" }
-}}]})
-\`\`\`
-
-## Button Guidelines
-
-**Labels:** 1-3 words | **Spoken Text:** Max 8 words | **IDs:** btn-{name}-{n}
-
-**Colors:** Blue #3B82F6 (needs), Amber #F59E0B (emotions), Pink #EC4899 (people), Yellow #EAB308 (activities), Gray #6B7280 (objects), Green #059669 (yes), Red #DC2626 (no)
-
-**Icons:** FontAwesome classes (fas fa-smile, fas fa-home, etc.)
-
-**Actions:** { type: "speak", text: "..." } or { type: "link", toPageId: "page-id" }
-
-## General Guidelines (follow these rules unless specified otherwise)
-- When creating multiple boards, if there is no main/home page, create one.
-- If a main page exists, create boards with a back button to return to main. The back button should be at row 0, col 0.
-- Populate new boards with relevant buttons based on the topic.
-
-When creating/modifying boards, use manageMemory and explain your changes.`;
-
-const BOARD_CREATION_PROMPT = `You are starting with a new communication board. The user will tell you what kind of board they want to create.
-
-If no board exists yet, you should:
-1. Ask clarifying questions about the student's needs
-2. Create an appropriate board structure
-3. Add relevant buttons based on the topic
-
-Remember to view the board structure first before making changes.`;
-
-// ============================================================================
 // AGENT TEMPLATES
 // ============================================================================
 
-// Agent templates for each mode
-const AGENT_TEMPLATES: Record<ChatMode, LocalAgentTemplate> = {
-  chat: {
-    name: "CliniAACian Assistant",
-    corePrompt: `You are CliniAACian, a helpful AI assistant for AAC (Augmentative and Alternative Communication) professionals and caregivers.
-
-You have access to information about the student you're helping with. Use the memory system to store and retrieve important information about them.
-You should not have access to the student's name or personally identifiable information unless explicitly provided in the conversation.
-Refer to the student using neutral terms like "the student" or "your student".
-
-Be warm, supportive, and knowledgeable about AAC practices. Help users with questions about:
-- Communication strategies
-- AAC device usage and setup
-- Supporting students in daily activities
-- Tracking progress and milestones
-- Understanding the student's needs and preferences
-
-Always be respectful when discussing the student and remember that caregivers and professionals are working hard to support communication access.`,
-    greeting: "Hello! I'm CliniAACian, your AAC assistant. How can I help you today?",
-    intelligence: 2,
-    memory: 2,
-    memoryFields: [...MASTER_MEMORY_FIELDS],
-    tools: {},
-    library: [],
-  },
-  boards: {
-    name: "Board Generator",
-    corePrompt: BOARD_SYSTEM_PROMPT,
-    greeting: "Hello! I can help you create and modify AAC communication boards. What would you like to build?\n\nYou can:\n- Create a new board for a specific topic or situation\n- Modify an existing board (add, edit, or remove buttons)\n- Get suggestions for improving your board layout",
-    intelligence: 2,
-    memory: 2,
-    memoryFields: [...MASTER_MEMORY_FIELDS, BOARD_MEMORY_FIELD],
-    tools: {},
-    library: [],
-  },
-  interpret: {
-    name: "Interpretation Assistant", 
-    corePrompt: "You are an AAC interpretation assistant. Help interpret and understand student communications.",
-    greeting: "Hello! I can help interpret AAC communications. What would you like me to help with?",
-    intelligence: 2,
-    memory: 2,
-    memoryFields: [...MASTER_MEMORY_FIELDS],
-    tools: {},
-    library: [],
-  },
-  docuslp: {
-    name: "DocuSLP Assistant", 
-    corePrompt: "You are a DocuSLP assistant for students. Help document speech-language pathology sessions.",
-    greeting: "Hello! I can help document SLP sessions for students. What would you like to document?",
-    intelligence: 2,
-    memory: 2,
-    memoryFields: [...MASTER_MEMORY_FIELDS],
-    tools: {},
-    library: [],
-  },
-  overview: {
-    name: "Overview Assistant",
-    corePrompt: "You are an overview assistant. Help users understand and navigate the CliniAACian system.",
-    greeting: "Hello! How can I help you navigate the system?",
-    intelligence: 1,
-    memory: 1,
-    memoryFields: [],
-    tools: {},
-    library: [],
-  },
-  students: {
-    name: "Student Management Assistant",
-    corePrompt: "You are a student management assistant. Help users manage student profiles and information.",
-    greeting: "Hello! How can I help you manage student profiles?",
-    intelligence: 1,
-    memory: 1,
-    memoryFields: [...MASTER_MEMORY_FIELDS],
-    tools: {},
-    library: [],
-  },
-  progress: {
-    name: PROGRESS_AGENT_CONFIG.name,
-    corePrompt: PROGRESS_AGENT_CONFIG.corePrompt,
-    greeting: PROGRESS_AGENT_CONFIG.greeting,
-    intelligence: PROGRESS_AGENT_CONFIG.intelligence,
-    memory: PROGRESS_AGENT_CONFIG.memory,
-    // Note: memoryFields will be set dynamically in getMessageManager
-    // because it includes DB operations that depend on context
-    memoryFields: [...MASTER_MEMORY_FIELDS],
-    tools: {},
-    library: [],
-  },
-  settings: {
-    name: "Settings Assistant",
-    corePrompt: "You are a settings assistant. Help users configure their CliniAACian preferences.",
-    greeting: "Hello! How can I help you with settings?",
-    intelligence: 1,
-    memory: 1,
-    memoryFields: [],
-    tools: {},
-    library: [],
-  },
-};
+const AGENT_TEMPLATE_BASE: LocalAgentTemplate = {
+  name: "CliniAACian Assistant",
+  corePrompt: `You are CliniAACian, a helpful AI assistant for AAC (Augmentative and Alternative Communication) professionals and caregivers.`,
+  greeting: "Hello! I'm CliniAACian, your AAC assistant. How can I help you today?",
+  intelligence: 2,
+  memory: 2,
+  memoryFields: [...MASTER_MEMORY_FIELDS],
+  tools: {},
+  library: [],
+}
 
 // ============================================================================
 // MEMORY CONTEXT
@@ -728,6 +409,7 @@ interface MemoryContext {
   user?: User;
   student?: Student;
   userStudent?: UserStudent;
+  institute?: Institute;
 }
 
 // Memory values are stored flat with prefixed keys
@@ -818,7 +500,7 @@ function extractMemoryForEntity(
  * Context data that can be passed for specific modes
  * This is session-scoped and injected into memoryValues
  */
-export interface ModeContext {
+export interface FeatureContext {
   /** Board context for "boards" mode */
   board?: {
     data: ParsedBoardData;
@@ -953,8 +635,9 @@ interface GetMessageManagerInput {
   userId?: string;
   studentId?: string;
   sessionId?: string;
-  mode?: ChatMode;
-  modeContext?: ModeContext;
+  feature?: FeatureType;
+  persona?: ChatPersona;
+  featureContext?: FeatureContext;
 }
 
 interface GetMessageManagerResult {
@@ -963,7 +646,7 @@ interface GetMessageManagerResult {
 }
 
 async function getMessageManager(input: GetMessageManagerInput): Promise<GetMessageManagerResult> {
-  const { userId, studentId, sessionId, mode = "chat", modeContext } = input;
+  const { userId, studentId, sessionId, featureContext, persona = "assistant", feature = "chat" } = input;
 
   // Validate input - at least one identifier must be provided
   if (!userId && !studentId && !sessionId) {
@@ -997,9 +680,10 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   let session: ChatSession | undefined;
   let chatState: ChatState;
   let log: ChatMessage[] = [];
-  let sessionMode: ChatMode = mode;
 
-  const template = AGENT_TEMPLATES[sessionMode];
+  const template = AGENT_TEMPLATE_BASE;
+  // Select core prompt based on conversation persona
+  template.corePrompt = getSystemPrompt(persona);
   
   const newChatState: ChatState = {
     history: [],
@@ -1027,7 +711,6 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     }
     chatState = (session.state as ChatState) || newChatState;
     log = (session.log as ChatMessage[]) || [];
-    sessionMode = session.chatMode as ChatMode;
   } else {
     // Create new session
     chatState = newChatState;
@@ -1035,7 +718,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
       userId: userId || null,
       studentId: studentId || null,
       userStudentId: context.userStudent?.id || null,
-      chatMode: sessionMode,
+      chatMode: feature,
       state: chatState,
       log: [],
       last: [],
@@ -1047,27 +730,55 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
 
   // === Progress Mode Setup ===
   let progressManager: ProgressModeManager | undefined;
-  let progressMemoryFields: AgentMemoryFieldWithDB[] = [];
+  let contextMemoryFields: AgentMemoryFieldWithDB[] = [];
 
-  if (mode === "progress" && context.student) {
-    // NEW: Deserialize existing load state from chatState if available
-    const existingLoadState = undefined; /*chatState.loadStateCache
-      ? deserializeLoadState(chatState.loadStateCache)
-      : undefined;*/
-
+  if (context.student) {
+    // Deserialize existing load state from chatState if available
+    const existingLoadState = undefined; // Or restore from chatState.loadStateCache
+    
+    // Determine report permissions based on user rights
+    // These could come from the userStudent relationship or be passed in featureContext
+    const hasMedicalRights = context.userStudent?.hasMedicalRights ?? false;
+    const hasEducationalRights = context.userStudent?.hasEducationalRights ?? false;
+    
+    // Convert rights to permissions
+    const reportPermissions = getReportPermissionsFromRights(
+      hasMedicalRights,
+      hasEducationalRights,
+      true // canEdit - set to false to make all reports read-only
+    );
+    
+    // Create the unified manager
     progressManager = await createProgressModeManager(
       context.student.id,
       context.user?.id,
-      modeContext?.progress?.programId,
+      featureContext?.progress?.programId,
       MASTER_MEMORY_FIELDS as AgentMemoryFieldWithDB[],
-      existingLoadState  // NEW: Pass existing load state
+      existingLoadState,
+      context.institute?.id, // instituteId for medical records filtering
+      reportPermissions
     );
     
-    // Get memory fields with DB operations
-    progressMemoryFields = progressManager.getMemoryFields();
+    // Get memory fields (includes both program and reports based on permissions)
+    contextMemoryFields.push(...progressManager.getMemoryFields());
     
-    // Update template with dynamic memory fields
-    template.memoryFields = progressMemoryFields as AgentMemoryField[];
+    // Update template with dynamic configuration
+    const additionalPrompt = buildProgressSystemPrompt(reportPermissions);
+    template.corePrompt = template.corePrompt + additionalPrompt;
+    template.memoryFields = contextMemoryFields as AgentMemoryField[];
+  }
+
+  // === Board Mode Setup ===
+  // Add board memory field to template.memoryFields when in boards mode
+  if (feature === 'boards') {
+    if (featureContext?.board) {
+      const boardPrompt = BOARD_SYSTEM_PROMPT;
+      template.corePrompt = `${template.corePrompt}\n${boardPrompt}`;
+    }
+    
+    // Add BOARD_MEMORY_FIELD to contextMemoryFields for prompt rendering
+    contextMemoryFields.push(BOARD_MEMORY_FIELD as AgentMemoryFieldWithDB);
+    template.memoryFields = contextMemoryFields as AgentMemoryField[];
   }
 
   // Build memory values from context
@@ -1078,7 +789,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   console.log('  - memoryValues:', JSON.stringify(memoryValues, null, 2));
 
   // For progress mode, load program data from database
-  if (mode === "progress" && progressManager) {
+  if (progressManager) {
       console.log('[DEBUG] Progress mode - calling injectProgressModeContext');
       console.log('  - studentId:', context.student?.id);
       console.log('  - baseContext:', progressManager.getBaseContext());
@@ -1098,7 +809,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   console.log('[getMessageManager] Initial memory values:', memoryValues);
 
   // Inject mode-specific context into memory values
-  injectModeContext(memoryValues, sessionMode, modeContext);
+  injectModeContext(memoryValues, feature, featureContext);
 
   // Create callbacks
   const onUpdateMemoryValues = async (newMemoryValues: FlatMemoryValues) => {
@@ -1159,7 +870,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
       prefix += progressManager.getStudentInfo();
       prefix += progressManager.getProgramSummary();
     }
-    return `${prefix}\n${corePrompt}`;
+    return `${corePrompt}\n${prefix}`;
   }
 
   const onUpdateChatState = async (state: ChatState, newLog?: ChatMessage[]) => {
@@ -1208,12 +919,14 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     }
   };
 
+  template.corePrompt = enrichCorePrompt(context, template.corePrompt);
+
   // Build agent-like object from template for ChatMessageManager
   const agentFromTemplate: AgentTemplate = {
-    id: `template-${sessionMode}`,
+    id: `template-${feature}`,
     accountId: context.user?.id || context.student?.id || "system",
     name: template.name,
-    corePrompt: enrichCorePrompt(context, template.corePrompt),
+    corePrompt: template.corePrompt,
     greeting: template.greeting,
     intelligence: template.intelligence,
     memory: template.memory,
@@ -1241,17 +954,41 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   // Create the memory processor based on mode
   let memoryProcessor: MemoryProcessor | undefined;
 
-  if (mode === "progress" && progressManager) {
+  if (progressManager) {
     // Create a load state ref (or get from progressManager)
     const loadStateRef = { current: progressManager.getLoadState() };
     
+    // Get the base fields from progressManager (these have DB ops attached)
+    let fieldsForProcessor = progressManager.getMemoryFields();
+    
+    // FIX: If in boards mode, add BOARD_MEMORY_FIELD to the processor's field list
+    // This allows the memory processor to resolve /Context_Board paths
+    if (feature === 'boards') {
+      fieldsForProcessor = [...fieldsForProcessor, BOARD_MEMORY_FIELD as AgentMemoryFieldWithDB];
+    }
+    
     memoryProcessor = createDBMemoryProcessor(
       processMemoryToolWithDB,
-      progressManager.getMemoryFields(),
+      fieldsForProcessor,
       { current: memoryValues },
       { current: chatState.memoryState },
       loadStateRef,
       progressManager.getBaseContext()
+    );
+  } else if (feature === 'boards') {
+    // Handle boards mode WITHOUT a student/progressManager (edge case)
+    const loadStateRef = { current: createMemoryLoadState() };
+    
+    memoryProcessor = createDBMemoryProcessor(
+      processMemoryToolWithDB,
+      [BOARD_MEMORY_FIELD as AgentMemoryFieldWithDB],
+      { current: memoryValues },
+      { current: chatState.memoryState },
+      loadStateRef,
+      {
+        studentId: context.student?.id,
+        userId: context.user?.id,
+      }
     );
   }
 
@@ -1283,19 +1020,19 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
  */
 function injectModeContext(
   memoryValues: FlatMemoryValues,
-  mode: ChatMode,
-  modeContext?: ModeContext
+  feature: FeatureType,
+  featureContext?: FeatureContext
 ): void {
-  console.log('[injectModeContext] Called with mode:', mode, 'modeContext:', !!modeContext);
+  console.log('[injectModeContext] Called with mode:', feature, 'featureContext:', !!featureContext);
   
-  if (!modeContext) {
-    console.log('[injectModeContext] No modeContext, returning');
+  if (!featureContext) {
+    console.log('[injectModeContext] No featureContext, returning');
     return;
   }
 
   // Board context for "boards" mode
-  if (mode === "boards" && modeContext.board) {
-    const { data, currentPageId, requestedGridSize } = modeContext.board;
+  if (feature === "boards" && featureContext.board) {
+    const { data, currentPageId, requestedGridSize } = featureContext.board;
     
     console.log('[injectModeContext] Board mode - data:', !!data, 'currentPageId:', currentPageId, 'requestedGridSize:', requestedGridSize);
     
@@ -1320,17 +1057,13 @@ function injectModeContext(
   }
 
   // Progress context for "progress" mode
-  if (mode === "progress") {
-    // Note: The actual data loading happens via progressManager.populateMemory()
-    // which is called separately. This just ensures the Context_Program key exists.
-    if (!memoryValues["Context_Program"]) {
-      memoryValues["Context_Program"] = null; // Will be populated from DB
-    }
+  if (!memoryValues["Context_Program"]) {
+    memoryValues["Context_Program"] = null; // Will be populated from DB
   }
 
   // Document context for future modes
-  if (modeContext.document) {
-    memoryValues["Context_Document"] = modeContext.document.data;
+  if (featureContext.document) {
+    memoryValues["Context_Document"] = featureContext.document.data;
   }
 }
 
@@ -1365,24 +1098,26 @@ export interface OnMessageInput {
   userId?: string;
   studentId?: string;
   sessionId?: string;
-  mode?: ChatMode;
+  activeFeature?: FeatureType;
+  persona?: ChatPersona;
   messages?: ChatMessage[];
   replyType?: "text" | "html";
   
   /** Mode-specific context data (boards, documents, etc.) */
-  modeContext?: ModeContext;
+  featureContext?: FeatureContext;
 }
 
 export async function onMessage(input: OnMessageInput): Promise<MessageResponse> {
   try {
-    const { userId, studentId, sessionId, mode, messages, replyType, modeContext } = input;
+    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext } = input;
 
     const { manager: messageManager, memoryValues } = await getMessageManager({
       userId,
       studentId,
       sessionId,
-      mode,
-      modeContext,
+      feature: activeFeature,
+      persona,
+      featureContext,
     });
 
     // Debug: Log what we injected
@@ -1480,9 +1215,8 @@ export async function getSessionInfo(sessionId: string): Promise<ChatSession | u
 // Export for use in other modules
 export { 
   getMessageManager, 
-  AGENT_TEMPLATES, 
   BOARD_MEMORY_FIELD,
-  type ChatMode, 
+  type FeatureType, 
   type MemoryContext,
   type ParsedBoardData,
   type BoardGrid,

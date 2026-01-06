@@ -1,4 +1,6 @@
 // src/pages/LoginPage.tsx
+// Updated Login page with working forgot password link
+
 import { useState, FormEvent } from 'react';
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
@@ -214,7 +216,7 @@ export default function LoginPage() {
                   {t('auth.loginTitle')}
                 </CardTitle>
                 <CardDescription>
-                  {t('auth.loginDescription')}
+                  {t('auth.loginSubtitle')}
                 </CardDescription>
               </CardHeader>
 
@@ -225,13 +227,13 @@ export default function LoginPage() {
                     <Input
                       id="email"
                       type="email"
-                      placeholder={t('auth.emailPlaceholder')}
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
+                      placeholder={t('auth.emailPlaceholder')}
                       required
-                      autoComplete="email"
                       dir="ltr"
                       disabled={isSubmitting}
+                      data-testid="input-email"
                     />
                   </div>
 
@@ -240,13 +242,13 @@ export default function LoginPage() {
                     <Input
                       id="password"
                       type="password"
-                      placeholder={t('auth.passwordPlaceholder')}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
+                      placeholder={t('auth.passwordPlaceholder')}
                       required
-                      autoComplete="current-password"
                       dir="ltr"
                       disabled={isSubmitting}
+                      data-testid="input-password"
                     />
                   </div>
 
@@ -254,6 +256,7 @@ export default function LoginPage() {
                     type="submit" 
                     className="w-full" 
                     disabled={isSubmitting}
+                    data-testid="button-login"
                   >
                     {isSubmitting ? (
                       <>
@@ -261,7 +264,7 @@ export default function LoginPage() {
                         {t('auth.loggingIn')}
                       </>
                     ) : (
-                      t('auth.loginWithEmail')
+                      t('auth.loginButton')
                     )}
                   </Button>
 
@@ -299,18 +302,11 @@ export default function LoginPage() {
                     {t('auth.noAccount')}
                   </button>
 
+                  {/* UPDATED: Now links to forgot password page */}
                   <button
                     type="button"
                     className="text-sm text-muted-foreground hover:text-primary hover:underline"
-                    onClick={() => {
-                      // TODO: Implement password recovery
-                      toast({
-                        title: t('auth.forgotPassword'),
-                        description: language === 'he' 
-                          ? 'תכונה זו תהיה זמינה בקרוב' 
-                          : 'This feature will be available soon',
-                      });
-                    }}
+                    onClick={() => setLocation('/forgot-password')}
                   >
                     {t('auth.forgotPassword')}
                   </button>

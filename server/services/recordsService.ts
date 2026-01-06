@@ -188,7 +188,7 @@ import {
       if (!existing) return undefined;
   
       // Only author or admin can edit
-      if (existing.authorUserId !== ctx.userId && ctx.role !== "admin") {
+      if (existing.userId !== ctx.userId && ctx.role !== "admin") {
         throw new Error("Only the author or an admin can edit this report");
       }
   
@@ -285,7 +285,7 @@ import {
       const existing = await educationalReportRepository.getById(id, ctx);
       if (!existing) return undefined;
   
-      if (existing.authorUserId !== ctx.userId && ctx.role !== "admin") {
+      if (existing.userId !== ctx.userId && ctx.role !== "admin") {
         throw new Error("Only the author or an admin can edit this report");
       }
   
