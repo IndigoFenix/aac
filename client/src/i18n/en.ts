@@ -39,6 +39,10 @@ export const en = {
     continue: "Continue",
     add: "Add",
     reset: "Reset",
+    view: "View",
+    create: "Create",
+    update: "Update",
+    none: "None",
   },
 
   // ============================================================================
@@ -924,21 +928,25 @@ export const en = {
   // Institute Panel
   institute: {
     title: 'Institutes',
-    subtitle: 'Manage your institutions',
-    noInstitutes: 'You are not a member of any institute yet',
-    createFirst: 'Create your first institute to get started',
+    subtitle: 'Manage your organization memberships',
+    noInstitutes: 'No institutes yet',
+    noInstitutesDesc: 'Create an institute to manage your organization.',
+    createFirst: 'Create Your First Institute',
     create: 'Create Institute',
     createNew: 'Create New Institute',
+    createDesc: 'Create a new institute to manage your organization.',
     edit: 'Edit Institute',
     delete: 'Delete Institute',
-    leave: 'Leave Institute',
+    leave: 'Leave',
 
     // Form fields
-    name: 'Institute Name',
+    name: 'Name',
     namePlaceholder: 'Enter institute name',
-    type: 'Type',
-    typeSchool: 'School',
-    typeHospital: 'Hospital',
+    typeLabel: 'Type',
+    type: {
+      school: 'School',
+      hospital: 'Hospital',
+    },
     description: 'Description',
     descriptionPlaceholder: 'Brief description of the institute',
     address: 'Address',
@@ -951,44 +959,88 @@ export const en = {
     websitePlaceholder: 'https://example.com',
 
     // Tabs
-    tabOverview: 'Overview',
-    tabMembers: 'Members',
-    tabInvites: 'Invites',
-    tabSettings: 'Settings',
+    tabs: {
+      overview: 'Overview',
+      members: 'Members',
+      invites: 'Invites',
+      settings: 'Settings',
+    },
+
+    // Details
+    details: 'Details',
 
     // Members
     members: 'Members',
+    membersCount: '{{count}} Members',
     noMembers: 'No members yet',
     member: 'Member',
     admin: 'Admin',
     owner: 'Owner',
     role: 'Role',
-    roleStaff: 'Staff',
-    roleTherapist: 'Therapist',
-    roleTeacher: 'Teacher',
-    roleAdmin: 'Admin',
+    roles: {
+      staff: 'Staff',
+      therapist: 'Therapist',
+      teacher: 'Teacher',
+      admin: 'Administrator',
+    },
     makeAdmin: 'Make Admin',
     removeAdmin: 'Remove Admin',
     removeMember: 'Remove Member',
     removeMemberConfirm: 'Are you sure you want to remove this member?',
     removeMemberConfirmDesc: 'They will lose access to this institute.',
 
+    // Invites
+    inviteMember: 'Invite Member',
+    inviteMemberDesc: 'Send an invitation to join this institute.',
+    sendInvite: 'Send Invite',
+    pendingInvites: 'Pending Invites',
+    noInvites: 'No invites sent yet',
+    grantAdmin: 'Grant Admin Access',
+    message: 'Message (Optional)',
+    messagePlaceholder: 'Add a personal message...',
+    willBeAdmin: 'Will be admin',
+    resend: 'Resend',
+    cancel: 'Cancel',
+
+    // Invite statuses
+    status: {
+      pending: 'Pending',
+      accepted: 'Accepted',
+      declined: 'Declined',
+      expired: 'Expired',
+      cancelled: 'Cancelled',
+    },
+
     // Settings
     dangerZone: 'Danger Zone',
-    deleteConfirm: 'Are you sure you want to delete this institute?',
-    deleteConfirmDesc: 'This action cannot be undone. All members will lose access.',
+    dangerZoneDesc: 'Irreversible actions for this institute',
+    deleteInstitute: 'Delete Institute',
+    confirmDelete: 'Delete Institute?',
+    confirmDeleteDesc: 'This action cannot be undone. All members will lose access.',
     deleteConfirmInput: 'Type the institute name to confirm',
-    leaveConfirm: 'Are you sure you want to leave this institute?',
-    leaveConfirmDesc: 'You will lose access to all institute resources.',
+    confirmLeave: 'Leave Institute?',
+    confirmLeaveDesc: 'You will lose access to this institute. You can rejoin if invited again.',
 
     // Messages
-    created: 'Institute created successfully',
-    updated: 'Institute updated successfully',
-    deleted: 'Institute deleted successfully',
-    left: 'You have left the institute',
-    memberRemoved: 'Member removed successfully',
-    memberUpdated: 'Member role updated',
+    error: 'Error',
+    nameRequired: 'Name is required',
+    emailRequired: 'Email is required',
+    created: 'Institute Created',
+    createdDesc: 'Your institute has been created successfully.',
+    updated: 'Institute Updated',
+    updatedDesc: 'Changes saved successfully.',
+    deleted: 'Institute Deleted',
+    deletedDesc: 'The institute has been deleted.',
+    left: 'Left Institute',
+    leftDesc: 'You have left the institute.',
+    memberRemoved: 'Member Removed',
+    memberUpdated: 'Member Updated',
     cannotRemoveLastAdmin: 'Cannot remove the last admin',
+    inviteSent: 'Invite Sent',
+    inviteSentDesc: 'The invite link has been copied to your clipboard.',
+    inviteCancelled: 'Invite Cancelled',
+    inviteResent: 'Invite Resent',
+    inviteLinkCopied: 'New invite link copied to clipboard.',
 
     // Actions
     switchTo: 'Switch to this institute',
@@ -1074,10 +1126,14 @@ export const en = {
 
   reports: {
     title: "Reports",
+    subtitle: "Reports for {{name}}",
     noStudent: "Please select a student to view reports",
+    noStudentSelected: "No Student Selected",
+    selectStudentFirst: "Please select a student to view their reports",
     loading: "Loading reports...",
     error: "Error loading reports",
     noReports: "No reports yet",
+    noAccess: "You don't have access to any reports for this student.",
     create: "Create Report",
     finalize: "Finalize",
     createRevision: "Create Revision",
@@ -1088,12 +1144,25 @@ export const en = {
     showArchived: "Show Archived",
     hideArchived: "Hide Archived",
 
+    // Timestamps
+    createdAt: "Created",
+    updatedAt: "Updated",
+    finalizedAt: "Finalized",
+
     status: {
       draft: "Draft",
       pending_review: "Pending Review",
       final: "Final",
       superseded: "Superseded"
     },
+
+    // Create confirmation
+    createConfirm: "This will create a new report. Any existing active report will be archived.",
+
+    // Finalize dialog
+    finalizeTitle: "Finalize Report",
+    finalizeWarning: "Once finalized, this report cannot be edited. You will need to create a new revision to make changes.",
+    finalizeCannotUndo: "This action cannot be undone.",
 
     confirmCreate: {
       title: "Create New Report",
@@ -1118,6 +1187,7 @@ export const en = {
       title: "Medical Record",
       description: "Medical diagnoses, allergies, medications, and alerts",
       create: "Create Medical Record",
+      createDesc: "Create a new medical record to document diagnoses, medications, and health alerts.",
       created: "Medical record created",
       createdDesc: "A new medical record has been created.",
       updated: "Medical record updated",
@@ -1125,24 +1195,34 @@ export const en = {
       finalizedDesc: "The medical record has been locked and cannot be edited.",
       revisionCreated: "Revision created",
       deleted: "Medical record deleted",
-      noRecord: "No medical record",
+      noReport: "No medical record",
       createFirst: "Create a medical record to document diagnoses, medications, and alerts.",
 
+      // Fields
       primaryDiagnosis: "Primary Diagnosis",
       primaryDiagnosisCode: "ICD Code",
       coMorbidities: "Co-morbidities",
       secondaryDiagnoses: "Secondary Diagnoses",
+      alerts: "Health Alerts",
       allergies: "Allergies",
       seizures: "Seizure Alerts",
       cardiac: "Cardiac Alerts",
       medications: "Medications",
-      medicalEquipment: "Medical Equipment"
+      medicalEquipment: "Medical Equipment",
+
+      // Placeholders
+      addAllergy: "Add allergy...",
+      addSeizureAlert: "Add seizure alert...",
+      addCardiacAlert: "Add cardiac alert...",
+      addMedication: "Add medication...",
+      addEquipment: "Add equipment...",
     },
 
     functional: {
       title: "Functional Report",
       description: "Mobility, ADLs, sensory profile, and safety risks",
       create: "Create Functional Report",
+      createDesc: "Create a new functional report to document mobility, daily living, and sensory information.",
       created: "Functional report created",
       createdDesc: "A new functional report has been created.",
       updated: "Functional report updated",
@@ -1153,16 +1233,24 @@ export const en = {
       noReport: "No functional report",
       createFirst: "Create a functional report to document mobility, daily living, and sensory information.",
 
+      // Fields
       mobilityStatus: "Mobility Status",
       adlStatus: "Activities of Daily Living",
       sensoryProfile: "Sensory Profile",
-      safetyRisks: "Safety Risks"
+      safetyRisks: "Safety Risks",
+
+      // Placeholders
+      addMobility: "Add mobility status...",
+      addAdl: "Add ADL status...",
+      addSensory: "Add sensory profile item...",
+      addRisk: "Add safety risk...",
     },
 
     educational: {
       title: "Educational Report",
       description: "Communication, technology, and behavioral strategies",
       create: "Create Educational Report",
+      createDesc: "Create a new educational report to document communication and learning strategies.",
       created: "Educational report created",
       createdDesc: "A new educational report has been created.",
       updated: "Educational report updated",
@@ -1173,12 +1261,21 @@ export const en = {
       noReport: "No educational report",
       createFirst: "Create an educational report to document communication and learning strategies.",
 
+      // Fields
       communicationMode: "Communication Modes",
       receptiveLanguage: "Receptive Language",
       assistiveTechnology: "Assistive Technology",
       reinforcers: "Reinforcers",
       preferredActivities: "Preferred Activities",
-      behavioralStrategies: "Behavioral Strategies"
+      behavioralStrategies: "Behavioral Strategies",
+
+      // Placeholders
+      addCommunication: "Add communication mode...",
+      addReceptive: "Add receptive language skill...",
+      addTechnology: "Add assistive technology...",
+      addReinforcer: "Add reinforcer...",
+      addActivity: "Add preferred activity...",
+      addStrategy: "Add behavioral strategy...",
     },
 
     tabs: {
@@ -1193,8 +1290,6 @@ export const en = {
     },
 
     lastUpdated: "Last updated",
-    finalizedAt: "Finalized",
-    createdAt: "Created"
   },
 
   // ============================================================================

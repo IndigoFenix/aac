@@ -39,6 +39,10 @@ export const he = {
     continue: "המשך",
     add: "הוסף",
     reset: "איפוס",
+    view: "צפה",
+    create: "צור",
+    update: "עדכן",
+    none: "אין",
   },
 
   // ============================================================================
@@ -1117,21 +1121,25 @@ export const he = {
   // Institute Panel
   institute: {
     title: 'מוסדות',
-    subtitle: 'ניהול המוסדות שלך',
-    noInstitutes: 'אינך חבר במוסד כלשהו עדיין',
-    createFirst: 'צור את המוסד הראשון שלך כדי להתחיל',
+    subtitle: 'ניהול החברות שלך בארגונים',
+    noInstitutes: 'עדיין אין מוסדות',
+    noInstitutesDesc: 'צור מוסד לניהול הארגון שלך.',
+    createFirst: 'צור את המוסד הראשון שלך',
     create: 'יצירת מוסד',
     createNew: 'יצירת מוסד חדש',
+    createDesc: 'צור מוסד חדש לניהול הארגון שלך.',
     edit: 'עריכת מוסד',
     delete: 'מחיקת מוסד',
-    leave: 'עזיבת מוסד',
+    leave: 'עזיבה',
 
     // Form fields
-    name: 'שם המוסד',
+    name: 'שם',
     namePlaceholder: 'הזן שם מוסד',
-    type: 'סוג',
-    typeSchool: 'בית ספר',
-    typeHospital: 'בית חולים',
+    typeLabel: 'סוג',
+    type: {
+      school: 'בית ספר',
+      hospital: 'בית חולים',
+    },
     description: 'תיאור',
     descriptionPlaceholder: 'תיאור קצר של המוסד',
     address: 'כתובת',
@@ -1144,44 +1152,88 @@ export const he = {
     websitePlaceholder: 'https://example.com',
 
     // Tabs
-    tabOverview: 'סקירה',
-    tabMembers: 'חברים',
-    tabInvites: 'הזמנות',
-    tabSettings: 'הגדרות',
+    tabs: {
+      overview: 'סקירה',
+      members: 'חברים',
+      invites: 'הזמנות',
+      settings: 'הגדרות',
+    },
+
+    // Details
+    details: 'פרטים',
 
     // Members
     members: 'חברים',
+    membersCount: '{{count}} חברים',
     noMembers: 'אין חברים עדיין',
     member: 'חבר',
     admin: 'מנהל',
     owner: 'בעלים',
     role: 'תפקיד',
-    roleStaff: 'צוות',
-    roleTherapist: 'מטפל/ת',
-    roleTeacher: 'מורה',
-    roleAdmin: 'מנהל',
+    roles: {
+      staff: 'צוות',
+      therapist: 'מטפל/ת',
+      teacher: 'מורה',
+      admin: 'מנהל',
+    },
     makeAdmin: 'הפוך למנהל',
     removeAdmin: 'הסר הרשאות מנהל',
     removeMember: 'הסר חבר',
     removeMemberConfirm: 'האם אתה בטוח שברצונך להסיר חבר זה?',
     removeMemberConfirmDesc: 'הוא יאבד גישה למוסד זה.',
 
+    // Invites
+    inviteMember: 'הזמנת חבר',
+    inviteMemberDesc: 'שלח הזמנה להצטרף למוסד זה.',
+    sendInvite: 'שלח הזמנה',
+    pendingInvites: 'הזמנות ממתינות',
+    noInvites: 'עדיין לא נשלחו הזמנות',
+    grantAdmin: 'הענק הרשאות מנהל',
+    message: 'הודעה (אופציונלי)',
+    messagePlaceholder: 'הוסף הודעה אישית...',
+    willBeAdmin: 'יהיה מנהל',
+    resend: 'שלח שוב',
+    cancel: 'ביטול',
+
+    // Invite statuses
+    status: {
+      pending: 'ממתין',
+      accepted: 'התקבל',
+      declined: 'נדחה',
+      expired: 'פג תוקף',
+      cancelled: 'בוטל',
+    },
+
     // Settings
     dangerZone: 'אזור סכנה',
-    deleteConfirm: 'האם אתה בטוח שברצונך למחוק מוסד זה?',
-    deleteConfirmDesc: 'פעולה זו לא ניתנת לביטול. כל החברים יאבדו גישה.',
+    dangerZoneDesc: 'פעולות בלתי הפיכות למוסד זה',
+    deleteInstitute: 'מחיקת מוסד',
+    confirmDelete: 'למחוק את המוסד?',
+    confirmDeleteDesc: 'פעולה זו לא ניתנת לביטול. כל החברים יאבדו גישה.',
     deleteConfirmInput: 'הקלד את שם המוסד לאישור',
-    leaveConfirm: 'האם אתה בטוח שברצונך לעזוב מוסד זה?',
-    leaveConfirmDesc: 'תאבד גישה לכל משאבי המוסד.',
+    confirmLeave: 'לעזוב את המוסד?',
+    confirmLeaveDesc: 'תאבד גישה למוסד זה. תוכל להצטרף מחדש אם תוזמן שוב.',
 
     // Messages
-    created: 'המוסד נוצר בהצלחה',
-    updated: 'המוסד עודכן בהצלחה',
-    deleted: 'המוסד נמחק בהצלחה',
+    error: 'שגיאה',
+    nameRequired: 'שם הוא שדה חובה',
+    emailRequired: 'דוא"ל הוא שדה חובה',
+    created: 'המוסד נוצר',
+    createdDesc: 'המוסד שלך נוצר בהצלחה.',
+    updated: 'המוסד עודכן',
+    updatedDesc: 'השינויים נשמרו בהצלחה.',
+    deleted: 'המוסד נמחק',
+    deletedDesc: 'המוסד נמחק.',
     left: 'עזבת את המוסד',
-    memberRemoved: 'החבר הוסר בהצלחה',
-    memberUpdated: 'תפקיד החבר עודכן',
+    leftDesc: 'עזבת את המוסד.',
+    memberRemoved: 'החבר הוסר',
+    memberUpdated: 'החבר עודכן',
     cannotRemoveLastAdmin: 'לא ניתן להסיר את המנהל האחרון',
+    inviteSent: 'ההזמנה נשלחה',
+    inviteSentDesc: 'קישור ההזמנה הועתק ללוח.',
+    inviteCancelled: 'ההזמנה בוטלה',
+    inviteResent: 'ההזמנה נשלחה שוב',
+    inviteLinkCopied: 'קישור הזמנה חדש הועתק ללוח.',
 
     // Actions
     switchTo: 'עבור למוסד זה',
@@ -1266,10 +1318,14 @@ export const he = {
   // ==========================================================================
   reports: {
     title: "דוחות",
+    subtitle: "דוחות עבור {{name}}",
     noStudent: "בחר תלמיד לצפייה בדוחות",
+    noStudentSelected: "לא נבחר תלמיד",
+    selectStudentFirst: "בחר תלמיד לצפייה בדוחות שלו",
     loading: "טוען דוחות...",
     error: "שגיאה בטעינת דוחות",
     noReports: "אין דוחות עדיין",
+    noAccess: "אין לך גישה לדוחות עבור תלמיד זה.",
     create: "יצירת דוח",
     finalize: "סיום",
     createRevision: "יצירת גרסה חדשה",
@@ -1280,12 +1336,25 @@ export const he = {
     showArchived: "הצג ארכיון",
     hideArchived: "הסתר ארכיון",
 
+    // Timestamps
+    createdAt: "נוצר",
+    updatedAt: "עודכן",
+    finalizedAt: "הושלם",
+
     status: {
       draft: "טיוטה",
       pending_review: "ממתין לבדיקה",
       final: "סופי",
       superseded: "הוחלף"
     },
+
+    // Create confirmation
+    createConfirm: "פעולה זו תיצור דוח חדש. דוח פעיל קיים יועבר לארכיון.",
+
+    // Finalize dialog
+    finalizeTitle: "סיום דוח",
+    finalizeWarning: "לאחר סיום, לא ניתן לערוך דוח זה. יש ליצור גרסה חדשה לביצוע שינויים.",
+    finalizeCannotUndo: "פעולה זו אינה ניתנת לביטול.",
 
     confirmCreate: {
       title: "יצירת דוח חדש",
@@ -1310,6 +1379,7 @@ export const he = {
       title: "רשומה רפואית",
       description: "אבחנות רפואיות, אלרגיות, תרופות והתראות",
       create: "יצירת רשומה רפואית",
+      createDesc: "צור רשומה רפואית חדשה לתיעוד אבחנות, תרופות והתראות בריאות.",
       created: "רשומה רפואית נוצרה",
       createdDesc: "רשומה רפואית חדשה נוצרה.",
       updated: "רשומה רפואית עודכנה",
@@ -1317,24 +1387,34 @@ export const he = {
       finalizedDesc: "הרשומה הרפואית ננעלה ולא ניתנת לעריכה.",
       revisionCreated: "גרסה חדשה נוצרה",
       deleted: "רשומה רפואית נמחקה",
-      noRecord: "אין רשומה רפואית",
+      noReport: "אין רשומה רפואית",
       createFirst: "צור רשומה רפואית לתיעוד אבחנות, תרופות והתראות.",
 
+      // Fields
       primaryDiagnosis: "אבחנה ראשית",
       primaryDiagnosisCode: "קוד ICD",
       coMorbidities: "תחלואה נלווית",
       secondaryDiagnoses: "אבחנות משניות",
+      alerts: "התראות בריאות",
       allergies: "אלרגיות",
       seizures: "התראות פרכוסים",
       cardiac: "התראות לב",
       medications: "תרופות",
-      medicalEquipment: "ציוד רפואי"
+      medicalEquipment: "ציוד רפואי",
+
+      // Placeholders
+      addAllergy: "הוסף אלרגיה...",
+      addSeizureAlert: "הוסף התראת פרכוסים...",
+      addCardiacAlert: "הוסף התראת לב...",
+      addMedication: "הוסף תרופה...",
+      addEquipment: "הוסף ציוד...",
     },
 
     functional: {
       title: "דוח תפקודי",
       description: "ניידות, פעילויות יומיומיות, פרופיל חושי וסיכונים",
       create: "יצירת דוח תפקודי",
+      createDesc: "צור דוח תפקודי חדש לתיעוד ניידות, חיי יומיום ומידע חושי.",
       created: "דוח תפקודי נוצר",
       createdDesc: "דוח תפקודי חדש נוצר.",
       updated: "דוח תפקודי עודכן",
@@ -1345,16 +1425,24 @@ export const he = {
       noReport: "אין דוח תפקודי",
       createFirst: "צור דוח תפקודי לתיעוד ניידות, חיי יומיום ומידע חושי.",
 
+      // Fields
       mobilityStatus: "מצב ניידות",
       adlStatus: "פעילויות יומיומיות",
       sensoryProfile: "פרופיל חושי",
-      safetyRisks: "סיכוני בטיחות"
+      safetyRisks: "סיכוני בטיחות",
+
+      // Placeholders
+      addMobility: "הוסף מצב ניידות...",
+      addAdl: "הוסף פעילות יומיומית...",
+      addSensory: "הוסף פריט לפרופיל חושי...",
+      addRisk: "הוסף סיכון בטיחות...",
     },
 
     educational: {
       title: "דוח חינוכי",
       description: "תקשורת, טכנולוגיה ואסטרטגיות התנהגות",
       create: "יצירת דוח חינוכי",
+      createDesc: "צור דוח חינוכי חדש לתיעוד תקשורת ואסטרטגיות למידה.",
       created: "דוח חינוכי נוצר",
       createdDesc: "דוח חינוכי חדש נוצר.",
       updated: "דוח חינוכי עודכן",
@@ -1365,12 +1453,21 @@ export const he = {
       noReport: "אין דוח חינוכי",
       createFirst: "צור דוח חינוכי לתיעוד תקשורת ואסטרטגיות למידה.",
 
+      // Fields
       communicationMode: "אופני תקשורת",
       receptiveLanguage: "שפה קלטנית",
       assistiveTechnology: "טכנולוגיה מסייעת",
       reinforcers: "מחזקים",
       preferredActivities: "פעילויות מועדפות",
-      behavioralStrategies: "אסטרטגיות התנהגות"
+      behavioralStrategies: "אסטרטגיות התנהגות",
+
+      // Placeholders
+      addCommunication: "הוסף אופן תקשורת...",
+      addReceptive: "הוסף יכולת שפה קלטנית...",
+      addTechnology: "הוסף טכנולוגיה מסייעת...",
+      addReinforcer: "הוסף מחזק...",
+      addActivity: "הוסף פעילות מועדפת...",
+      addStrategy: "הוסף אסטרטגיה התנהגותית...",
     },
 
     tabs: {
@@ -1385,8 +1482,6 @@ export const he = {
     },
 
     lastUpdated: "עדכון אחרון",
-    finalizedAt: "הושלם",
-    createdAt: "נוצר"
   },
 
   // ============================================================================
