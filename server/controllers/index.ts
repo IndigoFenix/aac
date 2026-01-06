@@ -11,3 +11,5 @@ export { onboardingController, OnboardingController } from "./onboardingControll
 export { slpClinicalController, SlpClinicalController } from "./slpClinicalController";
 export { programController, ProgramController } from "./programController";
 export { recordsController, RecordsController } from "./recordsController";
+export { instituteController, InstituteController } from "./instituteController";
+export { reportController, ReportController } from "./reportController";

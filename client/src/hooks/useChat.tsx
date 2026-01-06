@@ -2,9 +2,10 @@
 import { useState, useEffect, createContext, useContext, ReactNode, useCallback, useRef } from 'react';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useStudent } from './useStudent';
+import { useInstitute } from './useInstitute';
 import { useAuth } from './useAuth';
 import { useFeaturePanel, useSharedState } from '@/contexts/FeaturePanelContext';
-import { ChatMessage, ChatMode, ChatSession } from '@shared/schema';
+import { ChatMessage, FeatureType, ChatSession, ChatPersona } from '@shared/schema';
 
 // ============================================================================
 // TYPES
@@ -13,9 +14,6 @@ import { ChatMessage, ChatMode, ChatSession } from '@shared/schema';
 export interface ChatMessageContent {
   text?: string;
   html?: string;
-  // Feature-specific response data
-  boardGeneratorData?: BoardGeneratorResponse;
-  interpretData?: InterpretResponse;
   [key: string]: any;
 }
 
@@ -34,19 +32,140 @@ export interface InterpretResponse {
   context?: any;
 }
 
+// Icon name type - matches Lucide icon names
+export type PersonaIconName = 
+  | 'Bot' 
+  | 'Target' 
+  | 'Stethoscope' 
+  | 'GraduationCap' 
+  | 'Activity' 
+  | 'MessageCircle' 
+  | 'Hand' 
+  | 'Brain';
+
+// Persona definitions with display info
+export interface PersonaInfo {
+  id: ChatPersona;
+  labelKey: string;        // Translation key for label
+  descriptionKey: string;  // Translation key for description
+  iconName: PersonaIconName; // Lucide icon name (rendered by PersonaIcon component)
+  color: string;           // Tailwind color class for background
+  textColor: string;       // Tailwind color class for text/icon
+}
+
+// Available personas - SINGLE SOURCE OF TRUTH
+export const CHAT_PERSONAS: PersonaInfo[] = [
+  {
+    id: 'assistant',
+    labelKey: 'chat.persona.assistant',
+    descriptionKey: 'chat.persona.assistantDesc',
+    iconName: 'Bot',
+    color: 'bg-primary/10',
+    textColor: 'text-primary',
+  },
+  {
+    id: 'coach',
+    labelKey: 'chat.persona.coach',
+    descriptionKey: 'chat.persona.coachDesc',
+    iconName: 'Target',
+    color: 'bg-amber-500/10',
+    textColor: 'text-amber-600',
+  },
+  {
+    id: 'clinical',
+    labelKey: 'chat.persona.clinical',
+    descriptionKey: 'chat.persona.clinicalDesc',
+    iconName: 'Stethoscope',
+    color: 'bg-blue-500/10',
+    textColor: 'text-blue-600',
+  },
+  {
+    id: 'teacher',
+    labelKey: 'chat.persona.teacher',
+    descriptionKey: 'chat.persona.teacherDesc',
+    iconName: 'GraduationCap',
+    color: 'bg-green-500/10',
+    textColor: 'text-green-600',
+  },
+  {
+    id: 'pediatric_physical_therapist',
+    labelKey: 'chat.persona.pediatricPT',
+    descriptionKey: 'chat.persona.pediatricPTDesc',
+    iconName: 'Activity',
+    color: 'bg-purple-500/10',
+    textColor: 'text-purple-600',
+  },
+  {
+    id: 'speech_language_pathologist',
+    labelKey: 'chat.persona.slp',
+    descriptionKey: 'chat.persona.slpDesc',
+    iconName: 'MessageCircle',
+    color: 'bg-pink-500/10',
+    textColor: 'text-pink-600',
+  },
+  {
+    id: 'occupational_therapist',
+    labelKey: 'chat.persona.ot',
+    descriptionKey: 'chat.persona.otDesc',
+    iconName: 'Hand',
+    color: 'bg-orange-500/10',
+    textColor: 'text-orange-600',
+  },
+  {
+    id: 'behavioral_specialist',
+    labelKey: 'chat.persona.behavioral',
+    descriptionKey: 'chat.persona.behavioralDesc',
+    iconName: 'Brain',
+    color: 'bg-cyan-500/10',
+    textColor: 'text-cyan-600',
+  },
+];
+
+// Helper to get persona info by ID
+export const getPersonaById = (id: ChatPersona): PersonaInfo | undefined => {
+  return CHAT_PERSONAS.find(p => p.id === id);
+};
+
+// AI response action types
+export interface ChatResponseActions {
+  // Navigation
+  navigateToFeature?: FeatureType;
+  
+  // Context switching
+  selectStudentId?: string;
+  selectInstituteId?: string;
+  
+  // Persona
+  setPersona?: ChatPersona;
+  
+  // Board/feature specific data
+  board?: any;
+  interpret?: any;
+  program?: any;
+  programUpdated?: {
+    programId?: string;
+    goalId?: string;
+  };
+}
+
 interface ChatContextType {
   // State
   session: ChatSession | null;
   sessionId: string | null;
   history: ChatMessage[];
-  mode: ChatMode;
+  mode: FeatureType;
   isLoading: boolean;
   isSending: boolean;
   error: string | null;
+  persona: ChatPersona;
+  
+  // Persona management
+  setPersona: (persona: ChatPersona) => void;
+  getPersonaInfo: (persona: ChatPersona) => PersonaInfo | undefined;
   
   // Actions
   sendMessage: (content: string, options?: SendMessageOptions) => Promise<ChatMessage | null>;
-  startNewSession: (mode?: ChatMode) => Promise<boolean>;
+  startNewSession: (mode?: FeatureType) => Promise<boolean>;
   loadSession: (sessionId: string) => Promise<boolean>;
   clearSession: () => void;
   
@@ -97,15 +216,17 @@ export const ChatProvider = ({
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [persona, setPersonaState] = useState<ChatPersona>('assistant');
   const [error, setError] = useState<string | null>(null);
   
   // Refs
   const currentStudentIdRef = useRef<string | null>(null);
   
   // External hooks
-  const { student } = useStudent();
+  const { student, selectStudent } = useStudent();
+  const { selectInstitute } = useInstitute();
   const { user } = useAuth();
-  const { activeFeature, getFeatureMetadata } = useFeaturePanel();
+  const { activeFeature, getFeatureMetadata, setActiveFeature } = useFeaturePanel();
   const { setSharedState } = useSharedState();
 
   // DEBUG: Track activeFeature and sendMessage recreation
@@ -137,7 +258,6 @@ export const ChatProvider = ({
         const loadedSession: ChatSession = data.session;
         setSession(loadedSession);
         setHistory(loadedSession.log as ChatMessage[] || []);
-        // setModeState(loadedSession.chatMode);
         
         queryClient.setQueryData(['chat-session', sessionId], loadedSession);
         
@@ -155,7 +275,7 @@ export const ChatProvider = ({
     }
   }, []);
 
-  const startNewSession = useCallback(async (newMode?: ChatMode): Promise<boolean> => {
+  const startNewSession = useCallback(async (newMode?: FeatureType): Promise<boolean> => {
     setSession(null);
     setHistory([]);
     setError(null);
@@ -178,11 +298,53 @@ export const ChatProvider = ({
   }, [persistSession, getStorageKey]);
 
   // ============================================================================
+  // PERSONA MANAGEMENT
+  // ============================================================================
+  
+  const setPersona = useCallback((newPersona: ChatPersona) => {
+    console.log('[ChatProvider] Persona changed to:', newPersona);
+    setPersonaState(newPersona);
+  }, []);
+
+  const getPersonaInfo = useCallback((personaId: ChatPersona): PersonaInfo | undefined => {
+    return CHAT_PERSONAS.find(p => p.id === personaId);
+  }, []);
+
+  // ============================================================================
   // HANDLE CONTEXT DATA FROM RESPONSE
   // ============================================================================
 
-  const handleContextData = useCallback((contextData: Record<string, any> | undefined) => {
+  const handleContextData = useCallback((contextData: ChatResponseActions | undefined) => {
     if (!contextData) return;
+
+    console.log('[ChatProvider] Processing contextData:', Object.keys(contextData));
+
+    // Handle persona change from AI
+    if (contextData.setPersona) {
+      const validPersona = CHAT_PERSONAS.find(p => p.id === contextData.setPersona);
+      if (validPersona) {
+        console.log('[ChatProvider] AI requested persona change to:', contextData.setPersona);
+        setPersonaState(contextData.setPersona);
+      }
+    }
+
+    // Handle feature navigation from AI
+    if (contextData.navigateToFeature) {
+      console.log('[ChatProvider] AI requested navigation to:', contextData.navigateToFeature);
+      setActiveFeature(contextData.navigateToFeature);
+    }
+
+    // Handle student selection from AI
+    if (contextData.selectStudentId) {
+      console.log('[ChatProvider] AI requested student selection:', contextData.selectStudentId);
+      selectStudent(contextData.selectStudentId);
+    }
+
+    // Handle institute selection from AI
+    if (contextData.selectInstituteId) {
+      console.log('[ChatProvider] AI requested institute selection:', contextData.selectInstituteId);
+      selectInstitute(contextData.selectInstituteId);
+    }
 
     // Handle board data from boards mode
     if (contextData.board) {
@@ -200,14 +362,12 @@ export const ChatProvider = ({
     }
 
     // Handle program updates from progress mode
-    // When AI makes changes via memory system, invalidate queries to refresh UI
     if (contextData.program || contextData.programUpdated) {
       console.log('[ChatProvider] Program data updated by AI, invalidating queries:', contextData.program);
       
       const programId = contextData.program?.id || contextData.programUpdated?.programId;
       const studentId = student?.id;
       
-      // Invalidate program-related queries to trigger refetch
       if (programId) {
         queryClient.invalidateQueries({ queryKey: ['/api/programs', programId, 'full'] });
         queryClient.invalidateQueries({ queryKey: ['/api/programs', programId] });
@@ -218,19 +378,15 @@ export const ChatProvider = ({
         queryClient.invalidateQueries({ queryKey: ['/api/students', studentId, 'programs', 'current'] });
       }
       
-      // Also invalidate any goal/service specific queries that might be cached
       if (contextData.programUpdated?.goalId) {
         queryClient.invalidateQueries({ queryKey: ['/api/goals', contextData.programUpdated.goalId] });
       }
       
-      // Optionally update shared state with new program data
       if (contextData.program) {
         setSharedState({ programData: contextData.program });
       }
     }
-
-    // Handle other context types as needed
-  }, [setSharedState, student?.id]);
+  }, [setSharedState, student?.id, setActiveFeature, selectStudent, selectInstitute]);
 
   // ============================================================================
   // MESSAGING
@@ -248,10 +404,13 @@ export const ChatProvider = ({
     
     setIsSending(true);
     setError(null);
+
     
     // Get feature-specific metadata from the active feature's builder
     const featureMetadata = activeFeature ? getFeatureMetadata(activeFeature) : {};
-    
+
+    console.log('[useChat] Sending message in mode:', activeFeature, featureMetadata);
+
     // Combine metadata
     const metadata = {
       ...featureMetadata,
@@ -273,7 +432,8 @@ export const ChatProvider = ({
       const requestBody: Record<string, any> = {
         messages: [userMessage],
         replyType,
-        mode: activeFeature, // Send the active feature as the mode
+        activeFeature,
+        persona, // Include current persona in request
       };
       
       if (session?.id) {
@@ -287,19 +447,19 @@ export const ChatProvider = ({
         requestBody.studentId = student.id;
       }
 
-      // Add modeContext for boards mode (contains full board data)
-      if (activeFeature === 'boards' && featureMetadata?.modeContext) {
-        requestBody.modeContext = featureMetadata.modeContext;
-        console.log('[useChat] Sending modeContext for boards mode:', {
-          hasData: !!featureMetadata.modeContext.board?.data,
-          boardName: featureMetadata.modeContext.board?.data?.name,
-          pageCount: featureMetadata.modeContext.board?.data?.pages?.length,
-          buttonCount: featureMetadata.modeContext.board?.data?.pages?.reduce(
+      // Add featureContext for boards mode
+      if (activeFeature === 'boards' && featureMetadata?.featureContext) {
+        requestBody.featureContext = featureMetadata.featureContext;
+        console.log('[useChat] Sending featureContext for boards mode:', {
+          hasData: !!featureMetadata.featureContext.board?.data,
+          boardName: featureMetadata.featureContext.board?.data?.name,
+          pageCount: featureMetadata.featureContext.board?.data?.pages?.length,
+          buttonCount: featureMetadata.featureContext.board?.data?.pages?.reduce(
             (sum: number, p: any) => sum + (p.buttons?.length || 0), 0
           ),
         });
       } else if (activeFeature === 'boards') {
-        console.warn('[useChat] In boards mode but no modeContext available from metadata builder');
+        console.warn('[useChat] In boards mode but no featureContext available from metadata builder');
       }
       
       const response = await apiRequest('POST', '/api/chat', requestBody);
@@ -316,7 +476,7 @@ export const ChatProvider = ({
         
         setHistory(prev => [...prev, assistantMessage]);
 
-        // Handle contextData from the response (board updates, etc.)
+        // Handle contextData from the response
         if (data.contextData) {
           handleContextData(data.contextData);
         }
@@ -385,18 +545,17 @@ export const ChatProvider = ({
     } finally {
       setIsSending(false);
     }
-  }, [session, activeFeature, user, student, history, persistSession, getStorageKey, getFeatureMetadata, handleContextData]);
+  }, [session, activeFeature, user, student, history, persistSession, getStorageKey, getFeatureMetadata, handleContextData, persona]);
   
   useEffect(() => {
     console.log('[ChatProvider] sendMessage was recreated, activeFeature is:', activeFeature);
   }, [sendMessage]);
 
   // ============================================================================
-  // FEATURE-SPECIFIC METHODS (convenience wrappers)
+  // FEATURE-SPECIFIC METHODS
   // ============================================================================
 
   const sendBoardPrompt = useCallback(async (prompt: string): Promise<ChatMessage | null> => {
-    // The metadata will be automatically added by the boards feature's metadata builder
     return sendMessage(prompt, { replyType: 'html' });
   }, [sendMessage]);
 
@@ -404,7 +563,6 @@ export const ChatProvider = ({
     content: string, 
     context?: any
   ): Promise<ChatMessage | null> => {
-    // Pass additional context as metadata
     return sendMessage(content, {
       replyType: 'html',
       additionalMetadata: context ? { interpretContext: context } : undefined
@@ -489,6 +647,9 @@ export const ChatProvider = ({
     isLoading,
     isSending,
     error,
+    persona,
+    setPersona,
+    getPersonaInfo,
     sendMessage,
     startNewSession,
     loadSession,
@@ -524,6 +685,11 @@ export const useSendMessage = () => {
 export const useChatSession = () => {
   const { session, sessionId, startNewSession, loadSession, clearSession } = useChat();
   return { session, sessionId, startNewSession, loadSession, clearSession };
+};
+
+export const useChatPersona = () => {
+  const { persona, setPersona, getPersonaInfo } = useChat();
+  return { persona, setPersona, getPersonaInfo, personas: CHAT_PERSONAS };
 };
 
 export const useBoardChat = () => {

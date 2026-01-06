@@ -1,25 +1,31 @@
 // src/features/ChatPopup.tsx
-// Floating chat popup component for minimized chat mode with proper RTL support
+// Floating chat popup component with persona dropdown and proper RTL support
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { 
-  Bot, 
   Send, 
   Minus, 
   Maximize2, 
   MessageCircle,
-  X 
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
-import { useChat } from '@/hooks/useChat';
+import { useChat, CHAT_PERSONAS } from '@/hooks/useChat';
 import { useStudent } from '@/hooks/useStudent';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useFeaturePanel } from '@/contexts/FeaturePanelContext';
-import { ChatMessage, ChatMessageContent } from '@shared/schema';
+import { ChatMessage, ChatMessageContent, ChatPersona } from '@shared/schema';
 import { cn } from '@/lib/utils';
+import { PersonaIcon, getPersonaColorClasses } from '@/components/chat/PersonaIcon';
 
 export function ChatPopup() {
   const [prompt, setPrompt] = useState('');
@@ -41,10 +47,14 @@ export function ChatPopup() {
     history, 
     sendMessage, 
     isSending,
+    persona,
+    setPersona,
+    getPersonaInfo
   } = useChat();
 
   const isMinimized = chatMode === 'minimized';
   const unreadCount = 0; // Could be implemented with actual unread tracking
+  const currentPersonaInfo = getPersonaInfo(persona);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -90,6 +100,10 @@ export function ChatPopup() {
 
   const handleRestore = () => {
     setChatMode('popup');
+  };
+
+  const handlePersonaChange = (newPersona: string) => {
+    setPersona(newPersona as ChatPersona);
   };
 
   // Helper to extract display content from message
@@ -160,13 +174,35 @@ export function ChatPopup() {
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 bg-card border-b border-border">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-              <Bot className="w-4 h-4 text-primary" />
-            </div>
-            <div>
-              <p className="text-sm font-medium">{t('chat.assistant')}</p>
+            <PersonaIcon persona={persona} size="lg" withBackground />
+            <div className="flex-1 min-w-0">
+              {/* Persona dropdown selector */}
+              <Select value={persona} onValueChange={handlePersonaChange}>
+                <SelectTrigger 
+                  className="h-auto py-0 px-0 border-0 bg-transparent focus:ring-0 gap-1"
+                >
+                  <SelectValue>
+                    <span className="text-sm font-medium">
+                      {t(currentPersonaInfo?.labelKey || 'chat.persona.assistant')}
+                    </span>
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {CHAT_PERSONAS.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      <div className="flex items-center gap-2">
+                        <PersonaIcon persona={p} size="sm" withBackground />
+                        <div className="flex flex-col">
+                          <span className="text-sm">{t(p.labelKey)}</span>
+                          <span className="text-xs text-muted-foreground">{t(p.descriptionKey)}</span>
+                        </div>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               {student && (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground truncate">
                   {t('chat.workingWith')} {student.name}
                 </p>
               )}
@@ -208,9 +244,13 @@ export function ChatPopup() {
           className="flex-1 overflow-y-auto px-4 py-3 max-h-80 min-h-48"
         >
           {history.length === 0 ? (
-            <div className="h-full flex items-center justify-center">
+            <div className="h-full flex flex-col items-center justify-center gap-3">
+              <PersonaIcon persona={persona} size="lg" withBackground />
               <p className="text-sm text-muted-foreground text-center">
                 {t('chat.popupWelcome')}
+              </p>
+              <p className="text-xs text-muted-foreground/70 text-center">
+                {t(currentPersonaInfo?.descriptionKey || 'chat.persona.assistantDesc')}
               </p>
             </div>
           ) : (
@@ -225,8 +265,8 @@ export function ChatPopup() {
                 >
                   {message.role === 'assistant' && (
                     <Avatar className="w-6 h-6 flex-shrink-0">
-                      <AvatarFallback className="bg-primary/10 text-xs">
-                        <Bot className="w-3 h-3 text-primary" />
+                      <AvatarFallback className={cn("text-xs", currentPersonaInfo && getPersonaColorClasses(currentPersonaInfo))}>
+                        <PersonaIcon persona={persona} size="sm" />
                       </AvatarFallback>
                     </Avatar>
                   )}
@@ -258,8 +298,8 @@ export function ChatPopup() {
               {isSending && (
                 <div className="flex gap-2 justify-start">
                   <Avatar className="w-6 h-6 flex-shrink-0">
-                    <AvatarFallback className="bg-primary/10 text-xs">
-                      <Bot className="w-3 h-3 text-primary" />
+                    <AvatarFallback className={cn("text-xs", currentPersonaInfo && getPersonaColorClasses(currentPersonaInfo))}>
+                      <PersonaIcon persona={persona} size="sm" />
                     </AvatarFallback>
                   </Avatar>
                   <div className="rounded-xl px-3 py-2 bg-muted">

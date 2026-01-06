@@ -101,10 +101,14 @@ export const en = {
     workspace: "Workspace",
     toggleSidebar: "Toggle Sidebar",
     overview: "Overview",
+    institute: "Institute",
     students: "Students",
     progress: "Student Progress",
+    reports: "Student Reports",
     currentStudent: "Current Student",
     studentManagement: "Student Management",
+    instituteManagement: 'Institute Management',
+    noStudentSelected: "No Student Selected",
   },
 
   // ============================================================================
@@ -189,6 +193,26 @@ export const en = {
     minimize: "Minimize",
     popupWelcome: "Start a conversation...",
     placeholderShort: "Type a message...",
+    selectPersona:"Chat Mode",
+    changePersona:"Change mode",
+    persona: {
+      assistant:"Assistant",
+      assistantDesc:"Helpful general assistant",
+      coach:"Coach",
+      coachDesc:"Supportive goal-focused coach",
+      clinical:"Clinical",
+      clinicalDesc:"Professional clinical advisor",
+      teacher:"Teacher",
+      teacherDesc:"Patient educational guide",
+      pediatricPT:"Physical Therapist",
+      pediatricPTDesc:"Pediatric physical therapy specialist",
+      slp:"Speech Pathologist",
+      slpDesc:"Speech-language pathology expert",
+      ot:"Occupational Therapist",
+      otDesc:"Occupational therapy specialist",
+      behavioral:"Behavioral Specialist",
+      behavioralDesc:"Behavioral analysis expert"
+    }
   },
 
   // ============================================================================
@@ -554,7 +578,7 @@ export const en = {
     // General
     noStudentSelected: "No Student Selected",
     goToStudents: "Go to Students",
-    
+
     // Create Program
     startNew: "Start New Program",
     startNewDesc: "Create a new IEP/TALA program for {name}",
@@ -564,14 +588,14 @@ export const en = {
     year: "Program Year",
     createAndStart: "Create Program",
     previousPrograms: "Previous Programs",
-    
+
     // Status
     status: {
       draft: "Draft",
       active: "Active",
       archived: "Archived",
     },
-    
+
     // Actions
     activate: "Activate Program",
     archive: "Archive Program",
@@ -582,7 +606,7 @@ export const en = {
     createdDesc: "Your program has been created with default profile domains.",
     activated: "Program Activated",
     archived: "Program Archived",
-    
+
     // Tabs
     tabs: {
       overview: "Overview",
@@ -592,7 +616,7 @@ export const en = {
       progress: "Progress",
       team: "Team",
     },
-    
+
     // Stats
     stats: {
       activeGoals: "Active Goals",
@@ -600,7 +624,7 @@ export const en = {
       weeklyMinutes: "Weekly Minutes",
       teamMembers: "Team Members",
     },
-    
+
     // Overview
     overallProgress: "Overall Progress",
     goalCompletion: "Goal Completion",
@@ -608,7 +632,7 @@ export const en = {
     timeline: "Timeline",
     dueDate: "Due Date",
     approvedDate: "Approved Date",
-    
+
     // Profile/Domains
     functionalProfile: "Functional Profile",
     functionalProfileDesc: "Present levels of academic achievement and functional performance",
@@ -633,18 +657,18 @@ export const en = {
     educationalImpactPlaceholder: "Describe how this affects the student's education...",
     parentInput: "Parent Input",
     parentInputPlaceholder: "Document parent concerns and priorities...",
-    
+
     // Goals
     goalsAndObjectives: "Goals & Objectives",
     goalsAndObjectivesDesc: "Annual goals and short-term objectives for this program",
     noGoals: "No goals have been created yet",
-    
+
     // Services
     servicesAndAccommodations: "Services & Accommodations",
     servicesAndAccommodationsDesc: "Related services, interventions, and accommodations",
     noServices: "No services have been added yet",
     accommodations: "Accommodations",
-    
+
     // Progress
     progressTracking: "Progress Tracking",
     progressTrackingDesc: "Data collection and progress monitoring",
@@ -673,7 +697,7 @@ export const en = {
     deleted: "Goal Deleted",
     confirmDelete: "Are you sure you want to delete this goal?",
     modalDescription: "Create a measurable annual goal aligned with the student's needs",
-    
+
     // Form fields
     title: "Goal Title",
     titlePlaceholder: "e.g., Improve expressive communication",
@@ -688,7 +712,7 @@ export const en = {
     targetPlaceholder: "Expected achievement level",
     targetDate: "Target Date",
     currentProgress: "Current Progress",
-    
+
     // Status
     status: {
       draft: "Draft",
@@ -710,14 +734,14 @@ export const en = {
     title: "Objective",
     noObjectives: "No objectives defined yet",
 
-    
+
     description: "Objective Description",
     descriptionPlaceholder: "Describe the specific, measurable objective...",
     descriptionRequired: "Objective description is required",
     criteria: "Success Criteria",
     criteriaPlaceholder: "e.g., 80% accuracy over 3 consecutive sessions",
     targetDate: "Target Date",
-    
+
     status: {
       not_started: "Not Started",
       in_progress: "In Progress",
@@ -740,7 +764,7 @@ export const en = {
     deleted: "Service Removed",
     confirmDelete: "Are you sure you want to remove this service?",
     modalDescription: "Add a related service or intervention",
-    
+
     // Form fields
     type: "Service Type",
     name: "Service Name",
@@ -752,7 +776,7 @@ export const en = {
     setting: "Setting",
     provider: "Provider",
     providerPlaceholder: "Name of service provider",
-    
+
     // Types
     types: {
       speech_language_therapy: "Speech-Language Therapy",
@@ -764,14 +788,14 @@ export const en = {
       aac_support: "AAC Support",
       other: "Other",
     },
-    
+
     // Frequency
     frequency: {
       daily: "Daily",
       weekly: "Weekly",
       monthly: "Monthly",
     },
-    
+
     // Settings
     settings: {
       general_education: "General Education",
@@ -812,7 +836,7 @@ export const en = {
     noDataPoints: "No data recorded yet",
     collectedBy: "Collected by",
     moreCount: "+{{count}} more records",
-    
+
     numericValue: "Numeric Value",
     numericPlaceholder: "e.g., 85",
     textValue: "Text Value",
@@ -847,7 +871,7 @@ export const en = {
     confirmRemove: "Are you sure you want to remove this team member?",
     coordinator: "Coordinator",
     isCoordinator: "This person is the case coordinator",
-    
+
     name: "Full Name",
     namePlaceholder: "Enter full name",
     nameRequired: "Name is required",
@@ -856,7 +880,7 @@ export const en = {
     emailPlaceholder: "email@example.com",
     phone: "Phone",
     phonePlaceholder: "+1 234 567 8900",
-    
+
     roles: {
       parent_guardian: "Parent/Guardian",
       student: "Student",
@@ -882,7 +906,7 @@ export const en = {
     description: "IEP/TALA team meetings",
     schedule: "Schedule Meeting",
     none: "No meetings scheduled",
-    
+
     types: {
       initial_evaluation: "Initial Evaluation",
       annual_review: "Annual Review",
@@ -891,6 +915,286 @@ export const en = {
       transition_planning: "Transition Planning",
       progress_review: "Progress Review",
     },
+  },
+
+  // ============================================================================
+  // INSTITUTE
+  // ============================================================================
+
+  // Institute Panel
+  institute: {
+    title: 'Institutes',
+    subtitle: 'Manage your institutions',
+    noInstitutes: 'You are not a member of any institute yet',
+    createFirst: 'Create your first institute to get started',
+    create: 'Create Institute',
+    createNew: 'Create New Institute',
+    edit: 'Edit Institute',
+    delete: 'Delete Institute',
+    leave: 'Leave Institute',
+
+    // Form fields
+    name: 'Institute Name',
+    namePlaceholder: 'Enter institute name',
+    type: 'Type',
+    typeSchool: 'School',
+    typeHospital: 'Hospital',
+    description: 'Description',
+    descriptionPlaceholder: 'Brief description of the institute',
+    address: 'Address',
+    addressPlaceholder: 'Street address',
+    phone: 'Phone',
+    phonePlaceholder: 'Phone number',
+    email: 'Email',
+    emailPlaceholder: 'Contact email',
+    website: 'Website',
+    websitePlaceholder: 'https://example.com',
+
+    // Tabs
+    tabOverview: 'Overview',
+    tabMembers: 'Members',
+    tabInvites: 'Invites',
+    tabSettings: 'Settings',
+
+    // Members
+    members: 'Members',
+    noMembers: 'No members yet',
+    member: 'Member',
+    admin: 'Admin',
+    owner: 'Owner',
+    role: 'Role',
+    roleStaff: 'Staff',
+    roleTherapist: 'Therapist',
+    roleTeacher: 'Teacher',
+    roleAdmin: 'Admin',
+    makeAdmin: 'Make Admin',
+    removeAdmin: 'Remove Admin',
+    removeMember: 'Remove Member',
+    removeMemberConfirm: 'Are you sure you want to remove this member?',
+    removeMemberConfirmDesc: 'They will lose access to this institute.',
+
+    // Settings
+    dangerZone: 'Danger Zone',
+    deleteConfirm: 'Are you sure you want to delete this institute?',
+    deleteConfirmDesc: 'This action cannot be undone. All members will lose access.',
+    deleteConfirmInput: 'Type the institute name to confirm',
+    leaveConfirm: 'Are you sure you want to leave this institute?',
+    leaveConfirmDesc: 'You will lose access to all institute resources.',
+
+    // Messages
+    created: 'Institute created successfully',
+    updated: 'Institute updated successfully',
+    deleted: 'Institute deleted successfully',
+    left: 'You have left the institute',
+    memberRemoved: 'Member removed successfully',
+    memberUpdated: 'Member role updated',
+    cannotRemoveLastAdmin: 'Cannot remove the last admin',
+
+    // Actions
+    switchTo: 'Switch to this institute',
+    current: 'Current',
+  },
+
+  // Invites
+  invite: {
+    title: 'Invites',
+    send: 'Send Invite',
+    sendNew: 'Send New Invite',
+    email: 'Email Address',
+    emailPlaceholder: 'colleague@example.com',
+    role: 'Role',
+    grantAdmin: 'Grant admin access',
+    message: 'Personal Message',
+    messagePlaceholder: 'Optional message for the invitee',
+
+    // Status
+    pending: 'Pending',
+    accepted: 'Accepted',
+    declined: 'Declined',
+    expired: 'Expired',
+    cancelled: 'Cancelled',
+
+    // Actions
+    resend: 'Resend',
+    cancel: 'Cancel Invite',
+    copyLink: 'Copy Invite Link',
+    linkCopied: 'Invite link copied to clipboard',
+
+    // Messages
+    sent: 'Invite sent successfully',
+    sentDesc: 'An invite has been sent to {email}',
+    resent: 'Invite resent',
+    resentDesc: 'A new invite has been sent',
+    //cancelled: 'Invite cancelled',
+    cancelledDesc: 'The invite has been cancelled',
+    alreadyMember: 'This user is already a member',
+    alreadyInvited: 'This email has already been invited',
+
+    // Invite page
+    invalid: 'Invalid Invite',
+    invalidDesc: 'This invite link is invalid or has expired.',
+    createAccount: 'Create Your Account',
+    invitedBy: 'Invited by {name}',
+    invitedByToJoin: '{name} invited you to join {institute}',
+    invitedToJoinInstitute: 'You have been invited to join {institute}',
+    yourRole: 'Your role:',
+    admin: 'Admin',
+    accept: 'Accept Invite',
+    accepting: 'Accepting...',
+    decline: 'Decline',
+    acceptedTitle: 'Invite Accepted',
+    acceptedDesc: 'You have joined {institute}',
+    declinedTitle: 'Invite Declined',
+    declinedDesc: 'You have declined the invitation',
+    joiningAs: 'Joining as',
+    createAndJoin: 'Create Account & Join',
+    registered: 'Welcome!',
+    registeredDesc: 'Your account has been created and you have joined {institute}',
+    error: 'Error',
+
+    // Expiry
+    expiresAt: 'Expires',
+    expiresIn: 'Expires in {days} days',
+    expiresSoon: 'Expires soon',
+  },
+
+  // Pending invites page
+  pendingInvites: {
+    title: 'Pending Invites',
+    subtitle: 'Institute invitations awaiting your response',
+    noInvites: 'No pending invites',
+    noInvitesDesc: 'You have no pending institute invitations',
+    viewAll: 'View All',
+    badge: '{count} pending',
+  },
+
+  // ============================================================================
+  // REPORTS
+  // ============================================================================
+
+  reports: {
+    title: "Reports",
+    noStudent: "Please select a student to view reports",
+    loading: "Loading reports...",
+    error: "Error loading reports",
+    noReports: "No reports yet",
+    create: "Create Report",
+    finalize: "Finalize",
+    createRevision: "Create Revision",
+    view: "View",
+    edit: "Edit",
+    delete: "Delete",
+    archived: "Archived",
+    showArchived: "Show Archived",
+    hideArchived: "Hide Archived",
+
+    status: {
+      draft: "Draft",
+      pending_review: "Pending Review",
+      final: "Final",
+      superseded: "Superseded"
+    },
+
+    confirmCreate: {
+      title: "Create New Report",
+      description: "This will create a new {{type}} report. Any existing active report will be archived.",
+      confirm: "Create"
+    },
+
+    confirmFinalize: {
+      title: "Finalize Report",
+      description: "Once finalized, this report cannot be edited. You will need to create a new revision to make changes.",
+      warning: "This action cannot be undone.",
+      confirm: "Finalize"
+    },
+
+    confirmDelete: {
+      title: "Delete Report",
+      description: "Are you sure you want to delete this draft report? This action cannot be undone.",
+      confirm: "Delete"
+    },
+
+    medical: {
+      title: "Medical Record",
+      description: "Medical diagnoses, allergies, medications, and alerts",
+      create: "Create Medical Record",
+      created: "Medical record created",
+      createdDesc: "A new medical record has been created.",
+      updated: "Medical record updated",
+      finalized: "Medical record finalized",
+      finalizedDesc: "The medical record has been locked and cannot be edited.",
+      revisionCreated: "Revision created",
+      deleted: "Medical record deleted",
+      noRecord: "No medical record",
+      createFirst: "Create a medical record to document diagnoses, medications, and alerts.",
+
+      primaryDiagnosis: "Primary Diagnosis",
+      primaryDiagnosisCode: "ICD Code",
+      coMorbidities: "Co-morbidities",
+      secondaryDiagnoses: "Secondary Diagnoses",
+      allergies: "Allergies",
+      seizures: "Seizure Alerts",
+      cardiac: "Cardiac Alerts",
+      medications: "Medications",
+      medicalEquipment: "Medical Equipment"
+    },
+
+    functional: {
+      title: "Functional Report",
+      description: "Mobility, ADLs, sensory profile, and safety risks",
+      create: "Create Functional Report",
+      created: "Functional report created",
+      createdDesc: "A new functional report has been created.",
+      updated: "Functional report updated",
+      finalized: "Functional report finalized",
+      finalizedDesc: "The functional report has been locked and cannot be edited.",
+      revisionCreated: "Revision created",
+      deleted: "Functional report deleted",
+      noReport: "No functional report",
+      createFirst: "Create a functional report to document mobility, daily living, and sensory information.",
+
+      mobilityStatus: "Mobility Status",
+      adlStatus: "Activities of Daily Living",
+      sensoryProfile: "Sensory Profile",
+      safetyRisks: "Safety Risks"
+    },
+
+    educational: {
+      title: "Educational Report",
+      description: "Communication, technology, and behavioral strategies",
+      create: "Create Educational Report",
+      created: "Educational report created",
+      createdDesc: "A new educational report has been created.",
+      updated: "Educational report updated",
+      finalized: "Educational report finalized",
+      finalizedDesc: "The educational report has been locked and cannot be edited.",
+      revisionCreated: "Revision created",
+      deleted: "Educational report deleted",
+      noReport: "No educational report",
+      createFirst: "Create an educational report to document communication and learning strategies.",
+
+      communicationMode: "Communication Modes",
+      receptiveLanguage: "Receptive Language",
+      assistiveTechnology: "Assistive Technology",
+      reinforcers: "Reinforcers",
+      preferredActivities: "Preferred Activities",
+      behavioralStrategies: "Behavioral Strategies"
+    },
+
+    tabs: {
+      medical: "Medical",
+      functional: "Functional",
+      educational: "Educational"
+    },
+
+    empty: {
+      title: "No {{type}} reports",
+      description: "Create a new report to get started."
+    },
+
+    lastUpdated: "Last updated",
+    finalizedAt: "Finalized",
+    createdAt: "Created"
   },
 
   // ============================================================================
@@ -903,7 +1207,7 @@ export const en = {
     signed: "Signed",
     pending: "Pending",
     signedOn: "Signed on",
-    
+
     types: {
       initial_evaluation: "Initial Evaluation Consent",
       reevaluation: "Reevaluation Consent",

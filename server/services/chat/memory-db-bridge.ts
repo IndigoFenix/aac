@@ -181,15 +181,14 @@ export interface MemoryDBOperations<T = any> {
    * Write a single value.
    * Used for set/upsert on primitives and objects.
    * 
-   * @example
-   * // For a "profile" object field:
-   * write: async (ctx, value) => {
-   *   await db.insert(profiles)
-   *     .values({ ...value, agentInstanceId: ctx.all.agentInstanceId })
-   *     .onConflictDoUpdate({ target: profiles.agentInstanceId, set: value });
-   * }
+   * Can optionally return the written value (e.g., after sanitization/transformation).
+   * If a value is returned, it will be used to update the in-memory state,
+   * ensuring consistency between DB and memory.
+   * 
+   * @returns void if no value transformation, or T if the written value should 
+   *          replace the in-memory value (e.g., after field mapping/sanitization)
    */
-  write?: (ctx: DBOperationContext, value: T) => Promise<void>;
+  write?: (ctx: DBOperationContext, value: T) => Promise<T | void>;
 
   /**
    * List items in a container (array, map, topic) with pagination.
@@ -1271,8 +1270,15 @@ export async function processDBOperation(
       case 'set':
         if (dbOps.write) {
           const dbValue = dbOps.toDB ? dbOps.toDB(value) : value;
-          await dbOps.write(context, dbValue);
-          dbResult = value;
+          const writeResult = await dbOps.write(context, dbValue);
+          
+          // If write returned a value, use it (transformed by fromDB if available)
+          // Otherwise fall back to original value
+          if (writeResult !== undefined) {
+            dbResult = dbOps.fromDB ? dbOps.fromDB(writeResult) : writeResult;
+          } else {
+            dbResult = value;
+          }
           markLoaded(loadState, path);
         }
         break;
@@ -1288,8 +1294,14 @@ export async function processDBOperation(
         } else if (dbOps.write) {
           const valueWithContext = mergeInheritedContext(value, context);
           const dbValue = dbOps.toDB ? dbOps.toDB(valueWithContext) : valueWithContext;
-          await dbOps.write(context, dbValue);
-          dbResult = value;
+          const writeResult = await dbOps.write(context, dbValue);
+          
+          // If write returned a value, use it (transformed by fromDB if available)
+          if (writeResult !== undefined) {
+            dbResult = dbOps.fromDB ? dbOps.fromDB(writeResult) : writeResult;
+          } else {
+            dbResult = value;
+          }
           markLoaded(loadState, path);
         }
         break;
@@ -1416,32 +1428,45 @@ export async function processMemoryToolWithDB(
         baseContext
       );
       dbResults.set(i, result);
-      
-      // If DB operation failed, we might want to skip the in-memory update
-      // For now, we still allow in-memory updates even if DB fails
     }
   }
 
   // Process in-memory updates using original processor
   const memResult = originalProcessor(fields as any[], memoryValues, memoryState, input);
 
+  // Apply DB results to memory values for set/upsert operations
+  // This ensures in-memory values match what was actually saved to DB
+  for (let i = 0; i < ops.length; i++) {
+    const op = ops[i];
+    const dbOpResult = dbResults.get(i);
+    
+    if (
+      dbOpResult?.dbSynced && 
+      dbOpResult.dbResult !== undefined &&
+      (op.action === 'set' || op.action === 'upsert') &&
+      op.path
+    ) {
+      const originalValue = op.value;
+      const dbValue = dbOpResult.dbResult;
+      
+      // Only update if values differ (write() transformed/sanitized the data)
+      if (JSON.stringify(originalValue) !== JSON.stringify(dbValue)) {
+        console.log(`[processMemoryToolWithDB] Applying DB result to path ${op.path}`);
+        const tokens = splitPath(op.path);
+        setValueAtPath(memResult.updatedMemoryValues, tokens, dbValue, { merge: false });
+      }
+    }
+  }
+
   // Enhance results with DB sync status
-  // IMPORTANT: If DB operation succeeded (dbSynced: true), report overall success
-  // even if in-memory operation failed (e.g., parent not loaded in memory)
   const enhancedResults = memResult.results.map((result, i) => {
     const dbResult = dbResults.get(i);
     const dbSynced = dbResult?.dbSynced;
     const op = ops[i];
     
-    // If DB operation succeeded, the operation is successful from user's perspective
-    // The in-memory state will catch up on the next view/load
     const ok = dbSynced === true ? true : result.ok;
-    
-    // Only show error message if both DB and in-memory failed, or if only in-memory ran and failed
     const message = dbResult?.error ?? (dbSynced === true ? undefined : result.message);
     
-    // If DB succeeded but in-memory failed, mark the parent container as stale
-    // so it gets refreshed from DB on next access
     if (dbSynced === true && !result.ok && op.path) {
       const parentPath = op.path.split('/').slice(0, -1).join('/');
       if (parentPath) {

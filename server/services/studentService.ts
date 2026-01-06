@@ -20,6 +20,7 @@ export class StudentService {
     userId: string,
     role: string = "owner"
   ): Promise<Student> {
+    insert = { ...this.parseStudentNames(insert), ...insert };
     const { student } = await studentRepository.createStudentWithLink(
       insert,
       userId,
@@ -36,6 +37,7 @@ export class StudentService {
     userId: string,
     role: string = "owner"
   ): Promise<{ student: Student; link: UserStudent }> {
+    insert = { ...this.parseStudentNames(insert), ...insert };
     return await studentRepository.createStudentWithLink(
       insert,
       userId,
@@ -80,6 +82,7 @@ export class StudentService {
     studentId: string,
     updates: UpdateStudent
   ): Promise<Student | undefined> {
+    updates = { ...this.parseStudentNames(updates), ...updates };
     return studentRepository.updateStudent(studentId, updates);
   }
 
@@ -96,18 +99,18 @@ export class StudentService {
   async verifyStudentAccess(
     studentId: string,
     userId: string
-  ): Promise<{ hasAccess: boolean; student?: Student; link?: UserStudent }> {
+  ): Promise<{ hasAccess: boolean; student?: Student; link?: UserStudent; hasMedicalRights: boolean; hasEducationalRights: boolean; }> {
     const student = await studentRepository.getStudentById(studentId);
     if (!student) {
-      return { hasAccess: false };
+      return { hasAccess: false, hasMedicalRights: false, hasEducationalRights: false };
     }
 
     const link = await studentRepository.getUserStudentLink(userId, studentId);
     if (!link || !link.isActive) {
-      return { hasAccess: false, student };
+      return { hasAccess: false, student, hasMedicalRights: false, hasEducationalRights: false };
     }
 
-    return { hasAccess: true, student, link };
+    return { hasAccess: true, student, link, hasMedicalRights: true, hasEducationalRights: true };
   }
 
   // ==================== User-AAC User Link Operations ====================
@@ -196,6 +199,22 @@ export class StudentService {
       ...student,
       age: this.calculateAge(student.birthDate),
     };
+  }
+
+  parseStudentNames(student: {name?: string | null, firstName?: string | null, lastName?: string | null}): { name?: string, firstName?: string; lastName?: string } {
+    let { name, firstName, lastName } = student;
+
+    if (name && (!firstName || !lastName)) {
+      const nameParts = name.trim().split(" ");
+      firstName = nameParts.shift() || "";
+      lastName = nameParts.join(" ") || "";
+      return { name, firstName, lastName };
+    } else if ((firstName || lastName) && !name) {
+      name = `${firstName || ""} ${lastName || ""}`.trim();
+      return { name, firstName: firstName || undefined, lastName: lastName || undefined };
+    }
+
+    return { };
   }
 }
 

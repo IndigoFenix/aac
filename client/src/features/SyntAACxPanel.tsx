@@ -38,14 +38,14 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
   // Register metadata builder for the boards feature
   // This sends the current board state with each chat message
   const buildBoardsMetadata = useCallback(() => {
-    // Build modeContext for the backend sessionService
-    const modeContext: Record<string, any> = {
+    // Build featureContext for the backend sessionService
+    const featureContext: Record<string, any> = {
       board: {}
     };
 
     if (board) {
       // Send the full board data so the LLM can view and modify it
-      modeContext.board = {
+      featureContext.board = {
         data: board,
         currentPageId: currentPageId || board.pages?.[0]?.id,
       };
@@ -57,7 +57,7 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
       });
     } else {
       // No board yet - request default grid size for new board creation
-      modeContext.board = {
+      featureContext.board = {
         requestedGridSize: { rows: 4, cols: 4 }
       };
       console.log('[SyntAACxPanel] Building metadata without board (new board request)');
@@ -73,8 +73,8 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
       } : undefined,
       currentPageId: currentPageId,
       
-      // New modeContext for backend processing
-      modeContext,
+      // New featureContext for backend processing
+      featureContext,
     };
   }, [board, currentPageId]);
 

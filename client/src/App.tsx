@@ -19,6 +19,8 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import "./i18n";
 import { ChatProvider } from "./hooks/useChat";
 import { FeaturePanelProvider } from "@/contexts/FeaturePanelContext";
+import InviteSignupPage from "./pages/InviteSignupPage";
+import { InstituteProvider } from "./hooks/useInstitute";
 
 // Component to redirect authenticated users away from login page
 function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
@@ -79,6 +81,17 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Wrapper for protected dashboard routes
+function ProtectedDashboard() {
+  return (
+    <ProtectedRoute>
+      <OnboardingGuard>
+        <Dashboard />
+      </OnboardingGuard>
+    </ProtectedRoute>
+  );
+}
+
 function Router() {
   return (
     <Switch>
@@ -86,6 +99,11 @@ function Router() {
       <Route path="/login">
         <PublicOnlyRoute>
           <LoginPage />
+        </PublicOnlyRoute>
+      </Route>
+      <Route path="/invite/:token">
+        <PublicOnlyRoute>
+          <InviteSignupPage />
         </PublicOnlyRoute>
       </Route>
       <Route path="/terms-of-service" component={TermsOfService} />
@@ -103,47 +121,25 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
-      {/* Dashboard routes - all protected */}
-      <Route path="/boards">
-        <ProtectedRoute>
-          <OnboardingGuard>
-            <Dashboard />
-          </OnboardingGuard>
-        </ProtectedRoute>
-      </Route>
+      {/* Dashboard feature routes - all protected */}
+      {/* Core workspace features */}
+      <Route path="/boards" component={ProtectedDashboard} />
+      <Route path="/interpret" component={ProtectedDashboard} />
+      <Route path="/interpret/sessions/:sessionId" component={ProtectedDashboard} />
+      <Route path="/docuslp" component={ProtectedDashboard} />
+      
+      {/* Student management features */}
+      <Route path="/overview" component={ProtectedDashboard} />
+      <Route path="/students" component={ProtectedDashboard} />
+      <Route path="/progress" component={ProtectedDashboard} />
+      <Route path="/institute" component={ProtectedDashboard} />
+      <Route path="/reports" component={ProtectedDashboard} />
+      
+      {/* Settings */}
+      <Route path="/settings" component={ProtectedDashboard} />
 
-      <Route path="/interpret">
-        <ProtectedRoute>
-          <OnboardingGuard>
-            <Dashboard />
-          </OnboardingGuard>
-        </ProtectedRoute>
-      </Route>
-
-      <Route path="/interpret/sessions/:sessionId">
-        <ProtectedRoute>
-          <OnboardingGuard>
-            <Dashboard />
-          </OnboardingGuard>
-        </ProtectedRoute>
-      </Route>
-
-      <Route path="/docuslp">
-        <ProtectedRoute>
-          <OnboardingGuard>
-            <Dashboard />
-          </OnboardingGuard>
-        </ProtectedRoute>
-      </Route>
-
-      {/* Default home route - protected */}
-      <Route path="/">
-        <ProtectedRoute>
-          <OnboardingGuard>
-            <Dashboard />
-          </OnboardingGuard>
-        </ProtectedRoute>
-      </Route>
+      {/* Default home route (chat) - protected */}
+      <Route path="/" component={ProtectedDashboard} />
 
       {/* 404 fallback */}
       <Route component={NotFound} />
@@ -156,18 +152,20 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <LanguageProvider>
         <AuthProvider>
-          <StudentProvider>
-            <FeaturePanelProvider>
-              <ChatProvider>
-                <ThemeProvider defaultTheme="dark">
-                  <TooltipProvider>
-                    <Toaster />
-                    <Router />
-                  </TooltipProvider>
-                </ThemeProvider>
-              </ChatProvider>
-            </FeaturePanelProvider>
-          </StudentProvider>
+          <InstituteProvider>
+            <StudentProvider>
+              <FeaturePanelProvider>
+                <ChatProvider>
+                  <ThemeProvider defaultTheme="dark">
+                    <TooltipProvider>
+                      <Toaster />
+                      <Router />
+                    </TooltipProvider>
+                  </ThemeProvider>
+                </ChatProvider>
+              </FeaturePanelProvider>
+            </StudentProvider>
+          </InstituteProvider>
         </AuthProvider>
       </LanguageProvider>
     </QueryClientProvider>

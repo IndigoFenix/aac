@@ -122,39 +122,23 @@ app.use((req, res, next) => {
 });
 
 async function runMigrations(): Promise<void> {
-  const maxRetries = 3;
-  const retryDelay = 1000;
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      log(`Running database migrations (attempt ${attempt}/${maxRetries})...`);
-      const db = drizzle(pool);
-      await migrate(db, { migrationsFolder: "./drizzle" });
-      log("Migrations completed successfully!");
+  // Use advisory lock to prevent concurrent migrations
+  const lockId = 12345; // arbitrary unique number
+  
+  try {
+    const lockResult = await pool.query('SELECT pg_try_advisory_lock($1)', [lockId]);
+    if (!lockResult.rows[0].pg_try_advisory_lock) {
+      log("Another instance is running migrations, skipping...");
       return;
-    } catch (error: any) {
-      if (error.message?.includes("already exists") || 
-          error.message?.includes("duplicate key") ||
-          (error.message?.includes("relation") && error.message?.includes("already exists"))) {
-        log("Tables already exist, continuing...");
-        return;
-      }
-      
-      if (error.message?.includes("lock") || 
-          error.message?.includes("concurrent") ||
-          error.code === '55P03') {
-        log(`Migration locked, retrying in ${retryDelay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
-        continue;
-      }
-
-      if (attempt === maxRetries) {
-        throw error;
-      }
-
-      log(`Migration attempt ${attempt} failed: ${error.message}, retrying...`);
-      await new Promise(resolve => setTimeout(resolve, retryDelay));
     }
+    
+    log("Running database migrations...");
+    const db = drizzle(pool);
+    await migrate(db, { migrationsFolder: "./drizzle" });
+    log("Migrations completed!");
+    
+  } finally {
+    await pool.query('SELECT pg_advisory_unlock($1)', [lockId]);
   }
 }
 

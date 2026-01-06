@@ -8,6 +8,8 @@ export { savedLocationRepository, SavedLocationRepository } from "./savedLocatio
 export { boardRepository, BoardRepository } from "./boardRepository";
 export { settingsRepository, SettingsRepository } from "./settingsRepository";
 export { programRepository, ProgramRepository } from "./programRepository";
+export { instituteRepository, InstituteRepository } from "./instituteRepository";
+export { reportRepository, ReportRepository } from "./reportRepository";
 export { medicalRecordRepository } from "./medicalRecordRepository";
 export { functionalReportRepository } from "./functionalReportRepository";
 export { educationalReportRepository } from "./educationalReportRepository";

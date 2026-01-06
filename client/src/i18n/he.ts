@@ -101,10 +101,14 @@ export const he = {
     workspace: "סביבת עבודה",
     toggleSidebar: "החלף סרגל צד",
     overview: "סקירה כללית",
+    institute: 'מוסד',
     students: "תלמידים",
     progress: "התקדמות תלמידים",
+    reports: "דוחות תלמידים",
     currentStudent: "תלמיד נוכחי",
     studentManagement: "ניהול תלמידים",
+    instituteManagement: 'ניהול מוסדות',
+    noStudentSelected: "אין תלמיד נבחר",
   },
 
   // ============================================================================
@@ -189,6 +193,26 @@ export const he = {
     minimize: "מזער",
     popupWelcome: "התחל שיחה...",
     placeholderShort: "הקלד הודעה...",
+    selectPersona: "מצב צ'אט",
+    changePersona: "שינוי מצב",
+    persona: {
+      assistant: "עוזר",
+      assistantDesc: "עוזר כללי מועיל",
+      coach: "מאמן",
+      coachDesc: "מאמן תומך ממוקד מטרות",
+      clinical: "קליני",
+      clinicalDesc: "יועץ קליני מקצועי",
+      teacher: "מורה",
+      teacherDesc: "מדריך חינוכי סבלני",
+      pediatricPT: "פיזיותרפיסט",
+      pediatricPTDesc: "מומחה לפיזיותרפיה ילדים",
+      slp: "קלינאי תקשורת",
+      slpDesc: "מומחה לקלינאות תקשורת",
+      ot: "מרפא בעיסוק",
+      otDesc: "מומחה לריפוי בעיסוק",
+      behavioral: "מומחה התנהגותי",
+      behavioralDesc: "מומחה לניתוח התנהגות"
+    }
   },
 
   // ============================================================================
@@ -740,7 +764,7 @@ export const he = {
     p3: "יישום",
     p4: "סיכום והערכה",
   },
-  
+
   // ============================================================================
   // PROGRAM
   // ============================================================================
@@ -748,7 +772,7 @@ export const he = {
     // General
     noStudentSelected: "לא נבחר תלמיד",
     goToStudents: "עבור לתלמידים",
-    
+
     // Create Program
     startNew: "התחל תוכנית חדשה",
     startNewDesc: "צור תוכנית תל״א/IEP חדשה עבור {name}",
@@ -758,14 +782,14 @@ export const he = {
     year: "שנת התוכנית",
     createAndStart: "צור תוכנית",
     previousPrograms: "תוכניות קודמות",
-    
+
     // Status
     status: {
       draft: "טיוטה",
       active: "פעילה",
       archived: "בארכיון",
     },
-    
+
     // Actions
     activate: "הפעל תוכנית",
     archive: "העבר לארכיון",
@@ -776,7 +800,7 @@ export const he = {
     createdDesc: "התוכנית נוצרה עם תחומי פרופיל ברירת מחדל.",
     activated: "התוכנית הופעלה",
     archived: "התוכנית הועברה לארכיון",
-    
+
     // Tabs
     tabs: {
       overview: "סקירה",
@@ -786,7 +810,7 @@ export const he = {
       progress: "התקדמות",
       team: "צוות",
     },
-    
+
     // Stats
     stats: {
       activeGoals: "מטרות פעילות",
@@ -794,7 +818,7 @@ export const he = {
       weeklyMinutes: "דקות שבועיות",
       teamMembers: "חברי צוות",
     },
-    
+
     // Overview
     overallProgress: "התקדמות כללית",
     goalCompletion: "השלמת מטרות",
@@ -802,7 +826,7 @@ export const he = {
     timeline: "ציר זמן",
     dueDate: "תאריך יעד",
     approvedDate: "תאריך אישור",
-    
+
     // Profile/Domains
     functionalProfile: "פרופיל תפקודי",
     functionalProfileDesc: "רמות ביצוע אקדמיות ותפקודיות נוכחיות",
@@ -827,18 +851,18 @@ export const he = {
     educationalImpactPlaceholder: "תאר כיצד זה משפיע על החינוך של התלמיד...",
     parentInput: "קלט הורים",
     parentInputPlaceholder: "תעד דאגות ועדיפויות של ההורים...",
-    
+
     // Goals
     goalsAndObjectives: "מטרות ויעדים",
     goalsAndObjectivesDesc: "מטרות שנתיות ויעדים קצרי טווח לתוכנית זו",
     noGoals: "טרם נוצרו מטרות",
-    
+
     // Services
     servicesAndAccommodations: "שירותים והתאמות",
     servicesAndAccommodationsDesc: "שירותים נלווים, התערבויות והתאמות",
     noServices: "טרם נוספו שירותים",
     accommodations: "התאמות",
-    
+
     // Progress
     progressTracking: "מעקב התקדמות",
     progressTrackingDesc: "איסוף נתונים וניטור התקדמות",
@@ -867,7 +891,7 @@ export const he = {
     deleted: "המטרה נמחקה",
     confirmDelete: "האם אתה בטוח שברצונך למחוק מטרה זו?",
     modalDescription: "צור מטרה שנתית מדידה המותאמת לצרכי התלמיד",
-    
+
     // Form fields
     title: "כותרת המטרה",
     titlePlaceholder: "לדוגמה: שיפור תקשורת אקספרסיבית",
@@ -882,7 +906,7 @@ export const he = {
     targetPlaceholder: "רמת ההישג הצפויה",
     targetDate: "תאריך יעד",
     currentProgress: "התקדמות נוכחית",
-    
+
     // Status
     status: {
       draft: "טיוטה",
@@ -903,14 +927,14 @@ export const he = {
     modalDescription: "צור יעד קצר טווח ומדיד עבור מטרה זו",
     title: "יעדים",
     noObjectives: "עדיין לא הוגדרו יעדים",
-    
+
     description: "תיאור היעד",
     descriptionPlaceholder: "תאר את היעד הספציפי והמדיד...",
     descriptionRequired: "נדרש תיאור יעד",
     criteria: "קריטריון הצלחה",
     criteriaPlaceholder: "לדוגמה: 80% דיוק ב-3 מפגשים רצופים",
     targetDate: "תאריך יעד",
-    
+
     status: {
       not_started: "לא התחיל",
       in_progress: "בתהליך",
@@ -933,7 +957,7 @@ export const he = {
     deleted: "השירות הוסר",
     confirmDelete: "האם אתה בטוח שברצונך להסיר שירות זה?",
     modalDescription: "הוסף שירות נלווה או התערבות",
-    
+
     // Form fields
     type: "סוג שירות",
     name: "שם השירות",
@@ -945,7 +969,7 @@ export const he = {
     setting: "מיקום",
     provider: "נותן שירות",
     providerPlaceholder: "שם נותן השירות",
-    
+
     // Types
     types: {
       speech_language_therapy: "קלינאות תקשורת",
@@ -957,14 +981,14 @@ export const he = {
       aac_support: "תמיכה בתת״ח",
       other: "אחר",
     },
-    
+
     // Frequency
     frequency: {
       daily: "יומי",
       weekly: "שבועי",
       monthly: "חודשי",
     },
-    
+
     // Settings
     settings: {
       general_education: "חינוך רגיל",
@@ -1005,7 +1029,7 @@ export const he = {
     noDataPoints: "עדיין לא נרשמו נתונים",
     collectedBy: "נאסף על ידי",
     moreCount: "+{{count}} רשומות נוספות",
-    
+
     numericValue: "ערך מספרי",
     numericPlaceholder: "לדוגמה: 85",
     textValue: "ערך טקסטואלי",
@@ -1040,7 +1064,7 @@ export const he = {
     confirmRemove: "האם אתה בטוח שברצונך להסיר חבר צוות זה?",
     coordinator: "מתאם/ת",
     isCoordinator: "אדם זה הוא מתאם/ת התיק",
-    
+
     name: "שם מלא",
     namePlaceholder: "הזן שם מלא",
     nameRequired: "נדרש שם",
@@ -1049,7 +1073,7 @@ export const he = {
     emailPlaceholder: "email@example.com",
     phone: "טלפון",
     phonePlaceholder: "050-1234567",
-    
+
     roles: {
       parent_guardian: "הורה/אפוטרופוס",
       student: "תלמיד/ה",
@@ -1075,7 +1099,7 @@ export const he = {
     description: "פגישות צוות התל״א/IEP",
     schedule: "קבע פגישה",
     none: "אין פגישות מתוכננות",
-    
+
     types: {
       initial_evaluation: "הערכה ראשונית",
       annual_review: "סיכום שנתי",
@@ -1084,6 +1108,285 @@ export const he = {
       transition_planning: "תכנון מעבר",
       progress_review: "סיכום התקדמות",
     },
+  },
+
+  // ============================================================================
+  // INSTITUTE
+  // ============================================================================
+
+  // Institute Panel
+  institute: {
+    title: 'מוסדות',
+    subtitle: 'ניהול המוסדות שלך',
+    noInstitutes: 'אינך חבר במוסד כלשהו עדיין',
+    createFirst: 'צור את המוסד הראשון שלך כדי להתחיל',
+    create: 'יצירת מוסד',
+    createNew: 'יצירת מוסד חדש',
+    edit: 'עריכת מוסד',
+    delete: 'מחיקת מוסד',
+    leave: 'עזיבת מוסד',
+
+    // Form fields
+    name: 'שם המוסד',
+    namePlaceholder: 'הזן שם מוסד',
+    type: 'סוג',
+    typeSchool: 'בית ספר',
+    typeHospital: 'בית חולים',
+    description: 'תיאור',
+    descriptionPlaceholder: 'תיאור קצר של המוסד',
+    address: 'כתובת',
+    addressPlaceholder: 'כתובת רחוב',
+    phone: 'טלפון',
+    phonePlaceholder: 'מספר טלפון',
+    email: 'דוא"ל',
+    emailPlaceholder: 'דוא"ל ליצירת קשר',
+    website: 'אתר אינטרנט',
+    websitePlaceholder: 'https://example.com',
+
+    // Tabs
+    tabOverview: 'סקירה',
+    tabMembers: 'חברים',
+    tabInvites: 'הזמנות',
+    tabSettings: 'הגדרות',
+
+    // Members
+    members: 'חברים',
+    noMembers: 'אין חברים עדיין',
+    member: 'חבר',
+    admin: 'מנהל',
+    owner: 'בעלים',
+    role: 'תפקיד',
+    roleStaff: 'צוות',
+    roleTherapist: 'מטפל/ת',
+    roleTeacher: 'מורה',
+    roleAdmin: 'מנהל',
+    makeAdmin: 'הפוך למנהל',
+    removeAdmin: 'הסר הרשאות מנהל',
+    removeMember: 'הסר חבר',
+    removeMemberConfirm: 'האם אתה בטוח שברצונך להסיר חבר זה?',
+    removeMemberConfirmDesc: 'הוא יאבד גישה למוסד זה.',
+
+    // Settings
+    dangerZone: 'אזור סכנה',
+    deleteConfirm: 'האם אתה בטוח שברצונך למחוק מוסד זה?',
+    deleteConfirmDesc: 'פעולה זו לא ניתנת לביטול. כל החברים יאבדו גישה.',
+    deleteConfirmInput: 'הקלד את שם המוסד לאישור',
+    leaveConfirm: 'האם אתה בטוח שברצונך לעזוב מוסד זה?',
+    leaveConfirmDesc: 'תאבד גישה לכל משאבי המוסד.',
+
+    // Messages
+    created: 'המוסד נוצר בהצלחה',
+    updated: 'המוסד עודכן בהצלחה',
+    deleted: 'המוסד נמחק בהצלחה',
+    left: 'עזבת את המוסד',
+    memberRemoved: 'החבר הוסר בהצלחה',
+    memberUpdated: 'תפקיד החבר עודכן',
+    cannotRemoveLastAdmin: 'לא ניתן להסיר את המנהל האחרון',
+
+    // Actions
+    switchTo: 'עבור למוסד זה',
+    current: 'נוכחי',
+  },
+
+  // Invites
+  invite: {
+    title: 'הזמנות',
+    send: 'שלח הזמנה',
+    sendNew: 'שלח הזמנה חדשה',
+    email: 'כתובת דוא"ל',
+    emailPlaceholder: 'colleague@example.com',
+    role: 'תפקיד',
+    grantAdmin: 'הענק הרשאות מנהל',
+    message: 'הודעה אישית',
+    messagePlaceholder: 'הודעה אופציונלית למוזמן',
+
+    // Status
+    pending: 'ממתין',
+    accepted: 'התקבל',
+    declined: 'נדחה',
+    expired: 'פג תוקף',
+    cancelled: 'בוטל',
+
+    // Actions
+    resend: 'שלח שוב',
+    cancel: 'בטל הזמנה',
+    copyLink: 'העתק קישור הזמנה',
+    linkCopied: 'קישור ההזמנה הועתק',
+
+    // Messages
+    sent: 'ההזמנה נשלחה בהצלחה',
+    sentDesc: 'הזמנה נשלחה ל-{email}',
+    resent: 'ההזמנה נשלחה שוב',
+    resentDesc: 'הזמנה חדשה נשלחה',
+    //cancelled: 'ההזמנה בוטלה',
+    cancelledDesc: 'ההזמנה בוטלה',
+    alreadyMember: 'משתמש זה כבר חבר',
+    alreadyInvited: 'דוא"ל זה כבר הוזמן',
+
+    // Invite page
+    invalid: 'הזמנה לא תקינה',
+    invalidDesc: 'קישור ההזמנה לא תקין או שפג תוקפו.',
+    createAccount: 'צור את החשבון שלך',
+    invitedBy: 'הוזמנת על ידי {name}',
+    invitedByToJoin: '{name} הזמין אותך להצטרף ל-{institute}',
+    invitedToJoinInstitute: 'הוזמנת להצטרף ל-{institute}',
+    yourRole: 'התפקיד שלך:',
+    admin: 'מנהל',
+    accept: 'קבל הזמנה',
+    accepting: 'מקבל...',
+    decline: 'דחה',
+    acceptedTitle: 'ההזמנה התקבלה',
+    acceptedDesc: 'הצטרפת ל-{institute}',
+    declinedTitle: 'ההזמנה נדחתה',
+    declinedDesc: 'דחית את ההזמנה',
+    joiningAs: 'מצטרף כ',
+    createAndJoin: 'צור חשבון והצטרף',
+    registered: 'ברוכים הבאים!',
+    registeredDesc: 'החשבון שלך נוצר והצטרפת ל-{institute}',
+    error: 'שגיאה',
+
+    // Expiry
+    expiresAt: 'פג תוקף',
+    expiresIn: 'פג תוקף בעוד {days} ימים',
+    expiresSoon: 'פג תוקף בקרוב',
+  },
+
+  // Pending invites page
+  pendingInvites: {
+    title: 'הזמנות ממתינות',
+    subtitle: 'הזמנות למוסדות הממתינות לתגובתך',
+    noInvites: 'אין הזמנות ממתינות',
+    noInvitesDesc: 'אין לך הזמנות ממתינות למוסדות',
+    viewAll: 'הצג הכל',
+    badge: '{count} ממתינות',
+  },
+
+  // ===========================================================================
+  // REPORTS
+  // ==========================================================================
+  reports: {
+    title: "דוחות",
+    noStudent: "בחר תלמיד לצפייה בדוחות",
+    loading: "טוען דוחות...",
+    error: "שגיאה בטעינת דוחות",
+    noReports: "אין דוחות עדיין",
+    create: "יצירת דוח",
+    finalize: "סיום",
+    createRevision: "יצירת גרסה חדשה",
+    view: "צפייה",
+    edit: "עריכה",
+    delete: "מחיקה",
+    archived: "בארכיון",
+    showArchived: "הצג ארכיון",
+    hideArchived: "הסתר ארכיון",
+
+    status: {
+      draft: "טיוטה",
+      pending_review: "ממתין לבדיקה",
+      final: "סופי",
+      superseded: "הוחלף"
+    },
+
+    confirmCreate: {
+      title: "יצירת דוח חדש",
+      description: "פעולה זו תיצור דוח {{type}} חדש. דוח פעיל קיים יועבר לארכיון.",
+      confirm: "יצירה"
+    },
+
+    confirmFinalize: {
+      title: "סיום דוח",
+      description: "לאחר סיום, לא ניתן לערוך דוח זה. יש ליצור גרסה חדשה לביצוע שינויים.",
+      warning: "פעולה זו אינה ניתנת לביטול.",
+      confirm: "סיום"
+    },
+
+    confirmDelete: {
+      title: "מחיקת דוח",
+      description: "האם אתה בטוח שברצונך למחוק טיוטת דוח זו? פעולה זו אינה ניתנת לביטול.",
+      confirm: "מחיקה"
+    },
+
+    medical: {
+      title: "רשומה רפואית",
+      description: "אבחנות רפואיות, אלרגיות, תרופות והתראות",
+      create: "יצירת רשומה רפואית",
+      created: "רשומה רפואית נוצרה",
+      createdDesc: "רשומה רפואית חדשה נוצרה.",
+      updated: "רשומה רפואית עודכנה",
+      finalized: "רשומה רפואית הושלמה",
+      finalizedDesc: "הרשומה הרפואית ננעלה ולא ניתנת לעריכה.",
+      revisionCreated: "גרסה חדשה נוצרה",
+      deleted: "רשומה רפואית נמחקה",
+      noRecord: "אין רשומה רפואית",
+      createFirst: "צור רשומה רפואית לתיעוד אבחנות, תרופות והתראות.",
+
+      primaryDiagnosis: "אבחנה ראשית",
+      primaryDiagnosisCode: "קוד ICD",
+      coMorbidities: "תחלואה נלווית",
+      secondaryDiagnoses: "אבחנות משניות",
+      allergies: "אלרגיות",
+      seizures: "התראות פרכוסים",
+      cardiac: "התראות לב",
+      medications: "תרופות",
+      medicalEquipment: "ציוד רפואי"
+    },
+
+    functional: {
+      title: "דוח תפקודי",
+      description: "ניידות, פעילויות יומיומיות, פרופיל חושי וסיכונים",
+      create: "יצירת דוח תפקודי",
+      created: "דוח תפקודי נוצר",
+      createdDesc: "דוח תפקודי חדש נוצר.",
+      updated: "דוח תפקודי עודכן",
+      finalized: "דוח תפקודי הושלם",
+      finalizedDesc: "הדוח התפקודי ננעל ולא ניתן לעריכה.",
+      revisionCreated: "גרסה חדשה נוצרה",
+      deleted: "דוח תפקודי נמחק",
+      noReport: "אין דוח תפקודי",
+      createFirst: "צור דוח תפקודי לתיעוד ניידות, חיי יומיום ומידע חושי.",
+
+      mobilityStatus: "מצב ניידות",
+      adlStatus: "פעילויות יומיומיות",
+      sensoryProfile: "פרופיל חושי",
+      safetyRisks: "סיכוני בטיחות"
+    },
+
+    educational: {
+      title: "דוח חינוכי",
+      description: "תקשורת, טכנולוגיה ואסטרטגיות התנהגות",
+      create: "יצירת דוח חינוכי",
+      created: "דוח חינוכי נוצר",
+      createdDesc: "דוח חינוכי חדש נוצר.",
+      updated: "דוח חינוכי עודכן",
+      finalized: "דוח חינוכי הושלם",
+      finalizedDesc: "הדוח החינוכי ננעל ולא ניתן לעריכה.",
+      revisionCreated: "גרסה חדשה נוצרה",
+      deleted: "דוח חינוכי נמחק",
+      noReport: "אין דוח חינוכי",
+      createFirst: "צור דוח חינוכי לתיעוד תקשורת ואסטרטגיות למידה.",
+
+      communicationMode: "אופני תקשורת",
+      receptiveLanguage: "שפה קלטנית",
+      assistiveTechnology: "טכנולוגיה מסייעת",
+      reinforcers: "מחזקים",
+      preferredActivities: "פעילויות מועדפות",
+      behavioralStrategies: "אסטרטגיות התנהגות"
+    },
+
+    tabs: {
+      medical: "רפואי",
+      functional: "תפקודי",
+      educational: "חינוכי"
+    },
+
+    empty: {
+      title: "אין דוחות {{type}}",
+      description: "צור דוח חדש להתחלה."
+    },
+
+    lastUpdated: "עדכון אחרון",
+    finalizedAt: "הושלם",
+    createdAt: "נוצר"
   },
 
   // ============================================================================
@@ -1096,7 +1399,7 @@ export const he = {
     signed: "חתום",
     pending: "ממתין",
     signedOn: "נחתם בתאריך",
-    
+
     types: {
       initial_evaluation: "הסכמה להערכה ראשונית",
       reevaluation: "הסכמה להערכה מחדש",

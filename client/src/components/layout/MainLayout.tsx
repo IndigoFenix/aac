@@ -14,6 +14,8 @@ import { cn } from '@/lib/utils';
 import { OverviewPanel } from '@/features/OverviewPanel';
 import { StudentsPanel } from '@/features/StudentsPanel';
 import { StudentProgressPanel } from '@/features/StudentProgressPanel';
+import { InstitutePanel } from '@/features/InstitutePanel';
+import { ReportsPanel } from '@/features/ReportsPanel';
 
 export function MainLayout() {
   const { 
@@ -115,10 +117,14 @@ export function MainLayout() {
         return <DocuSLPPanel isOpen={isPanelOpen} />;
       case 'overview':
         return <OverviewPanel isOpen={isPanelOpen} />;
+      case 'institute':
+        return <InstitutePanel isOpen={isPanelOpen} />;
       case 'students':
         return <StudentsPanel isOpen={isPanelOpen} />;
       case 'progress':
         return <StudentProgressPanel isOpen={isPanelOpen} />;
+      case 'reports':
+        return <ReportsPanel isOpen={isPanelOpen} />;
       default:
         return null;
     }

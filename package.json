@@ -14,7 +14,8 @@
     "get-ec2": "aws ssm describe-instance-information --query \"InstanceInformationList[*].InstanceId\"",
     "db-tunnel": "aws ssm start-session --target i-058774f45dcc97bc1 --document-name AWS-StartPortForwardingSessionToRemoteHost --parameters host=cliniaacian-prod-postgres.cpea2as2c1xa.il-central-1.rds.amazonaws.com,portNumber=5432,localPortNumber=5432",
     "db:generate": "npx drizzle-kit generate",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "db:migrate": "tsx scripts/migrate.ts"
   },
   "dependencies": {
     "@aws-sdk/client-secrets-manager": "^3.958.0",

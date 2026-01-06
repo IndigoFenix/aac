@@ -1,21 +1,12 @@
 // src/contexts/FeaturePanelContext.tsx
-// Updated to support chat popup mode and full-screen features
+// Updated to support chat popup mode, full-screen features, and URL-based navigation
 
+import { FeatureType } from '@shared/schema';
 import React, { createContext, useContext, useState, useCallback, useMemo, ReactNode, useEffect, useRef } from 'react';
-
-// Feature types including new student management features
-export type FeatureType = 
-  | 'chat' 
-  | 'interpret' 
-  | 'boards' 
-  | 'docuslp'
-  | 'overview'    // Student overview/dashboard
-  | 'students'    // Student list
-  | 'progress'    // Individual student progress
-  | 'settings';   // Settings panel
+import { useLocation } from 'wouter';
 
 // Chat display mode
-export type ChatMode = 'expanded' | 'popup' | 'minimized';
+export type ChatDisplayMode = 'expanded' | 'popup' | 'minimized';
 
 // Panel configuration for each feature
 export interface FeatureConfig {
@@ -26,7 +17,35 @@ export interface FeatureConfig {
   hasBottomBar?: boolean;   // Whether to show a bottom bar below chat
   isFullScreen?: boolean;   // Whether the feature forces chat to popup mode
   isFullChat?: boolean;     // Whether chat takes full width when this feature is active
+  path: string;             // URL path for this feature
 }
+
+// URL path to feature mapping
+export const PATH_TO_FEATURE: Record<string, FeatureType> = {
+  '/': 'chat',
+  '/interpret': 'interpret',
+  '/boards': 'boards',
+  '/docuslp': 'docuslp',
+  '/overview': 'overview',
+  '/students': 'students',
+  '/progress': 'progress',
+  '/institute': 'institute',
+  '/settings': 'settings',
+};
+
+// Feature to URL path mapping
+export const FEATURE_TO_PATH: Record<FeatureType, string> = {
+  chat: '/',
+  interpret: '/interpret',
+  boards: '/boards',
+  docuslp: '/docuslp',
+  overview: '/overview',
+  students: '/students',
+  progress: '/progress',
+  institute: '/institute',
+  reports: '/reports',
+  settings: '/settings',
+};
 
 // Feature configurations
 export const FEATURE_CONFIG: Record<FeatureType, FeatureConfig> = {
@@ -37,6 +56,7 @@ export const FEATURE_CONFIG: Record<FeatureType, FeatureConfig> = {
     maxSize: 0,
     isFullScreen: false,
     isFullChat: true,
+    path: '/',
   },
   interpret: {
     id: 'interpret',
@@ -45,6 +65,7 @@ export const FEATURE_CONFIG: Record<FeatureType, FeatureConfig> = {
     maxSize: 70,
     hasBottomBar: false,
     isFullScreen: false,
+    path: '/interpret',
   },
   boards: {
     id: 'boards',
@@ -53,6 +74,7 @@ export const FEATURE_CONFIG: Record<FeatureType, FeatureConfig> = {
     maxSize: 80,
     hasBottomBar: true,
     isFullScreen: false,
+    path: '/boards',
   },
   docuslp: {
     id: 'docuslp',
@@ -61,21 +83,40 @@ export const FEATURE_CONFIG: Record<FeatureType, FeatureConfig> = {
     maxSize: 70,
     hasBottomBar: false,
     isFullScreen: false,
+    path: '/docuslp',
   },
   overview: {
     id: 'overview',
-    defaultSize: 60,
-    minSize: 40,
-    maxSize: 80,
-    isFullScreen: false,
-  },
-  // Full-screen features - these force chat into popup mode
-  students: {
-    id: 'students',
     defaultSize: 100,
     minSize: 100,
     maxSize: 100,
     isFullScreen: true,
+    path: '/overview',
+  },
+  // Full-screen features - these force chat into popup mode
+  institute: {
+    id: 'institute',
+    defaultSize: 50,
+    minSize: 30,
+    maxSize: 70,
+    hasBottomBar: false,
+    path: '/institute',
+  },
+  reports: {
+    id: 'reports',
+    defaultSize: 50,
+    minSize: 30,
+    maxSize: 70,
+    isFullScreen: false,
+    path: '/reports',
+  },
+  students: {
+    id: 'students',
+    defaultSize: 50,
+    minSize: 30,
+    maxSize: 70,
+    hasBottomBar: false,
+    path: '/students',
   },
   progress: {
     id: 'progress',
@@ -83,6 +124,7 @@ export const FEATURE_CONFIG: Record<FeatureType, FeatureConfig> = {
     minSize: 100,
     maxSize: 100,
     isFullScreen: true,
+    path: '/progress',
   },
   settings: {
     id: 'settings',
@@ -90,8 +132,16 @@ export const FEATURE_CONFIG: Record<FeatureType, FeatureConfig> = {
     minSize: 40,
     maxSize: 80,
     isFullScreen: false,
+    path: '/settings',
   },
 };
+
+// Helper function to get feature from URL path
+export function getFeatureFromPath(path: string): FeatureType {
+  // Handle paths with additional segments (e.g., /interpret/sessions/123)
+  const basePath = '/' + (path.split('/')[1] || '');
+  return PATH_TO_FEATURE[basePath] || PATH_TO_FEATURE[path] || 'chat';
+}
 
 // Panel state for each feature
 interface PanelState {
@@ -123,8 +173,8 @@ interface FeaturePanelContextType {
   setPanelOpen: (feature: FeatureType, isOpen: boolean) => void;
   
   // Chat mode
-  chatMode: ChatMode;
-  setChatMode: (mode: ChatMode) => void;
+  chatMode: ChatDisplayMode;
+  setChatMode: (mode: ChatDisplayMode) => void;
   toggleChatMode: () => void;
   isFullScreenFeature: boolean;
   
@@ -146,20 +196,32 @@ interface FeaturePanelContextType {
   
   // Animation
   transitionDuration: number;
+  
+  // Navigation helper
+  navigateToFeature: (feature: FeatureType) => void;
 }
 
 const FeaturePanelContext = createContext<FeaturePanelContextType | null>(null);
 
 // Provider component
 export function FeaturePanelProvider({ children }: { children: ReactNode }) {
-  const [activeFeature, setActiveFeatureState] = useState<FeatureType | null>('chat');
+  const [location, setLocation] = useLocation();
+  
+  // Initialize active feature from URL
+  const [activeFeature, setActiveFeatureState] = useState<FeatureType | null>(() => {
+    return getFeatureFromPath(location);
+  });
+  
   const [sharedState, setSharedStateInternal] = useState<SharedState>({});
   // Use a ref instead of state for metadata builders to avoid triggering re-renders
   // when builders are registered/unregistered. The builders are only accessed when
   // getFeatureMetadata is called, not on every render.
   const metadataBuildersRef = useRef<Partial<Record<FeatureType, MetadataBuilder>>>({});
-  const [chatMode, setChatModeState] = useState<ChatMode>('expanded');
+  const [chatMode, setChatModeState] = useState<ChatDisplayMode>('expanded');
   const [chatSize, setChatSizeState] = useState<number>(50); // Default 50% width for chat
+  
+  // Track if we're currently syncing to prevent loops
+  const isSyncingRef = useRef(false);
   
   // Initialize panel states
   const [panels, setPanels] = useState<Record<FeatureType, PanelState>>(() => {
@@ -171,10 +233,51 @@ export function FeaturePanelProvider({ children }: { children: ReactNode }) {
         size: FEATURE_CONFIG[feature].defaultSize,
       };
     });
+    
+    // Open the panel for the initial feature from URL
+    const initialFeature = getFeatureFromPath(location);
+    if (initialFeature && initialFeature !== 'chat') {
+      initial[initialFeature] = {
+        ...initial[initialFeature],
+        isOpen: true,
+      };
+    }
+    
     return initial;
   });
 
   const transitionDuration = 300;
+
+  // Sync active feature with URL changes (browser back/forward)
+  useEffect(() => {
+    if (isSyncingRef.current) return;
+    
+    const featureFromUrl = getFeatureFromPath(location);
+    if (featureFromUrl !== activeFeature) {
+      isSyncingRef.current = true;
+      setActiveFeatureState(featureFromUrl);
+      
+      // Open the panel for the new feature
+      if (featureFromUrl !== 'chat') {
+        setPanels(prev => ({
+          ...prev,
+          [featureFromUrl]: { ...prev[featureFromUrl], isOpen: true },
+        }));
+      }
+      
+      // Handle chat mode for full-screen features
+      const config = FEATURE_CONFIG[featureFromUrl];
+      if (config.isFullScreen) {
+        setChatModeState(prev => prev === 'expanded' ? 'popup' : prev);
+      } else if (config.isFullChat) {
+        setChatModeState('expanded');
+      }
+      
+      setTimeout(() => {
+        isSyncingRef.current = false;
+      }, 0);
+    }
+  }, [location, activeFeature]);
 
   // Check if current feature is full-screen
   const isFullScreenFeature = useMemo(() => {
@@ -188,7 +291,7 @@ export function FeaturePanelProvider({ children }: { children: ReactNode }) {
   }, [activeFeature]);
 
   // Set chat mode with validation
-  const setChatMode = useCallback((mode: ChatMode) => {
+  const setChatMode = useCallback((mode: ChatDisplayMode) => {
     // If in full-screen feature, only allow popup or minimized
     if (isFullScreenFeature && mode === 'expanded') {
       return;
@@ -212,11 +315,28 @@ export function FeaturePanelProvider({ children }: { children: ReactNode }) {
     setChatSizeState(clampedSize);
   }, []);
 
-  // Set active feature
+  // Navigate to a feature (updates both state and URL)
+  const navigateToFeature = useCallback((feature: FeatureType) => {
+    const path = FEATURE_TO_PATH[feature];
+    if (path) {
+      setLocation(path);
+    }
+  }, [setLocation]);
+
+  // Set active feature (also updates URL)
   const setActiveFeature = useCallback((feature: FeatureType) => {
+    if (isSyncingRef.current) return;
+    
+    isSyncingRef.current = true;
     setActiveFeatureState(feature);
     
     const config = FEATURE_CONFIG[feature];
+    
+    // Update URL to match the feature
+    const targetPath = FEATURE_TO_PATH[feature];
+    if (targetPath && location !== targetPath) {
+      setLocation(targetPath);
+    }
     
     // If switching to a full-screen feature, force chat to popup mode
     if (config.isFullScreen) {
@@ -234,7 +354,11 @@ export function FeaturePanelProvider({ children }: { children: ReactNode }) {
         [feature]: { ...prev[feature], isOpen: true },
       }));
     }
-  }, []);
+    
+    setTimeout(() => {
+      isSyncingRef.current = false;
+    }, 0);
+  }, [location, setLocation]);
 
   // When active feature changes, check if we need to adjust chat mode
   useEffect(() => {
@@ -318,6 +442,7 @@ export function FeaturePanelProvider({ children }: { children: ReactNode }) {
     unregisterMetadataBuilder,
     getFeatureMetadata,
     transitionDuration,
+    navigateToFeature,
   }), [
     activeFeature,
     setActiveFeature,
@@ -337,6 +462,7 @@ export function FeaturePanelProvider({ children }: { children: ReactNode }) {
     registerMetadataBuilder,
     unregisterMetadataBuilder,
     getFeatureMetadata,
+    navigateToFeature,
   ]);
 
   return (

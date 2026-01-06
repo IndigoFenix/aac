@@ -531,7 +531,15 @@ function expandWildcardOnce(memoryFields: AgentMemoryField[], values: any, path:
   const { leaf, error } = resolveSchemaPath(memoryFields, basePath);
   if (error) return { paths: [], error };
   const container = getAtPath(values, basePath);
-  if (container == null) return { paths: [], error: `Container '${basePath}' not found.` };
+  if (container == null) {
+    // Check if this is a valid schema path that just hasn't been initialized
+    const { leaf } = resolveSchemaPath(memoryFields, basePath);
+    if (leaf?.kind === 'field' && ['object', 'array', 'map', 'topic'].includes(leaf.schema.type)) {
+      // Valid container in schema but not yet in values - treat as empty
+      return { paths: [] };
+    }
+    return { paths: [], error: `Container '${basePath}' not found.` };
+  }
 
   let keys: string[] = [];
   if (Array.isArray(container)) keys = container.map((_, i) => String(i));
@@ -600,6 +608,15 @@ function getMemoryToolInstructions(): string {
   Use ManageMemory to store and retrieve information from memory.
   View any memory that seems relevant to the conversation. Hide information when it is no longer relevant.
   Any empty memory field should be filled as soon as relevant information becomes available.
+
+  Actions by type:
+  - "set": Use for objects and primitives. Creates or updates the value at the path..
+  - "add": Use ONLY for arrays (append item), maps (add key), and topics (add subtopic). Requires "value", and "key" for maps/topics.
+  - "view"/"hide": Control what's visible in the memory display.
+  - "delete": Remove items from arrays, maps, or topics.
+  - "clear": Empty a container (array/map/topic).
+
+  Do not attempt to set the properties of hidden objects - view them first.
 
   Batch API:
   - Send one or more operations in the 'ops' array. They are applied sequentially.
@@ -863,7 +880,7 @@ export function renderMemoryVisualization(
   
     lines.push(...slice);
     if (more > 0) lines.push(`  … +${more} more`);
-    lines.push(`  ↪ To expand: view "${basePath}/*" or a specific child path.`);
+    lines.push(`  ↪ To expand: view "${basePath}/*". To modify: action "set" on "${basePath}" or "${basePath}/<property>".`);
     return lines;
   }  
 
@@ -966,6 +983,7 @@ export function renderMemoryVisualization(
     }
   
     if (end < arr.length) lines.push(`  … more items (use view with page.offset=${end})`);
+    lines.push(`  ↪ To append: action "add" at "${basePath}" with value. To update item: action "set" at "${basePath}/<index>".`);
     return lines;
   }
   
@@ -1412,11 +1430,14 @@ export function processMemoryToolResponse(
     // VIEW / HIDE (supports wildcard on last segment and multi-targets)
     if (action === 'view' || action === 'hide') {
       const allExpanded: string[] = [];
+      let hadWildcardErrors = false;  // Track if any wildcard expansion failed
+      
       for (const t of rawTargets) {
         if (hasTrailingWildcard(t)) {
           const { paths, error } = expandWildcardOnce(memoryFields, values, t);
           if (error) {
             results.push({ target: t, action, ok: false, message: error });
+            hadWildcardErrors = true;  // Mark that we had errors
             continue;
           }
           allExpanded.push(...paths);
@@ -1452,6 +1473,7 @@ export function processMemoryToolResponse(
             if (op.page) setPagination(state, p, op.page.offset, op.page.limit);
             mutated.push(p);
           }
+          
           // Also return a rendering of the recalled item(s), matching the full memory visualization style.
           let message: string | undefined;
           if (RETURN_VIEW_DATA){
@@ -1479,14 +1501,24 @@ export function processMemoryToolResponse(
           } else {
             message = "Data added to instructions.";
           }
-          results.push({ target: rawTargets.join(','), action, ok: true, mutatedPaths: mutated, ...(message ? { message } : {}) });
+          
+          // Only push success result if no wildcard expansion errors occurred
+          // (error results were already pushed individually above)
+          if (!hadWildcardErrors) {
+            results.push({ target: rawTargets.join(','), action, ok: true, mutatedPaths: mutated, ...(message ? { message } : {}) });
+          }
         } else {
+        // action === 'hide'
         const mutated: string[] = [];
         for (const p of allExpanded) {
           closePathAndDescendants(state, p);
           mutated.push(p);
         }
-        results.push({ target: rawTargets.join(','), action, ok: true, mutatedPaths: mutated });
+        
+        // Only push success result if no wildcard expansion errors occurred
+        if (!hadWildcardErrors) {
+          results.push({ target: rawTargets.join(','), action, ok: true, mutatedPaths: mutated });
+        }
       }
       return;
     }
@@ -1652,6 +1684,7 @@ export function processMemoryToolResponse(
       }
 
       // -- add (array/map/topic root or node)
+      // ADD actions should NOT target object properties. If you see bugs where the AI is trying to do so, figure out why it is confused.
       if (action === 'add') {
         const { leaf: contLeaf, error: e2 } = requireResolved(rawTarget);
         if (e2 || !contLeaf) { results.push({ target: rawTarget, action, ok: false, message: e2 ?? 'Container not found.' }); continue; }
@@ -1730,8 +1763,172 @@ export function processMemoryToolResponse(
           continue;
         }
 
-        console.log('ADD unsupported container kind:', contLeaf);
-        results.push({ target: rawTarget, action, ok: false, message: 'Container not addable.' });
+        const nestedArraySchema = 
+        (contLeaf.kind === 'objectProp' && contLeaf.propSchema.type === 'array') ? contLeaf.propSchema :
+        (contLeaf.kind === 'mapValue' && contLeaf.valueSchema.type === 'array') ? contLeaf.valueSchema :
+        (contLeaf.kind === 'arrayItem' && contLeaf.itemSchema.type === 'array') ? contLeaf.itemSchema :
+        null;
+      
+        if (nestedArraySchema) {
+          const s = nestedArraySchema as AgentMemoryFieldArray;
+          if (op.value === undefined) { 
+            results.push({ target: rawTarget, action, ok: false, message: 'add to array requires value.' }); 
+            continue; 
+          }
+          
+          // Get or initialize the array at the nested path
+          let arr = getAtPath(values, rawTarget);
+          if (arr === undefined || arr === null) {
+            // Auto-initialize: ensure parent exists and create empty array
+            const pathTokens = splitPath(rawTarget);
+            if (pathTokens.length > 1) {
+              const parentPath = joinPath(pathTokens.slice(0, -1));
+              const parent = getAtPath(values, parentPath);
+              if (parent === undefined || parent === null) {
+                results.push({ target: rawTarget, action, ok: false, message: `Parent at '${parentPath}' does not exist. Create it first.` });
+                continue;
+              }
+              const propName = pathTokens[pathTokens.length - 1];
+              if (typeof parent === 'object' && !Array.isArray(parent)) {
+                parent[propName] = [];
+                arr = parent[propName];
+              } else if (Array.isArray(parent)) {
+                const idx = parseInt(propName, 10);
+                if (!isNaN(idx)) {
+                  parent[idx] = [];
+                  arr = parent[idx];
+                }
+              }
+            }
+            if (arr === undefined || arr === null) {
+              results.push({ target: rawTarget, action, ok: false, message: 'Could not initialize array at path.' });
+              continue;
+            }
+          }
+          
+          if (!Array.isArray(arr)) { 
+            results.push({ target: rawTarget, action, ok: false, message: 'Expected array at path.' }); 
+            continue; 
+          }
+          
+          const errs = validateAgainstSchema(s.items, op.value, rawTarget + '/<new>');
+          if (errs.length) { 
+            results.push({ target: rawTarget, action, ok: false, message: errs.join(' ') }); 
+            continue; 
+          }
+          if (s.maxItems != null && arr.length + 1 > s.maxItems) { 
+            results.push({ target: rawTarget, action, ok: false, message: `maxItems ${s.maxItems} exceeded.` }); 
+            continue; 
+          }
+          if (s.uniqueItems) {
+            const sv = JSON.stringify(op.value);
+            if (arr.some((x: any) => JSON.stringify(x) === sv)) { 
+              results.push({ target: rawTarget, action, ok: false, message: 'uniqueItems violated.' }); 
+              continue; 
+            }
+          }
+          
+          arr.push(op.value);
+          autoOpenIfObject(s.items, joinPath([...splitPath(rawTarget), String(arr.length - 1)]));
+          results.push({ target: rawTarget, action, ok: true });
+          continue;
+        }
+
+        // -- Handle nested maps (at any depth)
+        const nestedMapSchema = 
+          (contLeaf.kind === 'objectProp' && contLeaf.propSchema.type === 'map') ? contLeaf.propSchema :
+          (contLeaf.kind === 'mapValue' && contLeaf.valueSchema.type === 'map') ? contLeaf.valueSchema :
+          (contLeaf.kind === 'arrayItem' && contLeaf.itemSchema.type === 'map') ? contLeaf.itemSchema :
+          null;
+        
+        if (nestedMapSchema) {
+          const s = nestedMapSchema as AgentMemoryFieldMap;
+          const key = op.key;
+          if (!key) {
+            results.push({ target: rawTarget, action, ok: false, message: 'add to map requires key.' }); 
+            continue;
+          }
+          
+          // Get or initialize the map at the nested path
+          let map = getAtPath(values, rawTarget);
+          if (map === undefined || map === null) {
+            // Auto-initialize: ensure parent exists and create empty map
+            const pathTokens = splitPath(rawTarget);
+            if (pathTokens.length > 1) {
+              const parentPath = joinPath(pathTokens.slice(0, -1));
+              const parent = getAtPath(values, parentPath);
+              if (parent === undefined || parent === null) {
+                results.push({ target: rawTarget, action, ok: false, message: `Parent at '${parentPath}' does not exist. Create it first.` });
+                continue;
+              }
+              const propName = pathTokens[pathTokens.length - 1];
+              if (typeof parent === 'object' && !Array.isArray(parent)) {
+                parent[propName] = {};
+                map = parent[propName];
+              } else if (Array.isArray(parent)) {
+                const idx = parseInt(propName, 10);
+                if (!isNaN(idx)) {
+                  parent[idx] = {};
+                  map = parent[idx];
+                }
+              }
+            }
+            if (map === undefined || map === null) {
+              results.push({ target: rawTarget, action, ok: false, message: 'Could not initialize map at path.' });
+              continue;
+            }
+          }
+          
+          if (typeof map !== 'object' || Array.isArray(map)) {
+            results.push({ target: rawTarget, action, ok: false, message: 'Expected map at path.' });
+            continue;
+          }
+          
+          if (s.keyPattern && !new RegExp(s.keyPattern).test(key)) { 
+            results.push({ target: rawTarget, action, ok: false, message: 'keyPattern violation.' }); 
+            continue; 
+          }
+          if (map[key] !== undefined) { 
+            results.push({ target: rawTarget, action, ok: false, message: 'Key already exists.' }); 
+            continue; 
+          }
+          
+          const val = op.value;
+          const errs = validateAgainstSchema(s.values, val, rawTarget + '/' + key);
+          if (errs.length) { 
+            results.push({ target: rawTarget, action, ok: false, message: errs.join(' ') }); 
+            continue; 
+          }
+          if (s.maxProperties != null && Object.keys(map).length + 1 > s.maxProperties) { 
+            results.push({ target: rawTarget, action, ok: false, message: `maxProperties ${s.maxProperties} exceeded.` }); 
+            continue; 
+          }
+          
+          map[key] = val;
+          autoOpenIfObject(s.values, joinPath([...splitPath(rawTarget), key]));
+          results.push({ target: rawTarget, action, ok: true });
+          continue;
+        }
+
+        // Generate helpful error message based on what was found
+        let addErrorMsg = 'Container not addable.';
+        const foundType = 
+          contLeaf.kind === 'field' ? contLeaf.schema.type :
+          contLeaf.kind === 'objectProp' ? contLeaf.propSchema.type :
+          contLeaf.kind === 'mapValue' ? contLeaf.valueSchema.type :
+          contLeaf.kind === 'arrayItem' ? contLeaf.itemSchema.type :
+          null;
+        
+        if (foundType === 'object') {
+          addErrorMsg = `Cannot "add" to an object. Use "set" to create/update "${rawTarget}" or its properties (e.g., "${rawTarget}/<property>").`;
+        } else if (foundType === 'string' || foundType === 'number' || foundType === 'boolean') {
+          addErrorMsg = `Cannot "add" to a ${foundType}. Use "set" to update the value at "${rawTarget}".`;
+        } else if (foundType) {
+          addErrorMsg = `Cannot "add" to type "${foundType}" at this path.`;
+        }
+        
+        console.log('ADD unsupported container kind:', contLeaf.kind, 'type:', foundType);
+        results.push({ target: rawTarget, action, ok: false, message: addErrorMsg });
         continue;
       }
 
