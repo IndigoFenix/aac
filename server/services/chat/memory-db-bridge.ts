@@ -689,6 +689,15 @@ export function resolveSchemaWithContext(
 
     if (current.type === 'object') {
       const objSchema = current as AgentMemoryFieldObjectWithDB;
+      
+      // FIX: Track this object as the parent container if it has write ops
+      // This allows setting properties inside objects like medicalRecord that have db.write
+      if (objSchema.db?.write) {
+        parentContainerDbOps = objSchema.db;
+        parentContainerKey = undefined; // Not a map/array key - property name extracted from path
+        parentContainerPath = currentPath;
+      }
+      
       const propSchema = objSchema.properties?.[token];
       
       if (!propSchema && !objSchema.additionalProperties) {
@@ -1220,25 +1229,73 @@ export async function processDBOperation(
 
   // If no DB operations defined at the target path, check if we can use parent container operations
   if (!dbOps) {
-    // For 'set' action on a property, try to use parent container's update operation
-    if (action === 'set' && parentContainerDbOps?.update && parentContainerKey !== undefined) {
+    // For 'set' action on a property, try to use parent container's update OR write operation
+    if (action === 'set' && parentContainerDbOps && parentContainerPath) {
       try {
         // Extract the property name being set (last token in the path)
         const tokens = splitPath(path);
         const propertyName = tokens[tokens.length - 1];
         
-        // Call the parent container's update with the partial value
-        const partialUpdate = { [propertyName]: value };
-        await parentContainerDbOps.update(context, parentContainerKey, partialUpdate);
-        
-        if (parentContainerPath) {
+        // Option 1: Parent has update op (for maps/arrays with specific key)
+        if (parentContainerDbOps.update && parentContainerKey !== undefined) {
+          const partialUpdate = { [propertyName]: value };
+          await parentContainerDbOps.update(context, parentContainerKey, partialUpdate);
           markLoaded(loadState, parentContainerPath);
+          return { dbResult: value, shouldUpdateMemory: true, dbSynced: true };
         }
+        
+        // Option 2: Parent has write op
+        if (parentContainerDbOps.write) {
+          console.log(`[processDBOperation] Using parent object write at ${parentContainerPath}`);
+          console.log(`[processDBOperation] Property: ${propertyName}, Value:`, value);
+          
+          // Call parent's write with partial update
+          // The write operation handles merging with existing data
+          const partialUpdate = { [propertyName]: value };
+          const writeResult = await parentContainerDbOps.write(context, partialUpdate);
+          
+          markLoaded(loadState, parentContainerPath);
+          
+          // If write returned updated record, extract just the property we set
+          // Otherwise use the original value
+          const dbResult = writeResult !== undefined 
+            ? (parentContainerDbOps.fromDB ? parentContainerDbOps.fromDB(writeResult) : writeResult)
+            : value;
+            
+          return { dbResult, shouldUpdateMemory: true, dbSynced: true };
+        }
+      } catch (err: any) {
+        console.error('[processDBOperation] Parent container write/update failed:', err);
+        return { error: err.message || 'DB write failed', shouldUpdateMemory: false, dbSynced: false };
+      }
+    }
+    
+    // For 'add' action on an array property inside an object with write ops
+    if (action === 'add' && parentContainerDbOps?.write && parentContainerPath) {
+      try {
+        const tokens = splitPath(path);
+        const propertyName = tokens[tokens.length - 1];
+        
+        // Get current array from memory
+        const parentTokens = splitPath(parentContainerPath);
+        const currentParentValue = getValueAtPath(memoryValues, parentTokens) || {};
+        const currentArray = currentParentValue[propertyName] || [];
+        
+        // Append the new value
+        const updatedArray = [...currentArray, value];
+        const partialUpdate = { [propertyName]: updatedArray };
+        
+        console.log(`[processDBOperation] Using parent object write for 'add' at ${parentContainerPath}`);
+        console.log(`[processDBOperation] Array property: ${propertyName}, Adding:`, value);
+        
+        const writeResult = await parentContainerDbOps.write(context, partialUpdate);
+        
+        markLoaded(loadState, parentContainerPath);
         
         return { dbResult: value, shouldUpdateMemory: true, dbSynced: true };
       } catch (err: any) {
-        console.error('[processDBOperation] Parent container update failed:', err);
-        return { error: err.message || 'DB update failed', shouldUpdateMemory: false, dbSynced: false };
+        console.error('[processDBOperation] Parent container add failed:', err);
+        return { error: err.message || 'DB add failed', shouldUpdateMemory: false, dbSynced: false };
       }
     }
     
