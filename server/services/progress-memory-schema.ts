@@ -65,6 +65,8 @@ import {
   type Meeting,
   type ConsentForm,
   type AgentMemoryField,
+  InsertProgram,
+  UpdateProgram,
 } from "@shared/schema";
 
 import {
@@ -77,6 +79,7 @@ import {
   type PaginationParams,
   type ListResult,
 } from "./chat/memory-db-bridge";
+import { programService } from "./programService";
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -244,19 +247,35 @@ const programOps: MemoryDBOperations<Program> = {
   write: async (ctx, value) => {
     const studentId = ctx.all.studentId;
     if (!studentId) throw new Error("studentId required for program write");
-
-    if (value.id) {
-      // Update existing
-      await db
-        .update(programs)
-        .set({ ...value, updatedAt: new Date() })
-        .where(eq(programs.id, value.id));
-    } else {
-      // Create new
-      await db.insert(programs).values({
-        ...value,
-        studentId,
+  
+    const existing = value.id 
+      ? await programService.getProgramById(value.id)
+      : await programService.getCurrentProgram(studentId);
+    
+    if (existing) {
+      const updated = await programService.updateProgram(existing.id, {
+        ...value as UpdateProgram,
       });
+      return updated;
+    } else {
+      // Create new program with default profile domains
+      const { program, domains } = await programService.createProgramWithProfile({
+        ...value as InsertProgram,
+        studentId,
+      }, true);
+      
+      // Return program with domains populated so AI can see them
+      const result = programOps.fromDB!(program);
+      
+      // Populate profileDomains map with created domains
+      if (domains.length > 0) {
+        for (const domain of domains) {
+          const key = domain.domainType;
+          result.profileDomains[key] = toMemoryValue(domain);
+        }
+      }
+      
+      return result;
     }
   },
 
@@ -492,24 +511,30 @@ const goalsOps: MemoryDBOperations<Goal> = {
   add: async (ctx, value) => {
     const programId = ctx.all.programId;
     if (!programId) throw new Error("programId required for creating goal");
-
+  
+    // Sanitize FK fields - convert empty strings to null
+    const sanitizedValue = {
+      ...value,
+      profileDomainId: value.profileDomainId || null,
+    };
+  
     // Get next sort order
     const [maxOrder] = await db
       .select({ max: sql<number>`coalesce(max(sort_order), -1)` })
       .from(goals)
       .where(eq(goals.programId, programId));
-
+  
     const [created] = await db
       .insert(goals)
       .values({
-        ...value,
+        ...sanitizedValue,
         programId,
         sortOrder: (maxOrder?.max ?? -1) + 1,
       })
       .returning();
-
+  
     return created;
-  },
+  },  
 
   update: async (ctx, key, value) => {
     const programId = ctx.all.programId;
@@ -1406,7 +1431,7 @@ const baselineMeasurementSchema: AgentMemoryFieldObjectWithDB = {
     value: { id: "value", type: "string", description: "The measurement value (e.g., '10%', '3/10 trials')" },
     numericValue: { id: "numericValue", type: "number", description: "Numeric value for graphing" },
     unit: { id: "unit", type: "string", description: "Unit of measurement" },
-    assessedAt: { id: "assessedAt", type: "string", format: "date" },
+    assessedAt: { id: "assessedAt", type: "string", format: "YYYY-MM-DD" },
     assessedBy: { id: "assessedBy", type: "string" },
   },
   required: ["skillDescription", "measurementMethod", "value"],
@@ -1427,7 +1452,7 @@ const assessmentSourceSchema: AgentMemoryFieldObjectWithDB = {
       enum: ["standardized_test", "structured_observation", "parent_questionnaire", "teacher_input", "curriculum_based", "behavioral_records"],
     },
     instrumentName: { id: "instrumentName", type: "string", description: "Name of the assessment tool" },
-    assessedAt: { id: "assessedAt", type: "string", format: "date" },
+    assessedAt: { id: "assessedAt", type: "string", format: "YYYY-MM-DD" },
     summary: { id: "summary", type: "string" },
     resultsData: { id: "resultsData", type: "object", properties: {}, additionalProperties: true },
   },
@@ -1506,14 +1531,14 @@ const objectiveSchema: AgentMemoryFieldObjectWithDB = {
     sequenceOrder: { id: "sequenceOrder", type: "integer" },
     criterion: { id: "criterion", type: "string", description: "Measurable criterion (e.g., '3 out of 4 opportunities')", opened: true },
     context: { id: "context", type: "string" },
-    targetDate: { id: "targetDate", type: "string", format: "date" },
+    targetDate: { id: "targetDate", type: "string", format: "YYYY-MM-DD" },
     status: {
       id: "status",
       type: "string",
       enum: ["not_started", "in_progress", "achieved", "modified", "discontinued"],
       opened: true,
     },
-    achievedDate: { id: "achievedDate", type: "string", format: "date" },
+    achievedDate: { id: "achievedDate", type: "string", format: "YYYY-MM-DD" },
     dataPoints: {
       id: "dataPoints",
       type: "array",
@@ -1544,7 +1569,7 @@ const goalSchema: AgentMemoryFieldObjectWithDB = {
       opened: true,
     },
     progress: { id: "progress", type: "integer", minimum: 0, maximum: 100, opened: true },
-    targetDate: { id: "targetDate", type: "string", format: "date", opened: true },
+    targetDate: { id: "targetDate", type: "string", format: "YYYY-MM-DD", opened: true },
     // Less frequently accessed fields
     profileDomainId: { id: "profileDomainId", type: "string", description: "Link to profile domain" },
     criteria: { id: "criteria", type: "string", description: "Success criteria (e.g., '80% accuracy')" },
@@ -1640,8 +1665,8 @@ const serviceSchema: AgentMemoryFieldObjectWithDB = {
       type: "string",
       enum: ["direct", "consultation", "collaborative", "indirect"],
     },
-    startDate: { id: "startDate", type: "string", format: "date" },
-    endDate: { id: "endDate", type: "string", format: "date" },
+    startDate: { id: "startDate", type: "string", format: "YYYY-MM-DD" },
+    endDate: { id: "endDate", type: "string", format: "YYYY-MM-DD" },
     isActive: { id: "isActive", type: "boolean", default: true },
     accommodations: {
       id: "accommodations",
@@ -1726,8 +1751,8 @@ const consentFormSchema: AgentMemoryFieldObjectWithDB = {
       type: "string",
       enum: ["initial_evaluation", "reevaluation", "placement", "release_of_information", "service_provision"],
     },
-    requestedDate: { id: "requestedDate", type: "string", format: "date" },
-    responseDate: { id: "responseDate", type: "string", format: "date" },
+    requestedDate: { id: "requestedDate", type: "string", format: "YYYY-MM-DD" },
+    responseDate: { id: "responseDate", type: "string", format: "YYYY-MM-DD" },
     consentGiven: { id: "consentGiven", type: "boolean" },
     signedBy: { id: "signedBy", type: "string" },
     notes: { id: "notes", type: "string" },
@@ -1766,12 +1791,12 @@ const progressReportSchema: AgentMemoryFieldObjectWithDB = {
   opened: true,
   properties: {
     id: { id: "id", type: "string" },
-    reportDate: { id: "reportDate", type: "string", format: "date" },
+    reportDate: { id: "reportDate", type: "string", format: "YYYY-MM-DD" },
     reportingPeriod: { id: "reportingPeriod", type: "string", description: "e.g., 'Q1', 'Semester 1'" },
     overallSummary: { id: "overallSummary", type: "string" },
     recommendedChanges: { id: "recommendedChanges", type: "string" },
     sharedWithParents: { id: "sharedWithParents", type: "boolean", default: false },
-    sharedDate: { id: "sharedDate", type: "string", format: "date" },
+    sharedDate: { id: "sharedDate", type: "string", format: "YYYY-MM-DD" },
     entries: {
       id: "entries",
       type: "array",
@@ -1878,17 +1903,16 @@ export const PROGRESS_PROGRAM_FIELD: AgentMemoryFieldObjectWithDB = {
       enum: ["tala", "us_iep"],
       description: "TALA (Israel) or US IEP framework",
     },
-    programYear: { id: "programYear", type: "string", description: "e.g., '2024-2025'" },
     title: { id: "title", type: "string" },
     status: {
       id: "status",
       type: "string",
       enum: ["draft", "active", "archived"],
     },
-    startDate: { id: "startDate", type: "string", format: "date" },
-    endDate: { id: "endDate", type: "string", format: "date" },
-    dueDate: { id: "dueDate", type: "string", format: "date" },
-    approvalDate: { id: "approvalDate", type: "string", format: "date" },
+    startDate: { id: "startDate", type: "string", format: "YYYY-MM-DD" },
+    endDate: { id: "endDate", type: "string", format: "YYYY-MM-DD" },
+    dueDate: { id: "dueDate", type: "string", format: "YYYY-MM-DD" },
+    approvalDate: { id: "approvalDate", type: "string", format: "YYYY-MM-DD" },
     leastRestrictiveEnvironment: { id: "leastRestrictiveEnvironment", type: "string" },
     notes: { id: "notes", type: "string" },
     
@@ -1907,7 +1931,7 @@ export const PROGRESS_PROGRAM_FIELD: AgentMemoryFieldObjectWithDB = {
       id: "goals",
       type: "map",
       title: "Goals",
-      description: "Annual goals and objectives (keyed by goal statement)",
+      description: "Annual goals and objectives (keyed by goal statement). Goals should be defined using S.M.A.R.T criteria. (Specific, Measurable, Achievable, Relevant, Time-bound).",
       opened: true,
       values: goalSchema,
       db: goalsOps,
@@ -1965,7 +1989,7 @@ export const PROGRESS_PROGRAM_FIELD: AgentMemoryFieldObjectWithDB = {
     
     transitionPlan: transitionPlanSchema,
   },
-  required: ["framework", "programYear"],
+  required: ["framework"],
   db: programOps,
 };
 

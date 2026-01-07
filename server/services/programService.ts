@@ -733,7 +733,6 @@ export class ProgramService {
 
         programSummary = {
           id: currentProgram.id,
-          programYear: currentProgram.programYear,
           status: currentProgram.status,
           dueDate: currentProgram.dueDate || undefined,
           goalsCount: programGoals.length,

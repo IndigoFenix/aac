@@ -106,7 +106,6 @@ export interface Program {
   id: string;
   studentId: string;
   framework: ProgramFramework;
-  programYear: string;
   status: ProgramStatus;
   dueDate?: string | null;
   startDate?: string | null;
@@ -373,7 +372,6 @@ export interface StudentWithProgramSummary {
   currentProgram?: {
     id: string;
     framework: ProgramFramework;
-    programYear: string;
     status: ProgramStatus;
     goalsCount: number;
     goalsCompleted: number;
@@ -453,7 +451,6 @@ export interface TeamMemberFormData {
 
 export interface ProgramFormData {
   framework: ProgramFramework;
-  programYear: string;
 }
 
 // =============================================================================

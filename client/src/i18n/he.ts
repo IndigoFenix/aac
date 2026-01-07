@@ -91,6 +91,50 @@ export const he = {
     registerSuccessDesc: "החשבון נוצר. כעת ניתן להתחבר.",
     registerFailed: "הרשמה נכשלה",
     registerError: "אירעה שגיאה במהלך הרשמה",
+    
+    // Forgot Password Page
+    forgotPasswordDesc: 'הזן את כתובת האימייל שלך ונשלח לך קישור לאיפוס הסיסמה.',
+    sendResetLink: 'שלח קישור איפוס',
+    sending: 'שולח...',
+    emailRequired: 'נדרש אימייל',
+    invalidEmail: 'נא להזין כתובת אימייל תקינה',
+    
+    // Check Email (after submission)
+    checkEmail: 'בדוק את האימייל שלך',
+    resetEmailSent: 'אם קיים חשבון עם אימייל זה, שלחנו קישור לאיפוס הסיסמה.',
+    sentTo: 'נשלח אל',
+    checkSpam: 'לא רואה? בדוק את תיקיית הספאם או נסה שוב עם אימייל אחר.',
+    tryDifferentEmail: 'נסה אימייל אחר',
+    
+    // Invalid Token
+    invalidResetLink: 'קישור איפוס לא תקין',
+    invalidResetLinkDesc: 'קישור איפוס הסיסמה לא תקין או שפג תוקפו. אנא בקש קישור חדש.',
+    requestNewLink: 'בקש קישור חדש',
+    validatingLink: 'מאמת קישור איפוס...',
+    
+    // Reset Password Form
+    resetPassword: 'איפוס סיסמה',
+    resetPasswordDesc: 'הזן את הסיסמה החדשה שלך למטה.',
+    resettingFor: 'מאפס סיסמה עבור',
+    newPassword: 'סיסמה חדשה',
+    newPasswordPlaceholder: 'הזן סיסמה חדשה',
+    resetPasswordButton: 'אפס סיסמה',
+    resetting: 'מאפס...',
+    
+    // Password validation
+    passwordRequired: 'נדרשת סיסמה',
+    passwordTooShort: 'הסיסמה חייבת להכיל לפחות 6 תווים',
+    passwordStrength: 'חוזק',
+    passwordRequirements: 'דרישות סיסמה',
+    minCharacters: 'לפחות 6 תווים',
+    
+    // Success
+    passwordResetSuccess: 'הסיסמה אופסה!',
+    passwordResetSuccessDesc: 'הסיסמה שלך עודכנה בהצלחה. כעת תוכל להתחבר עם הסיסמה החדשה.',
+    goToLogin: 'עבור להתחברות',
+    
+    // Errors
+    passwordResetFailed: 'איפוס הסיסמה נכשל',
   },
 
   // ============================================================================

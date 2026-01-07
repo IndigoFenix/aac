@@ -278,7 +278,6 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
   // Form states - using schema-aligned field names
   const [programForm, setProgramForm] = useState({
     framework: 'tala' as ProgramFramework,
-    programYear: new Date().getFullYear().toString(),
   });
   
   const [goalForm, setGoalForm] = useState<GoalFormState>({
@@ -387,7 +386,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
 
   // Create program
   const createProgramMutation = useMutation({
-    mutationFn: async (data: { framework: ProgramFramework; programYear: string }) => {
+    mutationFn: async (data: { framework: ProgramFramework; }) => {
       const response = await apiRequest('POST', `/api/students/${student?.id}/programs`, {
         ...data,
         createDefaultDomains: true,
@@ -407,6 +406,13 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
       toast({ title: t('common.error'), description: error.message, variant: 'destructive' });
     },
   });
+
+  const getProgamYear = (program: Program) => {
+    if (!program.startDate || !program.endDate) return '';
+    const startDate = new Date(program.startDate);
+    const endDate = new Date(program.endDate);
+    return `${startDate.getFullYear()} - ${endDate.getFullYear()}`;
+  }
 
   // Activate program
   const activateProgramMutation = useMutation({
@@ -834,15 +840,6 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label>{t('program.year')}</Label>
-                <Input
-                  value={programForm.programYear}
-                  onChange={(e) => setProgramForm(prev => ({ ...prev, programYear: e.target.value }))}
-                  placeholder="2024-2025"
-                />
-              </div>
-
               <Button
                 className="w-full gap-2"
                 onClick={() => createProgramMutation.mutate(programForm)}
@@ -873,7 +870,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                           }}
                         >
                         <div>
-                          <p className="font-medium">{p.programYear}</p>
+                          <p className="font-medium">{getProgamYear(p)}</p>
                           <p className="text-xs text-muted-foreground">
                             {t(`program.framework${p.framework === 'tala' ? 'Tala' : 'Iep'}`)} • {t(`program.status.${p.status}`)}
                           </p>
@@ -925,7 +922,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                 </Badge>
               </div>
               <p className={cn('text-sm', isDark ? 'text-slate-400' : 'text-slate-600')}>
-                {t(`program.framework${program.framework === 'tala' ? 'Tala' : 'Iep'}`)} • {program.programYear}
+                {t(`program.framework${program.framework === 'tala' ? 'Tala' : 'Iep'}`)} • {getProgamYear(program)}
               </p>
             </div>
           </div>

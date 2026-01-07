@@ -577,7 +577,6 @@ export const programs = pgTable("programs", {
   
   // Framework and identification
   framework: programFrameworkEnum("framework").notNull(), // 'tala' | 'us_iep'
-  programYear: text("program_year").notNull(), // e.g., "2024-2025"
   title: text("title"), // Optional custom title
   
   // Status and timeline
@@ -2051,7 +2050,6 @@ export interface StudentWithProgramSummary {
   student: Student;
   currentProgram?: {
     id: string;
-    programYear: string;
     status: ProgramStatus;
     dueDate?: string;
     goalsCount: number;

@@ -115,13 +115,17 @@ export function ChatPopup() {
     return content.html || content.text || '';
   };
 
-  // Helper to check if content is HTML
+  // Helper to detect if a string contains HTML markup
+  const containsHtmlTags = (str: string): boolean => {
+    // Check for common HTML tag patterns (opening tags like <p>, <div>, <br>, etc.)
+    const htmlTagPattern = /<[a-z][^>]*\/?>/i;
+    return htmlTagPattern.test(str);
+  };
+
+  // Helper to check if content is HTML (inspects actual content, not just the property)
   const isHtmlContent = (message: ChatMessage): boolean => {
-    if (typeof message.content === 'string') {
-      return false;
-    }
-    const content = message.content as ChatMessageContent;
-    return !!content.html;
+    const content = getMessageContent(message);
+    return containsHtmlTags(content);
   };
 
   // Position classes based on RTL
@@ -281,7 +285,7 @@ export function ChatPopup() {
                     >
                       {isHtmlContent(message) ? (
                         <div 
-                          className="prose prose-sm dark:prose-invert max-w-none text-xs whitespace-pre-wrap"
+                          className="prose prose-sm dark:prose-invert max-w-none text-xs"
                           dangerouslySetInnerHTML={{ __html: getMessageContent(message) }}
                         />
                       ) : (

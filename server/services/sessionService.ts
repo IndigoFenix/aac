@@ -683,7 +683,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
 
   const template = AGENT_TEMPLATE_BASE;
   // Select core prompt based on conversation persona
-  template.corePrompt = getSystemPrompt(persona);
+  template.corePrompt = getSystemPrompt(persona, context?.student?.framework || null);
   
   const newChatState: ChatState = {
     history: [],
@@ -853,6 +853,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   const enrichCorePrompt = (context: MemoryContext, corePrompt: string) => {
     // Add any additional instructions or context to the core prompt if needed
     let prefix = "";
+    prefix = `Current datetime: ${new Date().toISOString()}\n`;
     if (context.user) {
       if (context.student) {
         if (context.userStudent) {

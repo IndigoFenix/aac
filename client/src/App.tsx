@@ -19,8 +19,8 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import "./i18n";
 import { ChatProvider } from "./hooks/useChat";
 import { FeaturePanelProvider } from "@/contexts/FeaturePanelContext";
-import InviteSignupPage from "./pages/InviteSignupPage";
 import { InstituteProvider } from "./hooks/useInstitute";
+import ForgotPasswordPage from "./pages/forgotPasswordPage";
 
 // Component to redirect authenticated users away from login page
 function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
@@ -37,6 +37,21 @@ function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
   // If already authenticated, redirect to home
   if (isAuthenticated) {
     return <Redirect to="/" />;
+  }
+  
+  return <>{children}</>;
+}
+
+// For invite routes - don't redirect authenticated users since they may need to accept the invite
+function InviteRoute({ children }: { children: React.ReactNode }) {
+  const { isLoading } = useAuth();
+  
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
   }
   
   return <>{children}</>;
@@ -101,10 +116,16 @@ function Router() {
           <LoginPage />
         </PublicOnlyRoute>
       </Route>
-      <Route path="/invite/:token">
+      <Route path="/forgot-password">
         <PublicOnlyRoute>
-          <InviteSignupPage />
+          <ForgotPasswordPage />
         </PublicOnlyRoute>
+      </Route>
+      {/* Invite route - uses the same LoginPage but with invite token handling */}
+      <Route path="/invite/:token">
+        <InviteRoute>
+          <LoginPage />
+        </InviteRoute>
       </Route>
       <Route path="/terms-of-service" component={TermsOfService} />
 
