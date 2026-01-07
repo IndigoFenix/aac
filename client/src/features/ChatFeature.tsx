@@ -149,13 +149,17 @@ export function ChatFeature() {
     return content.html || content.text || '';
   };
 
-  // Helper to check if content is HTML
+  // Helper to detect if a string contains HTML markup
+  const containsHtmlTags = (str: string): boolean => {
+    // Check for common HTML tag patterns (opening tags like <p>, <div>, <br>, etc.)
+    const htmlTagPattern = /<[a-z][^>]*\/?>/i;
+    return htmlTagPattern.test(str);
+  };
+
+  // Helper to check if content is HTML (inspects actual content, not just the property)
   const isHtmlContent = (message: ChatMessage): boolean => {
-    if (typeof message.content === 'string') {
-      return false;
-    }
-    const content = message.content as ChatMessageContent;
-    return !!content.html;
+    const content = getMessageContent(message);
+    return containsHtmlTags(content);
   };
 
   const formatTimestamp = (timestamp: number): string => {
@@ -443,7 +447,7 @@ export function ChatFeature() {
                     >
                       {isHtmlContent(message) ? (
                         <div 
-                          className="text-sm prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap"
+                          className="text-sm prose prose-sm dark:prose-invert max-w-none"
                           dir={isRTL ? 'rtl' : 'ltr'}
                           dangerouslySetInnerHTML={{ __html: getMessageContent(message) }}
                         />

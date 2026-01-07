@@ -1186,6 +1186,8 @@ export interface DbOperationResult {
   error?: string;
   shouldUpdateMemory: boolean;
   dbSynced?: boolean;
+  /** When set, apply dbResult to this path instead of the operation path */
+  targetPath?: string;
 }
 
 /**
@@ -1249,20 +1251,45 @@ export async function processDBOperation(
           console.log(`[processDBOperation] Using parent object write at ${parentContainerPath}`);
           console.log(`[processDBOperation] Property: ${propertyName}, Value:`, value);
           
+          // Check if parent object already exists in memory with an ID
+          const parentTokens = splitPath(parentContainerPath);
+          const currentParentValue = getValueAtPath(memoryValues, parentTokens);
+          const parentExists = currentParentValue && currentParentValue.id;
+          
           // Call parent's write with partial update
-          // The write operation handles merging with existing data
           const partialUpdate = { [propertyName]: value };
           const writeResult = await parentContainerDbOps.write(context, partialUpdate);
           
           markLoaded(loadState, parentContainerPath);
           
-          // If write returned updated record, extract just the property we set
-          // Otherwise use the original value
-          const dbResult = writeResult !== undefined 
-            ? (parentContainerDbOps.fromDB ? parentContainerDbOps.fromDB(writeResult) : writeResult)
-            : value;
+          if (writeResult !== undefined) {
+            const transformedResult = parentContainerDbOps.fromDB 
+              ? parentContainerDbOps.fromDB(writeResult) 
+              : writeResult;
             
-          return { dbResult, shouldUpdateMemory: true, dbSynced: true };
+            if (!parentExists) {
+              // CREATE case: Parent didn't exist, apply full object to parent path
+              console.log(`[processDBOperation] Parent created, applying to ${parentContainerPath}`);
+              return { 
+                dbResult: transformedResult, 
+                targetPath: parentContainerPath,  // Apply to parent, not property
+                shouldUpdateMemory: true, 
+                dbSynced: true 
+              };
+            } else {
+              // UPDATE case: Parent existed, just return the property value
+              // The in-memory system will handle setting the property
+              console.log(`[processDBOperation] Parent updated, property value applied`);
+              return { 
+                dbResult: undefined,  // Let in-memory handle it
+                shouldUpdateMemory: true, 
+                dbSynced: true 
+              };
+            }
+          }
+          
+          // No result from write, let in-memory handle it
+          return { shouldUpdateMemory: true, dbSynced: true };
         }
       } catch (err: any) {
         console.error('[processDBOperation] Parent container write/update failed:', err);
@@ -1276,9 +1303,10 @@ export async function processDBOperation(
         const tokens = splitPath(path);
         const propertyName = tokens[tokens.length - 1];
         
-        // Get current array from memory
+        // Get current parent value and check if it exists with ID
         const parentTokens = splitPath(parentContainerPath);
         const currentParentValue = getValueAtPath(memoryValues, parentTokens) || {};
+        const parentExists = currentParentValue && currentParentValue.id;
         const currentArray = currentParentValue[propertyName] || [];
         
         // Append the new value
@@ -1292,6 +1320,21 @@ export async function processDBOperation(
         
         markLoaded(loadState, parentContainerPath);
         
+        if (writeResult !== undefined && !parentExists) {
+          // Parent was created, apply full result to parent path
+          const transformedResult = parentContainerDbOps.fromDB 
+            ? parentContainerDbOps.fromDB(writeResult) 
+            : writeResult;
+          console.log(`[processDBOperation] Parent created via add, applying to ${parentContainerPath}`);
+          return { 
+            dbResult: transformedResult, 
+            targetPath: parentContainerPath,
+            shouldUpdateMemory: true, 
+            dbSynced: true 
+          };
+        }
+        
+        // Parent existed or no result, let in-memory handle the add
         return { dbResult: value, shouldUpdateMemory: true, dbSynced: true };
       } catch (err: any) {
         console.error('[processDBOperation] Parent container add failed:', err);
@@ -1503,13 +1546,19 @@ export async function processMemoryToolWithDB(
       (op.action === 'set' || op.action === 'upsert') &&
       op.path
     ) {
-      const originalValue = op.value;
       const dbValue = dbOpResult.dbResult;
       
-      // Only update if values differ (write() transformed/sanitized the data)
-      if (JSON.stringify(originalValue) !== JSON.stringify(dbValue)) {
-        console.log(`[processMemoryToolWithDB] Applying DB result to path ${op.path}`);
-        const tokens = splitPath(op.path);
+      // Use targetPath if provided (for parent write creates), otherwise use op.path
+      const targetPath = dbOpResult.targetPath || op.path;
+      
+      // If targetPath differs from op.path, this is a parent create - always apply
+      // Otherwise, only apply if values differ (write transformed/sanitized the data)
+      const shouldApply = targetPath !== op.path || 
+        JSON.stringify(op.value) !== JSON.stringify(dbValue);
+      
+      if (shouldApply) {
+        console.log(`[processMemoryToolWithDB] Applying DB result to path ${targetPath}`);
+        const tokens = splitPath(targetPath);
         setValueAtPath(memResult.updatedMemoryValues, tokens, dbValue, { merge: false });
       }
     }

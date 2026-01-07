@@ -91,6 +91,50 @@ export const en = {
     registerSuccessDesc: "Account created. You can now login.",
     registerFailed: "Registration Failed",
     registerError: "An error occurred during registration",
+
+    // Forgot Password Page
+    forgotPasswordDesc: "Enter your email address and we'll send you a link to reset your password.",
+    sendResetLink: 'Send Reset Link',
+    sending: 'Sending...',
+    emailRequired: 'Email is required',
+    invalidEmail: 'Please enter a valid email address',
+    
+    // Check Email (after submission)
+    checkEmail: 'Check Your Email',
+    resetEmailSent: "If an account exists with this email, we've sent a password reset link.",
+    sentTo: 'Sent to',
+    checkSpam: "Don't see it? Check your spam folder or try again with a different email.",
+    tryDifferentEmail: 'Try a different email',
+    
+    // Invalid Token
+    invalidResetLink: 'Invalid Reset Link',
+    invalidResetLinkDesc: 'This password reset link is invalid or has expired. Please request a new one.',
+    requestNewLink: 'Request New Link',
+    validatingLink: 'Validating reset link...',
+    
+    // Reset Password Form
+    resetPassword: 'Reset Password',
+    resetPasswordDesc: 'Enter your new password below.',
+    resettingFor: 'Resetting password for',
+    newPassword: 'New Password',
+    newPasswordPlaceholder: 'Enter new password',
+    resetPasswordButton: 'Reset Password',
+    resetting: 'Resetting...',
+    
+    // Password validation
+    passwordRequired: 'Password is required',
+    passwordTooShort: 'Password must be at least 6 characters',
+    passwordStrength: 'Strength',
+    passwordRequirements: 'Password requirements',
+    minCharacters: 'At least 6 characters',
+    
+    // Success
+    passwordResetSuccess: 'Password Reset!',
+    passwordResetSuccessDesc: 'Your password has been updated successfully. You can now log in with your new password.',
+    goToLogin: 'Go to Login',
+    
+    // Errors
+    passwordResetFailed: 'Failed to reset password',
   },
 
   // ============================================================================

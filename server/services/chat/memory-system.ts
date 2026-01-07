@@ -313,7 +313,9 @@ function validateFormat(format?: string, value?: any): boolean {
   switch (format) {
     case 'email':    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
     case 'uri':      try { new URL(value); return true; } catch { return false; }
-    case 'date-time':return !isNaN(Date.parse(value));
+    case 'date-time': return !isNaN(Date.parse(value));
+    case 'date':     return /^\d{4}-\d{2}-\d{2}$/.test(value) && !isNaN(Date.parse(value));
+    case 'YYYY-MM-DD': return /^\d{4}-\d{2}-\d{2}$/.test(value);
     case 'uuid':     return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
     default:         return true;
   }
@@ -849,7 +851,8 @@ export function renderMemoryVisualization(
           }
         } else {
           // Primitive
-          shown.push(`  - ${k}: ${summarizeValue(propSchema, v)}${inlineDesc(propSchema?.description)}`);
+          const enumHint = formatEnumHint(propSchema);
+          shown.push(`  - ${k}: ${summarizeValue(propSchema, v)}${enumHint}${inlineDesc(propSchema?.description)}`);
         }
         continue;
       }
@@ -861,7 +864,8 @@ export function renderMemoryVisualization(
           if (propSchema.type === 'object' || propSchema.type === 'map' || propSchema.type === 'array' || propSchema.type === 'topic') {
             shown.push(`  - ${k}: {${propSchema.type}}${inlineDesc(propSchema?.description)} (empty${req})`);
           } else {
-            shown.push(`  - ${k}: <${propSchema.type}>${inlineDesc(propSchema?.description)} (empty${req})`);
+            const enumHint = formatEnumHint(propSchema);
+            shown.push(`  - ${k}: <${propSchema.type}>${enumHint}${inlineDesc(propSchema?.description)} (empty${req})`);
           }
         }
         continue;
@@ -890,6 +894,19 @@ export function renderMemoryVisualization(
   }
 
   function inlineDesc(desc?: string): string { return desc ? ` — ${desc}` : ''; }
+
+  function formatEnumHint(schema: AgentMemoryField): string {
+    const s = schema as any;
+    if (!s.enum || !s.enum.length) return '';
+    
+    const maxToShow = 6;
+    if (s.enum.length <= maxToShow) {
+      return ` [${s.enum.map((v: any) => JSON.stringify(v)).join(' | ')}]`;
+    } else {
+      const shown = s.enum.slice(0, maxToShow).map((v: any) => JSON.stringify(v)).join(' | ');
+      return ` [${shown} | +${s.enum.length - maxToShow} more]`;
+    }
+  }
 
   /**
    * Renders a compact summary of an object showing only fields with `opened: true`.
@@ -1186,7 +1203,18 @@ export function renderMemoryVisualization(
       if (s.multipleOf != null) out.push(`×of ${s.multipleOf}`);
     }
     if (s.const !== undefined) out.push(`const ${JSON.stringify(s.const)}`);
-    if (s.enum && s.enum.length) out.push(`enum(${s.enum.length})`);
+    if (s.enum && s.enum.length) {
+      // Show actual enum values so AI knows valid options
+      const maxToShow = 8;
+      if (s.enum.length <= maxToShow) {
+        // Show all values
+        out.push(`enum: ${s.enum.map(v => JSON.stringify(v)).join(', ')}`);
+      } else {
+        // Show first few values with indication of more
+        const shown = s.enum.slice(0, maxToShow).map(v => JSON.stringify(v)).join(', ');
+        out.push(`enum: ${shown}, +${s.enum.length - maxToShow} more`);
+      }
+    }
     return out.length ? ` [${out.join('; ')}]` : '';
   }
 

@@ -555,13 +555,21 @@ export class ProgressModeManager {
    */
   getProgramSummary(): string {
     if (!this.state.program) {
-      return "No program loaded for this student. You may need to create a new program.";
+      const framework = this.state.student?.framework;
+      let framworkText = '';
+      if (framework === 'tala') {
+        framworkText = ` using "tala" framework`;
+      } else if (framework === 'us_iep') {
+        framworkText = ` using "us_iep" framework`;
+      } else {
+        framworkText = ` after consulting with the user about the appropriate framework`;
+      }
+      return `No program loaded for this student. If asked to edit program info, create a new program for the current year${framworkText}.`;
     }
 
     const p = this.state.program;
-    return `Current Program: ${p.title || p.programYear} (${p.framework.toUpperCase()})
+    return `Current Program: ${p.title} (${p.framework.toUpperCase()})
 Status: ${p.status}
-Year: ${p.programYear}
 ${p.startDate ? `Start: ${p.startDate}\n` : ""}${p.endDate ? `End: ${p.endDate}\n` : ""}${p.dueDate ? `Due: ${p.dueDate}\n` : ""}`;
   }
 

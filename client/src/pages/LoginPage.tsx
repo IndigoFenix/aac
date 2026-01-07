@@ -1,19 +1,53 @@
 // src/pages/LoginPage.tsx
-// Updated Login page with working forgot password link
+// Unified Login/Registration page that also handles invite-based signups
 
 import { useState, FormEvent } from 'react';
-import { useLocation } from 'wouter';
+import { useLocation, useParams } from 'wouter';
+import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { useToast } from '@/hooks/use-toast';
-import { LogIn, Loader2, UserPlus } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
+import { 
+  LogIn, 
+  Loader2, 
+  UserPlus, 
+  Building2, 
+  School, 
+  Hospital, 
+  CheckCircle,
+  XCircle,
+} from 'lucide-react';
+
+// Types
+interface InviteData {
+  id: string;
+  email: string;
+  role: string;
+  grantAdmin: boolean;
+  message?: string;
+  expiresAt: string;
+}
+
+interface InstituteData {
+  id: string;
+  name: string;
+  type: 'school' | 'hospital';
+  logoUrl?: string;
+}
+
+interface InviterData {
+  fullName?: string;
+}
+
+type UserType = 'admin' | 'Teacher' | 'Caregiver' | 'SLP' | 'Parent';
 
 // Google icon SVG component
 function GoogleIcon({ className }: { className?: string }) {
@@ -39,33 +73,112 @@ function GoogleIcon({ className }: { className?: string }) {
   );
 }
 
-export default function LoginPage() {
-  const { login, isLoading: authLoading, refetchUser } = useAuth();
+// Page layout wrapper
+function AuthPageLayout({ 
+  children, 
+  direction 
+}: { 
+  children: React.ReactNode;
+  direction: 'ltr' | 'rtl';
+}) {
+  const { language } = useLanguage();
+  
+  return (
+    <div 
+      className="min-h-screen flex flex-col bg-gradient-to-br from-background to-muted"
+      dir={direction}
+    >
+      <header className="p-4 flex justify-end">
+        <LanguageSelector />
+      </header>
+
+      <main className="flex-1 flex items-center justify-center p-4">
+        {children}
+      </main>
+
+      <footer className="p-4 text-center text-sm text-muted-foreground">
+        <a href="/terms-of-service" className="hover:underline">
+          {language === 'he' ? 'תנאי שימוש' : 'Terms of Service'}
+        </a>
+      </footer>
+    </div>
+  );
+}
+
+// Props for when used as invite page
+interface LoginPageProps {
+  inviteToken?: string;
+}
+
+export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {}) {
+  // Get token from URL params if not passed as prop (for /invite/:token route)
+  const params = useParams<{ token?: string }>();
+  const inviteToken = propToken || params.token;
+  const isInviteMode = !!inviteToken;
+  
+  const { isAuthenticated, isLoading: authLoading, login, refetchUser } = useAuth();
   const { t, language, direction } = useLanguage();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   
+  // View state
+  const [showRegister, setShowRegister] = useState(isInviteMode);
+  
   // Login form state
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loginData, setLoginData] = useState({ email: '', password: '' });
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   
   // Registration form state
-  const [showRegister, setShowRegister] = useState(false);
   const [registerData, setRegisterData] = useState({
     firstName: '',
     lastName: '',
     email: '',
     password: '',
     confirmPassword: '',
-    userType: 'Caregiver' as 'admin' | 'Teacher' | 'Caregiver' | 'SLP' | 'Parent',
+    userType: 'Caregiver' as UserType,
   });
   const [isRegistering, setIsRegistering] = useState(false);
+  
+  // Invite acceptance state
+  const [isAcceptingInvite, setIsAcceptingInvite] = useState(false);
 
+  // Fetch invite details if in invite mode
+  const { 
+    data: inviteData, 
+    isLoading: inviteLoading, 
+    error: inviteError 
+  } = useQuery({
+    queryKey: ['/api/invites/token', inviteToken],
+    queryFn: async () => {
+      const response = await apiRequest('GET', `/api/invites/token/${inviteToken}`);
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to load invite');
+      }
+      return data as {
+        invite: InviteData;
+        institute: InstituteData;
+        invitedBy: InviterData | null;
+      };
+    },
+    enabled: isInviteMode,
+    retry: false,
+  });
+
+  // User type options with translations
+  const userTypeOptions = [
+    { value: 'Caregiver', label: language === 'he' ? 'מטפל/ת' : 'Caregiver' },
+    { value: 'Guardian', label: language === 'he' ? 'הורה/אפוטרופוס' : 'Parent/Guardian' },
+    { value: 'Teacher', label: language === 'he' ? 'מורה' : 'Teacher' },
+    { value: 'SLP', label: language === 'he' ? 'קלינאי תקשורת' : 'SLP' },
+    { value: 'PPT', label: language === 'he' ? 'פיזיותרפיסט/ית' : 'PPT' },
+  ];
+
+  // Handlers
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
     
-    if (!email.trim() || !password.trim()) {
+    if (!loginData.email.trim() || !loginData.password.trim()) {
       toast({ 
         title: t('auth.error'), 
         description: t('auth.fieldsRequired'), 
@@ -74,17 +187,23 @@ export default function LoginPage() {
       return;
     }
 
-    setIsSubmitting(true);
+    setIsLoggingIn(true);
 
     try {
-      const success = await login(email, password);
+      const success = await login(loginData.email, loginData.password);
       if (success) {
         await refetchUser();
         toast({ 
           title: t('auth.loginSuccess'), 
           description: t('auth.welcomeBack') 
         });
-        setLocation('/');
+        // If we have an invite token, the user will be redirected back here 
+        // and can accept it as an authenticated user
+        if (isInviteMode) {
+          // Page will re-render and show accept invite UI
+        } else {
+          setLocation('/');
+        }
       } else {
         toast({ 
           title: t('auth.loginFailed'), 
@@ -99,11 +218,15 @@ export default function LoginPage() {
         variant: 'destructive' 
       });
     } finally {
-      setIsSubmitting(false);
+      setIsLoggingIn(false);
     }
   };
 
   const handleGoogleLogin = () => {
+    // Store invite token in session storage so we can handle it after OAuth callback
+    if (inviteToken) {
+      sessionStorage.setItem('pendingInviteToken', inviteToken);
+    }
     window.location.href = '/auth/google';
   };
 
@@ -112,7 +235,18 @@ export default function LoginPage() {
     const d = registerData;
 
     // Validation
-    if (!d.firstName.trim() || !d.lastName.trim() || !d.email.trim() || !d.password.trim() || !d.confirmPassword.trim()) {
+    const emailToUse = isInviteMode && inviteData ? inviteData.invite.email : d.email;
+    
+    if (!d.firstName.trim() || !d.password.trim() || !d.confirmPassword.trim()) {
+      toast({ 
+        title: t('auth.error'), 
+        description: t('auth.fieldsRequired'), 
+        variant: 'destructive' 
+      });
+      return;
+    }
+
+    if (!isInviteMode && !d.email.trim()) {
       toast({ 
         title: t('auth.error'), 
         description: t('auth.fieldsRequired'), 
@@ -130,16 +264,38 @@ export default function LoginPage() {
       return;
     }
 
+    if (d.password.length < 6) {
+      toast({
+        title: t('auth.error'),
+        description: t('auth.passwordTooShort') || 'Password must be at least 6 characters',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsRegistering(true);
 
     try {
-        const response = await apiRequest("POST", "/auth/register", {
-            email: d.email,
-            firstName: d.firstName,
-            lastName: d.lastName,
-            password: d.password,
-            userType: d.userType,
+      let response;
+      
+      if (isInviteMode) {
+        // Register via invite
+        response = await apiRequest('POST', `/api/invites/token/${inviteToken}/register`, {
+          firstName: d.firstName,
+          lastName: d.lastName,
+          password: d.password,
+          userType: d.userType,
         });
+      } else {
+        // Regular registration
+        response = await apiRequest('POST', '/auth/register', {
+          email: d.email,
+          firstName: d.firstName,
+          lastName: d.lastName,
+          password: d.password,
+          userType: d.userType,
+        });
+      }
 
       const data = await response.json();
 
@@ -147,28 +303,26 @@ export default function LoginPage() {
         throw new Error(data.message || 'Registration failed');
       }
 
-      // Registration successful
       await refetchUser();
-      toast({ 
-        title: t('auth.registerSuccess'), 
-        description: t('auth.registerSuccessDesc') 
-      });
       
-      // Reset form and redirect
-      setRegisterData({ 
-        firstName: '', 
-        lastName: '', 
-        email: '', 
-        password: '', 
-        confirmPassword: '', 
-        userType: 'Caregiver' 
-      });
+      if (isInviteMode && inviteData) {
+        toast({ 
+          title: t('invite.registered') || 'Welcome!',
+          description: (t('invite.registeredDesc') || `Your account has been created and you've joined ${inviteData.institute.name}`)
+        });
+      } else {
+        toast({ 
+          title: t('auth.registerSuccess'), 
+          description: t('auth.registerSuccessDesc') 
+        });
+      }
+      
       setLocation('/');
       
-    } catch {
+    } catch (error: any) {
       toast({ 
         title: t('auth.registerFailed'), 
-        description: t('auth.registerError'), 
+        description: error.message || t('auth.registerError'), 
         variant: 'destructive' 
       });
     } finally {
@@ -176,15 +330,35 @@ export default function LoginPage() {
     }
   };
 
-  // User type options with translations
-  const userTypeOptions = [
-    { value: 'Caregiver', label: language === 'he' ? 'מטפל/ת' : 'Caregiver' },
-    { value: 'Parent', label: language === 'he' ? 'הורה' : 'Parent' },
-    { value: 'Teacher', label: language === 'he' ? 'מורה' : 'Teacher' },
-    { value: 'SLP', label: language === 'he' ? 'קלינאי תקשורת' : 'SLP' },
-  ];
+  const handleAcceptInvite = async () => {
+    setIsAcceptingInvite(true);
+    try {
+      const response = await apiRequest('POST', `/api/invites/token/${inviteToken}/accept`);
+      const data = await response.json();
 
-  if (authLoading) {
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Failed to accept invite');
+      }
+
+      toast({
+        title: t('invite.accepted') || 'Invite Accepted',
+        description: (t('invite.acceptedDesc') || `You have joined ${inviteData?.institute.name}`),
+      });
+
+      setLocation('/');
+    } catch (error: any) {
+      toast({
+        title: t('invite.error') || 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsAcceptingInvite(false);
+    }
+  };
+
+  // Loading state
+  if (authLoading || (isInviteMode && inviteLoading)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -192,173 +366,300 @@ export default function LoginPage() {
     );
   }
 
-  return (
-    <div 
-      className="min-h-screen flex flex-col bg-gradient-to-br from-background to-muted"
-      dir={direction}
-    >
-      {/* Header with language selector */}
-      <header className="p-4 flex justify-end">
-        <LanguageSelector />
-      </header>
-
-      {/* Main content */}
-      <main className="flex-1 flex items-center justify-center p-4">
+  // Invalid invite error state
+  if (isInviteMode && (inviteError || !inviteData)) {
+    return (
+      <AuthPageLayout direction={direction}>
         <Card className="w-full max-w-md shadow-lg">
-          {!showRegister ? (
-            // Login Form
-            <>
-              <CardHeader className="space-y-1 text-center">
-                <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-                  <LogIn className="w-6 h-6 text-primary" />
+          <CardHeader className="space-y-1 text-center">
+            <div className="mx-auto w-12 h-12 bg-destructive/10 rounded-full flex items-center justify-center mb-4">
+              <XCircle className="w-6 h-6 text-destructive" />
+            </div>
+            <CardTitle className="text-2xl font-bold">
+              {t('invite.invalid') || 'Invalid Invite'}
+            </CardTitle>
+            <CardDescription>
+              {(inviteError as any)?.message || t('invite.invalidDesc') || 'This invite link is invalid or has expired.'}
+            </CardDescription>
+          </CardHeader>
+          <CardFooter className="flex justify-center">
+            <Button onClick={() => setLocation('/login')}>
+              <LogIn className="w-4 h-4 me-2" />
+              {t('auth.login') || 'Go to Login'}
+            </Button>
+          </CardFooter>
+        </Card>
+      </AuthPageLayout>
+    );
+  }
+
+  // Authenticated user with invite - show accept invite UI
+  if (isInviteMode && isAuthenticated && inviteData) {
+    const { invite, institute, invitedBy } = inviteData;
+    
+    return (
+      <AuthPageLayout direction={direction}>
+        <Card className="w-full max-w-md shadow-lg">
+          <CardHeader className="space-y-1 text-center">
+            <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+              {institute.type === 'hospital' ? (
+                <Hospital className="w-8 h-8 text-primary" />
+              ) : (
+                <School className="w-8 h-8 text-primary" />
+              )}
+            </div>
+            <CardTitle className="text-2xl font-bold">
+              {t('invite.joinTitle') || 'Join Institute'}
+            </CardTitle>
+            <CardDescription>
+              {invitedBy?.fullName 
+                ? (t('invite.invitedBy') || 'You have been invited by {name}').replace('{name}', invitedBy.fullName)
+                : (t('invite.invitedToJoin') || 'You have been invited to join')
+              }
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent className="space-y-4">
+            {/* Institute Info */}
+            <div className="bg-muted rounded-lg p-4 text-center">
+              <h3 className="text-lg font-semibold">{institute.name}</h3>
+              <p className="text-sm text-muted-foreground">
+                {t(`institute.type.${institute.type}`) || institute.type}
+              </p>
+            </div>
+
+            {/* Role Info */}
+            <div className="flex items-center justify-center gap-2">
+              <span className="text-sm text-muted-foreground">
+                {t('invite.yourRole') || 'Your role:'}
+              </span>
+              <Badge variant="secondary">{invite.role}</Badge>
+              {invite.grantAdmin && (
+                <Badge variant="outline">{t('invite.admin') || 'Admin'}</Badge>
+              )}
+            </div>
+
+            {/* Message */}
+            {invite.message && (
+              <div className="bg-muted/50 rounded-lg p-3">
+                <p className="text-sm italic">"{invite.message}"</p>
+              </div>
+            )}
+
+            <Button
+              className="w-full"
+              onClick={handleAcceptInvite}
+              disabled={isAcceptingInvite}
+            >
+              {isAcceptingInvite ? (
+                <>
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                  {t('invite.accepting') || 'Accepting...'}
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="w-4 h-4 me-2" />
+                  {t('invite.accept') || 'Accept Invite'}
+                </>
+              )}
+            </Button>
+          </CardContent>
+
+          <CardFooter className="flex justify-center">
+            <Button variant="ghost" onClick={() => setLocation('/')}>
+              {t('common.cancel') || 'Cancel'}
+            </Button>
+          </CardFooter>
+        </Card>
+      </AuthPageLayout>
+    );
+  }
+
+  // Main login/register view
+  return (
+    <AuthPageLayout direction={direction}>
+      <Card className="w-full max-w-md shadow-lg">
+        {!showRegister ? (
+          // Login Form
+          <>
+            <CardHeader className="space-y-1 text-center">
+              <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                <LogIn className="w-6 h-6 text-primary" />
+              </div>
+              <CardTitle className="text-2xl font-bold">
+                {t('auth.loginTitle')}
+              </CardTitle>
+              <CardDescription>
+                {t('auth.loginSubtitle')}
+              </CardDescription>
+            </CardHeader>
+
+            <form onSubmit={handleLogin}>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="email">{t('auth.email')}</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={loginData.email}
+                    onChange={(e) => setLoginData(prev => ({ ...prev, email: e.target.value }))}
+                    placeholder={t('auth.emailPlaceholder')}
+                    required
+                    dir="ltr"
+                    disabled={isLoggingIn}
+                    data-testid="input-email"
+                  />
                 </div>
-                <CardTitle className="text-2xl font-bold">
-                  {t('auth.loginTitle')}
-                </CardTitle>
-                <CardDescription>
-                  {t('auth.loginSubtitle')}
-                </CardDescription>
-              </CardHeader>
 
-              <form onSubmit={handleLogin}>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="email">{t('auth.email')}</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder={t('auth.emailPlaceholder')}
-                      required
-                      dir="ltr"
-                      disabled={isSubmitting}
-                      data-testid="input-email"
-                    />
+                <div className="space-y-2">
+                  <Label htmlFor="password">{t('auth.password')}</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={loginData.password}
+                    onChange={(e) => setLoginData(prev => ({ ...prev, password: e.target.value }))}
+                    placeholder={t('auth.passwordPlaceholder')}
+                    required
+                    dir="ltr"
+                    disabled={isLoggingIn}
+                    data-testid="input-password"
+                  />
+                </div>
+
+                <Button 
+                  type="submit" 
+                  className="w-full" 
+                  disabled={isLoggingIn}
+                  data-testid="button-login"
+                >
+                  {isLoggingIn ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin me-2" />
+                      {t('auth.loggingIn')}
+                    </>
+                  ) : (
+                    t('auth.loginButton')
+                  )}
+                </Button>
+
+                {/* Divider */}
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
                   </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="password">{t('auth.password')}</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder={t('auth.passwordPlaceholder')}
-                      required
-                      dir="ltr"
-                      disabled={isSubmitting}
-                      data-testid="input-password"
-                    />
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-background px-2 text-muted-foreground">
+                      {t('auth.or')}
+                    </span>
                   </div>
+                </div>
 
-                  <Button 
-                    type="submit" 
-                    className="w-full" 
-                    disabled={isSubmitting}
-                    data-testid="button-login"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin me-2" />
-                        {t('auth.loggingIn')}
-                      </>
+                {/* Google Login Button */}
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={handleGoogleLogin}
+                  type="button"
+                  data-testid="button-google-login"
+                >
+                  <GoogleIcon className="w-4 h-4 me-2" />
+                  {t('auth.googleLogin')}
+                </Button>
+              </CardContent>
+
+              <CardFooter className="flex flex-col gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowRegister(true)}
+                  className="text-sm text-primary hover:underline"
+                >
+                  {t('auth.noAccount')}
+                </button>
+
+                <button
+                  type="button"
+                  className="text-sm text-muted-foreground hover:text-primary hover:underline"
+                  onClick={() => setLocation('/forgot-password')}
+                >
+                  {t('auth.forgotPassword')}
+                </button>
+              </CardFooter>
+            </form>
+          </>
+        ) : (
+          // Registration Form
+          <>
+            <CardHeader className="space-y-1 text-center">
+              {isInviteMode && inviteData ? (
+                // Invite mode header
+                <>
+                  <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                    {inviteData.institute.type === 'hospital' ? (
+                      <Hospital className="w-8 h-8 text-primary" />
                     ) : (
-                      t('auth.loginButton')
+                      <School className="w-8 h-8 text-primary" />
                     )}
-                  </Button>
+                  </div>
+                  <CardTitle className="text-2xl font-bold">
+                    {t('invite.createAccount') || 'Create Your Account'}
+                  </CardTitle>
+                  <CardDescription>
+                    {inviteData.invitedBy?.fullName 
+                      ? (t('invite.invitedByToJoin') || '{name} invited you to join {institute}')
+                          .replace('{name}', inviteData.invitedBy.fullName)
+                          .replace('{institute}', inviteData.institute.name)
+                      : (t('invite.invitedToJoinInstitute') || 'You have been invited to join {institute}')
+                          .replace('{institute}', inviteData.institute.name)
+                    }
+                  </CardDescription>
+                </>
+              ) : (
+                // Regular registration header
+                <>
+                  <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                    <UserPlus className="w-6 h-6 text-primary" />
+                  </div>
+                  <CardTitle className="text-2xl font-bold">
+                    {t('auth.registerTitle')}
+                  </CardTitle>
+                  <CardDescription>
+                    {language === 'he' 
+                      ? 'צור חשבון חדש כדי להתחיל להשתמש במערכת' 
+                      : 'Create a new account to start using the system'}
+                  </CardDescription>
+                </>
+              )}
+            </CardHeader>
 
-                  {/* Divider */}
-                  <div className="relative">
-                    <div className="absolute inset-0 flex items-center">
-                      <span className="w-full border-t" />
-                    </div>
-                    <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-background px-2 text-muted-foreground">
-                        {t('auth.or')}
-                      </span>
+            <form onSubmit={handleRegister}>
+              <CardContent className="space-y-4">
+                {/* Institute Info for invite mode */}
+                {isInviteMode && inviteData && (
+                  <div className="bg-muted rounded-lg p-3 flex items-center gap-3">
+                    <Building2 className="w-5 h-5 text-muted-foreground" />
+                    <div>
+                      <p className="font-medium text-sm">{inviteData.institute.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {t('invite.joiningAs') || 'Joining as'}: {inviteData.invite.role}
+                      </p>
                     </div>
                   </div>
+                )}
 
-                  {/* Google Login Button */}
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={handleGoogleLogin}
-                    type="button"
-                    data-testid="button-google-login"
-                  >
-                    <GoogleIcon className="w-4 h-4 me-2" />
-                    {t('auth.googleLogin')}
-                  </Button>
-                </CardContent>
-
-                <CardFooter className="flex flex-col gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowRegister(true)}
-                    className="text-sm text-primary hover:underline"
-                  >
-                    {t('auth.noAccount')}
-                  </button>
-
-                  {/* UPDATED: Now links to forgot password page */}
-                  <button
-                    type="button"
-                    className="text-sm text-muted-foreground hover:text-primary hover:underline"
-                    onClick={() => setLocation('/forgot-password')}
-                  >
-                    {t('auth.forgotPassword')}
-                  </button>
-                </CardFooter>
-              </form>
-            </>
-          ) : (
-            // Registration Form
-            <>
-              <CardHeader className="space-y-1 text-center">
-                <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-                  <UserPlus className="w-6 h-6 text-primary" />
-                </div>
-                <CardTitle className="text-2xl font-bold">
-                  {t('auth.registerTitle')}
-                </CardTitle>
-                <CardDescription>
-                  {language === 'he' 
-                    ? 'צור חשבון חדש כדי להתחיל להשתמש במערכת' 
-                    : 'Create a new account to start using the system'}
-                </CardDescription>
-              </CardHeader>
-
-              <form onSubmit={handleRegister}>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="firstName">{t('auth.firstName')}</Label>
-                      <Input
-                        id="firstName"
-                        type="text"
-                        value={registerData.firstName}
-                        onChange={(e) => setRegisterData(prev => ({ ...prev, firstName: e.target.value }))}
-                        placeholder={t('auth.firstNamePlaceholder')}
-                        required
-                        disabled={isRegistering}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="lastName">{t('auth.lastName')}</Label>
-                      <Input
-                        id="lastName"
-                        type="text"
-                        value={registerData.lastName}
-                        onChange={(e) => setRegisterData(prev => ({ ...prev, lastName: e.target.value }))}
-                        placeholder={t('auth.lastNamePlaceholder')}
-                        required
-                        disabled={isRegistering}
-                      />
-                    </div>
+                {/* Email field - pre-filled and disabled for invite mode */}
+                {isInviteMode && inviteData ? (
+                  <div className="space-y-2">
+                    <Label htmlFor="regEmail">{t('auth.email') || 'Email'}</Label>
+                    <Input
+                      id="regEmail"
+                      type="email"
+                      value={inviteData.invite.email}
+                      disabled
+                      dir="ltr"
+                      className="bg-muted"
+                    />
                   </div>
-
+                ) : (
                   <div className="space-y-2">
                     <Label htmlFor="regEmail">{t('auth.email')}</Label>
                     <Input
@@ -372,101 +673,165 @@ export default function LoginPage() {
                       disabled={isRegistering}
                     />
                   </div>
+                )}
 
+                {/* Name fields */}
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="userType">
-                      {language === 'he' ? 'סוג משתמש' : 'User Type'}
+                    <Label htmlFor="firstName">
+                      {t('auth.firstName') || 'First Name'} {isInviteMode && '*'}
                     </Label>
-                    <Select
-                      value={registerData.userType}
-                      onValueChange={(value) => setRegisterData(prev => ({ 
-                        ...prev, 
-                        userType: value as typeof registerData.userType 
-                      }))}
-                      disabled={isRegistering}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder={language === 'he' ? 'בחר סוג משתמש' : 'Select user type'} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {userTypeOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="regPassword">{t('auth.password')}</Label>
                     <Input
-                      id="regPassword"
-                      type="password"
-                      value={registerData.password}
-                      onChange={(e) => setRegisterData(prev => ({ ...prev, password: e.target.value }))}
-                      placeholder={t('auth.passwordPlaceholder')}
+                      id="firstName"
+                      type="text"
+                      value={registerData.firstName}
+                      onChange={(e) => setRegisterData(prev => ({ ...prev, firstName: e.target.value }))}
+                      placeholder={t('auth.firstNamePlaceholder')}
                       required
-                      dir="ltr"
                       disabled={isRegistering}
                     />
                   </div>
-
                   <div className="space-y-2">
-                    <Label htmlFor="confirmPassword">{t('auth.confirmPassword')}</Label>
+                    <Label htmlFor="lastName">{t('auth.lastName')}</Label>
                     <Input
-                      id="confirmPassword"
-                      type="password"
-                      value={registerData.confirmPassword}
-                      onChange={(e) => setRegisterData(prev => ({ ...prev, confirmPassword: e.target.value }))}
-                      placeholder={t('auth.confirmPasswordPlaceholder')}
-                      required
-                      dir="ltr"
+                      id="lastName"
+                      type="text"
+                      value={registerData.lastName}
+                      onChange={(e) => setRegisterData(prev => ({ ...prev, lastName: e.target.value }))}
+                      placeholder={t('auth.lastNamePlaceholder')}
+                      required={!isInviteMode}
                       disabled={isRegistering}
                     />
                   </div>
+                </div>
 
-                  <Button 
-                    type="submit" 
-                    className="w-full" 
+                {/* User Type */}
+                <div className="space-y-2">
+                  <Label htmlFor="userType">
+                    {language === 'he' ? 'סוג משתמש' : 'User Type'}
+                  </Label>
+                  <Select
+                    value={registerData.userType}
+                    onValueChange={(value) => setRegisterData(prev => ({ 
+                      ...prev, 
+                      userType: value as UserType 
+                    }))}
                     disabled={isRegistering}
                   >
-                    {isRegistering ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin me-2" />
-                        {t('auth.registering')}
-                      </>
-                    ) : (
-                      t('auth.registerButton')
-                    )}
-                  </Button>
+                    <SelectTrigger>
+                      <SelectValue placeholder={language === 'he' ? 'בחר סוג משתמש' : 'Select user type'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {userTypeOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-                  {/* Divider */}
-                  <div className="relative">
-                    <div className="absolute inset-0 flex items-center">
-                      <span className="w-full border-t" />
+                {/* Password */}
+                <div className="space-y-2">
+                  <Label htmlFor="regPassword">
+                    {t('auth.password')} {isInviteMode && '*'}
+                  </Label>
+                  <Input
+                    id="regPassword"
+                    type="password"
+                    value={registerData.password}
+                    onChange={(e) => setRegisterData(prev => ({ ...prev, password: e.target.value }))}
+                    placeholder={t('auth.passwordPlaceholder')}
+                    required
+                    dir="ltr"
+                    disabled={isRegistering}
+                  />
+                </div>
+
+                {/* Confirm Password */}
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword">
+                    {t('auth.confirmPassword')} {isInviteMode && '*'}
+                  </Label>
+                  <Input
+                    id="confirmPassword"
+                    type="password"
+                    value={registerData.confirmPassword}
+                    onChange={(e) => setRegisterData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                    placeholder={t('auth.confirmPasswordPlaceholder')}
+                    required
+                    dir="ltr"
+                    disabled={isRegistering}
+                  />
+                </div>
+
+                <Button 
+                  type="submit" 
+                  className="w-full" 
+                  disabled={isRegistering}
+                  data-testid="button-register"
+                >
+                  {isRegistering ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin me-2" />
+                      {t('auth.registering')}
+                    </>
+                  ) : isInviteMode ? (
+                    <>
+                      <UserPlus className="w-4 h-4 me-2" />
+                      {t('invite.createAndJoin') || 'Create Account & Join'}
+                    </>
+                  ) : (
+                    t('auth.registerButton')
+                  )}
+                </Button>
+
+                {/* Divider - only show for non-invite mode */}
+                {!isInviteMode && (
+                  <>
+                    <div className="relative">
+                      <div className="absolute inset-0 flex items-center">
+                        <span className="w-full border-t" />
+                      </div>
+                      <div className="relative flex justify-center text-xs uppercase">
+                        <span className="bg-background px-2 text-muted-foreground">
+                          {t('auth.or')}
+                        </span>
+                      </div>
                     </div>
-                    <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-background px-2 text-muted-foreground">
-                        {t('auth.or')}
-                      </span>
+
+                    {/* Google Login Button */}
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={handleGoogleLogin}
+                      type="button"
+                      data-testid="button-google-register"
+                    >
+                      <GoogleIcon className="w-4 h-4 me-2" />
+                      {t('auth.googleLogin')}
+                    </Button>
+                  </>
+                )}
+              </CardContent>
+
+              <CardFooter className="flex flex-col gap-3">
+                {isInviteMode ? (
+                  <>
+                    <div className="text-sm text-center text-muted-foreground">
+                      {t('auth.hasAccount') || 'Already have an account?'}
                     </div>
-                  </div>
-
-                  {/* Google Login Button */}
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={handleGoogleLogin}
-                    type="button"
-                    data-testid="button-google-register"
-                  >
-                    <GoogleIcon className="w-4 h-4 me-2" />
-                    {t('auth.googleLogin')}
-                  </Button>
-                </CardContent>
-
-                <CardFooter className="flex justify-center">
+                    <Button 
+                      variant="outline" 
+                      className="w-full" 
+                      onClick={() => setShowRegister(false)}
+                      type="button"
+                    >
+                      <LogIn className="w-4 h-4 me-2" />
+                      {t('auth.login') || 'Log In'}
+                    </Button>
+                  </>
+                ) : (
                   <button
                     type="button"
                     onClick={() => setShowRegister(false)}
@@ -474,19 +839,12 @@ export default function LoginPage() {
                   >
                     {t('auth.backToLogin')}
                   </button>
-                </CardFooter>
-              </form>
-            </>
-          )}
-        </Card>
-      </main>
-
-      {/* Footer */}
-      <footer className="p-4 text-center text-sm text-muted-foreground">
-        <a href="/terms-of-service" className="hover:underline">
-          {language === 'he' ? 'תנאי שימוש' : 'Terms of Service'}
-        </a>
-      </footer>
-    </div>
+                )}
+              </CardFooter>
+            </form>
+          </>
+        )}
+      </Card>
+    </AuthPageLayout>
   );
 }
