@@ -12,4 +12,5 @@ export { slpClinicalController, SlpClinicalController } from "./slpClinicalContr
 export { programController, ProgramController } from "./programController";
 export { recordsController, RecordsController } from "./recordsController";
 export { instituteController, InstituteController } from "./instituteController";
+export { classroomController, ClassroomController } from "./classroomController";
 export { reportController, ReportController } from "./reportController";

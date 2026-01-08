@@ -1,13 +1,23 @@
 // src/features/InstitutePanel.tsx
-// Panel for managing institutes - view, create, edit, and manage members/invites
+// Panel for managing institutes - view, create, edit, and manage members/invites/classrooms
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { useInstitute, Institute, InstituteMember, InstituteInvite } from '@/hooks/useInstitute';
+import { 
+  useInstitute, 
+  Institute, 
+  InstituteMember, 
+  InstituteInvite,
+  Classroom,
+  ClassroomMember,
+  ClassroomStudent,
+  InstituteStudent,
+} from '@/hooks/useInstitute';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { INSTITUTE_ROLES, CLASSROOM_ROLES } from '@shared/schema';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -66,7 +76,31 @@ import {
   School,
   Hospital,
   Loader2,
+  BookOpen,
+  GraduationCap,
+  UserCheck,
+  AlertTriangle,
 } from 'lucide-react';
+
+// Grade options for UI - map enum to display labels
+const GRADE_OPTIONS = [
+  { value: 'pre_k', label: 'Pre-K' },
+  { value: 'k', label: 'Kindergarten' },
+  { value: '1', label: '1st Grade' },
+  { value: '2', label: '2nd Grade' },
+  { value: '3', label: '3rd Grade' },
+  { value: '4', label: '4th Grade' },
+  { value: '5', label: '5th Grade' },
+  { value: '6', label: '6th Grade' },
+  { value: '7', label: '7th Grade' },
+  { value: '8', label: '8th Grade' },
+  { value: '9', label: '9th Grade' },
+  { value: '10', label: '10th Grade' },
+  { value: '11', label: '11th Grade' },
+  { value: '12', label: '12th Grade' },
+  { value: 'special_ed', label: 'Special Education' },
+  { value: 'adult_ed', label: 'Adult Education' },
+];
 
 interface InstitutePanelProps {
   isOpen: boolean;
@@ -97,22 +131,55 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
     cancelInvite,
     resendInvite,
     refetchInstitutes,
+    // Classroom operations
+    getClassrooms,
+    createClassroom,
+    updateClassroom,
+    deleteClassroom,
+    getClassroomMembers,
+    addClassroomMember,
+    updateClassroomMember,
+    removeClassroomMember,
+    getClassroomStudents,
+    addStudentToClassroom,
+    updateClassroomStudent,
+    removeStudentFromClassroom,
+    // Institute student operations
+    getInstituteStudents,
+    addStudentToInstitute,
   } = useInstitute();
 
   // Local state
-  const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'invites' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'classrooms' | 'students' | 'invites' | 'settings'>('overview');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   
+  // Classroom dialogs
+  const [showClassroomDialog, setShowClassroomDialog] = useState(false);
+  const [showClassroomMemberDialog, setShowClassroomMemberDialog] = useState(false);
+  const [showClassroomStudentDialog, setShowClassroomStudentDialog] = useState(false);
+  const [showClassroomDeleteConfirm, setShowClassroomDeleteConfirm] = useState(false);
+  const [selectedClassroom, setSelectedClassroom] = useState<Classroom | null>(null);
+  const [editingClassroom, setEditingClassroom] = useState<Classroom | null>(null);
+  
   const [members, setMembers] = useState<InstituteMember[]>([]);
   const [invites, setInvites] = useState<InstituteInvite[]>([]);
+  const [classrooms, setClassrooms] = useState<Classroom[]>([]);
+  const [classroomMembers, setClassroomMembers] = useState<ClassroomMember[]>([]);
+  const [classroomStudents, setClassroomStudents] = useState<ClassroomStudent[]>([]);
+  const [instituteStudents, setInstituteStudents] = useState<InstituteStudent[]>([]);
+  
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [loadingInvites, setLoadingInvites] = useState(false);
+  const [loadingClassrooms, setLoadingClassrooms] = useState(false);
+  const [loadingClassroomMembers, setLoadingClassroomMembers] = useState(false);
+  const [loadingClassroomStudents, setLoadingClassroomStudents] = useState(false);
+  const [loadingInstituteStudents, setLoadingInstituteStudents] = useState(false);
 
-  // Form state
+  // Form state - Institute create with role selection
   const [createForm, setCreateForm] = useState({
     name: '',
     type: 'school' as 'school' | 'hospital',
@@ -121,6 +188,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
     phone: '',
     email: '',
     website: '',
+    creatorRole: 'admin' as string,
   });
   const [editForm, setEditForm] = useState<Partial<Institute>>({});
   const [inviteForm, setInviteForm] = useState({
@@ -129,21 +197,65 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
     grantAdmin: false,
     message: '',
   });
+  
+  // Classroom form state
+  const [classroomForm, setClassroomForm] = useState({
+    name: '',
+    grade: '',
+    description: '',
+    capacity: '',
+    roomNumber: '',
+    academicYear: '',
+  });
+  
+  // Classroom member form
+  const [classroomMemberForm, setClassroomMemberForm] = useState({
+    userId: '',
+    role: 'aide' as string,
+    isPrimary: false,
+  });
+  
+  // Classroom student form
+  const [classroomStudentForm, setClassroomStudentForm] = useState({
+    studentId: '',
+    isPrimary: true,
+    notes: '',
+  });
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Load members when tab changes
+  // Load data based on active tab
   useEffect(() => {
     if (currentInstitute && activeTab === 'members') {
       loadMembers();
     }
   }, [currentInstitute, activeTab]);
 
-  // Load invites when tab changes
   useEffect(() => {
     if (currentInstitute && activeTab === 'invites') {
       loadInvites();
     }
   }, [currentInstitute, activeTab]);
+
+  useEffect(() => {
+    if (currentInstitute && activeTab === 'classrooms' && currentInstitute.type === 'school') {
+      loadClassrooms();
+    }
+  }, [currentInstitute, activeTab]);
+
+  useEffect(() => {
+    if (currentInstitute && activeTab === 'students') {
+      loadInstituteStudents();
+    }
+  }, [currentInstitute, activeTab]);
+
+  // Load classroom details when selected
+  useEffect(() => {
+    if (selectedClassroom) {
+      loadClassroomMembers(selectedClassroom.id);
+      loadClassroomStudents(selectedClassroom.id);
+    }
+  }, [selectedClassroom]);
 
   const loadMembers = async () => {
     if (!currentInstitute) return;
@@ -179,6 +291,76 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
     }
   };
 
+  const loadClassrooms = async () => {
+    if (!currentInstitute) return;
+    setLoadingClassrooms(true);
+    try {
+      const classroomsList = await getClassrooms(currentInstitute.id);
+      setClassrooms(classroomsList);
+    } catch (error: any) {
+      toast({
+        title: t('institute.error') || 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingClassrooms(false);
+    }
+  };
+
+  const loadClassroomMembers = async (classroomId: string) => {
+    setLoadingClassroomMembers(true);
+    try {
+      const membersList = await getClassroomMembers(classroomId);
+      setClassroomMembers(membersList);
+    } catch (error: any) {
+      toast({
+        title: t('institute.error') || 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingClassroomMembers(false);
+    }
+  };
+
+  const loadClassroomStudents = async (classroomId: string) => {
+    setLoadingClassroomStudents(true);
+    try {
+      const studentsList = await getClassroomStudents(classroomId);
+      setClassroomStudents(studentsList);
+    } catch (error: any) {
+      toast({
+        title: t('institute.error') || 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingClassroomStudents(false);
+    }
+  };
+
+  const loadInstituteStudents = async () => {
+    if (!currentInstitute) return;
+    setLoadingInstituteStudents(true);
+    try {
+      const studentsList = await getInstituteStudents(currentInstitute.id);
+      setInstituteStudents(studentsList);
+    } catch (error: any) {
+      toast({
+        title: t('institute.error') || 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingInstituteStudents(false);
+    }
+  };
+
+  // ==========================================================================
+  // INSTITUTE HANDLERS
+  // ==========================================================================
+
   const handleCreateInstitute = async () => {
     if (!createForm.name.trim()) {
       toast({
@@ -191,7 +373,8 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
 
     setIsSubmitting(true);
     try {
-      const newInstitute = await createInstitute(createForm);
+      const { creatorRole, ...instituteData } = createForm;
+      const newInstitute = await createInstitute({ ...instituteData, creatorRole });
       selectInstitute(newInstitute.id);
       setShowCreateDialog(false);
       setCreateForm({
@@ -202,6 +385,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
         phone: '',
         email: '',
         website: '',
+        creatorRole: 'admin',
       });
       toast({
         title: t('institute.created') || 'Institute Created',
@@ -302,7 +486,6 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
         message: inviteForm.message || undefined,
       });
       
-      // Copy link to clipboard
       await navigator.clipboard.writeText(inviteLink);
       
       setShowInviteDialog(false);
@@ -380,6 +563,24 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
     }
   };
 
+  const handleUpdateMemberRole = async (memberId: string, role: string) => {
+    if (!currentInstitute) return;
+
+    try {
+      await updateMember(currentInstitute.id, memberId, { role });
+      loadMembers();
+      toast({
+        title: t('institute.memberUpdated') || 'Member Updated',
+      });
+    } catch (error: any) {
+      toast({
+        title: t('institute.error') || 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    }
+  };
+
   const handleRemoveMember = async (memberId: string) => {
     if (!currentInstitute) return;
 
@@ -398,6 +599,218 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
     }
   };
 
+  // ==========================================================================
+  // CLASSROOM HANDLERS
+  // ==========================================================================
+
+  const handleCreateClassroom = async () => {
+    if (!currentInstitute || !classroomForm.name.trim()) {
+      toast({
+        title: t('institute.error') || 'Error',
+        description: t('classroom.nameRequired') || 'Classroom name is required',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await createClassroom(currentInstitute.id, {
+        name: classroomForm.name,
+        grade: classroomForm.grade || undefined,
+        description: classroomForm.description || undefined,
+        capacity: classroomForm.capacity ? parseInt(classroomForm.capacity) : undefined,
+        roomNumber: classroomForm.roomNumber || undefined,
+        academicYear: classroomForm.academicYear || undefined,
+      });
+      
+      setShowClassroomDialog(false);
+      setClassroomForm({ name: '', grade: '', description: '', capacity: '', roomNumber: '', academicYear: '' });
+      setEditingClassroom(null);
+      loadClassrooms();
+      
+      toast({
+        title: t('classroom.created') || 'Classroom Created',
+        description: t('classroom.createdDesc') || 'The classroom has been created successfully.',
+      });
+    } catch (error: any) {
+      toast({
+        title: t('institute.error') || 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUpdateClassroom = async () => {
+    if (!editingClassroom || !classroomForm.name.trim()) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await updateClassroom(editingClassroom.id, {
+        name: classroomForm.name,
+        grade: classroomForm.grade || undefined,
+        description: classroomForm.description || undefined,
+        capacity: classroomForm.capacity ? parseInt(classroomForm.capacity) : undefined,
+        roomNumber: classroomForm.roomNumber || undefined,
+        academicYear: classroomForm.academicYear || undefined,
+      });
+      
+      setShowClassroomDialog(false);
+      setClassroomForm({ name: '', grade: '', description: '', capacity: '', roomNumber: '', academicYear: '' });
+      setEditingClassroom(null);
+      loadClassrooms();
+      
+      // Refresh selected classroom if it was the one edited
+      if (selectedClassroom?.id === editingClassroom.id) {
+        const updated = await getClassrooms(currentInstitute!.id);
+        const refreshed = updated.find((c: Classroom) => c.id === editingClassroom.id);
+        if (refreshed) setSelectedClassroom(refreshed);
+      }
+      
+      toast({
+        title: t('classroom.updated') || 'Classroom Updated',
+      });
+    } catch (error: any) {
+      toast({
+        title: t('institute.error') || 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteClassroom = async () => {
+    if (!selectedClassroom) return;
+
+    setIsSubmitting(true);
+    try {
+      await deleteClassroom(selectedClassroom.id);
+      setShowClassroomDeleteConfirm(false);
+      setSelectedClassroom(null);
+      loadClassrooms();
+      
+      toast({
+        title: t('classroom.deleted') || 'Classroom Deleted',
+      });
+    } catch (error: any) {
+      toast({
+        title: t('institute.error') || 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAddClassroomMember = async () => {
+    if (!selectedClassroom || !classroomMemberForm.userId) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await addClassroomMember(selectedClassroom.id, 
+        classroomMemberForm.userId,
+        classroomMemberForm.role,
+        classroomMemberForm.isPrimary,
+      );
+      
+      setShowClassroomMemberDialog(false);
+      setClassroomMemberForm({ userId: '', role: 'aide', isPrimary: false });
+      loadClassroomMembers(selectedClassroom.id);
+      
+      toast({
+        title: t('classroom.memberAdded') || 'Member Added',
+      });
+    } catch (error: any) {
+      toast({
+        title: t('institute.error') || 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRemoveClassroomMember = async (userId: string) => {
+    if (!selectedClassroom) return;
+
+    try {
+      await removeClassroomMember(selectedClassroom.id, userId);
+      loadClassroomMembers(selectedClassroom.id);
+      toast({
+        title: t('classroom.memberRemoved') || 'Member Removed',
+      });
+    } catch (error: any) {
+      toast({
+        title: t('institute.error') || 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleAddClassroomStudent = async () => {
+    if (!selectedClassroom || !classroomStudentForm.studentId) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await addStudentToClassroom(selectedClassroom.id, classroomStudentForm.studentId, {
+        isPrimary: classroomStudentForm.isPrimary,
+        notes: classroomStudentForm.notes || undefined,
+      });
+      
+      setShowClassroomStudentDialog(false);
+      setClassroomStudentForm({ studentId: '', isPrimary: true, notes: '' });
+      loadClassroomStudents(selectedClassroom.id);
+      
+      toast({
+        title: t('classroom.studentAdded') || 'Student Added',
+      });
+    } catch (error: any) {
+      toast({
+        title: t('institute.error') || 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRemoveClassroomStudent = async (studentId: string) => {
+    if (!selectedClassroom) return;
+
+    try {
+      await removeStudentFromClassroom(selectedClassroom.id, studentId);
+      loadClassroomStudents(selectedClassroom.id);
+      toast({
+        title: t('classroom.studentRemoved') || 'Student Removed',
+      });
+    } catch (error: any) {
+      toast({
+        title: t('institute.error') || 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // ==========================================================================
+  // HELPERS
+  // ==========================================================================
+
   const openEditDialog = () => {
     if (currentInstitute) {
       setEditForm({
@@ -411,6 +824,24 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
       });
       setShowEditDialog(true);
     }
+  };
+
+  const openClassroomDialog = (classroom?: Classroom) => {
+    if (classroom) {
+      setEditingClassroom(classroom);
+      setClassroomForm({
+        name: classroom.name,
+        grade: classroom.grade || '',
+        description: classroom.description || '',
+        capacity: classroom.capacity?.toString() || '',
+        roomNumber: classroom.roomNumber || '',
+        academicYear: classroom.academicYear || '',
+      });
+    } else {
+      setEditingClassroom(null);
+      setClassroomForm({ name: '', grade: '', description: '', capacity: '', roomNumber: '', academicYear: '' });
+    }
+    setShowClassroomDialog(true);
   };
 
   const getStatusBadge = (status: string) => {
@@ -430,6 +861,29 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
         {t(`institute.status.${status}`) || status}
       </Badge>
     );
+  };
+
+  const getGradeLabel = (gradeValue: string) => {
+    const grade = GRADE_OPTIONS.find(g => g.value === gradeValue);
+    return grade?.label || gradeValue;
+  };
+
+  const getRoleLabel = (roleValue: string, type: 'institute' | 'classroom') => {
+    const roles = type === 'institute' ? INSTITUTE_ROLES : CLASSROOM_ROLES;
+    const role = roles.find((r: any) => r.value === roleValue);
+    return role ? (t(role.labelKey) || roleValue) : roleValue;
+  };
+
+  // Filter members who aren't already in the classroom
+  const getAvailableMembers = () => {
+    const classroomMemberIds = new Set(classroomMembers.map(m => m.id));
+    return members.filter(m => !classroomMemberIds.has(m.id));
+  };
+
+  // Filter students who aren't already in the classroom
+  const getAvailableStudents = () => {
+    const classroomStudentIds = new Set(classroomStudents.map(s => s.id));
+    return instituteStudents.filter(s => !classroomStudentIds.has(s.id));
   };
 
   if (!isOpen) return null;
@@ -501,35 +955,41 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                   key={institute.id}
                   className={cn(
                     'cursor-pointer transition-all hover:shadow-md',
-                    isDark ? 'bg-slate-900 border-slate-800 hover:border-slate-700' : 'bg-white hover:border-primary/20'
+                    isDark ? 'hover:border-slate-600' : 'hover:border-slate-300'
                   )}
                   onClick={() => selectInstitute(institute.id)}
                 >
-                  <CardContent className="p-4 flex items-center gap-4">
-                    <div className={cn(
-                      'w-12 h-12 rounded-lg flex items-center justify-center',
-                      isDark ? 'bg-slate-800' : 'bg-secondary'
-                    )}>
-                      {institute.type === 'hospital' ? (
-                        <Hospital className="w-6 h-6 text-primary" />
-                      ) : (
-                        <School className="w-6 h-6 text-primary" />
-                      )}
-                    </div>
-                    <div className="flex-1">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={cn(
+                          'p-2 rounded-lg',
+                          institute.type === 'school'
+                            ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
+                            : 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'
+                        )}>
+                          {institute.type === 'school' ? <School className="w-5 h-5" /> : <Hospital className="w-5 h-5" />}
+                        </div>
+                        <div>
+                          <h3 className="font-medium">{institute.name}</h3>
+                          <p className="text-sm text-muted-foreground">
+                            {t(`institute.type.${institute.type}`) || institute.type}
+                          </p>
+                        </div>
+                      </div>
                       <div className="flex items-center gap-2">
-                        <h3 className="font-semibold">{institute.name}</h3>
                         {institute.isAdmin && (
                           <Badge variant="secondary" className="gap-1">
                             <Crown className="w-3 h-3" />
                             {t('institute.admin') || 'Admin'}
                           </Badge>
                         )}
+                        {institute.role && (
+                          <Badge variant="outline">
+                            {getRoleLabel(institute.role, 'institute')}
+                          </Badge>
+                        )}
                       </div>
-                      <p className="text-sm text-muted-foreground">
-                        {t(`institute.type.${institute.type}`) || institute.type}
-                        {institute.role && ` • ${institute.role}`}
-                      </p>
                     </div>
                   </CardContent>
                 </Card>
@@ -583,6 +1043,27 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                 </Select>
               </div>
               <div className="space-y-2">
+                <Label htmlFor="creatorRole">{t('institute.yourRole') || 'Your Role'}</Label>
+                <Select
+                  value={createForm.creatorRole}
+                  onValueChange={(value) => setCreateForm({ ...createForm, creatorRole: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INSTITUTE_ROLES.map((role) => (
+                      <SelectItem key={role.value} value={role.value}>
+                        {t(role.labelKey) || role.value}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {t('institute.creatorRoleNote') || 'You will be an admin regardless of the role selected.'}
+                </p>
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="description">{t('institute.description') || 'Description'}</Label>
                 <Textarea
                   id="description"
@@ -598,7 +1079,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
               </Button>
               <Button onClick={handleCreateInstitute} disabled={isSubmitting}>
                 {isSubmitting && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
-                {t('common.save') || 'Create'}
+                {t('common.create') || 'Create'}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -690,6 +1171,14 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
             <TabsTrigger value="members">
               {t('institute.tabs.members') || 'Members'}
             </TabsTrigger>
+            {currentInstitute.type === 'school' && (
+              <TabsTrigger value="classrooms">
+                {t('institute.tabs.classrooms') || 'Classrooms'}
+              </TabsTrigger>
+            )}
+            <TabsTrigger value="students">
+              {t('institute.tabs.students') || 'Students'}
+            </TabsTrigger>
             {currentInstitute.isAdmin && (
               <TabsTrigger value="invites">
                 {t('institute.tabs.invites') || 'Invites'}
@@ -758,9 +1247,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
           {activeTab === 'members' && (
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <h2 className="text-lg font-semibold">
-                  {t('institute.membersCount', { count: members.length }) || `${members.length} Members`}
-                </h2>
+                <h2 className="text-lg font-semibold">{t('institute.members') || 'Members'}</h2>
                 {currentInstitute.isAdmin && (
                   <Button onClick={() => setShowInviteDialog(true)}>
                     <UserPlus className="w-4 h-4 me-2" />
@@ -768,61 +1255,412 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                   </Button>
                 )}
               </div>
-
+              
               {loadingMembers ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                 </div>
+              ) : members.length === 0 ? (
+                <Card>
+                  <CardContent className="py-8 text-center">
+                    <Users className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-50" />
+                    <p className="text-muted-foreground">{t('institute.noMembers') || 'No members yet'}</p>
+                  </CardContent>
+                </Card>
               ) : (
                 <div className="space-y-2">
                   {members.map((member) => (
                     <Card key={member.id}>
-                      <CardContent className="p-4 flex items-center gap-4">
-                        <div className={cn(
-                          'w-10 h-10 rounded-full flex items-center justify-center font-medium',
-                          isDark ? 'bg-slate-800 text-slate-300' : 'bg-secondary text-secondary-foreground'
-                        )}>
-                          {member.fullName?.split(' ').map(n => n[0]).join('') || member.email[0].toUpperCase()}
-                        </div>
-                        <div className="flex-1">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            {member.profileImageUrl ? (
+                              <img
+                                src={member.profileImageUrl}
+                                alt={member.fullName || member.email}
+                                className="w-10 h-10 rounded-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                                <Users className="w-5 h-5 text-muted-foreground" />
+                              </div>
+                            )}
+                            <div>
+                              <p className="font-medium">{member.fullName || member.email}</p>
+                              <p className="text-sm text-muted-foreground">{member.email}</p>
+                            </div>
+                          </div>
                           <div className="flex items-center gap-2">
-                            <span className="font-medium">{member.fullName || member.email}</span>
                             {member.isAdmin && (
                               <Badge variant="secondary" className="gap-1">
                                 <Crown className="w-3 h-3" />
                                 {t('institute.admin') || 'Admin'}
                               </Badge>
                             )}
+                            <Badge variant="outline">
+                              {getRoleLabel(member.role, 'institute')}
+                            </Badge>
+                            {currentInstitute.isAdmin && member.id !== user?.id && (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon">
+                                    <MoreHorizontal className="w-4 h-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align={isRTL ? 'start' : 'end'}>
+                                  <DropdownMenuLabel>{t('institute.changeRole') || 'Change Role'}</DropdownMenuLabel>
+                                  {INSTITUTE_ROLES.map((role) => (
+                                    <DropdownMenuItem
+                                      key={role.value}
+                                      onClick={() => handleUpdateMemberRole(member.membershipId, role.value)}
+                                    >
+                                      {member.role === role.value && <CheckCircle className="w-4 h-4 me-2" />}
+                                      {t(role.labelKey) || role.value}
+                                    </DropdownMenuItem>
+                                  ))}
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={() => handleToggleAdmin(member.membershipId, member.isAdmin)}>
+                                    {member.isAdmin ? (
+                                      <>
+                                        <XCircle className="w-4 h-4 me-2" />
+                                        {t('institute.removeAdmin') || 'Remove Admin'}
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Crown className="w-4 h-4 me-2" />
+                                        {t('institute.makeAdmin') || 'Make Admin'}
+                                      </>
+                                    )}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    className="text-destructive"
+                                    onClick={() => handleRemoveMember(member.membershipId)}
+                                  >
+                                    <Trash2 className="w-4 h-4 me-2" />
+                                    {t('institute.removeMember') || 'Remove'}
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            )}
+                            {/* Allow admins to edit their own role */}
+                            {currentInstitute.isAdmin && member.id === user?.id && (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon">
+                                    <MoreHorizontal className="w-4 h-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align={isRTL ? 'start' : 'end'}>
+                                  <DropdownMenuLabel>{t('institute.changeRole') || 'Change Role'}</DropdownMenuLabel>
+                                  {INSTITUTE_ROLES.map((role) => (
+                                    <DropdownMenuItem
+                                      key={role.value}
+                                      onClick={() => handleUpdateMemberRole(member.membershipId, role.value)}
+                                    >
+                                      {member.role === role.value && <CheckCircle className="w-4 h-4 me-2" />}
+                                      {t(role.labelKey) || role.value}
+                                    </DropdownMenuItem>
+                                  ))}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            )}
                           </div>
-                          <p className="text-sm text-muted-foreground">{member.email}</p>
                         </div>
-                        <Badge variant="outline">{member.role}</Badge>
-                        {currentInstitute.isAdmin && member.id !== user?.id && (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon">
-                                <MoreHorizontal className="w-4 h-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align={isRTL ? 'start' : 'end'}>
-                              <DropdownMenuItem onClick={() => handleToggleAdmin(member.id, member.isAdmin)}>
-                                <Crown className="w-4 h-4 me-2" />
-                                {member.isAdmin 
-                                  ? (t('institute.removeAdmin') || 'Remove Admin')
-                                  : (t('institute.makeAdmin') || 'Make Admin')
-                                }
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                className="text-destructive"
-                                onClick={() => handleRemoveMember(member.id)}
-                              >
-                                <Trash2 className="w-4 h-4 me-2" />
-                                {t('institute.removeMember') || 'Remove Member'}
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Classrooms Tab - Only for schools */}
+          {activeTab === 'classrooms' && currentInstitute.type === 'school' && (
+            <div className="space-y-4">
+              {!selectedClassroom ? (
+                // Classroom list view
+                <>
+                  <div className="flex justify-between items-center">
+                    <h2 className="text-lg font-semibold">{t('classroom.title') || 'Classrooms'}</h2>
+                    {currentInstitute.isAdmin && (
+                      <Button onClick={() => openClassroomDialog()}>
+                        <Plus className="w-4 h-4 me-2" />
+                        {t('classroom.create') || 'Create Classroom'}
+                      </Button>
+                    )}
+                  </div>
+
+                  {loadingClassrooms ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : classrooms.length === 0 ? (
+                    <Card>
+                      <CardContent className="py-8 text-center">
+                        <BookOpen className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-50" />
+                        <p className="text-muted-foreground">{t('classroom.noClassrooms') || 'No classrooms yet'}</p>
+                        {currentInstitute.isAdmin && (
+                          <Button className="mt-4" onClick={() => openClassroomDialog()}>
+                            <Plus className="w-4 h-4 me-2" />
+                            {t('classroom.createFirst') || 'Create Your First Classroom'}
+                          </Button>
                         )}
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                      {classrooms.map((classroom) => (
+                        <Card
+                          key={classroom.id}
+                          className="cursor-pointer transition-all hover:shadow-md"
+                          onClick={() => setSelectedClassroom(classroom)}
+                        >
+                          <CardHeader className="pb-2">
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <CardTitle className="text-base">{classroom.name}</CardTitle>
+                                {classroom.grade && (
+                                  <CardDescription>{getGradeLabel(classroom.grade)}</CardDescription>
+                                )}
+                              </div>
+                              <Badge variant="outline">
+                                <BookOpen className="w-3 h-3 me-1" />
+                                {classroom.roomNumber || '-'}
+                              </Badge>
+                            </div>
+                          </CardHeader>
+                          <CardContent>
+                            {classroom.description && (
+                              <p className="text-sm text-muted-foreground line-clamp-2">{classroom.description}</p>
+                            )}
+                            <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+                              {classroom.capacity && (
+                                <span className="flex items-center gap-1">
+                                  <Users className="w-3 h-3" />
+                                  {t('classroom.capacity') || 'Capacity'}: {classroom.capacity}
+                                </span>
+                              )}
+                              {classroom.academicYear && (
+                                <span className="flex items-center gap-1">
+                                  <GraduationCap className="w-3 h-3" />
+                                  {classroom.academicYear}
+                                </span>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                // Single classroom detail view
+                <>
+                  <div className="flex items-center gap-4 mb-4">
+                    <Button variant="ghost" size="sm" onClick={() => setSelectedClassroom(null)}>
+                      {t('common.back') || '← Back'}
+                    </Button>
+                    <div className="flex-1">
+                      <h2 className="text-lg font-semibold">{selectedClassroom.name}</h2>
+                      {selectedClassroom.grade && (
+                        <p className="text-sm text-muted-foreground">{getGradeLabel(selectedClassroom.grade)}</p>
+                      )}
+                    </div>
+                    {currentInstitute.isAdmin && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="icon">
+                            <MoreHorizontal className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align={isRTL ? 'start' : 'end'}>
+                          <DropdownMenuItem onClick={() => openClassroomDialog(selectedClassroom)}>
+                            <Edit className="w-4 h-4 me-2" />
+                            {t('classroom.edit') || 'Edit Classroom'}
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={() => setShowClassroomDeleteConfirm(true)}
+                          >
+                            <Trash2 className="w-4 h-4 me-2" />
+                            {t('classroom.delete') || 'Delete Classroom'}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </div>
+
+                  {/* Classroom Info */}
+                  {selectedClassroom.description && (
+                    <Card className="mb-4">
+                      <CardContent className="py-3">
+                        <p className="text-sm">{selectedClassroom.description}</p>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Classroom Members Section */}
+                  <Card className="mb-4">
+                    <CardHeader className="pb-2">
+                      <div className="flex justify-between items-center">
+                        <CardTitle className="text-base">{t('classroom.members') || 'Assigned Staff'}</CardTitle>
+                        {currentInstitute.isAdmin && (
+                          <Button size="sm" onClick={() => {
+                            loadMembers(); // Make sure members list is fresh
+                            setShowClassroomMemberDialog(true);
+                          }}>
+                            <UserPlus className="w-4 h-4 me-2" />
+                            {t('classroom.addMember') || 'Add Staff'}
+                          </Button>
+                        )}
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      {loadingClassroomMembers ? (
+                        <div className="flex items-center justify-center py-4">
+                          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : classroomMembers.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-4">
+                          {t('classroom.noMembers') || 'No staff assigned yet'}
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {classroomMembers.map((member) => (
+                            <div key={member.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                                  <Users className="w-4 h-4 text-primary" />
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium">{member.fullName || member.email}</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {getRoleLabel(member.role, 'classroom')}
+                                    {member.isPrimary && ` • ${t('classroom.primary') || 'Primary'}`}
+                                  </p>
+                                </div>
+                              </div>
+                              {currentInstitute.isAdmin && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleRemoveClassroomMember(member.id)}
+                                >
+                                  <XCircle className="w-4 h-4 text-muted-foreground" />
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Classroom Students Section */}
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <div className="flex justify-between items-center">
+                        <CardTitle className="text-base">{t('classroom.students') || 'Students'}</CardTitle>
+                        <Button size="sm" onClick={() => {
+                          loadInstituteStudents(); // Make sure students list is fresh
+                          setShowClassroomStudentDialog(true);
+                        }}>
+                          <UserPlus className="w-4 h-4 me-2" />
+                          {t('classroom.addStudent') || 'Add Student'}
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      {loadingClassroomStudents ? (
+                        <div className="flex items-center justify-center py-4">
+                          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : classroomStudents.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-4">
+                          {t('classroom.noStudents') || 'No students enrolled yet'}
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {classroomStudents.map((student) => (
+                            <div key={student.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-full bg-green-500/10 flex items-center justify-center">
+                                  <GraduationCap className="w-4 h-4 text-green-600" />
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium">{student.name}</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {student.isPrimary && `${t('classroom.primaryClassroom') || 'Primary Classroom'}`}
+                                    {student.notes && ` • ${student.notes}`}
+                                  </p>
+                                </div>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleRemoveClassroomStudent(student.id)}
+                              >
+                                <XCircle className="w-4 h-4 text-muted-foreground" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Students Tab */}
+          {activeTab === 'students' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg font-semibold">{t('institute.students') || 'Students'}</h2>
+              </div>
+
+              {loadingInstituteStudents ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : instituteStudents.length === 0 ? (
+                <Card>
+                  <CardContent className="py-8 text-center">
+                    <GraduationCap className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-50" />
+                    <p className="text-muted-foreground">{t('institute.noStudents') || 'No students assigned yet'}</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {t('institute.noStudentsHint') || 'Assign students through the student management panel'}
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-2">
+                  {instituteStudents.map((student) => (
+                    <Card key={student.id}>
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center">
+                              <GraduationCap className="w-5 h-5 text-green-600" />
+                            </div>
+                            <div>
+                              <p className="font-medium">{student.name}</p>
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                {student.grade && <span>{getGradeLabel(student.grade)}</span>}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {student.enrollmentDate && (
+                              <span className="text-xs text-muted-foreground">
+                                {t('institute.enrolled') || 'Enrolled'}: {new Date(student.enrollmentDate).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </CardContent>
                     </Card>
                   ))}
@@ -835,63 +1673,66 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
           {activeTab === 'invites' && currentInstitute.isAdmin && (
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <h2 className="text-lg font-semibold">
-                  {t('institute.pendingInvites') || 'Pending Invites'}
-                </h2>
+                <h2 className="text-lg font-semibold">{t('institute.invites') || 'Invitations'}</h2>
                 <Button onClick={() => setShowInviteDialog(true)}>
-                  <UserPlus className="w-4 h-4 me-2" />
+                  <Mail className="w-4 h-4 me-2" />
                   {t('institute.sendInvite') || 'Send Invite'}
                 </Button>
               </div>
-
+              
               {loadingInvites ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                 </div>
               ) : invites.length === 0 ? (
-                <div className="text-center py-12">
-                  <Mail className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
-                  <p className="text-muted-foreground">
-                    {t('institute.noInvites') || 'No invites sent yet'}
-                  </p>
-                </div>
+                <Card>
+                  <CardContent className="py-8 text-center">
+                    <Mail className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-50" />
+                    <p className="text-muted-foreground">{t('institute.noInvites') || 'No pending invitations'}</p>
+                  </CardContent>
+                </Card>
               ) : (
                 <div className="space-y-2">
                   {invites.map((invite) => (
                     <Card key={invite.id}>
-                      <CardContent className="p-4 flex items-center gap-4">
-                        <Mail className="w-5 h-5 text-muted-foreground" />
-                        <div className="flex-1">
-                          <p className="font-medium" dir="ltr">{invite.inviteeEmail}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {invite.role}
-                            {invite.grantAdmin && ` • ${t('institute.willBeAdmin') || 'Will be admin'}`}
-                          </p>
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium">{invite.inviteeEmail}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              {getStatusBadge(invite.status)}
+                              <Badge variant="outline">{getRoleLabel(invite.role, 'institute')}</Badge>
+                              {invite.grantAdmin && (
+                                <Badge variant="secondary">
+                                  <Crown className="w-3 h-3 me-1" />
+                                  {t('institute.admin') || 'Admin'}
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                          {invite.status === 'pending' && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon">
+                                  <MoreHorizontal className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align={isRTL ? 'start' : 'end'}>
+                                <DropdownMenuItem onClick={() => handleResendInvite(invite.id)}>
+                                  <RefreshCw className="w-4 h-4 me-2" />
+                                  {t('institute.resend') || 'Resend'}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="text-destructive"
+                                  onClick={() => handleCancelInvite(invite.id)}
+                                >
+                                  <XCircle className="w-4 h-4 me-2" />
+                                  {t('institute.cancel') || 'Cancel'}
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
                         </div>
-                        {getStatusBadge(invite.status)}
-                        {invite.status === 'pending' && (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon">
-                                <MoreHorizontal className="w-4 h-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align={isRTL ? 'start' : 'end'}>
-                              <DropdownMenuItem onClick={() => handleResendInvite(invite.id)}>
-                                <RefreshCw className="w-4 h-4 me-2" />
-                                {t('institute.resend') || 'Resend'}
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                className="text-destructive"
-                                onClick={() => handleCancelInvite(invite.id)}
-                              >
-                                <XCircle className="w-4 h-4 me-2" />
-                                {t('institute.cancel') || 'Cancel'}
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
                       </CardContent>
                     </Card>
                   ))}
@@ -925,6 +1766,10 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
         </div>
       </ScrollArea>
 
+      {/* ======================================================================== */}
+      {/* DIALOGS */}
+      {/* ======================================================================== */}
+
       {/* Invite Dialog */}
       <Dialog open={showInviteDialog} onOpenChange={setShowInviteDialog}>
         <DialogContent className="sm:max-w-[500px]">
@@ -956,10 +1801,11 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="staff">{t('institute.roles.staff') || 'Staff'}</SelectItem>
-                  <SelectItem value="therapist">{t('institute.roles.therapist') || 'Therapist'}</SelectItem>
-                  <SelectItem value="teacher">{t('institute.roles.teacher') || 'Teacher'}</SelectItem>
-                  <SelectItem value="admin">{t('institute.roles.admin') || 'Administrator'}</SelectItem>
+                  {INSTITUTE_ROLES.map((role) => (
+                    <SelectItem key={role.value} value={role.value}>
+                      {t(role.labelKey) || role.value}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -993,7 +1839,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Dialog */}
+      {/* Edit Institute Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -1067,7 +1913,253 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation */}
+      {/* Classroom Create/Edit Dialog */}
+      <Dialog open={showClassroomDialog} onOpenChange={setShowClassroomDialog}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>
+              {editingClassroom
+                ? (t('classroom.edit') || 'Edit Classroom')
+                : (t('classroom.create') || 'Create Classroom')}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="classroomName">{t('classroom.name') || 'Name'} *</Label>
+              <Input
+                id="classroomName"
+                value={classroomForm.name}
+                onChange={(e) => setClassroomForm({ ...classroomForm, name: e.target.value })}
+                placeholder={t('classroom.namePlaceholder') || 'e.g., Room 101, Blue Class'}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="classroomGrade">{t('classroom.grade') || 'Grade'}</Label>
+                <Select
+                  value={classroomForm.grade}
+                  onValueChange={(value) => setClassroomForm({ ...classroomForm, grade: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('classroom.selectGrade') || 'Select grade'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {GRADE_OPTIONS.map((grade) => (
+                      <SelectItem key={grade.value} value={grade.value}>
+                        {t(`classroom.grades.${grade.value}`) || grade.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="classroomRoom">{t('classroom.roomNumber') || 'Room Number'}</Label>
+                <Input
+                  id="classroomRoom"
+                  value={classroomForm.roomNumber}
+                  onChange={(e) => setClassroomForm({ ...classroomForm, roomNumber: e.target.value })}
+                  placeholder="101"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="classroomCapacity">{t('classroom.capacity') || 'Capacity'}</Label>
+                <Input
+                  id="classroomCapacity"
+                  type="number"
+                  value={classroomForm.capacity}
+                  onChange={(e) => setClassroomForm({ ...classroomForm, capacity: e.target.value })}
+                  placeholder="20"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="classroomYear">{t('classroom.academicYear') || 'Academic Year'}</Label>
+                <Input
+                  id="classroomYear"
+                  value={classroomForm.academicYear}
+                  onChange={(e) => setClassroomForm({ ...classroomForm, academicYear: e.target.value })}
+                  placeholder="2024-2025"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="classroomDescription">{t('classroom.description') || 'Description'}</Label>
+              <Textarea
+                id="classroomDescription"
+                value={classroomForm.description}
+                onChange={(e) => setClassroomForm({ ...classroomForm, description: e.target.value })}
+                placeholder={t('classroom.descriptionPlaceholder') || 'Brief description of the classroom...'}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowClassroomDialog(false);
+              setEditingClassroom(null);
+              setClassroomForm({ name: '', grade: '', description: '', capacity: '', roomNumber: '', academicYear: '' });
+            }}>
+              {t('common.cancel') || 'Cancel'}
+            </Button>
+            <Button 
+              onClick={editingClassroom ? handleUpdateClassroom : handleCreateClassroom} 
+              disabled={isSubmitting}
+            >
+              {isSubmitting && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
+              {editingClassroom ? (t('common.save') || 'Save') : (t('common.create') || 'Create')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Member to Classroom Dialog */}
+      <Dialog open={showClassroomMemberDialog} onOpenChange={setShowClassroomMemberDialog}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>{t('classroom.addMember') || 'Add Staff to Classroom'}</DialogTitle>
+            <DialogDescription>
+              {t('classroom.addMemberDesc') || 'Assign an institute member to this classroom.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>{t('classroom.selectMember') || 'Select Staff Member'}</Label>
+              <Select
+                value={classroomMemberForm.userId}
+                onValueChange={(value) => setClassroomMemberForm({ ...classroomMemberForm, userId: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={t('classroom.selectMemberPlaceholder') || 'Choose a member...'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {getAvailableMembers().map((member) => (
+                    <SelectItem key={member.id} value={member.id}>
+                      {member.fullName || member.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {getAvailableMembers().length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {t('classroom.noAvailableMembers') || 'All institute members are already assigned to this classroom.'}
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label>{t('classroom.role') || 'Role'}</Label>
+              <Select
+                value={classroomMemberForm.role}
+                onValueChange={(value) => setClassroomMemberForm({ ...classroomMemberForm, role: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CLASSROOM_ROLES.map((role) => (
+                    <SelectItem key={role.value} value={role.value}>
+                      {t(role.labelKey) || role.value}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="memberPrimary">{t('classroom.isPrimary') || 'Primary Assignment'}</Label>
+              <Switch
+                id="memberPrimary"
+                checked={classroomMemberForm.isPrimary}
+                onCheckedChange={(checked) => setClassroomMemberForm({ ...classroomMemberForm, isPrimary: checked })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowClassroomMemberDialog(false);
+              setClassroomMemberForm({ userId: '', role: 'aide', isPrimary: false });
+            }}>
+              {t('common.cancel') || 'Cancel'}
+            </Button>
+            <Button 
+              onClick={handleAddClassroomMember} 
+              disabled={isSubmitting || !classroomMemberForm.userId}
+            >
+              {isSubmitting && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
+              {t('classroom.add') || 'Add'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Student to Classroom Dialog */}
+      <Dialog open={showClassroomStudentDialog} onOpenChange={setShowClassroomStudentDialog}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>{t('classroom.addStudent') || 'Add Student to Classroom'}</DialogTitle>
+            <DialogDescription>
+              {t('classroom.addStudentDesc') || 'Enroll a student in this classroom.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>{t('classroom.selectStudent') || 'Select Student'}</Label>
+              <Select
+                value={classroomStudentForm.studentId}
+                onValueChange={(value) => setClassroomStudentForm({ ...classroomStudentForm, studentId: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={t('classroom.selectStudentPlaceholder') || 'Choose a student...'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {getAvailableStudents().map((student) => (
+                    <SelectItem key={student.id} value={student.id}>
+                      {student.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {getAvailableStudents().length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {t('classroom.noAvailableStudents') || 'All assigned students are already in this classroom.'}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="studentPrimary">{t('classroom.isPrimaryClassroom') || 'Primary Classroom'}</Label>
+              <Switch
+                id="studentPrimary"
+                checked={classroomStudentForm.isPrimary}
+                onCheckedChange={(checked) => setClassroomStudentForm({ ...classroomStudentForm, isPrimary: checked })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="studentNotes">{t('classroom.notes') || 'Notes (Optional)'}</Label>
+              <Input
+                id="studentNotes"
+                value={classroomStudentForm.notes}
+                onChange={(e) => setClassroomStudentForm({ ...classroomStudentForm, notes: e.target.value })}
+                placeholder={t('classroom.notesPlaceholder') || 'Any special notes...'}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowClassroomStudentDialog(false);
+              setClassroomStudentForm({ studentId: '', isPrimary: true, notes: '' });
+            }}>
+              {t('common.cancel') || 'Cancel'}
+            </Button>
+            <Button 
+              onClick={handleAddClassroomStudent} 
+              disabled={isSubmitting || !classroomStudentForm.studentId}
+            >
+              {isSubmitting && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
+              {t('classroom.add') || 'Add'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Institute Confirmation */}
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -1089,7 +2181,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Leave Confirmation */}
+      {/* Leave Institute Confirmation */}
       <AlertDialog open={showLeaveConfirm} onOpenChange={setShowLeaveConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -1103,6 +2195,28 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
             <AlertDialogAction onClick={handleLeaveInstitute}>
               {isSubmitting && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
               {t('institute.leave') || 'Leave'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Classroom Confirmation */}
+      <AlertDialog open={showClassroomDeleteConfirm} onOpenChange={setShowClassroomDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('classroom.confirmDelete') || 'Delete Classroom?'}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('classroom.confirmDeleteDesc') || 'This will remove all member and student assignments. This action cannot be undone.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel') || 'Cancel'}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteClassroom}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isSubmitting && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
+              {t('common.delete') || 'Delete'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

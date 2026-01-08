@@ -137,7 +137,67 @@ export const instituteInviteStatusEnum = pgEnum("institute_invite_status", [
   "expired",
   "cancelled"
 ]);
+export const instituteRoleEnum = pgEnum("institute_role", [
+  "admin",       // Full administrative access
+  "director",    // Director/Principal - high-level oversight
+  "teacher",     // Classroom teacher
+  "therapist",   // Speech therapist, OT, PT, etc.
+  "aide",        // Teaching aide/assistant
+  "staff",       // General staff member
+  "observer",    // Read-only access for observers/interns
+]);
+export const classroomRoleEnum = pgEnum("classroom_role", [
+  "lead_teacher",    // Primary teacher responsible for the classroom
+  "co_teacher",      // Co-teaching partner
+  "therapist",       // Therapist assigned to this classroom
+  "aide",            // Classroom aide
+  "observer",        // Observer with read-only access
+]);
+export const gradeEnum = pgEnum("grade", [
+  "pre_k", "k", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12",
+  "special_ed", "adult_ed"
+]);
+export type GradeEnum = (typeof gradeEnum.enumValues)[number];
+export const GRADE_OPTIONS = [
+  { value: 'pre_k', label: 'Pre-K' },
+  { value: 'k', label: 'Kindergarten' },
+  { value: '1', label: '1st Grade' },
+  { value: '2', label: '2nd Grade' },
+  { value: '3', label: '3rd Grade' },
+  { value: '4', label: '4th Grade' },
+  { value: '5', label: '5th Grade' },
+  { value: '6', label: '6th Grade' },
+  { value: '7', label: '7th Grade' },
+  { value: '8', label: '8th Grade' },
+  { value: '9', label: '9th Grade' },
+  { value: '10', label: '10th Grade' },
+  { value: '11', label: '11th Grade' },
+  { value: '12', label: '12th Grade' },
+  { value: 'special_ed', label: 'Special Education' },
+  { value: 'adult_ed', label: 'Adult Education' },
+];
 
+// Export role arrays for use in frontend dropdowns
+export const INSTITUTE_ROLES = [
+  { value: "admin", labelKey: "institute.roles.admin" },
+  { value: "director", labelKey: "institute.roles.director" },
+  { value: "teacher", labelKey: "institute.roles.teacher" },
+  { value: "therapist", labelKey: "institute.roles.therapist" },
+  { value: "aide", labelKey: "institute.roles.aide" },
+  { value: "staff", labelKey: "institute.roles.staff" },
+  { value: "observer", labelKey: "institute.roles.observer" },
+] as const;
+
+export const CLASSROOM_ROLES = [
+  { value: "lead_teacher", labelKey: "classroom.roles.leadTeacher" },
+  { value: "co_teacher", labelKey: "classroom.roles.coTeacher" },
+  { value: "therapist", labelKey: "classroom.roles.therapist" },
+  { value: "aide", labelKey: "classroom.roles.aide" },
+  { value: "observer", labelKey: "classroom.roles.observer" },
+] as const;
+
+export type InstituteRole = typeof INSTITUTE_ROLES[number]["value"];
+export type ClassroomRole = typeof CLASSROOM_ROLES[number]["value"];
 
 // =============================================================================
 // CORE USER MANAGEMENT TABLES
@@ -298,6 +358,60 @@ export const instituteInvites = pgTable("institute_invites", {
   index("idx_institute_invites_invitee_user_id").on(table.inviteeUserId),
   index("idx_institute_invites_token").on(table.token),
   index("idx_institute_invites_status").on(table.status),
+]);
+
+/**
+ * Classrooms - Organizational units within schools
+ * Only applicable to institutes of type 'school'
+ */
+export const classrooms = pgTable("classrooms", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  instituteId: varchar("institute_id").references(() => institutes.id).notNull(),
+  name: text("name").notNull(),
+  grade: gradeEnum("grade"),
+  description: text("description"),
+  capacity: integer("capacity"), // Optional max students
+  roomNumber: text("room_number"), // Physical room identifier
+  academicYear: text("academic_year"), // e.g., "2024-2025"
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_classrooms_institute_id").on(table.instituteId),
+  index("idx_classrooms_is_active").on(table.isActive),
+  index("idx_classrooms_grade").on(table.grade),
+]);
+
+export const classroomUsers = pgTable("classroom_users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  classroomId: varchar("classroom_id").references(() => classrooms.id).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  role: text("role").default("teacher").notNull(), // Uses classroomRoleEnum values
+  isPrimary: boolean("is_primary").default(false).notNull(), // Is this the primary assignment?
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_classroom_users_classroom_id").on(table.classroomId),
+  index("idx_classroom_users_user_id").on(table.userId),
+  index("idx_classroom_users_is_active").on(table.isActive),
+]);
+
+export const studentClassrooms = pgTable("student_classrooms", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").references(() => students.id).notNull(),
+  classroomId: varchar("classroom_id").references(() => classrooms.id).notNull(),
+  isPrimary: boolean("is_primary").default(false).notNull(), // Is this the primary/homeroom classroom?
+  enrollmentDate: date("enrollment_date"),
+  exitDate: date("exit_date"),
+  notes: text("notes"),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_student_classrooms_student_id").on(table.studentId),
+  index("idx_student_classrooms_classroom_id").on(table.classroomId),
+  index("idx_student_classrooms_is_active").on(table.isActive),
 ]);
 
 
@@ -552,6 +666,9 @@ export const instituteStudents = pgTable("institute_students", {
   instituteId: varchar("institute_id").references(() => institutes.id).notNull(),
   studentId: varchar("student_id").references(() => students.id).notNull(),
   enrollmentDate: date("enrollment_date"),
+  exitDate: date("exit_date"),
+  exitReason: text("exit_reason"), // graduated, transferred, withdrawn, etc.
+  grade: gradeEnum("grade"), // e.g., "K", "1", "2", "3-5", "Middle School", etc.
   idNumber: text("id_number"), // Student ID number
   data: jsonb("data").default({}), // Private data for this relationship
   isActive: boolean("is_active").default(true).notNull(),
@@ -560,6 +677,7 @@ export const instituteStudents = pgTable("institute_students", {
 }, (table) => [
   index("idx_institute_students_institute_id").on(table.instituteId),
   index("idx_institute_students_student_id").on(table.studentId),
+  index("idx_institute_students_is_active").on(table.isActive),
 ]);
 
 // =============================================================================
@@ -1390,6 +1508,27 @@ export const insertInstituteInviteSchema = createInsertSchema(instituteInvites, 
   message: z.string().max(500).optional(),
 });
 
+export const insertClassroomSchema = createInsertSchema(classrooms).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertClassroomUserSchema = createInsertSchema(classroomUsers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertStudentClassroomSchema = createInsertSchema(studentClassrooms).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const updateClassroomSchema = insertClassroomSchema.partial();
+export const updateClassroomUserSchema = insertClassroomUserSchema.partial();
+export const updateStudentClassroomSchema = insertStudentClassroomSchema.partial();
+
 // Records schemas
 export const insertMedicalRecordSchema = createInsertSchema(medicalRecords).omit({
   id: true, createdAt: true, updatedAt: true,
@@ -1833,6 +1972,17 @@ export type UpdateInstituteInvite = Partial<InsertInstituteInvite>;
 export type InstituteStudent = typeof instituteStudents.$inferSelect;
 export type InsertInstituteStudent = z.infer<typeof insertInstituteStudentSchema>;
 export type UpdateInstituteStudent = z.infer<typeof updateInstituteStudentSchema>;
+
+// Classroom types
+export type Classroom = typeof classrooms.$inferSelect;
+export type InsertClassroom = z.infer<typeof insertClassroomSchema>;
+export type UpdateClassroom = z.infer<typeof updateClassroomSchema>;
+export type ClassroomUser = typeof classroomUsers.$inferSelect;
+export type InsertClassroomUser = z.infer<typeof insertClassroomUserSchema>;
+export type UpdateClassroomUser = z.infer<typeof updateClassroomUserSchema>;
+export type StudentClassroom = typeof studentClassrooms.$inferSelect;
+export type InsertStudentClassroom = z.infer<typeof insertStudentClassroomSchema>;
+export type UpdateStudentClassroom = z.infer<typeof updateStudentClassroomSchema>;
 
 // License types
 export type License = typeof licenses.$inferSelect;
@@ -2360,14 +2510,17 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   studentLinks: many(userStudents),
   instituteLinks: many(instituteUsers),
   licenses: many(licenses),
+  classroomLinks: many(classroomUsers),
 }));
 
 // Institute relations
 export const institutesRelations = relations(institutes, ({ many }) => ({
   userLinks: many(instituteUsers),
   studentLinks: many(instituteStudents),
+  instituteLinks: many(instituteStudents),
   licenses: many(licenses),
   invites: many(instituteInvites),
+  classrooms: many(classrooms),
 }));
 
 export const instituteUsersRelations = relations(instituteUsers, ({ one }) => ({
@@ -2407,6 +2560,37 @@ export const instituteInvitesRelations = relations(instituteInvites, ({ one }) =
   }),
 }));
 
+export const classroomsRelations = relations(classrooms, ({ one, many }) => ({
+  institute: one(institutes, {
+    fields: [classrooms.instituteId],
+    references: [institutes.id],
+  }),
+  userLinks: many(classroomUsers),
+  studentLinks: many(studentClassrooms),
+}));
+
+export const classroomUsersRelations = relations(classroomUsers, ({ one }) => ({
+  classroom: one(classrooms, {
+    fields: [classroomUsers.classroomId],
+    references: [classrooms.id],
+  }),
+  user: one(users, {
+    fields: [classroomUsers.userId],
+    references: [users.id],
+  }),
+}));
+
+export const studentClassroomsRelations = relations(studentClassrooms, ({ one }) => ({
+  student: one(students, {
+    fields: [studentClassrooms.studentId],
+    references: [students.id],
+  }),
+  classroom: one(classrooms, {
+    fields: [studentClassrooms.classroomId],
+    references: [classrooms.id],
+  }),
+}));
+
 // License relations
 export const licensesRelations = relations(licenses, ({ one }) => ({
   institute: one(institutes, {
@@ -2423,6 +2607,7 @@ export const licensesRelations = relations(licenses, ({ one }) => ({
 export const studentsRelations = relations(students, ({ many }) => ({
   userLinks: many(userStudents),
   instituteLinks: many(instituteStudents),
+  classroomLinks: many(studentClassrooms),
   programs: many(programs),
   interpretations: many(interpretations),
   inviteCodes: many(inviteCodes),

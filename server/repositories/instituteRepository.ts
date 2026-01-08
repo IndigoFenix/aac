@@ -16,6 +16,13 @@ import {
   type InsertInstituteInvite,
   type UpdateInstituteInvite,
   type User,
+  instituteStudents,
+  students,
+  type InstituteStudent,
+  type InsertInstituteStudent,
+  type UpdateInstituteStudent,
+  type Student,
+  GradeEnum
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, and, desc, or, sql, lt, ne } from "drizzle-orm";
@@ -592,6 +599,334 @@ export class InstituteRepository {
       .where(eq(instituteInvites.token, token));
 
     return result || null;
+  }
+
+    /**
+   * Assign a student to an institute
+   * For schools: automatically deactivates any existing school assignment
+   */
+  async assignStudentToInstitute(
+    instituteId: string,
+    studentId: string,
+    options: {
+      enrollmentDate?: string;
+      idNumber?: string;
+      grade?: string;
+    } = {}
+  ): Promise<InstituteStudent> {
+    const { enrollmentDate, idNumber, grade } = options;
+    
+    // Check if assignment already exists
+    const existing = await this.getInstituteStudentLink(instituteId, studentId);
+    
+    if (existing) {
+      // Reactivate if inactive
+      if (!existing.isActive) {
+        const [updated] = await db
+          .update(instituteStudents)
+          .set({
+            isActive: true,
+            enrollmentDate: enrollmentDate || existing.enrollmentDate,
+            idNumber: idNumber || existing.idNumber,
+            grade: grade as GradeEnum || existing.grade,
+            exitDate: null,
+            exitReason: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(instituteStudents.id, existing.id))
+          .returning();
+        return updated;
+      }
+      // Update existing active assignment
+      const [updated] = await db
+        .update(instituteStudents)
+        .set({
+          enrollmentDate: enrollmentDate || existing.enrollmentDate,
+          idNumber: idNumber || existing.idNumber,
+          grade: grade as GradeEnum || existing.grade,
+          updatedAt: new Date(),
+        })
+        .where(eq(instituteStudents.id, existing.id))
+        .returning();
+      return updated;
+    }
+
+    // Get institute type to check school constraint
+    const institute = await this.getInstituteById(instituteId);
+    
+    // If it's a school, deactivate other school assignments
+    // (This is also handled by database trigger, but we do it here for safety)
+    if (institute?.type === 'school') {
+      await this.deactivateStudentSchoolAssignments(studentId, instituteId);
+    }
+
+    const [link] = await db
+      .insert(instituteStudents)
+      .values({
+        instituteId,
+        studentId,
+        enrollmentDate: enrollmentDate || null,
+        idNumber: idNumber || null,
+        grade: grade as GradeEnum || null,
+        isActive: true,
+      })
+      .returning();
+    return link;
+  }
+
+  /**
+   * Deactivate all school assignments for a student except the specified one
+   */
+  async deactivateStudentSchoolAssignments(
+    studentId: string,
+    exceptInstituteId?: string
+  ): Promise<number> {
+    // First get all school institute IDs
+    const schoolInstitutes = await db
+      .select({ id: institutes.id })
+      .from(institutes)
+      .where(eq(institutes.type, 'school'));
+    
+    const schoolIds = schoolInstitutes.map(s => s.id);
+    if (schoolIds.length === 0) return 0;
+
+    // Deactivate assignments to schools
+    let count = 0;
+    for (const schoolId of schoolIds) {
+      if (schoolId === exceptInstituteId) continue;
+      
+      const [updated] = await db
+        .update(instituteStudents)
+        .set({
+          isActive: false,
+          exitDate: new Date().toISOString().split('T')[0],
+          exitReason: 'transferred',
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(instituteStudents.studentId, studentId),
+            eq(instituteStudents.instituteId, schoolId),
+            eq(instituteStudents.isActive, true)
+          )
+        )
+        .returning();
+      
+      if (updated) count++;
+    }
+    
+    return count;
+  }
+
+  /**
+   * Get the link between a student and an institute
+   */
+  async getInstituteStudentLink(
+    instituteId: string,
+    studentId: string
+  ): Promise<InstituteStudent | undefined> {
+    const [link] = await db
+      .select()
+      .from(instituteStudents)
+      .where(
+        and(
+          eq(instituteStudents.instituteId, instituteId),
+          eq(instituteStudents.studentId, studentId)
+        )
+      );
+    return link || undefined;
+  }
+
+  /**
+   * Get active link between a student and an institute
+   */
+  async getActiveInstituteStudentLink(
+    instituteId: string,
+    studentId: string
+  ): Promise<InstituteStudent | undefined> {
+    const [link] = await db
+      .select()
+      .from(instituteStudents)
+      .where(
+        and(
+          eq(instituteStudents.instituteId, instituteId),
+          eq(instituteStudents.studentId, studentId),
+          eq(instituteStudents.isActive, true)
+        )
+      );
+    return link || undefined;
+  }
+
+  /**
+   * Get all students in an institute
+   */
+  async getStudentsInInstitute(
+    instituteId: string
+  ): Promise<{ student: Student; enrollment: InstituteStudent }[]> {
+    const results = await db
+      .select({
+        student: students,
+        enrollment: instituteStudents,
+      })
+      .from(instituteStudents)
+      .innerJoin(students, eq(instituteStudents.studentId, students.id))
+      .where(
+        and(
+          eq(instituteStudents.instituteId, instituteId),
+          eq(instituteStudents.isActive, true),
+          eq(students.isActive, true)
+        )
+      )
+      .orderBy(students.name);
+
+    return results;
+  }
+
+  /**
+   * Get all institutes a student belongs to
+   */
+  async getInstitutesByStudentId(
+    studentId: string
+  ): Promise<{ institute: Institute; enrollment: InstituteStudent }[]> {
+    const results = await db
+      .select({
+        institute: institutes,
+        enrollment: instituteStudents,
+      })
+      .from(instituteStudents)
+      .innerJoin(institutes, eq(instituteStudents.instituteId, institutes.id))
+      .where(
+        and(
+          eq(instituteStudents.studentId, studentId),
+          eq(instituteStudents.isActive, true),
+          eq(institutes.isActive, true)
+        )
+      )
+      .orderBy(institutes.name);
+
+    return results;
+  }
+
+  /**
+   * Get all institutes (including inactive relationships) for a student
+   */
+  async getAllInstitutesByStudentId(
+    studentId: string
+  ): Promise<{ institute: Institute; enrollment: InstituteStudent }[]> {
+    const results = await db
+      .select({
+        institute: institutes,
+        enrollment: instituteStudents,
+      })
+      .from(instituteStudents)
+      .innerJoin(institutes, eq(instituteStudents.instituteId, institutes.id))
+      .where(
+        and(
+          eq(instituteStudents.studentId, studentId),
+          eq(institutes.isActive, true)
+        )
+      )
+      .orderBy(desc(instituteStudents.isActive), institutes.name);
+
+    return results;
+  }
+
+  /**
+   * Get the active school for a student (should be at most one)
+   */
+  async getActiveSchoolForStudent(
+    studentId: string
+  ): Promise<{ institute: Institute; enrollment: InstituteStudent } | undefined> {
+    const [result] = await db
+      .select({
+        institute: institutes,
+        enrollment: instituteStudents,
+      })
+      .from(instituteStudents)
+      .innerJoin(institutes, eq(instituteStudents.instituteId, institutes.id))
+      .where(
+        and(
+          eq(instituteStudents.studentId, studentId),
+          eq(instituteStudents.isActive, true),
+          eq(institutes.type, 'school'),
+          eq(institutes.isActive, true)
+        )
+      );
+
+    return result || undefined;
+  }
+
+  /**
+   * Update a student's institute assignment
+   */
+  async updateInstituteStudentLink(
+    id: string,
+    updates: UpdateInstituteStudent
+  ): Promise<InstituteStudent | undefined> {
+    const [updated] = await db
+      .update(instituteStudents)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(instituteStudents.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  /**
+   * Update student institute link by IDs
+   */
+  async updateInstituteStudentByIds(
+    instituteId: string,
+    studentId: string,
+    updates: UpdateInstituteStudent
+  ): Promise<InstituteStudent | undefined> {
+    const [updated] = await db
+      .update(instituteStudents)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(
+        and(
+          eq(instituteStudents.instituteId, instituteId),
+          eq(instituteStudents.studentId, studentId)
+        )
+      )
+      .returning();
+    return updated || undefined;
+  }
+
+  /**
+   * Remove a student from an institute (soft delete)
+   */
+  async removeStudentFromInstitute(
+    instituteId: string,
+    studentId: string,
+    exitReason?: string
+  ): Promise<boolean> {
+    const [updated] = await db
+      .update(instituteStudents)
+      .set({
+        isActive: false,
+        exitDate: new Date().toISOString().split('T')[0],
+        exitReason: exitReason || 'removed',
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(instituteStudents.instituteId, instituteId),
+          eq(instituteStudents.studentId, studentId)
+        )
+      )
+      .returning();
+    return !!updated;
+  }
+
+  /**
+   * Check if a student is enrolled in an institute
+   */
+  async isStudentInInstitute(
+    instituteId: string,
+    studentId: string
+  ): Promise<boolean> {
+    const link = await this.getActiveInstituteStudentLink(instituteId, studentId);
+    return !!link;
   }
 }
 
