@@ -4,7 +4,8 @@
 
 import { instituteRepository } from "../repositories";
 import { userRepository } from "../repositories";
-import { emailService } from "./emailService"; // ADD THIS IMPORT
+import { studentRepository } from "../repositories";
+import { emailService } from "./emailService";
 import {
   type Institute,
   type InsertInstitute,
@@ -12,6 +13,9 @@ import {
   type InstituteUser,
   type InstituteInvite,
   type User,
+  type InstituteStudent,
+  type Student,
+  GradeEnum,
 } from "@shared/schema";
 
 export class InstituteService {
@@ -551,6 +555,197 @@ export class InstituteService {
    */
   getInviteLink(token: string, baseUrl: string = ""): string {
     return `${baseUrl}/invite/${token}`;
+  }
+
+  /**
+   * Assign a student to an institute
+   * For schools: automatically handles the "one active school" rule
+   */
+  async assignStudentToInstitute(
+    instituteId: string,
+    studentId: string,
+    requestingUserId: string,
+    options: {
+      enrollmentDate?: string;
+      idNumber?: string;
+      grade?: string;
+    } = {}
+  ): Promise<{ success: boolean; enrollment?: InstituteStudent; error?: string }> {
+    // Verify the institute exists
+    const institute = await instituteRepository.getInstituteById(instituteId);
+    if (!institute) {
+      return { success: false, error: "Institute not found" };
+    }
+
+    // Verify the requesting user is a member of this institute
+    const isMember = await instituteRepository.isUserMemberOfInstitute(
+      instituteId,
+      requestingUserId
+    );
+    if (!isMember) {
+      return { success: false, error: "You must be a member of this institute to assign students" };
+    }
+
+    // Verify the student exists and the user has access
+    const studentAccess = await studentRepository.userHasAccessToStudent(
+      requestingUserId,
+      studentId
+    );
+    if (!studentAccess.hasAccess) {
+      return { success: false, error: "You do not have access to this student" };
+    }
+
+    // For schools, check if student already has an active school
+    if (institute.type === 'school') {
+      const currentSchool = await instituteRepository.getActiveSchoolForStudent(studentId);
+      if (currentSchool && currentSchool.institute.id !== instituteId) {
+        // Student is already in another school - this will be deactivated automatically
+        console.log(`Student ${studentId} transferring from ${currentSchool.institute.name} to ${institute.name}`);
+      }
+    }
+
+    const enrollment = await instituteRepository.assignStudentToInstitute(
+      instituteId,
+      studentId,
+      options
+    );
+
+    return { success: true, enrollment };
+  }
+
+  /**
+   * Get all students in an institute
+   */
+  async getInstituteStudents(
+    instituteId: string,
+    requestingUserId: string
+  ): Promise<{ success: boolean; students?: { student: Student; enrollment: InstituteStudent }[]; error?: string }> {
+    // Verify membership
+    const isMember = await instituteRepository.isUserMemberOfInstitute(
+      instituteId,
+      requestingUserId
+    );
+    if (!isMember) {
+      return { success: false, error: "You are not a member of this institute" };
+    }
+
+    const students = await instituteRepository.getStudentsInInstitute(instituteId);
+    return { success: true, students };
+  }
+
+  /**
+   * Get all institutes a student belongs to
+   */
+  async getStudentInstitutes(
+    studentId: string,
+    requestingUserId: string
+  ): Promise<{ success: boolean; institutes?: { institute: Institute; enrollment: InstituteStudent }[]; error?: string }> {
+    // Verify the user has access to this student
+    const studentAccess = await studentRepository.userHasAccessToStudent(
+      requestingUserId,
+      studentId
+    );
+    if (!studentAccess.hasAccess) {
+      return { success: false, error: "You do not have access to this student" };
+    }
+
+    const institutes = await instituteRepository.getInstitutesByStudentId(studentId);
+    return { success: true, institutes };
+  }
+
+  /**
+   * Update a student's institute enrollment
+   */
+  async updateStudentEnrollment(
+    instituteId: string,
+    studentId: string,
+    updates: {
+      idNumber?: string;
+      grade?: GradeEnum;
+    },
+    requestingUserId: string
+  ): Promise<{ success: boolean; enrollment?: InstituteStudent; error?: string }> {
+    // Verify membership
+    const isMember = await instituteRepository.isUserMemberOfInstitute(
+      instituteId,
+      requestingUserId
+    );
+    if (!isMember) {
+      return { success: false, error: "You are not a member of this institute" };
+    }
+
+    const enrollment = await instituteRepository.updateInstituteStudentByIds(
+      instituteId,
+      studentId,
+      updates
+    );
+    if (!enrollment) {
+      return { success: false, error: "Student is not enrolled in this institute" };
+    }
+
+    return { success: true, enrollment };
+  }
+
+  /**
+   * Remove a student from an institute
+   */
+  async removeStudentFromInstitute(
+    instituteId: string,
+    studentId: string,
+    requestingUserId: string,
+    exitReason?: string
+  ): Promise<{ success: boolean; error?: string }> {
+    // Verify admin access or student ownership
+    const isAdmin = await instituteRepository.isUserAdminOfInstitute(
+      instituteId,
+      requestingUserId
+    );
+    const studentAccess = await studentRepository.userHasAccessToStudent(
+      requestingUserId,
+      studentId
+    );
+
+    if (!isAdmin && !studentAccess.hasAccess) {
+      return { success: false, error: "You must be an admin or have access to this student" };
+    }
+
+    const removed = await instituteRepository.removeStudentFromInstitute(
+      instituteId,
+      studentId,
+      exitReason
+    );
+
+    return { success: removed, error: removed ? undefined : "Failed to remove student" };
+  }
+
+  /**
+   * Get the active school for a student
+   */
+  async getActiveSchoolForStudent(
+    studentId: string,
+    requestingUserId: string
+  ): Promise<{ success: boolean; school?: { institute: Institute; enrollment: InstituteStudent }; error?: string }> {
+    // Verify the user has access to this student
+    const studentAccess = await studentRepository.userHasAccessToStudent(
+      requestingUserId,
+      studentId
+    );
+    if (!studentAccess.hasAccess) {
+      return { success: false, error: "You do not have access to this student" };
+    }
+
+    const school = await instituteRepository.getActiveSchoolForStudent(studentId);
+    return { success: true, school };
+  }
+
+  /**
+   * Check if a student is enrolled in an institute
+   */
+  async isStudentInInstitute(
+    instituteId: string,
+    studentId: string
+  ): Promise<boolean> {
+    return instituteRepository.isStudentInInstitute(instituteId, studentId);
   }
 }
 

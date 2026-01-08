@@ -18,7 +18,8 @@ import {
   slpClinicalController,
   programController,
   recordsController,
-  instituteController
+  instituteController,
+  classroomController
 } from "./controllers";
 
 import {
@@ -149,7 +150,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/institutes/:id/invites/:inviteId/resend", requireAuth, (req, res) =>
     instituteController.resendInvite(req, res)
   );
-  
+
+  // Institute student routes
+  app.get('/api/institutes/:id/students', requireAuth, instituteController.getStudents.bind(instituteController));
+  app.post('/api/institutes/:id/students', requireAuth, instituteController.addStudent.bind(instituteController));
+  app.patch('/api/institutes/:id/students/:studentId', requireAuth, instituteController.updateStudent.bind(instituteController));
+  app.delete('/api/institutes/:id/students/:studentId', requireAuth, instituteController.removeStudent.bind(instituteController));
+
+  // Student institutes route
+  app.get('/api/students/:studentId/institutes', requireAuth, instituteController.getStudentInstitutes.bind(instituteController));
+
+  // Classroom routes
+  app.get('/api/institutes/:instituteId/classrooms', requireAuth, classroomController.getClassrooms.bind(classroomController));
+  app.post('/api/institutes/:instituteId/classrooms', requireAuth, classroomController.createClassroom.bind(classroomController));
+  app.get('/api/classrooms/:classroomId', requireAuth, classroomController.getClassroom.bind(classroomController));
+  app.patch('/api/classrooms/:classroomId', requireAuth, classroomController.updateClassroom.bind(classroomController));
+  app.delete('/api/classrooms/:classroomId', requireAuth, classroomController.deleteClassroom.bind(classroomController));
+
+  // Classroom member routes
+  app.get('/api/classrooms/:classroomId/members', requireAuth, classroomController.getMembers.bind(classroomController));
+  app.post('/api/classrooms/:classroomId/members', requireAuth, classroomController.addMember.bind(classroomController));
+  app.patch('/api/classrooms/:classroomId/members/:userId', requireAuth, classroomController.updateMember.bind(classroomController));
+  app.delete('/api/classrooms/:classroomId/members/:userId', requireAuth, classroomController.removeMember.bind(classroomController));
+
+  // Classroom student routes
+  app.get('/api/classrooms/:classroomId/students', requireAuth, classroomController.getStudents.bind(classroomController));
+  app.post('/api/classrooms/:classroomId/students', requireAuth, classroomController.addStudent.bind(classroomController));
+  app.patch('/api/classrooms/:classroomId/students/:studentId', requireAuth, classroomController.updateStudent.bind(classroomController));
+  app.delete('/api/classrooms/:classroomId/students/:studentId', requireAuth, classroomController.removeStudent.bind(classroomController));
+
+  // User's classrooms
+  app.get('/api/users/me/classrooms', requireAuth, classroomController.getMyClassrooms.bind(classroomController));
+
   // User's Pending Invites
   app.get("/api/invites/pending", requireAuth, (req, res) =>
     instituteController.getPendingInvites(req, res)

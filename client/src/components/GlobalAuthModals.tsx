@@ -11,46 +11,15 @@ import { useStudent } from "@/hooks/useStudent";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
 import { openUI, useUIEvent } from "@/lib/uiEvents";
+import { StudentModal } from '@/components/StudentModal';
 import {
-  MessageCircle,
-  Edit3,
-  Image,
-  Brain,
-  Lightbulb,
-  CheckCircle,
   Save,
-  Share,
   X,
-  History,
-  Trash2,
   Upload,
-  Eye,
-  AlertTriangle,
   Crop as CropIcon,
-  Share2,
-  Copy,
-  MessageSquare,
-  Mail,
-  MapPin,
-  Clock,
-  FileText,
-  ArrowRight,
-  ArrowLeft,
   Camera,
-  FolderOpen,
-  ChevronUp,
   Settings,
   User,
-  Plus,
-  Edit,
-  Shield,
-  Users,
-  Minus,
-  Calendar,
-  Moon,
-  Sun,
-  LogOut,
-  LogIn,
 } from "lucide-react";
 import { InsertInviteCode, insertInviteCodeSchema, Interpretation, RedeemInviteCode, redeemInviteCodeSchema, Student } from "@shared/schema";
 import { useForm } from "react-hook-form";
@@ -128,16 +97,9 @@ export function GlobalAuthModals() {
   );
 
   // settings
-  // CHANGED: 'age' replaced with 'birthDate' (ISO date string 'YYYY-MM-DD')
-  const [studentForm, setStudentForm] = useState({
-    name: "",
-    gender: "",
-    birthDate: "",
-    framework: "tala",
-    country: "IL"
-  });
-  const [editingStudent, setEditingStudent] = useState<any>(null);
   const [showStudentModal, setShowStudentModal] = useState(false);
+  const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  
   const [profileForm, setProfileForm] = useState({
     firstName: "",
     lastName: "",
@@ -185,32 +147,13 @@ export function GlobalAuthModals() {
 
   // Listen for createStudent event - opens student modal with empty form
   useUIEvent("createStudent", () => {
-    // Clear any existing edit state
     setEditingStudent(null);
-    setStudentForm({
-      name: "",
-      gender: "",
-      birthDate: "",
-      framework: "tala",
-      country: "IL",
-    });
-    // Open the student modal
     setShowStudentModal(true);
   });
 
   // Listen for editStudent event - opens student modal with AAC user data pre-filled
-  useUIEvent("editStudent", (studentData: any) => {
-    if (studentData) {
-      setEditingStudent(studentData);
-      setStudentForm({
-        name: studentData.name || "",
-        gender: studentData.gender || "",
-        birthDate: studentData.birthDate || "",
-        framework: studentData.framework || "tala",
-        country: studentData.country || "IL",
-      });
-    }
-    // Open the student modal
+  useUIEvent("editStudent", (studentData: Student | null) => {
+    setEditingStudent(studentData);
     setShowStudentModal(true);
   });
 
@@ -273,90 +216,6 @@ export function GlobalAuthModals() {
       setIsRegistering(false);
     }
   };
-
-  // ADDED: Helper function to calculate age from birth date
-  const calculateAge = (birthDateStr: string | null): number | null => {
-    if (!birthDateStr) return null;
-    const birth = new Date(birthDateStr);
-    const today = new Date();
-    let age = today.getFullYear() - birth.getFullYear();
-    const monthDiff = today.getMonth() - birth.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-      age--;
-    }
-    return age;
-  };
-
-
-  // Create AAC user mutation
-  const createStudentMutation = useMutation({
-    mutationFn: async (studentData: any) => {
-      const res = await apiRequest("POST", "/api/students", studentData);
-      return res.json();
-    },
-    onSuccess: async () => {
-      // Refresh global AAC users in the provider
-      await refetchStudent();
-
-      // Optional: keep this if anything else still uses the raw query
-      queryClient.invalidateQueries({ queryKey: ["/api/students"] });
-
-      setStudentForm({
-        name: "",
-        gender: "",
-        birthDate: "",
-        framework: "tala",
-        country: "IL",
-      });
-      setShowStudentModal(false);
-      toast({
-        title: t("toast.studentCreated"),
-        description: t("toast.studentCreatedDesc"),
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        title: t("toast.studentCreateFailed"),
-        description: error?.message || t("toast.studentCreateFailedDesc"),
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Update AAC user mutation
-  const updateStudentMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: any }) => {
-      const res = await apiRequest("PATCH", `/api/students/${id}`, data);
-      return res.json();
-    },
-    onSuccess: async () => {
-      await refetchStudent();
-      queryClient.invalidateQueries({ queryKey: ["/api/students"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/students/list"] });
-
-      setEditingStudent(null);
-      setStudentForm({
-        name: "",
-        gender: "",
-        birthDate: "",
-        framework: "tala",
-        country: "IL",
-      });
-      setShowStudentModal(false);
-      toast({
-        title: t("toast.studentUpdated"),
-        description: t("toast.studentUpdatedDesc"),
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        title: t("toast.studentUpdateFailed"),
-        description: error?.message || t("toast.studentUpdateFailedDesc"),
-        variant: "destructive",
-      });
-    },
-  });
-
 
   // Delete AAC user mutation
   const deleteStudentMutation = useMutation({
@@ -648,56 +507,6 @@ export function GlobalAuthModals() {
     }
 
     return { currentTime, location };
-  };
-  
-  // AAC User handlers
-  const handleCreateStudent = () => {
-    if (!studentForm.name.trim()) {
-      toast({
-        title: t("common.error"),
-        description: t("student.nameIsRequired"),
-        variant: "destructive",
-      });
-      return;
-    }
-    createStudentMutation.mutate(studentForm);
-  };
-
-  // CHANGED: Now uses birthDate instead of age
-  const handleEditStudent = (student: Student) => {
-    setEditingStudent(student);
-    setStudentForm({
-      name: student.name || "",
-      gender: student.gender || "",
-      birthDate: student.birthDate || "",
-      framework: student.framework || "tala",
-      country: student.country || "IL",
-    });
-  };
-
-  const handleUpdateStudent = () => {
-    if (!studentForm.name.trim()) {
-      toast({
-        title: t("common.error"),
-        description: t("student.nameIsRequired"),
-        variant: "destructive",
-      });
-      return;
-    }
-    updateStudentMutation.mutate({ id: editingStudent.id, data: studentForm });
-  };
-
-  // Reset form and close student modal
-  const handleCancelEdit = () => {
-    setEditingStudent(null);
-    setStudentForm({
-      name: "",
-      gender: "",
-      birthDate: "",
-      framework: "tala",
-      country: "IL",
-    });
-    setShowStudentModal(false);
   };
 
   // Initialize profile form when user data is available
@@ -1312,193 +1121,15 @@ export function GlobalAuthModals() {
         </DialogContent>
       </Dialog>
 
-      {/* Student (AAC User) Create/Edit Modal */}
-      <Dialog open={showStudentModal} onOpenChange={setShowStudentModal}>
-        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className={isRTL ? "text-right" : ""}>
-              {editingStudent
-                ? t("student.edit")
-                : t("student.addNew")}
-            </DialogTitle>
-            <DialogDescription className={isRTL ? "text-right" : ""}>
-              {editingStudent
-                ? t("student.editDescription")
-                : t("student.addNewDescription")}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid gap-4 py-4">
-            {/* Row 1: Name and ID Number */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="studentName">
-                  {t("student.nameRequired")}
-                </Label>
-                <Input
-                  id="studentName"
-                  value={studentForm.name}
-                  onChange={(e) =>
-                    setStudentForm((prev) => ({
-                      ...prev,
-                      name: e.target.value,
-                    }))
-                  }
-                  placeholder={t("student.namePlaceholder")}
-                  required
-                />
-              </div>
-            </div>
-
-            {/* Row 2: Gender and Birth Date */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="studentGender">
-                  {t("student.gender")}
-                </Label>
-                <Select
-                  value={studentForm.gender}
-                  onValueChange={(value) =>
-                    setStudentForm((prev) => ({ ...prev, gender: value }))
-                  }
-                >
-                  <SelectTrigger id="studentGender">
-                    <SelectValue
-                      placeholder={t("student.genderPlaceholder")}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Male">
-                      {t("student.genderMale")}
-                    </SelectItem>
-                    <SelectItem value="Female">
-                      {t("student.genderFemale")}
-                    </SelectItem>
-                    <SelectItem value="Other">
-                      {t("student.genderOther")}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="studentBirthDate">
-                  {t("student.dateOfBirth")}
-                </Label>
-                <Input
-                  id="studentBirthDate"
-                  type="date"
-                  value={studentForm.birthDate}
-                  onChange={(e) =>
-                    setStudentForm((prev) => ({
-                      ...prev,
-                      birthDate: e.target.value,
-                    }))
-                  }
-                  max={new Date().toISOString().split('T')[0]}
-                />
-                {studentForm.birthDate && (
-                  <p className="text-xs text-muted-foreground">
-                    {t("student.ageDisplay").replace("{{age}}", String(calculateAge(studentForm.birthDate)))}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Row 5: System Type and Country */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="studentFramework">
-                  {t("student.systemType")}
-                </Label>
-                <Select
-                  value={studentForm.framework}
-                  onValueChange={(value) =>
-                    setStudentForm((prev) => ({ ...prev, framework: value }))
-                  }
-                >
-                  <SelectTrigger id="studentFramework">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="tala">
-                      {t("student.frameworkTala")}
-                    </SelectItem>
-                    <SelectItem value="us_iep">
-                      {t("student.frameworkIep")}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="studentCountry">
-                  {t("student.country")}
-                </Label>
-                <Select
-                  value={studentForm.country}
-                  onValueChange={(value) =>
-                    setStudentForm((prev) => ({ ...prev, country: value }))
-                  }
-                >
-                  <SelectTrigger id="studentCountry">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="IL">
-                      {t("student.countryIsrael")}
-                    </SelectItem>
-                    <SelectItem value="US">
-                      {t("student.countryUS")}
-                    </SelectItem>
-                    <SelectItem value="UK">
-                      {t("student.countryUK")}
-                    </SelectItem>
-                    <SelectItem value="Other">
-                      {t("student.countryOther")}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter className={isRTL ? "flex-row-reverse" : ""}>
-            <Button
-              variant="outline"
-              onClick={handleCancelEdit}
-            >
-              {t("common.cancel")}
-            </Button>
-            <Button
-              onClick={
-                editingStudent ? handleUpdateStudent : handleCreateStudent
-              }
-              disabled={
-                createStudentMutation.isPending ||
-                updateStudentMutation.isPending ||
-                !studentForm.name.trim()
-              }
-              className="flex items-center gap-2"
-            >
-              {(createStudentMutation.isPending || updateStudentMutation.isPending) ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  {t("common.saving")}
-                </>
-              ) : editingStudent ? (
-                <>
-                  <Edit className="w-4 h-4" />
-                  {t("common.update")}
-                </>
-              ) : (
-                <>
-                  <Plus className="w-4 h-4" />
-                  {t("student.addStudent")}
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Student Create/Edit Modal */}
+      <StudentModal
+        isOpen={showStudentModal}
+        onClose={() => {
+          setShowStudentModal(false);
+          setEditingStudent(null);
+        }}
+        editingStudent={editingStudent}
+      />
     </>
   );
 }

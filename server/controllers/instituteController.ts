@@ -839,6 +839,230 @@ export class InstituteController {
       });
     }
   }
+
+  /**
+   * GET /api/institutes/:id/students
+   * Get all students in an institute
+   */
+  async getStudents(req: Request, res: Response): Promise<void> {
+    try {
+      const currentUser = req.user as any;
+      const instituteId = req.params.id;
+
+      const result = await instituteService.getInstituteStudents(
+        instituteId,
+        currentUser.id
+      );
+
+      if (!result.success) {
+        res.status(403).json({
+          success: false,
+          message: result.error,
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        students: result.students?.map(({ student, enrollment }) => ({
+          id: student.id,
+          name: student.name,
+          firstName: student.firstName,
+          lastName: student.lastName,
+          gender: student.gender,
+          birthDate: student.birthDate,
+          framework: student.framework,
+          country: student.country,
+          // Enrollment info
+          idNumber: enrollment.idNumber,
+          grade: enrollment.grade,
+          enrollmentDate: enrollment.enrollmentDate,
+          enrollmentId: enrollment.id,
+        })),
+      });
+    } catch (error: any) {
+      console.error("Error fetching institute students:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch students",
+      });
+    }
+  }
+
+  /**
+   * POST /api/institutes/:id/students
+   * Assign a student to an institute
+   */
+  async addStudent(req: Request, res: Response): Promise<void> {
+    try {
+      const currentUser = req.user as any;
+      const instituteId = req.params.id;
+      const { studentId, enrollmentDate, idNumber, grade } = req.body;
+
+      if (!studentId) {
+        res.status(400).json({
+          success: false,
+          message: "Student ID is required",
+        });
+        return;
+      }
+
+      const result = await instituteService.assignStudentToInstitute(
+        instituteId,
+        studentId,
+        currentUser.id,
+        { enrollmentDate, idNumber, grade }
+      );
+
+      if (!result.success) {
+        res.status(400).json({
+          success: false,
+          message: result.error,
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        message: "Student added to institute",
+        enrollment: result.enrollment,
+      });
+    } catch (error: any) {
+      console.error("Error adding student to institute:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to add student to institute",
+      });
+    }
+  }
+
+  /**
+   * PATCH /api/institutes/:id/students/:studentId
+   * Update a student's enrollment info
+   */
+  async updateStudent(req: Request, res: Response): Promise<void> {
+    try {
+      const currentUser = req.user as any;
+      const { id: instituteId, studentId } = req.params;
+      const { idNumber, grade } = req.body;
+
+      const result = await instituteService.updateStudentEnrollment(
+        instituteId,
+        studentId,
+        { idNumber, grade },
+        currentUser.id
+      );
+
+      if (!result.success) {
+        res.status(404).json({
+          success: false,
+          message: result.error,
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        message: "Student enrollment updated",
+        enrollment: result.enrollment,
+      });
+    } catch (error: any) {
+      console.error("Error updating student enrollment:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to update student enrollment",
+      });
+    }
+  }
+
+  /**
+   * DELETE /api/institutes/:id/students/:studentId
+   * Remove a student from an institute
+   */
+  async removeStudent(req: Request, res: Response): Promise<void> {
+    try {
+      const currentUser = req.user as any;
+      const { id: instituteId, studentId } = req.params;
+      const { exitReason } = req.body;
+
+      const result = await instituteService.removeStudentFromInstitute(
+        instituteId,
+        studentId,
+        currentUser.id,
+        exitReason
+      );
+
+      if (!result.success) {
+        res.status(403).json({
+          success: false,
+          message: result.error,
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        message: "Student removed from institute",
+      });
+    } catch (error: any) {
+      console.error("Error removing student from institute:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to remove student from institute",
+      });
+    }
+  }
+
+  // ==================== Student's Institutes Endpoint ====================
+  // Add this to studentController.ts or create a new endpoint
+
+  /**
+   * GET /api/students/:studentId/institutes
+   * Get all institutes a student belongs to
+   */
+  async getStudentInstitutes(req: Request, res: Response): Promise<void> {
+    try {
+      const currentUser = req.user as any;
+      const { studentId } = req.params;
+
+      const result = await instituteService.getStudentInstitutes(
+        studentId,
+        currentUser.id
+      );
+
+      if (!result.success) {
+        res.status(403).json({
+          success: false,
+          message: result.error,
+        });
+        return;
+      }
+
+      res.json({
+        success: true,
+        institutes: result.institutes?.map(({ institute, enrollment }) => ({
+          id: institute.id,
+          name: institute.name,
+          type: institute.type,
+          logoUrl: institute.logoUrl,
+          // Enrollment info
+          idNumber: enrollment.idNumber,
+          grade: enrollment.grade,
+          enrollmentDate: enrollment.enrollmentDate,
+          exitDate: enrollment.exitDate,
+          exitReason: enrollment.exitReason,
+          isActive: enrollment.isActive,
+          enrollmentId: enrollment.id,
+        })),
+      });
+    } catch (error: any) {
+      console.error("Error fetching student institutes:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch institutes",
+      });
+    }
+  }
 }
 
 export const instituteController = new InstituteController();

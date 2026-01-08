@@ -1,12 +1,15 @@
 // src/hooks/useInstitute.tsx
-// React hook for institute management
+// React hook for institute management - Updated with classroom support
 
 import { useState, useEffect, createContext, useContext, ReactNode, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/useAuth';
 
-// Types
+// =============================================================================
+// TYPES
+// =============================================================================
+
 export interface Institute {
   id: string;
   name: string;
@@ -69,6 +72,92 @@ export interface PendingInvite {
   createdAt: string;
 }
 
+// =============================================================================
+// CLASSROOM TYPES
+// =============================================================================
+
+export interface Classroom {
+  id: string;
+  instituteId: string;
+  name: string;
+  grade?: string;
+  description?: string;
+  capacity?: number;
+  roomNumber?: string;
+  academicYear?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  // When fetched with membership
+  role?: string;
+  isPrimary?: boolean;
+  membershipId?: string;
+}
+
+export interface ClassroomMember {
+  id: string;
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  fullName?: string;
+  profileImageUrl?: string;
+  role: string;
+  isPrimary: boolean;
+  membershipId: string;
+  assignedAt: string;
+}
+
+export interface ClassroomStudent {
+  id: string;
+  name: string;
+  firstName?: string;
+  lastName?: string;
+  gender?: string;
+  birthDate?: string;
+  framework?: string;
+  isPrimary: boolean;
+  enrollmentDate?: string;
+  notes?: string;
+  enrollmentId: string;
+}
+
+// =============================================================================
+// INSTITUTE STUDENT TYPES
+// =============================================================================
+
+export interface InstituteStudent {
+  id: string;
+  name: string;
+  firstName?: string;
+  lastName?: string;
+  gender?: string;
+  birthDate?: string;
+  framework?: string;
+  country?: string;
+  idNumber?: string;
+  grade?: string;
+  enrollmentDate?: string;
+  enrollmentId: string;
+}
+
+export interface StudentInstitute {
+  id: string;
+  name: string;
+  type: 'school' | 'hospital';
+  logoUrl?: string;
+  idNumber?: string;
+  grade?: string;
+  enrollmentDate?: string;
+  exitDate?: string;
+  exitReason?: string;
+  isActive: boolean;
+  enrollmentId: string;
+}
+
+// =============================================================================
+// CONTEXT TYPE
+// =============================================================================
+
 interface InstituteContextType {
   // State
   institutes: Institute[];
@@ -78,7 +167,7 @@ interface InstituteContextType {
 
   // Institute operations
   selectInstitute: (instituteId: string | null) => void;
-  createInstitute: (data: Partial<Institute>) => Promise<Institute>;
+  createInstitute: (data: Partial<Institute> & { creatorRole?: string }) => Promise<Institute>;
   updateInstitute: (id: string, data: Partial<Institute>) => Promise<Institute>;
   deleteInstitute: (id: string) => Promise<void>;
   leaveInstitute: (id: string) => Promise<void>;
@@ -100,12 +189,47 @@ interface InstituteContextType {
   declineInvite: (inviteId: string) => Promise<void>;
   refetchPendingInvites: () => void;
 
+  // Classroom operations
+  getClassrooms: (instituteId: string) => Promise<Classroom[]>;
+  createClassroom: (instituteId: string, data: Partial<Classroom>) => Promise<Classroom>;
+  updateClassroom: (classroomId: string, data: Partial<Classroom>) => Promise<Classroom>;
+  deleteClassroom: (classroomId: string) => Promise<void>;
+  
+  // Classroom member operations
+  getClassroomMembers: (classroomId: string) => Promise<ClassroomMember[]>;
+  addClassroomMember: (classroomId: string, userId: string, role: string, isPrimary?: boolean) => Promise<void>;
+  updateClassroomMember: (classroomId: string, userId: string, data: { role?: string; isPrimary?: boolean }) => Promise<void>;
+  removeClassroomMember: (classroomId: string, userId: string) => Promise<void>;
+  
+  // Classroom student operations
+  getClassroomStudents: (classroomId: string) => Promise<ClassroomStudent[]>;
+  addStudentToClassroom: (classroomId: string, studentId: string, options?: { isPrimary?: boolean; enrollmentDate?: string; notes?: string }) => Promise<void>;
+  updateClassroomStudent: (classroomId: string, studentId: string, data: { isPrimary?: boolean; notes?: string }) => Promise<void>;
+  removeStudentFromClassroom: (classroomId: string, studentId: string) => Promise<void>;
+
+  // Institute student operations
+  getInstituteStudents: (instituteId: string) => Promise<InstituteStudent[]>;
+  addStudentToInstitute: (instituteId: string, studentId: string, options?: { enrollmentDate?: string; idNumber?: string; grade?: string }) => Promise<void>;
+  updateInstituteStudent: (instituteId: string, studentId: string, data: { idNumber?: string; grade?: string }) => Promise<void>;
+  removeStudentFromInstitute: (instituteId: string, studentId: string, exitReason?: string) => Promise<void>;
+
+  // Student's institutes
+  getStudentInstitutes: (studentId: string) => Promise<StudentInstitute[]>;
+
   // Refetch
   refetchInstitutes: () => void;
 }
 
+// =============================================================================
+// QUERY KEYS
+// =============================================================================
+
 const INSTITUTES_QUERY_KEY = ['/api/institutes'];
 const PENDING_INVITES_QUERY_KEY = ['/api/invites/pending'];
+
+// =============================================================================
+// CONTEXT
+// =============================================================================
 
 const InstituteContext = createContext<InstituteContextType | null>(null);
 
@@ -116,6 +240,10 @@ export const useInstitute = () => {
   }
   return context;
 };
+
+// =============================================================================
+// PROVIDER
+// =============================================================================
 
 export const InstituteProvider = ({ children }: { children: ReactNode }) => {
   const { user } = useAuth();
@@ -162,7 +290,10 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [institutes, currentInstitute]);
 
-  // Select institute
+  // =============================================================================
+  // INSTITUTE OPERATIONS
+  // =============================================================================
+
   const selectInstitute = useCallback((instituteId: string | null) => {
     if (!instituteId) {
       setCurrentInstitute(null);
@@ -177,9 +308,12 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [institutes]);
 
-  // Create institute
-  const createInstitute = useCallback(async (data: Partial<Institute>): Promise<Institute> => {
-    const response = await apiRequest('POST', '/api/institutes', data);
+  const createInstitute = useCallback(async (data: Partial<Institute> & { creatorRole?: string }): Promise<Institute> => {
+    const { creatorRole, ...instituteData } = data;
+    const response = await apiRequest('POST', '/api/institutes', {
+      ...instituteData,
+      creatorRole, // Pass the creator's role selection
+    });
     const result = await response.json();
 
     if (!response.ok || !result.success) {
@@ -190,7 +324,6 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
     return result.institute;
   }, [queryClient]);
 
-  // Update institute
   const updateInstitute = useCallback(async (id: string, data: Partial<Institute>): Promise<Institute> => {
     const response = await apiRequest('PATCH', `/api/institutes/${id}`, data);
     const result = await response.json();
@@ -208,7 +341,6 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
     return result.institute;
   }, [queryClient, currentInstitute]);
 
-  // Delete institute
   const deleteInstitute = useCallback(async (id: string): Promise<void> => {
     const response = await apiRequest('DELETE', `/api/institutes/${id}`);
     const result = await response.json();
@@ -225,7 +357,6 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [queryClient, currentInstitute]);
 
-  // Leave institute
   const leaveInstitute = useCallback(async (id: string): Promise<void> => {
     const response = await apiRequest('POST', `/api/institutes/${id}/leave`);
     const result = await response.json();
@@ -242,7 +373,10 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [queryClient, currentInstitute]);
 
-  // Get members
+  // =============================================================================
+  // MEMBER OPERATIONS
+  // =============================================================================
+
   const getMembers = useCallback(async (instituteId: string): Promise<InstituteMember[]> => {
     const response = await apiRequest('GET', `/api/institutes/${instituteId}/members`);
     const result = await response.json();
@@ -254,7 +388,6 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
     return result.members || [];
   }, []);
 
-  // Update member
   const updateMember = useCallback(async (
     instituteId: string,
     userId: string,
@@ -268,7 +401,6 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  // Remove member
   const removeMember = useCallback(async (instituteId: string, userId: string): Promise<void> => {
     const response = await apiRequest('DELETE', `/api/institutes/${instituteId}/members/${userId}`);
     const result = await response.json();
@@ -278,7 +410,10 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  // Send invite
+  // =============================================================================
+  // INVITE OPERATIONS
+  // =============================================================================
+
   const sendInvite = useCallback(async (
     instituteId: string,
     email: string,
@@ -297,7 +432,6 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
     return { invite: result.invite, inviteLink: result.inviteLink };
   }, []);
 
-  // Get invites
   const getInvites = useCallback(async (instituteId: string): Promise<InstituteInvite[]> => {
     const response = await apiRequest('GET', `/api/institutes/${instituteId}/invites`);
     const result = await response.json();
@@ -309,7 +443,6 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
     return result.invites || [];
   }, []);
 
-  // Cancel invite
   const cancelInvite = useCallback(async (instituteId: string, inviteId: string): Promise<void> => {
     const response = await apiRequest('DELETE', `/api/institutes/${instituteId}/invites/${inviteId}`);
     const result = await response.json();
@@ -319,7 +452,6 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  // Resend invite
   const resendInvite = useCallback(async (
     instituteId: string,
     inviteId: string
@@ -334,7 +466,6 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
     return { invite: result.invite, inviteLink: result.inviteLink };
   }, []);
 
-  // Accept invite
   const acceptInvite = useCallback(async (inviteId: string): Promise<void> => {
     const response = await apiRequest('POST', `/api/invites/${inviteId}/accept`);
     const result = await response.json();
@@ -347,7 +478,6 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
     queryClient.invalidateQueries({ queryKey: PENDING_INVITES_QUERY_KEY });
   }, [queryClient]);
 
-  // Decline invite
   const declineInvite = useCallback(async (inviteId: string): Promise<void> => {
     const response = await apiRequest('POST', `/api/invites/${inviteId}/decline`);
     const result = await response.json();
@@ -359,19 +489,254 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
     queryClient.invalidateQueries({ queryKey: PENDING_INVITES_QUERY_KEY });
   }, [queryClient]);
 
+  // =============================================================================
+  // CLASSROOM OPERATIONS
+  // =============================================================================
+
+  const getClassrooms = useCallback(async (instituteId: string): Promise<Classroom[]> => {
+    const response = await apiRequest('GET', `/api/institutes/${instituteId}/classrooms`);
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'Failed to fetch classrooms');
+    }
+
+    return result.classrooms || [];
+  }, []);
+
+  const createClassroom = useCallback(async (instituteId: string, data: Partial<Classroom>): Promise<Classroom> => {
+    const response = await apiRequest('POST', `/api/institutes/${instituteId}/classrooms`, data);
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'Failed to create classroom');
+    }
+
+    return result.classroom;
+  }, []);
+
+  const updateClassroom = useCallback(async (classroomId: string, data: Partial<Classroom>): Promise<Classroom> => {
+    const response = await apiRequest('PATCH', `/api/classrooms/${classroomId}`, data);
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'Failed to update classroom');
+    }
+
+    return result.classroom;
+  }, []);
+
+  const deleteClassroom = useCallback(async (classroomId: string): Promise<void> => {
+    const response = await apiRequest('DELETE', `/api/classrooms/${classroomId}`);
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'Failed to delete classroom');
+    }
+  }, []);
+
+  // =============================================================================
+  // CLASSROOM MEMBER OPERATIONS
+  // =============================================================================
+
+  const getClassroomMembers = useCallback(async (classroomId: string): Promise<ClassroomMember[]> => {
+    const response = await apiRequest('GET', `/api/classrooms/${classroomId}/members`);
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'Failed to fetch classroom members');
+    }
+
+    return result.members || [];
+  }, []);
+
+  const addClassroomMember = useCallback(async (
+    classroomId: string,
+    userId: string,
+    role: string,
+    isPrimary: boolean = false
+  ): Promise<void> => {
+    const response = await apiRequest('POST', `/api/classrooms/${classroomId}/members`, {
+      userId,
+      role,
+      isPrimary,
+    });
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'Failed to add classroom member');
+    }
+  }, []);
+
+  const updateClassroomMember = useCallback(async (
+    classroomId: string,
+    userId: string,
+    data: { role?: string; isPrimary?: boolean }
+  ): Promise<void> => {
+    const response = await apiRequest('PATCH', `/api/classrooms/${classroomId}/members/${userId}`, data);
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'Failed to update classroom member');
+    }
+  }, []);
+
+  const removeClassroomMember = useCallback(async (classroomId: string, userId: string): Promise<void> => {
+    const response = await apiRequest('DELETE', `/api/classrooms/${classroomId}/members/${userId}`);
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'Failed to remove classroom member');
+    }
+  }, []);
+
+  // =============================================================================
+  // CLASSROOM STUDENT OPERATIONS
+  // =============================================================================
+
+  const getClassroomStudents = useCallback(async (classroomId: string): Promise<ClassroomStudent[]> => {
+    const response = await apiRequest('GET', `/api/classrooms/${classroomId}/students`);
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'Failed to fetch classroom students');
+    }
+
+    return result.students || [];
+  }, []);
+
+  const addStudentToClassroom = useCallback(async (
+    classroomId: string,
+    studentId: string,
+    options?: { isPrimary?: boolean; enrollmentDate?: string; notes?: string }
+  ): Promise<void> => {
+    const response = await apiRequest('POST', `/api/classrooms/${classroomId}/students`, {
+      studentId,
+      ...options,
+    });
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'Failed to add student to classroom');
+    }
+  }, []);
+
+  const updateClassroomStudent = useCallback(async (
+    classroomId: string,
+    studentId: string,
+    data: { isPrimary?: boolean; notes?: string }
+  ): Promise<void> => {
+    const response = await apiRequest('PATCH', `/api/classrooms/${classroomId}/students/${studentId}`, data);
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'Failed to update classroom student');
+    }
+  }, []);
+
+  const removeStudentFromClassroom = useCallback(async (classroomId: string, studentId: string): Promise<void> => {
+    const response = await apiRequest('DELETE', `/api/classrooms/${classroomId}/students/${studentId}`);
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'Failed to remove student from classroom');
+    }
+  }, []);
+
+  // =============================================================================
+  // INSTITUTE STUDENT OPERATIONS
+  // =============================================================================
+
+  const getInstituteStudents = useCallback(async (instituteId: string): Promise<InstituteStudent[]> => {
+    const response = await apiRequest('GET', `/api/institutes/${instituteId}/students`);
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'Failed to fetch institute students');
+    }
+
+    return result.students || [];
+  }, []);
+
+  const addStudentToInstitute = useCallback(async (
+    instituteId: string,
+    studentId: string,
+    options?: { enrollmentDate?: string; idNumber?: string; grade?: string }
+  ): Promise<void> => {
+    const response = await apiRequest('POST', `/api/institutes/${instituteId}/students`, {
+      studentId,
+      ...options,
+    });
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'Failed to add student to institute');
+    }
+  }, []);
+
+  const updateInstituteStudent = useCallback(async (
+    instituteId: string,
+    studentId: string,
+    data: { idNumber?: string; grade?: string }
+  ): Promise<void> => {
+    const response = await apiRequest('PATCH', `/api/institutes/${instituteId}/students/${studentId}`, data);
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'Failed to update institute student');
+    }
+  }, []);
+
+  const removeStudentFromInstitute = useCallback(async (
+    instituteId: string,
+    studentId: string,
+    exitReason?: string
+  ): Promise<void> => {
+    const response = await apiRequest('DELETE', `/api/institutes/${instituteId}/students/${studentId}`, {
+      exitReason,
+    });
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'Failed to remove student from institute');
+    }
+  }, []);
+
+  const getStudentInstitutes = useCallback(async (studentId: string): Promise<StudentInstitute[]> => {
+    const response = await apiRequest('GET', `/api/students/${studentId}/institutes`);
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || 'Failed to fetch student institutes');
+    }
+
+    return result.institutes || [];
+  }, []);
+
+  // =============================================================================
+  // CONTEXT VALUE
+  // =============================================================================
+
   const contextValue: InstituteContextType = {
+    // State
     institutes,
     currentInstitute,
     isLoading,
     error,
+    
+    // Institute operations
     selectInstitute,
     createInstitute,
     updateInstitute,
     deleteInstitute,
     leaveInstitute,
+    
+    // Member operations
     getMembers,
     updateMember,
     removeMember,
+    
+    // Invite operations
     sendInvite,
     getInvites,
     cancelInvite,
@@ -380,6 +745,33 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
     acceptInvite,
     declineInvite,
     refetchPendingInvites: () => refetchPendingInvites(),
+    
+    // Classroom operations
+    getClassrooms,
+    createClassroom,
+    updateClassroom,
+    deleteClassroom,
+    
+    // Classroom member operations
+    getClassroomMembers,
+    addClassroomMember,
+    updateClassroomMember,
+    removeClassroomMember,
+    
+    // Classroom student operations
+    getClassroomStudents,
+    addStudentToClassroom,
+    updateClassroomStudent,
+    removeStudentFromClassroom,
+    
+    // Institute student operations
+    getInstituteStudents,
+    addStudentToInstitute,
+    updateInstituteStudent,
+    removeStudentFromInstitute,
+    getStudentInstitutes,
+    
+    // Refetch
     refetchInstitutes: () => refetchInstitutes(),
   };
 

@@ -9,6 +9,7 @@ export { boardRepository, BoardRepository } from "./boardRepository";
 export { settingsRepository, SettingsRepository } from "./settingsRepository";
 export { programRepository, ProgramRepository } from "./programRepository";
 export { instituteRepository, InstituteRepository } from "./instituteRepository";
+export { classroomRepository, ClassroomRepository } from "./classroomRepository";
 export { reportRepository, ReportRepository } from "./reportRepository";
 export { medicalRecordRepository } from "./medicalRecordRepository";
 export { functionalReportRepository } from "./functionalReportRepository";
