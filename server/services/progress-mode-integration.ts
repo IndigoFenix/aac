@@ -57,6 +57,7 @@ import {
   createArchivedEducationalReportsField,
   REPORTS_SYSTEM_PROMPT,
 } from "./reports-memory-schema";
+import { studentService } from "./studentService";
 
 // Re-export for convenience
 export { PROGRESS_PROGRAM_FIELD, PROGRESS_SYSTEM_PROMPT };
@@ -626,7 +627,8 @@ ${p.startDate ? `Start: ${p.startDate}\n` : ""}${p.endDate ? `End: ${p.endDate}\
     }
 
     const s = this.state.student;
-    return `Student: ${s.name || "Unknown"}\nGender: ${s.gender}\n${s.primaryLanguage ? `Primary Language: ${s.primaryLanguage}\n` : ""}`;
+    const age = studentService.calculateAge(s.birthDate);
+    return `Student: ${s.name || "Unknown"}\nGender: ${s.gender}\nAge: ${age}\n${s.primaryLanguage ? `Primary Language: ${s.primaryLanguage}\n` : ""}`;
   }
 }
 
