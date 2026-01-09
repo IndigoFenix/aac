@@ -1,18 +1,17 @@
 /**
- * progress-mode-integration.ts
+ * chat-context-integration.ts
  * 
- * UNIFIED Integration layer for progress mode in sessionService.
+ * UNIFIED Integration layer for handling memory functions in sessionService.
  * Includes both IEP/TALA program data AND student reports (medical, functional, educational).
  * 
  * This file provides:
- * 1. ProgressModeManager - manages program AND reports data lifecycle
+ * 1. ChatContextManager - manages program AND reports data lifecycle
  * 2. Permission-based access control for each report type
  * 3. Integration with the memory-db-bridge system
  * 4. Helper functions for sessionService
  * 
- * MIGRATION NOTE: This replaces both the old progress-mode-integration.ts and 
- * reports-mode-integration.ts. The reports functionality is now integrated into
- * progress mode with permission-based access control.
+ * Integrations specific to the CliniAACian application go here and in the memory-schema files.
+ * General memory management functions remain in memory-db-bridge.ts.
  */
 
 import { eq, and, desc, or } from "drizzle-orm";
@@ -46,7 +45,12 @@ import {
   PROGRESS_PROGRAM_FIELD,
   PROGRESS_SYSTEM_PROMPT,
   getProgressMemoryFields as getBaseProgressMemoryFields,
-} from "./progress-memory-schema";
+} from "./memory-schema/progress-memory-schema";
+
+import {
+  getInstituteMemoryFields as getBaseInstituteMemoryFields,
+  INSTITUTE_SYSTEM_PROMPT,
+} from "./memory-schema/institute-memory-schema"
 
 import {
   createMedicalRecordField,
@@ -56,7 +60,7 @@ import {
   createArchivedFunctionalReportsField,
   createArchivedEducationalReportsField,
   REPORTS_SYSTEM_PROMPT,
-} from "./reports-memory-schema";
+} from "./memory-schema/reports-memory-schema";
 import { studentService } from "./studentService";
 
 // Re-export for convenience
@@ -77,7 +81,7 @@ export type ReportPermission = 'hidden' | 'readonly' | 'editable';
 /**
  * Permissions for all report types
  */
-export interface ReportPermissions {
+export interface AccessPermissions {
   medical: ReportPermission;
   functional: ReportPermission;
   educational: ReportPermission;
@@ -87,41 +91,25 @@ export interface ReportPermissions {
  * Default permissions - all hidden (safest default)
  * Override these based on user's hasMedicalRights / hasEducationalRights
  */
-export const DEFAULT_REPORT_PERMISSIONS: ReportPermissions = {
+export const DEFAULT_REPORT_PERMISSIONS: AccessPermissions = {
   medical: 'hidden',
   functional: 'hidden',
   educational: 'hidden',
 };
 
-/**
- * Helper to determine report permissions based on user rights
- * This can be used in sessionService to convert user rights to permissions
- */
-export function getReportPermissionsFromRights(
-  hasMedicalRights: boolean = false,
-  hasEducationalRights: boolean = false,
-  canEdit: boolean = true // Set to false to make all visible reports read-only
-): ReportPermissions {
-  return {
-    medical: hasMedicalRights ? (canEdit ? 'editable' : 'readonly') : 'hidden',
-    functional: hasEducationalRights ? (canEdit ? 'editable' : 'readonly') : 'hidden',
-    educational: hasEducationalRights ? (canEdit ? 'editable' : 'readonly') : 'hidden',
-  };
-}
-
 // ============================================================================
 // PROGRESS MODE MANAGER
 // ============================================================================
 
-export interface ProgressModeContext {
-  studentId: string;
+export interface ChatContext {
+  studentId?: string;
   userId?: string;
   programId?: string; // Optional - if not provided, will load current program
   instituteId?: string; // Optional - for filtering medical records by hospital
-  reportPermissions?: ReportPermissions; // Optional - defaults to all hidden
+  reportPermissions?: AccessPermissions; // Optional - defaults to all hidden
 }
 
-export interface ProgressModeState {
+export interface ChatContextState {
   student: Student | null;
   program: Program | null;
   // Reports state
@@ -131,19 +119,19 @@ export interface ProgressModeState {
   // Memory state
   loadState: MemoryLoadState;
   baseContext: Record<string, any>;
-  reportPermissions: ReportPermissions;
+  reportPermissions: AccessPermissions;
 }
 
 /**
  * Manages the progress mode lifecycle for a chat session.
  * Handles loading program data AND reports, syncing changes, and managing state.
  */
-export class ProgressModeManager {
-  private state: ProgressModeState;
+export class ChatContextManager {
+  private state: ChatContextState;
   private memoryFields: AgentMemoryFieldWithDB[];
 
   constructor(
-    private context: ProgressModeContext,
+    private context: ChatContext,
     masterMemoryFields: AgentMemoryFieldWithDB[] = [],
     existingLoadState?: MemoryLoadState
   ) {
@@ -169,77 +157,87 @@ export class ProgressModeManager {
   }
 
   /**
-   * Build memory fields based on permissions
-   * Combines base progress fields with permission-aware report fields
+   * Build memory fields based on permissions and context
+   * - Institute fields are always included (require userId, not studentId)
+   * - Progress fields are only included if studentId is present
+   * - Report fields are only included if studentId is present and permissions allow
    */
   private buildMemoryFields(
     masterMemoryFields: AgentMemoryFieldWithDB[],
-    permissions: ReportPermissions
+    permissions: AccessPermissions
   ): AgentMemoryFieldWithDB[] {
-    // Start with base progress fields (master fields + Context_Program)
-    const fields = getBaseProgressMemoryFields(masterMemoryFields);
+    // Start with master fields + institute fields (these don't require a student)
+    let fields = getBaseInstituteMemoryFields(masterMemoryFields);
 
-    // Build reports context field with permission-aware sub-fields
-    const reportsProperties: Record<string, AgentMemoryFieldWithDB> = {};
-
-    // Medical records
-    if (permissions.medical !== 'hidden') {
-      const isReadonly = permissions.medical === 'readonly';
-      reportsProperties.medicalRecord = createMedicalRecordField(isReadonly);
-      reportsProperties.archivedMedicalRecords = createArchivedMedicalRecordsField();
+    // Only add progress fields if we have a student
+    if (this.context.studentId) {
+      fields = getBaseProgressMemoryFields(fields);
     }
 
-    // Functional reports
-    if (permissions.functional !== 'hidden') {
-      const isReadonly = permissions.functional === 'readonly';
-      reportsProperties.functionalReport = createFunctionalReportField(isReadonly);
-      reportsProperties.archivedFunctionalReports = createArchivedFunctionalReportsField();
-    }
+    // Only add reports if we have a student (reports are student-specific)
+    if (this.context.studentId) {
+      // Build reports context field with permission-aware sub-fields
+      const reportsProperties: Record<string, AgentMemoryFieldWithDB> = {};
 
-    // Educational reports
-    if (permissions.educational !== 'hidden') {
-      const isReadonly = permissions.educational === 'readonly';
-      reportsProperties.educationalReport = createEducationalReportField(isReadonly);
-      reportsProperties.archivedEducationalReports = createArchivedEducationalReportsField();
-    }
+      // Medical records
+      if (permissions.medical !== 'hidden') {
+        const isReadonly = permissions.medical === 'readonly';
+        reportsProperties.medicalRecord = createMedicalRecordField(isReadonly);
+        reportsProperties.archivedMedicalRecords = createArchivedMedicalRecordsField();
+      }
 
-    // Only add reports context if at least one report type is visible
-    if (Object.keys(reportsProperties).length > 0) {
-      const reportsContextField: AgentMemoryFieldObjectWithDB = {
-        id: "Context_Reports",
-        type: "object",
-        title: "Student Reports",
-        description: this.buildReportsDescription(permissions),
-        opened: true, // Auto-load reports when visible
-        properties: reportsProperties,
-        // Parent read operation loads all children
-        db: {
-          read: async (ctx) => {
-            const studentId = ctx.all.studentId;
-            const instituteId = ctx.all.instituteId;
-            if (!studentId) return {};
-            
-            const result: Record<string, any> = {};
-            
-            // Load reports based on permissions
-            if (permissions.medical !== 'hidden') {
-              const record = await this.loadMedicalRecord(studentId, instituteId);
-              if (record) result.medicalRecord = record;
+      // Functional reports
+      if (permissions.functional !== 'hidden') {
+        const isReadonly = permissions.functional === 'readonly';
+        reportsProperties.functionalReport = createFunctionalReportField(isReadonly);
+        reportsProperties.archivedFunctionalReports = createArchivedFunctionalReportsField();
+      }
+
+      // Educational reports
+      if (permissions.educational !== 'hidden') {
+        const isReadonly = permissions.educational === 'readonly';
+        reportsProperties.educationalReport = createEducationalReportField(isReadonly);
+        reportsProperties.archivedEducationalReports = createArchivedEducationalReportsField();
+      }
+
+      // Only add reports context if at least one report type is visible
+      if (Object.keys(reportsProperties).length > 0) {
+        const reportsContextField: AgentMemoryFieldObjectWithDB = {
+          id: "Context_Reports",
+          type: "object",
+          title: "Student Reports",
+          description: this.buildReportsDescription(permissions),
+          opened: true, // Auto-load reports when visible
+          properties: reportsProperties,
+          // Parent read operation loads all children
+          db: {
+            read: async (ctx) => {
+              const studentId = ctx.all.studentId;
+              const instituteId = ctx.all.instituteId;
+              if (!studentId) return {};
+
+              const result: Record<string, any> = {};
+
+              // Load reports based on permissions
+              if (permissions.medical !== 'hidden') {
+                const record = await this.loadMedicalRecord(studentId, instituteId);
+                if (record) result.medicalRecord = record;
+              }
+              if (permissions.functional !== 'hidden') {
+                const report = await this.loadFunctionalReport(studentId);
+                if (report) result.functionalReport = report;
+              }
+              if (permissions.educational !== 'hidden') {
+                const report = await this.loadEducationalReport(studentId);
+                if (report) result.educationalReport = report;
+              }
+
+              return result;
             }
-            if (permissions.functional !== 'hidden') {
-              const report = await this.loadFunctionalReport(studentId);
-              if (report) result.functionalReport = report;
-            }
-            if (permissions.educational !== 'hidden') {
-              const report = await this.loadEducationalReport(studentId);
-              if (report) result.educationalReport = report;
-            }
-            
-            return result;
           }
-        }
-      };
-      fields.push(reportsContextField);
+        };
+        fields.push(reportsContextField);
+      }
     }
 
     return fields;
@@ -248,7 +246,7 @@ export class ProgressModeManager {
   /**
    * Build a description for the reports context based on permissions
    */
-  private buildReportsDescription(permissions: ReportPermissions): string {
+  private buildReportsDescription(permissions: AccessPermissions): string {
     const parts: string[] = [];
     
     if (permissions.medical === 'editable') {
@@ -335,7 +333,7 @@ export class ProgressModeManager {
    * Initialize the manager by loading student, program, and reports data.
    * Call this before using the manager.
    */
-  async initialize(): Promise<{
+  async initializeStudentFields(): Promise<{
     student: Student | null;
     program: Program | null;
     medicalRecord: MedicalRecord | null;
@@ -343,6 +341,16 @@ export class ProgressModeManager {
     educationalReport: EducationalReport | null;
   }> {
     // Load student
+    if (!this.context.studentId) {
+      console.warn("[ChatContextManager] No studentId provided in context");
+      return {
+        student: null,
+        program: null,
+        medicalRecord: null,
+        functionalReport: null,
+        educationalReport: null,
+      };
+    }
     const [student] = await db
       .select()
       .from(students)
@@ -351,7 +359,7 @@ export class ProgressModeManager {
     this.state.student = student || null;
 
     if (!student) {
-      console.warn(`[ProgressModeManager] Student ${this.context.studentId} not found`);
+      console.warn(`[ChatContextManager] Student ${this.context.studentId} not found`);
       return {
         student: null,
         program: null,
@@ -408,7 +416,11 @@ export class ProgressModeManager {
     }
 
     // Load reports based on permissions
-    await this.loadReports();
+    await this.loadStudentReports(
+      this.state.reportPermissions,
+      this.context.studentId,
+      this.context.instituteId
+    );
 
     return {
       student: this.state.student,
@@ -422,10 +434,7 @@ export class ProgressModeManager {
   /**
    * Load reports based on permissions
    */
-  private async loadReports(): Promise<void> {
-    const permissions = this.state.reportPermissions;
-    const studentId = this.context.studentId;
-    const instituteId = this.context.instituteId;
+  private async loadStudentReports(permissions: AccessPermissions, studentId: string, instituteId?: string): Promise<void> {
 
     if (permissions.medical !== 'hidden') {
       this.state.medicalRecord = await this.loadMedicalRecord(studentId, instituteId);
@@ -464,7 +473,7 @@ export class ProgressModeManager {
   /**
    * Get report permissions
    */
-  getReportPermissions(): ReportPermissions {
+  getReportPermissions(): AccessPermissions {
     return this.state.reportPermissions;
   }
 
@@ -637,24 +646,24 @@ ${p.startDate ? `Start: ${p.startDate}\n` : ""}${p.endDate ? `End: ${p.endDate}\
 // ============================================================================
 
 /**
- * Creates a ProgressModeManager for use in sessionService.
+ * Creates a ChatContextManager for use in sessionService.
  * This is the main entry point for creating the unified manager.
  */
-export async function createProgressModeManager(
-  studentId: string,
+export async function createChatContextManager(
+  studentId?: string,
   userId?: string,
   programId?: string,
   masterMemoryFields: AgentMemoryFieldWithDB[] = [],
   existingLoadState?: MemoryLoadState,
   instituteId?: string,
-  reportPermissions?: ReportPermissions
-): Promise<ProgressModeManager> {
-  const manager = new ProgressModeManager(
+  reportPermissions?: AccessPermissions
+): Promise<ChatContextManager> {
+  const manager = new ChatContextManager(
     { studentId, userId, programId, instituteId, reportPermissions },
     masterMemoryFields,
     existingLoadState
   );
-  await manager.initialize();
+  await manager.initializeStudentFields();
   return manager;
 }
 
@@ -662,22 +671,22 @@ export async function createProgressModeManager(
  * Injects progress mode context into memory values.
  * Call this after building base memory values but before the AI sees them.
  */
-export async function injectProgressModeContext(
+export async function injectChatContext(
   memoryValues: Record<string, any>,
   memoryState: { visible: string[]; page: Record<string, any> } | undefined,
-  manager: ProgressModeManager
+  manager: ChatContextManager
 ): Promise<Record<string, any>> {
-  console.log('[injectProgressModeContext] Input memoryValues keys:', Object.keys(memoryValues));
+  console.log('[injectChatContext] Input memoryValues keys:', Object.keys(memoryValues));
   
   const result = await manager.populateMemory(memoryValues, memoryState);
   
-  console.log('[injectProgressModeContext] Results:');
+  console.log('[injectChatContext] Results:');
   console.log('  - loadedPaths:', result.loadedPaths);
   console.log('  - errors:', result.errors);
   console.log('  - output memoryValues keys:', Object.keys(result.memoryValues));
   
   if (result.errors.length > 0) {
-    console.warn('[injectProgressModeContext] Errors loading data:', result.errors);
+    console.warn('[injectChatContext] Errors loading data:', result.errors);
   }
 
   return result.memoryValues;
@@ -702,17 +711,17 @@ export function extractReportsFromMemoryValues(
 }
 
 /**
- * Get the memory fields for progress mode (for use outside ProgressModeManager)
+ * Get the memory fields for progress mode (for use outside ChatContextManager)
  */
 export function getProgressMemoryFields(
   masterFields: AgentMemoryFieldWithDB[],
-  reportPermissions?: ReportPermissions
+  reportPermissions?: AccessPermissions
 ): AgentMemoryFieldWithDB[] {
   if (!reportPermissions) {
     return getBaseProgressMemoryFields(masterFields);
   }
 
-  const tempManager = new ProgressModeManager(
+  const tempManager = new ChatContextManager(
     { studentId: '', reportPermissions },
     masterFields
   );
@@ -724,43 +733,54 @@ export function getProgressMemoryFields(
 // ============================================================================
 
 /**
- * Build a combined system prompt based on report permissions
+ * Build a combined system prompt based on context and permissions
+ * - Institute instructions are always included
+ * - Progress/student instructions are only included when hasStudent is true
  */
-export function buildProgressSystemPrompt(permissions: ReportPermissions = DEFAULT_REPORT_PERMISSIONS): string {
-  let prompt = PROGRESS_SYSTEM_PROMPT;
+export function buildProgressSystemPrompt(
+  permissions: AccessPermissions = DEFAULT_REPORT_PERMISSIONS,
+  hasStudent: boolean = true
+): string {
+  // Always include institute prompt (institute management doesn't require a student)
+  let prompt = INSTITUTE_SYSTEM_PROMPT;
 
-  const hasVisibleReports = 
-    permissions.medical !== 'hidden' ||
-    permissions.functional !== 'hidden' ||
-    permissions.educational !== 'hidden';
+  // Only include student-related prompts if we have a student
+  if (hasStudent) {
+    prompt += PROGRESS_SYSTEM_PROMPT;
 
-  if (hasVisibleReports) {
-    prompt += `In addition to program management, you have access to student reports:\n\n`;
+    const hasVisibleReports =
+      permissions.medical !== 'hidden' ||
+      permissions.functional !== 'hidden' ||
+      permissions.educational !== 'hidden';
 
-    if (permissions.medical !== 'hidden') {
-      const access = permissions.medical === 'readonly' ? 'view' : 'view and edit';
-      prompt += `- **medicalRecord** (${access})\n`;
-    }
+    if (hasVisibleReports) {
+      prompt += `In addition to program management, you have access to student reports:\n\n`;
 
-    if (permissions.functional !== 'hidden') {
-      const access = permissions.functional === 'readonly' ? 'view' : 'view and edit';
-      prompt += `- **functionalReport** (${access})\n`;
-    }
+      if (permissions.medical !== 'hidden') {
+        const access = permissions.medical === 'readonly' ? 'view' : 'view and edit';
+        prompt += `- **medicalRecord** (${access})\n`;
+      }
 
-    if (permissions.educational !== 'hidden') {
-      const access = permissions.educational === 'readonly' ? 'view' : 'view and edit';
-      prompt += `- **educationalReport** (${access})\n`;
-    }
+      if (permissions.functional !== 'hidden') {
+        const access = permissions.functional === 'readonly' ? 'view' : 'view and edit';
+        prompt += `- **functionalReport** (${access})\n`;
+      }
 
-    prompt += `\nReports are stored in /Context_Reports.\n`;
+      if (permissions.educational !== 'hidden') {
+        const access = permissions.educational === 'readonly' ? 'view' : 'view and edit';
+        prompt += `- **educationalReport** (${access})\n`;
+      }
 
-    const readonlyTypes: string[] = [];
-    if (permissions.medical === 'readonly') readonlyTypes.push('medical records');
-    if (permissions.functional === 'readonly') readonlyTypes.push('functional reports');
-    if (permissions.educational === 'readonly') readonlyTypes.push('educational reports');
+      prompt += `\nReports are stored in /Context_Reports.\n`;
 
-    if (readonlyTypes.length > 0) {
-      prompt += `**Note:** The following are read-only: ${readonlyTypes.join(', ')}.\n`;
+      const readonlyTypes: string[] = [];
+      if (permissions.medical === 'readonly') readonlyTypes.push('medical records');
+      if (permissions.functional === 'readonly') readonlyTypes.push('functional reports');
+      if (permissions.educational === 'readonly') readonlyTypes.push('educational reports');
+
+      if (readonlyTypes.length > 0) {
+        prompt += `**Note:** The following are read-only: ${readonlyTypes.join(', ')}.\n`;
+      }
     }
   }
 
