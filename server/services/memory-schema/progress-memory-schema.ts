@@ -29,7 +29,7 @@
  */
 
 import { eq, and, asc, desc, sql } from "drizzle-orm";
-import { db } from "../db";
+import { db } from "../../db";
 import {
   programs,
   profileDomains,
@@ -78,8 +78,8 @@ import {
   type DBOperationContext,
   type PaginationParams,
   type ListResult,
-} from "./chat/memory-db-bridge";
-import { programService } from "./programService";
+} from "../chat/memory-db-bridge";
+import { programService } from "../programService";
 
 // ============================================================================
 // HELPER FUNCTIONS

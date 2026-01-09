@@ -12,7 +12,7 @@
  */
 
 import { eq, and, or, desc } from "drizzle-orm";
-import { db } from "../db";
+import { db } from "../../db";
 import {
   medicalRecords,
   functionalReports,
@@ -34,7 +34,7 @@ import {
   type DBOperationContext,
   type PaginationParams,
   type ListResult,
-} from "./chat/memory-db-bridge";
+} from "../chat/memory-db-bridge";
 
 // ============================================================================
 // HELPER FUNCTIONS

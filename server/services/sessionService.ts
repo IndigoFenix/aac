@@ -41,12 +41,12 @@ import {
   createEmptyBoard,
 } from "./board-utils";
 import {
-  ProgressModeManager,
-  createProgressModeManager,
-  injectProgressModeContext,
-  getReportPermissionsFromRights,
+  ChatContextManager,
+  createChatContextManager,
+  injectChatContext,
   buildProgressSystemPrompt,
-} from "./progress-mode-integration";
+  AccessPermissions,
+} from "./chat-context-integration";
 import {
   BOARD_SYSTEM_PROMPT,
   getSystemPrompt,
@@ -729,44 +729,51 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   }
 
   // === Progress Mode Setup ===
-  let progressManager: ProgressModeManager | undefined;
+  let chatContextManager: ChatContextManager | undefined;
   let contextMemoryFields: AgentMemoryFieldWithDB[] = [];
 
+  let accessPermissions: AccessPermissions = {
+    medical: 'hidden',
+    functional: 'hidden',
+    educational: 'hidden',
+  };
+
+  // Deserialize existing load state from chatState if available
+  const existingLoadState = undefined; // Or restore from chatState.loadStateCache
+
   if (context.student) {
-    // Deserialize existing load state from chatState if available
-    const existingLoadState = undefined; // Or restore from chatState.loadStateCache
-    
     // Determine report permissions based on user rights
     // These could come from the userStudent relationship or be passed in featureContext
     const hasMedicalRights = context.userStudent?.hasMedicalRights ?? false;
     const hasEducationalRights = context.userStudent?.hasEducationalRights ?? false;
+
+    const canEdit = true; // For now, assume edit rights if they have any access
     
     // Convert rights to permissions
-    const reportPermissions = getReportPermissionsFromRights(
-      hasMedicalRights,
-      hasEducationalRights,
-      true // canEdit - set to false to make all reports read-only
-    );
-    
-    // Create the unified manager
-    progressManager = await createProgressModeManager(
-      context.student.id,
-      context.user?.id,
-      featureContext?.progress?.programId,
-      MASTER_MEMORY_FIELDS as AgentMemoryFieldWithDB[],
-      existingLoadState,
-      context.institute?.id, // instituteId for medical records filtering
-      reportPermissions
-    );
-    
-    // Get memory fields (includes both program and reports based on permissions)
-    contextMemoryFields.push(...progressManager.getMemoryFields());
-    
-    // Update template with dynamic configuration
-    const additionalPrompt = buildProgressSystemPrompt(reportPermissions);
-    template.corePrompt = template.corePrompt + additionalPrompt;
-    template.memoryFields = contextMemoryFields as AgentMemoryField[];
+    accessPermissions.medical = hasMedicalRights ? (canEdit ? 'editable' : 'readonly') : 'hidden';
+    accessPermissions.functional = hasEducationalRights ? (canEdit ? 'editable' : 'readonly') : 'hidden';
+    accessPermissions.educational = hasEducationalRights ? (canEdit ? 'editable' : 'readonly') : 'hidden';
   }
+    
+  // Create the unified manager
+  chatContextManager = await createChatContextManager(
+    context.student?.id,
+    context.user?.id,
+    featureContext?.progress?.programId,
+    MASTER_MEMORY_FIELDS as AgentMemoryFieldWithDB[],
+    existingLoadState,
+    context.institute?.id, // instituteId for medical records filtering
+    accessPermissions
+  );
+    
+  // Get memory fields (includes both program and reports based on permissions)
+  contextMemoryFields.push(...chatContextManager.getMemoryFields());
+  
+  // Update template with dynamic configuration
+  const hasStudent = !!context.student;
+  const additionalPrompt = buildProgressSystemPrompt(accessPermissions, hasStudent);
+  template.corePrompt = template.corePrompt + additionalPrompt;
+  template.memoryFields = contextMemoryFields as AgentMemoryField[];
 
   // === Board Mode Setup ===
   // Add board memory field to template.memoryFields when in boards mode
@@ -789,19 +796,19 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   console.log('  - memoryValues:', JSON.stringify(memoryValues, null, 2));
 
   // For progress mode, load program data from database
-  if (progressManager) {
-      console.log('[DEBUG] Progress mode - calling injectProgressModeContext');
+  if (chatContextManager) {
+      console.log('[DEBUG] Progress mode - calling injectChatContext');
       console.log('  - studentId:', context.student?.id);
-      console.log('  - baseContext:', progressManager.getBaseContext());
+      console.log('  - baseContext:', chatContextManager.getBaseContext());
       
-      const populateResult = await injectProgressModeContext(
+      const populateResult = await injectChatContext(
         memoryValues,
         chatState.memoryState,
-        progressManager
+        chatContextManager
       );
       memoryValues = populateResult;
       
-      console.log('[DEBUG] After injectProgressModeContext:');
+      console.log('[DEBUG] After injectChatContext:');
       console.log('  - memoryValues keys:', Object.keys(memoryValues));
       console.log('  - Context_Program:', memoryValues['Context_Program']);
   }
@@ -867,9 +874,9 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     } else if (context.student) {
       prefix += `You are speaking with the student.\n`;
     }
-    if (progressManager){
-      prefix += progressManager.getStudentInfo();
-      prefix += progressManager.getProgramSummary();
+    if (chatContextManager){
+      prefix += chatContextManager.getStudentInfo();
+      prefix += chatContextManager.getProgramSummary();
     }
     return `${corePrompt}\n${prefix}`;
   }
@@ -877,8 +884,8 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   const onUpdateChatState = async (state: ChatState, newLog?: ChatMessage[]) => {
     if (!session) return;
 
-    if (progressManager) {
-      state.loadStateCache = serializeLoadState(progressManager.getLoadState());
+    if (chatContextManager) {
+      state.loadStateCache = serializeLoadState(chatContextManager.getLoadState());
     }
     
     const update: Partial<InsertChatSession> = {
@@ -955,12 +962,12 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   // Create the memory processor based on mode
   let memoryProcessor: MemoryProcessor | undefined;
 
-  if (progressManager) {
-    // Create a load state ref (or get from progressManager)
-    const loadStateRef = { current: progressManager.getLoadState() };
+  if (chatContextManager) {
+    // Create a load state ref (or get from chatContextManager)
+    const loadStateRef = { current: chatContextManager.getLoadState() };
     
-    // Get the base fields from progressManager (these have DB ops attached)
-    let fieldsForProcessor = progressManager.getMemoryFields();
+    // Get the base fields from chatContextManager (these have DB ops attached)
+    let fieldsForProcessor = chatContextManager.getMemoryFields();
     
     // FIX: If in boards mode, add BOARD_MEMORY_FIELD to the processor's field list
     // This allows the memory processor to resolve /Context_Board paths
@@ -974,10 +981,10 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
       { current: memoryValues },
       { current: chatState.memoryState },
       loadStateRef,
-      progressManager.getBaseContext()
+      chatContextManager.getBaseContext()
     );
   } else if (feature === 'boards') {
-    // Handle boards mode WITHOUT a student/progressManager (edge case)
+    // Handle boards mode WITHOUT a student/chatContextManager (edge case)
     const loadStateRef = { current: createMemoryLoadState() };
     
     memoryProcessor = createDBMemoryProcessor(

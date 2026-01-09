@@ -1,0 +1,1482 @@
+/**
+ * institute-memory-schema.ts
+ * 
+ * Memory field schema and database operations for Institute, Classroom, and Student management.
+ * Used when sessionService mode is "institute" or when organization management is needed.
+ * 
+ * This file defines:
+ * 1. Memory field definitions for institute structure
+ * 2. Database operations using instituteService, classroomService, and studentService
+ * 3. System prompt for the organization management AI
+ * 
+ * Structure:
+ * - Context_Institutes (map) - institutes the user is a member of, keyed by id
+ *   - members (map) - users in the institute, keyed by userId
+ *   - students (map) - students enrolled in the institute, keyed by studentId
+ *   - classrooms (map) - classrooms in the institute (schools only), keyed by id
+ *     - members (map) - users assigned to classroom
+ *     - students (map) - students enrolled in classroom
+ *   - invites (map) - pending invites, keyed by id
+ * - Context_Students (map) - students the user has access to, keyed by id
+ *   - users (map) - users linked to this student
+ *   - institutes (array) - institutes the student belongs to
+ *   - classrooms (array) - classrooms the student is enrolled in
+ * 
+ * Relationships:
+ * - Students have many-to-many with Institutes (via instituteStudents)
+ * - Students have many-to-many with Classrooms (via studentClassrooms)
+ * - Students can only have ONE active school at a time (enforced by service)
+ * - Users have many-to-many with Institutes (via instituteUsers)
+ * - Users have many-to-many with Classrooms (via classroomUsers)
+ * - Users have many-to-many with Students (via userStudents)
+ */
+
+import {
+    type AgentMemoryFieldWithDB,
+    type AgentMemoryFieldObjectWithDB,
+    type AgentMemoryFieldArrayWithDB,
+    type AgentMemoryFieldMapWithDB,
+    type MemoryDBOperations,
+    type DBOperationContext,
+    type ListResult,
+  } from "../chat/memory-db-bridge";
+  
+  import { instituteService } from "../instituteService";
+  import { classroomService } from "../classroomService";
+  import { studentService } from "../studentService";
+  
+  // ============================================================================
+  // HELPER FUNCTIONS
+  // ============================================================================
+  
+  /**
+   * Transform database record to memory value, removing internal fields
+   */
+  function toMemoryValue<T extends Record<string, any>>(
+    record: T,
+    excludeFields: string[] = ["createdAt", "updatedAt"]
+  ): any {
+    if (!record) return record;
+    const result = { ...record };
+    for (const field of excludeFields) {
+      delete (result as any)[field];
+    }
+    return result;
+  }
+  
+  /**
+   * Get the requesting user ID from context
+   */
+  function getUserId(ctx: DBOperationContext): string {
+    const userId = ctx.all.userId;
+    if (!userId) throw new Error("userId required in context");
+    return userId;
+  }
+  
+  // ============================================================================
+  // DATABASE OPERATIONS - INSTITUTES
+  // ============================================================================
+  
+  /**
+   * Institutes operations (MAP) - institutes the user is a member of
+   */
+  const institutesOps: MemoryDBOperations<any> = {
+    list: async (ctx, { offset, limit }): Promise<ListResult<any>> => {
+      const userId = getUserId(ctx);
+      
+      const institutesWithMembership = await instituteService.getUserInstitutesWithMembership(userId);
+      
+      // Apply pagination
+      const paged = institutesWithMembership.slice(offset, offset + limit);
+      const items = paged.map(({ institute, membership }) => ({
+        ...toMemoryValue(institute),
+        membership: toMemoryValue(membership),
+      }));
+      
+      const keys = paged.map(({ institute }) => institute.id);
+      
+      return {
+        items,
+        total: institutesWithMembership.length,
+        keys,
+      };
+    },
+  
+    get: async (ctx, key) => {
+      const institute = await instituteService.getInstituteById(String(key));
+      if (!institute) return undefined;
+      
+      const userId = getUserId(ctx);
+      const { isMember, membership } = await instituteService.verifyMembership(
+        institute.id,
+        userId
+      );
+      
+      if (!isMember) return undefined;
+      
+      return {
+        ...toMemoryValue(institute),
+        membership: membership ? toMemoryValue(membership) : undefined,
+      };
+    },
+  
+    add: async (ctx, value) => {
+      const userId = getUserId(ctx);
+      
+      const { institute, membership } = await instituteService.createInstitute(
+        {
+          name: value.name,
+          type: value.type,
+          description: value.description,
+          address: value.address,
+          phone: value.phone,
+          email: value.email,
+          website: value.website,
+        },
+        userId
+      );
+      
+      return {
+        ...toMemoryValue(institute),
+        membership: toMemoryValue(membership),
+      };
+    },
+  
+    update: async (ctx, key, value) => {
+      const userId = getUserId(ctx);
+      
+      const result = await instituteService.updateInstitute(
+        String(key),
+        value,
+        userId
+      );
+      
+      if (!result.success || !result.institute) {
+        throw new Error(result.error || "Failed to update institute");
+      }
+      
+      return toMemoryValue(result.institute);
+    },
+  
+    delete: async (ctx, key) => {
+      const userId = getUserId(ctx);
+      
+      const result = await instituteService.deleteInstitute(String(key), userId);
+      if (!result.success) {
+        throw new Error(result.error || "Failed to delete institute");
+      }
+    },
+  
+    fromDB: (record) => ({
+      ...toMemoryValue(record),
+      // Initialize empty collections for nested data
+      members: {},
+      students: {},
+      classrooms: {},
+      invites: {},
+    }),
+  
+    extractChildContext: (value) => ({
+      instituteId: value?.id,
+      instituteType: value?.type,
+    }),
+  
+    getDBKey: (value) => value?.id,
+  };
+  
+  // ============================================================================
+  // DATABASE OPERATIONS - INSTITUTE MEMBERS
+  // ============================================================================
+  
+  /**
+   * Institute members operations (MAP) - users in an institute
+   */
+  const instituteMembersOps: MemoryDBOperations<any> = {
+    list: async (ctx, { offset, limit }): Promise<ListResult<any>> => {
+      const userId = getUserId(ctx);
+      const instituteId = ctx.all.instituteId;
+      if (!instituteId) throw new Error("instituteId required");
+  
+      const result = await instituteService.getInstituteMembers(instituteId, userId);
+      if (!result.success || !result.members) {
+        throw new Error(result.error || "Failed to get members");
+      }
+  
+      const paged = result.members.slice(offset, offset + limit);
+      const items = paged.map(({ user, membership }) => ({
+        user: toMemoryValue(user, ["createdAt", "updatedAt", "password"]),
+        membership: toMemoryValue(membership),
+      }));
+      
+      const keys = paged.map(({ user }) => user.id);
+  
+      return {
+        items,
+        total: result.members.length,
+        keys,
+      };
+    },
+  
+    update: async (ctx, key, value) => {
+      const userId = getUserId(ctx);
+      const instituteId = ctx.all.instituteId;
+      if (!instituteId) throw new Error("instituteId required");
+  
+      const result = await instituteService.updateMember(
+        instituteId,
+        String(key),
+        { role: value.role, isAdmin: value.isAdmin },
+        userId
+      );
+  
+      if (!result.success) {
+        throw new Error(result.error || "Failed to update member");
+      }
+  
+      return { membership: result.membership ? toMemoryValue(result.membership) : undefined };
+    },
+  
+    delete: async (ctx, key) => {
+      const userId = getUserId(ctx);
+      const instituteId = ctx.all.instituteId;
+      if (!instituteId) throw new Error("instituteId required");
+  
+      const result = await instituteService.removeMember(
+        instituteId,
+        String(key),
+        userId
+      );
+  
+      if (!result.success) {
+        throw new Error(result.error || "Failed to remove member");
+      }
+    },
+  
+    fromDB: (record) => ({
+      user: record?.user ? toMemoryValue(record.user, ["createdAt", "updatedAt", "password"]) : undefined,
+      membership: record?.membership ? toMemoryValue(record.membership) : undefined,
+    }),
+  
+    getDBKey: (value) => value?.user?.id || value?.membership?.userId,
+  };
+  
+  // ============================================================================
+  // DATABASE OPERATIONS - INSTITUTE STUDENTS
+  // ============================================================================
+  
+  /**
+   * Institute students operations (MAP) - students enrolled in an institute
+   */
+  const instituteStudentsOps: MemoryDBOperations<any> = {
+    list: async (ctx, { offset, limit }): Promise<ListResult<any>> => {
+      const userId = getUserId(ctx);
+      const instituteId = ctx.all.instituteId;
+      if (!instituteId) throw new Error("instituteId required");
+  
+      const result = await instituteService.getInstituteStudents(instituteId, userId);
+      if (!result.success || !result.students) {
+        throw new Error(result.error || "Failed to get institute students");
+      }
+  
+      const paged = result.students.slice(offset, offset + limit);
+      const items = paged.map(({ student, enrollment }) => ({
+        student: toMemoryValue(student),
+        enrollment: toMemoryValue(enrollment),
+      }));
+      
+      const keys = paged.map(({ student }) => student.id);
+  
+      return {
+        items,
+        total: result.students.length,
+        keys,
+      };
+    },
+  
+    add: async (ctx, value) => {
+      const userId = getUserId(ctx);
+      const instituteId = ctx.all.instituteId;
+      if (!instituteId) throw new Error("instituteId required");
+  
+      const result = await instituteService.assignStudentToInstitute(
+        instituteId,
+        value.studentId,
+        userId,
+        {
+          enrollmentDate: value.enrollmentDate,
+          idNumber: value.idNumber,
+          grade: value.grade,
+        }
+      );
+  
+      if (!result.success || !result.enrollment) {
+        throw new Error(result.error || "Failed to assign student");
+      }
+  
+      // Get the full student data
+      const student = await studentService.getStudentById(value.studentId);
+  
+      return {
+        student: student ? toMemoryValue(student) : undefined,
+        enrollment: toMemoryValue(result.enrollment),
+      };
+    },
+  
+    update: async (ctx, key, value) => {
+      const userId = getUserId(ctx);
+      const instituteId = ctx.all.instituteId;
+      if (!instituteId) throw new Error("instituteId required");
+  
+      const result = await instituteService.updateStudentEnrollment(
+        instituteId,
+        String(key),
+        { idNumber: value.idNumber, grade: value.grade },
+        userId
+      );
+  
+      if (!result.success) {
+        throw new Error(result.error || "Failed to update enrollment");
+      }
+  
+      return { enrollment: result.enrollment ? toMemoryValue(result.enrollment) : undefined };
+    },
+  
+    delete: async (ctx, key) => {
+      const userId = getUserId(ctx);
+      const instituteId = ctx.all.instituteId;
+      if (!instituteId) throw new Error("instituteId required");
+  
+      const result = await instituteService.removeStudentFromInstitute(
+        instituteId,
+        String(key),
+        userId
+      );
+  
+      if (!result.success) {
+        throw new Error(result.error || "Failed to remove student");
+      }
+    },
+  
+    fromDB: (record) => ({
+      student: record?.student ? toMemoryValue(record.student) : undefined,
+      enrollment: record?.enrollment ? toMemoryValue(record.enrollment) : undefined,
+    }),
+  
+    extractChildContext: (value) => ({
+      studentId: value?.student?.id,
+    }),
+  
+    getDBKey: (value) => value?.student?.id || value?.enrollment?.studentId,
+  };
+  
+  // ============================================================================
+  // DATABASE OPERATIONS - CLASSROOMS
+  // ============================================================================
+  
+  /**
+   * Classrooms operations (MAP) - classrooms in an institute
+   */
+  const classroomsOps: MemoryDBOperations<any> = {
+    list: async (ctx, { offset, limit }): Promise<ListResult<any>> => {
+      const userId = getUserId(ctx);
+      const instituteId = ctx.all.instituteId;
+      if (!instituteId) throw new Error("instituteId required");
+  
+      const result = await classroomService.getInstituteClassrooms(instituteId, userId);
+      if (!result.success || !result.classrooms) {
+        throw new Error(result.error || "Failed to get classrooms");
+      }
+  
+      const paged = result.classrooms.slice(offset, offset + limit);
+      const items = paged.map(c => toMemoryValue(c));
+      const keys = paged.map(c => c.id);
+  
+      return {
+        items,
+        total: result.classrooms.length,
+        keys,
+      };
+    },
+  
+    get: async (ctx, key) => {
+      const classroom = await classroomService.getClassroomById(String(key));
+      return classroom ? toMemoryValue(classroom) : undefined;
+    },
+  
+    add: async (ctx, value) => {
+      const userId = getUserId(ctx);
+      const instituteId = ctx.all.instituteId;
+      if (!instituteId) throw new Error("instituteId required");
+  
+      const result = await classroomService.createClassroom(
+        {
+          instituteId,
+          name: value.name,
+          grade: value.grade,
+          description: value.description,
+          capacity: value.capacity,
+          roomNumber: value.roomNumber,
+          academicYear: value.academicYear,
+        },
+        userId
+      );
+  
+      if (!result.success || !result.classroom) {
+        throw new Error(result.error || "Failed to create classroom");
+      }
+  
+      return toMemoryValue(result.classroom);
+    },
+  
+    update: async (ctx, key, value) => {
+      const userId = getUserId(ctx);
+  
+      const result = await classroomService.updateClassroom(
+        String(key),
+        value,
+        userId
+      );
+  
+      if (!result.success || !result.classroom) {
+        throw new Error(result.error || "Failed to update classroom");
+      }
+  
+      return toMemoryValue(result.classroom);
+    },
+  
+    delete: async (ctx, key) => {
+      const userId = getUserId(ctx);
+  
+      const result = await classroomService.deleteClassroom(String(key), userId);
+      if (!result.success) {
+        throw new Error(result.error || "Failed to delete classroom");
+      }
+    },
+  
+    fromDB: (record) => ({
+      ...toMemoryValue(record),
+      members: {},
+      students: {},
+    }),
+  
+    extractChildContext: (value) => ({
+      classroomId: value?.id,
+    }),
+  
+    getDBKey: (value) => value?.id,
+  };
+  
+  // ============================================================================
+  // DATABASE OPERATIONS - CLASSROOM MEMBERS
+  // ============================================================================
+  
+  /**
+   * Classroom members operations (MAP) - users assigned to a classroom
+   */
+  const classroomMembersOps: MemoryDBOperations<any> = {
+    list: async (ctx, { offset, limit }): Promise<ListResult<any>> => {
+      const userId = getUserId(ctx);
+      const classroomId = ctx.all.classroomId;
+      if (!classroomId) throw new Error("classroomId required");
+  
+      const result = await classroomService.getClassroomMembers(classroomId, userId);
+      if (!result.success || !result.members) {
+        throw new Error(result.error || "Failed to get classroom members");
+      }
+  
+      const paged = result.members.slice(offset, offset + limit);
+      const items = paged.map(({ user, membership }) => ({
+        user: toMemoryValue(user, ["createdAt", "updatedAt", "password"]),
+        membership: toMemoryValue(membership),
+      }));
+      
+      const keys = paged.map(({ user }) => user.id);
+  
+      return {
+        items,
+        total: result.members.length,
+        keys,
+      };
+    },
+  
+    add: async (ctx, value) => {
+      const userId = getUserId(ctx);
+      const classroomId = ctx.all.classroomId;
+      if (!classroomId) throw new Error("classroomId required");
+  
+      const result = await classroomService.addUserToClassroom(
+        classroomId,
+        value.userId,
+        value.role || "teacher",
+        userId,
+        value.isPrimary || false
+      );
+  
+      if (!result.success || !result.membership) {
+        throw new Error(result.error || "Failed to add member");
+      }
+  
+      return { membership: toMemoryValue(result.membership) };
+    },
+  
+    update: async (ctx, key, value) => {
+      const userId = getUserId(ctx);
+      const classroomId = ctx.all.classroomId;
+      if (!classroomId) throw new Error("classroomId required");
+  
+      const result = await classroomService.updateClassroomMember(
+        classroomId,
+        String(key),
+        { role: value.role, isPrimary: value.isPrimary },
+        userId
+      );
+  
+      if (!result.success) {
+        throw new Error(result.error || "Failed to update member");
+      }
+  
+      return { membership: result.membership ? toMemoryValue(result.membership) : undefined };
+    },
+  
+    delete: async (ctx, key) => {
+      const userId = getUserId(ctx);
+      const classroomId = ctx.all.classroomId;
+      if (!classroomId) throw new Error("classroomId required");
+  
+      const result = await classroomService.removeUserFromClassroom(
+        classroomId,
+        String(key),
+        userId
+      );
+  
+      if (!result.success) {
+        throw new Error(result.error || "Failed to remove member");
+      }
+    },
+  
+    fromDB: (record) => ({
+      user: record?.user ? toMemoryValue(record.user, ["createdAt", "updatedAt", "password"]) : undefined,
+      membership: record?.membership ? toMemoryValue(record.membership) : undefined,
+    }),
+  
+    getDBKey: (value) => value?.user?.id || value?.membership?.userId,
+  };
+  
+  // ============================================================================
+  // DATABASE OPERATIONS - CLASSROOM STUDENTS
+  // ============================================================================
+  
+  /**
+   * Classroom students operations (MAP) - students enrolled in a classroom
+   */
+  const classroomStudentsOps: MemoryDBOperations<any> = {
+    list: async (ctx, { offset, limit }): Promise<ListResult<any>> => {
+      const userId = getUserId(ctx);
+      const classroomId = ctx.all.classroomId;
+      if (!classroomId) throw new Error("classroomId required");
+  
+      const result = await classroomService.getClassroomStudents(classroomId, userId);
+      if (!result.success || !result.students) {
+        throw new Error(result.error || "Failed to get classroom students");
+      }
+  
+      const paged = result.students.slice(offset, offset + limit);
+      const items = paged.map(({ student, enrollment }) => ({
+        student: toMemoryValue(student),
+        enrollment: toMemoryValue(enrollment),
+      }));
+      
+      const keys = paged.map(({ student }) => student.id);
+  
+      return {
+        items,
+        total: result.students.length,
+        keys,
+      };
+    },
+  
+    add: async (ctx, value) => {
+      const userId = getUserId(ctx);
+      const classroomId = ctx.all.classroomId;
+      if (!classroomId) throw new Error("classroomId required");
+  
+      const result = await classroomService.addStudentToClassroom(
+        value.studentId,
+        classroomId,
+        userId,
+        {
+          isPrimary: value.isPrimary,
+          enrollmentDate: value.enrollmentDate,
+          notes: value.notes,
+        }
+      );
+  
+      if (!result.success || !result.enrollment) {
+        throw new Error(result.error || "Failed to add student");
+      }
+  
+      const student = await studentService.getStudentById(value.studentId);
+  
+      return {
+        student: student ? toMemoryValue(student) : undefined,
+        enrollment: toMemoryValue(result.enrollment),
+      };
+    },
+  
+    update: async (ctx, key, value) => {
+      const userId = getUserId(ctx);
+      const classroomId = ctx.all.classroomId;
+      if (!classroomId) throw new Error("classroomId required");
+  
+      const result = await classroomService.updateStudentEnrollment(
+        String(key),
+        classroomId,
+        { isPrimary: value.isPrimary, notes: value.notes },
+        userId
+      );
+  
+      if (!result.success) {
+        throw new Error(result.error || "Failed to update enrollment");
+      }
+  
+      return { enrollment: result.enrollment ? toMemoryValue(result.enrollment) : undefined };
+    },
+  
+    delete: async (ctx, key) => {
+      const userId = getUserId(ctx);
+      const classroomId = ctx.all.classroomId;
+      if (!classroomId) throw new Error("classroomId required");
+  
+      const result = await classroomService.removeStudentFromClassroom(
+        String(key),
+        classroomId,
+        userId
+      );
+  
+      if (!result.success) {
+        throw new Error(result.error || "Failed to remove student");
+      }
+    },
+  
+    fromDB: (record) => ({
+      student: record?.student ? toMemoryValue(record.student) : undefined,
+      enrollment: record?.enrollment ? toMemoryValue(record.enrollment) : undefined,
+    }),
+  
+    getDBKey: (value) => value?.student?.id || value?.enrollment?.studentId,
+  };
+  
+  // ============================================================================
+  // DATABASE OPERATIONS - INSTITUTE INVITES
+  // ============================================================================
+  
+  /**
+   * Institute invites operations (MAP) - pending invites for an institute
+   */
+  const instituteInvitesOps: MemoryDBOperations<any> = {
+    list: async (ctx, { offset, limit }): Promise<ListResult<any>> => {
+      const userId = getUserId(ctx);
+      const instituteId = ctx.all.instituteId;
+      if (!instituteId) throw new Error("instituteId required");
+  
+      const result = await instituteService.getInstituteInvites(instituteId, userId);
+      if (!result.success || !result.invites) {
+        throw new Error(result.error || "Failed to get invites");
+      }
+  
+      const paged = result.invites.slice(offset, offset + limit);
+      const items = paged.map(invite => toMemoryValue(invite));
+      const keys = paged.map(invite => invite.id);
+  
+      return {
+        items,
+        total: result.invites.length,
+        keys,
+      };
+    },
+  
+    add: async (ctx, value) => {
+      const userId = getUserId(ctx);
+      const instituteId = ctx.all.instituteId;
+      if (!instituteId) throw new Error("instituteId required");
+  
+      const result = await instituteService.sendInvite(
+        instituteId,
+        value.inviteeEmail,
+        userId,
+        {
+          role: value.role,
+          grantAdmin: value.grantAdmin,
+          message: value.message,
+        }
+      );
+  
+      if (!result.success || !result.invite) {
+        throw new Error(result.error || "Failed to send invite");
+      }
+  
+      return toMemoryValue(result.invite);
+    },
+  
+    delete: async (ctx, key) => {
+      const userId = getUserId(ctx);
+  
+      const result = await instituteService.cancelInvite(String(key), userId);
+      if (!result.success) {
+        throw new Error(result.error || "Failed to cancel invite");
+      }
+    },
+  
+    fromDB: (record) => toMemoryValue(record),
+  
+    getDBKey: (value) => value?.id,
+  };
+  
+  // ============================================================================
+  // DATABASE OPERATIONS - STUDENTS (User's students)
+  // ============================================================================
+  
+  /**
+   * Students operations (MAP) - students the user has access to
+   */
+  const studentsOps: MemoryDBOperations<any> = {
+    list: async (ctx, { offset, limit }): Promise<ListResult<any>> => {
+      const userId = getUserId(ctx);
+      
+      const studentsWithLinks = await studentService.getStudentsWithLinksByUserId(userId);
+      
+      const paged = studentsWithLinks.slice(offset, offset + limit);
+      const items = paged.map(({ student, link }) => ({
+        ...toMemoryValue(student),
+        link: toMemoryValue(link),
+      }));
+      
+      const keys = paged.map(({ student }) => student.id);
+  
+      return {
+        items,
+        total: studentsWithLinks.length,
+        keys,
+      };
+    },
+  
+    get: async (ctx, key) => {
+      const userId = getUserId(ctx);
+      
+      const result = await studentService.verifyStudentAccess(String(key), userId);
+      if (!result.hasAccess || !result.student) return undefined;
+  
+      return {
+        ...toMemoryValue(result.student),
+        link: result.link ? toMemoryValue(result.link) : undefined,
+      };
+    },
+  
+    add: async (ctx, value) => {
+      const userId = getUserId(ctx);
+  
+      const { student, link } = await studentService.createStudentWithLink(
+        {
+          name: value.name,
+          firstName: value.firstName,
+          lastName: value.lastName,
+          gender: value.gender,
+          birthDate: value.birthDate,
+          framework: value.framework,
+          country: value.country,
+          primaryLanguage: value.primaryLanguage,
+          additionalLanguages: value.additionalLanguages,
+        },
+        userId,
+        "owner"
+      );
+  
+      return {
+        ...toMemoryValue(student),
+        link: toMemoryValue(link),
+      };
+    },
+  
+    update: async (ctx, key, value) => {
+      const student = await studentService.updateStudent(String(key), value);
+      if (!student) throw new Error("Failed to update student");
+      return toMemoryValue(student);
+    },
+  
+    delete: async (ctx, key) => {
+      const deleted = await studentService.deleteStudent(String(key));
+      if (!deleted) throw new Error("Failed to delete student");
+    },
+  
+    fromDB: (record) => ({
+      ...toMemoryValue(record),
+      users: {},
+      institutes: [],
+      classrooms: [],
+    }),
+  
+    extractChildContext: (value) => ({
+      studentId: value?.id,
+    }),
+  
+    getDBKey: (value) => value?.id,
+  };
+  
+  // ============================================================================
+  // DATABASE OPERATIONS - STUDENT USERS (Users linked to a student)
+  // ============================================================================
+  
+  /**
+   * Student users operations (MAP) - users linked to a student
+   */
+  const studentUsersOps: MemoryDBOperations<any> = {
+    list: async (ctx, { offset, limit }): Promise<ListResult<any>> => {
+      const studentId = ctx.all.studentId;
+      if (!studentId) throw new Error("studentId required");
+  
+      const links = await studentService.getUsersLinkedToStudent(studentId);
+      
+      const paged = links.slice(offset, offset + limit);
+      const items = paged.map(link => toMemoryValue(link));
+      const keys = paged.map(link => link.userId);
+  
+      return {
+        items,
+        total: links.length,
+        keys,
+      };
+    },
+  
+    add: async (ctx, value) => {
+      const studentId = ctx.all.studentId;
+      if (!studentId) throw new Error("studentId required");
+  
+      const link = await studentService.linkUserToStudent(
+        value.userId,
+        studentId,
+        value.role || "caregiver"
+      );
+  
+      return toMemoryValue(link);
+    },
+  
+    update: async (ctx, key, value) => {
+      const studentId = ctx.all.studentId;
+      if (!studentId) throw new Error("studentId required");
+  
+      const link = await studentService.getUserStudentLink(String(key), studentId);
+      if (!link) throw new Error("Link not found");
+  
+      const updated = await studentService.updateUserStudentLink(link.id, value);
+      if (!updated) throw new Error("Failed to update link");
+  
+      return toMemoryValue(updated);
+    },
+  
+    delete: async (ctx, key) => {
+      const studentId = ctx.all.studentId;
+      if (!studentId) throw new Error("studentId required");
+  
+      const removed = await studentService.unlinkUserFromStudent(String(key), studentId);
+      if (!removed) throw new Error("Failed to remove link");
+    },
+  
+    fromDB: (record) => toMemoryValue(record),
+  
+    getDBKey: (value) => value?.userId,
+  };
+  
+  // ============================================================================
+  // DATABASE OPERATIONS - STUDENT INSTITUTES (Institutes a student belongs to)
+  // ============================================================================
+  
+  /**
+   * Student institutes operations (ARRAY) - institutes a student is enrolled in
+   */
+  const studentInstitutesOps: MemoryDBOperations<any> = {
+    list: async (ctx, { offset, limit }): Promise<ListResult<any>> => {
+      const userId = getUserId(ctx);
+      const studentId = ctx.all.studentId;
+      if (!studentId) throw new Error("studentId required");
+  
+      const result = await instituteService.getStudentInstitutes(studentId, userId);
+      if (!result.success || !result.institutes) {
+        throw new Error(result.error || "Failed to get student institutes");
+      }
+  
+      const paged = result.institutes.slice(offset, offset + limit);
+      const items = paged.map(({ institute, enrollment }) => ({
+        institute: toMemoryValue(institute),
+        enrollment: toMemoryValue(enrollment),
+      }));
+  
+      return {
+        items,
+        total: result.institutes.length,
+      };
+    },
+  
+    fromDB: (record) => ({
+      institute: record?.institute ? toMemoryValue(record.institute) : undefined,
+      enrollment: record?.enrollment ? toMemoryValue(record.enrollment) : undefined,
+    }),
+  
+    getDBKey: (value) => value?.institute?.id || value?.enrollment?.instituteId,
+  };
+  
+  // ============================================================================
+  // DATABASE OPERATIONS - STUDENT CLASSROOMS (Classrooms a student is enrolled in)
+  // ============================================================================
+  
+  /**
+   * Student classrooms operations (ARRAY) - classrooms a student is enrolled in
+   */
+  const studentClassroomsOps: MemoryDBOperations<any> = {
+    list: async (ctx, { offset, limit }): Promise<ListResult<any>> => {
+      const studentId = ctx.all.studentId;
+      if (!studentId) throw new Error("studentId required");
+  
+      const classroomsWithEnrollment = await classroomService.getStudentClassrooms(studentId);
+      
+      const paged = classroomsWithEnrollment.slice(offset, offset + limit);
+      const items = paged.map(({ classroom, enrollment }) => ({
+        classroom: toMemoryValue(classroom),
+        enrollment: toMemoryValue(enrollment),
+      }));
+  
+      return {
+        items,
+        total: classroomsWithEnrollment.length,
+      };
+    },
+  
+    fromDB: (record) => ({
+      classroom: record?.classroom ? toMemoryValue(record.classroom) : undefined,
+      enrollment: record?.enrollment ? toMemoryValue(record.enrollment) : undefined,
+    }),
+  
+    getDBKey: (value) => value?.classroom?.id || value?.enrollment?.classroomId,
+  };
+  
+  // ============================================================================
+  // MEMORY FIELD SCHEMAS
+  // ============================================================================
+  
+  /**
+   * Institute invite schema (map value)
+   */
+  const instituteInviteSchema: AgentMemoryFieldObjectWithDB = {
+    id: "instituteInvite",
+    type: "object",
+    opened: false,
+    properties: {
+      id: { id: "id", type: "string" },
+      inviteeEmail: { id: "inviteeEmail", type: "string", description: "Email address of the person being invited" },
+      role: {
+        id: "role",
+        type: "string",
+        enum: ["admin", "director", "teacher", "therapist", "aide", "staff", "observer"],
+        default: "staff",
+      },
+      grantAdmin: { id: "grantAdmin", type: "boolean", default: false },
+      message: { id: "message", type: "string", description: "Optional message to include in the invite" },
+      status: {
+        id: "status",
+        type: "string",
+        enum: ["pending", "accepted", "declined", "expired", "cancelled"],
+      },
+      expiresAt: { id: "expiresAt", type: "string", format: "ISO datetime" },
+    },
+    required: ["inviteeEmail"],
+  };
+  
+  /**
+   * Institute member schema (map value)
+   */
+  const instituteMemberSchema: AgentMemoryFieldObjectWithDB = {
+    id: "instituteMember",
+    type: "object",
+    opened: false,
+    properties: {
+      user: {
+        id: "user",
+        type: "object",
+        properties: {
+          id: { id: "id", type: "string" },
+          email: { id: "email", type: "string" },
+          firstName: { id: "firstName", type: "string" },
+          lastName: { id: "lastName", type: "string" },
+          fullName: { id: "fullName", type: "string" },
+          userType: { id: "userType", type: "string" },
+        },
+      },
+      membership: {
+        id: "membership",
+        type: "object",
+        properties: {
+          role: {
+            id: "role",
+            type: "string",
+            enum: ["admin", "director", "teacher", "therapist", "aide", "staff", "observer"],
+          },
+          isAdmin: { id: "isAdmin", type: "boolean" },
+          isActive: { id: "isActive", type: "boolean" },
+        },
+      },
+    },
+  };
+  
+  /**
+   * Institute student enrollment schema (map value)
+   */
+  const instituteStudentSchema: AgentMemoryFieldObjectWithDB = {
+    id: "instituteStudent",
+    type: "object",
+    opened: false,
+    properties: {
+      student: {
+        id: "student",
+        type: "object",
+        properties: {
+          id: { id: "id", type: "string" },
+          name: { id: "name", type: "string" },
+          firstName: { id: "firstName", type: "string" },
+          lastName: { id: "lastName", type: "string" },
+          gender: { id: "gender", type: "string", enum: ["male", "female", "other"] },
+          birthDate: { id: "birthDate", type: "string", format: "YYYY-MM-DD" },
+        },
+      },
+      enrollment: {
+        id: "enrollment",
+        type: "object",
+        properties: {
+          enrollmentDate: { id: "enrollmentDate", type: "string", format: "YYYY-MM-DD" },
+          exitDate: { id: "exitDate", type: "string", format: "YYYY-MM-DD" },
+          grade: {
+            id: "grade",
+            type: "string",
+            enum: ["pre_k", "k", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "special_ed", "adult_ed"],
+          },
+          idNumber: { id: "idNumber", type: "string", description: "Student ID number within the institute" },
+          isActive: { id: "isActive", type: "boolean" },
+        },
+      },
+      studentId: { id: "studentId", type: "string", description: "Required when adding a student to an institute" },
+    },
+  };
+  
+  /**
+   * Classroom member schema (map value)
+   */
+  const classroomMemberSchema: AgentMemoryFieldObjectWithDB = {
+    id: "classroomMember",
+    type: "object",
+    opened: false,
+    properties: {
+      user: {
+        id: "user",
+        type: "object",
+        properties: {
+          id: { id: "id", type: "string" },
+          email: { id: "email", type: "string" },
+          firstName: { id: "firstName", type: "string" },
+          lastName: { id: "lastName", type: "string" },
+          fullName: { id: "fullName", type: "string" },
+        },
+      },
+      membership: {
+        id: "membership",
+        type: "object",
+        properties: {
+          role: {
+            id: "role",
+            type: "string",
+            enum: ["lead_teacher", "co_teacher", "therapist", "aide", "observer"],
+          },
+          isPrimary: { id: "isPrimary", type: "boolean" },
+          isActive: { id: "isActive", type: "boolean" },
+        },
+      },
+      userId: { id: "userId", type: "string", description: "Required when adding a user to a classroom" },
+      role: { id: "role", type: "string", description: "Role when adding" },
+      isPrimary: { id: "isPrimary", type: "boolean", description: "Is this the primary assignment?" },
+    },
+  };
+  
+  /**
+   * Classroom student enrollment schema (map value)
+   */
+  const classroomStudentSchema: AgentMemoryFieldObjectWithDB = {
+    id: "classroomStudent",
+    type: "object",
+    opened: false,
+    properties: {
+      student: {
+        id: "student",
+        type: "object",
+        properties: {
+          id: { id: "id", type: "string" },
+          name: { id: "name", type: "string" },
+          firstName: { id: "firstName", type: "string" },
+          lastName: { id: "lastName", type: "string" },
+        },
+      },
+      enrollment: {
+        id: "enrollment",
+        type: "object",
+        properties: {
+          isPrimary: { id: "isPrimary", type: "boolean", description: "Is this the primary/homeroom classroom?" },
+          enrollmentDate: { id: "enrollmentDate", type: "string", format: "YYYY-MM-DD" },
+          exitDate: { id: "exitDate", type: "string", format: "YYYY-MM-DD" },
+          notes: { id: "notes", type: "string" },
+          isActive: { id: "isActive", type: "boolean" },
+        },
+      },
+      studentId: { id: "studentId", type: "string", description: "Required when adding a student to a classroom" },
+      isPrimary: { id: "isPrimary", type: "boolean" },
+      enrollmentDate: { id: "enrollmentDate", type: "string" },
+      notes: { id: "notes", type: "string" },
+    },
+  };
+  
+  /**
+   * Classroom schema (map value)
+   */
+  const classroomSchema: AgentMemoryFieldObjectWithDB = {
+    id: "classroom",
+    type: "object",
+    opened: false,
+    properties: {
+      id: { id: "id", type: "string" },
+      name: { id: "name", type: "string" },
+      grade: {
+        id: "grade",
+        type: "string",
+        enum: ["pre_k", "k", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "special_ed", "adult_ed"],
+      },
+      description: { id: "description", type: "string" },
+      capacity: { id: "capacity", type: "integer" },
+      roomNumber: { id: "roomNumber", type: "string" },
+      academicYear: { id: "academicYear", type: "string", description: "e.g., '2024-2025'" },
+      isActive: { id: "isActive", type: "boolean" },
+      members: {
+        id: "members",
+        type: "map",
+        title: "Classroom Members",
+        description: "Users assigned to this classroom (keyed by userId)",
+        opened: true,
+        values: classroomMemberSchema,
+        db: classroomMembersOps,
+      } as AgentMemoryFieldMapWithDB,
+      students: {
+        id: "students",
+        type: "map",
+        title: "Classroom Students",
+        description: "Students enrolled in this classroom (keyed by studentId)",
+        opened: true,
+        values: classroomStudentSchema,
+        db: classroomStudentsOps,
+      } as AgentMemoryFieldMapWithDB,
+    },
+    required: ["name"],
+  };
+  
+  /**
+   * Institute schema (map value)
+   */
+  const instituteSchema: AgentMemoryFieldObjectWithDB = {
+    id: "institute",
+    type: "object",
+    opened: false,
+    properties: {
+      id: { id: "id", type: "string" },
+      name: { id: "name", type: "string" },
+      type: {
+        id: "type",
+        type: "string",
+        enum: ["school", "hospital"],
+        description: "Type of institute. Classrooms are only available for schools.",
+      },
+      description: { id: "description", type: "string" },
+      address: { id: "address", type: "string" },
+      phone: { id: "phone", type: "string" },
+      email: { id: "email", type: "string" },
+      website: { id: "website", type: "string" },
+      isActive: { id: "isActive", type: "boolean" },
+      membership: {
+        id: "membership",
+        type: "object",
+        description: "The current user's membership in this institute",
+        properties: {
+          role: { id: "role", type: "string" },
+          isAdmin: { id: "isAdmin", type: "boolean" },
+          isActive: { id: "isActive", type: "boolean" },
+        },
+      },
+      members: {
+        id: "members",
+        type: "map",
+        title: "Institute Members",
+        description: "Users who are members of this institute (keyed by userId)",
+        opened: true,
+        values: instituteMemberSchema,
+        db: instituteMembersOps,
+      } as AgentMemoryFieldMapWithDB,
+      students: {
+        id: "students",
+        type: "map",
+        title: "Institute Students",
+        description: "Students enrolled in this institute (keyed by studentId)",
+        opened: true,
+        values: instituteStudentSchema,
+        db: instituteStudentsOps,
+      } as AgentMemoryFieldMapWithDB,
+      classrooms: {
+        id: "classrooms",
+        type: "map",
+        title: "Classrooms",
+        description: "Classrooms in this institute (only for schools, keyed by classroomId)",
+        opened: true,
+        values: classroomSchema,
+        db: classroomsOps,
+      } as AgentMemoryFieldMapWithDB,
+      invites: {
+        id: "invites",
+        type: "map",
+        title: "Pending Invites",
+        description: "Pending invitations to join this institute (keyed by inviteId)",
+        opened: true,
+        values: instituteInviteSchema,
+        db: instituteInvitesOps,
+      } as AgentMemoryFieldMapWithDB,
+    },
+    required: ["name", "type"],
+  };
+  
+  /**
+   * User-Student link schema
+   */
+  const userStudentLinkSchema: AgentMemoryFieldObjectWithDB = {
+    id: "userStudentLink",
+    type: "object",
+    opened: false,
+    properties: {
+      userId: { id: "userId", type: "string" },
+      role: {
+        id: "role",
+        type: "string",
+        enum: ["owner", "caregiver", "therapist", "teacher", "parent"],
+        default: "caregiver",
+      },
+      hasEducationalRights: { id: "hasEducationalRights", type: "boolean", default: true },
+      hasMedicalRights: { id: "hasMedicalRights", type: "boolean", default: true },
+      isActive: { id: "isActive", type: "boolean" },
+    },
+    required: ["userId"],
+  };
+  
+  /**
+   * Student institute enrollment schema (array item)
+   */
+  const studentInstituteSchema: AgentMemoryFieldObjectWithDB = {
+    id: "studentInstitute",
+    type: "object",
+    opened: false,
+    properties: {
+      institute: {
+        id: "institute",
+        type: "object",
+        properties: {
+          id: { id: "id", type: "string" },
+          name: { id: "name", type: "string" },
+          type: { id: "type", type: "string", enum: ["school", "hospital"] },
+        },
+      },
+      enrollment: {
+        id: "enrollment",
+        type: "object",
+        properties: {
+          enrollmentDate: { id: "enrollmentDate", type: "string" },
+          grade: { id: "grade", type: "string" },
+          isActive: { id: "isActive", type: "boolean" },
+        },
+      },
+    },
+  };
+  
+  /**
+   * Student classroom enrollment schema (array item)
+   */
+  const studentClassroomSchema: AgentMemoryFieldObjectWithDB = {
+    id: "studentClassroom",
+    type: "object",
+    opened: false,
+    properties: {
+      classroom: {
+        id: "classroom",
+        type: "object",
+        properties: {
+          id: { id: "id", type: "string" },
+          name: { id: "name", type: "string" },
+          grade: { id: "grade", type: "string" },
+        },
+      },
+      enrollment: {
+        id: "enrollment",
+        type: "object",
+        properties: {
+          isPrimary: { id: "isPrimary", type: "boolean" },
+          enrollmentDate: { id: "enrollmentDate", type: "string" },
+          isActive: { id: "isActive", type: "boolean" },
+        },
+      },
+    },
+  };
+  
+  /**
+   * Student schema (map value)
+   */
+  const studentSchema: AgentMemoryFieldObjectWithDB = {
+    id: "student",
+    type: "object",
+    opened: false,
+    properties: {
+      id: { id: "id", type: "string" },
+      name: { id: "name", type: "string" },
+      firstName: { id: "firstName", type: "string" },
+      lastName: { id: "lastName", type: "string" },
+      gender: { id: "gender", type: "string", enum: ["male", "female", "other"] },
+      birthDate: { id: "birthDate", type: "string", format: "YYYY-MM-DD" },
+      framework: {
+        id: "framework",
+        type: "string",
+        enum: ["tala", "us_iep"],
+        description: "Educational framework: TALA (Israel) or US IEP",
+      },
+      country: { id: "country", type: "string", default: "IL" },
+      primaryLanguage: { id: "primaryLanguage", type: "string", default: "he" },
+      additionalLanguages: {
+        id: "additionalLanguages",
+        type: "array",
+        items: { id: "language", type: "string" },
+      },
+      isActive: { id: "isActive", type: "boolean" },
+      link: {
+        id: "link",
+        type: "object",
+        description: "The current user's relationship with this student",
+        properties: {
+          role: { id: "role", type: "string" },
+          hasEducationalRights: { id: "hasEducationalRights", type: "boolean" },
+          hasMedicalRights: { id: "hasMedicalRights", type: "boolean" },
+          isActive: { id: "isActive", type: "boolean" },
+        },
+      },
+      users: {
+        id: "users",
+        type: "map",
+        title: "Linked Users",
+        description: "Users who have access to this student (keyed by userId)",
+        opened: true,
+        values: userStudentLinkSchema,
+        db: studentUsersOps,
+      } as AgentMemoryFieldMapWithDB,
+      institutes: {
+        id: "institutes",
+        type: "array",
+        title: "Institutes",
+        description: "Institutes this student belongs to",
+        opened: true,
+        items: studentInstituteSchema,
+        db: studentInstitutesOps,
+      } as AgentMemoryFieldArrayWithDB,
+      classrooms: {
+        id: "classrooms",
+        type: "array",
+        title: "Classrooms",
+        description: "Classrooms this student is enrolled in",
+        opened: true,
+        items: studentClassroomSchema,
+        db: studentClassroomsOps,
+      } as AgentMemoryFieldArrayWithDB,
+    },
+    required: ["name"],
+  };
+  
+  // ============================================================================
+  // MAIN INSTITUTE MEMORY FIELDS
+  // ============================================================================
+  
+  /**
+   * Institutes map - the main entry point for institute management
+   */
+  export const INSTITUTE_INSTITUTES_FIELD: AgentMemoryFieldMapWithDB = {
+    id: "Context_Institutes",
+    type: "map",
+    title: "Institutes",
+    description: "Organizations (schools or hospitals) that the user is a member of. Keyed by institute ID.",
+    opened: true,
+    values: instituteSchema,
+    db: institutesOps,
+  };
+  
+  /**
+   * Students map - students the user has access to
+   */
+  export const INSTITUTE_STUDENTS_FIELD: AgentMemoryFieldMapWithDB = {
+    id: "Context_Students",
+    type: "map",
+    title: "Students",
+    description: "Students (AAC users) that the user has access to. Keyed by student ID.",
+    opened: true,
+    values: studentSchema,
+    db: studentsOps,
+  };
+  
+  // ============================================================================
+  // SYSTEM PROMPT FOR INSTITUTE MODE
+  // ============================================================================
+  
+  export const INSTITUTE_SYSTEM_PROMPT = `
+  You can manage educational organizations and students:
+  
+  **Institutes (Schools & Hospitals)**
+  - Create, update, and delete institutes
+  - Manage institute members and their roles
+  - Send invitations to new users via email
+  - Enroll and manage students in institutes
+  
+  **Classrooms (Schools only)**
+  - Create and manage classrooms within schools
+  - Assign teachers and staff to classrooms
+  - Enroll students in classrooms
+  - Track primary/homeroom assignments
+  
+  **Students**
+  - Create and manage student profiles
+  - Link users (caregivers, therapists, teachers) to students
+  - View student enrollments across institutes and classrooms
+  
+  **Important Rules**
+  - Students can only be enrolled in ONE active school at a time
+  - When enrolling a student in a new school, they are automatically transferred from their previous school
+  - Students can be enrolled in multiple hospitals simultaneously
+  - Classrooms are only available for institutes of type "school"
+  - Only institute admins can invite new members or remove existing ones
+  `;
+  
+  // ============================================================================
+  // EXPORTS
+  // ============================================================================
+  
+  /**
+   * Get the complete memory fields for institute mode
+   * Combines master memory fields with institute-specific fields
+   */
+  export function getInstituteMemoryFields(masterFields: AgentMemoryFieldWithDB[]): AgentMemoryFieldWithDB[] {
+    return [
+      ...masterFields, 
+      INSTITUTE_INSTITUTES_FIELD,
+      INSTITUTE_STUDENTS_FIELD,
+    ];
+  }
