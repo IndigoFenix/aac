@@ -32,6 +32,7 @@ export type MemoryProcessor = (
  * Tool registry interface - all available tools
  */
 export interface ToolRegistry {
+  describeActions: (args: { actionDescription: string }) => Promise<any>;
   apiCall: (toolCall: GPTFunctionToolCall) => Promise<any>;
   openTopic: (args: { topic: string }) => Promise<{ success: boolean; error?: string }>;
   manageMemory: (input: MemoryToolInput) => Promise<MemoryOperationResult[]>;
@@ -57,6 +58,7 @@ export interface ToolRegistryDeps {
   onUpdateMemoryValues?: (v: any) => Promise<void>;
   onUpdateChatState?: (v: ChatState) => Promise<void>;
   onCreditsUsed?: (v: number) => Promise<void>;
+  onThinkingUpdate?: (description: string) => void;
 
   /**
    * Optional custom memory processor.
@@ -106,6 +108,12 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   );
 
   return {
+    describeActions: async ({ actionDescription }) => {
+      if (deps.onThinkingUpdate){
+        deps.onThinkingUpdate(actionDescription);
+        return { success: true };
+      }
+    },
     apiCall: async (toolCall: GPTFunctionToolCall) => {
       const functionToolCall = toolCall as GPTFunctionToolCall;
       const fnName = (toolCall as GPTFunctionToolCall).function.name;
@@ -561,6 +569,10 @@ export async function makeToolCalls(
               : {};
             let response;
             switch (toolCall.function.name) {
+              case "describeActions":
+                response = await registry.describeActions(args as { actionDescription: string });
+                insertToolCallResponse(toolCall, response);
+                break;
               case "openTopic":
                 response = await registry.openTopic(args as { topic: string });
                 insertToolCallResponse(toolCall, response);

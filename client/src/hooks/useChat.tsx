@@ -6,6 +6,7 @@ import { useInstitute } from './useInstitute';
 import { useAuth } from './useAuth';
 import { useFeaturePanel, useSharedState } from '@/contexts/FeaturePanelContext';
 import { ChatMessage, FeatureType, ChatSession, ChatPersona } from '@shared/schema';
+import { useChatStream } from './useChatStream';
 
 // ============================================================================
 // TYPES
@@ -146,6 +147,27 @@ export interface ChatResponseActions {
     programId?: string;
     goalId?: string;
   };
+
+  // Institute context data - extracted from Context_Institutes memory field
+  institutes?: any;
+  // Institute updates - trigger InstitutePanel reload
+  institutesUpdated?: boolean;
+  instituteUpdated?: {
+    instituteId?: string;
+  };
+
+  // Student context data - extracted from Context_Students memory field
+  students?: any;
+  // Student updates - trigger StudentsPanel reload
+  studentsUpdated?: boolean;
+  studentUpdated?: {
+    studentId?: string;
+  };
+
+  // Classroom updates - trigger InstitutePanel classroom tab reload
+  classroomsUpdated?: {
+    instituteId?: string;
+  };
 }
 
 interface ChatContextType {
@@ -158,7 +180,11 @@ interface ChatContextType {
   isSending: boolean;
   error: string | null;
   persona: ChatPersona;
-  
+
+  // Thinking state - for real-time AI status during tool calls
+  thinkingText: string | null;
+  isThinking: boolean;
+
   // Persona management
   setPersona: (persona: ChatPersona) => void;
   getPersonaInfo: (persona: ChatPersona) => PersonaInfo | undefined;
@@ -218,6 +244,13 @@ export const ChatProvider = ({
   const [isSending, setIsSending] = useState(false);
   const [persona, setPersonaState] = useState<ChatPersona>('assistant');
   const [error, setError] = useState<string | null>(null);
+
+  // Thinking state - for real-time AI status during tool calls
+  const [thinkingText, setThinkingText] = useState<string | null>(null);
+  const [isThinking, setIsThinking] = useState(false);
+
+  // Streaming hook
+  const { sendStreamingMessage } = useChatStream();
   
   // Refs
   const currentStudentIdRef = useRef<string | null>(null);
@@ -386,6 +419,53 @@ export const ChatProvider = ({
         setSharedState({ programData: contextData.program });
       }
     }
+
+    // Handle institute updates - triggers InstitutePanel reload
+    // Context_Institutes becomes "institutes" in contextData
+    if (contextData.institutes || contextData.institutesUpdated || contextData.instituteUpdated) {
+      console.log('[ChatProvider] Institutes data updated by AI, invalidating queries');
+
+      // Invalidate the main institutes list
+      queryClient.invalidateQueries({ queryKey: ['/api/institutes'] });
+      // Also invalidate pending invites in case they were affected
+      queryClient.invalidateQueries({ queryKey: ['/api/invites/pending'] });
+
+      // If a specific institute was updated, also invalidate its details
+      const instituteId = contextData.instituteUpdated?.instituteId;
+      if (instituteId) {
+        queryClient.invalidateQueries({ queryKey: ['/api/institutes', instituteId] });
+        queryClient.invalidateQueries({ queryKey: ['/api/institutes', instituteId, 'members'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/institutes', instituteId, 'classrooms'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/institutes', instituteId, 'students'] });
+      }
+    }
+
+    // Handle classroom updates - triggers InstitutePanel classroom tab reload
+    if (contextData.classroomsUpdated) {
+      console.log('[ChatProvider] Classrooms data updated by AI, invalidating queries');
+
+      if (contextData.classroomsUpdated.instituteId) {
+        const instituteId = contextData.classroomsUpdated.instituteId;
+        queryClient.invalidateQueries({ queryKey: ['/api/institutes', instituteId, 'classrooms'] });
+      }
+    }
+
+    // Handle student updates - triggers StudentsPanel reload
+    // Context_Students becomes "students" in contextData
+    if (contextData.students || contextData.studentsUpdated || contextData.studentUpdated) {
+      console.log('[ChatProvider] Students data updated by AI, invalidating queries');
+
+      // Invalidate the main students list
+      queryClient.invalidateQueries({ queryKey: ['/api/students'] });
+
+      // If a specific student was updated, also invalidate their details
+      const updatedStudentId = contextData.studentUpdated?.studentId;
+      if (updatedStudentId) {
+        queryClient.invalidateQueries({ queryKey: ['/api/students', updatedStudentId] });
+        queryClient.invalidateQueries({ queryKey: ['/api/students', updatedStudentId, 'programs'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/students', updatedStudentId, 'programs', 'current'] });
+      }
+    }
   }, [setSharedState, student?.id, setActiveFeature, selectStudent, selectInstitute]);
 
   // ============================================================================
@@ -401,11 +481,12 @@ export const ChatProvider = ({
     }
 
     const { replyType = 'html', additionalMetadata } = options;
-    
+
     setIsSending(true);
+    setIsThinking(false);
+    setThinkingText(null);
     setError(null);
 
-    
     // Get feature-specific metadata from the active feature's builder
     const featureMetadata = activeFeature ? getFeatureMetadata(activeFeature) : {};
 
@@ -416,7 +497,7 @@ export const ChatProvider = ({
       ...featureMetadata,
       ...additionalMetadata,
     };
-    
+
     // Create user message
     const userMessage: ChatMessage = {
       role: 'user',
@@ -424,47 +505,45 @@ export const ChatProvider = ({
       timestamp: Date.now(),
       metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
     };
-    
+
     // Optimistically add user message
     setHistory(prev => [...prev, userMessage]);
-    
-    try {
-      const requestBody: Record<string, any> = {
-        messages: [userMessage],
-        replyType,
-        activeFeature,
-        persona, // Include current persona in request
-      };
-      
-      if (session?.id) {
-        requestBody.sessionId = session.id;
-      }
-      
-      if (user?.id) {
-        requestBody.userId = user.id;
-      }
-      if (student?.id) {
-        requestBody.studentId = student.id;
-      }
 
-      // Add featureContext for boards mode
-      if (activeFeature === 'boards' && featureMetadata?.featureContext) {
-        requestBody.featureContext = featureMetadata.featureContext;
-        console.log('[useChat] Sending featureContext for boards mode:', {
-          hasData: !!featureMetadata.featureContext.board?.data,
-          boardName: featureMetadata.featureContext.board?.data?.name,
-          pageCount: featureMetadata.featureContext.board?.data?.pages?.length,
-          buttonCount: featureMetadata.featureContext.board?.data?.pages?.reduce(
-            (sum: number, p: any) => sum + (p.buttons?.length || 0), 0
-          ),
-        });
-      } else if (activeFeature === 'boards') {
-        console.warn('[useChat] In boards mode but no featureContext available from metadata builder');
-      }
-      
-      const response = await apiRequest('POST', '/api/chat', requestBody);
-      const data = await response.json();
-      
+    // Build request body
+    const requestBody: Record<string, any> = {
+      messages: [userMessage],
+      replyType,
+      activeFeature,
+      persona,
+    };
+
+    if (session?.id) {
+      requestBody.sessionId = session.id;
+    }
+    if (user?.id) {
+      requestBody.userId = user.id;
+    }
+    if (student?.id) {
+      requestBody.studentId = student.id;
+    }
+
+    // Add featureContext for boards mode
+    if (activeFeature === 'boards' && featureMetadata?.featureContext) {
+      requestBody.featureContext = featureMetadata.featureContext;
+      console.log('[useChat] Sending featureContext for boards mode:', {
+        hasData: !!featureMetadata.featureContext.board?.data,
+        boardName: featureMetadata.featureContext.board?.data?.name,
+        pageCount: featureMetadata.featureContext.board?.data?.pages?.length,
+        buttonCount: featureMetadata.featureContext.board?.data?.pages?.reduce(
+          (sum: number, p: any) => sum + (p.buttons?.length || 0), 0
+        ),
+      });
+    } else if (activeFeature === 'boards') {
+      console.warn('[useChat] In boards mode but no featureContext available from metadata builder');
+    }
+
+    // Helper to process response data (used by both streaming and non-streaming paths)
+    const processResponseData = (data: any): ChatMessage | null => {
       if (data?.message) {
         const assistantMessage: ChatMessage = {
           role: data.message.role || 'assistant',
@@ -473,14 +552,14 @@ export const ChatProvider = ({
           credits: data.message.credits,
           error: data.message.error,
         };
-        
+
         setHistory(prev => [...prev, assistantMessage]);
 
         // Handle contextData from the response
         if (data.contextData) {
           handleContextData(data.contextData);
         }
-        
+
         // Update session
         if (data.sessionId && (!session?.id || data.sessionId !== session.id)) {
           const newSession: ChatSession = {
@@ -502,20 +581,19 @@ export const ChatProvider = ({
             priority: 0,
             useResponsesAPI: null
           };
-          
+
           setSession(newSession);
-          
+
           if (persistSession && typeof window !== 'undefined') {
             window.localStorage.setItem(getStorageKey(), data.sessionId);
           }
         }
-        
+
         return assistantMessage;
       }
-      
+
       if (data?.error) {
         setError(data.error);
-        
         const errorMessage: ChatMessage = {
           role: 'system',
           content: data.error,
@@ -523,16 +601,49 @@ export const ChatProvider = ({
           error: data.error,
         };
         setHistory(prev => [...prev, errorMessage]);
-        
         return errorMessage;
       }
-      
+
       return null;
+    };
+
+    // Ref to track result from streaming (needed for closure)
+    let streamingResult: ChatMessage | null = null;
+
+    try {
+      // Try streaming endpoint first for real-time thinking updates
+      const streamCompleted = await sendStreamingMessage(requestBody, {
+        onThinking: (text) => {
+          setIsThinking(true);
+          setThinkingText(text);
+        },
+        onComplete: (data) => {
+          setIsThinking(false);
+          setThinkingText(null);
+          streamingResult = processResponseData(data);
+        },
+        onError: (errorMsg) => {
+          // Log but don't fail - we'll try non-streaming fallback
+          console.warn('[useChat] Streaming error, will fallback:', errorMsg);
+        }
+      });
+
+      // If streaming completed successfully, return the result
+      if (streamCompleted && streamingResult) {
+        return streamingResult;
+      }
+
+      // Fallback to non-streaming endpoint if streaming didn't complete
+      console.log('[useChat] Falling back to non-streaming endpoint');
+      const response = await apiRequest('POST', '/api/chat', requestBody);
+      const data = await response.json();
+
+      return processResponseData(data);
     } catch (err: any) {
       console.error('Send message failed:', err);
       const errorText = err.message || 'Failed to send message';
       setError(errorText);
-      
+
       const errorMessage: ChatMessage = {
         role: 'system',
         content: errorText,
@@ -540,12 +651,14 @@ export const ChatProvider = ({
         error: errorText,
       };
       setHistory(prev => [...prev, errorMessage]);
-      
+
       return errorMessage;
     } finally {
       setIsSending(false);
+      setIsThinking(false);
+      setThinkingText(null);
     }
-  }, [session, activeFeature, user, student, history, persistSession, getStorageKey, getFeatureMetadata, handleContextData, persona]);
+  }, [session, activeFeature, user, student, history, persistSession, getStorageKey, getFeatureMetadata, handleContextData, persona, sendStreamingMessage]);
   
   useEffect(() => {
     console.log('[ChatProvider] sendMessage was recreated, activeFeature is:', activeFeature);
@@ -648,6 +761,8 @@ export const ChatProvider = ({
     isSending,
     error,
     persona,
+    thinkingText,
+    isThinking,
     setPersona,
     getPersonaInfo,
     sendMessage,

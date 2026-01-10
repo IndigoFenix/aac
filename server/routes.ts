@@ -34,6 +34,7 @@ import {
 import { setupUserAuth } from "./userAuth"; // Keep existing passport setup
 import { interpretationRepository, apiProviderRepository } from "./repositories";
 import { chatController } from "./controllers/chatController";
+import { chatStreamController } from "./controllers/chatStreamController";
 import { reportController } from "./controllers/reportController";
 
 // Configure multer for file uploads
@@ -704,6 +705,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ============= CHAT ROUTES =============
   app.post("/api/chat", optionalAuth, requireOnboardingComplete, (req, res) =>
     chatController.onMessage(req, res)
+  );
+  // Streaming chat endpoint with real-time thinking updates (SSE)
+  app.post("/api/chat/stream", optionalAuth, requireOnboardingComplete, (req, res) =>
+    chatStreamController.onMessage(req, res)
   );
 
   // ============= ADMIN ROUTES =============

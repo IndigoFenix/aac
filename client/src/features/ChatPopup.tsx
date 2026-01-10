@@ -12,11 +12,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { 
-  Send, 
-  Minus, 
-  Maximize2, 
+import {
+  Send,
+  Minus,
+  Maximize2,
   MessageCircle,
+  Sparkles,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useChat, CHAT_PERSONAS } from '@/hooks/useChat';
@@ -43,13 +44,15 @@ export function ChatPopup() {
     isFullScreenFeature 
   } = useFeaturePanel();
   
-  const { 
-    history, 
-    sendMessage, 
+  const {
+    history,
+    sendMessage,
     isSending,
     persona,
     setPersona,
-    getPersonaInfo
+    getPersonaInfo,
+    thinkingText,
+    isThinking
   } = useChat();
 
   const isMinimized = chatMode === 'minimized';
@@ -298,7 +301,7 @@ export function ChatPopup() {
                 </div>
               ))}
               
-              {/* Typing indicator */}
+              {/* Typing/Thinking indicator */}
               {isSending && (
                 <div className="flex gap-2 justify-start">
                   <Avatar className="w-6 h-6 flex-shrink-0">
@@ -307,11 +310,20 @@ export function ChatPopup() {
                     </AvatarFallback>
                   </Avatar>
                   <div className="rounded-xl px-3 py-2 bg-muted">
-                    <div className="flex gap-1">
-                      <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '0ms' }} />
-                      <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '150ms' }} />
-                      <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '300ms' }} />
-                    </div>
+                    {isThinking && thinkingText ? (
+                      // Show thinking text with animated icon
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Sparkles className="w-3 h-3 animate-pulse text-primary" />
+                        <span>{thinkingText}</span>
+                      </div>
+                    ) : (
+                      // Show bouncing dots (fallback)
+                      <div className="flex gap-1">
+                        <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '150ms' }} />
+                        <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '300ms' }} />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

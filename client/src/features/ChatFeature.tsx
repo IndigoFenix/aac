@@ -42,15 +42,17 @@ export function ChatFeature() {
     panels 
   } = useFeaturePanel();
   
-  const { 
-    history, 
-    sendMessage, 
-    isSending, 
+  const {
+    history,
+    sendMessage,
+    isSending,
     error,
     startNewSession,
     persona,
     setPersona,
-    getPersonaInfo
+    getPersonaInfo,
+    thinkingText,
+    isThinking
   } = useChat();
   
   const showWelcome = history.length === 0;
@@ -464,9 +466,9 @@ export function ChatFeature() {
                 </div>
               ))}
               
-              {/* Typing indicator */}
+              {/* Typing/Thinking indicator */}
               {isSending && (
-                <div 
+                <div
                   dir={isRTL ? 'rtl' : 'ltr'}
                   className="flex gap-4 justify-start"
                   data-testid="typing-indicator"
@@ -478,11 +480,20 @@ export function ChatFeature() {
                   </Avatar>
                   <div className="max-w-2xl">
                     <div className="rounded-2xl px-4 py-3 bg-card border border-card-border">
-                      <div className="flex gap-1">
-                        <div className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '0ms' }} />
-                        <div className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '150ms' }} />
-                        <div className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '300ms' }} />
-                      </div>
+                      {isThinking && thinkingText ? (
+                        // Show thinking text with animated icon
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Sparkles className="w-4 h-4 animate-pulse text-primary" />
+                          <span>{thinkingText}</span>
+                        </div>
+                      ) : (
+                        // Show bouncing dots (fallback)
+                        <div className="flex gap-1">
+                          <div className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '0ms' }} />
+                          <div className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '150ms' }} />
+                          <div className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '300ms' }} />
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
