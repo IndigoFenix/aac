@@ -592,6 +592,7 @@ export class InstituteService {
       studentId
     );
     if (!studentAccess.hasAccess) {
+      console.log(`User ${requestingUserId} does not have access to student ${studentId}`);
       return { success: false, error: "You do not have access to this student" };
     }
 

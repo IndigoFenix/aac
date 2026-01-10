@@ -18,6 +18,7 @@ import {
   import { buildPromptAndTools, formValues, NlpSchema, AgentLike } from "./prompt-kit";
   import { defaultToolRegistry, enrichToolCallMessage, makeToolCalls, MemoryProcessor, ToolRegistry } from "./tool-router";
   import { publish } from "./events.service";
+  import { GPTFunctionToolCall } from "./gpt";
   
   const getCullMessagesTo = (memory: number) => {
       if (memory === 1){
@@ -102,9 +103,10 @@ import {
       onUpdateMemoryValues?: (memoryValues: any) => Promise<void>;
       onUpdateChatState?: (chatState: ChatState, log?: ChatMessage[]) => Promise<void>;
       onCreditsUsed?: (creditsUsed: number) => Promise<void>;
+      onThinkingUpdate?: (thinkingText: string) => void;
       memoryProcessor?: MemoryProcessor;
       toolRegistry: ToolRegistry;
-  
+
       toJSON(): ChatState {
           return {
               history: this.chatState.history,
@@ -129,12 +131,13 @@ import {
           agent: AgentTemplate,
           session?: ChatSession,
           memoryValues: any,
-          chatState: ChatState, 
+          chatState: ChatState,
           log: ChatMessage[],
           maxCredits: number,
           onUpdateMemoryValues: (memoryValues: any) => Promise<void>,
           onUpdateChatState: (chatState: ChatState, log?: ChatMessage[]) => Promise<void>
           onCreditsUsed: (creditsUsed: number) => Promise<void>,
+          onThinkingUpdate?: (thinkingText: string) => void,
           memoryProcessor?: MemoryProcessor,
           useResponsesAPI?: boolean
       }){
@@ -158,6 +161,7 @@ import {
           }
           this.onCreditsUsed = settings.onCreditsUsed;
           this.memoryProcessor = settings.memoryProcessor;
+          this.onThinkingUpdate = settings.onThinkingUpdate;
           this.toolRegistry = defaultToolRegistry({
               agent: settings.agent as any,
               openedTopics: this.chatState.openedTopics,
@@ -166,7 +170,8 @@ import {
               onUpdateMemoryValues: this.onUpdateMemoryValues,
               onUpdateChatState: this.onUpdateChatState,
               onCreditsUsed: this.onCreditsUsed,
-              memoryProcessor: this.memoryProcessor
+              memoryProcessor: this.memoryProcessor,
+              onThinkingUpdate: this.onThinkingUpdate
           });
   
           this.agent = settings.agent;
@@ -296,7 +301,8 @@ import {
               openedTopics: this.chatState.openedTopics,
               conversationSummary: this.chatState.conversationSummary,
               lastFormSchema: params?.lastFormSchema,
-              lastFormValues: params?.lastFormValues
+              lastFormValues: params?.lastFormValues,
+              describeActions: this.onThinkingUpdate !== undefined,
           });
       }
   
@@ -380,6 +386,7 @@ import {
                               + `rawCredits=${rawCredits} billed=${creditsUsed}`);
               }
               if (gptResponse.toolCalls?.length){
+                  // Send thinking update if callback is available
                   let toolCallMessage: ChatMessage = {
                       role: 'assistant',
                       toolCalls: gptResponse.toolCalls,

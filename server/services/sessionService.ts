@@ -638,6 +638,7 @@ interface GetMessageManagerInput {
   feature?: FeatureType;
   persona?: ChatPersona;
   featureContext?: FeatureContext;
+  onThinkingUpdate?: (thinkingText: string) => void;
 }
 
 interface GetMessageManagerResult {
@@ -646,7 +647,7 @@ interface GetMessageManagerResult {
 }
 
 async function getMessageManager(input: GetMessageManagerInput): Promise<GetMessageManagerResult> {
-  const { userId, studentId, sessionId, featureContext, persona = "assistant", feature = "chat" } = input;
+  const { userId, studentId, sessionId, featureContext, persona = "assistant", feature = "chat", onThinkingUpdate } = input;
 
   // Validate input - at least one identifier must be provided
   if (!userId && !studentId && !sessionId) {
@@ -1010,6 +1011,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     onUpdateMemoryValues,
     onUpdateChatState,
     onCreditsUsed,
+    onThinkingUpdate,
     memoryProcessor
   });
 
@@ -1110,9 +1112,17 @@ export interface OnMessageInput {
   persona?: ChatPersona;
   messages?: ChatMessage[];
   replyType?: "text" | "html";
-  
+
   /** Mode-specific context data (boards, documents, etc.) */
   featureContext?: FeatureContext;
+}
+
+/**
+ * Input for streaming message processing with thinking updates
+ */
+export interface OnMessageStreamingInput extends OnMessageInput {
+  /** Callback for real-time thinking updates during tool calls */
+  onThinkingUpdate?: (thinkingText: string) => void;
 }
 
 export async function onMessage(input: OnMessageInput): Promise<MessageResponse> {
@@ -1176,6 +1186,79 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
     }
   } catch (error: any) {
     console.error("onMessage error:", error);
+    return {
+      message: {
+        role: "system",
+        content: error.message || "An unexpected error occurred.",
+        timestamp: Date.now(),
+      },
+      sessionId: input.sessionId,
+    };
+  }
+}
+
+/**
+ * Process a message with streaming thinking updates.
+ * This variant passes an optional onThinkingUpdate callback that will be called
+ * whenever the AI is processing tool calls, allowing real-time status updates.
+ */
+export async function onMessageStreaming(input: OnMessageStreamingInput): Promise<MessageResponse> {
+  try {
+    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, onThinkingUpdate } = input;
+
+    const { manager: messageManager, memoryValues } = await getMessageManager({
+      userId,
+      studentId,
+      sessionId,
+      feature: activeFeature,
+      persona,
+      featureContext,
+      onThinkingUpdate, // Pass the callback through to ChatMessageManager
+    });
+
+    // Debug: Log what we injected
+    console.log('[onMessageStreaming] After getMessageManager, memoryValues keys:', Object.keys(memoryValues));
+
+    // Persist any incoming messages
+    if (messages && messages.length > 0) {
+      await messageManager.persistMessages(
+        messages.map((message) => ({ ...message, timestamp: Date.now() }))
+      );
+    }
+
+    // Generate response if requested
+    if (replyType) {
+      const response = await messageManager.getResponse(replyType);
+
+      // Debug: Log what's in response.memoryValues
+      console.log('[onMessageStreaming] After getResponse, response.memoryValues keys:', Object.keys(response.memoryValues || {}));
+
+      // Merge: our injected values + any updates from LLM
+      const mergedMemoryValues = {
+        ...memoryValues,
+        ...(response.memoryValues || {}),
+      };
+
+      // Extract context data (boards, documents, etc.) from memory values
+      const contextData = extractContextFromMemoryValues(mergedMemoryValues);
+
+      return {
+        ...response,
+        memoryValues: mergedMemoryValues,
+        contextData,
+      };
+    } else {
+      return {
+        message: {
+          role: "system",
+          content: "",
+          timestamp: Date.now(),
+        },
+        sessionId: messageManager.session?.id,
+      };
+    }
+  } catch (error: any) {
+    console.error("onMessageStreaming error:", error);
     return {
       message: {
         role: "system",

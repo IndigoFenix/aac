@@ -176,8 +176,9 @@ import {
       invites: {},
     }),
   
-    extractChildContext: (value) => ({
-      instituteId: value?.id,
+    extractChildContext: (value, key) => ({
+      // Use value.id if available, otherwise use the key as fallback
+      instituteId: value?.id || (typeof key === 'string' ? key : undefined),
       instituteType: value?.type,
     }),
   
@@ -293,14 +294,20 @@ import {
       };
     },
   
-    add: async (ctx, value) => {
+    add: async (ctx, value, options) => {
       const userId = getUserId(ctx);
       const instituteId = ctx.all.instituteId;
       if (!instituteId) throw new Error("instituteId required");
-  
+
+      // Accept studentId from options.key (the map key) OR value.studentId
+      const studentId = options?.key || value.studentId;
+      if (!studentId) {
+        throw new Error("studentId required - provide as 'key' parameter or in value.studentId");
+      }
+
       const result = await instituteService.assignStudentToInstitute(
         instituteId,
-        value.studentId,
+        studentId,
         userId,
         {
           enrollmentDate: value.enrollmentDate,
@@ -308,13 +315,13 @@ import {
           grade: value.grade,
         }
       );
-  
+
       if (!result.success || !result.enrollment) {
         throw new Error(result.error || "Failed to assign student");
       }
-  
+
       // Get the full student data
-      const student = await studentService.getStudentById(value.studentId);
+      const student = await studentService.getStudentById(studentId);
   
       return {
         student: student ? toMemoryValue(student) : undefined,
@@ -362,10 +369,11 @@ import {
       enrollment: record?.enrollment ? toMemoryValue(record.enrollment) : undefined,
     }),
   
-    extractChildContext: (value) => ({
-      studentId: value?.student?.id,
+    extractChildContext: (value, key) => ({
+      // Use value.student.id if available, otherwise use the key as fallback
+      studentId: value?.student?.id || (typeof key === 'string' ? key : undefined),
     }),
-  
+
     getDBKey: (value) => value?.student?.id || value?.enrollment?.studentId,
   };
   
@@ -399,7 +407,21 @@ import {
     },
   
     get: async (ctx, key) => {
-      const classroom = await classroomService.getClassroomById(String(key));
+      const keyStr = String(key);
+      // Try to get by ID first
+      let classroom = await classroomService.getClassroomById(keyStr);
+
+      // If not found and we have an instituteId, try to find by name or roomNumber
+      if (!classroom && ctx.all.instituteId) {
+        const userId = getUserId(ctx);
+        const result = await classroomService.getInstituteClassrooms(ctx.all.instituteId, userId);
+        if (result.success && result.classrooms) {
+          classroom = result.classrooms.find(
+            c => c.name === keyStr || c.roomNumber === keyStr
+          );
+        }
+      }
+
       return classroom ? toMemoryValue(classroom) : undefined;
     },
   
@@ -459,13 +481,15 @@ import {
       students: {},
     }),
   
-    extractChildContext: (value) => ({
-      classroomId: value?.id,
+    extractChildContext: (value, key) => ({
+      // Use value.id if available, otherwise use the key as fallback
+      // This handles cases where the classroom was looked up by name/roomNumber
+      classroomId: value?.id || (typeof key === 'string' ? key : undefined),
     }),
-  
+
     getDBKey: (value) => value?.id,
   };
-  
+
   // ============================================================================
   // DATABASE OPERATIONS - CLASSROOM MEMBERS
   // ============================================================================
@@ -499,23 +523,29 @@ import {
       };
     },
   
-    add: async (ctx, value) => {
-      const userId = getUserId(ctx);
+    add: async (ctx, value, options) => {
+      const currentUserId = getUserId(ctx);
       const classroomId = ctx.all.classroomId;
       if (!classroomId) throw new Error("classroomId required");
-  
+
+      // Accept userId from options.key (the map key) OR value.userId
+      const targetUserId = options?.key || value.userId;
+      if (!targetUserId) {
+        throw new Error("userId required - provide as 'key' parameter or in value.userId");
+      }
+
       const result = await classroomService.addUserToClassroom(
         classroomId,
-        value.userId,
+        targetUserId,
         value.role || "teacher",
-        userId,
+        currentUserId,
         value.isPrimary || false
       );
-  
+
       if (!result.success || !result.membership) {
         throw new Error(result.error || "Failed to add member");
       }
-  
+
       return { membership: toMemoryValue(result.membership) };
     },
   
@@ -595,13 +625,19 @@ import {
       };
     },
   
-    add: async (ctx, value) => {
+    add: async (ctx, value, options) => {
       const userId = getUserId(ctx);
       const classroomId = ctx.all.classroomId;
       if (!classroomId) throw new Error("classroomId required");
-  
+
+      // Accept studentId from options.key (the map key) OR value.studentId
+      const studentId = options?.key || value.studentId;
+      if (!studentId) {
+        throw new Error("studentId required - provide as 'key' parameter or in value.studentId");
+      }
+
       const result = await classroomService.addStudentToClassroom(
-        value.studentId,
+        studentId,
         classroomId,
         userId,
         {
@@ -610,13 +646,13 @@ import {
           notes: value.notes,
         }
       );
-  
+
       if (!result.success || !result.enrollment) {
         throw new Error(result.error || "Failed to add student");
       }
-  
-      const student = await studentService.getStudentById(value.studentId);
-  
+
+      const student = await studentService.getStudentById(studentId);
+
       return {
         student: student ? toMemoryValue(student) : undefined,
         enrollment: toMemoryValue(result.enrollment),
@@ -815,10 +851,11 @@ import {
       classrooms: [],
     }),
   
-    extractChildContext: (value) => ({
-      studentId: value?.id,
+    extractChildContext: (value, key) => ({
+      // Use value.id if available, otherwise use the key as fallback
+      studentId: value?.id || (typeof key === 'string' ? key : undefined),
     }),
-  
+
     getDBKey: (value) => value?.id,
   };
   
@@ -1061,7 +1098,7 @@ import {
           isActive: { id: "isActive", type: "boolean" },
         },
       },
-      studentId: { id: "studentId", type: "string", description: "Required when adding a student to an institute" },
+      studentId: { id: "studentId", type: "string", description: "The student's ID. When adding, provide this as the 'key' parameter OR in value.studentId" },
     },
   };
   
@@ -1097,9 +1134,9 @@ import {
           isActive: { id: "isActive", type: "boolean" },
         },
       },
-      userId: { id: "userId", type: "string", description: "Required when adding a user to a classroom" },
-      role: { id: "role", type: "string", description: "Role when adding" },
-      isPrimary: { id: "isPrimary", type: "boolean", description: "Is this the primary assignment?" },
+      userId: { id: "userId", type: "string", description: "The user's ID. When adding, provide this as the 'key' parameter OR in value.userId" },
+      role: { id: "role", type: "string", description: "Role for the classroom membership" },
+      isPrimary: { id: "isPrimary", type: "boolean", description: "Is this the primary classroom assignment?" },
     },
   };
   
@@ -1132,10 +1169,10 @@ import {
           isActive: { id: "isActive", type: "boolean" },
         },
       },
-      studentId: { id: "studentId", type: "string", description: "Required when adding a student to a classroom" },
-      isPrimary: { id: "isPrimary", type: "boolean" },
-      enrollmentDate: { id: "enrollmentDate", type: "string" },
-      notes: { id: "notes", type: "string" },
+      studentId: { id: "studentId", type: "string", description: "The student's ID. When adding, provide this as the 'key' parameter OR in value.studentId" },
+      isPrimary: { id: "isPrimary", type: "boolean", description: "Is this the student's primary/homeroom classroom?" },
+      enrollmentDate: { id: "enrollmentDate", type: "string", description: "Date student was enrolled (YYYY-MM-DD)" },
+      notes: { id: "notes", type: "string", description: "Notes about the enrollment" },
     },
   };
   
@@ -1163,7 +1200,7 @@ import {
         id: "members",
         type: "map",
         title: "Classroom Members",
-        description: "Users assigned to this classroom (keyed by userId)",
+        description: "Users assigned to this classroom. Keys are user UUIDs. To add a user, use their UUID as the 'key' parameter.",
         opened: true,
         values: classroomMemberSchema,
         db: classroomMembersOps,
@@ -1172,7 +1209,7 @@ import {
         id: "students",
         type: "map",
         title: "Classroom Students",
-        description: "Students enrolled in this classroom (keyed by studentId)",
+        description: "Students enrolled in this classroom. Keys are student UUIDs. To add a student, use their UUID as the 'key' parameter.",
         opened: true,
         values: classroomStudentSchema,
         db: classroomStudentsOps,
@@ -1226,7 +1263,7 @@ import {
         id: "students",
         type: "map",
         title: "Institute Students",
-        description: "Students enrolled in this institute (keyed by studentId)",
+        description: "Students enrolled in this institute. Keys are student UUIDs (from student.id). To add a student, use their UUID as the 'key' parameter.",
         opened: true,
         values: instituteStudentSchema,
         db: instituteStudentsOps,
@@ -1235,7 +1272,7 @@ import {
         id: "classrooms",
         type: "map",
         title: "Classrooms",
-        description: "Classrooms in this institute (only for schools, keyed by classroomId)",
+        description: "Classrooms in this institute. Keys are the classroom's 'id' field (UUID). View the map first to see available classroom IDs.",
         opened: true,
         values: classroomSchema,
         db: classroomsOps,

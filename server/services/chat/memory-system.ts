@@ -597,6 +597,9 @@ function getMemoryToolInstructions(): string {
     "  /todos/0                 -> first item of array 'todos'",
     "  /contacts/John~1Doe      -> map key 'John/Doe' (escape '/' as '~1', '~' as '~0')",
     "  /notes/*                 -> wildcard: all immediate children (view/hide only)",
+    "Database-backed maps (use UUIDs as keys):",
+    "  /institute/classrooms/abc-123-uuid        -> classroom with id 'abc-123-uuid'",
+    "  /institute/classrooms/abc-123-uuid/students -> students map of that classroom",
     "Topic paths:",
     "  /research                -> topic tree root (map of subtopics)",
     "  /research/AI             -> a TopicNode named 'AI'",
@@ -608,15 +611,23 @@ function getMemoryToolInstructions(): string {
   `=== Section: Memory Management ===
 
   Use ManageMemory to store and retrieve information from memory.
-  View any memory that seems relevant to the conversation. Hide information when it is no longer relevant.
+  View any memory that seems relevant to the conversation.
+  If a user mentions an item that you cannot see, check whether you have fully opened its relevant list.
+  If you open multiple items in order to find something, hide the ones you don't need immediately afterwards.
+  Hide information that is not relevant to the conversation to keep your memory focused.
   Any empty memory field should be filled as soon as relevant information becomes available.
 
   Actions by type:
-  - "set": Use for objects and primitives. Creates or updates the value at the path..
+  - "set": Use for objects and primitives. Creates or updates the value at the path.
   - "add": Use ONLY for arrays (append item), maps (add key), and topics (add subtopic). Requires "value", and "key" for maps/topics.
   - "view"/"hide": Control what's visible in the memory display.
   - "delete": Remove items from arrays, maps, or topics.
   - "clear": Empty a container (array/map/topic).
+
+  IMPORTANT - Working with Maps:
+  - Map keys are typically UUIDs (the "id" field of each item). Do NOT invent arbitrary names.
+  - ALWAYS view the map first to discover existing keys before operating on specific items.
+  - When adding to a map, use the item's actual UUID as the "key" parameter.
 
   Do not attempt to set the properties of hidden objects - view them first.
 
@@ -655,7 +666,7 @@ export function buildMemoryTool(): GPTFunctionTool {
       paths: { type: "array",   items: { type: "string" }, description: "Multiple targets (allowed only for view/hide)." },
       value: { description: "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}." },
       index: { type: "integer", minimum: 0, description: "Array index for insert/upsert on arrays." },
-      key:   { type: "string",  description: "For add to map/topic: new dynamic key." },
+      key:   { type: "string",  description: "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)." },
       newKey:{ type: "string",  description: "For rename on map/topic: new key." },
       page:  {
         type: "object",

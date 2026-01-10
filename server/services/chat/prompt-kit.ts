@@ -56,6 +56,7 @@ export interface NlpSchema {
     conversationSummary: string;
     lastFormSchema?: NlpSchema;
     lastFormValues?: formValues;
+    describeActions?: boolean;
   }): PromptBuild {
 
     const tools: GPTTool[] = [];
@@ -319,6 +320,25 @@ export interface NlpSchema {
         properties: schemaProperties,
         required: getKeysFromSchema(schemaProperties),
         additionalProperties: false,
+    }
+
+    if (ctx.describeActions && tools.length > 0){
+        // Create descriptor tool
+        tools.unshift({
+            type: 'function',
+            function: {
+                name: 'describeActions',
+                description: 'Displays actions to the user. Call this tool once whenever you call at least one other tool.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        actionDescription: { type: 'string', description: 'A short description of the actions you are taking, such as "Thinking about X"' }
+                    },
+                    required: ['string'],
+                    additionalProperties: false
+                }
+            }
+        })
     }
 
     return {
