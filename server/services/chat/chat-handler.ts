@@ -254,7 +254,7 @@ import {
                   sessionId: isReadableMessage ? this.session?.id : undefined,
                   message
               });
-              const loggedMessage = isProd ? 'REDACTED' : (message.content ? JSON.stringify(message.content) : undefined);
+              const loggedMessage = isProd ? 'REDACTED' : (message ? JSON.stringify(message) : undefined);
               console.log('Message published', loggedMessage, this.session?.id);
           } catch (error) {
               console.error('Message failed to publish', error);
