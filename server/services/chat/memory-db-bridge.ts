@@ -14,6 +14,9 @@
 
 import type { MemoryState } from "@shared/schema";
 
+const isProduction = process.env.NODE_ENV === 'production';
+const hideLogs = isProduction; // Set to true to hide logs in production
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Type Imports (copied from memory-system.ts for standalone compilation)
 // ──────────────────────────────────────────────────────────────────────────────
@@ -643,7 +646,7 @@ export function resolveSchemaWithContext(
 
   ctx = extendContext(ctx, {}, '/' + escapeToken(fieldId));
 
-  console.log('Resolving path:', path, 'Tokens:', tokens, 'ctx', ctx);
+  if (!hideLogs) console.log('Resolving path:', path, 'Tokens:', tokens, 'ctx', ctx);
   
   if (tokens.length === 1) {
     return {
@@ -675,7 +678,7 @@ export function resolveSchemaWithContext(
     // so extractChildContext would receive the wrong value
     if (currentValue !== undefined && current.db?.extractChildContext && current.type !== 'map' && current.type !== 'array') {
       const extractedCtx = current.db.extractChildContext(currentValue, consumedTokens[consumedTokens.length - 1]);
-      console.log('Extracted context at', currentPath, ':', extractedCtx);
+      if (!hideLogs) console.log('Extracted context at', currentPath, ':', extractedCtx);
       if (extractedCtx) {
         ctx = extendContext(ctx, extractedCtx, nextPath, token);
       }
@@ -683,7 +686,7 @@ export function resolveSchemaWithContext(
       ctx = extendContext(ctx, {}, nextPath, token);
     }
 
-    console.log('At token:', token, 'Current type:', current.type, 'ctx:', ctx);
+    if (!hideLogs) console.log('At token:', token, 'Current type:', current.type, 'ctx:', ctx);
 
     consumedTokens.push(token);
 
@@ -1218,8 +1221,8 @@ export async function processDBOperation(
     return { error: 'Path required for mutation operations', shouldUpdateMemory: false };
   }
 
-  console.log(`[processDBOperation] Action: ${action}, Path: ${path}`);
-  console.log(`[processDBOperation] Initial baseContext:`, baseContext);
+  if (!hideLogs) console.log(`[processDBOperation] Action: ${action}, Path: ${path}`);
+  if (!hideLogs) console.log(`[processDBOperation] Initial baseContext:`, baseContext);
 
   const resolution = resolveSchemaWithContext(fields, memoryValues, path, baseContext);
   
@@ -1248,8 +1251,8 @@ export async function processDBOperation(
         
         // Option 2: Parent has write op
         if (parentContainerDbOps.write) {
-          console.log(`[processDBOperation] Using parent object write at ${parentContainerPath}`);
-          console.log(`[processDBOperation] Property: ${propertyName}, Value:`, value);
+          if (!hideLogs) console.log(`[processDBOperation] Using parent object write at ${parentContainerPath}`);
+          if (!hideLogs) console.log(`[processDBOperation] Property: ${propertyName}, Value:`, value);
           
           // Check if parent object already exists in memory with an ID
           const parentTokens = splitPath(parentContainerPath);
@@ -1269,7 +1272,7 @@ export async function processDBOperation(
             
             if (!parentExists) {
               // CREATE case: Parent didn't exist, apply full object to parent path
-              console.log(`[processDBOperation] Parent created, applying to ${parentContainerPath}`);
+              if (!hideLogs) console.log(`[processDBOperation] Parent created, applying to ${parentContainerPath}`);
               return { 
                 dbResult: transformedResult, 
                 targetPath: parentContainerPath,  // Apply to parent, not property
@@ -1279,7 +1282,7 @@ export async function processDBOperation(
             } else {
               // UPDATE case: Parent existed, just return the property value
               // The in-memory system will handle setting the property
-              console.log(`[processDBOperation] Parent updated, property value applied`);
+              if (!hideLogs) console.log(`[processDBOperation] Parent updated, property value applied`);
               return { 
                 dbResult: undefined,  // Let in-memory handle it
                 shouldUpdateMemory: true, 
@@ -1313,8 +1316,8 @@ export async function processDBOperation(
         const updatedArray = [...currentArray, value];
         const partialUpdate = { [propertyName]: updatedArray };
         
-        console.log(`[processDBOperation] Using parent object write for 'add' at ${parentContainerPath}`);
-        console.log(`[processDBOperation] Array property: ${propertyName}, Adding:`, value);
+        if (!hideLogs) console.log(`[processDBOperation] Using parent object write for 'add' at ${parentContainerPath}`);
+        if (!hideLogs) console.log(`[processDBOperation] Array property: ${propertyName}, Adding:`, value);
         
         const writeResult = await parentContainerDbOps.write(context, partialUpdate);
         
@@ -1325,7 +1328,7 @@ export async function processDBOperation(
           const transformedResult = parentContainerDbOps.fromDB 
             ? parentContainerDbOps.fromDB(writeResult) 
             : writeResult;
-          console.log(`[processDBOperation] Parent created via add, applying to ${parentContainerPath}`);
+          if (!hideLogs) console.log(`[processDBOperation] Parent created via add, applying to ${parentContainerPath}`);
           return { 
             dbResult: transformedResult, 
             targetPath: parentContainerPath,
@@ -1557,7 +1560,7 @@ export async function processMemoryToolWithDB(
         JSON.stringify(op.value) !== JSON.stringify(dbValue);
       
       if (shouldApply) {
-        console.log(`[processMemoryToolWithDB] Applying DB result to path ${targetPath}`);
+        if (!hideLogs) console.log(`[processMemoryToolWithDB] Applying DB result to path ${targetPath}`);
         const tokens = splitPath(targetPath);
         setValueAtPath(memResult.updatedMemoryValues, tokens, dbValue, { merge: false });
       }

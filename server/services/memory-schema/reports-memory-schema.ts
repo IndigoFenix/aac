@@ -35,6 +35,8 @@ import {
   type PaginationParams,
   type ListResult,
 } from "../chat/memory-db-bridge";
+const isProduction = process.env.NODE_ENV === 'production';
+const hideLogs = isProduction; // Set to true to hide logs in production
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -221,12 +223,12 @@ function sanitizeValue(
         result[mappedKey] = val;
       }
     } else {
-      console.log(`[sanitizeValue] Filtered out invalid field: ${key} (mapped to: ${mappedKey})`);
+      if (!hideLogs) console.log(`[sanitizeValue] Filtered out invalid field: ${key} (mapped to: ${mappedKey})`);
     }
   }
   
-  console.log(`[sanitizeValue] Input:`, value);
-  console.log(`[sanitizeValue] Output:`, result);
+  if (!hideLogs) console.log(`[sanitizeValue] Input:`, value);
+  if (!hideLogs) console.log(`[sanitizeValue] Output:`, result);
   
   return result;
 }
@@ -278,9 +280,9 @@ const medicalRecordReadOp = async (ctx: DBOperationContext) => {
   
   if (!studentId) throw new Error("studentId required for medical record query");
 
-  console.log(`[medicalRecordReadOp] Loading for studentId: ${studentId}, instituteId: ${instituteId}`);
+  if (!hideLogs) console.log(`[medicalRecordReadOp] Loading for studentId: ${studentId}, instituteId: ${instituteId}`);
   const record = await getCurrentMedicalRecord(studentId, instituteId);
-  console.log(`[medicalRecordReadOp] Found:`, record ? `id=${record.id}` : 'null');
+  if (!hideLogs) console.log(`[medicalRecordReadOp] Found:`, record ? `id=${record.id}` : 'null');
   
   return record;
 };
@@ -296,14 +298,14 @@ const medicalRecordWriteOp = async (ctx: DBOperationContext, value: any): Promis
   
   if (!studentId) throw new Error("studentId required for medical record write");
 
-  console.log(`[medicalRecordWriteOp] Writing for studentId: ${studentId}`);
-  console.log(`[medicalRecordWriteOp] Raw value:`, value);
+  if (!hideLogs) console.log(`[medicalRecordWriteOp] Writing for studentId: ${studentId}`);
+  if (!hideLogs) console.log(`[medicalRecordWriteOp] Raw value:`, value);
 
   // Sanitize the incoming value
   const sanitizedValue = sanitizeValue(value, MEDICAL_RECORD_FIELDS, MEDICAL_FIELD_MAPPINGS);
   
   if (Object.keys(sanitizedValue).length === 0) {
-    console.log(`[medicalRecordWriteOp] No valid fields to save after sanitization`);
+    if (!hideLogs) console.log(`[medicalRecordWriteOp] No valid fields to save after sanitization`);
     return undefined;
   }
   
@@ -311,7 +313,7 @@ const medicalRecordWriteOp = async (ctx: DBOperationContext, value: any): Promis
   const existing = await getCurrentMedicalRecord(studentId, instituteId);
   
   if (existing) {
-    console.log(`[medicalRecordWriteOp] Updating existing record: ${existing.id}`);
+    if (!hideLogs) console.log(`[medicalRecordWriteOp] Updating existing record: ${existing.id}`);
     
     // Update existing record - merge with new values
     if (existing.status === "final" || existing.status === "superseded") {
@@ -333,7 +335,7 @@ const medicalRecordWriteOp = async (ctx: DBOperationContext, value: any): Promis
       }
     }
     
-    console.log(`[medicalRecordWriteOp] Update data:`, updateData);
+    if (!hideLogs) console.log(`[medicalRecordWriteOp] Update data:`, updateData);
     
     await db
       .update(medicalRecords)
@@ -346,10 +348,10 @@ const medicalRecordWriteOp = async (ctx: DBOperationContext, value: any): Promis
       .from(medicalRecords)
       .where(eq(medicalRecords.id, existing.id));
       
-    console.log(`[medicalRecordWriteOp] Updated record:`, updated);
+    if (!hideLogs) console.log(`[medicalRecordWriteOp] Updated record:`, updated);
     return updated;
   } else {
-    console.log(`[medicalRecordWriteOp] Creating new record`);
+    if (!hideLogs) console.log(`[medicalRecordWriteOp] Creating new record`);
     
     // Create new record
     const insertData: InsertMedicalRecord = {
@@ -369,14 +371,14 @@ const medicalRecordWriteOp = async (ctx: DBOperationContext, value: any): Promis
       ...sanitizedValue,
     };
     
-    console.log(`[medicalRecordWriteOp] Insert data:`, insertData);
+    if (!hideLogs) console.log(`[medicalRecordWriteOp] Insert data:`, insertData);
     
     const [inserted] = await db
       .insert(medicalRecords)
       .values(insertData)
       .returning();
       
-    console.log(`[medicalRecordWriteOp] Inserted record:`, inserted);
+    if (!hideLogs) console.log(`[medicalRecordWriteOp] Inserted record:`, inserted);
     return inserted;
   }
 };
@@ -485,9 +487,9 @@ const functionalReportReadOp = async (ctx: DBOperationContext) => {
   const studentId = ctx.all.studentId;
   if (!studentId) throw new Error("studentId required for functional report query");
 
-  console.log(`[functionalReportReadOp] Loading for studentId: ${studentId}`);
+  if (!hideLogs) console.log(`[functionalReportReadOp] Loading for studentId: ${studentId}`);
   const report = await getCurrentFunctionalReport(studentId);
-  console.log(`[functionalReportReadOp] Found:`, report ? `id=${report.id}` : 'null');
+  if (!hideLogs) console.log(`[functionalReportReadOp] Found:`, report ? `id=${report.id}` : 'null');
   
   return report;
 };
@@ -504,14 +506,14 @@ const functionalReportWriteOp = async (ctx: DBOperationContext, value: any): Pro
   
   if (!studentId) throw new Error("studentId required for functional report write");
 
-  console.log(`[functionalReportWriteOp] Writing for studentId: ${studentId}`);
-  console.log(`[functionalReportWriteOp] Raw value:`, value);
+  if (!hideLogs) console.log(`[functionalReportWriteOp] Writing for studentId: ${studentId}`);
+  if (!hideLogs) console.log(`[functionalReportWriteOp] Raw value:`, value);
 
   // Sanitize the incoming value
   const sanitizedValue = sanitizeValue(value, FUNCTIONAL_REPORT_FIELDS, FUNCTIONAL_FIELD_MAPPINGS);
   
   if (Object.keys(sanitizedValue).length === 0) {
-    console.log(`[functionalReportWriteOp] No valid fields to save after sanitization`);
+    if (!hideLogs) console.log(`[functionalReportWriteOp] No valid fields to save after sanitization`);
     return undefined;
   }
   
@@ -519,7 +521,7 @@ const functionalReportWriteOp = async (ctx: DBOperationContext, value: any): Pro
   const existing = await getCurrentFunctionalReport(studentId);
   
   if (existing) {
-    console.log(`[functionalReportWriteOp] Updating existing report: ${existing.id}`);
+    if (!hideLogs) console.log(`[functionalReportWriteOp] Updating existing report: ${existing.id}`);
     
     if (existing.status === "final" || existing.status === "superseded") {
       throw new Error("Cannot update a finalized or superseded report. Create a new revision instead.");
@@ -549,7 +551,7 @@ const functionalReportWriteOp = async (ctx: DBOperationContext, value: any): Pro
       .where(eq(functionalReports.id, existing.id));
     return updated;
   } else {
-    console.log(`[functionalReportWriteOp] Creating new report`);
+    if (!hideLogs) console.log(`[functionalReportWriteOp] Creating new report`);
     
     const insertData: InsertFunctionalReport = {
       studentId,
@@ -666,9 +668,9 @@ const educationalReportReadOp = async (ctx: DBOperationContext) => {
   const studentId = ctx.all.studentId;
   if (!studentId) throw new Error("studentId required for educational report query");
 
-  console.log(`[educationalReportReadOp] Loading for studentId: ${studentId}`);
+  if (!hideLogs) console.log(`[educationalReportReadOp] Loading for studentId: ${studentId}`);
   const report = await getCurrentEducationalReport(studentId);
-  console.log(`[educationalReportReadOp] Found:`, report ? `id=${report.id}` : 'null');
+  if (!hideLogs) console.log(`[educationalReportReadOp] Found:`, report ? `id=${report.id}` : 'null');
   
   return report;
 };
@@ -685,14 +687,14 @@ const educationalReportWriteOp = async (ctx: DBOperationContext, value: any): Pr
   
   if (!studentId) throw new Error("studentId required for educational report write");
 
-  console.log(`[educationalReportWriteOp] Writing for studentId: ${studentId}`);
-  console.log(`[educationalReportWriteOp] Raw value:`, value);
+  if (!hideLogs) console.log(`[educationalReportWriteOp] Writing for studentId: ${studentId}`);
+  if (!hideLogs) console.log(`[educationalReportWriteOp] Raw value:`, value);
 
   // Sanitize the incoming value
   const sanitizedValue = sanitizeValue(value, EDUCATIONAL_REPORT_FIELDS, EDUCATIONAL_FIELD_MAPPINGS);
   
   if (Object.keys(sanitizedValue).length === 0) {
-    console.log(`[educationalReportWriteOp] No valid fields to save after sanitization`);
+    if (!hideLogs) console.log(`[educationalReportWriteOp] No valid fields to save after sanitization`);
     return undefined;
   }
   
@@ -700,7 +702,7 @@ const educationalReportWriteOp = async (ctx: DBOperationContext, value: any): Pr
   const existing = await getCurrentEducationalReport(studentId);
   
   if (existing) {
-    console.log(`[educationalReportWriteOp] Updating existing report: ${existing.id}`);
+    if (!hideLogs) console.log(`[educationalReportWriteOp] Updating existing report: ${existing.id}`);
     
     if (existing.status === "final" || existing.status === "superseded") {
       throw new Error("Cannot update a finalized or superseded report. Create a new revision instead.");
@@ -730,7 +732,7 @@ const educationalReportWriteOp = async (ctx: DBOperationContext, value: any): Pr
       .where(eq(educationalReports.id, existing.id));
     return updated;
   } else {
-    console.log(`[educationalReportWriteOp] Creating new report`);
+    if (!hideLogs) console.log(`[educationalReportWriteOp] Creating new report`);
     
     const insertData: InsertEducationalReport = {
       studentId,
@@ -830,7 +832,7 @@ const reportsContextReadOp = async (ctx: DBOperationContext) => {
   
   if (!studentId) throw new Error("studentId required for reports context read");
 
-  console.log(`[reportsContextReadOp] Loading all reports for studentId: ${studentId}`);
+  if (!hideLogs) console.log(`[reportsContextReadOp] Loading all reports for studentId: ${studentId}`);
 
   // Load all current reports in parallel
   const [medicalRecord, functionalReport, educationalReport] = await Promise.all([
@@ -839,7 +841,7 @@ const reportsContextReadOp = async (ctx: DBOperationContext) => {
     getCurrentEducationalReport(studentId),
   ]);
 
-  console.log(`[reportsContextReadOp] Found: medical=${medicalRecord?.id ?? 'null'}, functional=${functionalReport?.id ?? 'null'}, educational=${educationalReport?.id ?? 'null'}`);
+  if (!hideLogs) console.log(`[reportsContextReadOp] Found: medical=${medicalRecord?.id ?? 'null'}, functional=${functionalReport?.id ?? 'null'}, educational=${educationalReport?.id ?? 'null'}`);
 
   // Return structured object with current reports
   const result: Record<string, any> = {};

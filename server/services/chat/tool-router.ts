@@ -8,6 +8,8 @@ import { getDistance } from "./tools/map-data";
 import { AgentAPIEndpoint } from "@shared/schema";
 
 const API_PREFIX = "api_";
+const isProduction = process.env.NODE_ENV === 'production';
+const hideLogs = isProduction; // Set to true to hide logs in production
 
 // ============================================================================
 // TYPES
@@ -127,7 +129,7 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
           ? JSON.parse(functionToolCall.function.arguments)
           : {};
         try {
-          console.log("Calling API endpoint", endpointData.name, "with params:", params);
+          if (!hideLogs) console.log("Calling API endpoint", endpointData.name, "with params:", params);
           const response = await callApiEndpoint(endpointData, params);
           return response;
         } catch (e: any) {
@@ -148,8 +150,8 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     manageMemory: async (input: MemoryToolInput) => {
       // Use custom processor if provided, otherwise use default
       if (deps.memoryProcessor) {
-        console.log(`[manageMemory] memoryValuesRef before processing: ${JSON.stringify(deps.memoryValuesRef.current)}`);
-        console.log(`[manageMemory] visiblePathsAccumulator before: [${[...visiblePathsAccumulator].join(', ')}]`);
+        if (!hideLogs) console.log(`[manageMemory] memoryValuesRef before processing: ${JSON.stringify(deps.memoryValuesRef.current)}`);
+        if (!hideLogs) console.log(`[manageMemory] visiblePathsAccumulator before: [${[...visiblePathsAccumulator].join(', ')}]`);
         
         const result = await deps.memoryProcessor(input);
         
@@ -187,9 +189,9 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
           await deps.onUpdateChatState(deps.chatStateRef.current);
         }
 
-        console.log('[manageMemory] After - result:', result);
-        console.log(`[manageMemory] visiblePathsAccumulator after: [${[...visiblePathsAccumulator].join(', ')}]`);
-        console.log(`[manageMemory] memoryValuesRef after processing: ${JSON.stringify(deps.memoryValuesRef.current)}`);
+        if (!hideLogs) console.log('[manageMemory] After - result:', result);
+        if (!hideLogs) console.log(`[manageMemory] visiblePathsAccumulator after: [${[...visiblePathsAccumulator].join(', ')}]`);
+        if (!hideLogs) console.log(`[manageMemory] memoryValuesRef after processing: ${JSON.stringify(deps.memoryValuesRef.current)}`);
         
         return result.results;
       }
@@ -358,9 +360,9 @@ export function createDBMemoryProcessor(
   baseContext: Record<string, any>
 ): MemoryProcessor {
   return async (input: MemoryToolInput) => {
-    console.log('[createDBMemoryProcessor] Called with input:', JSON.stringify(input));
-    console.log('[createDBMemoryProcessor] Base context:', baseContext);
-    console.log('[createDBMemoryProcessor] Current memoryValues keys:', Object.keys(memoryValuesRef.current));
+    if (!hideLogs) console.log('[createDBMemoryProcessor] Called with input:', JSON.stringify(input));
+    if (!hideLogs) console.log('[createDBMemoryProcessor] Base context:', baseContext);
+    if (!hideLogs) console.log('[createDBMemoryProcessor] Current memoryValues keys:', Object.keys(memoryValuesRef.current));
     const result = await dbProcessor(
       memoryFields,
       memoryValuesRef.current,
@@ -390,7 +392,7 @@ export async function callApiEndpoint(
     throw new Error("Invalid API endpoint");
   }
 
-  console.log(`Calling ${endpoint.name} with params:`, params);
+  if (!hideLogs) console.log(`Calling ${endpoint.name} with params:`, params);
 
   try {
     const body =
@@ -412,7 +414,7 @@ export async function callApiEndpoint(
     const responseBody = await response.json();
     if (responseBody?.error) throw new Error(responseBody.error.message);
 
-    console.log(`HTTP endpoint ${endpoint.name} response:`, responseBody);
+    if (!hideLogs) console.log(`HTTP endpoint ${endpoint.name} response:`, responseBody);
     return responseBody.result ?? responseBody;
   } catch (e: any) {
     throw new Error(`Error calling ${endpoint.name}: ${e.message}`);

@@ -12,16 +12,19 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
-import { 
-  Loader2, 
-  ArrowLeft, 
+import {
+  Loader2,
+  ArrowLeft,
   CheckCircle,
   XCircle,
   KeyRound,
   Eye,
   EyeOff,
   Lock,
+  Check,
+  X,
 } from 'lucide-react';
+import { passwordPolicy } from '@shared/schema';
 
 export default function ResetPasswordPage() {
   const { token } = useParams<{ token: string }>();
@@ -63,10 +66,25 @@ export default function ResetPasswordPage() {
       return;
     }
 
-    if (newPassword.length < 6) {
+    // Validate password against policy
+    const passwordErrors: string[] = [];
+    if (newPassword.length < passwordPolicy.minLength) {
+      passwordErrors.push(`Password must be at least ${passwordPolicy.minLength} characters`);
+    }
+    if (passwordPolicy.requireUppercase && !/[A-Z]/.test(newPassword)) {
+      passwordErrors.push('Password must contain at least one uppercase letter');
+    }
+    if (passwordPolicy.requireLowercase && !/[a-z]/.test(newPassword)) {
+      passwordErrors.push('Password must contain at least one lowercase letter');
+    }
+    if (passwordPolicy.requireNumber && !/[0-9]/.test(newPassword)) {
+      passwordErrors.push('Password must contain at least one number');
+    }
+
+    if (passwordErrors.length > 0) {
       toast({
         title: t('auth.error') || 'Error',
-        description: t('auth.passwordTooShort') || 'Password must be at least 6 characters',
+        description: passwordErrors[0],
         variant: 'destructive',
       });
       return;
@@ -111,22 +129,19 @@ export default function ResetPasswordPage() {
     }
   };
 
-  // Password strength indicator
-  const getPasswordStrength = (password: string): { strength: number; label: string; color: string } => {
-    let strength = 0;
-    if (password.length >= 6) strength++;
-    if (password.length >= 8) strength++;
-    if (/[A-Z]/.test(password)) strength++;
-    if (/[0-9]/.test(password)) strength++;
-    if (/[^A-Za-z0-9]/.test(password)) strength++;
-
-    if (strength <= 1) return { strength: 1, label: language === 'he' ? 'חלשה' : 'Weak', color: 'bg-red-500' };
-    if (strength <= 2) return { strength: 2, label: language === 'he' ? 'בינונית' : 'Fair', color: 'bg-yellow-500' };
-    if (strength <= 3) return { strength: 3, label: language === 'he' ? 'טובה' : 'Good', color: 'bg-blue-500' };
-    return { strength: 4, label: language === 'he' ? 'חזקה' : 'Strong', color: 'bg-green-500' };
+  // Password requirements check
+  const passwordChecks = {
+    minLength: newPassword.length >= passwordPolicy.minLength,
+    hasUppercase: /[A-Z]/.test(newPassword),
+    hasLowercase: /[a-z]/.test(newPassword),
+    hasNumber: /[0-9]/.test(newPassword),
   };
 
-  const passwordStrength = newPassword ? getPasswordStrength(newPassword) : null;
+  const allRequirementsMet =
+    passwordChecks.minLength &&
+    (!passwordPolicy.requireUppercase || passwordChecks.hasUppercase) &&
+    (!passwordPolicy.requireLowercase || passwordChecks.hasLowercase) &&
+    (!passwordPolicy.requireNumber || passwordChecks.hasNumber);
 
   // Loading state
   if (isLoading) {
@@ -293,26 +308,6 @@ export default function ResetPasswordPage() {
                   </button>
                 </div>
                 
-                {/* Password strength indicator */}
-                {passwordStrength && (
-                  <div className="space-y-1">
-                    <div className="flex gap-1">
-                      {[1, 2, 3, 4].map((level) => (
-                        <div
-                          key={level}
-                          className={`h-1 flex-1 rounded-full transition-colors ${
-                            level <= passwordStrength.strength
-                              ? passwordStrength.color
-                              : 'bg-muted'
-                          }`}
-                        />
-                      ))}
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {t('auth.passwordStrength') || 'Strength'}: {passwordStrength.label}
-                    </p>
-                  </div>
-                )}
               </div>
 
               {/* Confirm Password */}
@@ -338,21 +333,40 @@ export default function ResetPasswordPage() {
               </div>
 
               {/* Password requirements */}
-              <div className="bg-muted rounded-lg p-3 text-xs text-muted-foreground">
-                <p className="font-medium mb-1">
+              <div className="bg-muted rounded-lg p-3 text-xs">
+                <p className="font-medium mb-2 text-muted-foreground">
                   {t('auth.passwordRequirements') || 'Password requirements'}:
                 </p>
-                <ul className="space-y-1 list-disc list-inside">
-                  <li className={newPassword.length >= 6 ? 'text-green-600 dark:text-green-400' : ''}>
-                    {t('auth.minCharacters') || 'At least 6 characters'}
+                <ul className="space-y-1">
+                  <li className={`flex items-center gap-2 ${passwordChecks.minLength ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
+                    {passwordChecks.minLength ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                    At least {passwordPolicy.minLength} characters
                   </li>
+                  {passwordPolicy.requireUppercase && (
+                    <li className={`flex items-center gap-2 ${passwordChecks.hasUppercase ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
+                      {passwordChecks.hasUppercase ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                      At least one uppercase letter
+                    </li>
+                  )}
+                  {passwordPolicy.requireLowercase && (
+                    <li className={`flex items-center gap-2 ${passwordChecks.hasLowercase ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
+                      {passwordChecks.hasLowercase ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                      At least one lowercase letter
+                    </li>
+                  )}
+                  {passwordPolicy.requireNumber && (
+                    <li className={`flex items-center gap-2 ${passwordChecks.hasNumber ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
+                      {passwordChecks.hasNumber ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                      At least one number
+                    </li>
+                  )}
                 </ul>
               </div>
 
               <Button
                 type="submit"
                 className="w-full"
-                disabled={isSubmitting || newPassword !== confirmPassword || newPassword.length < 6}
+                disabled={isSubmitting || newPassword !== confirmPassword || !allRequirementsMet}
               >
                 {isSubmitting ? (
                   <>

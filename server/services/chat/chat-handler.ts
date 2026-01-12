@@ -19,6 +19,8 @@ import {
   import { defaultToolRegistry, enrichToolCallMessage, makeToolCalls, MemoryProcessor, ToolRegistry } from "./tool-router";
   import { publish } from "./events.service";
   import { GPTFunctionToolCall } from "./gpt";
+
+  const isProd = process.env.NODE_ENV === 'production';
   
   const getCullMessagesTo = (memory: number) => {
       if (memory === 1){
@@ -242,7 +244,8 @@ import {
                   sessionId: isReadableMessage ? this.session?.id : undefined,
                   message
               });
-              console.log('Message published', message.content, this.session?.id);
+              const loggedMessage = isProd ? 'REDACTED' : (message.content ? JSON.stringify(message.content) : undefined);
+              console.log('Message published', loggedMessage, this.session?.id);
           } catch (error) {
               console.error('Message failed to publish', error);
           }
@@ -464,13 +467,14 @@ import {
           try {
               parsedResponse = JSON.parse(response);
           } catch (e) {
-              console.log('Error parsing response:', e, response);
-              return {
-                  role: 'system',
-                  timestamp: new Date().getTime(),
-                  content: { text: 'An error occured while processing the response.' },
-                  error: 'PARSE_ERROR',
-              };
+            const loggedMessage = isProd ? 'REDACTED' : response;
+            console.log('Error parsing response:', e, loggedMessage);
+            return {
+                role: 'system',
+                timestamp: new Date().getTime(),
+                content: { text: 'An error occured while processing the response.' },
+                error: 'PARSE_ERROR',
+            };
           }
   
           let reply: ChatMessage = {

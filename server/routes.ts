@@ -94,6 +94,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   }
 
+  // ============= MFA ROUTES =============
+  // MFA status (requires auth)
+  app.get("/auth/mfa/status", requireAuth, (req, res) =>
+    authController.mfaStatus(req, res)
+  );
+  // MFA setup (requires auth)
+  app.post("/auth/mfa/setup", requireAuth, (req, res) =>
+    authController.mfaSetup(req, res)
+  );
+  // MFA setup with token (for enforced setup during login)
+  app.post("/auth/mfa/setup-with-token", (req, res) =>
+    authController.mfaSetupWithToken(req, res)
+  );
+  // MFA verify setup (requires auth)
+  app.post("/auth/mfa/verify-setup", requireAuth, (req, res) =>
+    authController.mfaVerifySetup(req, res)
+  );
+  // MFA verify setup with token (for enforced setup during login)
+  app.post("/auth/mfa/verify-setup-with-token", (req, res) =>
+    authController.mfaVerifySetupWithToken(req, res)
+  );
+  // MFA disable (requires auth)
+  app.post("/auth/mfa/disable", requireAuth, (req, res) =>
+    authController.mfaDisable(req, res)
+  );
+  // MFA verify during login (public, uses mfaToken)
+  app.post("/auth/mfa/verify", (req, res) =>
+    authController.mfaVerify(req, res)
+  );
+  // MFA recovery request (public)
+  app.post("/auth/mfa/recovery/request", (req, res) =>
+    authController.mfaRecoveryRequest(req, res)
+  );
+  // MFA recovery validate (public)
+  app.get("/auth/mfa/recovery/:token", (req, res) =>
+    authController.mfaRecoveryValidate(req, res)
+  );
+  // MFA recovery complete (public)
+  app.post("/auth/mfa/recovery/complete", (req, res) =>
+    authController.mfaRecoveryComplete(req, res)
+  );
+
   // ============= PROFILE ROUTES =============
   app.post(
     "/api/profile/upload-image",
@@ -737,6 +779,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ success: false, message: "Failed to delete user" });
     }
   });
+  // MFA enforcement
+  app.patch("/api/admin/users/:id/mfa-enforcement", requireAdmin, (req, res) =>
+    adminController.setMfaEnforcement(req, res)
+  );
 
   // System prompt
   app.get("/api/admin/prompt", requireAdmin, (req, res) =>
