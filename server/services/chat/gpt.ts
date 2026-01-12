@@ -285,10 +285,58 @@ export class GPT {
         console.log(`[GPT] Added file_search tool with vector store: ${vectorStoreId}`);
       }
 
+      // Convert Chat Completions message format to Responses API Items format:
+      // - Messages become { type: "message", role, content }
+      // - tool_calls become separate { type: "function_call", call_id, name, arguments }
+      // - tool role messages become { type: "function_call_output", call_id, output }
+      const rspMessages: any[] = [];
+
+      for (const m of messages as any[]) {
+        // Skip metadata-only messages
+        const { metadata, ...msgWithoutMeta } = m;
+
+        if (m.role === 'tool') {
+          // Tool response → function_call_output item
+          rspMessages.push({
+            type: "function_call_output",
+            call_id: m.tool_call_id,
+            output: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+          });
+        } else if (m.tool_calls && m.tool_calls.length > 0) {
+          // Assistant message with tool calls
+          // First add the message content if it exists
+          if (m.content) {
+            rspMessages.push({
+              type: "message",
+              role: m.role,
+              content: m.content,
+            });
+          }
+          // Then add each tool call as a separate function_call item
+          for (const tc of m.tool_calls) {
+            if (tc.type === 'function') {
+              rspMessages.push({
+                type: "function_call",
+                call_id: tc.id,
+                name: tc.function.name,
+                arguments: tc.function.arguments,
+              });
+            }
+          }
+        } else if (m.content) {
+          // Regular message with content
+          rspMessages.push({
+            type: "message",
+            role: m.role,
+            content: m.content,
+          });
+        }
+      }
+
       const rspParams: any = {
         model,
         instructions: instructionsText,
-        input: messages,
+        input: rspMessages,
         max_output_tokens: max_tokens,
         tools: rspTools,
         text: {
@@ -325,19 +373,31 @@ export class GPT {
     // Responses API returns an 'output' array  (assistant responses + tool calls)
     const outs = resp.output;
     const searchCalls = outs.filter((o: any) => o.type === "web_search_call");
-    const lastMsg = outs
+    const lastMsg = [...outs]
       .reverse()
       .find((o: any) => o.type === "assistant_response");
+
+    // Convert Responses API function_call format to Chat Completions format
+    // Responses: { type: "function_call", call_id, name, arguments }
+    // Chat Completions: { id, type: "function", function: { name, arguments } }
+    const functionCalls = resp.output
+      .filter((o: any) => o.type === "function_call")
+      .map((fc: any) => ({
+        id: fc.call_id,
+        type: "function" as const,
+        function: {
+          name: fc.name,
+          arguments: fc.arguments,
+        },
+      }));
 
     return {
       promptTokens: resp.usage.prompt_tokens,
       completionTokens: resp.usage.completion_tokens,
       cachedTokens: resp.usage.cached_tokens ?? 0,
       output: outs,
-      content: resp.output_text, //lastMsg?.content?.trim(),
-      toolCalls: resp.output.filter(
-        (o: any) => o.type === "function_call"
-      ) as any,
+      content: resp.output_text,
+      toolCalls: functionCalls,
       refused: lastMsg?.refusal ?? false,
       searchCalls: searchCalls.length,
     };

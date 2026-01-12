@@ -323,18 +323,18 @@ export interface NlpSchema {
     }
 
     if (ctx.describeActions && tools.length > 0){
-        // Create descriptor tool
+        // Create descriptor tool - called by AI to show "thinking" status to user during tool calls
         tools.unshift({
             type: 'function',
             function: {
                 name: 'describeActions',
-                description: 'Displays actions to the user. Call this tool once whenever you call at least one other tool.',
+                description: 'IMPORTANT: You MUST call this tool FIRST before calling any other tools. Displays a brief status message to the user while you work.',
                 parameters: {
                     type: 'object',
                     properties: {
-                        actionDescription: { type: 'string', description: 'A short description of the actions you are taking, such as "Thinking about X"' }
+                        actionDescription: { type: 'string', description: 'A short description of what you are doing, e.g. "Looking up student information" or "Updating the board"' }
                     },
-                    required: ['string'],
+                    required: ['actionDescription'],
                     additionalProperties: false
                 }
             }
