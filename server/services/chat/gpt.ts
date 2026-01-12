@@ -206,7 +206,8 @@ export class GPT {
     useSearch: boolean = false,
     searchContextSize: 1 | 2 | 3 = 1,
     useResponsesAPI: boolean = false,
-    instructionsText: string | undefined = undefined
+    instructionsText: string | undefined = undefined,
+    vectorStoreId: string | undefined = undefined // For file_search tool
   ): Promise<GPTResponse> {
     const chatModels = ["gpt-4o-mini", "gpt-4o-mini", "gpt-4o", "o3"];
     const searchModels = [
@@ -273,6 +274,15 @@ export class GPT {
             searchContextSize - 1
           ] as "low" | "medium" | "high",
         });
+      }
+
+      // Add file_search tool if vector store is provided
+      if (vectorStoreId) {
+        rspTools.push({
+          type: "file_search",
+          vector_store_ids: [vectorStoreId],
+        } as any);
+        console.log(`[GPT] Added file_search tool with vector store: ${vectorStoreId}`);
       }
 
       const rspParams: any = {

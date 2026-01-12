@@ -13,14 +13,26 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   Send,
   Minus,
   Maximize2,
   MessageCircle,
   Sparkles,
+  Plus,
+  Paperclip,
+  X,
+  FileText,
+  Image,
+  Loader2,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
-import { useChat, CHAT_PERSONAS } from '@/hooks/useChat';
+import { useChat, CHAT_PERSONAS, type AttachedFile } from '@/hooks/useChat';
 import { useStudent } from '@/hooks/useStudent';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useFeaturePanel } from '@/contexts/FeaturePanelContext';
@@ -33,17 +45,18 @@ export function ChatPopup() {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const { user } = useAuth();
   const { student } = useStudent();
   const { t, isRTL } = useLanguage();
-  const { 
-    chatMode, 
-    setChatMode, 
-    toggleChatMode, 
-    isFullScreenFeature 
+  const {
+    chatMode,
+    setChatMode,
+    toggleChatMode,
+    isFullScreenFeature
   } = useFeaturePanel();
-  
+
   const {
     history,
     sendMessage,
@@ -52,7 +65,12 @@ export function ChatPopup() {
     setPersona,
     getPersonaInfo,
     thinkingText,
-    isThinking
+    isThinking,
+    attachedFiles,
+    isUploadingFile,
+    uploadFile,
+    removeFile,
+    clearFiles,
   } = useChat();
 
   const isMinimized = chatMode === 'minimized';
@@ -107,6 +125,39 @@ export function ChatPopup() {
 
   const handlePersonaChange = (newPersona: string) => {
     setPersona(newPersona as ChatPersona);
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    for (const file of Array.from(files)) {
+      await uploadFile(file);
+    }
+
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleAddFilesClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  // Helper to get file icon based on mime type
+  const getFileIcon = (mimeType: string) => {
+    if (mimeType.startsWith('image/')) {
+      return <Image className="w-3 h-3" />;
+    }
+    return <FileText className="w-3 h-3" />;
+  };
+
+  // Helper to format file size
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   // Helper to extract display content from message
@@ -334,8 +385,70 @@ export function ChatPopup() {
         </div>
 
         {/* Input area */}
-        <div className="px-3 py-3 border-t border-border bg-card">
+        <div className="px-3 py-3 border-t border-border bg-card space-y-2">
+          {/* Attached files list */}
+          {attachedFiles.length > 0 && (
+            <div
+              dir={isRTL ? 'rtl' : 'ltr'}
+              className="flex flex-wrap gap-1 px-1"
+            >
+              {attachedFiles.map((file) => (
+                <div
+                  key={file.fileId}
+                  className="flex items-center gap-1 bg-muted/50 border border-border rounded px-2 py-0.5 text-xs"
+                >
+                  {getFileIcon(file.mimeType)}
+                  <span className="max-w-[80px] truncate">{file.filename}</span>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-4 w-4 rounded-full hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => removeFile(file.fileId)}
+                    aria-label={t('chat.removeFile')}
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={handleFileSelect}
+            accept=".pdf,.txt,.md,.json,.csv,.xml,.html,.css,.js,.ts,.py,.java,.c,.cpp,.h,.hpp,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp"
+          />
+
           <div className="flex items-center gap-2 bg-muted rounded-full px-3 py-1">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6 rounded-full"
+                  data-testid="chat-popup-add-attachment"
+                  aria-label={t('chat.addAttachment')}
+                  disabled={isUploadingFile}
+                >
+                  {isUploadingFile ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Plus className="w-3.5 h-3.5" />
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={handleAddFilesClick}>
+                  <Paperclip className="w-3.5 h-3.5 me-2" />
+                  {t('chat.addFiles')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
             <Input
               ref={inputRef}
               value={prompt}

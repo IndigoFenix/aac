@@ -36,8 +36,9 @@ import { interpretationRepository, apiProviderRepository } from "./repositories"
 import { chatController } from "./controllers/chatController";
 import { chatStreamController } from "./controllers/chatStreamController";
 import { reportController } from "./controllers/reportController";
+import { fileUploadController } from "./controllers/fileUploadController";
 
-// Configure multer for file uploads
+// Configure multer for image uploads
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
@@ -52,6 +53,12 @@ const upload = multer({
       cb(new Error("Only image files are allowed"));
     }
   },
+});
+
+// Configure multer for chat file uploads (various file types)
+const chatFileUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB limit
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -751,6 +758,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Streaming chat endpoint with real-time thinking updates (SSE)
   app.post("/api/chat/stream", optionalAuth, requireOnboardingComplete, (req, res) =>
     chatStreamController.onMessage(req, res)
+  );
+
+  // ============= CHAT FILE UPLOAD ROUTES =============
+  // Upload a file for use in chat context
+  app.post(
+    "/api/chat/files/upload",
+    optionalAuth,
+    chatFileUpload.single("file"),
+    (req, res) => fileUploadController.uploadFile(req, res)
+  );
+  // Delete a specific file
+  app.delete("/api/chat/files/:fileId", optionalAuth, (req, res) =>
+    fileUploadController.deleteFile(req, res)
+  );
+  // List files for a session
+  app.get("/api/chat/sessions/:sessionId/files", optionalAuth, (req, res) =>
+    fileUploadController.listSessionFiles(req, res)
+  );
+  // Clean up all files for a session
+  app.delete("/api/chat/sessions/:sessionId/files", optionalAuth, (req, res) =>
+    fileUploadController.cleanupSessionFiles(req, res)
   );
 
   // ============= ADMIN ROUTES =============

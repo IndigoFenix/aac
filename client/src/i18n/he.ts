@@ -275,6 +275,7 @@ export const he = {
     placeholderShort: "הקלד הודעה...",
     selectPersona: "מצב צ'אט",
     changePersona: "שינוי מצב",
+    addFiles: "הוסף קבצים",
     persona: {
       assistant: "עוזר",
       assistantDesc: "עוזר כללי מועיל",

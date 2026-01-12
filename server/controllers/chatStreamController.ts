@@ -10,6 +10,7 @@ const messageSchema = z.object({
   activeFeature: z.string().optional(),
   persona: z.string().optional(),
   featureContext: z.record(z.any()).optional(),
+  vectorStoreId: z.string().optional(), // For file search support
   messages: z
     .array(
       z.object({
@@ -42,7 +43,7 @@ export class ChatStreamController {
 
     try {
       const userId = req.user!.id;
-      let { studentId, sessionId, activeFeature, persona, messages, featureContext } =
+      let { studentId, sessionId, activeFeature, persona, messages, featureContext, vectorStoreId } =
         messageSchema.parse(req.body);
 
       if (!persona) {
@@ -79,6 +80,7 @@ export class ChatStreamController {
         persona: persona as ChatPersona,
         messages: messagesWithTimestamp,
         featureContext,
+        vectorStoreId,
         replyType: "html",
         onThinkingUpdate,
       });

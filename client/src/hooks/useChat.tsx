@@ -33,6 +33,17 @@ export interface InterpretResponse {
   context?: any;
 }
 
+// File attachment info
+export interface AttachedFile {
+  fileId: string;
+  vectorStoreId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  // Local file reference for display (not sent to server)
+  localFile?: File;
+}
+
 // Icon name type - matches Lucide icon names
 export type PersonaIconName = 
   | 'Bot' 
@@ -185,20 +196,30 @@ interface ChatContextType {
   thinkingText: string | null;
   isThinking: boolean;
 
+  // File attachments
+  attachedFiles: AttachedFile[];
+  isUploadingFile: boolean;
+  vectorStoreId: string | null;
+
   // Persona management
   setPersona: (persona: ChatPersona) => void;
   getPersonaInfo: (persona: ChatPersona) => PersonaInfo | undefined;
-  
+
   // Actions
   sendMessage: (content: string, options?: SendMessageOptions) => Promise<ChatMessage | null>;
   startNewSession: (mode?: FeatureType) => Promise<boolean>;
   loadSession: (sessionId: string) => Promise<boolean>;
   clearSession: () => void;
-  
+
+  // File management
+  uploadFile: (file: File) => Promise<AttachedFile | null>;
+  removeFile: (fileId: string) => void;
+  clearFiles: () => void;
+
   // Feature-specific (convenience wrappers)
   sendBoardPrompt: (prompt: string) => Promise<ChatMessage | null>;
   sendInterpretRequest: (content: string, context?: any) => Promise<ChatMessage | null>;
-  
+
   // Utilities
   getLastAssistantMessage: () => ChatMessage | null;
   getLastUserMessage: () => ChatMessage | null;
@@ -248,6 +269,11 @@ export const ChatProvider = ({
   // Thinking state - for real-time AI status during tool calls
   const [thinkingText, setThinkingText] = useState<string | null>(null);
   const [isThinking, setIsThinking] = useState(false);
+
+  // File attachment state
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+  const [vectorStoreId, setVectorStoreId] = useState<string | null>(null);
 
   // Streaming hook
   const { sendStreamingMessage } = useChatStream();
@@ -342,6 +368,74 @@ export const ChatProvider = ({
   const getPersonaInfo = useCallback((personaId: ChatPersona): PersonaInfo | undefined => {
     return CHAT_PERSONAS.find(p => p.id === personaId);
   }, []);
+
+  // ============================================================================
+  // FILE MANAGEMENT
+  // ============================================================================
+
+  // Generate a session ID for file uploads if we don't have one
+  const getOrCreateSessionId = useCallback((): string => {
+    if (session?.id) return session.id;
+    // Generate a temporary session ID for file uploads before session is created
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    return tempId;
+  }, [session?.id]);
+
+  const uploadFile = useCallback(async (file: File): Promise<AttachedFile | null> => {
+    setIsUploadingFile(true);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('sessionId', getOrCreateSessionId());
+
+      // Use apiRequest which handles base URL, credentials, and error handling
+      const response = await apiRequest('POST', '/api/chat/files/upload', formData);
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to upload file');
+      }
+
+      const attachedFile: AttachedFile = {
+        ...data.file,
+        localFile: file,
+      };
+
+      setAttachedFiles(prev => [...prev, attachedFile]);
+      setVectorStoreId(data.file.vectorStoreId);
+
+      console.log('[useChat] File uploaded:', attachedFile.filename);
+
+      return attachedFile;
+    } catch (err: any) {
+      console.error('File upload failed:', err);
+      setError(err.message || 'Failed to upload file');
+      return null;
+    } finally {
+      setIsUploadingFile(false);
+    }
+  }, [getOrCreateSessionId]);
+
+  const removeFile = useCallback((fileId: string) => {
+    setAttachedFiles(prev => prev.filter(f => f.fileId !== fileId));
+
+    // Optionally delete from OpenAI (fire and forget)
+    apiRequest('DELETE', `/api/chat/files/${fileId}`)
+      .catch(err => console.warn('Failed to delete file from OpenAI:', err));
+  }, []);
+
+  const clearFiles = useCallback(() => {
+    // Delete all files from OpenAI
+    attachedFiles.forEach(file => {
+      apiRequest('DELETE', `/api/chat/files/${file.fileId}`)
+        .catch(err => console.warn('Failed to delete file:', err));
+    });
+
+    setAttachedFiles([]);
+    setVectorStoreId(null);
+  }, [attachedFiles]);
 
   // ============================================================================
   // HANDLE CONTEXT DATA FROM RESPONSE
@@ -526,6 +620,10 @@ export const ChatProvider = ({
     if (student?.id) {
       requestBody.studentId = student.id;
     }
+    // Include vector store ID if files are attached
+    if (vectorStoreId) {
+      requestBody.vectorStoreId = vectorStoreId;
+    }
 
     // Add featureContext for boards mode
     if (activeFeature === 'boards' && featureMetadata?.featureContext) {
@@ -658,7 +756,7 @@ export const ChatProvider = ({
       setIsThinking(false);
       setThinkingText(null);
     }
-  }, [session, activeFeature, user, student, history, persistSession, getStorageKey, getFeatureMetadata, handleContextData, persona, sendStreamingMessage]);
+  }, [session, activeFeature, user, student, history, persistSession, getStorageKey, getFeatureMetadata, handleContextData, persona, sendStreamingMessage, vectorStoreId]);
   
   useEffect(() => {
     console.log('[ChatProvider] sendMessage was recreated, activeFeature is:', activeFeature);
@@ -763,12 +861,18 @@ export const ChatProvider = ({
     persona,
     thinkingText,
     isThinking,
+    attachedFiles,
+    isUploadingFile,
+    vectorStoreId,
     setPersona,
     getPersonaInfo,
     sendMessage,
     startNewSession,
     loadSession,
     clearSession,
+    uploadFile,
+    removeFile,
+    clearFiles,
     sendBoardPrompt,
     sendInterpretRequest,
     getLastAssistantMessage,
