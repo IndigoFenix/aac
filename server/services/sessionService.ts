@@ -1015,8 +1015,6 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     onThinkingUpdate,
     memoryProcessor,
     vectorStoreId: input.vectorStoreId,
-    // Force Responses API when files are attached (file_search only works with Responses API)
-    useResponsesAPI: true,
   });
 
   // Return both manager and memoryValues reference

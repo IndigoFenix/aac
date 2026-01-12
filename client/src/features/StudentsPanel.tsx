@@ -46,6 +46,8 @@ interface StudentsPanelProps {
 interface StudentWithProgress {
   id: string;
   name: string;
+  firstName?: string | null;
+  lastName?: string | null;
   idNumber?: string;
   school?: string;
   grade?: string;
@@ -145,6 +147,8 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
     openUI('editStudent', {
       id: student.id,
       name: student.name,
+      firstName: student.firstName,
+      lastName: student.lastName,
       gender: student.gender,
       birthDate: student.birthDate,
       framework: student.framework,

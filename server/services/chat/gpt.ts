@@ -4,13 +4,15 @@
 import OpenAI from "openai";
 import * as tiktoken from "js-tiktoken";
 
-// If your js-tiktoken typings are behind, this keeps TS happy while
-// preserving the runtime behavior you had with require().
 const { getEncoding, getEncodingNameForModel } = tiktoken as any;
 
 const openAIConfiguration = {
   apiKey: process.env["OPENAI_API_KEY"],
 };
+
+// ──────────────────────────────────────────────────────────────────────────────
+// RESPONSE TYPES
+// ──────────────────────────────────────────────────────────────────────────────
 
 export interface GPTResponse {
   promptTokens: number;
@@ -23,22 +25,42 @@ export interface GPTResponse {
   searchCalls?: number;
 }
 
-export interface GPTMessage {
-  role: "user" | "assistant" | "system" | "tool";
-  content?: string;
-  tool_call_id?: string; // for tool calls, the ID of the tool being called
-  tool_calls?: GPTToolCall[]; // for tool messages, the tool calls made by the assistant
-  metadata?: { [key: string]: any };
+// ──────────────────────────────────────────────────────────────────────────────
+// RESPONSES API INPUT ITEMS
+// ──────────────────────────────────────────────────────────────────────────────
+
+/** Message item for Responses API input */
+export interface GPTMessageItem {
+  type: "message";
+  role: "user" | "assistant" | "system";
+  content: string;
 }
 
+/** Function call item for Responses API input (representing a previous tool call) */
+export interface GPTFunctionCallItem {
+  type: "function_call";
+  call_id: string;
+  name: string;
+  arguments: string;
+}
+
+/** Function call output item for Responses API input (representing a tool response) */
+export interface GPTFunctionCallOutputItem {
+  type: "function_call_output";
+  call_id: string;
+  output: string;
+}
+
+/** Union of all input item types */
+export type GPTInputItem = GPTMessageItem | GPTFunctionCallItem | GPTFunctionCallOutputItem;
+
 // ──────────────────────────────────────────────────────────────────────────────
-//  ░░  Utility:  Draft-07 JSON-Schema (pruned to what the tool API supports)  ░░
+// JSON SCHEMA TYPE
 // ──────────────────────────────────────────────────────────────────────────────
+
 export type JSONSchema =
   | { $ref: string }
   | ({
-
-      // core
       type?:
         | "string"
         | "number"
@@ -47,113 +69,77 @@ export type JSONSchema =
         | "null"
         | "object"
         | "array"
-        | (string & {}); // future-proof
+        | (string & {});
       description?: string;
       enum?: (string | number | boolean | null)[];
       default?: unknown;
-
-      // strings
       minLength?: number;
       maxLength?: number;
       pattern?: string;
-
-      // numbers
       minimum?: number;
       maximum?: number;
-
-      // objects
       properties?: Record<string, JSONSchema>;
       required?: string[];
       additionalProperties?: boolean | JSONSchema;
-
-      // arrays
       items?: JSONSchema;
       minItems?: number;
       maxItems?: number;
-    } & Record<string, unknown>); // allow extra non-standard keywords
+    } & Record<string, unknown>);
 
 // ──────────────────────────────────────────────────────────────────────────────
-//  ░░  1.  TOOLS SENT *TO* THE COMPLETIONS ENDPOINT                            ░░
+// TOOL DEFINITIONS (for sending to API)
 // ──────────────────────────────────────────────────────────────────────────────
+
+/** Function tool definition - Chat Completions format (converted for Responses API) */
 export type GPTFunctionTool = {
-  /** Fixed discriminator */
   type: "function";
-  /** Call signature the model should respect */
   function: {
-    name: string; // ≤64 chars, a JS identifier
-    description?: string; // counts toward prompt tokens
-    parameters: JSONSchema & { type: "object" }; // root *must* be object
+    name: string;
+    description?: string;
+    parameters: JSONSchema & { type: "object" };
   };
-};
-
-export type GPTCodeInterpreterTool = {
-  type: "code_interpreter";
-  /** Currently no extra properties are allowed, but we keep it open */
-  code_interpreter?: Record<string, never>;
-};
-
-export type GPTRetrievalTool = {
-  type: "retrieval";
-  retrieval?: Record<string, never>;
 };
 
 export type GPTWebSearchTool = {
   type: "web_search_preview";
-  search_context_size?: "low" | "medium" | "high"; // default: low
+  search_context_size?: "low" | "medium" | "high";
 };
 
-/** Union of everything allowed in the `tools` array */
-export type GPTTool =
-  | GPTFunctionTool
-  | GPTCodeInterpreterTool
-  | GPTRetrievalTool
-  | GPTWebSearchTool;
+export type GPTFileSearchTool = {
+  type: "file_search";
+  vector_store_ids: string[];
+};
+
+/** Union of tool definitions */
+export type GPTTool = GPTFunctionTool | GPTWebSearchTool | GPTFileSearchTool;
 
 // ──────────────────────────────────────────────────────────────────────────────
-//  ░░  2.  TOOL-CALL OBJECTS RETURNED BY THE MODEL (message.tool_calls)        ░░
+// TOOL CALLS (returned from API)
 // ──────────────────────────────────────────────────────────────────────────────
+
+/** Function tool call - Responses API format */
 export interface GPTFunctionToolCall {
-  id: string; // “call_…” unique within the chat session
-  type: "function";
-  function: {
-    name: string; // must match a declared tool
-    /** Raw JSON string produced by the model */
-    arguments: string;
-  };
+  type: "function_call";
+  call_id: string;
+  name: string;
+  arguments: string;
 }
 
-export interface GPTCodeInterpreterToolCall {
-  id: string;
-  type: "code_interpreter";
-  code_interpreter: {
-    /** Python code the model wants to run */
-    code: string;
-    /** Optional files referenced/created during execution */
-    files?: {
-      id: string; // file IDs in the OpenAI file store
-      purpose?: string; // e.g. "input", "output", "plot"
-    }[];
-  };
-}
+/** Everything that can appear as a tool call in output */
+export type GPTToolCall = GPTFunctionToolCall;
 
-/** Retrieval calls contain no arguments today */
-export interface GPTRetrievalToolCall {
-  id: string;
-  type: "retrieval";
-  retrieval?: Record<string, never>;
-}
+// ──────────────────────────────────────────────────────────────────────────────
+// HELPER FUNCTIONS
+// ──────────────────────────────────────────────────────────────────────────────
 
-/** Everything that can appear in `message.tool_calls` */
-export type GPTToolCall =
-  | GPTFunctionToolCall
-  | GPTCodeInterpreterToolCall
-  | GPTRetrievalToolCall;
-
-export function GPTToolsToRSP(tools: GPTTool[]) {
+/**
+ * Convert function tools from Chat Completions format to Responses API format
+ */
+export function GPTToolsToRSP(tools: GPTTool[]): any[] {
   return tools.map((t) => {
     if (t.type === "function") {
       return {
-        type: t.type,
+        type: "function",
         name: t.function.name,
         description: t.function.description,
         parameters: t.function.parameters,
@@ -164,8 +150,11 @@ export function GPTToolsToRSP(tools: GPTTool[]) {
   });
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// GPT CLASS
+// ──────────────────────────────────────────────────────────────────────────────
+
 export class GPT {
-  // IMPORTANT: this is now an *instance* type, not typeof OpenAI
   openai: OpenAI;
   lastPrompt: string;
   promptTokens: number;
@@ -190,211 +179,95 @@ export class GPT {
     this.promptTokens = this.completionTokens = 0;
   }
 
+  /**
+   * Get a structured response from the Responses API
+   */
   public async getStructuredResponse(
-    messages: GPTMessage[],
+    input: GPTInputItem[],
     schema_name: string,
     schema: any,
     tools: GPTTool[] = [],
     max_tokens: number = 150,
     intelligenceLevel: 0 | 1 | 2 | 3 = 1,
     additionalParams: {
-      temperature?: number; // Randomness
+      temperature?: number;
       top_p?: number;
-      frequency_penalty?: number; // Higher values make the model less likely to repeat
-      presence_penalty?: number; // Higher values make the model more likely to talk about things that have not been mentioned before
+      frequency_penalty?: number;
+      presence_penalty?: number;
     },
     useSearch: boolean = false,
     searchContextSize: 1 | 2 | 3 = 1,
-    useResponsesAPI: boolean = false,
     instructionsText: string | undefined = undefined,
-    vectorStoreId: string | undefined = undefined // For file_search tool
+    vectorStoreId: string | undefined = undefined
   ): Promise<GPTResponse> {
-    const chatModels = ["gpt-4o-mini", "gpt-4o-mini", "gpt-4o", "o3"];
-    const searchModels = [
-      "gpt-4o-mini-search-preview",
-      "gpt-4o-mini-search-preview",
-      "gpt-4o-search-preview",
-      "o3",
-    ]; // o3-pro has no search SKU
-    const model =
-      useSearch && !useResponsesAPI
-        ? searchModels[intelligenceLevel]
-        : chatModels[intelligenceLevel];
+    const models = ["gpt-4o-mini", "gpt-4o-mini", "gpt-4o", "o3"];
+    const model = models[intelligenceLevel];
 
-    /* ------------------------------------------------------------------ */
-    // Shared params for both endpoints
+    // Convert tools to Responses API format
+    const rspTools = GPTToolsToRSP(tools);
+
+    // Add web search tool if requested
+    if (useSearch) {
+      rspTools.push({
+        type: "web_search_preview",
+        search_context_size: ["low", "medium", "high"][searchContextSize - 1] as "low" | "medium" | "high",
+      });
+    }
+
+    // Add file_search tool if vector store is provided
+    if (vectorStoreId) {
+      rspTools.push({
+        type: "file_search",
+        vector_store_ids: [vectorStoreId],
+      });
+      console.log(`[GPT] Added file_search tool with vector store: ${vectorStoreId}`);
+    }
+
     const jsonSchemaFmt = {
       type: "json_schema",
       json_schema: { strict: true, name: schema_name, schema },
     };
 
-    if (!useResponsesAPI) {
-      /* =========  path A : classic chat.completions  ========= */
-      const messagesNoMeta = messages.map((m: any) => {
-        const { metadata, ...rest } = m;
-        return rest;
-      });
-      const params: any = {
-        model,
-        messages: messagesNoMeta,
-        max_tokens,
-        response_format: jsonSchemaFmt,
-        tools,
-      };
-      for (let k in additionalParams)
-        params[k] = additionalParams[k as keyof typeof additionalParams];
-
-      if (useSearch) {
-        params["web_search_options"] = {
-          search_context_size:
-            searchContextSize == 1
-              ? "low"
-              : searchContextSize == 2
-              ? "medium"
-              : searchContextSize == 3
-              ? "high"
-              : "low",
-        };
-      }
-
-      console.log(params);
-
-      // In chat-completions we still need a separate SKU for search
-      const completion = await this.openai.chat.completions.create(params);
-
-      return this.parseChatResult(completion);
-    } else {
-      /* =========  path B : Responses API  ========= */
-      // Attach the built–in search tool when requested
-      const rspTools = GPTToolsToRSP(tools);
-      if (useSearch) {
-        rspTools.push({
-          type: "web_search_preview",
-          search_context_size: ["low", "medium", "high"][
-            searchContextSize - 1
-          ] as "low" | "medium" | "high",
-        });
-      }
-
-      // Add file_search tool if vector store is provided
-      if (vectorStoreId) {
-        rspTools.push({
-          type: "file_search",
-          vector_store_ids: [vectorStoreId],
-        } as any);
-        console.log(`[GPT] Added file_search tool with vector store: ${vectorStoreId}`);
-      }
-
-      // Convert Chat Completions message format to Responses API Items format:
-      // - Messages become { type: "message", role, content }
-      // - tool_calls become separate { type: "function_call", call_id, name, arguments }
-      // - tool role messages become { type: "function_call_output", call_id, output }
-      const rspMessages: any[] = [];
-
-      for (const m of messages as any[]) {
-        // Skip metadata-only messages
-        const { metadata, ...msgWithoutMeta } = m;
-
-        if (m.role === 'tool') {
-          // Tool response → function_call_output item
-          rspMessages.push({
-            type: "function_call_output",
-            call_id: m.tool_call_id,
-            output: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
-          });
-        } else if (m.tool_calls && m.tool_calls.length > 0) {
-          // Assistant message with tool calls
-          // First add the message content if it exists
-          if (m.content) {
-            rspMessages.push({
-              type: "message",
-              role: m.role,
-              content: m.content,
-            });
-          }
-          // Then add each tool call as a separate function_call item
-          for (const tc of m.tool_calls) {
-            if (tc.type === 'function') {
-              rspMessages.push({
-                type: "function_call",
-                call_id: tc.id,
-                name: tc.function.name,
-                arguments: tc.function.arguments,
-              });
-            }
-          }
-        } else if (m.content) {
-          // Regular message with content
-          rspMessages.push({
-            type: "message",
-            role: m.role,
-            content: m.content,
-          });
-        }
-      }
-
-      const rspParams: any = {
-        model,
-        instructions: instructionsText,
-        input: rspMessages,
-        max_output_tokens: max_tokens,
-        tools: rspTools,
-        text: {
-          format: { ...jsonSchemaFmt.json_schema, type: jsonSchemaFmt.type },
-        },
-      };
-
-      const response = await this.openai.responses.create(rspParams);
-
-      return this.parseResponsesResult(response);
-    }
-  }
-
-  /* -------------- helpers to normalise the two return shapes ---------- */
-
-  private parseChatResult(comp: any): GPTResponse {
-    const m = comp.choices[0].message;
-    const refused = !!m.refusal;
-    return {
-      promptTokens: comp.usage.prompt_tokens,
-      completionTokens: comp.usage.completion_tokens,
-      cachedTokens: m?.prompt_tokens_details?.cached_tokens ?? 0,
-      content: m.content?.trim(),
-      toolCalls: m.tool_calls ?? [],
-      refused: refused,
-      // For chat completions + search-preview: at most ONE surcharge
-      searchCalls:
-        m.tool_calls?.filter((c: any) => c.type === "web_search_preview")
-          .length ?? 0,
+    const rspParams: any = {
+      model,
+      instructions: instructionsText,
+      input,
+      max_output_tokens: max_tokens,
+      tools: rspTools.length > 0 ? rspTools : undefined,
+      text: {
+        format: { ...jsonSchemaFmt.json_schema, type: jsonSchemaFmt.type },
+      },
     };
+
+    const response = await this.openai.responses.create(rspParams);
+
+    return this.parseResponsesResult(response);
   }
 
+  /**
+   * Parse the Responses API result into our standard format
+   */
   private parseResponsesResult(resp: any): GPTResponse {
-    // Responses API returns an 'output' array  (assistant responses + tool calls)
-    const outs = resp.output;
+    const outs = resp.output || [];
     const searchCalls = outs.filter((o: any) => o.type === "web_search_call");
     const lastMsg = [...outs]
       .reverse()
-      .find((o: any) => o.type === "assistant_response");
+      .find((o: any) => o.type === "message" && o.role === "assistant");
 
-    // Convert Responses API function_call format to Chat Completions format
-    // Responses: { type: "function_call", call_id, name, arguments }
-    // Chat Completions: { id, type: "function", function: { name, arguments } }
-    const functionCalls = resp.output
+    // Extract function calls in Responses API format
+    const functionCalls: GPTFunctionToolCall[] = outs
       .filter((o: any) => o.type === "function_call")
       .map((fc: any) => ({
-        id: fc.call_id,
-        type: "function" as const,
-        function: {
-          name: fc.name,
-          arguments: fc.arguments,
-        },
+        type: "function_call" as const,
+        call_id: fc.call_id,
+        name: fc.name,
+        arguments: fc.arguments,
       }));
 
     return {
-      promptTokens: resp.usage.prompt_tokens,
-      completionTokens: resp.usage.completion_tokens,
-      cachedTokens: resp.usage.cached_tokens ?? 0,
+      promptTokens: resp.usage?.input_tokens ?? 0,
+      completionTokens: resp.usage?.output_tokens ?? 0,
+      cachedTokens: resp.usage?.input_tokens_details?.cached_tokens ?? 0,
       output: outs,
       content: resp.output_text,
       toolCalls: functionCalls,
@@ -403,17 +276,18 @@ export class GPT {
     };
   }
 
+  /**
+   * Convert markdown links in content to HTML anchors
+   */
   public convertContent(content: string) {
     return content.replace(
       /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g,
       (_match, linkText, urlStr) => {
         try {
           const url = new URL(urlStr);
-          // overwrite or add utm_source
           url.searchParams.set("utm_source", "hello-computer");
           return `<a href="${url.toString()}">${linkText}</a>`;
         } catch {
-          // if URL parsing fails, leave the original markdown
           return _match;
         }
       }

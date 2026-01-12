@@ -14,11 +14,10 @@ import {
     MessageResponse,
   } from "@shared/schema";
   import { CreditsPerCompletionTokenByIntelligence, CreditsPerPromptTokenByIntelligence, CreditsPerSearchByIntelligence } from "./cost-helpers";
-  import { GPT, GPTResponse, GPTMessage, GPTToolCall } from "./gpt";
+  import { GPT, GPTResponse, GPTInputItem, GPTFunctionToolCall } from "./gpt";
   import { buildPromptAndTools, formValues, NlpSchema, AgentLike } from "./prompt-kit";
   import { defaultToolRegistry, enrichToolCallMessage, makeToolCalls, MemoryProcessor, ToolRegistry } from "./tool-router";
   import { publish } from "./events.service";
-  import { GPTFunctionToolCall } from "./gpt";
 
   const isProd = process.env.NODE_ENV === 'production';
   
@@ -86,7 +85,6 @@ import {
   }
   
   class ChatMessageManager {
-      private useResponsesAPI: boolean = true;
       agent: AgentTemplate;
       session?: ChatSession;
       gpt: GPT;
@@ -142,7 +140,6 @@ import {
           onCreditsUsed: (creditsUsed: number) => Promise<void>,
           onThinkingUpdate?: (thinkingText: string) => void,
           memoryProcessor?: MemoryProcessor,
-          useResponsesAPI?: boolean,
           vectorStoreId?: string
       }){
           this.chatState = JSON.parse(JSON.stringify(settings.chatState));
@@ -150,7 +147,6 @@ import {
           this.memoryValues = settings.memoryValues ? JSON.parse(JSON.stringify(settings.memoryValues)) : {};
           this.maxCredits = settings.maxCredits;
           this.gpt = new GPT();
-          this.useResponsesAPI = settings.useResponsesAPI ?? (settings.session?.useResponsesAPI ?? false);
           this.onUpdateMemoryValues = async (memoryValues: any) => {
               memoryValues = JSON.parse(JSON.stringify(memoryValues));
               this.memoryValues = memoryValues;
@@ -261,36 +257,75 @@ import {
           }
       }
   
-      // Gets the data to be sent to the LLM
-      getConversationHistoryAsMessages(conversationHistory: ChatMessage[]): GPTMessage[] {
-          const messages: GPTMessage[] = [];
-          for (let i=0; i < conversationHistory.length; i++){
-              const message = conversationHistory[i];
+      // Gets the data to be sent to the LLM in Responses API Items format
+      getConversationHistoryAsInputItems(conversationHistory: ChatMessage[]): GPTInputItem[] {
+          const items: GPTInputItem[] = [];
+
+          for (const message of conversationHistory) {
+              // Tool response messages -> function_call_output
+              if (message.role === 'tool' && message.toolCallId) {
+                  items.push({
+                      type: "function_call_output",
+                      call_id: message.toolCallId,
+                      output: typeof message.content === 'string'
+                          ? message.content
+                          : JSON.stringify(message.content),
+                  });
+                  continue;
+              }
+
+              // Messages with tool calls -> separate function_call items
+              if (message.toolCalls && message.toolCalls.length > 0) {
+                  // First add the message content if it exists
+                  let stringifiedContent = '';
+                  if (typeof message.content === 'string') {
+                      stringifiedContent = message.content;
+                  } else if (typeof message.content === 'object' && message.content) {
+                      stringifiedContent = message.content.html || message.content.text || '';
+                  }
+
+                  if (stringifiedContent && message.role !== 'tool') {
+                      items.push({
+                          type: "message",
+                          role: message.role as "user" | "assistant" | "system",
+                          content: stringifiedContent,
+                      });
+                  }
+
+                  // Then add each tool call as a separate function_call item
+                  for (const tc of message.toolCalls as GPTFunctionToolCall[]) {
+                      items.push({
+                          type: "function_call",
+                          call_id: tc.call_id,
+                          name: tc.name,
+                          arguments: tc.arguments,
+                      });
+                  }
+                  continue;
+              }
+
+              // Regular messages with content
               let stringifiedContent = '';
-              if (typeof message.content === 'string') stringifiedContent = message.content;
-              else if (typeof message.content === 'object') {
-                  if (message.content.setValues){
+              if (typeof message.content === 'string') {
+                  stringifiedContent = message.content;
+              } else if (typeof message.content === 'object' && message.content) {
+                  if (message.content.setValues) {
                       stringifiedContent = JSON.stringify(message.content);
                   } else {
                       stringifiedContent = message.content.html || message.content.text || '';
                   }
               }
-  
-              const gptMessage: GPTMessage = {
-                  role: message.role,
-                  content: stringifiedContent,
+
+              if (stringifiedContent && message.role !== 'tool') {
+                  items.push({
+                      type: "message",
+                      role: message.role as "user" | "assistant" | "system",
+                      content: stringifiedContent,
+                  });
               }
-              if (message.content) gptMessage.content = stringifiedContent;
-              else if (message.toolCalls) gptMessage.tool_calls = message.toolCalls;
-              if (message.toolCallId){
-                  gptMessage.tool_call_id = message.toolCallId;
-              }
-              if (message.metadata) {
-                  gptMessage.metadata = message.metadata;
-              }
-              messages.push(gptMessage);
           }
-          return messages;
+
+          return items;
       }
   
       getLastUserMessage(): (ChatMessage | null) {
@@ -321,12 +356,9 @@ import {
   
       // Updates the conversation after confirming that the bot should interact
       async updateConversation(totalCreditsUsed: number = 0, responseType: 'text' | 'html', apiValues?: { [key: string]: any }): Promise<ChatResponse> {
-          const messages: GPTMessage[] = this.getConversationHistoryAsMessages(this.chatState.history);
+          const inputItems = this.getConversationHistoryAsInputItems(this.chatState.history);
           const lastUserMessage = this.getLastUserMessage();
           const lastContent = lastUserMessage?.content ? this.chatState.history[this.chatState.history.length - 1].content : undefined;
-          if (typeof lastContent === 'object'){
-              
-          }
           const lastFormSchema = typeof lastContent === 'object' ? lastContent.formSchema : undefined;
           const lastFormValues = typeof lastContent === 'object' ? lastContent.formValues : undefined;
   
@@ -334,36 +366,17 @@ import {
               lastFormSchema: lastFormSchema,
               lastFormValues: lastFormValues
           });
-  
-          
-          const instructionMessage: GPTMessage = {
-              role: 'system',
-              content: promptBuild.instructions,
-          }
-          let instructionsText: string | undefined;
-          if (this.useResponsesAPI) {
-              instructionsText = promptBuild.instructions + (promptBuild.endInstructions ? ('\n' + promptBuild.endInstructions) : '');
-          } else {
-              messages.unshift(instructionMessage);
-              if (promptBuild.endInstructions){
-                  const endInstructionMessage: GPTMessage = {
-                      role: 'system',
-                      content: promptBuild.endInstructions,
-                  }
-                  messages.push(endInstructionMessage);
-              }
-          }
-  
+
+          const instructionsText = promptBuild.instructions + (promptBuild.endInstructions ? ('\n' + promptBuild.endInstructions) : '');
+
           const creditsPerPromptToken = CreditsPerPromptTokenByIntelligence(this.intelligenceLevel);
           const creditsPerCompletionToken = CreditsPerCompletionTokenByIntelligence(this.intelligenceLevel);
-          const creditsForSearch = CreditsPerSearchByIntelligence(this.intelligenceLevel, promptBuild.searchContextSize);
-  
+
           const tokensAvailableForResponse = 15000;
           const temperature = 0.7;
-          const useResponsesMode: boolean = this.useResponsesAPI === true;
           try {
               const gptResponse: GPTResponse = await this.gpt.getStructuredResponse(
-                  messages,
+                  inputItems,
                   String(hashCode(JSON.stringify(promptBuild.schema))),
                   promptBuild.schema,
                   promptBuild.tools,
@@ -373,7 +386,6 @@ import {
                   },
                   promptBuild.searchEnabled,
                   promptBuild.searchContextSize,
-                  useResponsesMode,
                   instructionsText,
                   this.vectorStoreId // Pass vector store ID for file search
               );
@@ -385,11 +397,8 @@ import {
                   const cachedPromptCharge  = gptResponse.cachedTokens * (creditsPerPromptToken / 2);
                   const completionCharge    = gptResponse.completionTokens * creditsPerCompletionToken;
   
-                  // search: chat-preview = 0 or 1 surcharge, responses = N surcharges
                   const searchCharge = (promptBuild.searchEnabled && promptBuild.searchContextSize)
-                          ? (useResponsesMode
-                              ? (gptResponse.searchCalls || 0) * CreditsPerSearchByIntelligence(this.intelligenceLevel, promptBuild.searchContextSize)
-                              : CreditsPerSearchByIntelligence(this.intelligenceLevel, promptBuild.searchContextSize))  // one-off
+                          ? (gptResponse.searchCalls || 0) * CreditsPerSearchByIntelligence(this.intelligenceLevel, promptBuild.searchContextSize)
                           : 0;
   
                   const rawCredits = promptCharge + cachedPromptCharge + completionCharge + searchCharge;
@@ -458,7 +467,7 @@ import {
           }
       }
   
-      async realtimeCallTools(toolCalls: GPTToolCall[], creditsUsed: number): Promise<ChatMessage[]> {
+      async realtimeCallTools(toolCalls: GPTFunctionToolCall[], creditsUsed: number): Promise<ChatMessage[]> {
           const toolCallMessage: ChatMessage = {
               role: 'assistant',
               toolCalls: toolCalls,
