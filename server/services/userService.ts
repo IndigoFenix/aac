@@ -160,6 +160,8 @@ export class UserService {
       profileImageUrl: user.profileImageUrl,
       isActive: user.isActive,
       referralCode: user.referralCode,
+      mfaEnabled: user.mfaEnabled,
+      mfaEnforcedByAdmin: user.mfaEnforcedByAdmin,
     };
   }
 }

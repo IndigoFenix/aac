@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { adminService, userService, creditService } from "../services";
+import { mfaService } from "../services/mfaService";
 import { userRepository, interpretationRepository } from "../repositories";
 import { insertApiProviderSchemaWithValidation } from "@shared/schema";
 
@@ -441,6 +442,53 @@ export class AdminController {
     } catch (error: any) {
       console.error("Error fetching admin user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
+    }
+  }
+
+  // MFA enforcement
+  async setMfaEnforcement(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.params.id;
+      const { enforced } = req.body;
+
+      if (typeof enforced !== "boolean") {
+        res.status(400).json({
+          success: false,
+          message: "enforced must be a boolean",
+        });
+        return;
+      }
+
+      const user = await userService.getUser(userId);
+      if (!user) {
+        res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+        return;
+      }
+
+      const success = await mfaService.setMfaEnforcement(userId, enforced);
+
+      if (success) {
+        res.json({
+          success: true,
+          message: enforced
+            ? "MFA enforcement enabled for user"
+            : "MFA enforcement disabled for user",
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: "Failed to update MFA enforcement",
+        });
+      }
+    } catch (error: any) {
+      console.error("Error setting MFA enforcement:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to update MFA enforcement",
+      });
     }
   }
 }

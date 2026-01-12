@@ -1966,7 +1966,6 @@ export function processMemoryToolResponse(
           addErrorMsg = `Cannot "add" to type "${foundType}" at this path.`;
         }
         
-        console.log('ADD unsupported container kind:', contLeaf.kind, 'type:', foundType);
         results.push({ target: rawTarget, action, ok: false, message: addErrorMsg });
         continue;
       }

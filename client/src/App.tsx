@@ -21,6 +21,7 @@ import { ChatProvider } from "./hooks/useChat";
 import { FeaturePanelProvider } from "@/contexts/FeaturePanelContext";
 import { InstituteProvider } from "./hooks/useInstitute";
 import ForgotPasswordPage from "./pages/forgotPasswordPage";
+import MfaRecoveryPage from "./pages/MfaRecoveryPage";
 
 // Component to redirect authenticated users away from login page
 function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
@@ -128,6 +129,16 @@ function Router() {
         </InviteRoute>
       </Route>
       <Route path="/terms-of-service" component={TermsOfService} />
+
+      {/* MFA Recovery routes */}
+      <Route path="/mfa-recovery">
+        <PublicOnlyRoute>
+          <MfaRecoveryPage />
+        </PublicOnlyRoute>
+      </Route>
+      <Route path="/mfa-recovery/:token">
+        <MfaRecoveryPage />
+      </Route>
 
       {/* Protected routes - require authentication */}
       <Route path="/onboarding">

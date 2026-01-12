@@ -1,7 +1,7 @@
 // src/pages/LoginPage.tsx
 // Unified Login/Registration page that also handles invite-based signups
 
-import { useState, FormEvent } from 'react';
+import { useState, FormEvent, useEffect } from 'react';
 import { useLocation, useParams } from 'wouter';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -15,16 +15,21 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
-import { 
-  LogIn, 
-  Loader2, 
-  UserPlus, 
-  Building2, 
-  School, 
-  Hospital, 
+import {
+  LogIn,
+  Loader2,
+  UserPlus,
+  Building2,
+  School,
+  Hospital,
   CheckCircle,
   XCircle,
+  Shield,
+  KeyRound,
 } from 'lucide-react';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
+import { type LoginResult } from '@/hooks/useAuth';
+import { passwordPolicy } from '@shared/schema';
 
 // Types
 interface InviteData {
@@ -142,6 +147,65 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
   // Invite acceptance state
   const [isAcceptingInvite, setIsAcceptingInvite] = useState(false);
 
+  // MFA state
+  const [mfaStep, setMfaStep] = useState<'login' | 'mfa_verify' | 'mfa_setup'>('login');
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaQrCode, setMfaQrCode] = useState<string | null>(null);
+  const [mfaManualKey, setMfaManualKey] = useState<string | null>(null);
+  const [isVerifyingMfa, setIsVerifyingMfa] = useState(false);
+  const [isSettingUpMfa, setIsSettingUpMfa] = useState(false);
+
+  // Check for MFA redirect from OAuth
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const mfaRequired = urlParams.get('mfa_required');
+    const mfaSetupRequired = urlParams.get('mfa_setup_required');
+    const token = urlParams.get('mfa_token');
+
+    if (mfaRequired === 'true' && token) {
+      setMfaStep('mfa_verify');
+      setMfaToken(decodeURIComponent(token));
+      // Clean up URL
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (mfaSetupRequired === 'true' && token) {
+      setMfaStep('mfa_setup');
+      setMfaToken(decodeURIComponent(token));
+      // Fetch MFA setup data
+      fetchMfaSetup(decodeURIComponent(token));
+      // Clean up URL
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
+  const fetchMfaSetup = async (token: string) => {
+    setIsSettingUpMfa(true);
+    try {
+      const response = await apiRequest('POST', '/auth/mfa/setup-with-token', { mfaToken: token });
+      const data = await response.json();
+      if (data.success) {
+        setMfaQrCode(data.qrCode);
+        setMfaManualKey(data.manualEntryKey);
+      } else {
+        toast({
+          title: 'MFA Setup Failed',
+          description: data.message || 'Failed to start MFA setup',
+          variant: 'destructive',
+        });
+        setMfaStep('login');
+      }
+    } catch {
+      toast({
+        title: 'MFA Setup Failed',
+        description: 'Failed to start MFA setup',
+        variant: 'destructive',
+      });
+      setMfaStep('login');
+    } finally {
+      setIsSettingUpMfa(false);
+    }
+  };
+
   // Fetch invite details if in invite mode
   const { 
     data: inviteData, 
@@ -177,12 +241,12 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
   // Handlers
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
-    
+
     if (!loginData.email.trim() || !loginData.password.trim()) {
-      toast({ 
-        title: t('auth.error'), 
-        description: t('auth.fieldsRequired'), 
-        variant: 'destructive' 
+      toast({
+        title: t('auth.error'),
+        description: t('auth.fieldsRequired'),
+        variant: 'destructive'
       });
       return;
     }
@@ -190,36 +254,140 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
     setIsLoggingIn(true);
 
     try {
-      const success = await login(loginData.email, loginData.password);
-      if (success) {
+      const result = await login(loginData.email, loginData.password);
+
+      // MFA required - show verification screen
+      if (result.mfaRequired && result.mfaToken) {
+        setMfaToken(result.mfaToken);
+        setMfaStep('mfa_verify');
+        setIsLoggingIn(false);
+        return;
+      }
+
+      // MFA setup required - show setup screen
+      if (result.mfaSetupRequired && result.mfaToken) {
+        setMfaToken(result.mfaToken);
+        setMfaStep('mfa_setup');
+        fetchMfaSetup(result.mfaToken);
+        setIsLoggingIn(false);
+        return;
+      }
+
+      // Normal login success
+      if (result.success && result.user) {
         await refetchUser();
-        toast({ 
-          title: t('auth.loginSuccess'), 
-          description: t('auth.welcomeBack') 
+        toast({
+          title: t('auth.loginSuccess'),
+          description: t('auth.welcomeBack')
         });
-        // If we have an invite token, the user will be redirected back here 
-        // and can accept it as an authenticated user
         if (isInviteMode) {
           // Page will re-render and show accept invite UI
         } else {
           setLocation('/');
         }
       } else {
-        toast({ 
-          title: t('auth.loginFailed'), 
-          description: t('auth.invalidCredentials'), 
-          variant: 'destructive' 
+        toast({
+          title: t('auth.loginFailed'),
+          description: result.message || t('auth.invalidCredentials'),
+          variant: 'destructive'
         });
       }
     } catch {
-      toast({ 
-        title: t('auth.loginFailed'), 
-        description: t('auth.loginError'), 
-        variant: 'destructive' 
+      toast({
+        title: t('auth.loginFailed'),
+        description: t('auth.loginError'),
+        variant: 'destructive'
       });
     } finally {
       setIsLoggingIn(false);
     }
+  };
+
+  const handleMfaVerify = async () => {
+    if (!mfaToken || mfaCode.length !== 6) return;
+
+    setIsVerifyingMfa(true);
+    try {
+      const response = await apiRequest('POST', '/auth/mfa/verify', {
+        mfaToken,
+        code: mfaCode,
+        rememberMe: false,
+      });
+      const data = await response.json();
+
+      if (data.success && data.user) {
+        await refetchUser();
+        toast({
+          title: t('auth.loginSuccess'),
+          description: t('auth.welcomeBack'),
+        });
+        if (isInviteMode) {
+          // Page will re-render and show accept invite UI
+        } else {
+          setLocation('/');
+        }
+      } else {
+        toast({
+          title: 'Verification Failed',
+          description: data.message || 'Invalid verification code',
+          variant: 'destructive',
+        });
+      }
+    } catch {
+      toast({
+        title: 'Verification Failed',
+        description: 'Failed to verify code',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsVerifyingMfa(false);
+    }
+  };
+
+  const handleMfaSetupVerify = async () => {
+    if (!mfaToken || mfaCode.length !== 6) return;
+
+    setIsVerifyingMfa(true);
+    try {
+      const response = await apiRequest('POST', '/auth/mfa/verify-setup-with-token', {
+        mfaToken,
+        code: mfaCode,
+        rememberMe: false,
+      });
+      const data = await response.json();
+
+      if (data.success && data.user) {
+        await refetchUser();
+        toast({
+          title: 'MFA Enabled',
+          description: 'Two-factor authentication has been set up successfully.',
+        });
+        if (isInviteMode) {
+          // Page will re-render and show accept invite UI
+        } else {
+          setLocation('/');
+        }
+      } else {
+        toast({
+          title: 'Setup Failed',
+          description: data.message || 'Invalid verification code',
+          variant: 'destructive',
+        });
+      }
+    } catch {
+      toast({
+        title: 'Setup Failed',
+        description: 'Failed to complete MFA setup',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsVerifyingMfa(false);
+    }
+  };
+
+  const handleMfaRecoveryRequest = async () => {
+    // Navigate to MFA recovery page
+    setLocation('/mfa-recovery');
   };
 
   const handleGoogleLogin = () => {
@@ -264,10 +432,25 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
       return;
     }
 
-    if (d.password.length < 6) {
+    // Validate password against policy
+    const passwordErrors: string[] = [];
+    if (d.password.length < passwordPolicy.minLength) {
+      passwordErrors.push(`Password must be at least ${passwordPolicy.minLength} characters`);
+    }
+    if (passwordPolicy.requireUppercase && !/[A-Z]/.test(d.password)) {
+      passwordErrors.push('Password must contain at least one uppercase letter');
+    }
+    if (passwordPolicy.requireLowercase && !/[a-z]/.test(d.password)) {
+      passwordErrors.push('Password must contain at least one lowercase letter');
+    }
+    if (passwordPolicy.requireNumber && !/[0-9]/.test(d.password)) {
+      passwordErrors.push('Password must contain at least one number');
+    }
+
+    if (passwordErrors.length > 0) {
       toast({
         title: t('auth.error'),
-        description: t('auth.passwordTooShort') || 'Password must be at least 6 characters',
+        description: passwordErrors[0],
         variant: 'destructive',
       });
       return;
@@ -479,7 +662,179 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
   return (
     <AuthPageLayout direction={direction}>
       <Card className="w-full max-w-md shadow-lg">
-        {!showRegister ? (
+        {/* MFA Verification Step */}
+        {mfaStep === 'mfa_verify' && (
+          <>
+            <CardHeader className="space-y-1 text-center">
+              <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                <Shield className="w-6 h-6 text-primary" />
+              </div>
+              <CardTitle className="text-2xl font-bold">
+                Two-Factor Authentication
+              </CardTitle>
+              <CardDescription>
+                Enter the 6-digit code from your authenticator app
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent className="space-y-6">
+              <div className="flex justify-center">
+                <InputOTP
+                  maxLength={6}
+                  value={mfaCode}
+                  onChange={(value) => setMfaCode(value)}
+                >
+                  <InputOTPGroup>
+                    <InputOTPSlot index={0} />
+                    <InputOTPSlot index={1} />
+                    <InputOTPSlot index={2} />
+                    <InputOTPSlot index={3} />
+                    <InputOTPSlot index={4} />
+                    <InputOTPSlot index={5} />
+                  </InputOTPGroup>
+                </InputOTP>
+              </div>
+
+              <Button
+                className="w-full"
+                onClick={handleMfaVerify}
+                disabled={mfaCode.length !== 6 || isVerifyingMfa}
+              >
+                {isVerifyingMfa ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin me-2" />
+                    Verifying...
+                  </>
+                ) : (
+                  'Verify'
+                )}
+              </Button>
+            </CardContent>
+
+            <CardFooter className="flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setMfaStep('login');
+                  setMfaToken(null);
+                  setMfaCode('');
+                }}
+                className="text-sm text-muted-foreground hover:text-primary hover:underline"
+              >
+                Back to login
+              </button>
+              <button
+                type="button"
+                onClick={handleMfaRecoveryRequest}
+                className="text-sm text-muted-foreground hover:text-primary hover:underline"
+              >
+                Lost access to authenticator?
+              </button>
+            </CardFooter>
+          </>
+        )}
+
+        {/* MFA Setup Step */}
+        {mfaStep === 'mfa_setup' && (
+          <>
+            <CardHeader className="space-y-1 text-center">
+              <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                <KeyRound className="w-6 h-6 text-primary" />
+              </div>
+              <CardTitle className="text-2xl font-bold">
+                Set Up Two-Factor Authentication
+              </CardTitle>
+              <CardDescription>
+                Your administrator requires MFA for this account
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent className="space-y-6">
+              {isSettingUpMfa ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                </div>
+              ) : mfaQrCode ? (
+                <>
+                  <p className="text-sm text-center text-muted-foreground">
+                    Scan this QR code with your authenticator app
+                  </p>
+                  <div className="flex justify-center">
+                    <img
+                      src={mfaQrCode}
+                      alt="MFA QR Code"
+                      className="w-48 h-48 border rounded"
+                    />
+                  </div>
+                  {mfaManualKey && (
+                    <div className="text-center">
+                      <p className="text-xs text-muted-foreground mb-1">Or enter this key manually:</p>
+                      <code className="bg-muted px-2 py-1 rounded text-sm font-mono select-all">
+                        {mfaManualKey}
+                      </code>
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    <Label className="text-center block">Enter the 6-digit code:</Label>
+                    <div className="flex justify-center">
+                      <InputOTP
+                        maxLength={6}
+                        value={mfaCode}
+                        onChange={(value) => setMfaCode(value)}
+                      >
+                        <InputOTPGroup>
+                          <InputOTPSlot index={0} />
+                          <InputOTPSlot index={1} />
+                          <InputOTPSlot index={2} />
+                          <InputOTPSlot index={3} />
+                          <InputOTPSlot index={4} />
+                          <InputOTPSlot index={5} />
+                        </InputOTPGroup>
+                      </InputOTP>
+                    </div>
+                  </div>
+                  <Button
+                    className="w-full"
+                    onClick={handleMfaSetupVerify}
+                    disabled={mfaCode.length !== 6 || isVerifyingMfa}
+                  >
+                    {isVerifyingMfa ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin me-2" />
+                        Setting up...
+                      </>
+                    ) : (
+                      'Complete Setup'
+                    )}
+                  </Button>
+                </>
+              ) : (
+                <p className="text-center text-muted-foreground">
+                  Failed to load MFA setup. Please try again.
+                </p>
+              )}
+            </CardContent>
+
+            <CardFooter className="flex justify-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setMfaStep('login');
+                  setMfaToken(null);
+                  setMfaCode('');
+                  setMfaQrCode(null);
+                  setMfaManualKey(null);
+                }}
+                className="text-sm text-muted-foreground hover:text-primary hover:underline"
+              >
+                Back to login
+              </button>
+            </CardFooter>
+          </>
+        )}
+
+        {/* Normal Login Form */}
+        {mfaStep === 'login' && !showRegister && (
           // Login Form
           <>
             <CardHeader className="space-y-1 text-center">
@@ -586,8 +941,10 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
               </CardFooter>
             </form>
           </>
-        ) : (
-          // Registration Form
+        )}
+
+        {/* Registration Form */}
+        {mfaStep === 'login' && showRegister && (
           <>
             <CardHeader className="space-y-1 text-center">
               {isInviteMode && inviteData ? (

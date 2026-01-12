@@ -262,6 +262,11 @@ export const users = pgTable("users", {
   chatMemory: jsonb("chat_memory").default({}), // User-specific memory values for chat
   chatCreditsUsed: real("chat_credits_used").notNull().default(0),
   chatCreditsUpdated: timestamp("chat_credits_updated").defaultNow(),
+
+  // MFA fields
+  mfaEnabled: boolean("mfa_enabled").default(false).notNull(),
+  mfaSecret: text("mfa_secret"), // Encrypted TOTP secret
+  mfaEnforcedByAdmin: boolean("mfa_enforced_by_admin").default(false).notNull(),
 });
 
 export const passwordResetTokens = pgTable("password_reset_tokens", {
@@ -274,6 +279,18 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
 }, (table) => [
   index("idx_password_reset_tokens_user_id").on(table.userId),
   index("idx_password_reset_tokens_expires_at").on(table.expiresAt),
+]);
+
+export const mfaRecoveryTokens = pgTable("mfa_recovery_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  tokenHash: text("token_hash").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_mfa_recovery_tokens_user_id").on(table.userId),
+  index("idx_mfa_recovery_tokens_expires_at").on(table.expiresAt),
 ]);
 
 // =============================================================================
@@ -1886,17 +1903,54 @@ export const insertBoardSchema = createInsertSchema(boards).omit({
   updatedAt: true,
 });
 
+// Password policy configuration
+export const passwordPolicy = {
+  minLength: 8,
+  requireUppercase: true,
+  requireLowercase: true,
+  requireNumber: true,
+  requireSpecialChar: false,
+} as const;
+
+// Password validation schema with policy enforcement
+export const passwordSchema = z
+  .string()
+  .min(passwordPolicy.minLength, `Password must be at least ${passwordPolicy.minLength} characters`)
+  .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+  .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+  .regex(/[0-9]/, "Password must contain at least one number");
+
+// Helper function to validate password (for use outside Zod)
+export function validatePassword(password: string): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  if (password.length < passwordPolicy.minLength) {
+    errors.push(`Password must be at least ${passwordPolicy.minLength} characters`);
+  }
+  if (passwordPolicy.requireUppercase && !/[A-Z]/.test(password)) {
+    errors.push("Password must contain at least one uppercase letter");
+  }
+  if (passwordPolicy.requireLowercase && !/[a-z]/.test(password)) {
+    errors.push("Password must contain at least one lowercase letter");
+  }
+  if (passwordPolicy.requireNumber && !/[0-9]/.test(password)) {
+    errors.push("Password must contain at least one number");
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
 // Authentication schemas
 export const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  password: z.string().min(1, "Password is required"),
 });
 
 export const registerSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  password: passwordSchema,
   userType: z.enum(["admin", "Teacher", "Caregiver", "SLP", "Parent"], {
     errorMap: () => ({ message: "Please select a valid user type" }),
   }),
@@ -1958,6 +2012,8 @@ export type AdminUser = typeof adminUsers.$inferSelect;
 export type UpsertAdminUser = typeof adminUsers.$inferInsert;
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
 export type InsertPasswordResetToken = typeof passwordResetTokens.$inferInsert;
+export type MfaRecoveryToken = typeof mfaRecoveryTokens.$inferSelect;
+export type InsertMfaRecoveryToken = typeof mfaRecoveryTokens.$inferInsert;
 
 // Institute types
 export type Institute = typeof institutes.$inferSelect;

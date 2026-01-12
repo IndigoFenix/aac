@@ -15,13 +15,24 @@ interface User {
   profileImageUrl?: string;
   isActive: boolean;
   referralCode?: string;
+  mfaEnabled?: boolean;
+  mfaEnforcedByAdmin?: boolean;
+}
+
+export interface LoginResult {
+  success: boolean;
+  user?: User;
+  mfaRequired?: boolean;
+  mfaSetupRequired?: boolean;
+  mfaToken?: string;
+  message?: string;
 }
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<LoginResult>;
   logout: () => void;
   refetchUser: () => Promise<void>;
 }
@@ -61,7 +72,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = async (email: string, password: string): Promise<LoginResult> => {
     try {
       const response = await apiRequest("POST", "/auth/login", {
         email,
@@ -70,15 +81,46 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       const data = await response.json();
 
+      // MFA required - user verified but needs second factor
+      if (data.success && data.mfaRequired) {
+        return {
+          success: true,
+          mfaRequired: true,
+          mfaToken: data.mfaToken,
+          message: data.message,
+        };
+      }
+
+      // MFA setup required - user needs to set up MFA before proceeding
+      if (data.success && data.mfaSetupRequired) {
+        return {
+          success: true,
+          mfaSetupRequired: true,
+          mfaToken: data.mfaToken,
+          message: data.message,
+        };
+      }
+
+      // Normal successful login
       if (data.success && data.user) {
         setUser(data.user);
-        return true;
-      } else {
-        return false;
+        return {
+          success: true,
+          user: data.user,
+        };
       }
+
+      // Login failed
+      return {
+        success: false,
+        message: data.message || 'Login failed',
+      };
     } catch (error) {
       console.error('Login failed:', error);
-      return false;
+      return {
+        success: false,
+        message: 'Login failed',
+      };
     }
   };
 
