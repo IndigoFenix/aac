@@ -277,6 +277,7 @@ export const en = {
     placeholderShort: "Type a message...",
     selectPersona:"Chat Mode",
     changePersona:"Change mode",
+    addFiles: "Add Files",
     persona: {
       assistant:"Assistant",
       assistantDesc:"Helpful general assistant",

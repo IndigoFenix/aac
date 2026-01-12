@@ -639,6 +639,7 @@ interface GetMessageManagerInput {
   persona?: ChatPersona;
   featureContext?: FeatureContext;
   onThinkingUpdate?: (thinkingText: string) => void;
+  vectorStoreId?: string;
 }
 
 interface GetMessageManagerResult {
@@ -1012,7 +1013,10 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     onUpdateChatState,
     onCreditsUsed,
     onThinkingUpdate,
-    memoryProcessor
+    memoryProcessor,
+    vectorStoreId: input.vectorStoreId,
+    // Force Responses API when files are attached (file_search only works with Responses API)
+    useResponsesAPI: true,
   });
 
   // Return both manager and memoryValues reference
@@ -1115,6 +1119,9 @@ export interface OnMessageInput {
 
   /** Mode-specific context data (boards, documents, etc.) */
   featureContext?: FeatureContext;
+
+  /** OpenAI vector store ID for file search (if files are attached) */
+  vectorStoreId?: string;
 }
 
 /**
@@ -1127,7 +1134,7 @@ export interface OnMessageStreamingInput extends OnMessageInput {
 
 export async function onMessage(input: OnMessageInput): Promise<MessageResponse> {
   try {
-    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext } = input;
+    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, vectorStoreId } = input;
 
     const { manager: messageManager, memoryValues } = await getMessageManager({
       userId,
@@ -1136,6 +1143,7 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
       feature: activeFeature,
       persona,
       featureContext,
+      vectorStoreId,
     });
 
     // Debug: Log what we injected
@@ -1204,7 +1212,7 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
  */
 export async function onMessageStreaming(input: OnMessageStreamingInput): Promise<MessageResponse> {
   try {
-    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, onThinkingUpdate } = input;
+    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, onThinkingUpdate, vectorStoreId } = input;
 
     const { manager: messageManager, memoryValues } = await getMessageManager({
       userId,
@@ -1214,6 +1222,7 @@ export async function onMessageStreaming(input: OnMessageStreamingInput): Promis
       persona,
       featureContext,
       onThinkingUpdate, // Pass the callback through to ChatMessageManager
+      vectorStoreId,
     });
 
     // Debug: Log what we injected

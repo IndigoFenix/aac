@@ -97,6 +97,7 @@ import {
       log: ChatMessage[] = []; // Full log of all messages (including culled messages)
       intelligenceLevel: 0 | 1 | 2 | 3;
       memoryLevel: number;
+      vectorStoreId?: string; // For file_search tool support
   
       cullMessages: boolean;
       cullMessagesTo: number;
@@ -141,7 +142,8 @@ import {
           onCreditsUsed: (creditsUsed: number) => Promise<void>,
           onThinkingUpdate?: (thinkingText: string) => void,
           memoryProcessor?: MemoryProcessor,
-          useResponsesAPI?: boolean
+          useResponsesAPI?: boolean,
+          vectorStoreId?: string
       }){
           this.chatState = JSON.parse(JSON.stringify(settings.chatState));
           this.log = JSON.parse(JSON.stringify(settings.log));
@@ -183,10 +185,18 @@ import {
           this.memoryLevel = settings.agent.memory || 1;
   
           this.cullMessages = this.memoryLevel < 3;
-  
+
           this.cullMessagesTo = getCullMessagesTo(this.memoryLevel);
           this.cullMessagesThreshold = this.cullMessagesTo + 5;
           this.maximumMessages = this.cullMessagesTo + 15;
+
+          // File search support
+          this.vectorStoreId = settings.vectorStoreId;
+      }
+
+      // Set vector store ID for file search (can be set after construction)
+      setVectorStoreId(vectorStoreId: string | undefined) {
+          this.vectorStoreId = vectorStoreId;
       }
   
       // Add messages to history and run toolCalls if included.
@@ -353,18 +363,19 @@ import {
           const useResponsesMode: boolean = this.useResponsesAPI === true;
           try {
               const gptResponse: GPTResponse = await this.gpt.getStructuredResponse(
-                  messages, 
+                  messages,
                   String(hashCode(JSON.stringify(promptBuild.schema))),
-                  promptBuild.schema, 
-                  promptBuild.tools, 
-                  tokensAvailableForResponse, 
+                  promptBuild.schema,
+                  promptBuild.tools,
+                  tokensAvailableForResponse,
                   this.intelligenceLevel, {
                       temperature
-                  }, 
-                  promptBuild.searchEnabled, 
-                  promptBuild.searchContextSize, 
+                  },
+                  promptBuild.searchEnabled,
+                  promptBuild.searchContextSize,
                   useResponsesMode,
-                  instructionsText
+                  instructionsText,
+                  this.vectorStoreId // Pass vector store ID for file search
               );
               let creditsUsed = 0; // Credits used by this one response
   

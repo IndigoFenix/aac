@@ -5,16 +5,27 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { 
-  Plus, 
-  Settings2, 
-  Mic, 
-  Send, 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Plus,
+  Settings2,
+  Mic,
+  Send,
   Minimize2,
   Sparkles,
+  Paperclip,
+  X,
+  FileText,
+  Image,
+  Loader2,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
-import { useChat, CHAT_PERSONAS } from '@/hooks/useChat';
+import { useChat, CHAT_PERSONAS, type AttachedFile } from '@/hooks/useChat';
 import { useStudent } from '@/hooks/useStudent';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useSharedState, useFeaturePanel } from '@/contexts/FeaturePanelContext';
@@ -29,6 +40,7 @@ export function ChatFeature() {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const { user } = useAuth();
   const { student } = useStudent();
@@ -52,7 +64,12 @@ export function ChatFeature() {
     setPersona,
     getPersonaInfo,
     thinkingText,
-    isThinking
+    isThinking,
+    attachedFiles,
+    isUploadingFile,
+    uploadFile,
+    removeFile,
+    clearFiles,
   } = useChat();
   
   const showWelcome = history.length === 0;
@@ -135,6 +152,39 @@ export function ChatFeature() {
 
   const handleSwitchToPopup = () => {
     setChatMode('popup');
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    for (const file of Array.from(files)) {
+      await uploadFile(file);
+    }
+
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleAddFilesClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  // Helper to get file icon based on mime type
+  const getFileIcon = (mimeType: string) => {
+    if (mimeType.startsWith('image/')) {
+      return <Image className="w-4 h-4" />;
+    }
+    return <FileText className="w-4 h-4" />;
+  };
+
+  // Helper to format file size
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   const handlePersonaChange = (newPersona: ChatPersona) => {
@@ -246,73 +296,130 @@ export function ChatFeature() {
 
   // Input bar component
   const InputBar = useMemo(() => (
-    <div 
-      dir={isRTL ? 'rtl' : 'ltr'}
-      className="relative bg-card border border-card-border rounded-full px-6 py-4 flex items-center gap-3"
-    >
-      <Button
-        size="icon"
-        variant="ghost"
-        className="h-8 w-8 rounded-full hover-elevate active-elevate-2"
-        data-testid="button-add-attachment"
-        onClick={() => console.log('Add attachment clicked')}
-        aria-label={t('chat.addAttachment')}
-      >
-        <Plus className="w-5 h-5" />
-      </Button>
-      
-      {showTools && (
-        <Button
-          variant="ghost"
-          className="h-8 rounded-full hover-elevate active-elevate-2"
-          data-testid="button-tools"
-          onClick={() => console.log('Tools clicked')}
+    <div className="space-y-2">
+      {/* Attached files list */}
+      {attachedFiles.length > 0 && (
+        <div
+          dir={isRTL ? 'rtl' : 'ltr'}
+          className="flex flex-wrap gap-2 px-2"
         >
-          <Settings2 className="w-4 h-4" />
-          <span className="text-sm ms-2">{t('chat.tools')}</span>
-        </Button>
+          {attachedFiles.map((file) => (
+            <div
+              key={file.fileId}
+              className="flex items-center gap-2 bg-muted/50 border border-border rounded-lg px-3 py-1.5 text-sm"
+            >
+              {getFileIcon(file.mimeType)}
+              <span className="max-w-[150px] truncate">{file.filename}</span>
+              <span className="text-xs text-muted-foreground">
+                ({formatFileSize(file.size)})
+              </span>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-5 w-5 rounded-full hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => removeFile(file.fileId)}
+                aria-label={t('chat.removeFile')}
+              >
+                <X className="w-3 h-3" />
+              </Button>
+            </div>
+          ))}
+        </div>
       )}
 
-      <Input
-        ref={inputRef}
-        value={prompt}
-        onChange={(e) => setPrompt(e.target.value)}
-        placeholder={getPlaceholder()}
-        className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-base h-8 px-2"
-        dir={isRTL ? 'rtl' : 'ltr'}
-        data-testid="input-prompt"
-        onKeyDown={handleKeyDown}
-        disabled={isSending}
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={handleFileSelect}
+        accept=".pdf,.txt,.md,.json,.csv,.xml,.html,.css,.js,.ts,.py,.java,.c,.cpp,.h,.hpp,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp"
       />
 
-      <Button
-        size="icon"
-        variant="ghost"
-        className={cn(
-          "h-8 w-8 rounded-full hover-elevate active-elevate-2",
-          isRecording && "bg-destructive/10 text-destructive"
-        )}
-        onClick={handleVoiceInput}
-        data-testid="button-voice"
-        aria-label={t('chat.voiceInput')}
-        disabled={true} // Voice input disabled for now
+      {/* Main input bar */}
+      <div
+        dir={isRTL ? 'rtl' : 'ltr'}
+        className="relative bg-card border border-card-border rounded-full px-6 py-4 flex items-center gap-3"
       >
-        <Mic className="w-4 h-4" />
-      </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 rounded-full hover-elevate active-elevate-2"
+              data-testid="button-add-attachment"
+              aria-label={t('chat.addAttachment')}
+              disabled={isUploadingFile}
+            >
+              {isUploadingFile ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Plus className="w-5 h-5" />
+              )}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onClick={handleAddFilesClick}>
+              <Paperclip className="w-4 h-4 me-2" />
+              {t('chat.addFiles')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
-      <Button
-        size="icon"
-        variant="default"
-        className="h-8 w-8 rounded-full"
-        onClick={handleSend}
-        disabled={!prompt.trim() || isSending}
-        data-testid="button-send"
-        aria-label={t('chat.sendMessage')}
-      >
-        <Send className={cn("w-4 h-4", isRTL && "rotate-180")} />
-      </Button>
+        {showTools && (
+          <Button
+            variant="ghost"
+            className="h-8 rounded-full hover-elevate active-elevate-2"
+            data-testid="button-tools"
+            onClick={() => console.log('Tools clicked')}
+          >
+            <Settings2 className="w-4 h-4" />
+            <span className="text-sm ms-2">{t('chat.tools')}</span>
+          </Button>
+        )}
+
+        <Input
+          ref={inputRef}
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder={getPlaceholder()}
+          className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-base h-8 px-2"
+          dir={isRTL ? 'rtl' : 'ltr'}
+          data-testid="input-prompt"
+          onKeyDown={handleKeyDown}
+          disabled={isSending}
+        />
+
+        <Button
+          size="icon"
+          variant="ghost"
+          className={cn(
+            "h-8 w-8 rounded-full hover-elevate active-elevate-2",
+            isRecording && "bg-destructive/10 text-destructive"
+          )}
+          onClick={handleVoiceInput}
+          data-testid="button-voice"
+          aria-label={t('chat.voiceInput')}
+          disabled={true} // Voice input disabled for now
+        >
+          <Mic className="w-4 h-4" />
+        </Button>
+
+        <Button
+          size="icon"
+          variant="default"
+          className="h-8 w-8 rounded-full"
+          onClick={handleSend}
+          disabled={!prompt.trim() || isSending}
+          data-testid="button-send"
+          aria-label={t('chat.sendMessage')}
+        >
+          <Send className={cn("w-4 h-4", isRTL && "rotate-180")} />
+        </Button>
+      </div>
     </div>
-  ), [prompt, isRecording, isSending, student, isRTL, t, handleKeyDown, handleVoiceInput, handleSend, getPlaceholder]);
+  ), [prompt, isRecording, isSending, student, isRTL, t, handleKeyDown, handleVoiceInput, handleSend, getPlaceholder, attachedFiles, isUploadingFile, removeFile, handleFileSelect, handleAddFilesClick]);
 
   return (
     <div className="flex flex-col h-full relative">

@@ -142,6 +142,9 @@
     "expandMode": "Expand chat",
     "minimize": "Minimize",
     "popupWelcome": "Start a conversation...",
-    "placeholderShort": "Type a message..."
+    "placeholderShort": "Type a message...",
+    "addAttachment": "Add attachment",
+    "addFiles": "Add files",
+    "removeFile": "Remove file"
   }
 }

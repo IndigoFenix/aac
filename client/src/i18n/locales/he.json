@@ -142,6 +142,9 @@
     "expandMode": "הרחב צ׳אט",
     "minimize": "מזער",
     "popupWelcome": "התחל שיחה...",
-    "placeholderShort": "הקלד הודעה..."
+    "placeholderShort": "הקלד הודעה...",
+    "addAttachment": "הוסף קובץ מצורף",
+    "addFiles": "הוסף קבצים",
+    "removeFile": "הסר קובץ"
   }
 }
