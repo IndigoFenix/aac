@@ -53,7 +53,8 @@ interface StudentModalProps {
 }
 
 interface StudentFormData {
-  name: string;
+  firstName: string;
+  lastName: string;
   gender: string;
   birthDate: string;
   framework: string;
@@ -82,7 +83,8 @@ const GRADE_OPTIONS = [
 ];
 
 const INITIAL_FORM_STATE: StudentFormData = {
-  name: '',
+  firstName: '',
+  lastName: '',
   gender: '',
   birthDate: '',
   framework: 'tala',
@@ -134,20 +136,21 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
       const res = await apiRequest('POST', '/api/students', studentData);
       return res.json();
     },
-    onSuccess: async (newStudent) => {
+    onSuccess: async (response) => {
       await refetchStudent();
       queryClient.invalidateQueries({ queryKey: ['/api/students'] });
-      
-      // Assign to institute if selected
-      if (selectedInstituteId && newStudent.id) {
-        await handleInstituteAssignment(newStudent.id);
+
+      // Assign to institute if selected (response.student contains the created student)
+      const newStudentId = response?.student?.id;
+      if (selectedInstituteId && newStudentId) {
+        await handleInstituteAssignment(newStudentId);
       }
-      
+
       toast({
         title: t('toast.studentCreated') || 'Student Created',
         description: t('toast.studentCreatedDesc') || 'The student has been created successfully.',
       });
-      
+
       handleClose();
     },
     onError: (error: any) => {
@@ -198,7 +201,8 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
   useEffect(() => {
     if (editingStudent) {
       setFormData({
-        name: editingStudent.name || '',
+        firstName: editingStudent.firstName || '',
+        lastName: editingStudent.lastName || '',
         gender: editingStudent.gender || '',
         birthDate: editingStudent.birthDate || '',
         framework: editingStudent.framework || 'tala',
@@ -304,17 +308,18 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
   };
 
   const handleSubmit = () => {
-    if (!formData.name.trim()) {
+    if (!formData.firstName.trim()) {
       toast({
         title: t('common.error') || 'Error',
-        description: t('student.nameIsRequired') || 'Name is required',
+        description: t('student.firstNameIsRequired') || 'First name is required',
         variant: 'destructive',
       });
       return;
     }
 
     const submitData = {
-      name: formData.name,
+      firstName: formData.firstName,
+      lastName: formData.lastName || undefined,
       gender: formData.gender || undefined,
       birthDate: formData.birthDate || undefined,
       framework: formData.framework,
@@ -387,18 +392,31 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
         </DialogHeader>
 
         <div className="grid gap-4 py-4">
-          {/* Row 1: Name */}
-          <div className="space-y-2">
-            <Label htmlFor="studentName">
-              {t('student.nameRequired') || 'Name *'}
-            </Label>
-            <Input
-              id="studentName"
-              value={formData.name}
-              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-              placeholder={t('student.namePlaceholder') || 'Enter student name'}
-              required
-            />
+          {/* Row 1: First Name and Last Name */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="studentFirstName">
+                {t('student.firstNameRequired') || 'First Name *'}
+              </Label>
+              <Input
+                id="studentFirstName"
+                value={formData.firstName}
+                onChange={(e) => setFormData(prev => ({ ...prev, firstName: e.target.value }))}
+                placeholder={t('student.firstNamePlaceholder') || 'Enter first name'}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="studentLastName">
+                {t('student.lastName') || 'Last Name'}
+              </Label>
+              <Input
+                id="studentLastName"
+                value={formData.lastName}
+                onChange={(e) => setFormData(prev => ({ ...prev, lastName: e.target.value }))}
+                placeholder={t('student.lastNamePlaceholder') || 'Enter last name'}
+              />
+            </div>
           </div>
 
           {/* Row 2: Gender and Birth Date */}
@@ -678,7 +696,7 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={isLoading || !formData.name.trim()}
+            disabled={isLoading || !formData.firstName.trim()}
             className="flex items-center gap-2"
           >
             {isLoading ? (

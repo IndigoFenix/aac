@@ -3,10 +3,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { 
-  useInstitute, 
-  Institute, 
-  InstituteMember, 
+import { useStudent } from '@/hooks/useStudent';
+import {
+  useInstitute,
+  Institute,
+  InstituteMember,
   InstituteInvite,
   Classroom,
   ClassroomMember,
@@ -147,7 +148,12 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
     // Institute student operations
     getInstituteStudents,
     addStudentToInstitute,
+    updateInstituteStudent,
+    removeStudentFromInstitute,
   } = useInstitute();
+
+  // Get user's students for adding to institute
+  const { students: userStudents } = useStudent();
 
   // Local state
   const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'classrooms' | 'students' | 'invites' | 'settings'>('overview');
@@ -221,7 +227,20 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
     isPrimary: true,
     notes: '',
   });
-  
+
+  // Institute student dialogs
+  const [showAddInstituteStudentDialog, setShowAddInstituteStudentDialog] = useState(false);
+  const [showEditInstituteStudentDialog, setShowEditInstituteStudentDialog] = useState(false);
+  const [showRemoveInstituteStudentConfirm, setShowRemoveInstituteStudentConfirm] = useState(false);
+  const [selectedInstituteStudent, setSelectedInstituteStudent] = useState<InstituteStudent | null>(null);
+
+  // Institute student form
+  const [instituteStudentForm, setInstituteStudentForm] = useState({
+    studentId: '',
+    grade: '',
+    idNumber: '',
+  });
+
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Load data based on active tab
@@ -806,6 +825,116 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
       });
     }
   };
+
+  // ==========================================================================
+  // INSTITUTE STUDENT HANDLERS
+  // ==========================================================================
+
+  const handleAddInstituteStudent = async () => {
+    if (!currentInstitute || !instituteStudentForm.studentId) {
+      toast({
+        title: t('institute.error') || 'Error',
+        description: t('institute.selectStudent') || 'Please select a student',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await addStudentToInstitute(currentInstitute.id, instituteStudentForm.studentId, {
+        grade: instituteStudentForm.grade || undefined,
+        idNumber: instituteStudentForm.idNumber || undefined,
+      });
+      await loadInstituteStudents();
+      setShowAddInstituteStudentDialog(false);
+      setInstituteStudentForm({ studentId: '', grade: '', idNumber: '' });
+      toast({
+        title: t('institute.studentAdded') || 'Student Added',
+        description: t('institute.studentAddedDesc') || 'Student has been added to the institute.',
+      });
+    } catch (error: any) {
+      toast({
+        title: t('institute.error') || 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleEditInstituteStudent = async () => {
+    if (!currentInstitute || !selectedInstituteStudent) return;
+
+    setIsSubmitting(true);
+    try {
+      await updateInstituteStudent(currentInstitute.id, selectedInstituteStudent.id, {
+        grade: instituteStudentForm.grade || undefined,
+        idNumber: instituteStudentForm.idNumber || undefined,
+      });
+      await loadInstituteStudents();
+      setShowEditInstituteStudentDialog(false);
+      setSelectedInstituteStudent(null);
+      setInstituteStudentForm({ studentId: '', grade: '', idNumber: '' });
+      toast({
+        title: t('institute.studentUpdated') || 'Student Updated',
+        description: t('institute.studentUpdatedDesc') || 'Student enrollment has been updated.',
+      });
+    } catch (error: any) {
+      toast({
+        title: t('institute.error') || 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRemoveInstituteStudent = async () => {
+    if (!currentInstitute || !selectedInstituteStudent) return;
+
+    setIsSubmitting(true);
+    try {
+      await removeStudentFromInstitute(currentInstitute.id, selectedInstituteStudent.id);
+      await loadInstituteStudents();
+      setShowRemoveInstituteStudentConfirm(false);
+      setSelectedInstituteStudent(null);
+      toast({
+        title: t('institute.studentRemoved') || 'Student Removed',
+        description: t('institute.studentRemovedDesc') || 'Student has been removed from the institute.',
+      });
+    } catch (error: any) {
+      toast({
+        title: t('institute.error') || 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const openEditInstituteStudentDialog = (student: InstituteStudent) => {
+    setSelectedInstituteStudent(student);
+    setInstituteStudentForm({
+      studentId: student.id,
+      grade: student.grade || '',
+      idNumber: student.idNumber || '',
+    });
+    setShowEditInstituteStudentDialog(true);
+  };
+
+  const openRemoveInstituteStudentConfirm = (student: InstituteStudent) => {
+    setSelectedInstituteStudent(student);
+    setShowRemoveInstituteStudentConfirm(true);
+  };
+
+  // Get students available to add (user's students not already in this institute)
+  const availableStudentsToAdd = userStudents.filter(
+    (student) => !instituteStudents.some((is) => is.id === student.id)
+  );
 
   // ==========================================================================
   // HELPERS
@@ -1620,6 +1749,18 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <h2 className="text-lg font-semibold">{t('institute.students') || 'Students'}</h2>
+                {currentInstitute.isAdmin && (
+                  <Button
+                    onClick={() => {
+                      setInstituteStudentForm({ studentId: '', grade: '', idNumber: '' });
+                      setShowAddInstituteStudentDialog(true);
+                    }}
+                    disabled={availableStudentsToAdd.length === 0}
+                  >
+                    <UserPlus className="w-4 h-4 me-2" />
+                    {t('institute.addStudent') || 'Add Student'}
+                  </Button>
+                )}
               </div>
 
               {loadingInstituteStudents ? (
@@ -1632,8 +1773,22 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                     <GraduationCap className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-50" />
                     <p className="text-muted-foreground">{t('institute.noStudents') || 'No students assigned yet'}</p>
                     <p className="text-sm text-muted-foreground mt-1">
-                      {t('institute.noStudentsHint') || 'Assign students through the student management panel'}
+                      {currentInstitute.isAdmin && availableStudentsToAdd.length > 0
+                        ? (t('institute.noStudentsHintAdmin') || 'Click "Add Student" to assign students to this institute')
+                        : (t('institute.noStudentsHint') || 'Assign students through the student management panel')}
                     </p>
+                    {currentInstitute.isAdmin && availableStudentsToAdd.length > 0 && (
+                      <Button
+                        className="mt-4"
+                        onClick={() => {
+                          setInstituteStudentForm({ studentId: '', grade: '', idNumber: '' });
+                          setShowAddInstituteStudentDialog(true);
+                        }}
+                      >
+                        <UserPlus className="w-4 h-4 me-2" />
+                        {t('institute.addStudent') || 'Add Student'}
+                      </Button>
+                    )}
                   </CardContent>
                 </Card>
               ) : (
@@ -1649,7 +1804,8 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                             <div>
                               <p className="font-medium">{student.name}</p>
                               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                {student.grade && <span>{getGradeLabel(student.grade)}</span>}
+                                {student.grade && <Badge variant="outline">{getGradeLabel(student.grade)}</Badge>}
+                                {student.idNumber && <span>ID: {student.idNumber}</span>}
                               </div>
                             </div>
                           </div>
@@ -1658,6 +1814,30 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                               <span className="text-xs text-muted-foreground">
                                 {t('institute.enrolled') || 'Enrolled'}: {new Date(student.enrollmentDate).toLocaleDateString()}
                               </span>
+                            )}
+                            {currentInstitute.isAdmin && (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon">
+                                    <MoreHorizontal className="w-4 h-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuLabel>{t('common.actions') || 'Actions'}</DropdownMenuLabel>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={() => openEditInstituteStudentDialog(student)}>
+                                    <Edit className="w-4 h-4 me-2" />
+                                    {t('institute.editEnrollment') || 'Edit Enrollment'}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    className="text-destructive"
+                                    onClick={() => openRemoveInstituteStudentConfirm(student)}
+                                  >
+                                    <Trash2 className="w-4 h-4 me-2" />
+                                    {t('institute.removeStudent') || 'Remove from Institute'}
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             )}
                           </div>
                         </div>
@@ -2217,6 +2397,175 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
             >
               {isSubmitting && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
               {t('common.delete') || 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Add Student to Institute Dialog */}
+      <Dialog open={showAddInstituteStudentDialog} onOpenChange={setShowAddInstituteStudentDialog}>
+        <DialogContent className="sm:max-w-[450px]">
+          <DialogHeader>
+            <DialogTitle>{t('institute.addStudent') || 'Add Student to Institute'}</DialogTitle>
+            <DialogDescription>
+              {t('institute.addStudentDesc') || 'Select a student to add to this institute.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>{t('institute.selectStudent') || 'Student'} *</Label>
+              <Select
+                value={instituteStudentForm.studentId}
+                onValueChange={(value) => setInstituteStudentForm(prev => ({ ...prev, studentId: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={t('institute.selectStudentPlaceholder') || 'Select a student...'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableStudentsToAdd.length === 0 ? (
+                    <div className="p-2 text-sm text-muted-foreground text-center">
+                      {t('institute.noAvailableStudents') || 'All your students are already in this institute'}
+                    </div>
+                  ) : (
+                    availableStudentsToAdd.map((student) => (
+                      <SelectItem key={student.id} value={student.id}>
+                        <span className="flex items-center gap-2">
+                          <GraduationCap className="w-4 h-4" />
+                          {student.name}
+                        </span>
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>{t('institute.grade') || 'Grade Level'}</Label>
+              <Select
+                value={instituteStudentForm.grade}
+                onValueChange={(value) => setInstituteStudentForm(prev => ({ ...prev, grade: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={t('institute.selectGrade') || 'Select grade...'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {GRADE_OPTIONS.map((grade) => (
+                    <SelectItem key={grade.value} value={grade.value}>
+                      {t(`student.grades.${grade.value}`) || grade.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>{t('institute.studentIdNumber') || 'Student ID Number'}</Label>
+              <Input
+                value={instituteStudentForm.idNumber}
+                onChange={(e) => setInstituteStudentForm(prev => ({ ...prev, idNumber: e.target.value }))}
+                placeholder={t('institute.studentIdPlaceholder') || 'Institution ID (optional)'}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowAddInstituteStudentDialog(false);
+              setInstituteStudentForm({ studentId: '', grade: '', idNumber: '' });
+            }}>
+              {t('common.cancel') || 'Cancel'}
+            </Button>
+            <Button
+              onClick={handleAddInstituteStudent}
+              disabled={isSubmitting || !instituteStudentForm.studentId}
+            >
+              {isSubmitting && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
+              {t('institute.add') || 'Add'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Student Enrollment Dialog */}
+      <Dialog open={showEditInstituteStudentDialog} onOpenChange={setShowEditInstituteStudentDialog}>
+        <DialogContent className="sm:max-w-[450px]">
+          <DialogHeader>
+            <DialogTitle>{t('institute.editEnrollment') || 'Edit Enrollment'}</DialogTitle>
+            <DialogDescription>
+              {selectedInstituteStudent?.name
+                ? (t('institute.editEnrollmentDescNamed') || `Update enrollment details for ${selectedInstituteStudent.name}`).replace('${selectedInstituteStudent.name}', selectedInstituteStudent.name)
+                : (t('institute.editEnrollmentDesc') || 'Update student enrollment details.')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>{t('institute.grade') || 'Grade Level'}</Label>
+              <Select
+                value={instituteStudentForm.grade}
+                onValueChange={(value) => setInstituteStudentForm(prev => ({ ...prev, grade: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={t('institute.selectGrade') || 'Select grade...'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {GRADE_OPTIONS.map((grade) => (
+                    <SelectItem key={grade.value} value={grade.value}>
+                      {t(`student.grades.${grade.value}`) || grade.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>{t('institute.studentIdNumber') || 'Student ID Number'}</Label>
+              <Input
+                value={instituteStudentForm.idNumber}
+                onChange={(e) => setInstituteStudentForm(prev => ({ ...prev, idNumber: e.target.value }))}
+                placeholder={t('institute.studentIdPlaceholder') || 'Institution ID (optional)'}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowEditInstituteStudentDialog(false);
+              setSelectedInstituteStudent(null);
+              setInstituteStudentForm({ studentId: '', grade: '', idNumber: '' });
+            }}>
+              {t('common.cancel') || 'Cancel'}
+            </Button>
+            <Button onClick={handleEditInstituteStudent} disabled={isSubmitting}>
+              {isSubmitting && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
+              {t('common.save') || 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Remove Student from Institute Confirmation */}
+      <AlertDialog open={showRemoveInstituteStudentConfirm} onOpenChange={setShowRemoveInstituteStudentConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-destructive" />
+              {t('institute.confirmRemoveStudent') || 'Remove Student from Institute?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {selectedInstituteStudent?.name
+                ? (t('institute.confirmRemoveStudentDescNamed') || `Are you sure you want to remove ${selectedInstituteStudent.name} from this institute? They will also be removed from any classrooms in this institute.`).replace('${selectedInstituteStudent.name}', selectedInstituteStudent.name)
+                : (t('institute.confirmRemoveStudentDesc') || 'This student will be removed from this institute and any associated classrooms.')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              setShowRemoveInstituteStudentConfirm(false);
+              setSelectedInstituteStudent(null);
+            }}>
+              {t('common.cancel') || 'Cancel'}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleRemoveInstituteStudent}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isSubmitting && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
+              {t('institute.remove') || 'Remove'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -637,7 +637,7 @@ ${p.startDate ? `Start: ${p.startDate}\n` : ""}${p.endDate ? `End: ${p.endDate}\
 
     const s = this.state.student;
     const age = studentService.calculateAge(s.birthDate);
-    return `Student: ${s.name || "Unknown"}\nGender: ${s.gender}\nAge: ${age}\n${s.primaryLanguage ? `Primary Language: ${s.primaryLanguage}\n` : ""}`;
+    return `Student: ${s.firstName || "Unknown"}\nGender: ${s.gender}\nAge: ${age}\n${s.primaryLanguage ? `Primary Language: ${s.primaryLanguage}\n` : ""}`;
   }
 }
 

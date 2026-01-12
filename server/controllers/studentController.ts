@@ -71,10 +71,10 @@ export class StudentController {
     try {
       const currentUser = req.user as any;
 
-      if (!req.body.name) {
+      if (!req.body.firstName) {
         res
           .status(400)
-          .json({ success: false, message: "Name is required" });
+          .json({ success: false, message: "First name is required" });
         return;
       }
 

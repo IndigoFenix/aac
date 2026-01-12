@@ -1,6 +1,6 @@
 import { ChatMessage, ChatState } from "./chat-handler";
 import { CREDITS_PER_WEB_SEARCH } from "./cost-helpers";
-import { GPTFunctionToolCall, GPTToolCall, JSONSchema } from "./gpt";
+import { GPTFunctionToolCall, GPTToolCall, GPTFunctionCallItem, JSONSchema } from "./gpt";
 import { sendEmail } from "./tools/email";
 import { MemoryOperationResult, MemoryToolInput, processMemoryToolResponse } from "./memory-system";
 import { ArticleResponse, fetchPage, SearchItem, webSearch } from "./tools/search-engine";
@@ -117,16 +117,15 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
       }
     },
     apiCall: async (toolCall: GPTFunctionToolCall) => {
-      const functionToolCall = toolCall as GPTFunctionToolCall;
-      const fnName = (toolCall as GPTFunctionToolCall).function.name;
+      const fnName = toolCall.name;
       const endpointData = deps.agent.apiEndpoints.find(
         (endpoint: any) => `${API_PREFIX}${endpoint.name}` === fnName
       );
       if (!endpointData) {
         return { error: `API endpoint "${fnName}" not found.` };
       } else {
-        const params = functionToolCall.function.arguments
-          ? JSON.parse(functionToolCall.function.arguments)
+        const params = toolCall.arguments
+          ? JSON.parse(toolCall.arguments)
           : {};
         try {
           if (!hideLogs) console.log("Calling API endpoint", endpointData.name, "with params:", params);
@@ -507,18 +506,18 @@ export function enrichToolCallMessage(
 ): ChatMessage {
   if (!toolCallMessage.toolCalls) return toolCallMessage;
 
-  toolCallMessage.toolCalls.forEach((toolCall) => {
-    if (toolCall.type !== "function") return;
-    if (!toolCall.function?.name?.startsWith(API_PREFIX)) return;
+  toolCallMessage.toolCalls.forEach((toolCall: GPTFunctionToolCall) => {
+    if (toolCall.type !== "function_call") return;
+    if (!toolCall.name?.startsWith(API_PREFIX)) return;
 
     const endpoint = apiEndpoints.find(
-      (ep) => `${API_PREFIX}${ep.name}` === toolCall.function.name
+      (ep) => `${API_PREFIX}${ep.name}` === toolCall.name
     );
     if (!endpoint) return;
 
     let args: unknown;
     try {
-      args = JSON.parse((toolCall as GPTFunctionToolCall).function.arguments || "{}");
+      args = JSON.parse(toolCall.arguments || "{}");
     } catch {
       return;
     }
@@ -530,7 +529,7 @@ export function enrichToolCallMessage(
       insertKeysForProperty(args as Record<string, any>, name, schema as JSONSchema, values, []);
     }
 
-    (toolCall as GPTFunctionToolCall).function.arguments = JSON.stringify(args);
+    toolCall.arguments = JSON.stringify(args);
   });
 
   return toolCallMessage;
@@ -544,12 +543,12 @@ export async function makeToolCalls(
 
   if (!toolCallMessage.toolCalls) return toolCallMessages;
 
-  const toolCalls = toolCallMessage.toolCalls;
+  const toolCalls = toolCallMessage.toolCalls as GPTFunctionToolCall[];
 
-  const insertToolCallResponse = (toolCall: GPTToolCall, response: any, credits?: number) => {
+  const insertToolCallResponse = (toolCall: GPTFunctionToolCall, response: any, credits?: number) => {
     const message: ChatMessage = {
       role: "tool",
-      toolCallId: toolCall.id,
+      toolCallId: toolCall.call_id,
       content: JSON.stringify(response),
       timestamp: Date.now(),
       credits: credits || 0,
@@ -561,16 +560,16 @@ export async function makeToolCalls(
     toolCalls.map(async (toolCall) => {
       try {
         let response;
-        if (toolCall.type === "function") {
-          if (toolCall.function?.name?.startsWith(API_PREFIX)) {
+        if (toolCall.type === "function_call") {
+          if (toolCall.name?.startsWith(API_PREFIX)) {
             response = await registry.apiCall(toolCall);
             insertToolCallResponse(toolCall, response);
           } else {
-            let args = toolCall.function.arguments
-              ? JSON.parse(toolCall.function.arguments)
+            let args = toolCall.arguments
+              ? JSON.parse(toolCall.arguments)
               : {};
             let response;
-            switch (toolCall.function.name) {
+            switch (toolCall.name) {
               case "describeActions":
                 response = await registry.describeActions(args as { actionDescription: string });
                 insertToolCallResponse(toolCall, response);
@@ -606,7 +605,7 @@ export async function makeToolCalls(
                 break;
               default:
                 insertToolCallResponse(toolCall, {
-                  error: `Unknown tool: ${toolCall.function.name}`,
+                  error: `Unknown tool: ${toolCall.name}`,
                 });
                 break;
             }
@@ -617,6 +616,6 @@ export async function makeToolCalls(
       }
     })
   );
-  
+
   return toolCallMessages;
 }
