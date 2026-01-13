@@ -57,9 +57,9 @@ import {
   deserializeLoadState, 
   processMemoryToolWithDB, 
   serializeLoadState, 
-  type AgentMemoryFieldWithDB 
 } from "./chat/memory-db-bridge";
 import { createDBMemoryProcessor, MemoryProcessor } from "./chat/tool-router";
+import { AgentMemoryFieldWithDB } from "./chat/memory-types";
 // ============================================================================
 // AGENT TEMPLATES (Mode-based, stored locally)
 // ============================================================================
@@ -741,7 +741,10 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   };
 
   // Deserialize existing load state from chatState if available
-  const existingLoadState = undefined; // Or restore from chatState.loadStateCache
+  // Note: May be the cause of some bugs. If issues arise, consider setting it to undefined.
+  const existingLoadState = chatState.loadStateCache 
+    ? deserializeLoadState(chatState.loadStateCache) 
+    : undefined;
 
   if (context.student) {
     // Determine report permissions based on user rights

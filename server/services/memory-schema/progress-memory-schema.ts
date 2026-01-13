@@ -78,7 +78,7 @@ import {
   type DBOperationContext,
   type PaginationParams,
   type ListResult,
-} from "../chat/memory-db-bridge";
+} from "../chat/memory-types";
 import { programService } from "../programService";
 
 // ============================================================================

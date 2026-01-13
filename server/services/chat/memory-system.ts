@@ -6,167 +6,65 @@
  *   - processMemoryToolResponse(memoryFields, memoryValues, memoryState, toolInput)
  */
 
-import { MemoryState } from "@shared/schema";
 import { GPTFunctionTool, JSONSchema } from "./gpt";
+import {
+  // Core types
+  MemoryType,
+  MemoryPrimitiveType,
+  MemoryCompositeType,
+  MemoryAction,
+  
+  // Field schemas (base, without DB)
+  AgentMemoryField,
+  AgentMemoryFieldBase,
+  AgentMemoryFieldObject,
+  AgentMemoryFieldArray,
+  AgentMemoryFieldMap,
+  AgentMemoryFieldTopic,
+  
+  // Topic tree
+  TopicNode,
+  TopicTree,
+  
+  // Tool input/output
+  MemoryToolInput,
+  MemoryToolBatchInput,
+  MemoryToolCallInput,
+  MemoryOperationResult,
+  MemoryToolResponseProcessed,
+  
+  // State
+  MemoryState,
+  
+  // Schema resolution
+  SchemaStep,
+} from './memory-types';
+
+import {
+  normalizePath,
+  splitPath,
+  joinPath,
+  escapeToken,
+  unescapeToken,
+  getParentPath,
+  getLastToken,
+  appendToPath,
+  hasWildcard,
+  endsWithWildcard,
+  getWildcardBasePath,
+  getPathDepth,
+  isArrayIndex,
+  parseArrayIndex,
+} from './path-utils';
 
 const REQUIRE_VISIBLE_TO_UPDATE = false;
 const RETURN_VIEW_DATA = true;
-
-/* ------------------------------
- * Types (copied / compatible)
- * ------------------------------ */
-
-export type MemoryPrimitiveType = 'string' | 'number' | 'integer' | 'boolean' | 'null';
-export type MemoryCompositeType  = 'object' | 'array' | 'map' | 'topic';
-export type MemoryType           = MemoryPrimitiveType | MemoryCompositeType;
-
-export interface AgentMemoryFieldBase {
-  id: string;
-  type: MemoryType;
-  title?: string;
-  description?: string;
-  default?: any;
-  enum?: any[];
-  const?: any;
-  examples?: any[];
-  opened?: boolean;
-  // Strings
-  minLength?: number;
-  maxLength?: number;
-  pattern?: string;
-  format?: string;
-  // Numbers
-  minimum?: number;
-  maximum?: number;
-  exclusiveMinimum?: number;
-  exclusiveMaximum?: number;
-  multipleOf?: number;
-}
-
-export interface AgentMemoryFieldObject extends AgentMemoryFieldBase {
-  type: 'object';
-  properties: Record<string, AgentMemoryField>;
-  required?: string[];
-  additionalProperties?: boolean;
-}
-
-export interface AgentMemoryFieldArray extends AgentMemoryFieldBase {
-  type: 'array';
-  items: AgentMemoryField;
-  minItems?: number;
-  maxItems?: number;
-  uniqueItems?: boolean;
-}
-
-export interface AgentMemoryFieldMap extends AgentMemoryFieldBase {
-  type: 'map';
-  values: AgentMemoryField;
-  keyPattern?: string;
-  minProperties?: number;
-  maxProperties?: number;
-}
-
-export interface AgentMemoryFieldTopic extends AgentMemoryFieldBase {
-  type: 'topic';
-  maxDepth?: number;
-  maxBreadthPerNode?: number;
-}
-
-export type AgentMemoryField =
-  | AgentMemoryFieldObject
-  | AgentMemoryFieldArray
-  | AgentMemoryFieldMap
-  | AgentMemoryFieldTopic
-  | (AgentMemoryFieldBase & { type: MemoryPrimitiveType });
-
-export interface TopicNode {
-  description?: string;
-  subtopics: Record<string, TopicNode>;
-}
-
-export type TopicTree = Record<string, TopicNode>;
-
-/* --------------------------------
- * Tool input + results
- * -------------------------------- */
-export type MemoryAction =
-  | 'view' | 'hide'
-  | 'set' | 'upsert'
-  | 'add' | 'insert'
-  | 'delete' | 'clear'
-  | 'rename';
-
-export interface MemoryToolInput {
-  action: MemoryAction;
-  /** Single target path OR an array of paths. Exactly one of these must be provided. */
-  path?: string;
-  paths?: string[];
-  /** Value for set/upsert/add/insert; for topics, string value here targets "description" unless a node object is supplied. */
-  value?: any;
-  /** For insert (array) or upsert (array), index position. 0..length */
-  index?: number;
-  /** For add to map/topic: new key (required). For map rename/topic rename: the new key name. */
-  key?: string;
-  newKey?: string;
-  /** Optional pagination for view (container paths only). */
-  page?: { offset?: number; limit?: number };
-  /** For view: if true and path is a container (no *), also make its immediate children visible. Default true for objects; false for others. */
-  openChildren?: boolean;
-}
-
-export type MemoryToolBatchInput = { ops: MemoryToolInput[] } | { operations: MemoryToolInput[] };
-export type MemoryToolCallInput  = MemoryToolInput | MemoryToolBatchInput;
-
-export interface MemoryOperationResult {
-  target: string;
-  action: MemoryAction;
-  ok: boolean;
-  message?: string;
-  newPath?: string;          // e.g., after rename
-  mutatedPaths?: string[];   // concrete paths touched (esp. when wildcard expands)
-}
-
-export interface MemoryToolResponseProcessed {
-  updatedMemoryValues: any;
-  updatedMemoryState: MemoryState;
-  results: MemoryOperationResult[];
-}
 
 /* ------------------------------
  * Utilities: paths & helpers
  * ------------------------------ */
 
 const ROOT = '';
-
-function escapeToken(token: string): string {
-  return token.replace(/~/g, '~0').replace(/\//g, '~1');
-}
-function unescapeToken(token: string): string {
-  return token.replace(/~1/g, '/').replace(/~0/g, '~');
-}
-
-function normalizePath(path: string | undefined | null): string {
-  if (!path) return ROOT;
-  let p = path.trim();
-  if (p === '' || p === '/') return ROOT;
-  if (!p.startsWith('/')) p = '/' + p;
-  // Collapse extra slashes
-  p = p.replace(/\/+/g, '/');
-  // Remove trailing slash except root
-  if (p.length > 1 && p.endsWith('/')) p = p.slice(0, -1);
-  return p;
-}
-
-function splitPath(path: string): string[] {
-  const p = normalizePath(path);
-  if (p === ROOT) return [];
-  return p.slice(1).split('/').map(unescapeToken);
-}
-
-function joinPath(tokens: string[]): string {
-  if (!tokens.length) return ROOT;
-  return '/' + tokens.map(escapeToken).join('/');
-}
 
 function last<T>(arr: T[]): T | undefined {
   return arr[arr.length - 1];
@@ -183,15 +81,6 @@ function isIntegerKey(s: string): boolean {
 function topFieldById(fields: AgentMemoryField[], id: string | undefined): AgentMemoryField | undefined {
   return fields.find(f => f.id === id);
 }
-
-type SchemaStep =
-  | { kind: 'field'; schema: AgentMemoryField; fieldId: string }
-  | { kind: 'objectProp'; schema: AgentMemoryFieldObject; propName: string; propSchema: AgentMemoryField }
-  | { kind: 'arrayItem'; schema: AgentMemoryFieldArray; index: number; itemSchema: AgentMemoryField }
-  | { kind: 'mapValue'; schema: AgentMemoryFieldMap; key: string; valueSchema: AgentMemoryField }
-  | { kind: 'topic'; schema: AgentMemoryFieldTopic; nodePath: string[] } // points to a TopicNode or the TopicTree root when nodePath=[]
-  | { kind: 'topicDescription'; schema: AgentMemoryFieldTopic; nodePath: string[] }
-  | { kind: 'topicSubtopics'; schema: AgentMemoryFieldTopic; nodePath: string[] };
 
 function resolveSchemaPath(memoryFields: AgentMemoryField[], path: string): { steps: SchemaStep[]; leaf?: SchemaStep; error?: string } {
   const tokens = splitPath(path);
@@ -631,6 +520,9 @@ function getMemoryToolInstructions(): string {
 
   Do not attempt to set the properties of hidden objects - view them first.
 
+  All memory operations are applied simultaneously in a single batch.
+  Do not attempt to create a parent object and its children at the same time; first create the parent, then add children in a subsequent operation, using the parent's actual ID.
+
   Batch API:
   - Send one or more operations in the 'ops' array. They are applied sequentially.
   - For view/hide you may use 'path' or 'paths' (array) and an optional trailing '*' wildcard.
@@ -964,6 +856,14 @@ export function renderMemoryVisualization(
     if (!open) return lines;
   
     const arr = Array.isArray(value) ? value : [];
+    
+    // Explicit empty message so AI knows there's nothing to load
+    if (arr.length === 0) {
+      lines.push(`  (empty - no items to display)`);
+      lines.push(`  ↪ To append: action "add" at "${basePath}" with value.`);
+      return lines;
+    }
+
     const start = Math.min(page.offset, Math.max(0, arr.length - 1));
     const end = Math.min(arr.length, start + page.limit);
   
@@ -1024,6 +924,13 @@ export function renderMemoryVisualization(
     lines.push(`• ${basePath || '/'} (map, ${allKeys.length} keys)${inlineDesc(field.description)} ${open ? '' : '— hidden; view to list keys'}`);
     if (!open) return lines;
   
+    // Explicit empty message so AI knows there's nothing to load
+    if (allKeys.length === 0) {
+      lines.push(`  (empty - no items to display)`);
+      lines.push(`  ↪ Add: action "add" at "${basePath}" with key + value.`);
+      return lines;
+    }
+
     const start = Math.min(page.offset, Math.max(0, allKeys.length));
     const end = Math.min(allKeys.length, start + page.limit);
   

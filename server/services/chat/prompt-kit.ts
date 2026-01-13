@@ -1,5 +1,5 @@
 import { MemoryState, AgentAPIEndpoint, Topic, ChatMessage } from "@shared/schema";
-import { GPTMessage, GPTTool, JSONSchema } from "./gpt";
+import { GPTTool, JSONSchema } from "./gpt";
 import { getKeysFromSchema, InteractionSchemaProperties } from "./gpt-schema";
 import { buildMemoryTool, renderMemoryVisualization } from "./memory-system";
 

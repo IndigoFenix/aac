@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useStudent } from '@/hooks/useStudent';
+import { useChat } from '@/hooks/useChat';
 import {
   useInstitute,
   Institute,
@@ -154,6 +155,10 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
 
   // Get user's students for adding to institute
   const { students: userStudents } = useStudent();
+
+  // Get AI refresh state to show loading indicator when AI updates data
+  const { aiRefreshing } = useChat();
+  const isAiRefreshing = aiRefreshing.has('institute');
 
   // Local state
   const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'classrooms' | 'students' | 'invites' | 'settings'>('overview');
@@ -1034,12 +1039,17 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
         )}>
           <div className="flex justify-between items-center">
             <div>
-              <h1 className={cn(
-                'text-xl font-bold',
-                isDark ? 'text-white' : 'text-slate-900'
-              )}>
-                {t('institute.title') || 'Institutes'}
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className={cn(
+                  'text-xl font-bold',
+                  isDark ? 'text-white' : 'text-slate-900'
+                )}>
+                  {t('institute.title') || 'Institutes'}
+                </h1>
+                {isAiRefreshing && (
+                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                )}
+              </div>
               <p className={cn(
                 'text-sm',
                 isDark ? 'text-slate-400' : 'text-slate-600'
@@ -1252,6 +1262,9 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                   <Crown className="w-3 h-3" />
                   {t('institute.admin') || 'Admin'}
                 </Badge>
+              )}
+              {isAiRefreshing && (
+                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
               )}
             </div>
             <p className="text-sm text-muted-foreground">
@@ -2138,7 +2151,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                   id="classroomRoom"
                   value={classroomForm.roomNumber}
                   onChange={(e) => setClassroomForm({ ...classroomForm, roomNumber: e.target.value })}
-                  placeholder="101"
+                  placeholder="---"
                 />
               </div>
             </div>
@@ -2150,7 +2163,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                   type="number"
                   value={classroomForm.capacity}
                   onChange={(e) => setClassroomForm({ ...classroomForm, capacity: e.target.value })}
-                  placeholder="20"
+                  placeholder="---"
                 />
               </div>
               <div className="space-y-2">
@@ -2159,7 +2172,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                   id="classroomYear"
                   value={classroomForm.academicYear}
                   onChange={(e) => setClassroomForm({ ...classroomForm, academicYear: e.target.value })}
-                  placeholder="2024-2025"
+                  placeholder="---"
                 />
               </div>
             </div>

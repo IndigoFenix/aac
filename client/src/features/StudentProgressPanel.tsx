@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useStudent } from '@/hooks/useStudent';
+import { useChat } from '@/hooks/useChat';
 import { useFeaturePanel, useSharedState } from '@/contexts/FeaturePanelContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -254,6 +255,8 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
   const isDark = theme === 'dark';
   const { user } = useAuth();
   const { student } = useStudent();
+  const { aiRefreshing } = useChat();
+  const isAiRefreshing = aiRefreshing.has('progress');
   const { setActiveFeature, registerMetadataBuilder, unregisterMetadataBuilder } = useFeaturePanel();
   const { sharedState } = useSharedState();
   const { toast } = useToast();
@@ -920,6 +923,9 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                 <Badge className={STATUS_COLORS[program.status]}>
                   {t(`program.status.${program.status}`)}
                 </Badge>
+                {isAiRefreshing && (
+                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                )}
               </div>
               <p className={cn('text-sm', isDark ? 'text-slate-400' : 'text-slate-600')}>
                 {t(`program.framework${program.framework === 'tala' ? 'Tala' : 'Iep'}`)} • {getProgamYear(program)}

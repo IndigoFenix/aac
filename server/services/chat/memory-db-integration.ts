@@ -26,10 +26,6 @@
 
 import type { MemoryState } from "@shared/schema";
 import {
-  type AgentMemoryFieldWithDB,
-  type MemoryLoadState,
-  type DBOperationContext,
-  type MemoryDBOperations,
   type PopulateResult,
   createMemoryLoadState,
   populateMemoryFromDB,
@@ -40,6 +36,14 @@ import {
   markStale,
   clearLoadState,
 } from './memory-db-bridge';
+
+import {
+  type AgentMemoryFieldWithDB,
+  type AgentMemoryFieldArrayWithDB,
+  type MemoryLoadState,
+  type DBOperationContext,
+  type MemoryDBOperations,
+} from "./memory-types";
 
 // Re-export types for convenience
 export type {

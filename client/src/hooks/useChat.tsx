@@ -179,6 +179,16 @@ export interface ChatResponseActions {
   classroomsUpdated?: {
     instituteId?: string;
   };
+
+  // Institute student updates - trigger InstitutePanel students tab reload
+  instituteStudentsUpdated?: {
+    instituteId?: string;
+  };
+
+  // Reports context data - extracted from Context_Reports memory field
+  reports?: any;
+  // Report updates - trigger ReportsPanel reload
+  reportsUpdated?: boolean;
 }
 
 interface ChatContextType {
@@ -195,6 +205,9 @@ interface ChatContextType {
   // Thinking state - for real-time AI status during tool calls
   thinkingText: string | null;
   isThinking: boolean;
+
+  // AI-triggered data refresh state - panels use this to show loading indicators
+  aiRefreshing: Set<string>;
 
   // File attachments
   attachedFiles: AttachedFile[];
@@ -269,6 +282,9 @@ export const ChatProvider = ({
   // Thinking state - for real-time AI status during tool calls
   const [thinkingText, setThinkingText] = useState<string | null>(null);
   const [isThinking, setIsThinking] = useState(false);
+
+  // AI-triggered data refresh state - tracks which panels are being refreshed by AI actions
+  const [aiRefreshing, setAiRefreshing] = useState<Set<string>>(new Set());
 
   // File attachment state
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
@@ -491,24 +507,25 @@ export const ChatProvider = ({
     // Handle program updates from progress mode
     if (contextData.program || contextData.programUpdated) {
       console.log('[ChatProvider] Program data updated by AI, invalidating queries:', contextData.program);
-      
+      setAiRefreshing(prev => new Set(prev).add('progress'));
+
       const programId = contextData.program?.id || contextData.programUpdated?.programId;
       const studentId = student?.id;
-      
+
       if (programId) {
         queryClient.invalidateQueries({ queryKey: ['/api/programs', programId, 'full'] });
         queryClient.invalidateQueries({ queryKey: ['/api/programs', programId] });
       }
-      
+
       if (studentId) {
         queryClient.invalidateQueries({ queryKey: ['/api/students', studentId, 'programs'] });
         queryClient.invalidateQueries({ queryKey: ['/api/students', studentId, 'programs', 'current'] });
       }
-      
+
       if (contextData.programUpdated?.goalId) {
         queryClient.invalidateQueries({ queryKey: ['/api/goals', contextData.programUpdated.goalId] });
       }
-      
+
       if (contextData.program) {
         setSharedState({ programData: contextData.program });
       }
@@ -518,6 +535,7 @@ export const ChatProvider = ({
     // Context_Institutes becomes "institutes" in contextData
     if (contextData.institutes || contextData.institutesUpdated || contextData.instituteUpdated) {
       console.log('[ChatProvider] Institutes data updated by AI, invalidating queries');
+      setAiRefreshing(prev => new Set(prev).add('institute'));
 
       // Invalidate the main institutes list
       queryClient.invalidateQueries({ queryKey: ['/api/institutes'] });
@@ -537,6 +555,7 @@ export const ChatProvider = ({
     // Handle classroom updates - triggers InstitutePanel classroom tab reload
     if (contextData.classroomsUpdated) {
       console.log('[ChatProvider] Classrooms data updated by AI, invalidating queries');
+      setAiRefreshing(prev => new Set(prev).add('institute'));
 
       if (contextData.classroomsUpdated.instituteId) {
         const instituteId = contextData.classroomsUpdated.instituteId;
@@ -544,10 +563,22 @@ export const ChatProvider = ({
       }
     }
 
+    // Handle institute students updates - triggers InstitutePanel students tab reload
+    if (contextData.instituteStudentsUpdated) {
+      console.log('[ChatProvider] Institute students data updated by AI, invalidating queries');
+      setAiRefreshing(prev => new Set(prev).add('institute'));
+
+      if (contextData.instituteStudentsUpdated.instituteId) {
+        const instituteId = contextData.instituteStudentsUpdated.instituteId;
+        queryClient.invalidateQueries({ queryKey: ['/api/institutes', instituteId, 'students'] });
+      }
+    }
+
     // Handle student updates - triggers StudentsPanel reload
     // Context_Students becomes "students" in contextData
     if (contextData.students || contextData.studentsUpdated || contextData.studentUpdated) {
       console.log('[ChatProvider] Students data updated by AI, invalidating queries');
+      setAiRefreshing(prev => new Set(prev).add('students'));
 
       // Invalidate the main students list
       queryClient.invalidateQueries({ queryKey: ['/api/students'] });
@@ -560,6 +591,23 @@ export const ChatProvider = ({
         queryClient.invalidateQueries({ queryKey: ['/api/students', updatedStudentId, 'programs', 'current'] });
       }
     }
+
+    // Handle reports updates - triggers ReportsPanel reload
+    if (contextData.reports || contextData.reportsUpdated) {
+      console.log('[ChatProvider] Reports data updated by AI, invalidating queries');
+      setAiRefreshing(prev => new Set(prev).add('reports'));
+
+      const studentId = student?.id;
+      if (studentId) {
+        // Invalidate all reports queries for the student
+        queryClient.invalidateQueries({ queryKey: ['/api/students', studentId, 'reports'] });
+      }
+    }
+
+    // Clear AI refreshing states after a short delay to allow queries to complete
+    setTimeout(() => {
+      setAiRefreshing(new Set());
+    }, 2000);
   }, [setSharedState, student?.id, setActiveFeature, selectStudent, selectInstitute]);
 
   // ============================================================================
@@ -861,6 +909,7 @@ export const ChatProvider = ({
     persona,
     thinkingText,
     isThinking,
+    aiRefreshing,
     attachedFiles,
     isUploadingFile,
     vectorStoreId,

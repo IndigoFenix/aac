@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useStudent } from '@/hooks/useStudent';
+import { useChat } from '@/hooks/useChat';
 import { useFeaturePanel, useSharedState } from '@/contexts/FeaturePanelContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -36,6 +37,7 @@ import {
   User,
   GraduationCap,
   Building2,
+  Loader2,
 } from 'lucide-react';
 
 interface StudentsPanelProps {
@@ -70,6 +72,8 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
   const isDark = theme === 'dark';
   const { user } = useAuth();
   const { students, selectStudent } = useStudent();
+  const { aiRefreshing } = useChat();
+  const isAiRefreshing = aiRefreshing.has('students');
   const { setActiveFeature, registerMetadataBuilder, unregisterMetadataBuilder } = useFeaturePanel();
   const { sharedState, setSharedState } = useSharedState();
 
@@ -173,12 +177,17 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
       )}>
         <div className="flex justify-between items-center mb-4">
           <div>
-            <h1 className={cn(
-              'text-xl font-bold',
-              isDark ? 'text-white' : 'text-slate-900'
-            )}>
-              {t('students.title') || 'Students'}
-            </h1>
+            <div className="flex items-center gap-2">
+              <h1 className={cn(
+                'text-xl font-bold',
+                isDark ? 'text-white' : 'text-slate-900'
+              )}>
+                {t('students.title') || 'Students'}
+              </h1>
+              {isAiRefreshing && (
+                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+              )}
+            </div>
             <p className={cn(
               'text-sm',
               isDark ? 'text-slate-400' : 'text-slate-600'

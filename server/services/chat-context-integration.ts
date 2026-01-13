@@ -35,6 +35,8 @@ import {
   type AgentMemoryFieldObjectWithDB,
   type MemoryLoadState,
   type DBOperationContext,
+} from "./chat/memory-types";
+import {
   createMemoryLoadState,
   populateMemoryFromDB,
   processMemoryToolWithDB,
