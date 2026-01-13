@@ -12,63 +12,68 @@
  * - processMemoryToolWithDB: Wraps the existing processMemoryToolResponse with DB sync
  */
 
-import type { MemoryState } from "@shared/schema";
+import {
+  // Core types
+  MemoryType,
+  MemoryAction,
+  
+  // Field schemas (with DB operations)
+  AgentMemoryFieldWithDB,
+  AgentMemoryFieldBaseWithDB,
+  AgentMemoryFieldObjectWithDB,
+  AgentMemoryFieldArrayWithDB,
+  AgentMemoryFieldMapWithDB,
+  AgentMemoryFieldTopicWithDB,
+  
+  // Base field schemas (for compatibility)
+  AgentMemoryField,
+  AgentMemoryFieldObject,
+  AgentMemoryFieldArray,
+  AgentMemoryFieldMap,
+  AgentMemoryFieldTopic,
+  
+  // Topic tree
+  TopicNode,
+  TopicTree,
+  
+  // Tool input/output
+  MemoryToolInput,
+  MemoryOperationResult,
+  
+  // State
+  MemoryState,
+  MemoryLoadState,
+  
+  // DB operation types
+  DBOperationContext,
+  MemoryDBOperations,
+  PaginationParams,
+  ListResult,
+  DbOperationResult,
+  SchemaResolution,
+  MemoryToolBatchInput,
+} from './memory-types';
+
+import {
+  normalizePath,
+  splitPath,
+  joinPath,
+  escapeToken,
+  unescapeToken,
+  getParentPath,
+  getLastToken,
+  appendToPath,
+  hasWildcard,
+  getWildcardBasePath,
+  getPathDepth,
+  sortPathsByDepthAsc,
+  isArrayIndex,
+  parseArrayIndex,
+} from './path-utils';
+
 
 const isProduction = process.env.NODE_ENV === 'production';
 const hideLogs = isProduction; // Set to true to hide logs in production
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Type Imports (copied from memory-system.ts for standalone compilation)
-// ──────────────────────────────────────────────────────────────────────────────
-
-export type MemoryPrimitiveType = 'string' | 'number' | 'integer' | 'boolean' | 'null';
-export type MemoryCompositeType = 'object' | 'array' | 'map' | 'topic';
-export type MemoryType = MemoryPrimitiveType | MemoryCompositeType;
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Database Operation Context
-// ──────────────────────────────────────────────────────────────────────────────
-
-/**
- * Context passed to all database operations.
- * Allows operations to be scoped to the correct data (e.g., agent instance, user, parent records).
- */
-export interface DBOperationContext {
-  /**
-   * Base context provided at initialization.
-   * Typically includes agentInstanceId, userId, or other top-level identifiers.
-   */
-  base: Record<string, any>;
-
-  /**
-   * Context inherited from parent items during traversal.
-   * For example, when operating on `/students/0/goals`, this would include
-   * the studentId extracted from the student at index 0.
-   */
-  inherited: Record<string, any>;
-
-  /**
-   * Combined context (base + inherited) for convenience.
-   */
-  get all(): Record<string, any>;
-
-  /**
-   * The full path being operated on (e.g., "/students/0/goals").
-   */
-  path: string;
-
-  /**
-   * Path split into tokens (e.g., ["students", "0", "goals"]).
-   */
-  pathTokens: string[];
-
-  /**
-   * The key/index of the current item within its parent container.
-   * For `/students/0`, this would be "0".
-   * For `/contacts/john`, this would be "john".
-   */
-  currentKey?: string | number;
-}
 
 /**
  * Creates a new DBOperationContext.
@@ -133,336 +138,8 @@ export function mergeInheritedContext(
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Database Operations Interface
-// ──────────────────────────────────────────────────────────────────────────────
-
-/**
- * Pagination parameters for list operations.
- */
-export interface PaginationParams {
-  offset: number;
-  limit: number;
-}
-
-/**
- * Result from a list operation.
- */
-export interface ListResult<T = any> {
-  /** Items in the current page */
-  items: T[];
-  /** Total count of all items (for pagination UI) */
-  total: number;
-  /** 
-   * For maps/topics: keys corresponding to each item.
-   * For arrays: this can be omitted (indices are implicit from offset).
-   */
-  keys?: string[];
-}
-
-/**
- * Database operations that can be attached to a memory field.
- * All operations are optional - only implement what makes sense for each field.
- * 
- * @template T The type of data stored in this field
- */
-export interface MemoryDBOperations<T = any> {
-  /**
-   * Read a single value.
-   * Used for primitives and object fields (non-container types).
-   * 
-   * @example
-   * // For a "profile" object field:
-   * read: async (ctx) => {
-   *   return db.query.profiles.findFirst({
-   *     where: eq(profiles.agentInstanceId, ctx.all.agentInstanceId)
-   *   });
-   * }
-   */
-  read?: (ctx: DBOperationContext) => Promise<T | undefined>;
-
-  /**
-   * Write a single value.
-   * Used for set/upsert on primitives and objects.
-   * 
-   * Can optionally return the written value (e.g., after sanitization/transformation).
-   * If a value is returned, it will be used to update the in-memory state,
-   * ensuring consistency between DB and memory.
-   * 
-   * @returns void if no value transformation, or T if the written value should 
-   *          replace the in-memory value (e.g., after field mapping/sanitization)
-   */
-  write?: (ctx: DBOperationContext, value: T) => Promise<T | void>;
-
-  /**
-   * List items in a container (array, map, topic) with pagination.
-   * 
-   * @example
-   * // For a "students" array field:
-   * list: async (ctx, { offset, limit }) => {
-   *   const items = await db.query.students.findMany({
-   *     where: eq(students.agentInstanceId, ctx.all.agentInstanceId),
-   *     offset,
-   *     limit,
-   *     orderBy: students.createdAt
-   *   });
-   *   const [{ count }] = await db.select({ count: sql`count(*)` })
-   *     .from(students)
-   *     .where(eq(students.agentInstanceId, ctx.all.agentInstanceId));
-   *   return { items, total: Number(count) };
-   * }
-   */
-  list?: (ctx: DBOperationContext, pagination: PaginationParams) => Promise<ListResult<T>>;
-
-  /**
-   * Get a single item from a container by key/index.
-   * 
-   * @example
-   * // For array by index (assuming ordered by some field):
-   * get: async (ctx, index) => {
-   *   const items = await db.query.students.findMany({
-   *     where: eq(students.agentInstanceId, ctx.all.agentInstanceId),
-   *     offset: Number(index),
-   *     limit: 1
-   *   });
-   *   return items[0];
-   * }
-   * 
-   * // For map by key:
-   * get: async (ctx, key) => {
-   *   return db.query.contacts.findFirst({
-   *     where: and(
-   *       eq(contacts.agentInstanceId, ctx.all.agentInstanceId),
-   *       eq(contacts.key, key)
-   *     )
-   *   });
-   * }
-   */
-  get?: (ctx: DBOperationContext, key: string | number) => Promise<T | undefined>;
-
-  /**
-   * Add an item to a container.
-   * Returns the created item (potentially with generated ID, timestamps, etc.).
-   * 
-   * @example
-   * // For arrays:
-   * add: async (ctx, value, options) => {
-   *   const [created] = await db.insert(students)
-   *     .values({ ...value, agentInstanceId: ctx.all.agentInstanceId })
-   *     .returning();
-   *   return created;
-   * }
-   * 
-   * // For nested arrays (e.g., goals inside a student):
-   * add: async (ctx, value, options) => {
-   *   const [created] = await db.insert(goals)
-   *     .values({ ...value, studentId: ctx.all.studentId })
-   *     .returning();
-   *   return created;
-   * }
-   */
-  add?: (ctx: DBOperationContext, value: T, options?: { key?: string; index?: number }) => Promise<T>;
-
-  /**
-   * Insert an item at a specific index (for arrays only).
-   * If not implemented, falls back to add().
-   */
-  insert?: (ctx: DBOperationContext, value: T, index: number) => Promise<T>;
-
-  /**
-   * Update an existing item in a container.
-   * 
-   * @example
-   * update: async (ctx, key, value) => {
-   *   const [updated] = await db.update(students)
-   *     .set(value)
-   *     .where(and(
-   *       eq(students.agentInstanceId, ctx.all.agentInstanceId),
-   *       eq(students.id, key)
-   *     ))
-   *     .returning();
-   *   return updated;
-   * }
-   */
-  update?: (ctx: DBOperationContext, key: string | number, value: Partial<T>) => Promise<T>;
-
-  /**
-   * Upsert (update or insert) an item.
-   * For containers: updates if key exists, creates if not.
-   * For non-containers: same as write().
-   */
-  upsert?: (ctx: DBOperationContext, value: T, key?: string | number) => Promise<T>;
-
-  /**
-   * Delete an item from a container.
-   */
-  delete?: (ctx: DBOperationContext, key: string | number) => Promise<void>;
-
-  /**
-   * Rename a key (for maps and topics only).
-   */
-  rename?: (ctx: DBOperationContext, oldKey: string, newKey: string) => Promise<void>;
-
-  /**
-   * Clear all items from a container.
-   */
-  clear?: (ctx: DBOperationContext) => Promise<void>;
-
-  /**
-   * Extract context values from a loaded item.
-   * Called when traversing into a child field - allows parent's DB ID to flow to child queries.
-   * 
-   * @example
-   * // When a student is loaded with { id: 'db-123', name: 'John' }:
-   * extractChildContext: (value, key) => ({ studentId: value.id })
-   * 
-   * // This means when accessing /students/0/goals, the goals query
-   * // will have ctx.inherited.studentId = 'db-123'
-   */
-  extractChildContext?: (value: T, key?: string | number) => Record<string, any>;
-
-  /**
-   * Transform data from database format to memory format.
-   * Called after reading from DB, before storing in memoryValues.
-   * Returns any JSON-serializable value that matches the memory field schema.
-   * 
-   * @example
-   * // Strip internal fields, rename columns, etc.
-   * fromDB: (dbRow) => ({
-   *   name: dbRow.full_name,
-   *   email: dbRow.email_address
-   * })
-   */
-  fromDB?: (dbValue: T) => any;
-
-  /**
-   * Transform data from memory format to database format.
-   * Called before writing to DB.
-   * 
-   * @example
-   * toDB: (memValue) => ({
-   *   full_name: memValue.name,
-   *   email_address: memValue.email
-   * })
-   */
-  toDB?: (memValue: T) => any;
-
-  /**
-   * Get the database key/ID from a memory value.
-   * Used to identify which DB record to update/delete.
-   * 
-   * @example
-   * getDBKey: (value) => value.id
-   */
-  getDBKey?: (value: T) => string | number;
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Extended Memory Field Types (with DB operations)
-// ──────────────────────────────────────────────────────────────────────────────
-
-/**
- * Base memory field with optional database operations.
- */
-export interface AgentMemoryFieldBaseWithDB {
-  id: string;
-  type: MemoryType;
-  title?: string;
-  description?: string;
-  default?: any;
-  enum?: any[];
-  const?: any;
-  examples?: any[];
-  opened?: boolean;
-  
-  // String constraints
-  minLength?: number;
-  maxLength?: number;
-  pattern?: string;
-  format?: string;
-  
-  // Number constraints
-  minimum?: number;
-  maximum?: number;
-  exclusiveMinimum?: number;
-  exclusiveMaximum?: number;
-  multipleOf?: number;
-
-  /**
-   * Database operations for this field.
-   * If not provided, the field uses in-memory storage only (original behavior).
-   */
-  db?: MemoryDBOperations;
-}
-
-export interface AgentMemoryFieldObjectWithDB extends AgentMemoryFieldBaseWithDB {
-  type: 'object';
-  properties: Record<string, AgentMemoryFieldWithDB>;
-  required?: string[];
-  additionalProperties?: boolean;
-}
-
-export interface AgentMemoryFieldArrayWithDB extends AgentMemoryFieldBaseWithDB {
-  type: 'array';
-  items: AgentMemoryFieldWithDB;
-  minItems?: number;
-  maxItems?: number;
-  uniqueItems?: boolean;
-}
-
-export interface AgentMemoryFieldMapWithDB extends AgentMemoryFieldBaseWithDB {
-  type: 'map';
-  values: AgentMemoryFieldWithDB;
-  keyPattern?: string;
-  minProperties?: number;
-  maxProperties?: number;
-}
-
-export interface AgentMemoryFieldTopicWithDB extends AgentMemoryFieldBaseWithDB {
-  type: 'topic';
-  maxDepth?: number;
-  maxBreadthPerNode?: number;
-}
-
-export type AgentMemoryFieldWithDB =
-  | AgentMemoryFieldObjectWithDB
-  | AgentMemoryFieldArrayWithDB
-  | AgentMemoryFieldMapWithDB
-  | AgentMemoryFieldTopicWithDB
-  | (AgentMemoryFieldBaseWithDB & { type: MemoryPrimitiveType });
-
-// ──────────────────────────────────────────────────────────────────────────────
 // Memory Load State (tracks what's loaded from DB)
 // ──────────────────────────────────────────────────────────────────────────────
-
-/**
- * Tracks the loading state of memory fields.
- * Used to know what's already loaded vs. needs to be fetched from DB.
- */
-export interface MemoryLoadState {
-  /**
-   * Set of paths that have been loaded from the database.
-   * Paths are normalized (e.g., "/students", "/students/0/goals").
-   */
-  loaded: Set<string>;
-
-  /**
-   * Set of paths that need to be refreshed from the database.
-   * Used when external changes may have occurred.
-   */
-  stale: Set<string>;
-
-  /**
-   * Timestamp of last load for each path.
-   * Can be used for cache invalidation.
-   */
-  loadedAt: Map<string, number>;
-
-  /**
-   * Total counts for paginated containers.
-   * Key is the container path, value is the total item count.
-   */
-  totals: Map<string, number>;
-}
 
 /**
  * Creates a new MemoryLoadState.
@@ -534,40 +211,7 @@ export function clearLoadState(state: MemoryLoadState, path: string): void {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Path Utilities
-// ──────────────────────────────────────────────────────────────────────────────
-
 const ROOT = '';
-
-function escapeToken(token: string): string {
-  return token.replace(/~/g, '~0').replace(/\//g, '~1');
-}
-
-function unescapeToken(token: string): string {
-  return token.replace(/~1/g, '/').replace(/~0/g, '~');
-}
-
-function normalizePath(path: string | undefined | null): string {
-  if (!path) return ROOT;
-  let p = path.trim();
-  if (p === '' || p === '/') return ROOT;
-  if (!p.startsWith('/')) p = '/' + p;
-  p = p.replace(/\/+/g, '/');
-  if (p.length > 1 && p.endsWith('/')) p = p.slice(0, -1);
-  return p;
-}
-
-function splitPath(path: string): string[] {
-  const p = normalizePath(path);
-  if (p === ROOT) return [];
-  return p.slice(1).split('/').map(unescapeToken);
-}
-
-function joinPath(tokens: string[]): string {
-  if (!tokens.length) return ROOT;
-  return '/' + tokens.map(escapeToken).join('/');
-}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Schema Navigation
@@ -581,32 +225,6 @@ function findFieldById(
   id: string
 ): AgentMemoryFieldWithDB | undefined {
   return fields.find(f => f.id === id);
-}
-
-/**
- * Result of resolving a schema path.
- */
-export interface SchemaResolution {
-  /** The resolved schema at the target path */
-  schema?: AgentMemoryFieldWithDB;
-  /** Database operations at the target (may be inherited from parent) */
-  dbOps?: MemoryDBOperations;
-  /** Context built up by traversing parent items */
-  context: DBOperationContext;
-  /** Error message if resolution failed */
-  error?: string;
-  /** The parent schema (for container items) */
-  parentSchema?: AgentMemoryFieldWithDB;
-  /** Path tokens consumed */
-  tokensConsumed: string[];
-  
-  // === NEW: Track parent container with db.update for nested property sets ===
-  /** The nearest parent container (array/map) that has db.update operation */
-  parentContainerDbOps?: MemoryDBOperations;
-  /** The key/index used to access the current item in the parent container */
-  parentContainerKey?: string | number;
-  /** The path to the parent container */
-  parentContainerPath?: string;
 }
 
 /**
@@ -958,18 +576,9 @@ export async function populateMemoryFromDB(
 
   // Get all visible paths
   const visiblePaths = getVisiblePaths(fields, memoryState);
-
-  // Sort by path depth (shortest first = parents first)
-  // This ensures parent objects are loaded before their children,
-  // so child data isn't overwritten when parent loads later
-  visiblePaths.sort((a, b) => {
-    const depthA = a.split('/').filter(Boolean).length;
-    const depthB = b.split('/').filter(Boolean).length;
-    return depthA - depthB;
-  });
-
-  // Process each visible path
-  for (const path of visiblePaths) {
+  const sortedPaths = sortPathsByDepthAsc(visiblePaths);
+  
+  for (const path of sortedPaths) {
     try {
       const shouldLoad = options.forceRefresh || needsLoading(loadState, path);
       
@@ -1137,62 +746,6 @@ function getValueAtPath(obj: any, tokens: string[]): any {
   return current;
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Database-Aware Memory Tool Processing
-// ──────────────────────────────────────────────────────────────────────────────
-
-/**
- * Memory action types (from memory-system.ts).
- */
-export type MemoryAction =
-  | 'view' | 'hide'
-  | 'set' | 'upsert'
-  | 'add' | 'insert'
-  | 'delete' | 'clear'
-  | 'rename';
-
-/**
- * Single memory operation input.
- */
-export interface MemoryToolInput {
-  action: MemoryAction;
-  path?: string;
-  paths?: string[];
-  value?: any;
-  index?: number;
-  key?: string;
-  newKey?: string;
-  page?: { offset?: number; limit?: number };
-  openChildren?: boolean;
-}
-
-/**
- * Batch of memory operations.
- */
-export type MemoryToolBatchInput = { ops: MemoryToolInput[] } | { operations: MemoryToolInput[] };
-
-/**
- * Result of a single memory operation.
- */
-export interface MemoryOperationResult {
-  target: string;
-  action: MemoryAction;
-  ok: boolean;
-  message?: string;
-  newPath?: string;
-  mutatedPaths?: string[];
-  dbSynced?: boolean;
-}
-
-export interface DbOperationResult {
-  dbResult?: any;
-  error?: string;
-  shouldUpdateMemory: boolean;
-  dbSynced?: boolean;
-  /** When set, apply dbResult to this path instead of the operation path */
-  targetPath?: string;
-}
-
 /**
  * Processes database operations for a memory tool action.
  * This should be called BEFORE processMemoryToolResponse to sync with DB.
@@ -1256,6 +809,18 @@ export async function processDBOperation(
           
           // Check if parent object already exists in memory with an ID
           const parentTokens = splitPath(parentContainerPath);
+          const targetTokens = splitPath(path);
+          const depthFromParent = targetTokens.length - parentTokens.length;
+          
+          // Only use parent operations if target is 1-2 levels deep
+          // (1 level = property of parent, 2 levels = property of array/map item)
+          if (depthFromParent > 2) {
+            console.warn(
+              `[processDBOperation] SAFETY: Target path "${path}" is ${depthFromParent} levels ` +
+              `deep from parent "${parentContainerPath}". Not using parent operations.`
+            );
+            return { shouldUpdateMemory: true, dbSynced: false };
+          }
           const currentParentValue = getValueAtPath(memoryValues, parentTokens);
           const parentExists = currentParentValue && currentParentValue.id;
           
@@ -1308,6 +873,18 @@ export async function processDBOperation(
         
         // Get current parent value and check if it exists with ID
         const parentTokens = splitPath(parentContainerPath);
+        const targetTokens = splitPath(path);
+        const depthFromParent = targetTokens.length - parentTokens.length;
+        
+        // Only use parent operations if target is 1-2 levels deep
+        // (1 level = property of parent, 2 levels = property of array/map item)
+        if (depthFromParent > 2) {
+          console.warn(
+            `[processDBOperation] SAFETY: Target path "${path}" is ${depthFromParent} levels ` +
+            `deep from parent "${parentContainerPath}". Not using parent operations.`
+          );
+          return { shouldUpdateMemory: true, dbSynced: false };
+        }
         const currentParentValue = getValueAtPath(memoryValues, parentTokens) || {};
         const parentExists = currentParentValue && currentParentValue.id;
         const currentArray = currentParentValue[propertyName] || [];
@@ -1346,23 +923,46 @@ export async function processDBOperation(
     }
     
     // For 'delete' action, try to use parent container's delete operation
-    if (action === 'delete' && parentContainerDbOps?.delete && parentContainerKey !== undefined) {
-      try {
-        await parentContainerDbOps.delete(context, parentContainerKey);
-        
-        if (parentContainerPath) {
+    // SAFETY: Only use parent delete if target is IMMEDIATE child of parent container
+    if (action === 'delete' && parentContainerDbOps?.delete && parentContainerKey !== undefined && parentContainerPath) {
+      // Calculate depth from parent container to target path
+      const parentTokens = splitPath(parentContainerPath);
+      const targetTokens = splitPath(path);
+      const depthFromParent = targetTokens.length - parentTokens.length;
+      
+      // Only allow parent delete if target is exactly 1 level deeper (immediate child)
+      if (depthFromParent === 1) {
+        try {
+          await parentContainerDbOps.delete(context, parentContainerKey);
+          
           clearLoadState(loadState, parentContainerPath);
+          
+          return { shouldUpdateMemory: true, dbSynced: true };
+        } catch (err: any) {
+          console.error('[processDBOperation] Parent container delete failed:', err);
+          return { error: err.message || 'DB delete failed', shouldUpdateMemory: false, dbSynced: false };
         }
-        
-        return { shouldUpdateMemory: true, dbSynced: true };
-      } catch (err: any) {
-        console.error('[processDBOperation] Parent container delete failed:', err);
-        return { error: err.message || 'DB delete failed', shouldUpdateMemory: false, dbSynced: false };
+      } else {
+        // Target is too deeply nested - log warning and DON'T use parent delete
+        console.warn(
+          `[processDBOperation] SAFETY: Prevented parent container delete. ` +
+          `Target path "${path}" is ${depthFromParent} levels deep from parent "${parentContainerPath}". ` +
+          `Parent delete would operate at the wrong level.`
+        );
       }
     }
     
-    // No db ops and no parent operation available - just let in-memory system handle it
-    // Note: dbSynced is NOT set (undefined) because no DB operation happened
+    // No db ops and no appropriate parent operation available
+    // Return error to make it clear the operation wasn't persisted
+    if (action === 'delete' || action === 'add' || action === 'set') {
+      return { 
+        shouldUpdateMemory: true,
+        dbSynced: false, // Explicitly false - operation was NOT persisted to DB
+        error: `No database operation configured for '${action}' at path '${path}'. Changes are in-memory only.`
+      };
+    }
+    
+    // For other actions, just let in-memory system handle it
     return { shouldUpdateMemory: true };
   }
 
@@ -1386,28 +986,35 @@ export async function processDBOperation(
         }
         break;
 
-      case 'upsert':
-        if (dbOps.upsert) {
-          // Merge inherited context (parent IDs) into the value before DB transformation
-          const valueWithContext = mergeInheritedContext(value, context);
-          const dbValue = dbOps.toDB ? dbOps.toDB(valueWithContext) : valueWithContext;
-          dbResult = await dbOps.upsert(context, dbValue, key ?? index);
-          if (dbOps.fromDB) dbResult = dbOps.fromDB(dbResult);
-          markLoaded(loadState, path);
-        } else if (dbOps.write) {
-          const valueWithContext = mergeInheritedContext(value, context);
-          const dbValue = dbOps.toDB ? dbOps.toDB(valueWithContext) : valueWithContext;
-          const writeResult = await dbOps.write(context, dbValue);
-          
-          // If write returned a value, use it (transformed by fromDB if available)
-          if (writeResult !== undefined) {
-            dbResult = dbOps.fromDB ? dbOps.fromDB(writeResult) : writeResult;
-          } else {
-            dbResult = value;
+        case 'upsert':
+          if (dbOps.upsert) {
+            // Explicit upsert operation
+            const valueWithContext = mergeInheritedContext(value, context);
+            const dbValue = dbOps.toDB ? dbOps.toDB(valueWithContext) : valueWithContext;
+            dbResult = await dbOps.upsert(context, dbValue, key ?? index);
+            if (dbOps.fromDB) dbResult = dbOps.fromDB(dbResult);
+            markLoaded(loadState, path);
+          } else if (dbOps.update && (key !== undefined || index !== undefined)) {
+            // UPDATE existing item (has key or index)
+            const keyOrIndex = key ?? index;
+            const valueWithContext = mergeInheritedContext(value, context);
+            const dbValue = dbOps.toDB ? dbOps.toDB(valueWithContext) : valueWithContext;
+            dbResult = await dbOps.update(context, keyOrIndex!, dbValue);
+            if (dbOps.fromDB) dbResult = dbOps.fromDB(dbResult);
+            markLoaded(loadState, path);
+          } else if (dbOps.write) {
+            // Fallback to write (for objects without key)
+            const valueWithContext = mergeInheritedContext(value, context);
+            const dbValue = dbOps.toDB ? dbOps.toDB(valueWithContext) : valueWithContext;
+            const writeResult = await dbOps.write(context, dbValue);
+            if (writeResult !== undefined) {
+              dbResult = dbOps.fromDB ? dbOps.fromDB(writeResult) : writeResult;
+            } else {
+              dbResult = value;
+            }
+            markLoaded(loadState, path);
           }
-          markLoaded(loadState, path);
-        }
-        break;
+          break;
 
       case 'add':
         if (dbOps.add) {
@@ -1537,71 +1144,110 @@ export async function processMemoryToolWithDB(
   // Process in-memory updates using original processor
   const memResult = originalProcessor(fields as any[], memoryValues, memoryState, input);
 
-  // Apply DB results to memory values for set/upsert operations
-  // This ensures in-memory values match what was actually saved to DB
+  // Apply DB results to memory values
+  // This ensures in-memory values match what was actually saved to DB (including generated IDs)
   for (let i = 0; i < ops.length; i++) {
     const op = ops[i];
     const dbOpResult = dbResults.get(i);
     
-    if (
-      dbOpResult?.dbSynced && 
-      dbOpResult.dbResult !== undefined &&
-      (op.action === 'set' || op.action === 'upsert') &&
-      op.path
-    ) {
-      const dbValue = dbOpResult.dbResult;
+    if (!dbOpResult?.dbSynced || dbOpResult.dbResult === undefined || !op.path) {
+      continue;
+    }
+
+    const dbValue = dbOpResult.dbResult;
+    const action = op.action;
+
+    // For set/upsert: apply to the exact path (or targetPath for parent creates)
+    // Note: 'upsert' is the AI's action for both create and update of items
+    if (action === 'set' || action === 'upsert') {
+      // For upsert with key/index, the path is the container - need to target the specific item
+      let targetPath = dbOpResult.targetPath || op.path;
       
-      // Use targetPath if provided (for parent write creates), otherwise use op.path
-      const targetPath = dbOpResult.targetPath || op.path;
+      if (action === 'upsert' && (op.key !== undefined || op.index !== undefined)) {
+        // Upsert on a container item - target the specific entry
+        const itemKey = op.key ?? op.index;
+        targetPath = `${op.path}/${itemKey}`;
+      }
       
-      // If targetPath differs from op.path, this is a parent create - always apply
-      // Otherwise, only apply if values differ (write transformed/sanitized the data)
       const shouldApply = targetPath !== op.path || 
         JSON.stringify(op.value) !== JSON.stringify(dbValue);
       
       if (shouldApply) {
         if (!hideLogs) console.log(`[processMemoryToolWithDB] Applying DB result to path ${targetPath}`);
         const tokens = splitPath(targetPath);
-        setValueAtPath(memResult.updatedMemoryValues, tokens, dbValue, { merge: false });
+        setValueAtPath(memResult.updatedMemoryValues, tokens, dbValue, { merge: action === 'upsert' });
+      }
+      continue;
+    }
+
+    // For add/insert: update the newly added item with DB result
+    if (action === 'add' || action === 'insert') {
+      const containerTokens = splitPath(op.path);
+      const container = getValueAtPath(memResult.updatedMemoryValues, containerTokens);
+      
+      if (!container) {
+        if (!hideLogs) console.log(`[processMemoryToolWithDB] Container not found at ${op.path}, skipping`);
+        continue;
+      }
+
+      // Handle arrays
+      if (Array.isArray(container)) {
+        const targetIndex = op.index ?? (container.length - 1);
+        if (targetIndex >= 0 && targetIndex < container.length) {
+          container[targetIndex] = dbValue;
+          if (!hideLogs) console.log(`[processMemoryToolWithDB] Updated array[${targetIndex}] at ${op.path} with DB result`);
+        }
+        continue;
+      }
+
+      // Handle maps/objects
+      if (typeof container === 'object') {
+        // Determine the correct key for this entry
+        // Priority: 1) DB-generated key via getDBKey, 2) op.key from AI
+        const resolution = resolveSchemaWithContext(fields, memResult.updatedMemoryValues, op.path, baseContext);
+        const dbKey = resolution.dbOps?.getDBKey?.(dbValue);
+        const originalKey = op.key;
+        
+        if (dbKey && originalKey && dbKey !== originalKey) {
+          // Key changed (e.g., temp key → ID-based key)
+          // Remove old entry, add at correct key
+          delete container[originalKey];
+          container[dbKey] = dbValue;
+          if (!hideLogs) console.log(`[processMemoryToolWithDB] Moved map entry '${originalKey}' → '${dbKey}' with DB result`);
+        } else {
+          // Use whichever key we have
+          const finalKey = dbKey || originalKey;
+          if (finalKey) {
+            container[finalKey] = dbValue;
+            if (!hideLogs) console.log(`[processMemoryToolWithDB] Updated map['${finalKey}'] at ${op.path} with DB result`);
+          }
+        }
       }
     }
   }
 
-  // Enhance results with DB sync status
-  const enhancedResults = memResult.results.map((result, i) => {
-    const dbResult = dbResults.get(i);
-    const dbSynced = dbResult?.dbSynced;
-    const op = ops[i];
-    
-    const ok = dbSynced === true ? true : result.ok;
-    const message = dbResult?.error ?? (dbSynced === true ? undefined : result.message);
-    
-    if (dbSynced === true && !result.ok && op.path) {
-      const parentPath = op.path.split('/').slice(0, -1).join('/');
-      if (parentPath) {
-        markStale(loadState, parentPath, false);
-      }
-    }
-    
-    return {
-      ...result,
-      ok,
-      dbSynced,
-      message
-    };
-  });
-
   // For view operations, load data from DB if needed
+  const viewedPathsThisBatch = new Set<string>();
   for (const op of ops) {
     if (op.action === 'view') {
       const paths = op.paths ?? (op.path ? [op.path] : []);
       
-      for (const path of paths) {
-        if (needsLoading(loadState, path)) {
+      for (const rawPath of paths) {
+        const containerPath = rawPath.replace(/\/\*$/, '');
+        
+        // ADD: Skip duplicates
+        if (viewedPathsThisBatch.has(containerPath)) {
+          if (!hideLogs) console.log(`[processMemoryToolWithDB] Skipping duplicate view: ${containerPath}`);
+          continue;
+        }
+        viewedPathsThisBatch.add(containerPath);
+        
+        if (needsLoading(loadState, containerPath)) {
+          // Resolve the CONTAINER path, not the wildcard path
           const resolution = resolveSchemaWithContext(
             fields,
             memResult.updatedMemoryValues,
-            path,
+            containerPath,  // ← Use container path, not rawPath
             baseContext
           );
 
@@ -1619,13 +1265,76 @@ export async function processMemoryToolWithDB(
                 }
               );
             } catch (err) {
-              console.error(`Failed to load data for path ${path}:`, err);
+              console.error(`Failed to load data for path ${containerPath}:`, err);
             }
           }
         }
       }
     }
   }
+
+  // Enhance results with DB sync status and view summaries
+  const enhancedResults = memResult.results.map((result, i) => {
+    const dbResult = dbResults.get(i);
+    const dbSynced = dbResult?.dbSynced;
+    const op = ops[i];
+    
+    const ok = dbSynced === true ? true : result.ok;
+    const message = dbResult?.error ?? (dbSynced === true ? undefined : result.message);
+
+    // Include actual key for add operations
+    let actualKey: string | undefined;
+    if (dbResult?.dbResult && op.path && (op.action === 'add' || op.action === 'insert')) {
+      const resolution = resolveSchemaWithContext(fields, memResult.updatedMemoryValues, op.path, baseContext);
+      if (resolution.dbOps?.getDBKey) {
+        actualKey = String(resolution.dbOps.getDBKey(dbResult.dbResult));
+      }
+    }
+
+    // Add summary for view operations
+    let summary: string | undefined;
+    if (op.action === 'view' && op.path) {
+      const containerPath = op.path.replace(/\/\*$/, '');
+      const tokens = splitPath(containerPath);
+      const viewedValue = getValueAtPath(memResult.updatedMemoryValues, tokens);
+      
+      if (viewedValue === undefined || viewedValue === null) {
+        summary = 'Path not found or not loaded';
+      } else if (Array.isArray(viewedValue)) {
+        summary = viewedValue.length === 0 
+          ? 'Empty array (0 items)' 
+          : `Array with ${viewedValue.length} item(s)`;
+      } else if (typeof viewedValue === 'object') {
+        const keys = Object.keys(viewedValue);
+        if (keys.length === 0) {
+          summary = 'Empty (0 items)';
+        } else if (keys.length <= 5) {
+          summary = `${keys.length} item(s): ${keys.join(', ')}`;
+        } else {
+          summary = `${keys.length} item(s): ${keys.slice(0, 5).join(', ')}...`;
+        }
+      } else {
+        summary = `Value: ${String(viewedValue).slice(0, 50)}`;
+      }
+    }
+    
+    // Mark stale if DB succeeded but memory failed
+    if (dbSynced === true && !result.ok && op.path) {
+      const parentPath = op.path.split('/').slice(0, -1).join('/');
+      if (parentPath) {
+        markStale(loadState, parentPath, false);
+      }
+    }
+    
+    return {
+      ...result,
+      ok,
+      dbSynced,
+      message,
+      actualKey,
+      summary,  // NEW FIELD
+    };
+  });
 
   return {
     updatedMemoryValues: memResult.updatedMemoryValues,

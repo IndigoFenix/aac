@@ -39,7 +39,7 @@ import {
     type MemoryDBOperations,
     type DBOperationContext,
     type ListResult,
-  } from "../chat/memory-db-bridge";
+  } from "../chat/memory-types";
   
   import { instituteService } from "../instituteService";
   import { classroomService } from "../classroomService";
@@ -840,6 +840,7 @@ import {
     },
   
     delete: async (ctx, key) => {
+      throw new Error("AI is not allowed to delete students directly. User must delete the student manually.");
       const deleted = await studentService.deleteStudent(String(key));
       if (!deleted) throw new Error("Failed to delete student");
     },
@@ -986,6 +987,163 @@ import {
         total: classroomsWithEnrollment.length,
       };
     },
+
+    /**
+     * Get a specific classroom enrollment by index
+     * The key is the array index, we need to fetch all and return the one at that index
+     */
+    get: async (ctx, key): Promise<any> => {
+      const studentId = ctx.all.studentId;
+      if (!studentId) throw new Error("studentId required");
+
+      const classroomsWithEnrollment = await classroomService.getStudentClassrooms(studentId);
+      const index = typeof key === 'number' ? key : parseInt(String(key), 10);
+      
+      if (isNaN(index) || index < 0 || index >= classroomsWithEnrollment.length) {
+        return undefined;
+      }
+
+      const { classroom, enrollment } = classroomsWithEnrollment[index];
+      return {
+        classroom: toMemoryValue(classroom),
+        enrollment: toMemoryValue(enrollment),
+      };
+    },
+
+    /**
+     * Add a student to a classroom
+     * 
+     * Value should contain:
+     * - classroomId: The classroom to add the student to (REQUIRED)
+     * - isPrimary: Whether this is the primary classroom (optional)
+     * - enrollmentDate: Enrollment date (optional)
+     * - notes: Notes about the enrollment (optional)
+     */
+    add: async (ctx, value, options): Promise<any> => {
+      const userId = getUserId(ctx);
+      const studentId = ctx.all.studentId;
+      if (!studentId) throw new Error("studentId required");
+
+      // Get classroomId from value or options.key
+      const classroomId = value?.classroomId || value?.classroom?.id || options?.key;
+      if (!classroomId) {
+        throw new Error("classroomId required - provide in value.classroomId or value.classroom.id");
+      }
+
+      const result = await classroomService.addStudentToClassroom(
+        studentId,
+        classroomId,
+        userId,
+        {
+          isPrimary: value?.isPrimary ?? value?.enrollment?.isPrimary,
+          enrollmentDate: value?.enrollmentDate ?? value?.enrollment?.enrollmentDate,
+          notes: value?.notes ?? value?.enrollment?.notes,
+        }
+      );
+
+      if (!result.success || !result.enrollment) {
+        throw new Error(result.error || "Failed to add student to classroom");
+      }
+
+      // Fetch the classroom details
+      const classroom = await classroomService.getClassroomById(classroomId);
+
+      return {
+        classroom: classroom ? toMemoryValue(classroom) : { id: classroomId },
+        enrollment: toMemoryValue(result.enrollment),
+      };
+    },
+
+    /**
+     * Remove a student from a classroom
+     * 
+     * Key can be:
+     * - Array index (number) - removes the enrollment at that index
+     * - Classroom ID (string) - removes the enrollment for that classroom
+     */
+    delete: async (ctx, key): Promise<void> => {
+      const userId = getUserId(ctx);
+      const studentId = ctx.all.studentId;
+      if (!studentId) throw new Error("studentId required");
+
+      let classroomId: string;
+
+      // If key is a number or looks like an index, we need to look up the classroom
+      const keyAsNumber = typeof key === 'number' ? key : parseInt(String(key), 10);
+      
+      if (!isNaN(keyAsNumber) && keyAsNumber >= 0) {
+        // Key is an index - fetch all classrooms and get the one at that index
+        const classroomsWithEnrollment = await classroomService.getStudentClassrooms(studentId);
+        
+        if (keyAsNumber >= classroomsWithEnrollment.length) {
+          throw new Error(`Invalid classroom index: ${key}. Student is only in ${classroomsWithEnrollment.length} classroom(s).`);
+        }
+        
+        classroomId = classroomsWithEnrollment[keyAsNumber].classroom.id;
+      } else {
+        // Key is a classroom ID
+        classroomId = String(key);
+      }
+
+      const result = await classroomService.removeStudentFromClassroom(
+        studentId,
+        classroomId,
+        userId
+      );
+
+      if (!result.success) {
+        throw new Error(result.error || "Failed to remove student from classroom");
+      }
+    },
+
+    /**
+     * Update enrollment details (e.g., isPrimary, notes)
+     */
+    update: async (ctx, key, value): Promise<any> => {
+      const userId = getUserId(ctx);
+      const studentId = ctx.all.studentId;
+      if (!studentId) throw new Error("studentId required");
+
+      let classroomId: string;
+
+      // If key is a number or looks like an index, we need to look up the classroom
+      const keyAsNumber = typeof key === 'number' ? key : parseInt(String(key), 10);
+      
+      if (!isNaN(keyAsNumber) && keyAsNumber >= 0) {
+        // Key is an index
+        const classroomsWithEnrollment = await classroomService.getStudentClassrooms(studentId);
+        
+        if (keyAsNumber >= classroomsWithEnrollment.length) {
+          throw new Error(`Invalid classroom index: ${key}`);
+        }
+        
+        classroomId = classroomsWithEnrollment[keyAsNumber].classroom.id;
+      } else {
+        // Key is a classroom ID
+        classroomId = String(key);
+      }
+
+      const result = await classroomService.updateStudentEnrollment(
+        studentId,
+        classroomId,
+        { 
+          isPrimary: value?.isPrimary ?? value?.enrollment?.isPrimary, 
+          notes: value?.notes ?? value?.enrollment?.notes 
+        },
+        userId
+      );
+
+      if (!result.success) {
+        throw new Error(result.error || "Failed to update enrollment");
+      }
+
+      const classroom = await classroomService.getClassroomById(classroomId);
+      
+      return {
+        classroom: classroom ? toMemoryValue(classroom) : { id: classroomId },
+        enrollment: result.enrollment ? toMemoryValue(result.enrollment) : undefined,
+      };
+    },
   
     fromDB: (record) => ({
       classroom: record?.classroom ? toMemoryValue(record.classroom) : undefined,
@@ -993,7 +1151,15 @@ import {
     }),
   
     getDBKey: (value) => value?.classroom?.id || value?.enrollment?.classroomId,
+
+    /**
+     * Extract context for child operations
+     */
+    extractChildContext: (value, key) => ({
+      classroomId: value?.classroom?.id || value?.enrollment?.classroomId,
+    }),
   };
+
   
   // ============================================================================
   // MEMORY FIELD SCHEMAS
@@ -1182,10 +1348,10 @@ import {
   const classroomSchema: AgentMemoryFieldObjectWithDB = {
     id: "classroom",
     type: "object",
-    opened: false,
+    opened: true,
     properties: {
       id: { id: "id", type: "string" },
-      name: { id: "name", type: "string" },
+      name: { id: "name", type: "string", opened: true },
       grade: {
         id: "grade",
         type: "string",
@@ -1224,10 +1390,10 @@ import {
   const instituteSchema: AgentMemoryFieldObjectWithDB = {
     id: "institute",
     type: "object",
-    opened: false,
+    opened: true,
     properties: {
       id: { id: "id", type: "string" },
-      name: { id: "name", type: "string" },
+      name: { id: "name", type: "string", opened: true },
       type: {
         id: "type",
         type: "string",
@@ -1376,11 +1542,11 @@ import {
   const studentSchema: AgentMemoryFieldObjectWithDB = {
     id: "student",
     type: "object",
-    opened: false,
+    opened: true,
     properties: {
       id: { id: "id", type: "string" },
       name: { id: "name", type: "string" },
-      firstName: { id: "firstName", type: "string" },
+      firstName: { id: "firstName", type: "string", opened: true },
       lastName: { id: "lastName", type: "string" },
       gender: { id: "gender", type: "string", enum: ["male", "female", "other"] },
       birthDate: { id: "birthDate", type: "string", format: "YYYY-MM-DD" },

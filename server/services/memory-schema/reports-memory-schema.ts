@@ -34,7 +34,7 @@ import {
   type DBOperationContext,
   type PaginationParams,
   type ListResult,
-} from "../chat/memory-db-bridge";
+} from "../chat/memory-types";
 const isProduction = process.env.NODE_ENV === 'production';
 const hideLogs = isProduction; // Set to true to hide logs in production
 

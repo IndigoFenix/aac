@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useStudent } from '@/hooks/useStudent';
+import { useChat } from '@/hooks/useChat';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
 
@@ -109,6 +110,8 @@ type ReportType = 'medical' | 'functional' | 'educational';
 export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
   const { user } = useAuth();
   const { student } = useStudent();
+  const { aiRefreshing } = useChat();
+  const isAiRefreshing = aiRefreshing.has('reports');
   const { t, isRTL } = useLanguage();
   const { toast } = useToast();
 
@@ -443,7 +446,12 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
       <div className="flex-shrink-0 p-6 border-b">
         <div className="flex items-center justify-between mb-2">
           <div>
-            <h2 className="text-2xl font-semibold">{t('reports.title')}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-2xl font-semibold">{t('reports.title')}</h2>
+              {isAiRefreshing && (
+                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+              )}
+            </div>
             <p className="text-muted-foreground">
               {t('reports.subtitle', { name: student.name })}
             </p>

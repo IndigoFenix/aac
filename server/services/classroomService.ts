@@ -299,6 +299,15 @@ export class ClassroomService {
       return { success: false, error: "You must be an admin or assigned to this classroom" };
     }
 
+    const isStudentInInstitute = await instituteRepository.isStudentInInstitute(
+      classroom.instituteId,
+      studentId
+    );
+
+    if (!isStudentInInstitute) {
+      return { success: false, error: "Student must be enrolled in the institute first" };
+    }
+
     const enrollment = await classroomRepository.addStudentToClassroom(
       studentId,
       classroomId,
