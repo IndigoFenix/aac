@@ -1048,12 +1048,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.sendFile(path.join(process.cwd(), "client/purchase-credits.html"));
   });
 
-  app.get("/admin*", (req, res) => {
-    if (req.path.startsWith("/api/admin/")) {
-      return; // Let API routes handle themselves
-    }
-    res.sendFile(path.join(process.cwd(), "admin/index.html"));
-  });
+  // Admin routes are handled by the SPA fallback in index.prod.ts
+  // The admin page is a client-side route within the main React app
 
   // ============= FALLBACK ROUTES =============
   app.use("/api", (req, res, next) => {
