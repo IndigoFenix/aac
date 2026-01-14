@@ -182,17 +182,17 @@ const PROGRESS_STATUS_COLORS: Record<ProgressStatus, string> = {
 
 interface GoalFormState {
   goalStatement: string;
-  profileDomainId: string;
   targetBehavior: string;
   criteria: string;
-  conditions: string;
+  methods: string;
   targetDate: string;
 }
 
 interface ObjectiveFormState {
   objectiveStatement: string;
-  criterion: string;
-  context: string;
+  profileDomainId: string;
+  criteria: string;
+  methods: string;
   targetDate: string;
 }
 
@@ -245,6 +245,33 @@ function calculateWeeklyMinutes(service: Service): number {
   return service.frequencyCount * service.sessionDuration * periodsPerWeek;
 }
 
+/**
+ * Get unique domains for a goal by looking at its objectives
+ * Since domains are now associated with objectives, not goals directly
+ */
+function getDomainsForGoal(goal: GoalWithNested, domains: ProfileDomain[]): ProfileDomain[] {
+  if (!goal.objectives || goal.objectives.length === 0) return [];
+  
+  const domainIds = new Set<string>();
+  goal.objectives.forEach(obj => {
+    if (obj.profileDomainId) {
+      domainIds.add(obj.profileDomainId);
+    }
+  });
+  
+  return domains.filter(d => domainIds.has(d.id));
+}
+
+/**
+ * Get goals that have objectives in a specific domain
+ */
+function getGoalsByDomain(goals: GoalWithNested[], domainId: string): GoalWithNested[] {
+  return goals.filter(goal => {
+    if (!goal.objectives) return false;
+    return goal.objectives.some(obj => obj.profileDomainId === domainId);
+  });
+}
+
 // =============================================================================
 // MAIN COMPONENT
 // =============================================================================
@@ -271,6 +298,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
   const [showTeamMemberModal, setShowTeamMemberModal] = useState(false);
   
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
+  const [editingObjective, setEditingObjective] = useState<Objective | null>(null);
   const [editingService, setEditingService] = useState<Service | null>(null);
   const [selectedGoalForObjective, setSelectedGoalForObjective] = useState<string | null>(null);
   const [selectedGoalForDataPoint, setSelectedGoalForDataPoint] = useState<string | null>(null);
@@ -285,17 +313,17 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
   
   const [goalForm, setGoalForm] = useState<GoalFormState>({
     goalStatement: '',
-    profileDomainId: '',
     targetBehavior: '',
     criteria: '',
-    conditions: '',
+    methods: '',
     targetDate: '',
   });
   
   const [objectiveForm, setObjectiveForm] = useState<ObjectiveFormState>({
     objectiveStatement: '',
-    criterion: '',
-    context: '',
+    profileDomainId: '',
+    criteria: '',
+    methods: '',
     targetDate: '',
   });
   
@@ -541,6 +569,41 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
     },
   });
 
+  // Update objective
+  const updateObjectiveMutation = useMutation({
+    mutationFn: async ({ objectiveId, updates }: { objectiveId: string; updates: Partial<Objective> }) => {
+      const response = await apiRequest('PATCH', `/api/objectives/${objectiveId}`, updates);
+      if (!response.ok) throw new Error('Failed to update objective');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/programs', program?.id, 'full'] });
+      toast({ title: t('objective.updated') });
+      setShowObjectiveModal(false);
+      setEditingObjective(null);
+      resetObjectiveForm();
+    },
+    onError: (error: Error) => {
+      toast({ title: t('common.error'), description: error.message, variant: 'destructive' });
+    },
+  });
+
+  // Delete objective
+  const deleteObjectiveMutation = useMutation({
+    mutationFn: async (objectiveId: string) => {
+      const response = await apiRequest('DELETE', `/api/objectives/${objectiveId}`);
+      if (!response.ok) throw new Error('Failed to delete objective');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/programs', program?.id, 'full'] });
+      toast({ title: t('objective.deleted') });
+    },
+    onError: (error: Error) => {
+      toast({ title: t('common.error'), description: error.message, variant: 'destructive' });
+    },
+  });
+
   // Create service - using schema field names (customServiceName, frequencyCount, sessionDuration, providerName)
   const createServiceMutation = useMutation({
     mutationFn: async (serviceData: InsertService) => {
@@ -653,10 +716,9 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
   const resetGoalForm = () => {
     setGoalForm({
       goalStatement: '',
-      profileDomainId: '',
       targetBehavior: '',
       criteria: '',
-      conditions: '',
+      methods: '',
       targetDate: '',
     });
     setEditingGoal(null);
@@ -665,11 +727,13 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
   const resetObjectiveForm = () => {
     setObjectiveForm({
       objectiveStatement: '',
-      criterion: '',
-      context: '',
+      profileDomainId: '',
+      criteria: '',
+      methods: '',
       targetDate: '',
     });
     setSelectedGoalForObjective(null);
+    setEditingObjective(null);
   };
 
   const resetServiceForm = () => {
@@ -1109,11 +1173,12 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                   <Progress value={stats.goalProgress} className="h-3" />
                 </div>
 
-                {/* Goals by Domain */}
+                {/* Goals by Domain - Use getGoalsByDomain helper */}
                 <div className="space-y-2 pt-4">
                   <p className="text-sm font-medium text-muted-foreground">{t('program.goalsByDomain')}</p>
                   {domains.map((domain) => {
-                    const domainGoals = goals.filter((g) => g.profileDomainId === domain.id);
+                    // Get goals that have objectives in this domain
+                    const domainGoals = getGoalsByDomain(goals, domain.id);
                     const achieved = domainGoals.filter((g) => g.status === 'achieved').length;
                     return (
                       <div key={domain.id} className={cn('flex items-center gap-3', isRTL && 'flex-row-reverse')}>
@@ -1194,7 +1259,8 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                           <div className={isRTL ? 'text-right' : ''}>
                             <CardTitle className="text-base">{t(`program.domains.${domain.domainType}`)}</CardTitle>
                             <CardDescription>
-                              {goals.filter((g) => g.profileDomainId === domain.id).length} {t('program.goalsLinked')}
+                              {/* Count goals via objectives in this domain */}
+                              {getGoalsByDomain(goals, domain.id).length} {t('program.goalsLinked')}
                             </CardDescription>
                           </div>
                         </div>
@@ -1324,7 +1390,8 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
               </Card>
             ) : (
               goals.map((goal, index) => {
-                const domain = domains.find((d) => d.id === goal.profileDomainId);
+                // UPDATED: Get domains from objectives instead of goal.profileDomainId
+                const goalDomains = getDomainsForGoal(goal, domains);
                 return (
                   <Collapsible
                     key={goal.id}
@@ -1349,11 +1416,18 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                               <div className={isRTL ? 'text-right' : ''}>
                                 {/* goalStatement is the main field in schema (NOT title) */}
                                 <CardTitle className="text-base">{goal.goalStatement}</CardTitle>
-                                <div className={cn('flex items-center gap-2 mt-1')}>
-                                  {domain && (
-                                    <Badge variant="outline" className="text-xs">
-                                      {DOMAIN_ICONS[domain.domainType]}
-                                      <span className="ms-1">{t(`program.domains.${domain.domainType}`)}</span>
+                                <div className={cn('flex items-center gap-2 mt-1 flex-wrap')}>
+                                  {/* UPDATED: Show multiple domains from objectives */}
+                                  {goalDomains.length > 0 ? (
+                                    goalDomains.map(domain => (
+                                      <Badge key={domain.id} variant="outline" className="text-xs">
+                                        {DOMAIN_ICONS[domain.domainType]}
+                                        <span className="ms-1">{t(`program.domains.${domain.domainType}`)}</span>
+                                      </Badge>
+                                    ))
+                                  ) : (
+                                    <Badge variant="outline" className="text-xs text-muted-foreground">
+                                      {t('goal.noDomain')}
                                     </Badge>
                                   )}
                                   <Badge className={STATUS_COLORS[goal.status]}>
@@ -1372,12 +1446,12 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       setEditingGoal(goal);
+                                      // UPDATED: No profileDomainId in form
                                       setGoalForm({
                                         goalStatement: goal.goalStatement,
-                                        profileDomainId: goal.profileDomainId || '',
                                         targetBehavior: goal.targetBehavior || '',
                                         criteria: goal.criteria || '',
-                                        conditions: goal.conditions || '',
+                                        methods: goal.methods || '',
                                         targetDate: goal.targetDate || '',
                                       });
                                       setShowGoalModal(true);
@@ -1420,16 +1494,16 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                                 <p className="text-sm">{goal.criteria}</p>
                               </div>
                             )}
-                            {goal.conditions && (
+                            {goal.methods && (
                               <div className="space-y-1">
-                                <Label className="text-muted-foreground">{t('goal.conditions')}</Label>
-                                <p className="text-sm">{goal.conditions}</p>
+                                <Label className="text-muted-foreground">{t('goal.methods')}</Label>
+                                <p className="text-sm">{goal.methods}</p>
                               </div>
                             )}
                           </div>
 
-                          {/* progress is the schema field (0-100), NOT currentProgress */}
-                          {goal.progress !== null && goal.progress > 0 && (
+                          {/* UPDATED: progress is the schema field (0-100) */}
+                          {goal.progress !== null && goal.progress !== undefined && goal.progress > 0 && (
                             <div className="space-y-2">
                               <div className={cn('flex justify-between text-sm')}>
                                 <span>{t('goal.currentProgress')}</span>
@@ -1470,47 +1544,113 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                             
                             {goal.objectives && goal.objectives.length > 0 ? (
                               <div className="space-y-2">
-                                {goal.objectives.map((objective, idx) => (
-                                  <div
-                                    key={objective.id}
-                                    className={cn(
-                                      'p-3 rounded-lg border text-sm',
-                                      isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-gray-50 border-gray-200'
-                                    )}
-                                  >
-                                    <div className={cn('flex items-start justify-between gap-2')}>
-                                      <div className={cn('flex items-start gap-2')}>
-                                        <span className={cn(
-                                          'flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium mt-0.5',
-                                          objective.status === 'achieved' 
-                                            ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
-                                            : objective.status === 'in_progress'
-                                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
-                                            : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                        )}>
-                                          {idx + 1}
-                                        </span>
-                                        <div className="flex-1 min-w-0">
-                                          <p className={isRTL ? 'text-right' : ''}>{objective.objectiveStatement}</p>
-                                          {objective.criterion && (
-                                            <p className={cn('text-xs text-muted-foreground mt-1', isRTL && 'text-right')}>
-                                              {t('objective.criterion')}: {objective.criterion}
-                                            </p>
+                                {goal.objectives.map((objective, idx) => {
+                                  // Get domain for this objective
+                                  const objDomain = domains.find(d => d.id === objective.profileDomainId);
+                                  return (
+                                    <div
+                                      key={objective.id}
+                                      className={cn(
+                                        'p-3 rounded-lg border text-sm',
+                                        isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-gray-50 border-gray-200'
+                                      )}
+                                    >
+                                      <div className={cn('flex items-start justify-between gap-2')}>
+                                        <div className={cn('flex items-start gap-2')}>
+                                          <span className={cn(
+                                            'flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium mt-0.5',
+                                            objective.status === 'achieved' 
+                                              ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
+                                              : objective.status === 'in_progress'
+                                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+                                              : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                          )}>
+                                            {idx + 1}
+                                          </span>
+                                          <div className="flex-1 min-w-0">
+                                            <p className={isRTL ? 'text-right' : ''}>{objective.objectiveStatement}</p>
+                                            {/* Show domain for this objective */}
+                                            {objDomain && (
+                                              <Badge variant="outline" className="text-xs mt-1">
+                                                {DOMAIN_ICONS[objDomain.domainType]}
+                                                <span className="ms-1">{t(`program.domains.${objDomain.domainType}`)}</span>
+                                              </Badge>
+                                            )}
+                                            {objective.criteria && (
+                                              <p className={cn('text-xs text-muted-foreground mt-1', isRTL && 'text-right')}>
+                                                {t('objective.criteria')}: {objective.criteria}
+                                              </p>
+                                            )}
+                                            {/* Show methods if present */}
+                                            {objective.methods && (
+                                              <p className={cn('text-xs text-muted-foreground mt-1', isRTL && 'text-right')}>
+                                                {t('objective.methods')}: {objective.methods}
+                                              </p>
+                                            )}
+                                            {/* Show objective progress */}
+                                            {objective.progress !== null && objective.progress !== undefined && objective.progress > 0 && (
+                                              <div className="mt-2">
+                                                <div className={cn('flex justify-between text-xs')}>
+                                                  <span>{t('objective.progress')}</span>
+                                                  <span className="font-medium">{objective.progress}%</span>
+                                                </div>
+                                                <Progress value={objective.progress} className="h-1 mt-1" />
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                          <Badge className={cn('flex-shrink-0', STATUS_COLORS[objective.status])}>
+                                            {t(`objective.status.${objective.status}`)}
+                                          </Badge>
+                                          {program.status !== 'archived' && (
+                                            <>
+                                              <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-6 w-6"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setEditingObjective(objective);
+                                                  setSelectedGoalForObjective(goal.id);
+                                                  setObjectiveForm({
+                                                    objectiveStatement: objective.objectiveStatement,
+                                                    profileDomainId: objective.profileDomainId || 'none',
+                                                    criteria: objective.criteria || '',
+                                                    methods: objective.methods || '',
+                                                    targetDate: objective.targetDate || '',
+                                                  });
+                                                  setShowObjectiveModal(true);
+                                                }}
+                                              >
+                                                <Edit className="w-3 h-3" />
+                                              </Button>
+                                              <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-6 w-6 text-destructive hover:text-destructive"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  if (confirm(t('objective.confirmDelete'))) {
+                                                    deleteObjectiveMutation.mutate(objective.id);
+                                                  }
+                                                }}
+                                              >
+                                                <Trash2 className="w-3 h-3" />
+                                              </Button>
+                                            </>
                                           )}
                                         </div>
                                       </div>
-                                      <Badge className={cn('flex-shrink-0', STATUS_COLORS[objective.status])}>
-                                        {t(`objective.status.${objective.status}`)}
-                                      </Badge>
+                                      {objective.targetDate && (
+                                        <p className={cn('text-xs text-muted-foreground mt-2 flex items-center gap-1', isRTL && 'flex-row-reverse justify-end')}>
+                                          <Calendar className="w-3 h-3" />
+                                          {t('objective.targetDate')}: {new Date(objective.targetDate).toLocaleDateString()}
+                                        </p>
+                                      )}
                                     </div>
-                                    {objective.targetDate && (
-                                      <p className={cn('text-xs text-muted-foreground mt-2 flex items-center gap-1', isRTL && 'flex-row-reverse justify-end')}>
-                                        <Calendar className="w-3 h-3" />
-                                        {t('objective.targetDate')}: {new Date(objective.targetDate).toLocaleDateString()}
-                                      </p>
-                                    )}
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             ) : (
                               <p className={cn('text-sm text-muted-foreground italic', isRTL && 'text-right')}>
@@ -2042,25 +2182,6 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
               />
             </div>
 
-            <div className="space-y-2">
-              <Label>{t('goal.domain')}</Label>
-              <Select
-                value={goalForm.profileDomainId}
-                onValueChange={(value) => setGoalForm(prev => ({ ...prev, profileDomainId: value }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={t('goal.selectDomain')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {domains.map((domain) => (
-                    <SelectItem key={domain.id} value={domain.id}>
-                      {t(`program.domains.${domain.domainType}`)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
             <div className="grid sm:grid-cols-2 gap-4">
               {/* criteria - schema field */}
               <div className="space-y-2">
@@ -2071,13 +2192,13 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                   placeholder={t('goal.criteriaPlaceholder')}
                 />
               </div>
-              {/* conditions - schema field */}
+              {/* methods - schema field */}
               <div className="space-y-2">
-                <Label>{t('goal.conditions')}</Label>
+                <Label>{t('goal.methods')}</Label>
                 <Input
-                  value={goalForm.conditions}
-                  onChange={(e) => setGoalForm(prev => ({ ...prev, conditions: e.target.value }))}
-                  placeholder={t('goal.conditionsPlaceholder')}
+                  value={goalForm.methods}
+                  onChange={(e) => setGoalForm(prev => ({ ...prev, methods: e.target.value }))}
+                  placeholder={t('goal.methodsPlaceholder')}
                 />
               </div>
             </div>
@@ -2105,9 +2226,8 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                 const goalData: InsertGoal = {
                   programId: program.id,
                   goalStatement: goalForm.goalStatement,
-                  profileDomainId: goalForm.profileDomainId || undefined,
                   criteria: goalForm.criteria || undefined,
-                  conditions: goalForm.conditions || undefined,
+                  methods: goalForm.methods || undefined,
                   targetDate: goalForm.targetDate || undefined,
                 };
                 if (editingGoal) {
@@ -2129,9 +2249,9 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
 
       {/* Objective Modal */}
       <Dialog open={showObjectiveModal} onOpenChange={setShowObjectiveModal}>
-        <DialogContent className="sm:max-w-[450px]">
+        <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>{t('objective.add')}</DialogTitle>
+            <DialogTitle>{editingObjective ? t('objective.edit') : t('objective.add')}</DialogTitle>
             <DialogDescription>{t('objective.modalDescription')}</DialogDescription>
           </DialogHeader>
 
@@ -2146,13 +2266,45 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
               />
             </div>
 
-            {/* criterion - schema field (NOT criteria) */}
+            {/* NEW: Domain selection for objective */}
             <div className="space-y-2">
-              <Label>{t('objective.criterion')}</Label>
+              <Label>{t('objective.domain')}</Label>
+              <Select
+                value={objectiveForm.profileDomainId}
+                onValueChange={(value) => setObjectiveForm(prev => ({ ...prev, profileDomainId: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={t('objective.selectDomain')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">{t('objective.noDomain')}</SelectItem>
+                  {domains.map((domain) => (
+                    <SelectItem key={domain.id} value={domain.id}>
+                      {t(`program.domains.${domain.domainType}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* criteria */}
+            <div className="space-y-2">
+              <Label>{t('objective.criteria')}</Label>
               <Input
-                value={objectiveForm.criterion}
-                onChange={(e) => setObjectiveForm(prev => ({ ...prev, criterion: e.target.value }))}
-                placeholder={t('objective.criterionPlaceholder')}
+                value={objectiveForm.criteria}
+                onChange={(e) => setObjectiveForm(prev => ({ ...prev, criteria: e.target.value }))}
+                placeholder={t('objective.criteriaPlaceholder')}
+              />
+            </div>
+
+            {/* Methods/strategies field */}
+            <div className="space-y-2">
+              <Label>{t('objective.methods')}</Label>
+              <Textarea
+                value={objectiveForm.methods}
+                onChange={(e) => setObjectiveForm(prev => ({ ...prev, methods: e.target.value }))}
+                placeholder={t('objective.methodsPlaceholder')}
+                className="min-h-[60px]"
               />
             </div>
 
@@ -2176,23 +2328,34 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                   toast({ title: t('common.error'), description: t('objective.statementRequired'), variant: 'destructive' });
                   return;
                 }
-                if (selectedGoalForObjective) {
+                
+                const objectiveData = {
+                  goalId: selectedGoalForObjective!,
+                  objectiveStatement: objectiveForm.objectiveStatement,
+                  profileDomainId: objectiveForm.profileDomainId && objectiveForm.profileDomainId !== 'none' ? objectiveForm.profileDomainId : undefined,
+                  criteria: objectiveForm.criteria || undefined,
+                  methods: objectiveForm.methods || undefined,
+                  targetDate: objectiveForm.targetDate || undefined,
+                };
+                
+                if (editingObjective) {
+                  updateObjectiveMutation.mutate({ 
+                    objectiveId: editingObjective.id, 
+                    updates: objectiveData 
+                  });
+                } else if (selectedGoalForObjective) {
                   createObjectiveMutation.mutate({
                     goalId: selectedGoalForObjective,
-                    data: {
-                      goalId: selectedGoalForObjective,
-                      objectiveStatement: objectiveForm.objectiveStatement,
-                      criterion: objectiveForm.criterion || undefined,
-                      context: objectiveForm.context || undefined,
-                      targetDate: objectiveForm.targetDate || undefined,
-                    },
+                    data: objectiveData,
                   });
                 }
               }}
-              disabled={createObjectiveMutation.isPending}
+              disabled={createObjectiveMutation.isPending || updateObjectiveMutation.isPending}
             >
-              {createObjectiveMutation.isPending && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
-              {t('common.create')}
+              {(createObjectiveMutation.isPending || updateObjectiveMutation.isPending) && (
+                <Loader2 className="w-4 h-4 me-2 animate-spin" />
+              )}
+              {editingObjective ? t('common.save') : t('common.create')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2244,7 +2407,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
             <div className="grid sm:grid-cols-3 gap-4">
               {/* frequencyCount - schema field (NOT frequency) */}
               <div className="space-y-2">
-                <Label>{t('service.frequency')}</Label>
+                <Label>{t('service.frequencyCount')}</Label>
                 <Input
                   type="number"
                   min={1}

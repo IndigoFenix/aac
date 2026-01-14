@@ -17,6 +17,8 @@ import {
   meetings,
   consentForms,
   students,
+  userGoals,
+  userObjectives,
   type Program,
   type InsertProgram,
   type UpdateProgram,
@@ -64,6 +66,12 @@ import {
   type ProgramWithDetails,
   type StudentWithProgramSummary,
   type GoalWithContext,
+  type UserGoal,
+  type InsertUserGoal,
+  type UpdateUserGoal,
+  type UserObjective,
+  type InsertUserObjective,
+  type UpdateUserObjective,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, and, desc, asc, sql, inArray, isNull, count } from "drizzle-orm";
@@ -195,11 +203,16 @@ export class ProgramRepository {
 
     const programGoals = await this.getGoalsByProgramId(programId);
     const goalsWithData = await Promise.all(
-      programGoals.map(async (goal) => ({
-        ...goal,
-        objectives: await this.getObjectivesByGoalId(goal.id),
-        dataPoints: await this.getDataPointsByGoalId(goal.id),
-      }))
+      programGoals.map(async (goal) => {
+        const goalObjectives = await this.getObjectivesByGoalId(goal.id);
+        return {
+          ...goal,
+          objectives: goalObjectives,
+          dataPoints: await this.getDataPointsByGoalId(goal.id),
+          // Get domains for this goal via its objectives
+          domains: await this.getDomainsForGoal(goal.id),
+        };
+      })
     );
 
     const programServices = await this.getServicesByProgramId(programId);
@@ -371,11 +384,57 @@ export class ProgramRepository {
       .orderBy(asc(goals.sortOrder));
   }
 
+  /**
+   * Get domains for a goal by looking at its objectives' domains
+   * Since domains are now on objectives, not goals, we need to aggregate
+   * the unique domains from all objectives under this goal.
+   */
+  async getDomainsForGoal(goalId: string): Promise<ProfileDomain[]> {
+    // Get all objectives for this goal
+    const goalObjectives = await this.getObjectivesByGoalId(goalId);
+    
+    // Get unique domain IDs from objectives
+    const domainIds = [...new Set(
+      goalObjectives
+        .map(obj => obj.profileDomainId)
+        .filter((id): id is string => id !== null && id !== undefined)
+    )];
+    
+    if (domainIds.length === 0) {
+      return [];
+    }
+    
+    // Fetch the actual domain records
+    return await db
+      .select()
+      .from(profileDomains)
+      .where(inArray(profileDomains.id, domainIds))
+      .orderBy(asc(profileDomains.sortOrder));
+  }
+
+  /**
+   * Get goals that have objectives in a specific domain
+   * This replaces the old getGoalsByDomainId which was based on goals.profileDomainId
+   */
   async getGoalsByDomainId(domainId: string): Promise<Goal[]> {
+    // Find all objectives in this domain
+    const domainObjectives = await db
+      .select()
+      .from(objectives)
+      .where(eq(objectives.profileDomainId, domainId));
+    
+    // Get unique goal IDs
+    const goalIds = [...new Set(domainObjectives.map(obj => obj.goalId))];
+    
+    if (goalIds.length === 0) {
+      return [];
+    }
+    
+    // Fetch the goals
     return await db
       .select()
       .from(goals)
-      .where(eq(goals.profileDomainId, domainId))
+      .where(inArray(goals.id, goalIds))
       .orderBy(asc(goals.sortOrder));
   }
 
@@ -386,10 +445,14 @@ export class ProgramRepository {
     const goalObjectives = await this.getObjectivesByGoalId(goalId);
     const goalDataPoints = await this.getDataPointsByGoalId(goalId);
     const latestProgress = await this.getLatestGoalProgressEntryByGoalId(goalId);
+    
+    // Get domain names from objectives
+    const domains = await this.getDomainsForGoal(goalId);
+    const domainNames = domains.map(d => d.customName || d.domainType).join(", ");
 
     return {
       goal,
-      domainName: "", // Placeholder - would require join with profileDomains
+      domainName: domainNames,
       latestProgress,
       objectives: goalObjectives,
       dataPoints: goalDataPoints,
@@ -437,6 +500,17 @@ export class ProgramRepository {
       .select()
       .from(objectives)
       .where(eq(objectives.goalId, goalId))
+      .orderBy(asc(objectives.sequenceOrder));
+  }
+
+  /**
+   * Get objectives by domain ID
+   */
+  async getObjectivesByDomainId(domainId: string): Promise<Objective[]> {
+    return await db
+      .select()
+      .from(objectives)
+      .where(eq(objectives.profileDomainId, domainId))
       .orderBy(asc(objectives.sequenceOrder));
   }
 
@@ -528,14 +602,6 @@ export class ProgramRepository {
     return accommodation;
   }
 
-  async getAccommodationById(id: string): Promise<Accommodation | undefined> {
-    const [accommodation] = await db
-      .select()
-      .from(accommodations)
-      .where(eq(accommodations.id, id));
-    return accommodation || undefined;
-  }
-
   async getAccommodationsByServiceId(serviceId: string): Promise<Accommodation[]> {
     return await db
       .select()
@@ -563,49 +629,6 @@ export class ProgramRepository {
     const result = await db
       .delete(accommodations)
       .where(eq(accommodations.id, id));
-    return (result.rowCount ?? 0) > 0;
-  }
-
-  // ==========================================================================
-  // DATA POINT OPERATIONS
-  // ==========================================================================
-
-  async createDataPoint(insert: InsertDataPoint): Promise<DataPoint> {
-    const [dataPoint] = await db
-      .insert(dataPoints)
-      .values(insert)
-      .returning();
-    return dataPoint;
-  }
-
-  async getDataPointById(id: string): Promise<DataPoint | undefined> {
-    const [dataPoint] = await db
-      .select()
-      .from(dataPoints)
-      .where(eq(dataPoints.id, id));
-    return dataPoint || undefined;
-  }
-
-  async getDataPointsByGoalId(goalId: string): Promise<DataPoint[]> {
-    return await db
-      .select()
-      .from(dataPoints)
-      .where(eq(dataPoints.goalId, goalId))
-      .orderBy(desc(dataPoints.recordedAt));
-  }
-
-  async getDataPointsByObjectiveId(objectiveId: string): Promise<DataPoint[]> {
-    return await db
-      .select()
-      .from(dataPoints)
-      .where(eq(dataPoints.objectiveId, objectiveId))
-      .orderBy(desc(dataPoints.recordedAt));
-  }
-
-  async deleteDataPoint(id: string): Promise<boolean> {
-    const result = await db
-      .delete(dataPoints)
-      .where(eq(dataPoints.id, id));
     return (result.rowCount ?? 0) > 0;
   }
 
@@ -676,7 +699,8 @@ export class ProgramRepository {
     return await db
       .select()
       .from(goalProgressEntries)
-      .where(eq(goalProgressEntries.goalId, goalId));
+      .where(eq(goalProgressEntries.goalId, goalId))
+      .orderBy(desc(goalProgressEntries.createdAt));
   }
 
   async getLatestGoalProgressEntryByGoalId(goalId: string): Promise<GoalProgressEntry | undefined> {
@@ -687,6 +711,41 @@ export class ProgramRepository {
       .orderBy(desc(goalProgressEntries.createdAt))
       .limit(1);
     return entry || undefined;
+  }
+
+  // ==========================================================================
+  // DATA POINT OPERATIONS
+  // ==========================================================================
+
+  async createDataPoint(insert: InsertDataPoint): Promise<DataPoint> {
+    const [point] = await db
+      .insert(dataPoints)
+      .values(insert)
+      .returning();
+    return point;
+  }
+
+  async getDataPointsByGoalId(goalId: string): Promise<DataPoint[]> {
+    return await db
+      .select()
+      .from(dataPoints)
+      .where(eq(dataPoints.goalId, goalId))
+      .orderBy(desc(dataPoints.recordedAt));
+  }
+
+  async getDataPointsByObjectiveId(objectiveId: string): Promise<DataPoint[]> {
+    return await db
+      .select()
+      .from(dataPoints)
+      .where(eq(dataPoints.objectiveId, objectiveId))
+      .orderBy(desc(dataPoints.recordedAt));
+  }
+
+  async deleteDataPoint(id: string): Promise<boolean> {
+    const result = await db
+      .delete(dataPoints)
+      .where(eq(dataPoints.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
 
   // ==========================================================================
@@ -907,18 +966,155 @@ export class ProgramRepository {
   }
 
   // ==========================================================================
+  // USER-GOAL OPERATIONS (Many-to-Many)
+  // ==========================================================================
+
+  async assignUserToGoal(insert: InsertUserGoal): Promise<UserGoal> {
+    const [userGoal] = await db
+      .insert(userGoals)
+      .values(insert)
+      .returning();
+    return userGoal;
+  }
+
+  async getUserGoalById(id: string): Promise<UserGoal | undefined> {
+    const [userGoal] = await db
+      .select()
+      .from(userGoals)
+      .where(eq(userGoals.id, id));
+    return userGoal || undefined;
+  }
+
+  async getUserGoalsByGoalId(goalId: string): Promise<UserGoal[]> {
+    return await db
+      .select()
+      .from(userGoals)
+      .where(eq(userGoals.goalId, goalId));
+  }
+
+  async getUserGoalsByUserId(userId: string): Promise<UserGoal[]> {
+    return await db
+      .select()
+      .from(userGoals)
+      .where(eq(userGoals.userId, userId));
+  }
+
+  async getGoalsForUser(userId: string): Promise<Goal[]> {
+    const userGoalLinks = await this.getUserGoalsByUserId(userId);
+    const goalIds = userGoalLinks.map(ug => ug.goalId);
+    
+    if (goalIds.length === 0) return [];
+    
+    return await db
+      .select()
+      .from(goals)
+      .where(inArray(goals.id, goalIds))
+      .orderBy(asc(goals.sortOrder));
+  }
+
+  async updateUserGoal(id: string, updates: UpdateUserGoal): Promise<UserGoal | undefined> {
+    const [updated] = await db
+      .update(userGoals)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(userGoals.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async removeUserFromGoal(userId: string, goalId: string): Promise<boolean> {
+    const result = await db
+      .delete(userGoals)
+      .where(
+        and(
+          eq(userGoals.userId, userId),
+          eq(userGoals.goalId, goalId)
+        )
+      );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // ==========================================================================
+  // USER-OBJECTIVE OPERATIONS (Many-to-Many)
+  // ==========================================================================
+
+  async assignUserToObjective(insert: InsertUserObjective): Promise<UserObjective> {
+    const [userObjective] = await db
+      .insert(userObjectives)
+      .values(insert)
+      .returning();
+    return userObjective;
+  }
+
+  async getUserObjectiveById(id: string): Promise<UserObjective | undefined> {
+    const [userObjective] = await db
+      .select()
+      .from(userObjectives)
+      .where(eq(userObjectives.id, id));
+    return userObjective || undefined;
+  }
+
+  async getUserObjectivesByObjectiveId(objectiveId: string): Promise<UserObjective[]> {
+    return await db
+      .select()
+      .from(userObjectives)
+      .where(eq(userObjectives.objectiveId, objectiveId));
+  }
+
+  async getUserObjectivesByUserId(userId: string): Promise<UserObjective[]> {
+    return await db
+      .select()
+      .from(userObjectives)
+      .where(eq(userObjectives.userId, userId));
+  }
+
+  async getObjectivesForUser(userId: string): Promise<Objective[]> {
+    const userObjectiveLinks = await this.getUserObjectivesByUserId(userId);
+    const objectiveIds = userObjectiveLinks.map(uo => uo.objectiveId);
+    
+    if (objectiveIds.length === 0) return [];
+    
+    return await db
+      .select()
+      .from(objectives)
+      .where(inArray(objectives.id, objectiveIds))
+      .orderBy(asc(objectives.sequenceOrder));
+  }
+
+  async updateUserObjective(id: string, updates: UpdateUserObjective): Promise<UserObjective | undefined> {
+    const [updated] = await db
+      .update(userObjectives)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(userObjectives.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async removeUserFromObjective(userId: string, objectiveId: string): Promise<boolean> {
+    const result = await db
+      .delete(userObjectives)
+      .where(
+        and(
+          eq(userObjectives.userId, userId),
+          eq(userObjectives.objectiveId, objectiveId)
+        )
+      );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // ==========================================================================
   // AGGREGATE QUERIES
   // ==========================================================================
 
   /**
-   * Calculate overall progress for a program based on goal statuses
+   * Calculate overall progress for a program based on goal progress values
    */
   async calculateProgramProgress(programId: string): Promise<number> {
     const programGoals = await this.getGoalsByProgramId(programId);
     if (programGoals.length === 0) return 0;
 
-    const completedGoals = programGoals.filter(g => g.status === "achieved").length;
-    return Math.round((completedGoals / programGoals.length) * 100);
+    // Use the progress field instead of status
+    const totalProgress = programGoals.reduce((sum, g) => sum + (g.progress ?? 0), 0);
+    return Math.round(totalProgress / programGoals.length);
   }
 
   /**
@@ -958,6 +1154,20 @@ export class ProgramRepository {
       acc[row.status] = row.count;
       return acc;
     }, {} as Record<string, number>);
+  }
+
+  /**
+   * Get average progress for goals in a program
+   */
+  async getAverageGoalProgress(programId: string): Promise<number> {
+    const [result] = await db
+      .select({
+        avgProgress: sql<number>`coalesce(avg(${goals.progress}), 0)`,
+      })
+      .from(goals)
+      .where(eq(goals.programId, programId));
+
+    return Math.round(result?.avgProgress ?? 0);
   }
 }
 
