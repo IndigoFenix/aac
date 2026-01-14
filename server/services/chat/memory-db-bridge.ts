@@ -185,9 +185,35 @@ export function markStale(state: MemoryLoadState, path: string, includeDescendan
 /**
  * Checks if a path needs loading (not loaded or stale).
  */
-export function needsLoading(state: MemoryLoadState, path: string): boolean {
+export function needsLoading(
+  state: MemoryLoadState, 
+  path: string,
+  memoryValues?: any  // pass memoryValues to verify data exists
+): boolean {
   const normalized = normalizePath(path);
-  return !state.loaded.has(normalized) || state.stale.has(normalized);
+  
+  // If marked stale, needs loading
+  if (state.stale.has(normalized)) {
+    return true;
+  }
+  
+  // If not loaded yet, needs loading
+  if (!state.loaded.has(normalized)) {
+    return true;
+  }
+  
+  // Even if marked as loaded, if value is undefined, reload it
+  if (memoryValues !== undefined) {
+    const tokens = splitPath(normalized);
+    const value = getValueAtPath(memoryValues, tokens);
+    if (value === undefined) {
+      // Path was marked loaded but data is missing - need to reload
+      state.loaded.delete(normalized);  // Clear stale marker
+      return true;
+    }
+  }
+  
+  return false;
 }
 
 /**
@@ -580,7 +606,7 @@ export async function populateMemoryFromDB(
   
   for (const path of sortedPaths) {
     try {
-      const shouldLoad = options.forceRefresh || needsLoading(loadState, path);
+      const shouldLoad = options.forceRefresh || needsLoading(loadState, path, values);
       
       if (!shouldLoad) continue;
 
@@ -1275,9 +1301,29 @@ export async function processMemoryToolWithDB(
 
   // Enhance results with DB sync status and view summaries
   const enhancedResults = memResult.results.map((result, i) => {
-    const dbResult = dbResults.get(i);
+    // For view/hide with wildcards, results may be more than ops
+    // Find the original op that generated this result by matching target paths
+    let opIndex = i;
+    let op = ops[i];
+    
+    // If no direct match, try to find the op that owns this result
+    if (!op && result.target) {
+      opIndex = ops.findIndex(o => {
+        if (!o) return false;
+        const paths = o.paths ?? (o.path ? [o.path] : []);
+        return paths.some(p => {
+          // Check if result.target matches or is a child of this op's path
+          const basePath = p.replace(/\/\*$/, '');
+          return result.target === p || 
+                result.target === basePath || 
+                result.target.startsWith(basePath + '/');
+        });
+      });
+      op = ops[opIndex] ?? ops[0]; // Fall back to first op if no match
+    }
+    
+    const dbResult = dbResults.get(opIndex);
     const dbSynced = dbResult?.dbSynced;
-    const op = ops[i];
     
     const ok = dbSynced === true ? true : result.ok;
     const message = dbResult?.error ?? (dbSynced === true ? undefined : result.message);

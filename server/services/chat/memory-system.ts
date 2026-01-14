@@ -676,6 +676,40 @@ export function renderMemoryVisualization(
     return state.page[p] ?? { offset: 0, limit: defaultLimit };
   }
 
+  /**
+   * Checks if a container might have unloaded data from the database.
+   * Returns true if:
+   * - The schema has DB operations defined (it's database-backed)
+   * - The path has NOT been explicitly viewed (not in state.visible)
+   * - The current value appears empty
+   * 
+   * This helps the AI understand that an empty container might actually
+   * have data that needs to be loaded via a view operation.
+   */
+  function mayHaveUnloadedData(
+    schema: AgentMemoryField,
+    path: string,
+    value: any
+  ): boolean {
+    // Check if schema has db operations (cast to any since AgentMemoryField 
+    // doesn't include db in its type, but it exists at runtime)
+    const hasDbOps = !!(schema as any).db;
+    if (!hasDbOps) return false;
+    
+    // Check if the path has been explicitly viewed
+    const normalizedPath = normalizePath(path);
+    const isExplicitlyViewed = state.visible.includes(normalizedPath);
+    if (isExplicitlyViewed) return false;
+    
+    // Check if value appears empty
+    const isEmpty = value === undefined || 
+                    value === null || 
+                    (Array.isArray(value) && value.length === 0) ||
+                    (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0);
+    
+    return isEmpty;
+  }
+
   // ---------- small helpers for snapshot ----------
   function summarizeValue(schema: AgentMemoryField, value: any): string {
     if (value == null) return "null";
@@ -857,9 +891,13 @@ export function renderMemoryVisualization(
   
     const arr = Array.isArray(value) ? value : [];
     
-    // Explicit empty message so AI knows there's nothing to load
+    // Empty array handling - check if it might have unloaded DB data
     if (arr.length === 0) {
-      lines.push(`  (empty - no items to display)`);
+      if (mayHaveUnloadedData(field, basePath, arr)) {
+        lines.push(`  (may contain items - view "${basePath}" to load from database)`);
+      } else {
+        lines.push(`  (empty - no items to display)`);
+      }
       lines.push(`  ↪ To append: action "add" at "${basePath}" with value.`);
       return lines;
     }
@@ -924,9 +962,13 @@ export function renderMemoryVisualization(
     lines.push(`• ${basePath || '/'} (map, ${allKeys.length} keys)${inlineDesc(field.description)} ${open ? '' : '— hidden; view to list keys'}`);
     if (!open) return lines;
   
-    // Explicit empty message so AI knows there's nothing to load
+    // Empty map handling - check if it might have unloaded DB data
     if (allKeys.length === 0) {
-      lines.push(`  (empty - no items to display)`);
+      if (mayHaveUnloadedData(field, basePath, value)) {
+        lines.push(`  (may contain items - view "${basePath}" to load from database)`);
+      } else {
+        lines.push(`  (empty - no items to display)`);
+      }
       lines.push(`  ↪ Add: action "add" at "${basePath}" with key + value.`);
       return lines;
     }
@@ -990,6 +1032,17 @@ export function renderMemoryVisualization(
     const keys = Object.keys(value ?? {});
     lines.push(`• ${basePath || '/'} (topic, ${keys.length} subtopics)${inlineDesc(field.description)} ${open ? '' : '— hidden; view to list subtopics'}`);
     if (!open) return lines;
+
+    // Empty topic handling - check if it might have unloaded DB data
+    if (keys.length === 0) {
+      if (mayHaveUnloadedData(field, basePath, value)) {
+        lines.push(`  (may contain subtopics - view "${basePath}" to load from database)`);
+      } else {
+        lines.push(`  (empty - no subtopics)`);
+      }
+      lines.push(`  ↪ Add subtopic: action "add" at "${basePath}" with key + optional {description}.`);
+      return lines;
+    }
 
     const start = Math.min(page.offset, Math.max(0, keys.length));
     const end = Math.min(keys.length, start + page.limit);
