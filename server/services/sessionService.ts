@@ -812,9 +812,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
 
   // Deserialize existing load state from chatState if available
   // Note: May be the cause of some bugs. If issues arise, consider setting it to undefined.
-  const existingLoadState = chatState.loadStateCache 
-    ? deserializeLoadState(chatState.loadStateCache) 
-    : undefined;
+  const existingLoadState = chatState.loadStateCache ? deserializeLoadState(chatState.loadStateCache) : undefined;
 
   if (context.student) {
     // Determine report permissions based on user rights
