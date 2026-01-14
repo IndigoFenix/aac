@@ -26,6 +26,7 @@ import {
   requireAuth,
   optionalAuth,
   requireAdmin,
+  requireSystemAdmin,
   requireSLPPlan,
   requireOnboardingComplete,
   validateCSRF,
@@ -37,6 +38,8 @@ import { chatController } from "./controllers/chatController";
 import { chatStreamController } from "./controllers/chatStreamController";
 import { reportController } from "./controllers/reportController";
 import { fileUploadController } from "./controllers/fileUploadController";
+import { personaController } from "./controllers/personaController";
+import { topicController } from "./controllers/topicController";
 
 // Configure multer for image uploads
 const upload = multer({
@@ -231,6 +234,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // User's classrooms
   app.get('/api/users/me/classrooms', requireAuth, classroomController.getMyClassrooms.bind(classroomController));
+
+  // ============= PERSONA ROUTES =============
+  // Admin routes (system admin only)
+  app.get('/api/admin/personas', requireAuth, requireSystemAdmin, personaController.getPersonas.bind(personaController));
+  app.post('/api/admin/personas', requireAuth, requireSystemAdmin, personaController.createPersona.bind(personaController));
+  app.get('/api/admin/personas/:id', requireAuth, requireSystemAdmin, personaController.getPersona.bind(personaController));
+  app.patch('/api/admin/personas/:id', requireAuth, requireSystemAdmin, personaController.updatePersona.bind(personaController));
+  app.delete('/api/admin/personas/:id', requireAuth, requireSystemAdmin, personaController.deletePersona.bind(personaController));
+
+  // User routes (any authenticated user)
+  app.get('/api/personas/selectable', requireAuth, personaController.getSelectablePersonas.bind(personaController));
+
+  // ============= TOPIC/LIBRARY ROUTES =============
+  // Admin routes (system admin only)
+  app.get('/api/admin/topics', requireAuth, requireSystemAdmin, topicController.getTopics.bind(topicController));
+  app.post('/api/admin/topics', requireAuth, requireSystemAdmin, topicController.createTopic.bind(topicController));
+  app.get('/api/admin/topics/:id', requireAuth, requireSystemAdmin, topicController.getTopic.bind(topicController));
+  app.patch('/api/admin/topics/:id', requireAuth, requireSystemAdmin, topicController.updateTopic.bind(topicController));
+  app.delete('/api/admin/topics/:id', requireAuth, requireSystemAdmin, topicController.deleteTopic.bind(topicController));
+
+  // User routes (any authenticated user - active topics only)
+  app.get('/api/topics', requireAuth, topicController.getActiveTopics.bind(topicController));
+  app.get('/api/topics/:id', requireAuth, topicController.getActiveTopic.bind(topicController));
 
   // User's Pending Invites
   app.get("/api/invites/pending", requireAuth, (req, res) =>

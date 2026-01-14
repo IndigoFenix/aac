@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, real, varchar, jsonb, index, numeric, AnyPgColumn, pgEnum, date } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, real, varchar, jsonb, index, uniqueIndex, numeric, AnyPgColumn, pgEnum, date } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { sql, relations } from "drizzle-orm";
 import { z } from "zod";
@@ -246,6 +246,7 @@ export const users = pgTable("users", {
   lastActiveAt: timestamp("last_active_at").defaultNow(),
   onboardingStep: integer("onboarding_step").default(0).notNull(), // 0=new, 1=profile done, 3=complete
   referralCode: text("referral_code").unique(), // Unique code for user to share with others
+  isSystemAdmin: boolean("is_system_admin").default(false).notNull(), // Full system admin rights
 
   // 🔑 self-referencing FK – note the AnyPgColumn annotation
   referredById: varchar("referred_by_id").references(
@@ -1516,6 +1517,40 @@ export const chatSessions = pgTable("chat_sessions", {
 ]);
 
 // =============================================================================
+// PERSONA AND LIBRARY TABLES
+// =============================================================================
+
+// AI Personas - configurable AI personalities with custom prompts
+export const personas = pgTable("personas", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  icon: text("icon").notNull(), // Emoji or icon identifier
+  prompt: text("prompt").notNull(), // System prompt text for this persona
+  manualSelection: boolean("manual_selection").default(true).notNull(), // Whether users can manually select this persona
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_personas_active").on(table.active),
+  index("idx_personas_manual_selection").on(table.manualSelection),
+]);
+
+// Library Topics - hierarchical knowledge base for RAG
+export const topics = pgTable("topics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  parentId: varchar("parent_id").references((): AnyPgColumn => topics.id), // Self-referencing for hierarchy
+  content: text("content").notNull().default(''), // Plain text content for AI consumption
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_topics_parent_id").on(table.parentId),
+  index("idx_topics_active").on(table.active),
+  uniqueIndex("idx_topics_title_parent").on(table.title, table.parentId), // Title unique per parent
+]);
+
+// =============================================================================
 // INSERT/UPDATE SCHEMAS
 // =============================================================================
 
@@ -1967,6 +2002,32 @@ export const insertChatSessionSchema = createInsertSchema(chatSessions).omit({
   deletedAt: true,
 });
 
+// Persona schemas
+export const insertPersonaSchema = createInsertSchema(personas).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updatePersonaSchema = createInsertSchema(personas).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial();
+
+// Topic schemas
+export const insertTopicSchema = createInsertSchema(topics).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateTopicSchema = createInsertSchema(topics).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial();
+
 // Board schemas
 export const insertBoardSchema = createInsertSchema(boards).omit({
   id: true,
@@ -2263,6 +2324,16 @@ export type ChatSession = typeof chatSessions.$inferSelect;
 export type InsertChatSession = z.infer<typeof insertChatSessionSchema>;
 export type FeatureType = "chat" | "boards" | "interpret" | 'docuslp' | 'overview' | 'students' | 'institute' | 'progress' | 'reports' | 'settings';
 export type ChatPersona = 'assistant' | 'coach' | 'clinical' | 'teacher' | 'pediatric_physical_therapist' | 'speech_language_pathologist' | 'occupational_therapist' | 'behavioral_specialist';
+
+// Persona types
+export type Persona = typeof personas.$inferSelect;
+export type InsertPersona = z.infer<typeof insertPersonaSchema>;
+export type UpdatePersona = z.infer<typeof updatePersonaSchema>;
+
+// Library Topic types (renamed to avoid conflict with agent memory Topic interface)
+export type LibraryTopic = typeof topics.$inferSelect;
+export type InsertLibraryTopic = z.infer<typeof insertTopicSchema>;
+export type UpdateLibraryTopic = z.infer<typeof updateTopicSchema>;
 
 // Domain types
 export type ProgramFramework = 'tala' | 'us_iep';

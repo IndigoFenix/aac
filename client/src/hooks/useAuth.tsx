@@ -10,6 +10,7 @@ interface User {
   fullName: string;
   userType: string;
   isAdmin: boolean;
+  isSystemAdmin: boolean;
   credits: number;
   subscriptionType: string;
   profileImageUrl?: string;

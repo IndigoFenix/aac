@@ -25,11 +25,11 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
-import { useChat, CHAT_PERSONAS, type AttachedFile } from '@/hooks/useChat';
+import { useChat, type AttachedFile } from '@/hooks/useChat';
 import { useStudent } from '@/hooks/useStudent';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useSharedState, useFeaturePanel } from '@/contexts/FeaturePanelContext';
-import { ChatMessage, ChatMessageContent, ChatPersona } from '@shared/schema';
+import { ChatMessage, ChatMessageContent } from '@shared/schema';
 import { PersonaIcon, getPersonaColorClasses } from '@/components/chat/PersonaIcon';
 import { cn } from '@/lib/utils';
 
@@ -63,6 +63,8 @@ export function ChatFeature() {
     persona,
     setPersona,
     getPersonaInfo,
+    personas,
+    isPersonasLoading,
     thinkingText,
     isThinking,
     attachedFiles,
@@ -187,7 +189,7 @@ export function ChatFeature() {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  const handlePersonaChange = (newPersona: ChatPersona) => {
+  const handlePersonaChange = (newPersona: string) => {
     setPersona(newPersona);
     setShowPersonaSelector(false);
   };
@@ -233,36 +235,42 @@ export function ChatFeature() {
     <div className="flex items-center gap-2 mb-4">
       <span className="text-xs text-muted-foreground">{t('chat.selectPersona')}:</span>
       <div className="flex gap-1 flex-wrap">
-        {CHAT_PERSONAS.map((p) => (
-          <Button
-            key={p.id}
-            size="sm"
-            variant={persona === p.id ? "default" : "outline"}
-            className={cn(
-              "h-8 gap-1.5 text-xs rounded-full transition-all",
-              persona === p.id && "ring-2 ring-offset-2 ring-primary"
-            )}
-            onClick={() => handlePersonaChange(p.id)}
-            title={t(p.descriptionKey)}
-          >
-            <PersonaIcon persona={p} size="sm" />
-            <span>{t(p.labelKey)}</span>
-          </Button>
-        ))}
+        {isPersonasLoading ? (
+          <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+        ) : personas.length === 0 ? (
+          <span className="text-xs text-muted-foreground">{t('chat.noPersonas')}</span>
+        ) : (
+          personas.map((p) => (
+            <Button
+              key={p.id}
+              size="sm"
+              variant={persona === p.id ? "default" : "outline"}
+              className={cn(
+                "h-8 gap-1.5 text-xs rounded-full transition-all",
+                persona === p.id && "ring-2 ring-offset-2 ring-primary"
+              )}
+              onClick={() => handlePersonaChange(p.id)}
+              title={p.prompt?.substring(0, 100) || p.title}
+            >
+              <span>{p.icon}</span>
+              <span>{p.title}</span>
+            </Button>
+          ))
+        )}
       </div>
     </div>
-  ), [persona, t]);
+  ), [persona, t, personas, isPersonasLoading]);
 
   // Current persona indicator (shows in chat header when conversation has started)
   const PersonaIndicator = currentPersonaInfo && !showWelcome && (
-    <div 
+    <div
       className={cn(
         "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs",
         getPersonaColorClasses(currentPersonaInfo)
       )}
     >
-      <PersonaIcon persona={currentPersonaInfo} size="sm" />
-      <span>{t(currentPersonaInfo.labelKey)}</span>
+      <span>{currentPersonaInfo.icon}</span>
+      <span>{currentPersonaInfo.title}</span>
       <Button
         size="icon"
         variant="ghost"
@@ -504,16 +512,16 @@ export function ChatFeature() {
             {/* Inline persona selector when toggled */}
             {showPersonaSelector && (
               <div className="flex gap-1 ms-auto">
-                {CHAT_PERSONAS.map((p) => (
+                {personas.map((p) => (
                   <Button
                     key={p.id}
                     size="sm"
                     variant={persona === p.id ? "default" : "ghost"}
                     className="h-7 gap-1 text-xs rounded-full"
                     onClick={() => handlePersonaChange(p.id)}
-                    title={t(p.descriptionKey)}
+                    title={p.title}
                   >
-                    <PersonaIcon persona={p} size="sm" />
+                    <span>{p.icon}</span>
                   </Button>
                 ))}
               </div>

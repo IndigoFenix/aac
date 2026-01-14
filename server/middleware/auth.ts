@@ -60,6 +60,34 @@ export const requireAdmin: RequestHandler = (
 };
 
 /**
+ * Middleware that requires system admin privileges
+ */
+export const requireSystemAdmin: RequestHandler = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
+  if (!req.isAuthenticated() || !req.user) {
+    res.status(401).json({
+      success: false,
+      message: "Authentication required",
+    });
+    return;
+  }
+
+  const user = req.user as any;
+  if (!user.isSystemAdmin) {
+    res.status(403).json({
+      success: false,
+      message: "System admin privileges required",
+    });
+    return;
+  }
+
+  next();
+};
+
+/**
  * Middleware that requires SLP subscription plan
  */
 export const requireSLPPlan: RequestHandler = (

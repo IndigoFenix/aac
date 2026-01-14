@@ -31,8 +31,9 @@ import {
   BoardGrid,
   Institute,
   InstituteStudent,
-  ChatPersona,
+  type Persona,
 } from "@shared/schema";
+import { personaRepository } from "../repositories/personaRepository";
 import { ChatMessageManager, AgentTemplate } from "./chat/chat-handler";
 import { AgentLike } from "./chat/prompt-kit";
 import {
@@ -52,14 +53,82 @@ import {
   getSystemPrompt,
 } from "./system-prompts";
 
-import { 
+import {
   createMemoryLoadState,
-  deserializeLoadState, 
-  processMemoryToolWithDB, 
-  serializeLoadState, 
+  deserializeLoadState,
+  processMemoryToolWithDB,
+  serializeLoadState,
 } from "./chat/memory-db-bridge";
 import { createDBMemoryProcessor, MemoryProcessor } from "./chat/tool-router";
 import { AgentMemoryFieldWithDB } from "./chat/memory-types";
+
+// ============================================================================
+// PERSONA HELPERS
+// ============================================================================
+
+/**
+ * Process jurisdiction-specific placeholders in persona prompts.
+ *
+ * Placeholder format:
+ * - {{US_ONLY: ...}} - Content only shown when framework is 'us_iep'
+ * - {{IL_ONLY: ...}} - Content only shown when framework is 'tala' (Israel)
+ *
+ * If no framework is specified, both placeholders are removed.
+ */
+function processPersonaPrompt(prompt: string, framework: string | null): string {
+  // Process {{US_ONLY: ...}} blocks
+  const usOnlyRegex = /\{\{US_ONLY:\s*([\s\S]*?)\}\}/g;
+  prompt = prompt.replace(usOnlyRegex, (_match, content) => {
+    return framework === 'us_iep' ? content.trim() : '';
+  });
+
+  // Process {{IL_ONLY: ...}} blocks
+  const ilOnlyRegex = /\{\{IL_ONLY:\s*([\s\S]*?)\}\}/g;
+  prompt = prompt.replace(ilOnlyRegex, (_match, content) => {
+    return framework === 'tala' ? content.trim() : '';
+  });
+
+  // Clean up any double newlines left behind
+  prompt = prompt.replace(/\n{3,}/g, '\n\n');
+
+  return prompt.trim();
+}
+
+/**
+ * Build the system prompt by combining the general prompt with the persona prompt.
+ */
+async function buildPersonaSystemPrompt(
+  personaId: string | undefined,
+  framework: string | null
+): Promise<string> {
+  // Get the base general prompt
+  const basePrompt = getSystemPrompt('assistant', framework as 'us_iep' | 'tala' | null);
+
+  // If no persona ID provided, just return the base prompt
+  if (!personaId) {
+    return basePrompt;
+  }
+
+  // Look up persona from database
+  const persona = await personaRepository.getPersonaById(personaId);
+
+  // If persona not found or inactive, fall back to base prompt
+  if (!persona || !persona.active) {
+    console.log(`[buildPersonaSystemPrompt] Persona not found or inactive: ${personaId}, using base prompt`);
+    return basePrompt;
+  }
+
+  // Process jurisdiction placeholders in the persona prompt
+  const processedPersonaPrompt = processPersonaPrompt(persona.prompt, framework);
+
+  // Combine base prompt with persona-specific prompt
+  if (processedPersonaPrompt) {
+    return `${basePrompt}\n\n=== Persona: ${persona.title} ===\n${processedPersonaPrompt}`;
+  }
+
+  return basePrompt;
+}
+
 // ============================================================================
 // AGENT TEMPLATES (Mode-based, stored locally)
 // ============================================================================
@@ -636,7 +705,8 @@ interface GetMessageManagerInput {
   studentId?: string;
   sessionId?: string;
   feature?: FeatureType;
-  persona?: ChatPersona;
+  /** Persona ID (UUID) from the personas table, or undefined for default */
+  persona?: string;
   featureContext?: FeatureContext;
   onThinkingUpdate?: (thinkingText: string) => void;
   vectorStoreId?: string;
@@ -648,7 +718,7 @@ interface GetMessageManagerResult {
 }
 
 async function getMessageManager(input: GetMessageManagerInput): Promise<GetMessageManagerResult> {
-  const { userId, studentId, sessionId, featureContext, persona = "assistant", feature = "chat", onThinkingUpdate } = input;
+  const { userId, studentId, sessionId, featureContext, persona, feature = "chat", onThinkingUpdate } = input;
 
   // Validate input - at least one identifier must be provided
   if (!userId && !studentId && !sessionId) {
@@ -684,8 +754,8 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   let log: ChatMessage[] = [];
 
   const template = AGENT_TEMPLATE_BASE;
-  // Select core prompt based on conversation persona
-  template.corePrompt = getSystemPrompt(persona, context?.student?.framework || null);
+  // Select core prompt based on conversation persona (loaded from database)
+  template.corePrompt = await buildPersonaSystemPrompt(persona, context?.student?.framework || null);
   
   const newChatState: ChatState = {
     history: [],
@@ -1114,7 +1184,8 @@ export interface OnMessageInput {
   studentId?: string;
   sessionId?: string;
   activeFeature?: FeatureType;
-  persona?: ChatPersona;
+  /** Persona ID (UUID) from the personas table, or undefined for default */
+  persona?: string;
   messages?: ChatMessage[];
   replyType?: "text" | "html";
 

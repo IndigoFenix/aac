@@ -214,7 +214,7 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
                 <div className="text-2xl font-bold">{stats.totalStudents}</div>
                 <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                   <TrendingUp className="w-3 h-3 text-green-500" />
-                  {t('overview.growth') || '+2 this month'}
+                  {t('overview.acrossAllPrograms') || 'Across all programs'}
                 </p>
               </CardContent>
             </Card>
@@ -229,7 +229,7 @@ export function OverviewPanel({ isOpen, onClose }: OverviewPanelProps) {
               <CardContent>
                 <div className="text-2xl font-bold text-primary">{stats.activeCases}</div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {t('overview.fromLastMonth') || 'In progress'}
+                  {t('overview.inProgress') || 'In progress'}
                 </p>
               </CardContent>
             </Card>

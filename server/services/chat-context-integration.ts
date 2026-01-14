@@ -63,10 +63,15 @@ import {
   createArchivedEducationalReportsField,
   REPORTS_SYSTEM_PROMPT,
 } from "./memory-schema/reports-memory-schema";
+import {
+  getLibraryMemoryFields as getBaseLibraryMemoryFields,
+  LIBRARY_SYSTEM_PROMPT,
+} from "./memory-schema/topic-memory-schema";
 import { studentService } from "./studentService";
 
 // Re-export for convenience
 export { PROGRESS_PROGRAM_FIELD, PROGRESS_SYSTEM_PROMPT };
+export { LIBRARY_SYSTEM_PROMPT };
 
 // ============================================================================
 // PERMISSION TYPES
@@ -161,6 +166,7 @@ export class ChatContextManager {
   /**
    * Build memory fields based on permissions and context
    * - Institute fields are always included (require userId, not studentId)
+   * - Library fields are always included (global knowledge base)
    * - Progress fields are only included if studentId is present
    * - Report fields are only included if studentId is present and permissions allow
    */
@@ -170,6 +176,9 @@ export class ChatContextManager {
   ): AgentMemoryFieldWithDB[] {
     // Start with master fields + institute fields (these don't require a student)
     let fields = getBaseInstituteMemoryFields(masterMemoryFields);
+
+    // Add library fields (global knowledge base, always available)
+    fields = getBaseLibraryMemoryFields(fields);
 
     // Only add progress fields if we have a student
     if (this.context.studentId) {
