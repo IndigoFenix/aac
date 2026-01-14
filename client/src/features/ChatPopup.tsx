@@ -32,11 +32,11 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
-import { useChat, CHAT_PERSONAS, type AttachedFile } from '@/hooks/useChat';
+import { useChat, type AttachedFile } from '@/hooks/useChat';
 import { useStudent } from '@/hooks/useStudent';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useFeaturePanel } from '@/contexts/FeaturePanelContext';
-import { ChatMessage, ChatMessageContent, ChatPersona } from '@shared/schema';
+import { ChatMessage, ChatMessageContent } from '@shared/schema';
 import { cn } from '@/lib/utils';
 import { PersonaIcon, getPersonaColorClasses } from '@/components/chat/PersonaIcon';
 
@@ -64,6 +64,8 @@ export function ChatPopup() {
     persona,
     setPersona,
     getPersonaInfo,
+    personas,
+    isPersonasLoading,
     thinkingText,
     isThinking,
     attachedFiles,
@@ -124,7 +126,7 @@ export function ChatPopup() {
   };
 
   const handlePersonaChange = (newPersona: string) => {
-    setPersona(newPersona as ChatPersona);
+    setPersona(newPersona);
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -235,28 +237,33 @@ export function ChatPopup() {
             <PersonaIcon persona={persona} size="lg" withBackground />
             <div className="flex-1 min-w-0">
               {/* Persona dropdown selector */}
-              <Select value={persona} onValueChange={handlePersonaChange}>
-                <SelectTrigger 
+              <Select value={persona || ''} onValueChange={handlePersonaChange}>
+                <SelectTrigger
                   className="h-auto py-0 px-0 border-0 bg-transparent focus:ring-0 gap-1"
                 >
                   <SelectValue>
                     <span className="text-sm font-medium">
-                      {t(currentPersonaInfo?.labelKey || 'chat.persona.assistant')}
+                      {currentPersonaInfo?.title || t('chat.persona.assistant')}
                     </span>
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {CHAT_PERSONAS.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      <div className="flex items-center gap-2">
-                        <PersonaIcon persona={p} size="sm" withBackground />
-                        <div className="flex flex-col">
-                          <span className="text-sm">{t(p.labelKey)}</span>
-                          <span className="text-xs text-muted-foreground">{t(p.descriptionKey)}</span>
+                  {isPersonasLoading ? (
+                    <div className="flex items-center justify-center py-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    </div>
+                  ) : (
+                    personas.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        <div className="flex items-center gap-2">
+                          <span>{p.icon}</span>
+                          <div className="flex flex-col">
+                            <span className="text-sm">{p.title}</span>
+                          </div>
                         </div>
-                      </div>
-                    </SelectItem>
-                  ))}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
               {student && (
@@ -308,7 +315,7 @@ export function ChatPopup() {
                 {t('chat.popupWelcome')}
               </p>
               <p className="text-xs text-muted-foreground/70 text-center">
-                {t(currentPersonaInfo?.descriptionKey || 'chat.persona.assistantDesc')}
+                {currentPersonaInfo?.title || t('chat.persona.assistantDesc')}
               </p>
             </div>
           ) : (

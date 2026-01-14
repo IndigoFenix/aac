@@ -112,8 +112,8 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
           <span>{t('header.credits')}</span>
         </div>
 
-        {/* Admin portal */}
-        {(user.userType === 'admin' || user.isAdmin) && (
+        {/* System Admin portal */}
+        {user.isSystemAdmin && (
           <Button
             variant="outline"
             size="sm"

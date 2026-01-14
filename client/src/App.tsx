@@ -22,6 +22,7 @@ import { FeaturePanelProvider } from "@/contexts/FeaturePanelContext";
 import { InstituteProvider } from "./hooks/useInstitute";
 import ForgotPasswordPage from "./pages/forgotPasswordPage";
 import MfaRecoveryPage from "./pages/MfaRecoveryPage";
+import { AdminDashboard } from "./pages/AdminDashboard";
 
 // Component to redirect authenticated users away from login page
 function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
@@ -108,6 +109,29 @@ function ProtectedDashboard() {
   );
 }
 
+// Protected route that requires system admin privileges
+function SystemAdminRoute({ children }: { children: React.ReactNode }) {
+  const { user, isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Redirect to="/login" />;
+  }
+
+  if (!user?.isSystemAdmin) {
+    return <Redirect to="/" />;
+  }
+
+  return <>{children}</>;
+}
+
 function Router() {
   return (
     <Switch>
@@ -169,6 +193,28 @@ function Router() {
       
       {/* Settings */}
       <Route path="/settings" component={ProtectedDashboard} />
+
+      {/* Admin routes - require system admin */}
+      <Route path="/admin/personas">
+        <SystemAdminRoute>
+          <AdminDashboard />
+        </SystemAdminRoute>
+      </Route>
+      <Route path="/admin/library/:topicId">
+        <SystemAdminRoute>
+          <AdminDashboard />
+        </SystemAdminRoute>
+      </Route>
+      <Route path="/admin/library">
+        <SystemAdminRoute>
+          <AdminDashboard />
+        </SystemAdminRoute>
+      </Route>
+      <Route path="/admin">
+        <SystemAdminRoute>
+          <AdminDashboard />
+        </SystemAdminRoute>
+      </Route>
 
       {/* Default home route (chat) - protected */}
       <Route path="/" component={ProtectedDashboard} />

@@ -1,0 +1,56 @@
+Instructions for creating the variable persona and library system:
+
+This is a system that will allow system admins to create a variety of AI personas as well as a set of nested library topics that can be accessed using RAG.
+
+Phase 1: Database Items
+- Create the following new items in shared/schema.
+
+    Persona:
+        id: uuid
+        title: text
+        icon: text
+        prompt: text
+        manualSelection: boolean
+        active: boolean
+
+    Topic:
+        id: uuid
+        title: text
+        parent: topic id (can be null)
+        content: text
+        active: boolean
+
+- Topic title for a given parent id should be unique.
+- Create routes, controllers, services, and repositories to manage personas and topics.
+
+Phase 2: System Admin interface
+    - Add a page for system admins to the frontend. This page will be similar to the dashboard, with a sidebar with two items for now, Personas and Library.
+    - The Persona section is a simple interface that allows the user to add and edit personas.
+
+    - The Library section allows the user to add and edit topics.
+    - Top-level topics (with no parent) will be loaded immediately. Each topic is displayed as an openable section with its title and content visible.
+    - When clicked, migrate to a subpage that displays the topic and loads all subtopics underneath the content.
+    - There should also be a back button to travel to the parent topic.
+
+    - The "active" fields for both personas and topics can be switched on and off with a checkbox. Deletion is hard-deletion.
+
+    - Persona and topic subpages should be reflected in the URL.
+    - Cache all data on the frontend for faster navigation.
+
+Phase 3: Persona Switching System
+    - Replace the hard-coded persona list in the chatFeature and chatPopup with a list of active personas loaded from the database.
+    - Only personas with manualSelection should be shown.
+    - Chat messages should be sent to the backend with the persona's id instead of the string it uses now.
+    - In the SessionService, load the persona prompt from the database, and place it after the hard-coded GENERAL_SYSTEM_PROMPT.
+    - In addition, persona prompt text may have sections enclosed in double parentheses, like this:
+        {{US_ONLY: --content--}}
+        {{IL_ONLY: --content--}}
+        The content in these sections should be displayed only in the respective juridiction (us_iep for US_ONLY, tala for IL_ONLY).
+
+Phase 4: Loading the topic data into memory
+    - Create a system for loading the topic data.
+    - Do not modify files inside server/services/chat, use the memory-schema system instead.
+    - This should use the existing memory system, just like it loads progress, reports, and institute data from the database.
+    - All topics should be keyed by their titles, not their UUID.
+    - Top-level topics should be accessible by default. Viewing a topic should load its content and subtopics for the AI.
+    - The AI cannot modify library data.

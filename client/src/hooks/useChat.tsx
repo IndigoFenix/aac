@@ -1,11 +1,12 @@
 // src/hooks/useChat.tsx
 import { useState, useEffect, createContext, useContext, ReactNode, useCallback, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useStudent } from './useStudent';
 import { useInstitute } from './useInstitute';
 import { useAuth } from './useAuth';
 import { useFeaturePanel, useSharedState } from '@/contexts/FeaturePanelContext';
-import { ChatMessage, FeatureType, ChatSession, ChatPersona } from '@shared/schema';
+import { ChatMessage, FeatureType, ChatSession } from '@shared/schema';
 import { useChatStream } from './useChatStream';
 
 // ============================================================================
@@ -44,111 +45,58 @@ export interface AttachedFile {
   localFile?: File;
 }
 
-// Icon name type - matches Lucide icon names
-export type PersonaIconName = 
-  | 'Bot' 
-  | 'Target' 
-  | 'Stethoscope' 
-  | 'GraduationCap' 
-  | 'Activity' 
-  | 'MessageCircle' 
-  | 'Hand' 
+// Icon name type - matches Lucide icon names (for legacy support)
+export type PersonaIconName =
+  | 'Bot'
+  | 'Target'
+  | 'Stethoscope'
+  | 'GraduationCap'
+  | 'Activity'
+  | 'MessageCircle'
+  | 'Hand'
   | 'Brain';
 
-// Persona definitions with display info
+// Persona from database - the new dynamic persona format
 export interface PersonaInfo {
-  id: ChatPersona;
+  id: string;              // UUID from database
+  title: string;           // Display title
+  icon: string;            // Emoji icon (e.g., "🤖", "🎯")
+  prompt: string;          // Persona-specific prompt
+  manualSelection: boolean; // Whether user can select this persona
+  active: boolean;         // Whether persona is active
+}
+
+// Legacy persona info type for backwards compatibility with hardcoded personas
+export interface LegacyPersonaInfo {
+  id: string;
   labelKey: string;        // Translation key for label
   descriptionKey: string;  // Translation key for description
-  iconName: PersonaIconName; // Lucide icon name (rendered by PersonaIcon component)
+  iconName: PersonaIconName; // Lucide icon name
   color: string;           // Tailwind color class for background
   textColor: string;       // Tailwind color class for text/icon
 }
 
-// Available personas - SINGLE SOURCE OF TRUTH
-export const CHAT_PERSONAS: PersonaInfo[] = [
-  {
-    id: 'assistant',
-    labelKey: 'chat.persona.assistant',
-    descriptionKey: 'chat.persona.assistantDesc',
-    iconName: 'Bot',
-    color: 'bg-primary/10',
-    textColor: 'text-primary',
-  },
-  {
-    id: 'coach',
-    labelKey: 'chat.persona.coach',
-    descriptionKey: 'chat.persona.coachDesc',
-    iconName: 'Target',
-    color: 'bg-amber-500/10',
-    textColor: 'text-amber-600',
-  },
-  {
-    id: 'clinical',
-    labelKey: 'chat.persona.clinical',
-    descriptionKey: 'chat.persona.clinicalDesc',
-    iconName: 'Stethoscope',
-    color: 'bg-blue-500/10',
-    textColor: 'text-blue-600',
-  },
-  {
-    id: 'teacher',
-    labelKey: 'chat.persona.teacher',
-    descriptionKey: 'chat.persona.teacherDesc',
-    iconName: 'GraduationCap',
-    color: 'bg-green-500/10',
-    textColor: 'text-green-600',
-  },
-  {
-    id: 'pediatric_physical_therapist',
-    labelKey: 'chat.persona.pediatricPT',
-    descriptionKey: 'chat.persona.pediatricPTDesc',
-    iconName: 'Activity',
-    color: 'bg-purple-500/10',
-    textColor: 'text-purple-600',
-  },
-  {
-    id: 'speech_language_pathologist',
-    labelKey: 'chat.persona.slp',
-    descriptionKey: 'chat.persona.slpDesc',
-    iconName: 'MessageCircle',
-    color: 'bg-pink-500/10',
-    textColor: 'text-pink-600',
-  },
-  {
-    id: 'occupational_therapist',
-    labelKey: 'chat.persona.ot',
-    descriptionKey: 'chat.persona.otDesc',
-    iconName: 'Hand',
-    color: 'bg-orange-500/10',
-    textColor: 'text-orange-600',
-  },
-  {
-    id: 'behavioral_specialist',
-    labelKey: 'chat.persona.behavioral',
-    descriptionKey: 'chat.persona.behavioralDesc',
-    iconName: 'Brain',
-    color: 'bg-cyan-500/10',
-    textColor: 'text-cyan-600',
-  },
-];
-
-// Helper to get persona info by ID
-export const getPersonaById = (id: ChatPersona): PersonaInfo | undefined => {
-  return CHAT_PERSONAS.find(p => p.id === id);
+// Default fallback persona when API not loaded
+const DEFAULT_PERSONA: PersonaInfo = {
+  id: 'default',
+  title: 'Assistant',
+  icon: '🤖',
+  prompt: '',
+  manualSelection: true,
+  active: true,
 };
 
 // AI response action types
 export interface ChatResponseActions {
   // Navigation
   navigateToFeature?: FeatureType;
-  
+
   // Context switching
   selectStudentId?: string;
   selectInstituteId?: string;
-  
-  // Persona
-  setPersona?: ChatPersona;
+
+  // Persona (UUID from database)
+  setPersona?: string;
   
   // Board/feature specific data
   board?: any;
@@ -200,7 +148,8 @@ interface ChatContextType {
   isLoading: boolean;
   isSending: boolean;
   error: string | null;
-  persona: ChatPersona;
+  /** Current persona ID (UUID from database, or undefined for default) */
+  persona: string | undefined;
 
   // Thinking state - for real-time AI status during tool calls
   thinkingText: string | null;
@@ -215,8 +164,10 @@ interface ChatContextType {
   vectorStoreId: string | null;
 
   // Persona management
-  setPersona: (persona: ChatPersona) => void;
-  getPersonaInfo: (persona: ChatPersona) => PersonaInfo | undefined;
+  personas: PersonaInfo[];          // Available personas from API
+  isPersonasLoading: boolean;       // Loading state for personas
+  setPersona: (persona: string | undefined) => void;
+  getPersonaInfo: (personaId: string | undefined) => PersonaInfo | undefined;
 
   // Actions
   sendMessage: (content: string, options?: SendMessageOptions) => Promise<ChatMessage | null>;
@@ -267,17 +218,28 @@ interface ChatProviderProps {
   persistSession?: boolean;
 }
 
-export const ChatProvider = ({ 
-  children, 
-  persistSession = false 
+export const ChatProvider = ({
+  children,
+  persistSession = false
 }: ChatProviderProps) => {
   // State
   const [session, setSession] = useState<ChatSession | null>(null);
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
-  const [persona, setPersonaState] = useState<ChatPersona>('assistant');
+  const [persona, setPersonaState] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
+
+  // Fetch selectable personas from API
+  const { data: personas = [], isLoading: isPersonasLoading } = useQuery({
+    queryKey: ['/api/personas/selectable'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', '/api/personas/selectable');
+      const data = await res.json();
+      return (data.personas || []) as PersonaInfo[];
+    },
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
 
   // Thinking state - for real-time AI status during tool calls
   const [thinkingText, setThinkingText] = useState<string | null>(null);
@@ -375,15 +337,16 @@ export const ChatProvider = ({
   // ============================================================================
   // PERSONA MANAGEMENT
   // ============================================================================
-  
-  const setPersona = useCallback((newPersona: ChatPersona) => {
+
+  const setPersona = useCallback((newPersona: string | undefined) => {
     console.log('[ChatProvider] Persona changed to:', newPersona);
     setPersonaState(newPersona);
   }, []);
 
-  const getPersonaInfo = useCallback((personaId: ChatPersona): PersonaInfo | undefined => {
-    return CHAT_PERSONAS.find(p => p.id === personaId);
-  }, []);
+  const getPersonaInfo = useCallback((personaId: string | undefined): PersonaInfo | undefined => {
+    if (!personaId) return undefined;
+    return personas.find(p => p.id === personaId);
+  }, [personas]);
 
   // ============================================================================
   // FILE MANAGEMENT
@@ -464,7 +427,8 @@ export const ChatProvider = ({
 
     // Handle persona change from AI
     if (contextData.setPersona) {
-      const validPersona = CHAT_PERSONAS.find(p => p.id === contextData.setPersona);
+      // Validate that the persona ID exists in our loaded personas
+      const validPersona = personas.find(p => p.id === contextData.setPersona);
       if (validPersona) {
         console.log('[ChatProvider] AI requested persona change to:', contextData.setPersona);
         setPersonaState(contextData.setPersona);
@@ -608,7 +572,7 @@ export const ChatProvider = ({
     setTimeout(() => {
       setAiRefreshing(new Set());
     }, 2000);
-  }, [setSharedState, student?.id, setActiveFeature, selectStudent, selectInstitute]);
+  }, [setSharedState, student?.id, setActiveFeature, selectStudent, selectInstitute, personas]);
 
   // ============================================================================
   // MESSAGING
@@ -913,6 +877,8 @@ export const ChatProvider = ({
     attachedFiles,
     isUploadingFile,
     vectorStoreId,
+    personas,
+    isPersonasLoading,
     setPersona,
     getPersonaInfo,
     sendMessage,
@@ -956,8 +922,8 @@ export const useChatSession = () => {
 };
 
 export const useChatPersona = () => {
-  const { persona, setPersona, getPersonaInfo } = useChat();
-  return { persona, setPersona, getPersonaInfo, personas: CHAT_PERSONAS };
+  const { persona, setPersona, getPersonaInfo, personas, isPersonasLoading } = useChat();
+  return { persona, setPersona, getPersonaInfo, personas, isPersonasLoading };
 };
 
 export const useBoardChat = () => {

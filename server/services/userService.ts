@@ -155,6 +155,7 @@ export class UserService {
       fullName: user.fullName,
       userType: user.userType,
       isAdmin: user.isAdmin,
+      isSystemAdmin: user.isSystemAdmin,
       credits: user.credits,
       subscriptionType: user.subscriptionType,
       profileImageUrl: user.profileImageUrl,
