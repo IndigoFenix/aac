@@ -43,6 +43,13 @@
       "when": 1768168414099,
       "tag": "0005_material_sway",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1768384241424,
+      "tag": "0006_clumsy_lyja",
+      "breakpoints": true
     }
   ]
 }

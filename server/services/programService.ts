@@ -50,6 +50,12 @@ import {
   type GoalWithContext,
   type OverviewStats,
   type ProgramFramework,
+  type UserGoal,
+  type InsertUserGoal,
+  type UpdateUserGoal,
+  type UserObjective,
+  type InsertUserObjective,
+  type UpdateUserObjective,
 } from "@shared/schema";
 
 export class ProgramService {
@@ -254,8 +260,19 @@ export class ProgramService {
     return programRepository.getGoalsByProgramId(programId);
   }
 
+  /**
+   * Get goals that have objectives in a specific domain
+   * (Goals are now linked to domains through their objectives)
+   */
   async getGoalsByDomainId(domainId: string): Promise<Goal[]> {
     return programRepository.getGoalsByDomainId(domainId);
+  }
+
+  /**
+   * Get domains associated with a goal through its objectives
+   */
+  async getDomainsForGoal(goalId: string): Promise<ProfileDomain[]> {
+    return programRepository.getDomainsForGoal(goalId);
   }
 
   async getGoalWithContext(goalId: string): Promise<GoalWithContext | undefined> {
@@ -275,6 +292,19 @@ export class ProgramService {
    */
   async achieveGoal(id: string): Promise<Goal | undefined> {
     return programRepository.updateGoal(id, { status: "achieved", progress: 100 });
+  }
+
+  /**
+   * Update goal progress
+   */
+  async updateGoalProgress(id: string, progress: number): Promise<Goal | undefined> {
+    const clampedProgress = Math.max(0, Math.min(100, progress));
+    const status = clampedProgress >= 100 ? "achieved" : "active";
+    return programRepository.updateGoal(id, { 
+      progress: clampedProgress,
+      status,
+      achievedDate: clampedProgress >= 100 ? new Date().toISOString().split('T')[0] : undefined
+    });
   }
 
   /**
@@ -306,12 +336,49 @@ export class ProgramService {
     return programRepository.getObjectivesByGoalId(goalId);
   }
 
+  /**
+   * Get objectives for a specific domain
+   */
+  async getObjectivesByDomainId(domainId: string): Promise<Objective[]> {
+    return programRepository.getObjectivesByDomainId(domainId);
+  }
+
   async updateObjective(id: string, updates: UpdateObjective): Promise<Objective | undefined> {
     return programRepository.updateObjective(id, updates);
   }
 
   async deleteObjective(id: string): Promise<boolean> {
     return programRepository.deleteObjective(id);
+  }
+
+  /**
+   * Update objective progress
+   */
+  async updateObjectiveProgress(id: string, progress: number): Promise<Objective | undefined> {
+    const clampedProgress = Math.max(0, Math.min(100, progress));
+    const status = clampedProgress >= 100 ? "achieved" : 
+                   clampedProgress > 0 ? "in_progress" : "not_started";
+    return programRepository.updateObjective(id, { 
+      progress: clampedProgress,
+      status,
+      achievedDate: clampedProgress >= 100 ? new Date().toISOString().split('T')[0] : undefined
+    });
+  }
+
+  /**
+   * Recalculate goal progress based on its objectives' progress
+   */
+  async recalculateGoalProgress(goalId: string): Promise<Goal | undefined> {
+    const goalObjectives = await programRepository.getObjectivesByGoalId(goalId);
+    
+    if (goalObjectives.length === 0) {
+      return programRepository.getGoalById(goalId);
+    }
+    
+    const totalProgress = goalObjectives.reduce((sum, obj) => sum + (obj.progress ?? 0), 0);
+    const averageProgress = Math.round(totalProgress / goalObjectives.length);
+    
+    return this.updateGoalProgress(goalId, averageProgress);
   }
 
   // ==========================================================================
@@ -419,35 +486,6 @@ export class ProgramService {
     return programRepository.deleteProgressReport(id);
   }
 
-  /**
-   * Create a progress report with entries for all goals
-   */
-  async createProgressReportWithEntries(
-    programId: string,
-    reportDate: string,
-    reportingPeriod: string
-  ): Promise<{ report: ProgressReport; entries: GoalProgressEntry[] }> {
-    const report = await programRepository.createProgressReport({
-      programId,
-      reportDate,
-      reportingPeriod,
-    });
-
-    const programGoals = await programRepository.getGoalsByProgramId(programId);
-    const entries: GoalProgressEntry[] = [];
-
-    for (const goal of programGoals) {
-      const entry = await programRepository.createGoalProgressEntry({
-        progressReportId: report.id,
-        goalId: goal.id,
-        progressStatus: "making_progress", // Default status
-      });
-      entries.push(entry);
-    }
-
-    return { report, entries };
-  }
-
   // ==========================================================================
   // GOAL PROGRESS ENTRY OPERATIONS
   // ==========================================================================
@@ -484,37 +522,16 @@ export class ProgramService {
     return programRepository.deleteDataPoint(id);
   }
 
-  /**
-   * Record a data point and update goal progress
-   */
-  async recordDataPointWithProgressUpdate(
-    insert: InsertDataPoint
-  ): Promise<{ dataPoint: DataPoint; goal?: Goal }> {
-    const dataPoint = await programRepository.createDataPoint(insert);
-
-    // If this data point is for a goal, update the goal's progress
-    if (insert.goalId && insert.numericValue !== undefined) {
-      const goal = await programRepository.getGoalById(insert.goalId);
-      if (goal && goal.criteriaPercentage) {
-        // Calculate progress based on criteria percentage
-        const progress = Math.min(
-          Math.round(((insert.numericValue || 0) / goal.criteriaPercentage) * 100),
-          100
-        );
-        const updatedGoal = await programRepository.updateGoal(insert.goalId, { progress });
-        return { dataPoint, goal: updatedGoal };
-      }
-    }
-
-    return { dataPoint };
-  }
-
   // ==========================================================================
   // TRANSITION PLAN OPERATIONS
   // ==========================================================================
 
   async createTransitionPlan(insert: InsertTransitionPlan): Promise<TransitionPlan> {
     return programRepository.createTransitionPlan(insert);
+  }
+
+  async getTransitionPlanById(id: string): Promise<TransitionPlan | undefined> {
+    return programRepository.getTransitionPlanById(id);
   }
 
   async getTransitionPlanByProgramId(programId: string): Promise<TransitionPlan | undefined> {
@@ -661,6 +678,70 @@ export class ProgramService {
   }
 
   // ==========================================================================
+  // USER-GOAL OPERATIONS (Many-to-Many)
+  // ==========================================================================
+
+  async assignUserToGoal(insert: InsertUserGoal): Promise<UserGoal> {
+    return programRepository.assignUserToGoal(insert);
+  }
+
+  async getUserGoalById(id: string): Promise<UserGoal | undefined> {
+    return programRepository.getUserGoalById(id);
+  }
+
+  async getUserGoalsByGoalId(goalId: string): Promise<UserGoal[]> {
+    return programRepository.getUserGoalsByGoalId(goalId);
+  }
+
+  async getUserGoalsByUserId(userId: string): Promise<UserGoal[]> {
+    return programRepository.getUserGoalsByUserId(userId);
+  }
+
+  async getGoalsForUser(userId: string): Promise<Goal[]> {
+    return programRepository.getGoalsForUser(userId);
+  }
+
+  async updateUserGoal(id: string, updates: UpdateUserGoal): Promise<UserGoal | undefined> {
+    return programRepository.updateUserGoal(id, updates);
+  }
+
+  async removeUserFromGoal(userId: string, goalId: string): Promise<boolean> {
+    return programRepository.removeUserFromGoal(userId, goalId);
+  }
+
+  // ==========================================================================
+  // USER-OBJECTIVE OPERATIONS (Many-to-Many)
+  // ==========================================================================
+
+  async assignUserToObjective(insert: InsertUserObjective): Promise<UserObjective> {
+    return programRepository.assignUserToObjective(insert);
+  }
+
+  async getUserObjectiveById(id: string): Promise<UserObjective | undefined> {
+    return programRepository.getUserObjectiveById(id);
+  }
+
+  async getUserObjectivesByObjectiveId(objectiveId: string): Promise<UserObjective[]> {
+    return programRepository.getUserObjectivesByObjectiveId(objectiveId);
+  }
+
+  async getUserObjectivesByUserId(userId: string): Promise<UserObjective[]> {
+    return programRepository.getUserObjectivesByUserId(userId);
+  }
+
+  async getObjectivesForUser(userId: string): Promise<Objective[]> {
+    return programRepository.getObjectivesForUser(userId);
+  }
+
+  async updateUserObjective(id: string, updates: UpdateUserObjective): Promise<UserObjective | undefined> {
+    return programRepository.updateUserObjective(id, updates);
+  }
+
+  async removeUserFromObjective(userId: string, objectiveId: string): Promise<boolean> {
+    return programRepository.removeUserFromObjective(userId, objectiveId);
+  }
+
+  // ==========================================================================
   // AGGREGATE OPERATIONS
   // ==========================================================================
 
@@ -668,7 +749,7 @@ export class ProgramService {
    * Get overview stats for a user's students
    */
   async getOverviewStats(userId: string): Promise<OverviewStats> {
-    console.log('Get overview tats for user:', userId);
+    console.log('Get overview stats for user:', userId);
     const studentsWithLinks = await studentRepository.getStudentsWithLinksByUserId(userId);
     console.log('Found students:', studentsWithLinks.length);
     let activeCases = 0;
@@ -727,8 +808,11 @@ export class ProgramService {
       if (currentProgram) {
         const programGoals = await programRepository.getGoalsByProgramId(currentProgram.id);
         const completedGoals = programGoals.filter(g => g.status === "achieved").length;
+        
+        // Use average progress instead of just completed count
+        const totalProgress = programGoals.reduce((sum, g) => sum + (g.progress ?? 0), 0);
         const overallProgress = programGoals.length > 0
-          ? Math.round((completedGoals / programGoals.length) * 100)
+          ? Math.round(totalProgress / programGoals.length)
           : 0;
 
         programSummary = {
@@ -763,6 +847,13 @@ export class ProgramService {
    */
   async getGoalStatusCounts(programId: string): Promise<Record<string, number>> {
     return programRepository.getGoalStatusCounts(programId);
+  }
+
+  /**
+   * Get average goal progress for a program
+   */
+  async getAverageGoalProgress(programId: string): Promise<number> {
+    return programRepository.getAverageGoalProgress(programId);
   }
 }
 

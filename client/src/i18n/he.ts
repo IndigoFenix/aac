@@ -45,6 +45,8 @@ export const he = {
     update: "עדכן",
     none: "אין",
     actions: "פעולות",
+    minutes: "דקות",
+    saved: "נשמר",
   },
 
   // ============================================================================
@@ -928,6 +930,8 @@ export const he = {
     goalsLinked: "מטרות מקושרות",
     impactStatement: "הצהרת השפעה",
     impactStatementPlaceholder: "תאר כיצד תחום זה משפיע על החינוך של התלמיד...",
+    adverseEffectStatement: "הצהרת השפעה שלילית",
+    adverseEffectStatementPlaceholder: "תאר את ההשפעות החינוכיות השליליות...",
     presentLevels: "רמות ביצוע נוכחיות",
     presentLevelsPlaceholder: "תאר את היכולות והביצועים הנוכחיים של התלמיד בתחום זה...",
     strengths: "חוזקות",
@@ -963,6 +967,8 @@ export const he = {
     // Team
     teamAndCompliance: "צוות וציות",
     teamAndComplianceDesc: "ניהול חברי צוות ודרישות ציות",
+    meetings: "פגישות",
+    consentForms: "טפסי הסכמה",
   },
 
   // ============================================================================
@@ -983,14 +989,22 @@ export const he = {
     title: "כותרת המטרה",
     titlePlaceholder: "לדוגמה: שיפור תקשורת אקספרסיבית",
     titleRequired: "נדרשת כותרת למטרה",
+    goalStatement: "הצהרת מטרה",
+    goalStatementPlaceholder: "הזן את הצהרת המטרה השנתית...",
+    statementRequired: "הצהרת מטרה נדרשת",
     domain: "תחום פרופיל",
     selectDomain: "בחר תחום",
+    noDomain: "אין תחום מוקצה",
     description: "תיאור המטרה",
     descriptionPlaceholder: "תיאור מפורט של המטרה...",
     baseline: "רמת בסיס",
     baselinePlaceholder: "רמת ביצוע נוכחית",
     target: "רמת יעד",
     targetPlaceholder: "רמת ההישג הצפויה",
+    criteria: "קריטריוני שליטה",
+    criteriaPlaceholder: "הגדר קריטריוני הצלחה (לדוגמה, 80% דיוק על פני 3 מפגשים)...",
+    methods: "שיטות מדידה",
+    methodsPlaceholder: "כיצד ימדד ההתקדמות?",
     targetDate: "תאריך יעד",
     currentProgress: "התקדמות נוכחית",
 
@@ -1010,17 +1024,30 @@ export const he = {
   objective: {
     add: "הוסף יעד",
     new: "יעד חדש",
+    edit: "ערוך יעד",
     created: "היעד נוצר",
+    updated: "היעד עודכן",
+    deleted: "היעד נמחק",
+    confirmDelete: "האם אתה בטוח שברצונך למחוק יעד זה?",
     modalDescription: "צור יעד קצר טווח ומדיד עבור מטרה זו",
     title: "יעדים",
     noObjectives: "עדיין לא הוגדרו יעדים",
 
+    statement: "הצהרת יעד",
+    statementPlaceholder: "הזן את היעד המדיד...",
+    statementRequired: "הצהרת יעד נדרשת",
     description: "תיאור היעד",
     descriptionPlaceholder: "תאר את היעד הספציפי והמדיד...",
     descriptionRequired: "נדרש תיאור יעד",
+    domain: "תחום",
+    selectDomain: "בחר תחום",
+    noDomain: "אין תחום",
     criteria: "קריטריון הצלחה",
     criteriaPlaceholder: "לדוגמה: 80% דיוק ב-3 מפגשים רצופים",
+    methods: "שיטות מדידה",
+    methodsPlaceholder: "כיצד זה ימדד?",
     targetDate: "תאריך יעד",
+    progress: "התקדמות",
 
     status: {
       not_started: "לא התחיל",
@@ -1050,7 +1077,7 @@ export const he = {
     name: "שם השירות",
     namePlaceholder: "לדוגמה: טיפול קלינאות תקשורת פרטני",
     nameRequired: "נדרש שם שירות",
-    //frequency: "תדירות",
+    frequencyCount: "תדירות",
     period: "תקופה",
     duration: "משך (דקות)",
     setting: "מיקום",
@@ -1134,6 +1161,13 @@ export const he = {
     create: "צור דוח",
     none: "אין עדיין דוחות התקדמות",
     shared: "שותף",
+  },
+
+  // ============================================================================
+  // PROGRESS
+  // ============================================================================
+  progress: {
+    shared: "משותף",
   },
 
   // ============================================================================

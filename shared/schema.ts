@@ -811,24 +811,15 @@ export const assessmentSources = pgTable("assessment_sources", {
 export const goals = pgTable("goals", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   programId: varchar("program_id").references(() => programs.id).notNull(),
-  profileDomainId: varchar("profile_domain_id").references(() => profileDomains.id), // Links goal to baseline
   
   // Goal statement
   goalStatement: text("goal_statement").notNull(),
   
-  // SMART components (structured for AI assistance)
-  smartSpecific: jsonb("smart_specific").default({}), // { targetBehavior, skill, context }
-  smartMeasurable: jsonb("smart_measurable").default({}), // { criterion, measurementMethod }
-  smartAchievable: jsonb("smart_achievable").default({}), // { justification }
-  smartRelevant: jsonb("smart_relevant").default({}), // { educationalRelevance }
-  smartTimeBound: jsonb("smart_time_bound").default({}), // { targetDate }
-  
   // Legacy/simple fields (for quick entry)
   targetBehavior: text("target_behavior"),
-  criteria: text("criteria"), // e.g., "80% accuracy"
-  criteriaPercentage: integer("criteria_percentage"),
+  criteria: text("criteria"),
+  methods: text("methods"),
   measurementMethod: text("measurement_method"),
-  conditions: text("conditions"), // Context/opportunity
   relevance: text("relevance"), // Educational impact
   targetDate: date("target_date"),
   
@@ -838,6 +829,7 @@ export const goals = pgTable("goals", {
   // Status tracking
   status: goalStatusEnum("status").default("draft").notNull(),
   progress: integer("progress").default(0), // 0-100
+  achievedDate: date("achieved_date"),
   
   // Ordering
   sortOrder: integer("sort_order").default(0).notNull(),
@@ -846,7 +838,6 @@ export const goals = pgTable("goals", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_goals_program_id").on(table.programId),
-  index("idx_goals_domain_id").on(table.profileDomainId),
   index("idx_goals_status").on(table.status),
 ]);
 
@@ -856,26 +847,84 @@ export const goals = pgTable("goals", {
 export const objectives = pgTable("objectives", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   goalId: varchar("goal_id").references(() => goals.id).notNull(),
+  profileDomainId: varchar("profile_domain_id").references(() => profileDomains.id), // Links goal to baseline
   
   objectiveStatement: text("objective_statement").notNull(),
   sequenceOrder: integer("sequence_order").notNull().default(1),
   
   // Measurable criteria
-  criterion: text("criterion"), // e.g., "3 out of 4 opportunities"
-  context: text("context"), // e.g., "during structured therapy"
+  targetBehavior: text("target_behavior"),
+  methods: text("methods"),
+  criteria: text("criteria"),
+  measurementMethod: text("measurement_method"),
+  relevance: text("relevance"), // Educational impact
   
   // Timeline
   targetDate: date("target_date"),
   
   // Status tracking
   status: objectiveStatusEnum("status").default("not_started").notNull(),
+  progress: integer("progress").default(0), // 0-100
   achievedDate: date("achieved_date"),
   
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_objectives_goal_id").on(table.goalId),
+  index("idx_objectives_domain_id").on(table.profileDomainId),
   index("idx_objectives_status").on(table.status),
+]);
+
+/**
+ * User Goals Junction - Links users to goals they're responsible for
+ */
+export const userGoals = pgTable("user_goals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  goalId: varchar("goal_id").references(() => goals.id).notNull(),
+  
+  // Role in relation to this goal
+  role: text("role").default("assigned"), // 'assigned', 'supervisor', 'observer'
+  
+  // Permissions
+  canEdit: boolean("can_edit").default(true).notNull(),
+  canRecordData: boolean("can_record_data").default(true).notNull(),
+  
+  // Notification preferences
+  notifyOnProgress: boolean("notify_on_progress").default(true).notNull(),
+  notifyOnDataPoint: boolean("notify_on_data_point").default(false).notNull(),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_user_goals_user_id").on(table.userId),
+  index("idx_user_goals_goal_id").on(table.goalId),
+]);
+
+/**
+ * User Objectives Junction - Links users to objectives they're responsible for
+ */
+export const userObjectives = pgTable("user_objectives", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  objectiveId: varchar("objective_id").references(() => objectives.id).notNull(),
+  
+  // Role in relation to this objective
+  role: text("role").default("assigned"), // 'assigned', 'supervisor', 'observer'
+  
+  // Permissions
+  canEdit: boolean("can_edit").default(true).notNull(),
+  canRecordData: boolean("can_record_data").default(true).notNull(),
+  
+  // Notification preferences
+  notifyOnProgress: boolean("notify_on_progress").default(true).notNull(),
+  notifyOnDataPoint: boolean("notify_on_data_point").default(false).notNull(),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_user_objectives_user_id").on(table.userId),
+  index("idx_user_objectives_objective_id").on(table.objectiveId),
 ]);
 
 /**
@@ -1660,6 +1709,17 @@ export const updateGoalSchema = createInsertSchema(goals).omit({
   updatedAt: true,
 }).partial();
 
+export const insertUserGoalSchema = createInsertSchema(userGoals).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateUserGoalSchema = insertUserGoalSchema.partial().omit({
+  userId: true,
+  goalId: true,
+});
+
 // Objective schemas
 export const insertObjectiveSchema = createInsertSchema(objectives).omit({
   id: true,
@@ -1673,6 +1733,17 @@ export const updateObjectiveSchema = createInsertSchema(objectives).omit({
   createdAt: true,
   updatedAt: true,
 }).partial();
+
+export const insertUserObjectiveSchema = createInsertSchema(userObjectives).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateUserObjectiveSchema = insertUserObjectiveSchema.partial().omit({
+  userId: true,
+  objectiveId: true,
+});
 
 // Service schemas
 export const insertServiceSchema = createInsertSchema(services).omit({
@@ -2075,6 +2146,14 @@ export type UpdateGoal = z.infer<typeof updateGoalSchema>;
 export type Objective = typeof objectives.$inferSelect;
 export type InsertObjective = z.infer<typeof insertObjectiveSchema>;
 export type UpdateObjective = z.infer<typeof updateObjectiveSchema>;
+
+export type UserGoal = typeof userGoals.$inferSelect;
+export type InsertUserGoal = typeof userGoals.$inferInsert;
+export type UpdateUserGoal = Partial<Omit<InsertUserGoal, 'id' | 'userId' | 'goalId' | 'createdAt'>>;
+
+export type UserObjective = typeof userObjectives.$inferSelect;
+export type InsertUserObjective = typeof userObjectives.$inferInsert;
+export type UpdateUserObjective = Partial<Omit<InsertUserObjective, 'id' | 'userId' | 'objectiveId' | 'createdAt'>>;
 
 export type Service = typeof services.$inferSelect;
 export type InsertService = z.infer<typeof insertServiceSchema>;
@@ -2567,6 +2646,8 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   instituteLinks: many(instituteUsers),
   licenses: many(licenses),
   classroomLinks: many(classroomUsers),
+  goalLinks: many(userGoals),
+  objectiveLinks: many(userObjectives),
 }));
 
 // Institute relations
@@ -2644,6 +2725,28 @@ export const studentClassroomsRelations = relations(studentClassrooms, ({ one })
   classroom: one(classrooms, {
     fields: [studentClassrooms.classroomId],
     references: [classrooms.id],
+  }),
+}));
+
+export const userGoalsRelations = relations(userGoals, ({ one }) => ({
+  user: one(users, {
+    fields: [userGoals.userId],
+    references: [users.id]
+  }),
+  goal: one(goals, {
+    fields: [userGoals.goalId],
+    references: [goals.id]
+  }),
+}));
+
+export const userObjectivesRelations = relations(userObjectives, ({ one }) => ({
+  user: one(users, {
+    fields: [userObjectives.userId],
+    references: [users.id]
+  }),
+  objective: one(objectives, {
+    fields: [userObjectives.objectiveId],
+    references: [objectives.id]
   }),
 }));
 
@@ -2726,14 +2829,11 @@ export const goalsRelations = relations(goals, ({ one, many }) => ({
     fields: [goals.programId],
     references: [programs.id]
   }),
-  profileDomain: one(profileDomains, {
-    fields: [goals.profileDomainId],
-    references: [profileDomains.id]
-  }),
   objectives: many(objectives),
   dataPoints: many(dataPoints),
   progressEntries: many(goalProgressEntries),
   serviceLinks: many(serviceGoals),
+  userLinks: many(userGoals),
 }));
 
 export const objectivesRelations = relations(objectives, ({ one, many }) => ({
@@ -2741,7 +2841,12 @@ export const objectivesRelations = relations(objectives, ({ one, many }) => ({
     fields: [objectives.goalId],
     references: [goals.id]
   }),
+  profileDomain: one(profileDomains, {
+    fields: [objectives.profileDomainId],
+    references: [profileDomains.id]
+  }),
   dataPoints: many(dataPoints),
+  userLinks: many(userObjectives), // ADD THIS LINE
 }));
 
 export const servicesRelations = relations(services, ({ one, many }) => ({

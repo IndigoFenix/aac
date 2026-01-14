@@ -45,6 +45,8 @@ export const en = {
     update: "Update",
     none: "None",
     actions: "Actions",
+    minutes: "minutes",
+    saved: "Saved",
   },
 
   // ============================================================================
@@ -734,6 +736,8 @@ export const en = {
     goalsLinked: "goals linked",
     impactStatement: "Impact Statement",
     impactStatementPlaceholder: "Describe how the disability affects the student's involvement and progress in the general curriculum...",
+    adverseEffectStatement: "Adverse Effect Statement",
+    adverseEffectStatementPlaceholder: "Describe the adverse educational effects...",
     presentLevels: "Present Levels of Performance",
     presentLevelsPlaceholder: "Describe the student's current abilities and performance in this area...",
     strengths: "Strengths",
@@ -769,6 +773,8 @@ export const en = {
     // Team
     teamAndCompliance: "Team & Compliance",
     teamAndComplianceDesc: "Team members and compliance documentation",
+    meetings: "Meetings",
+    consentForms: "Consent Forms",
   },
 
   // ============================================================================
@@ -789,14 +795,22 @@ export const en = {
     title: "Goal Title",
     titlePlaceholder: "e.g., Improve expressive communication",
     titleRequired: "Goal title is required",
+    goalStatement: "Goal Statement",
+    goalStatementPlaceholder: "Enter the annual goal statement...",
+    statementRequired: "Goal statement is required",
     domain: "Profile Domain",
     selectDomain: "Select a domain",
+    noDomain: "No domain assigned",
     description: "Goal Description",
     descriptionPlaceholder: "Detailed description of the goal...",
     baseline: "Baseline Level",
     baselinePlaceholder: "Current performance level",
     target: "Target Level",
     targetPlaceholder: "Expected achievement level",
+    criteria: "Mastery Criteria",
+    criteriaPlaceholder: "Define success criteria (e.g., 80% accuracy over 3 sessions)...",
+    methods: "Measurement Methods",
+    methodsPlaceholder: "How will progress be measured?",
     targetDate: "Target Date",
     currentProgress: "Current Progress",
 
@@ -816,18 +830,30 @@ export const en = {
   objective: {
     add: "Add Objective",
     new: "New Objective",
+    edit: "Edit Objective",
     created: "Objective Created",
+    updated: "Objective Updated",
+    deleted: "Objective Deleted",
+    confirmDelete: "Are you sure you want to delete this objective?",
     modalDescription: "Create a short-term, measurable objective for this goal",
     title: "Objective",
     noObjectives: "No objectives defined yet",
 
-
+    statement: "Objective Statement",
+    statementPlaceholder: "Enter the measurable objective...",
+    statementRequired: "Objective statement is required",
     description: "Objective Description",
     descriptionPlaceholder: "Describe the specific, measurable objective...",
     descriptionRequired: "Objective description is required",
+    domain: "Domain",
+    selectDomain: "Select domain",
+    noDomain: "No domain",
     criteria: "Success Criteria",
     criteriaPlaceholder: "e.g., 80% accuracy over 3 consecutive sessions",
+    methods: "Measurement Methods",
+    methodsPlaceholder: "How will this be measured?",
     targetDate: "Target Date",
+    progress: "Progress",
 
     status: {
       not_started: "Not Started",
@@ -857,7 +883,7 @@ export const en = {
     name: "Service Name",
     namePlaceholder: "e.g., Individual Speech Therapy",
     nameRequired: "Service name is required",
-    //frequency: "Frequency",
+    frequencyCount: "Frequency",
     period: "Period",
     duration: "Duration (min)",
     setting: "Setting",
@@ -940,6 +966,13 @@ export const en = {
     title: "Progress Reports",
     create: "Create Report",
     none: "No progress reports yet",
+    shared: "Shared",
+  },
+
+  // ============================================================================
+  // PROGRESS
+  // ============================================================================
+  progress: {
     shared: "Shared",
   },
 
