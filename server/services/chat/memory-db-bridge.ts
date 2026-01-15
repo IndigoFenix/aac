@@ -1299,7 +1299,10 @@ export async function processMemoryToolWithDB(
     }
   }
 
-  // Enhance results with DB sync status and view summaries
+  // Enhance results with simplified status (no separate dbSynced field)
+  // - For mutations with DB ops: ok = true only if DB succeeded, ok = false with error message if DB failed
+  // - For view/hide operations: ok from memory system (no DB involvement)
+  // - For mutations without DB ops: ok from memory system
   const enhancedResults = memResult.results.map((result, i) => {
     // For view/hide with wildcards, results may be more than ops
     // Find the original op that generated this result by matching target paths
@@ -1323,10 +1326,32 @@ export async function processMemoryToolWithDB(
     }
     
     const dbResult = dbResults.get(opIndex);
-    const dbSynced = dbResult?.dbSynced;
     
-    const ok = dbSynced === true ? true : result.ok;
-    const message = dbResult?.error ?? (dbSynced === true ? undefined : result.message);
+    // Determine ok status and message based on operation type and DB result
+    let ok: boolean;
+    let message: string | undefined;
+    
+    if (op.action === 'view' || op.action === 'hide') {
+      // View/hide operations don't involve DB writes - use memory system result
+      ok = result.ok;
+      message = result.message;
+    } else if (dbResult === undefined) {
+      // No DB operation was attempted (field has no DB ops) - use memory system result
+      ok = result.ok;
+      message = result.message;
+    } else if (dbResult.error) {
+      // DB operation failed - this is a failure
+      ok = false;
+      message = dbResult.error;
+    } else if (dbResult.dbSynced === true) {
+      // DB operation succeeded
+      ok = true;
+      message = undefined;
+    } else {
+      // DB operation was attempted but dbSynced is false/undefined - treat as failure
+      ok = false;
+      message = dbResult.error || 'Database operation did not complete successfully';
+    }
 
     // Include actual key for add operations
     let actualKey: string | undefined;
@@ -1364,21 +1389,24 @@ export async function processMemoryToolWithDB(
       }
     }
     
-    // Mark stale if DB succeeded but memory failed
-    if (dbSynced === true && !result.ok && op.path) {
+    // Mark stale if DB succeeded but memory failed (edge case recovery)
+    if (dbResult?.dbSynced === true && !result.ok && op.path) {
       const parentPath = op.path.split('/').slice(0, -1).join('/');
       if (parentPath) {
         markStale(loadState, parentPath, false);
       }
     }
     
+    // Return result WITHOUT dbSynced field - success/failure is conveyed via ok/message
     return {
-      ...result,
+      target: result.target,
+      action: result.action,
       ok,
-      dbSynced,
       message,
+      newPath: result.newPath,
+      mutatedPaths: result.mutatedPaths,
       actualKey,
-      summary,  // NEW FIELD
+      summary,
     };
   });
 

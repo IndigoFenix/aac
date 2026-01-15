@@ -49,6 +49,161 @@ export interface ToolRegistry {
   despawn: (args: { subAgentId: string }) => Promise<any>;
 }
 
+// ============================================================================
+// LOOP DETECTION
+// ============================================================================
+
+/**
+ * Configuration for loop detection.
+ * Can be customized per-session or per-system.
+ */
+export interface LoopDetectionConfig {
+  /** Maximum number of identical sequence repetitions before breaking */
+  maxRepetitions: number;
+  /** Maximum number of recent tool call sequences to track */
+  maxHistorySize: number;
+  /** Whether loop detection is enabled */
+  enabled: boolean;
+}
+
+/**
+ * Default loop detection configuration.
+ */
+export const DEFAULT_LOOP_DETECTION_CONFIG: LoopDetectionConfig = {
+  maxRepetitions: 3,
+  maxHistorySize: 100,
+  enabled: true,
+};
+
+/**
+ * Tracks tool call sequences for loop detection.
+ */
+export interface LoopDetector {
+  /** Record a tool call and its response */
+  record(toolName: string, args: any, response: any): void;
+  /** Check if we're in a loop (same sequence repeated too many times) */
+  isLooping(): boolean;
+  /** Get the current repetition count for the detected pattern */
+  getRepetitionCount(): number;
+  /** Reset the detector */
+  reset(): void;
+  /** Get a message explaining the loop if one is detected */
+  getLoopMessage(): string | null;
+}
+
+/**
+ * Creates a loop detector with the given configuration.
+ */
+export function createLoopDetector(config: LoopDetectionConfig = DEFAULT_LOOP_DETECTION_CONFIG): LoopDetector {
+  // Each entry: hash of (toolName + args + response)
+  const history: string[] = [];
+  let detectedPatternLength = 0;
+  let repetitionCount = 0;
+
+  /**
+   * Create a deterministic hash of a tool call and response.
+   */
+  function hashEntry(toolName: string, args: any, response: any): string {
+    // Create a stable string representation
+    const argsStr = JSON.stringify(args, Object.keys(args || {}).sort());
+    const responseStr = JSON.stringify(response, Object.keys(response || {}).sort());
+    return `${toolName}:${argsStr}:${responseStr}`;
+  }
+
+  /**
+   * Check if the last N entries repeat a pattern.
+   * Returns the pattern length if found, 0 otherwise.
+   */
+  function findRepeatingPattern(): { patternLength: number; repetitions: number } {
+    if (history.length < 2) return { patternLength: 0, repetitions: 0 };
+
+    // Try pattern lengths from 1 to half the history
+    const maxPatternLen = Math.floor(history.length / 2);
+    
+    for (let patternLen = 1; patternLen <= maxPatternLen; patternLen++) {
+      // Check if we have at least config.maxRepetitions of this pattern
+      const requiredLen = patternLen * config.maxRepetitions;
+      if (history.length < requiredLen) continue;
+
+      // Get the pattern (last patternLen entries)
+      const pattern = history.slice(-patternLen);
+      
+      // Count how many times it repeats
+      let reps = 1;
+      for (let i = history.length - patternLen * 2; i >= 0; i -= patternLen) {
+        const segment = history.slice(i, i + patternLen);
+        if (segment.length !== patternLen) break;
+        
+        let matches = true;
+        for (let j = 0; j < patternLen; j++) {
+          if (segment[j] !== pattern[j]) {
+            matches = false;
+            break;
+          }
+        }
+        
+        if (matches) {
+          reps++;
+        } else {
+          break;
+        }
+      }
+
+      if (reps >= config.maxRepetitions) {
+        return { patternLength: patternLen, repetitions: reps };
+      }
+    }
+
+    return { patternLength: 0, repetitions: 0 };
+  }
+
+  return {
+    record(toolName: string, args: any, response: any) {
+      if (!config.enabled) return;
+      
+      const hash = hashEntry(toolName, args, response);
+      history.push(hash);
+
+      // Trim history if too long
+      while (history.length > config.maxHistorySize) {
+        history.shift();
+      }
+
+      // Check for loop
+      const { patternLength, repetitions } = findRepeatingPattern();
+      detectedPatternLength = patternLength;
+      repetitionCount = repetitions;
+    },
+
+    isLooping(): boolean {
+      if (!config.enabled) return false;
+      return detectedPatternLength > 0 && repetitionCount >= config.maxRepetitions;
+    },
+
+    getRepetitionCount(): number {
+      return repetitionCount;
+    },
+
+    reset() {
+      history.length = 0;
+      detectedPatternLength = 0;
+      repetitionCount = 0;
+    },
+
+    getLoopMessage(): string | null {
+      if (!this.isLooping()) return null;
+      
+      const patternDesc = detectedPatternLength === 1 
+        ? "the same operation" 
+        : `a sequence of ${detectedPatternLength} operations`;
+      
+      return `Loop detected: ${patternDesc} has been repeated ${repetitionCount} times with identical results. ` +
+        `This usually indicates the operation cannot achieve the desired outcome. ` +
+        `Please provide a direct response to the user instead of retrying.`;
+    }
+  };
+}
+
 /**
  * Dependencies for creating a tool registry.
  * External systems can customize behavior by providing optional overrides.
@@ -67,20 +222,14 @@ export interface ToolRegistryDeps {
    * Optional custom memory processor.
    * When provided, this replaces the default processMemoryToolResponse.
    * Use this to inject database-backed memory systems.
-   * 
-   * Example usage with ProgressModeManager:
-   * ```
-   * memoryProcessor: async (input) => {
-   *   return progressManager.processMemoryTool(
-   *     memoryValuesRef.current,
-   *     chatStateRef.current.memoryState,
-   *     input,
-   *     processMemoryToolResponse
-   *   );
-   * }
-   * ```
    */
   memoryProcessor?: MemoryProcessor;
+
+  /**
+   * Optional loop detection configuration.
+   * If not provided, uses DEFAULT_LOOP_DETECTION_CONFIG.
+   */
+  loopDetectionConfig?: LoopDetectionConfig;
 }
 
 // ============================================================================
@@ -97,17 +246,15 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
   // =========================================================================
   // RACE CONDITION FIX: Persistent accumulator for visible paths
   // =========================================================================
-  // When parallel tool calls happen (e.g., Promise.all on multiple manageMemory calls),
-  // each call reads the same initial state and writes back independently.
-  // Without this accumulator, the last call to finish would overwrite all others.
-  // 
-  // By using a persistent Set that lives for the lifetime of this registry,
-  // we ensure all parallel calls accumulate their visible paths safely.
-  // Set.add() is atomic in single-threaded JS event loop, so concurrent calls
-  // will correctly add their paths without overwriting each other.
-  // =========================================================================
   const visiblePathsAccumulator = new Set<string>(
     deps.chatStateRef.current.memoryState?.visible || []
+  );
+
+  // =========================================================================
+  // LOOP DETECTION
+  // =========================================================================
+  const loopDetector = createLoopDetector(
+    deps.loopDetectionConfig || DEFAULT_LOOP_DETECTION_CONFIG
   );
 
   return {
@@ -148,28 +295,38 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     },
 
     manageMemory: async (input: MemoryToolInput) => {
+      // Check for loop BEFORE processing
+      if (loopDetector.isLooping()) {
+        const loopMessage = loopDetector.getLoopMessage();
+        loopDetector.reset(); // Reset after breaking the loop
+        return [{
+          target: input.path || 'unknown',
+          action: input.action,
+          ok: false,
+          message: loopMessage || 'Loop detected. Please respond to the user directly.',
+        }];
+      }
+
       // Use custom processor if provided, otherwise use default
+      let result;
       if (deps.memoryProcessor) {
         if (!hideLogs) console.log(`[manageMemory] memoryValuesRef before processing: ${JSON.stringify(deps.memoryValuesRef.current)}`);
         if (!hideLogs) console.log(`[manageMemory] visiblePathsAccumulator before: [${[...visiblePathsAccumulator].join(', ')}]`);
         
-        const result = await deps.memoryProcessor(input);
+        result = await deps.memoryProcessor(input);
         
         // MERGE memoryValues instead of replacing
-        // This ensures parallel calls don't overwrite each other's data
         deps.memoryValuesRef.current = {
           ...deps.memoryValuesRef.current,
           ...result.updatedMemoryValues
         };
         
         // ACCUMULATE visible paths into the persistent Set
-        // This is the key fix for the race condition - Set.add is safe for concurrent calls
         for (const path of result.updatedMemoryState?.visible || []) {
           visiblePathsAccumulator.add(path);
         }
         
         // Also preserve any paths that were already in the chat state
-        // (in case chatStateRef was updated elsewhere)
         for (const path of deps.chatStateRef.current.memoryState?.visible || []) {
           visiblePathsAccumulator.add(path);
         }
@@ -192,39 +349,42 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
         if (!hideLogs) console.log('[manageMemory] After - result:', result);
         if (!hideLogs) console.log(`[manageMemory] visiblePathsAccumulator after: [${[...visiblePathsAccumulator].join(', ')}]`);
         if (!hideLogs) console.log(`[manageMemory] memoryValuesRef after processing: ${JSON.stringify(deps.memoryValuesRef.current)}`);
+      } else {
+        // Default: use standard in-memory processor
+        const memResult = processMemoryToolResponse(
+          deps.agent.memoryFields || [],
+          deps.memoryValuesRef.current,
+          deps.chatStateRef.current.memoryState,
+          input
+        );
         
-        return result.results;
+        result = {
+          results: memResult.results,
+          updatedMemoryValues: memResult.updatedMemoryValues,
+          updatedMemoryState: memResult.updatedMemoryState,
+        };
+        
+        // Apply same merge logic for default processor
+        deps.memoryValuesRef.current = {
+          ...deps.memoryValuesRef.current,
+          ...result.updatedMemoryValues
+        };
+        
+        // Accumulate visible paths
+        for (const path of result.updatedMemoryState?.visible || []) {
+          visiblePathsAccumulator.add(path);
+        }
+        
+        deps.chatStateRef.current.memoryState = {
+          ...deps.chatStateRef.current.memoryState,
+          ...result.updatedMemoryState,
+          visible: [...visiblePathsAccumulator]
+        };
       }
 
-      // Default: use standard in-memory processor
-      const result = processMemoryToolResponse(
-        deps.agent.memoryFields || [],
-        deps.memoryValuesRef.current,
-        deps.chatStateRef.current.memoryState,
-        input
-      );
-      
-      // Apply same merge logic for default processor
-      deps.memoryValuesRef.current = {
-        ...deps.memoryValuesRef.current,
-        ...result.updatedMemoryValues
-      };
-      
-      // Accumulate visible paths
-      for (const path of result.updatedMemoryState?.visible || []) {
-        visiblePathsAccumulator.add(path);
-      }
-      
-      deps.chatStateRef.current.memoryState = {
-        ...deps.chatStateRef.current.memoryState,
-        ...result.updatedMemoryState,
-        visible: [...visiblePathsAccumulator]
-      };
-      
-      if (deps.onUpdateMemoryValues) {
-        await deps.onUpdateMemoryValues(deps.memoryValuesRef.current);
-      }
-      
+      // Record for loop detection AFTER processing
+      loopDetector.record('manageMemory', input, result.results);
+
       return result.results;
     },
 
@@ -327,17 +487,6 @@ export function createStandardMemoryProcessor(
  * @param memoryValuesRef - Reference to current memory values
  * @param memoryStateRef - Reference to current memory state
  * @param baseContext - Base context for database operations (e.g., { studentId, userId })
- * 
- * @example
- * ```typescript
- * const processor = createDBMemoryProcessor(
- *   processMemoryToolWithDB,
- *   progressMemoryFields,
- *   memoryValuesRef,
- *   memoryStateRef,
- *   { studentId: student.id, programId: program.id }
- * );
- * ```
  */
 export function createDBMemoryProcessor(
   dbProcessor: (

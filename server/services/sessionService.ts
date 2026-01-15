@@ -59,8 +59,41 @@ import {
   processMemoryToolWithDB,
   serializeLoadState,
 } from "./chat/memory-db-bridge";
-import { createDBMemoryProcessor, MemoryProcessor } from "./chat/tool-router";
 import { AgentMemoryFieldWithDB } from "./chat/memory-types";
+import { 
+  createDBMemoryProcessor, 
+  MemoryProcessor,
+  LoopDetectionConfig,
+  DEFAULT_LOOP_DETECTION_CONFIG 
+} from "./chat/tool-router";
+
+
+// ============================================================================
+// LOOP DETECTION CONFIGURATION
+// ============================================================================
+
+/**
+ * Loop detection rules for the CliniAACian system.
+ * These can be customized based on the expected usage patterns.
+ */
+export const CLINIAACIAN_LOOP_DETECTION_CONFIG: LoopDetectionConfig = {
+  /** 
+   * Allow up to 3 identical sequence repetitions before breaking.
+   * This gives the AI room for legitimate retries while catching infinite loops.
+   */
+  maxRepetitions: 3,
+  
+  /**
+   * Track up to 100 recent tool calls for pattern detection.
+   * This is enough to catch loops while not consuming too much memory.
+   */
+  maxHistorySize: 100,
+  
+  /**
+   * Enable loop detection by default.
+   */
+  enabled: true,
+};
 
 // ============================================================================
 // PERSONA HELPERS
@@ -1086,7 +1119,9 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     onThinkingUpdate,
     memoryProcessor,
     vectorStoreId: input.vectorStoreId,
+    loopDetectionConfig: CLINIAACIAN_LOOP_DETECTION_CONFIG,
   });
+
 
   // Return both manager and memoryValues reference
   // The memoryValues object is passed by reference, so changes made by the memory system

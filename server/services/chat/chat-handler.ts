@@ -16,7 +16,7 @@ import {
   import { CreditsPerCompletionTokenByIntelligence, CreditsPerPromptTokenByIntelligence, CreditsPerSearchByIntelligence } from "./cost-helpers";
   import { GPT, GPTResponse, GPTInputItem, GPTFunctionToolCall } from "./gpt";
   import { buildPromptAndTools, formValues, NlpSchema, AgentLike } from "./prompt-kit";
-  import { defaultToolRegistry, enrichToolCallMessage, makeToolCalls, MemoryProcessor, ToolRegistry } from "./tool-router";
+  import { defaultToolRegistry, enrichToolCallMessage, LoopDetectionConfig, makeToolCalls, MemoryProcessor, ToolRegistry } from "./tool-router";
   import { publish } from "./events.service";
 
   const isProd = process.env.NODE_ENV === 'production';
@@ -105,6 +105,7 @@ import {
       onUpdateChatState?: (chatState: ChatState, log?: ChatMessage[]) => Promise<void>;
       onCreditsUsed?: (creditsUsed: number) => Promise<void>;
       onThinkingUpdate?: (thinkingText: string) => void;
+      loopDetectionConfig?: LoopDetectionConfig;
       memoryProcessor?: MemoryProcessor;
       toolRegistry: ToolRegistry;
 
@@ -140,7 +141,8 @@ import {
           onCreditsUsed: (creditsUsed: number) => Promise<void>,
           onThinkingUpdate?: (thinkingText: string) => void,
           memoryProcessor?: MemoryProcessor,
-          vectorStoreId?: string
+          vectorStoreId?: string,
+          loopDetectionConfig?: LoopDetectionConfig;
       }){
           this.chatState = JSON.parse(JSON.stringify(settings.chatState));
           this.log = JSON.parse(JSON.stringify(settings.log));
@@ -162,6 +164,8 @@ import {
           this.onCreditsUsed = settings.onCreditsUsed;
           this.memoryProcessor = settings.memoryProcessor;
           this.onThinkingUpdate = settings.onThinkingUpdate;
+          this.loopDetectionConfig = settings.loopDetectionConfig;
+
           this.toolRegistry = defaultToolRegistry({
               agent: settings.agent as any,
               openedTopics: this.chatState.openedTopics,
@@ -171,7 +175,8 @@ import {
               onUpdateChatState: this.onUpdateChatState,
               onCreditsUsed: this.onCreditsUsed,
               memoryProcessor: this.memoryProcessor,
-              onThinkingUpdate: this.onThinkingUpdate
+              onThinkingUpdate: this.onThinkingUpdate,
+              loopDetectionConfig: this.loopDetectionConfig
           });
   
           this.agent = settings.agent;
