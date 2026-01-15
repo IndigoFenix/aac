@@ -39,10 +39,12 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTheme } from "@/contexts/ThemeContext";
+import { useSound } from "@/contexts/SoundContext";
 
 export function BoardCanvas() {
-  const { t, isRTL } = useLanguage();
+  const { t, isRTL, language } = useLanguage();
   const { theme } = useTheme();
+  const { speakText, isSpeaking } = useSound();
   const isDark = theme === "dark";
 
   const {
@@ -171,14 +173,17 @@ export function BoardCanvas() {
   };
 
   // Handle speaking text (preview mode action)
-  const speakText = (text: string) => {
+  const handleSpeak = async (text: string) => {
     setSpokenText(text);
     
-    // Use Web Speech API if available
-    if ("speechSynthesis" in window) {
-      const utterance = new SpeechSynthesisUtterance(text);
-      window.speechSynthesis.speak(utterance);
-    }
+    // Use SoundContext's speakText which tracks audio state globally
+    const languageMap: Record<string, string> = {
+      en: 'en-US',
+      he: 'he-IL',
+      ar: 'ar-SA',
+    };
+    const speechLang = languageMap[language] || 'en-US';
+    await speakText(text, { lang: speechLang });
 
     // Clear the display after a delay
     setTimeout(() => {
@@ -195,13 +200,13 @@ export function BoardCanvas() {
       
       if (!action) {
         // Default: speak the label
-        speakText(button.spokenText || button.label);
+        handleSpeak(button.spokenText || button.label);
         return;
       }
 
       switch (action.type) {
         case "speak":
-          speakText(action.text || button.spokenText || button.label);
+          handleSpeak(action.text || button.spokenText || button.label);
           break;
         case "youtube":
           setActiveVideo({
@@ -226,7 +231,7 @@ export function BoardCanvas() {
           }
           break;
         default:
-          speakText(button.spokenText || button.label);
+          handleSpeak(button.spokenText || button.label);
       }
       return;
     }

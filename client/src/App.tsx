@@ -7,6 +7,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import { SoundProvider } from "@/contexts/SoundContext";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { StudentProvider, useStudent } from "@/hooks/useStudent";
 import NotFound from "@/pages/not-found";
@@ -229,22 +230,24 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <LanguageProvider>
-        <AuthProvider>
-          <InstituteProvider>
-            <StudentProvider>
-              <FeaturePanelProvider>
-                <ChatProvider>
-                  <ThemeProvider defaultTheme="dark">
-                    <TooltipProvider>
-                      <Toaster />
-                      <Router />
-                    </TooltipProvider>
-                  </ThemeProvider>
-                </ChatProvider>
-              </FeaturePanelProvider>
-            </StudentProvider>
-          </InstituteProvider>
-        </AuthProvider>
+        <SoundProvider>
+          <AuthProvider>
+            <InstituteProvider>
+              <StudentProvider>
+                <FeaturePanelProvider>
+                  <ChatProvider>
+                    <ThemeProvider defaultTheme="dark">
+                      <TooltipProvider>
+                        <Toaster />
+                        <Router />
+                      </TooltipProvider>
+                    </ThemeProvider>
+                  </ChatProvider>
+                </FeaturePanelProvider>
+              </StudentProvider>
+            </InstituteProvider>
+          </AuthProvider>
+        </SoundProvider>
       </LanguageProvider>
     </QueryClientProvider>
   );

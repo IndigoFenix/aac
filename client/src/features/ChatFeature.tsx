@@ -1,5 +1,5 @@
 // src/features/ChatFeature.tsx
-// Updated with persona selector buttons and proper RTL support
+// Updated with speech-to-text and text-to-speech functionality
 
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -12,9 +12,15 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
   Plus,
   Settings2,
   Mic,
+  MicOff,
   Send,
   Minimize2,
   Sparkles,
@@ -23,24 +29,29 @@ import {
   FileText,
   Image,
   Loader2,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useChat, type AttachedFile } from '@/hooks/useChat';
 import { useStudent } from '@/hooks/useStudent';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useSharedState, useFeaturePanel } from '@/contexts/FeaturePanelContext';
+import { useSpeechToText } from '@/hooks/useSpeechToText';
+import { useTextToSpeech, htmlToPlainText } from '@/hooks/useTextToSpeech';
 import { ChatMessage, ChatMessageContent } from '@shared/schema';
 import { PersonaIcon, getPersonaColorClasses } from '@/components/chat/PersonaIcon';
 import { cn } from '@/lib/utils';
 
 export function ChatFeature() {
   const [prompt, setPrompt] = useState('');
-  const [isRecording, setIsRecording] = useState(false);
   const [showPersonaSelector, setShowPersonaSelector] = useState(false);
+  const [ttsEnabled, setTtsEnabled] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const lastReadMessageRef = useRef<number | null>(null);
   
   const { user } = useAuth();
   const { student } = useStudent();
@@ -74,6 +85,39 @@ export function ChatFeature() {
     clearFiles,
   } = useChat();
   
+  // Text-to-speech hook
+  const { 
+    isSupported: ttsSupported, 
+    isSpeaking, 
+    speak, 
+    stop: stopSpeaking,
+  } = useTextToSpeech();
+
+  // Speech-to-text hook with auto-send capability
+  const handleSpeechResult = useCallback((transcript: string) => {
+    if (transcript.trim() && !isSending) {
+      // Append to existing prompt or set as new
+      setPrompt(prev => {
+        const newPrompt = prev ? `${prev} ${transcript}` : transcript;
+        return newPrompt;
+      });
+    }
+  }, [isSending]);
+
+  const {
+    isSupported: sttSupported,
+    isListening,
+    interimTranscript,
+    startListening,
+    stopListening,
+    toggleListening,
+    error: sttError,
+    isDisabled: sttDisabled,
+  } = useSpeechToText({
+    onResult: handleSpeechResult,
+    continuous: false,
+  });
+  
   const showWelcome = history.length === 0;
   const showTools = false; // Placeholder for future tools feature
   
@@ -90,6 +134,25 @@ export function ChatFeature() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [history, isSending]);
+
+  // Auto-read new assistant messages when TTS is enabled
+  useEffect(() => {
+    if (!ttsEnabled || !ttsSupported) return;
+    
+    const lastMessage = history[history.length - 1];
+    if (
+      lastMessage?.role === 'assistant' && 
+      lastMessage.timestamp !== lastReadMessageRef.current
+    ) {
+      const content = getMessageContent(lastMessage);
+      const plainText = containsHtmlTags(content) ? htmlToPlainText(content) : content;
+      
+      if (plainText.trim()) {
+        speak(plainText);
+        lastReadMessageRef.current = lastMessage.timestamp;
+      }
+    }
+  }, [history, ttsEnabled, ttsSupported, speak]);
 
   // Process chat responses for feature-specific data
   useEffect(() => {
@@ -118,6 +181,18 @@ export function ChatFeature() {
     }
   }, [sharedState.pendingPrompt, setSharedState]);
 
+  // Auto-send when speech recognition completes and not already sending
+  useEffect(() => {
+    // If we just stopped listening and have a prompt, send it
+    if (!isListening && prompt.trim() && !isSending) {
+      // Small delay to allow final transcript to be processed
+      const timeout = setTimeout(() => {
+        handleSend();
+      }, 500);
+      return () => clearTimeout(timeout);
+    }
+  }, [isListening]);
+
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return t('chat.greeting.morning');
@@ -126,8 +201,7 @@ export function ChatFeature() {
   };
 
   const handleVoiceInput = () => {
-    setIsRecording(!isRecording);
-    console.log(`Voice input ${!isRecording ? 'started' : 'stopped'}`);
+    toggleListening();
   };
 
   const handleSend = useCallback(async () => {
@@ -194,6 +268,25 @@ export function ChatFeature() {
     setShowPersonaSelector(false);
   };
 
+  const handleToggleTts = () => {
+    if (isSpeaking) {
+      stopSpeaking();
+    }
+    setTtsEnabled(!ttsEnabled);
+  };
+
+  const handleSpeakMessage = (message: ChatMessage) => {
+    const content = getMessageContent(message);
+    const plainText = containsHtmlTags(content) ? htmlToPlainText(content) : content;
+    if (plainText.trim()) {
+      if (isSpeaking) {
+        stopSpeaking();
+      } else {
+        speak(plainText);
+      }
+    }
+  };
+
   // Helper to extract display content from message
   const getMessageContent = (message: ChatMessage): string => {
     if (typeof message.content === 'string') {
@@ -224,6 +317,9 @@ export function ChatFeature() {
   };
 
   const getPlaceholder = () => {
+    if (isListening) {
+      return interimTranscript || t('chat.listening');
+    }
     if (student) {
       return t('chat.placeholderWithUser', { name: student.name });
     }
@@ -302,6 +398,75 @@ export function ChatFeature() {
     </Button>
   );
 
+  // Voice control buttons
+  const VoiceControls = useMemo(() => (
+    <div className={cn("flex items-center gap-1", isRTL && "flex-row-reverse")}>
+      {/* Speech-to-Text (Microphone) */}
+      {sttSupported && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className={cn(
+                "h-8 w-8 rounded-full hover-elevate active-elevate-2 transition-colors",
+                isListening && "bg-red-500/20 text-red-500 animate-pulse",
+                sttDisabled && "opacity-50 cursor-not-allowed"
+              )}
+              onClick={handleVoiceInput}
+              disabled={sttDisabled || isSending}
+              data-testid="button-voice"
+              aria-label={isListening ? t('chat.stopListening') : t('chat.voiceInput')}
+            >
+              {isListening ? (
+                <MicOff className="w-4 h-4" />
+              ) : (
+                <Mic className="w-4 h-4" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {sttDisabled 
+              ? t('chat.voiceDisabledAudioPlaying')
+              : isListening 
+                ? t('chat.stopListening') 
+                : t('chat.voiceInput')
+            }
+          </TooltipContent>
+        </Tooltip>
+      )}
+
+      {/* Text-to-Speech Toggle */}
+      {ttsSupported && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className={cn(
+                "h-8 w-8 rounded-full hover-elevate active-elevate-2 transition-colors",
+                ttsEnabled && "bg-blue-500/20 text-blue-500",
+                isSpeaking && "animate-pulse"
+              )}
+              onClick={handleToggleTts}
+              data-testid="button-tts"
+              aria-label={ttsEnabled ? t('chat.disableTts') : t('chat.enableTts')}
+            >
+              {ttsEnabled ? (
+                <Volume2 className="w-4 h-4" />
+              ) : (
+                <VolumeX className="w-4 h-4" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {ttsEnabled ? t('chat.disableTts') : t('chat.enableTts')}
+          </TooltipContent>
+        </Tooltip>
+      )}
+    </div>
+  ), [sttSupported, ttsSupported, isListening, ttsEnabled, isSpeaking, sttDisabled, isSending, isRTL, t]);
+
   // Input bar component
   const InputBar = useMemo(() => (
     <div className="space-y-2">
@@ -345,10 +510,20 @@ export function ChatFeature() {
         accept=".pdf,.txt,.md,.json,.csv,.xml,.html,.css,.js,.ts,.py,.java,.c,.cpp,.h,.hpp,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp"
       />
 
+      {/* Speech recognition error display */}
+      {sttError && (
+        <div className="text-xs text-destructive px-4">
+          {sttError}
+        </div>
+      )}
+
       {/* Main input bar */}
       <div
         dir={isRTL ? 'rtl' : 'ltr'}
-        className="relative bg-card border border-card-border rounded-full px-6 py-4 flex items-center gap-3"
+        className={cn(
+          "relative bg-card border rounded-full px-6 py-4 flex items-center gap-3",
+          isListening ? "border-red-500/50 ring-2 ring-red-500/20" : "border-card-border"
+        )}
       >
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -389,45 +564,44 @@ export function ChatFeature() {
 
         <Input
           ref={inputRef}
-          value={prompt}
+          value={isListening ? (interimTranscript || prompt) : prompt}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder={getPlaceholder()}
-          className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-base h-8 px-2"
+          className={cn(
+            "flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-base h-8 px-2",
+            isListening && "text-muted-foreground italic"
+          )}
           dir={isRTL ? 'rtl' : 'ltr'}
           data-testid="input-prompt"
           onKeyDown={handleKeyDown}
-          disabled={isSending}
+          disabled={isSending || isListening}
         />
 
-        <Button
-          size="icon"
-          variant="ghost"
-          className={cn(
-            "h-8 w-8 rounded-full hover-elevate active-elevate-2",
-            isRecording && "bg-destructive/10 text-destructive"
-          )}
-          onClick={handleVoiceInput}
-          data-testid="button-voice"
-          aria-label={t('chat.voiceInput')}
-          disabled={true} // Voice input disabled for now
-        >
-          <Mic className="w-4 h-4" />
-        </Button>
+        {/* Voice Controls */}
+        {VoiceControls}
 
         <Button
           size="icon"
           variant="default"
           className="h-8 w-8 rounded-full"
           onClick={handleSend}
-          disabled={!prompt.trim() || isSending}
+          disabled={!prompt.trim() || isSending || isListening}
           data-testid="button-send"
           aria-label={t('chat.sendMessage')}
         >
           <Send className={cn("w-4 h-4", isRTL && "rotate-180")} />
         </Button>
       </div>
+
+      {/* Listening indicator */}
+      {isListening && (
+        <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+          <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+          <span>{t('chat.listeningIndicator')}</span>
+        </div>
+      )}
     </div>
-  ), [prompt, isRecording, isSending, student, isRTL, t, handleKeyDown, handleVoiceInput, handleSend, getPlaceholder, attachedFiles, isUploadingFile, removeFile, handleFileSelect, handleAddFilesClick]);
+  ), [prompt, isSending, student, isRTL, t, handleKeyDown, handleSend, getPlaceholder, attachedFiles, isUploadingFile, removeFile, handleFileSelect, handleAddFilesClick, VoiceControls, isListening, interimTranscript, sttError]);
 
   return (
     <div className="flex flex-col h-full relative">
@@ -574,9 +748,33 @@ export function ChatFeature() {
                         </p>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground mt-2 opacity-70">
-                      {formatTimestamp(message.timestamp)}
-                    </p>
+                    <div className={cn(
+                      "flex items-center gap-2 mt-2",
+                      message.role === 'user' ? "justify-end" : "justify-start"
+                    )}>
+                      <p className="text-xs text-muted-foreground opacity-70">
+                        {formatTimestamp(message.timestamp)}
+                      </p>
+                      {/* TTS button for assistant messages */}
+                      {message.role === 'assistant' && ttsSupported && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-5 w-5 opacity-50 hover:opacity-100"
+                              onClick={() => handleSpeakMessage(message)}
+                              aria-label={t('chat.speakMessage')}
+                            >
+                              <Volume2 className="w-3 h-3" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {t('chat.speakMessage')}
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}

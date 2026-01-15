@@ -260,7 +260,19 @@ export const en = {
     newConversation: "Start new conversation",
     addAttachment: "Add attachment",
     tools: "Tools",
+    
+    // Speech-to-text keys
     voiceInput: "Voice input",
+    stopListening: "Stop listening",
+    listening: "Listening...",
+    listeningIndicator: "Listening... Speak now",
+    voiceDisabledAudioPlaying: "Voice input disabled while audio is playing",
+    
+    // Text-to-speech keys
+    enableTts: "Enable auto-read responses",
+    disableTts: "Disable auto-read responses",
+    speakMessage: "Read aloud",
+
     sendMessage: "Send message",
     suggestions: {
       communicationPrefs: "Communication preferences",
