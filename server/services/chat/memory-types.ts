@@ -121,6 +121,16 @@ export interface MemoryToolInput {
 export type MemoryToolBatchInput = { ops: MemoryToolInput[] } | { operations: MemoryToolInput[] };
 export type MemoryToolCallInput = MemoryToolInput | MemoryToolBatchInput;
 
+/**
+ * Result of a memory operation.
+ * 
+ * SIMPLIFIED: Removed dbSynced field. The response semantics are now:
+ * - ok: true = operation succeeded (in-memory and database if applicable)
+ * - ok: false = operation failed (with message explaining why)
+ * 
+ * For fields without database operations, success means in-memory success.
+ * For fields with database operations, success requires both in-memory and DB success.
+ */
 export interface MemoryOperationResult {
   target: string;
   action: MemoryAction;
@@ -128,7 +138,8 @@ export interface MemoryOperationResult {
   message?: string;
   newPath?: string;          // e.g., after rename
   mutatedPaths?: string[];   // concrete paths touched (esp. when wildcard expands)
-  dbSynced?: boolean;        // Whether the operation was persisted to database
+  summary?: string;          // Summary of viewed data (for view operations)
+  actualKey?: string;        // The actual key used (for add operations where key may be generated)
 }
 
 export interface MemoryToolResponseProcessed {
@@ -413,13 +424,21 @@ export interface MemoryLoadState {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// DB Operation Result Types
+// DB Operation Result Types (Internal - used by memory-db-bridge)
 // ──────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Internal result type for database operations.
+ * Used by memory-db-bridge to track what happened during a DB operation.
+ * 
+ * Note: This is an internal type. The public MemoryOperationResult does not
+ * expose dbSynced - success/failure is communicated via ok/message.
+ */
 export interface DbOperationResult {
   dbResult?: any;
   error?: string;
   shouldUpdateMemory: boolean;
+  /** Internal flag - true if DB operation succeeded, false if failed, undefined if no DB ops */
   dbSynced?: boolean;
   /** When set, apply dbResult to this path instead of the operation path */
   targetPath?: string;

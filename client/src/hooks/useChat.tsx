@@ -230,7 +230,10 @@ export const ChatProvider = ({
   const [persona, setPersonaState] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch selectable personas from API
+  // External hooks - need user for enabled condition on personas query
+  const { user } = useAuth();
+
+  // Fetch selectable personas from API (only when authenticated)
   const { data: personas = [], isLoading: isPersonasLoading } = useQuery({
     queryKey: ['/api/personas/selectable'],
     queryFn: async () => {
@@ -239,6 +242,7 @@ export const ChatProvider = ({
       return (data.personas || []) as PersonaInfo[];
     },
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    enabled: !!user, // Only fetch when user is authenticated
   });
 
   // Thinking state - for real-time AI status during tool calls
@@ -262,7 +266,6 @@ export const ChatProvider = ({
   // External hooks
   const { student, selectStudent } = useStudent();
   const { selectInstitute } = useInstitute();
-  const { user } = useAuth();
   const { activeFeature, getFeatureMetadata, setActiveFeature } = useFeaturePanel();
   const { setSharedState } = useSharedState();
 
