@@ -101,16 +101,16 @@ export function PersonaForm({ open, onClose, persona }: PersonaFormProps) {
           id: persona.id,
           data: formData as UpdatePersonaData,
         });
-        toast({ title: 'Persona updated successfully' });
+        toast({ title: 'Agent updated successfully' });
       } else {
         await createPersona.mutateAsync(formData as CreatePersonaData);
-        toast({ title: 'Persona created successfully' });
+        toast({ title: 'Agent created successfully' });
       }
       onClose();
     } catch (err: any) {
       toast({
         title: 'Error',
-        description: err.message || `Failed to ${isEditing ? 'update' : 'create'} persona`,
+        description: err.message || `Failed to ${isEditing ? 'update' : 'create'} agent`,
         variant: 'destructive',
       });
     }
@@ -123,12 +123,12 @@ export function PersonaForm({ open, onClose, persona }: PersonaFormProps) {
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {isEditing ? 'Edit Persona' : 'Create Persona'}
+            {isEditing ? 'Edit Agent' : 'Create Agent'}
           </DialogTitle>
           <DialogDescription>
             {isEditing
-              ? 'Update the persona settings and prompt'
-              : 'Create a new AI persona with a custom system prompt'}
+              ? 'Update the agent settings and prompt'
+              : 'Create a new AI agent with a custom system prompt'}
           </DialogDescription>
         </DialogHeader>
 
@@ -168,7 +168,7 @@ export function PersonaForm({ open, onClose, persona }: PersonaFormProps) {
               onChange={(e) =>
                 setFormData((prev) => ({ ...prev, prompt: e.target.value }))
               }
-              placeholder="Enter the system prompt for this persona..."
+              placeholder="Enter the system prompt for this agent..."
               rows={12}
               className="font-mono text-sm"
             />
@@ -193,7 +193,7 @@ export function PersonaForm({ open, onClose, persona }: PersonaFormProps) {
                 Manual Selection
               </Label>
               <span className="text-xs text-muted-foreground">
-                (Users can select this persona in chat)
+                (Users can select this agent in chat)
               </span>
             </div>
 

@@ -31,7 +31,7 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
   const navItems = [
     {
       icon: Bot,
-      label: 'Personas',
+      label: 'Agents',
       section: 'personas' as AdminSection,
       testId: 'admin-nav-personas',
     },
