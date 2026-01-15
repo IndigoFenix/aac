@@ -21,6 +21,7 @@
     "test:institute": "cross-env NODE_OPTIONS='--experimental-vm-modules' jest --testPathPatterns=institute.test.ts",
     "test:reports": "cross-env NODE_OPTIONS='--experimental-vm-modules' jest --testPathPatterns=reports.test.ts",
     "test:integration": "cross-env NODE_OPTIONS='--experimental-vm-modules' jest --testPathPatterns=integration",
+    "test:ai": "cross-env NODE_OPTIONS='--experimental-vm-modules' jest --testPathPatterns=ai-response.test.ts --runInBand",
     "test:coverage": "cross-env NODE_OPTIONS='--experimental-vm-modules' jest --coverage",
     "test:watch": "cross-env NODE_OPTIONS='--experimental-vm-modules' jest --watch",
     "audit": "npm audit",

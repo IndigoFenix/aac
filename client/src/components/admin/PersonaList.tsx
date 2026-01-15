@@ -97,7 +97,7 @@ export function PersonaList() {
   if (error) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-destructive">Error loading personas: {error.message}</p>
+        <p className="text-destructive">Error loading agents: {error.message}</p>
       </div>
     );
   }
@@ -107,14 +107,14 @@ export function PersonaList() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Personas</h1>
+          <h1 className="text-2xl font-bold">Agents</h1>
           <p className="text-muted-foreground">
-            Manage AI personas and their system prompts
+            Manage AI agents and their system prompts (personas).
           </p>
         </div>
         <Button onClick={handleCreate}>
           <Plus className="w-4 h-4 me-2" />
-          Add Persona
+          Add Agent
         </Button>
       </div>
 
@@ -186,10 +186,10 @@ export function PersonaList() {
       ) : (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
-            <p className="text-muted-foreground mb-4">No personas yet</p>
+            <p className="text-muted-foreground mb-4">No agents yet</p>
             <Button onClick={handleCreate}>
               <Plus className="w-4 h-4 me-2" />
-              Create your first persona
+              Create your first agent
             </Button>
           </CardContent>
         </Card>
@@ -206,9 +206,9 @@ export function PersonaList() {
       <AlertDialog open={!!deleteConfirmId} onOpenChange={() => setDeleteConfirmId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Persona</AlertDialogTitle>
+            <AlertDialogTitle>Delete Agent</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this persona? This action cannot be undone.
+              Are you sure you want to delete this agent? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
