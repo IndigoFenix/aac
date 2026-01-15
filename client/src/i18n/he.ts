@@ -260,7 +260,19 @@ export const he = {
     newConversation: "התחל שיחה חדשה",
     addAttachment: "הוסף קובץ מצורף",
     tools: "כלים",
+
+    // Speech-to-text keys
     voiceInput: "קלט קולי",
+    stopListening: "הפסק להקשיב",
+    listening: "מאזין...",
+    listeningIndicator: "מאזין... דבר עכשיו",
+    voiceDisabledAudioPlaying: "קלט קולי מושבת בזמן השמעת שמע",
+    
+    // Text-to-speech keys
+    enableTts: "הפעל קריאה אוטומטית של תגובות",
+    disableTts: "בטל קריאה אוטומטית של תגובות",
+    speakMessage: "קרא בקול",
+    
     sendMessage: "שלח הודעה",
     suggestions: {
       communicationPrefs: "העדפות תקשורת",

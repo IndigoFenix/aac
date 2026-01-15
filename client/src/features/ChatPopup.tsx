@@ -1,5 +1,5 @@
 // src/features/ChatPopup.tsx
-// Floating chat popup component with persona dropdown and proper RTL support
+// Floating chat popup component with speech-to-text and text-to-speech support
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -19,6 +19,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
   Send,
   Minus,
   Maximize2,
@@ -30,22 +35,30 @@ import {
   FileText,
   Image,
   Loader2,
+  Mic,
+  MicOff,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useChat, type AttachedFile } from '@/hooks/useChat';
 import { useStudent } from '@/hooks/useStudent';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useFeaturePanel } from '@/contexts/FeaturePanelContext';
+import { useSpeechToText } from '@/hooks/useSpeechToText';
+import { useTextToSpeech, htmlToPlainText } from '@/hooks/useTextToSpeech';
 import { ChatMessage, ChatMessageContent } from '@shared/schema';
 import { cn } from '@/lib/utils';
 import { PersonaIcon, getPersonaColorClasses } from '@/components/chat/PersonaIcon';
 
 export function ChatPopup() {
   const [prompt, setPrompt] = useState('');
+  const [ttsEnabled, setTtsEnabled] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const lastReadMessageRef = useRef<number | null>(null);
 
   const { user } = useAuth();
   const { student } = useStudent();
@@ -75,6 +88,36 @@ export function ChatPopup() {
     clearFiles,
   } = useChat();
 
+  // Text-to-speech hook
+  const { 
+    isSupported: ttsSupported, 
+    isSpeaking, 
+    speak, 
+    stop: stopSpeaking,
+  } = useTextToSpeech();
+
+  // Speech-to-text hook with auto-send capability
+  const handleSpeechResult = useCallback((transcript: string) => {
+    if (transcript.trim() && !isSending) {
+      setPrompt(prev => {
+        const newPrompt = prev ? `${prev} ${transcript}` : transcript;
+        return newPrompt;
+      });
+    }
+  }, [isSending]);
+
+  const {
+    isSupported: sttSupported,
+    isListening,
+    interimTranscript,
+    toggleListening,
+    error: sttError,
+    isDisabled: sttDisabled,
+  } = useSpeechToText({
+    onResult: handleSpeechResult,
+    continuous: false,
+  });
+
   const isMinimized = chatMode === 'minimized';
   const unreadCount = 0; // Could be implemented with actual unread tracking
   const currentPersonaInfo = getPersonaInfo(persona);
@@ -92,6 +135,35 @@ export function ChatPopup() {
       inputRef.current?.focus();
     }
   }, [isMinimized]);
+
+  // Auto-read new assistant messages when TTS is enabled
+  useEffect(() => {
+    if (!ttsEnabled || !ttsSupported || isMinimized) return;
+    
+    const lastMessage = history[history.length - 1];
+    if (
+      lastMessage?.role === 'assistant' && 
+      lastMessage.timestamp !== lastReadMessageRef.current
+    ) {
+      const content = getMessageContent(lastMessage);
+      const plainText = containsHtmlTags(content) ? htmlToPlainText(content) : content;
+      
+      if (plainText.trim()) {
+        speak(plainText);
+        lastReadMessageRef.current = lastMessage.timestamp;
+      }
+    }
+  }, [history, ttsEnabled, ttsSupported, isMinimized, speak]);
+
+  // Auto-send when speech recognition completes
+  useEffect(() => {
+    if (!isListening && prompt.trim() && !isSending) {
+      const timeout = setTimeout(() => {
+        handleSend();
+      }, 500);
+      return () => clearTimeout(timeout);
+    }
+  }, [isListening]);
 
   const handleSend = useCallback(async () => {
     if (prompt.trim() && !isSending) {
@@ -145,6 +217,17 @@ export function ChatPopup() {
 
   const handleAddFilesClick = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleToggleTts = () => {
+    if (isSpeaking) {
+      stopSpeaking();
+    }
+    setTtsEnabled(!ttsEnabled);
+  };
+
+  const handleVoiceInput = () => {
+    toggleListening();
   };
 
   // Helper to get file icon based on mime type
@@ -226,32 +309,32 @@ export function ChatPopup() {
       <div 
         dir={isRTL ? 'rtl' : 'ltr'}
         className={cn(
-          "bg-background border border-border rounded-2xl shadow-2xl overflow-hidden",
-          "flex flex-col",
-          "animate-in slide-in-from-bottom-4 duration-300"
+          "flex flex-col rounded-2xl shadow-2xl border border-border overflow-hidden",
+          "bg-background",
+          "max-h-[70vh]"
         )}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 bg-card border-b border-border">
-          <div className="flex items-center gap-2">
-            <PersonaIcon persona={persona} size="lg" withBackground />
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            {/* Persona icon */}
+            <PersonaIcon persona={persona} size="md" withBackground />
+            
+            {/* Persona selector dropdown */}
             <div className="flex-1 min-w-0">
-              {/* Persona dropdown selector */}
-              <Select value={persona || ''} onValueChange={handlePersonaChange}>
-                <SelectTrigger
-                  className="h-auto py-0 px-0 border-0 bg-transparent focus:ring-0 gap-1"
-                >
-                  <SelectValue>
-                    <span className="text-sm font-medium">
-                      {currentPersonaInfo?.title || t('chat.persona.assistant')}
-                    </span>
-                  </SelectValue>
+              <Select
+                value={persona || 'default'}
+                onValueChange={handlePersonaChange}
+                disabled={isPersonasLoading}
+              >
+                <SelectTrigger className="h-7 text-xs border-none bg-transparent shadow-none px-1">
+                  <SelectValue placeholder={t('chat.selectPersona')} />
                 </SelectTrigger>
                 <SelectContent>
                   {isPersonasLoading ? (
-                    <div className="flex items-center justify-center py-2">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    </div>
+                    <SelectItem value="loading" disabled>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    </SelectItem>
                   ) : (
                     personas.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
@@ -275,6 +358,34 @@ export function ChatPopup() {
           </div>
           
           <div className="flex items-center gap-1">
+            {/* TTS Toggle */}
+            {ttsSupported && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className={cn(
+                      "h-7 w-7 rounded-full",
+                      ttsEnabled && "bg-blue-500/20 text-blue-500",
+                      isSpeaking && "animate-pulse"
+                    )}
+                    onClick={handleToggleTts}
+                    title={ttsEnabled ? t('chat.disableTts') : t('chat.enableTts')}
+                  >
+                    {ttsEnabled ? (
+                      <Volume2 className="w-3.5 h-3.5" />
+                    ) : (
+                      <VolumeX className="w-3.5 h-3.5" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {ttsEnabled ? t('chat.disableTts') : t('chat.enableTts')}
+                </TooltipContent>
+              </Tooltip>
+            )}
+
             {/* Expand to full mode (only if not full-screen feature) */}
             {!isFullScreenFeature && (
               <Button
@@ -430,7 +541,18 @@ export function ChatPopup() {
             accept=".pdf,.txt,.md,.json,.csv,.xml,.html,.css,.js,.ts,.py,.java,.c,.cpp,.h,.hpp,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp"
           />
 
-          <div className="flex items-center gap-2 bg-muted rounded-full px-3 py-1">
+          {/* Listening indicator */}
+          {isListening && (
+            <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground pb-1">
+              <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+              <span>{t('chat.listeningIndicator')}</span>
+            </div>
+          )}
+
+          <div className={cn(
+            "flex items-center gap-2 rounded-full px-3 py-1",
+            isListening ? "bg-red-500/10 ring-1 ring-red-500/30" : "bg-muted"
+          )}>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -458,21 +580,59 @@ export function ChatPopup() {
 
             <Input
               ref={inputRef}
-              value={prompt}
+              value={isListening ? (interimTranscript || prompt) : prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder={t('chat.placeholderShort')}
-              className="flex-1 border-0 bg-transparent focus-visible:ring-0 text-sm h-8 px-1"
+              placeholder={isListening ? t('chat.listening') : t('chat.placeholderShort')}
+              className={cn(
+                "flex-1 border-0 bg-transparent focus-visible:ring-0 text-sm h-8 px-1",
+                isListening && "text-muted-foreground italic"
+              )}
               dir={isRTL ? 'rtl' : 'ltr'}
               data-testid="chat-popup-input"
               onKeyDown={handleKeyDown}
-              disabled={isSending}
+              disabled={isSending || isListening}
             />
+
+            {/* Voice input button */}
+            {sttSupported && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className={cn(
+                      "h-7 w-7 rounded-full transition-colors",
+                      isListening && "bg-red-500/20 text-red-500 animate-pulse",
+                      sttDisabled && "opacity-50 cursor-not-allowed"
+                    )}
+                    onClick={handleVoiceInput}
+                    disabled={sttDisabled || isSending}
+                    aria-label={isListening ? t('chat.stopListening') : t('chat.voiceInput')}
+                  >
+                    {isListening ? (
+                      <MicOff className="w-3.5 h-3.5" />
+                    ) : (
+                      <Mic className="w-3.5 h-3.5" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {sttDisabled 
+                    ? t('chat.voiceDisabledAudioPlaying')
+                    : isListening 
+                      ? t('chat.stopListening') 
+                      : t('chat.voiceInput')
+                  }
+                </TooltipContent>
+              </Tooltip>
+            )}
+
             <Button
               size="icon"
               variant="ghost"
               className="h-7 w-7 rounded-full"
               onClick={handleSend}
-              disabled={!prompt.trim() || isSending}
+              disabled={!prompt.trim() || isSending || isListening}
               data-testid="chat-popup-send"
             >
               <Send className={cn("w-3.5 h-3.5", isRTL && "rotate-180")} />
