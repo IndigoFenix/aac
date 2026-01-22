@@ -119,12 +119,28 @@ export default function PrebuiltBoardSection({
 
   // Handle button click
   const handleButtonClick = (button: ButtonIR) => {
+    // Handle navigation actions (don't speak or send to chat)
     if (button.action?.type === "link" && button.action.toPageId) {
       navigateToPage(button.action.toPageId);
       return;
     }
 
-    // Speak the text
+    // Handle back action (navigate back without speaking)
+    if (button.action?.type === "back") {
+      goBack();
+      return;
+    }
+
+    // Handle home action (go to first page without speaking)
+    if (button.action?.type === "home") {
+      if (selectedBoard?.irData?.pages?.[0]?.id) {
+        setPageHistory([]);
+        setCurrentPageId(selectedBoard.irData.pages[0].id);
+      }
+      return;
+    }
+
+    // Speak the text and send to chat
     const textToSpeak = button.action?.text || button.spokenText || button.label;
     speak(textToSpeak, language);
     onSpeakAction(textToSpeak);

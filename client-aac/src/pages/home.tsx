@@ -854,7 +854,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           userProfile={userProfile}
           isVisible={showConversation}
           onToggle={() => setShowConversation(!showConversation)}
-          selectedSymbols={showConversation ? selectedSymbols : []}
+          selectedSymbols={selectedSymbols}
           onClearSymbols={() => setSelectedSymbols([])}
           visualContext={currentVisualContext}
           language={currentLanguage}

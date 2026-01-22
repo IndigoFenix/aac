@@ -39,6 +39,7 @@ export function ConversationBox({
     currentMessage,
     isLoading,
     isInitialized,
+    error,
     audioEnabled,
     isPlaying,
     initialize,
@@ -52,6 +53,7 @@ export function ConversationBox({
   } = useConversation();
 
   const hasInitializedRef = useRef(false);
+  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Set up capture frame function
   useEffect(() => {
@@ -76,9 +78,29 @@ export function ConversationBox({
     }
   }, [isVisible, isInitialized, isLoading, initialize]);
 
-  // Handle symbol selection from parent
+  // Handle initialization errors - allow retry after a delay
   useEffect(() => {
-    if (selectedSymbols && selectedSymbols.length > 0 && isVisible) {
+    if (error && hasInitializedRef.current && !isInitialized && !isLoading) {
+      console.log('[ConversationBox] Initialization error detected, will retry in 2s:', error);
+      // Clear any existing retry timeout
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
+      // Reset the ref after a delay to allow retry
+      retryTimeoutRef.current = setTimeout(() => {
+        hasInitializedRef.current = false;
+      }, 2000);
+    }
+    return () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
+    };
+  }, [error, isInitialized, isLoading]);
+
+  // Handle symbol selection from parent - works even when panel is hidden
+  useEffect(() => {
+    if (selectedSymbols && selectedSymbols.length > 0 && isInitialized) {
       // Send symbols as user response
       const message = selectedSymbols.join(' ');
       sendMessage(message, true);
@@ -87,7 +109,7 @@ export function ConversationBox({
         setTimeout(() => onClearSymbols(), 1000);
       }
     }
-  }, [selectedSymbols, isVisible, sendMessage, onClearSymbols]);
+  }, [selectedSymbols, isInitialized, sendMessage, onClearSymbols]);
 
   const handleReplayAudio = () => {
     if (currentMessage && !isPlaying) {
@@ -146,6 +168,20 @@ export function ConversationBox({
                 <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{animationDelay: '0.1s'}} />
                 <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{animationDelay: '0.2s'}} />
                 <span className="ml-2 text-sm">Thinking...</span>
+              </div>
+            ) : error ? (
+              <div className="flex items-center justify-between w-full">
+                <p className="text-white/80 text-sm">Connection issue, retrying...</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    hasInitializedRef.current = false;
+                  }}
+                  className="text-white hover:text-gray-200 hover:bg-white/10 text-xs px-2 py-1"
+                >
+                  Retry Now
+                </Button>
               </div>
             ) : currentMessage ? (
               <div className="flex items-center justify-between w-full">

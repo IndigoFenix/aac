@@ -25,7 +25,7 @@ export default function QuickActions({ onAction, onBack }: QuickActionsProps) {
   };
 
   const handleBack = () => {
-    speak(t("quickActions.back"), language);
+    // Just navigate, don't speak
     onBack();
   };
 
