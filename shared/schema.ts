@@ -12,6 +12,7 @@ export const apiTypeEnum = pgEnum("api_type", [
 ]);
 
 export const chatSessionStatusEnum = pgEnum("chat_session_status", ["open", "paused", "closed"]);
+export const aacSessionStatusEnum = pgEnum("aac_session_status", ["active", "paused", "ended"]);
 
 export const instituteTypeEnum = pgEnum("institute_type", ["school", "hospital"]);
 
@@ -645,6 +646,18 @@ export const students = pgTable("students", {
   chatMemory: jsonb("chat_memory").default({}), // Student-specific memory values for chat
   chatCreditsUsed: real("chat_credits_used").notNull().default(0),
   chatCreditsUpdated: timestamp("chat_credits_updated").defaultNow(),
+
+  // AAC-specific fields
+  aacEnabled: boolean("aac_enabled").default(false), // Whether AAC mode is enabled
+  aacChatAgentPrompt: text("aac_chat_agent_prompt"), // Custom prompt override for AAC agent
+  aacDemoMode: boolean("aac_demo_mode").default(false), // Demo scenario enabled
+  aacDemoScenario: text("aac_demo_scenario"), // Which demo scenario to use
+  aacUsePcsSymbols: boolean("aac_use_pcs_symbols").default(false), // PCS vs emoji preference
+  aacSignLanguageReading: boolean("aac_sign_language_reading").default(false), // Sign language detection enabled
+  aacMultiCameraMode: boolean("aac_multi_camera_mode").default(false), // Multi-camera support
+  aacModelOverride: text("aac_model_override"), // AI model override (e.g., 'chatgpt5')
+  aacVoiceType: text("aac_voice_type"), // 'man', 'woman', 'boy', 'girl'
+  aacKnownPeople: jsonb("aac_known_people").default([]), // Array of known people for recognition
 
   // Status and metadata
   isActive: boolean("is_active").default(true).notNull(),
@@ -1517,6 +1530,109 @@ export const chatSessions = pgTable("chat_sessions", {
 ]);
 
 // =============================================================================
+// AAC SESSIONS (Real-time AAC communication for non-verbal users)
+// =============================================================================
+
+// AAC Session context types (stored as JSONB)
+export interface AACVisualContext {
+  sceneDescription?: string;
+  objects?: string[];
+  location?: string;
+  activities?: string[];
+  timestamp?: string;
+}
+
+export interface AACPersonDetection {
+  personPresent: boolean;
+  isMainUser?: boolean;
+  age?: number;
+  gender?: string;
+  facialExpression?: string;
+  emotionalState?: string;
+  confidence?: number;
+}
+
+export interface AACAudioContext {
+  transcript?: string;
+  detectedLanguage?: string;
+  confidence?: number;
+  speechPresent?: boolean;
+  ambientSounds?: string[];
+  emotionalTone?: string;
+  speakerCount?: number;
+}
+
+export interface AACSymbol {
+  id: string;
+  label: string;
+  emoji?: string;
+  confidence?: number;
+  category?: string;
+  reasoning?: string;
+}
+
+export interface AACKnownPerson {
+  id: string;
+  name: string;
+  relationship: string; // 'parent', 'sibling', 'therapist', 'teacher', etc.
+  age?: number;
+  gender?: string;
+  description?: string; // Physical description for recognition
+  photo?: string; // URL or base64 for face recognition
+}
+
+export interface AACSessionContext {
+  visualContext?: AACVisualContext;
+  personDetection?: AACPersonDetection;
+  audioContext?: AACAudioContext;
+  cameraVisualContexts?: Record<string, AACVisualContext>;
+  emotionalContext?: string;
+  lastSymbols?: AACSymbol[];
+  timeOfDay?: string;
+  demoScenario?: string;
+}
+
+export interface AACMessage {
+  id: string;
+  role: 'agent' | 'user';
+  content: string;
+  symbols?: AACSymbol[];
+  timestamp: string;
+  audioGenerated?: boolean;
+  audioUrl?: string;
+}
+
+export const aacSessions = pgTable("aac_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").references(() => students.id).notNull(),
+  userId: varchar("user_id").references(() => users.id), // Who started/is monitoring this session
+
+  // Real-time context (updated frequently)
+  context: jsonb("context").$type<AACSessionContext>().default({}),
+
+  // Conversation state
+  conversationHistory: jsonb("conversation_history").$type<AACMessage[]>().default([]),
+
+  // Credit tracking
+  creditsUsed: real("credits_used").notNull().default(0),
+
+  // Session management
+  status: aacSessionStatusEnum("status").notNull().default("active"),
+  started: timestamp("started").notNull().defaultNow(),
+  lastActivity: timestamp("last_activity").notNull().defaultNow(),
+  ended: timestamp("ended"),
+
+  // Metadata
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_aac_sessions_student_id").on(table.studentId),
+  index("idx_aac_sessions_user_id").on(table.userId),
+  index("idx_aac_sessions_status").on(table.status),
+  index("idx_aac_sessions_last_activity").on(table.lastActivity),
+]);
+
+// =============================================================================
 // PERSONA AND LIBRARY TABLES
 // =============================================================================
 
@@ -2002,6 +2118,14 @@ export const insertChatSessionSchema = createInsertSchema(chatSessions).omit({
   deletedAt: true,
 });
 
+// AAC Session schemas
+export const insertAACSessionSchema = createInsertSchema(aacSessions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+
 // Persona schemas
 export const insertPersonaSchema = createInsertSchema(personas).omit({
   id: true,
@@ -2322,7 +2446,12 @@ export type InsertDropboxBackup = z.infer<typeof insertDropboxBackupSchema>;
 // Chat types
 export type ChatSession = typeof chatSessions.$inferSelect;
 export type InsertChatSession = z.infer<typeof insertChatSessionSchema>;
-export type FeatureType = "chat" | "boards" | "interpret" | 'docuslp' | 'overview' | 'students' | 'institute' | 'progress' | 'reports' | 'settings';
+export type FeatureType = "chat" | "boards" | "interpret" | 'docuslp' | 'overview' | 'students' | 'institute' | 'progress' | 'reports' | 'settings' | 'aacsettings' | 'aac';
+
+// AAC Session types
+export type AACSession = typeof aacSessions.$inferSelect;
+export type InsertAACSession = typeof aacSessions.$inferInsert;
+export type UpdateAACSession = Partial<typeof aacSessions.$inferInsert>;
 export type ChatPersona = 'assistant' | 'coach' | 'clinical' | 'teacher' | 'pediatric_physical_therapist' | 'speech_language_pathologist' | 'occupational_therapist' | 'behavioral_specialist';
 
 // Persona types
@@ -2635,7 +2764,7 @@ export interface ChatState {
   conversationSummary: string;
   openedTopics: string[];
   memoryState: MemoryState;
-  
+
   /**
    * Cached load state for DB-backed memory fields.
    * Persists across messages to avoid redundant database queries.
@@ -2646,6 +2775,8 @@ export interface ChatState {
     stale: string[];
     loadedAt: Record<string, number>;
     totals: Record<string, number>;
+    /** Cached values for loaded fields - avoids redundant DB queries */
+    cachedValues?: Record<string, any>;
   };
 }
 
@@ -2841,6 +2972,7 @@ export const studentsRelations = relations(students, ({ many }) => ({
   programs: many(programs),
   interpretations: many(interpretations),
   inviteCodes: many(inviteCodes),
+  aacSessions: many(aacSessions),
 }));
 
 export const userStudentsRelations = relations(userStudents, ({ one }) => ({
@@ -3115,5 +3247,16 @@ export const chatSessionsRelations = relations(chatSessions, ({ one }) => ({
   userStudent: one(userStudents, {
     fields: [chatSessions.userStudentId],
     references: [userStudents.id]
+  }),
+}));
+
+export const aacSessionsRelations = relations(aacSessions, ({ one }) => ({
+  student: one(students, {
+    fields: [aacSessions.studentId],
+    references: [students.id]
+  }),
+  user: one(users, {
+    fields: [aacSessions.userId],
+    references: [users.id]
   }),
 }));

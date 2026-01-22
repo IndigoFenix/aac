@@ -26,6 +26,7 @@ import {
   GraduationCap,
   ChevronRight,
   Building2,
+  MessageSquare,
 } from 'lucide-react';
 import logoImage from '@assets/cliniaacian_logo.png';
 import { useAuth } from '@/hooks/useAuth';
@@ -83,6 +84,13 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
       labelKey: 'nav.boards',
       feature: 'boards' as FeatureType,
       testId: 'nav-boards',
+      disabled: !student, // Only enabled when a student is selected
+    },
+    {
+      icon: MessageSquare,
+      labelKey: 'nav.aacSettings',
+      feature: 'aacsettings' as FeatureType,
+      testId: 'nav-aacsettings',
       disabled: !student, // Only enabled when a student is selected
     },
     {

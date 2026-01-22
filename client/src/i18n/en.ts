@@ -159,6 +159,7 @@ export const en = {
     students: "Students",
     progress: "Student Progress",
     reports: "Student Reports",
+    aacSettings: "AAC Settings",
     currentStudent: "Current Student",
     studentManagement: "Student Management",
     instituteManagement: 'Institute Management',

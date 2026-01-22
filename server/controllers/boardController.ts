@@ -54,6 +54,20 @@ export class BoardController {
   }
 
   /**
+   * GET /api/boards/student/:studentId
+   * Get boards for a specific student
+   */
+  async getStudentBoards(req: Request, res: Response): Promise<void> {
+    try {
+      const { studentId } = req.params;
+      const boards = await boardRepository.getStudentBoards(req.user!.id, studentId);
+      res.json(boards);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  /**
    * GET /api/boards/:id
    * Get specific board
    */

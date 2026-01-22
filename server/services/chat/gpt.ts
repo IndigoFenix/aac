@@ -29,11 +29,24 @@ export interface GPTResponse {
 // RESPONSES API INPUT ITEMS
 // ──────────────────────────────────────────────────────────────────────────────
 
+/** Content part for multimodal messages */
+export interface GPTTextContentPart {
+  type: "input_text";
+  text: string;
+}
+
+export interface GPTImageContentPart {
+  type: "input_image";
+  image_url: string; // data:image/jpeg;base64,... or https://...
+}
+
+export type GPTContentPart = GPTTextContentPart | GPTImageContentPart;
+
 /** Message item for Responses API input */
 export interface GPTMessageItem {
   type: "message";
   role: "user" | "assistant" | "system";
-  content: string;
+  content: string | GPTContentPart[];
 }
 
 /** Function call item for Responses API input (representing a previous tool call) */

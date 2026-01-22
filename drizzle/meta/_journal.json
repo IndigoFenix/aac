@@ -57,6 +57,13 @@
       "when": 1768396395497,
       "tag": "0007_worried_klaw",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1768847183227,
+      "tag": "0008_young_tinkerer",
+      "breakpoints": true
     }
   ]
 }

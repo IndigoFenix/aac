@@ -40,6 +40,12 @@ export interface AgentMemoryFieldBase {
   exclusiveMinimum?: number;
   exclusiveMaximum?: number;
   multipleOf?: number;
+  /**
+   * Cache TTL in milliseconds. If set, the cached value will be reloaded from
+   * the database after this time has elapsed. If not set, cached values are
+   * used indefinitely within the session.
+   */
+  cacheTTL?: number;
 }
 
 export interface AgentMemoryFieldObject extends AgentMemoryFieldBase {
@@ -421,6 +427,13 @@ export interface MemoryLoadState {
    * Key is the container path, value is the total item count.
    */
   totals: Map<string, number>;
+
+  /**
+   * Cached values for loaded fields.
+   * Key is the field path, value is the loaded data.
+   * Used to avoid redundant database queries within a session.
+   */
+  cachedValues: Map<string, any>;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

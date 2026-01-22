@@ -4,6 +4,16 @@ import { onMessageStreaming, FeatureType } from "../services/sessionService";
 import { ChatPersona } from "@shared/schema";
 
 // Validation schema - same as chatController
+// Message content can be a string or an object with text, formSchema, formValues
+const messageContentSchema = z.union([
+  z.string(),
+  z.object({
+    text: z.string(),
+    formSchema: z.any().optional(),
+    formValues: z.any().optional(),
+  }),
+]);
+
 const messageSchema = z.object({
   studentId: z.string().optional(),
   sessionId: z.string().optional(),
@@ -15,7 +25,7 @@ const messageSchema = z.object({
     .array(
       z.object({
         role: z.enum(["user", "assistant", "system"]),
-        content: z.string(),
+        content: messageContentSchema,
         timestamp: z.number().optional(),
       })
     )
@@ -43,7 +53,7 @@ export class ChatStreamController {
 
     try {
       const userId = req.user!.id;
-      let { studentId, sessionId, activeFeature, persona, messages, featureContext, vectorStoreId } =
+      let { studentId, sessionId, activeFeature, persona, messages, featureContext, vectorStoreId, replyType } =
         messageSchema.parse(req.body);
 
       if (!persona) {
@@ -81,7 +91,7 @@ export class ChatStreamController {
         messages: messagesWithTimestamp,
         featureContext,
         vectorStoreId,
-        replyType: "html",
+        replyType: replyType || "html",
         onThinkingUpdate,
       });
 

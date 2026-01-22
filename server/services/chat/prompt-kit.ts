@@ -57,18 +57,19 @@ export interface NlpSchema {
     lastFormSchema?: NlpSchema;
     lastFormValues?: formValues;
     describeActions?: boolean;
+    replyType?: 'text' | 'html';
   }): PromptBuild {
 
     const tools: GPTTool[] = [];
 
-    let startPrompt = `${printPromptHeader(ctx.agent, ctx.conversationSummary)}`;
+    let startPrompt = `${printPromptHeader(ctx.agent, ctx.conversationSummary, ctx.replyType)}`;
     let endPrompt = ``;
 
     let formSchema: any, formSchemaHash: string = '';
 
     if (ctx.lastFormSchema){
         formSchema = nlpSchemaToGPTSchema(ctx.lastFormSchema);
-        startPrompt += `=== Section: setValues Instructions ===\n\nThe next section represents elements you are currently able to see on the webpage (there may be elements visible to you but not the user, and vice-versa). You may interact with form elements by setting their values in the "setValues" response.\nYou may click buttons by setting their value to true.\nTo clear a string input, set its value to "".\nTo leave a string value unchanged while interacting, reply with its value as null. If you have no reason to change a value, leave it unchanged.\nIf you are not changing any fields or interacting with buttons, respond with "setValues" set to null.\n\nAll values set in the response will occur before the user sees the html text, so structure your html text as if you have already set these values.\nFollow all instructions associated with page elements, unless they contradict your core prompt.\n\n=== Section: Page Elements ===${printSchemaInstructions(ctx.lastFormSchema, 0, ctx.lastFormValues)}\n\n`;
+        startPrompt += `=== Section: setValues Instructions ===\n\nThe next section represents elements you are currently able to see on the webpage. You may interact with form elements by setting their values in the "setValues" response.\nYou may click buttons by setting their value to true.\nTo clear a string input, set its value to "".\nTo leave a string value unchanged while interacting, reply with its value as null. If you have no reason to change a value, leave it unchanged.\nIf you are not changing any fields or interacting with buttons, respond with "setValues" set to null.\n\nAll values set in the response will occur before the user sees the reply text, so structure your reply text as if you have already set these values.\nFollow all instructions associated with page elements, unless they contradict your core prompt.\n\n=== Section: Page Elements ===${printSchemaInstructions(ctx.lastFormSchema, 0, ctx.lastFormValues)}\n\n`;
     }
 
     if (ctx.agent.apiEndpoints && ctx.agent.apiEndpoints.length > 0){
@@ -352,8 +353,8 @@ export interface NlpSchema {
   }
 
   
-function printPromptHeader(agent: AgentLike, conversationSummary: string): string {
-    let instructions = '=== Section: Reply Guidelines ===\n\nUse the "html" field to reply. Use HTML format.\nYou can speak any language. Reply content should be in the same language as the user.\n\n';
+function printPromptHeader(agent: AgentLike, conversationSummary: string, replyType?: 'text' | 'html'): string {
+    let instructions = `=== Section: Reply Guidelines ===\n\nUse the "${replyType || 'text'}" field to reply.\nYou can speak any language. Reply content should be in the same language as the user${replyType === 'html' ? ' (use HTML format)' : ''}.\n\n`;
     if (conversationSummary){
         instructions += `=== Section: Current Conversation summary ===\n\n${conversationSummary}\n\n`;
     }

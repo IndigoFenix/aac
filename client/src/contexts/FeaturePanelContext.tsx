@@ -31,6 +31,7 @@ export const PATH_TO_FEATURE: Record<string, FeatureType> = {
   '/progress': 'progress',
   '/institute': 'institute',
   '/settings': 'settings',
+  '/aacsettings': 'aacsettings',
 };
 
 // Feature to URL path mapping
@@ -45,6 +46,8 @@ export const FEATURE_TO_PATH: Record<FeatureType, string> = {
   institute: '/institute',
   reports: '/reports',
   settings: '/settings',
+  aacsettings: '/aacsettings',
+  aac: '/aac',
 };
 
 // Feature configurations
@@ -133,6 +136,24 @@ export const FEATURE_CONFIG: Record<FeatureType, FeatureConfig> = {
     maxSize: 80,
     isFullScreen: false,
     path: '/settings',
+  },
+  aacsettings: {
+    id: 'aacsettings',
+    defaultSize: 50,
+    minSize: 30,
+    maxSize: 70,
+    hasBottomBar: false,
+    isFullScreen: false,
+    path: '/aacsettings',
+  },
+  aac: {
+    id: 'aac',
+    defaultSize: 50,
+    minSize: 30,
+    maxSize: 70,
+    hasBottomBar: false,
+    isFullScreen: false,
+    path: '/aac',
   },
 };
 

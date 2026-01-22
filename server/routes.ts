@@ -40,6 +40,7 @@ import { reportController } from "./controllers/reportController";
 import { fileUploadController } from "./controllers/fileUploadController";
 import { personaController } from "./controllers/personaController";
 import { topicController } from "./controllers/topicController";
+import { aacController } from "./controllers/aacController";
 
 // Configure multer for image uploads
 const upload = multer({
@@ -62,6 +63,24 @@ const upload = multer({
 const chatFileUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024 }, // 20MB limit
+});
+
+// Configure multer for AAC uploads (images and audio)
+const aacUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB limit
+  fileFilter: (
+    req: Request,
+    file: Express.Multer.File,
+    cb: multer.FileFilterCallback
+  ) => {
+    // Accept images and audio files
+    if (file.mimetype.startsWith("image/") || file.mimetype.startsWith("audio/")) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only image and audio files are allowed"));
+    }
+  },
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -745,6 +764,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     boardController.getUserBoards(req, res)
   );
 
+  app.get("/api/boards/student/:studentId", requireAuth, (req, res) =>
+    boardController.getStudentBoards(req, res)
+  );
+
   app.get("/api/boards/:id", requireAuth, (req, res) =>
     boardController.getBoard(req, res)
   );
@@ -778,7 +801,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
 
   // ============= CHAT ROUTES =============
-  app.post("/api/chat", optionalAuth, requireOnboardingComplete, (req, res) =>
+  // Chat endpoint with optional image upload for multimodal context
+  app.post("/api/chat", optionalAuth, requireOnboardingComplete, aacUpload.single("image"), (req, res) =>
     chatController.onMessage(req, res)
   );
   // Streaming chat endpoint with real-time thinking updates (SSE)
@@ -1041,6 +1065,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.delete("/api/admin/credit-packages/:id", requireAdmin, (req, res) =>
     creditPackageController.deleteCreditPackage(req, res)
+  );
+
+  // ============= AAC ROUTES =============
+  // Session management
+  app.get("/api/aac/session/:studentId", requireAuth, (req, res) =>
+    aacController.getSession(req, res)
+  );
+  app.post("/api/aac/session/:studentId/context", requireAuth, (req, res) =>
+    aacController.updateSessionContext(req, res)
+  );
+  app.post("/api/aac/session/:studentId/end", requireAuth, (req, res) =>
+    aacController.endSession(req, res)
+  );
+
+  // Symbol generation
+  app.post("/api/aac/symbols/contextual", requireAuth, (req, res) =>
+    aacController.getContextualSymbols(req, res)
+  );
+  app.get("/api/aac/arasaac/search/:language/:searchText", requireAuth, (req, res) =>
+    aacController.searchArasaacSymbols(req, res)
+  );
+  app.get("/api/aac/arasaac/keywords/:language", requireAuth, (req, res) =>
+    aacController.getArasaacKeywords(req, res)
+  );
+
+  // Choice classification and generation
+  app.post("/api/aac/choice/classify", requireAuth, (req, res) =>
+    aacController.classifyChoice(req, res)
+  );
+  app.post("/api/aac/choice/generate", requireAuth, (req, res) =>
+    aacController.generateChoiceOptions(req, res)
+  );
+
+  // Visual analysis
+  app.post("/api/aac/analyze-image", requireAuth, upload.single("image"), (req, res) =>
+    aacController.analyzeImage(req, res)
+  );
+  app.post("/api/aac/detect-person", requireAuth, upload.single("image"), (req, res) =>
+    aacController.detectPerson(req, res)
+  );
+  app.post("/api/aac/analyze-person-role", requireAuth, upload.single("image"), (req, res) =>
+    aacController.analyzePersonRole(req, res)
+  );
+  app.post("/api/aac/detect-sign-language", requireAuth, upload.single("image"), (req, res) =>
+    aacController.detectSignLanguage(req, res)
+  );
+  app.post("/api/aac/multi-camera/analyze", requireAuth, upload.array("frames"), (req, res) =>
+    aacController.analyzeMultipleCameras(req, res)
+  );
+
+  // Conversation
+  app.post("/api/aac/conversation/start", requireAuth, (req, res) =>
+    aacController.startConversation(req, res)
+  );
+  app.post("/api/aac/conversation/respond", requireAuth, (req, res) =>
+    aacController.generateResponse(req, res)
+  );
+  app.get("/api/aac/conversation/history/:studentId", requireAuth, (req, res) =>
+    aacController.getHistory(req, res)
+  );
+  app.post("/api/aac/conversation/audio", requireAuth, (req, res) =>
+    aacController.generateAudio(req, res)
+  );
+  app.delete("/api/aac/conversation/:studentId", requireAuth, (req, res) =>
+    aacController.clearConversation(req, res)
+  );
+
+  // Audio processing
+  app.post("/api/aac/audio/process", requireAuth, aacUpload.single("audio"), (req, res) =>
+    aacController.processAudio(req, res)
+  );
+  app.get("/api/aac/audio/context/:studentId", requireAuth, (req, res) =>
+    aacController.getAudioContext(req, res)
+  );
+
+  // Context and misc
+  app.get("/api/aac/context", requireAuth, (req, res) =>
+    aacController.getContext(req, res)
+  );
+  app.post("/api/aac/symbols/suggestions", requireAuth, (req, res) =>
+    aacController.getSymbolSuggestions(req, res)
+  );
+  app.post("/api/aac/interpret", requireAuth, (req, res) =>
+    aacController.interpretSymbols(req, res)
+  );
+  app.post("/api/aac/detect-objects-in-hands", requireAuth, aacUpload.single("image"), (req, res) =>
+    aacController.detectObjectsInHands(req, res)
+  );
+  app.get("/api/aac/multi-camera/current-analysis", requireAuth, (req, res) =>
+    aacController.getCurrentMultiCameraAnalysis(req, res)
   );
 
   // ============= STATIC FILES =============
