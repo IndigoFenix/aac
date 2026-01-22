@@ -144,14 +144,26 @@ async function startServer(): Promise<void> {
 
     // Serve static files (built by Vite)
     const distPath = path.resolve(import.meta.dirname, "public");
+    const distPathAac = path.resolve(import.meta.dirname, "public-aac");
 
     if (!fs.existsSync(distPath)) {
       throw new Error(`Build directory not found: ${distPath}`);
     }
 
+    // Serve AAC client on /aac path (if built)
+    if (fs.existsSync(distPathAac)) {
+      log("Serving AAC client on /aac");
+      app.use("/aac", express.static(distPathAac));
+      // SPA fallback for AAC client
+      app.use("/aac/*", (_req, res) => {
+        res.sendFile(path.resolve(distPathAac, "index.html"));
+      });
+    }
+
+    // Serve main client
     app.use(express.static(distPath));
 
-    // SPA fallback
+    // SPA fallback for main client
     app.use("*", (_req, res) => {
       res.sendFile(path.resolve(distPath, "index.html"));
     });

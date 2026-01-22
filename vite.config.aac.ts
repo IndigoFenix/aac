@@ -12,6 +12,8 @@ export default defineConfig({
     },
   },
   root: path.resolve(import.meta.dirname, "client-aac"),
+  // In production, the app is served from /aac path
+  base: process.env.NODE_ENV === "production" ? "/aac/" : "/",
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public-aac"),
     emptyOutDir: true,
