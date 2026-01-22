@@ -35,6 +35,8 @@ import {
   markLoaded,
   markStale,
   clearLoadState,
+  getCachedValue,
+  updateCachedValue,
 } from './memory-db-bridge';
 
 import {
@@ -290,11 +292,7 @@ export class MemoryManager {
    * Useful when you need to ensure fresh data for a specific path.
    */
   async loadPath(path: string, force: boolean = false): Promise<any> {
-    if (!force && !needsLoading(this._loadState, path)) {
-      // Already loaded, return cached value
-      return this.getValueAtPath(path);
-    }
-
+    // Resolve schema first to get cacheTTL
     const resolution = resolveSchemaWithContext(
       this.fields,
       this._memoryValues,
@@ -302,12 +300,19 @@ export class MemoryManager {
       this.baseContext
     );
 
+    const cacheTTL = resolution.schema?.cacheTTL;
+
+    if (!force && !needsLoading(this._loadState, path, this._memoryValues, cacheTTL)) {
+      // Already loaded and cache not expired, return cached value
+      return this.getValueAtPath(path);
+    }
+
     if (resolution.error || !resolution.dbOps) {
       return undefined;
     }
 
     const { schema, dbOps, context } = resolution;
-    
+
     try {
       let value: any;
 
@@ -315,16 +320,18 @@ export class MemoryManager {
         if (dbOps.list) {
           const page = this._memoryState.page[path] ?? { offset: 0, limit: this.defaultLimit };
           const result = await dbOps.list(context, page);
-          value = dbOps.fromDB 
+          value = dbOps.fromDB
             ? result.items.map(item => dbOps.fromDB!(item))
             : result.items;
-          markLoaded(this._loadState, path, result.total);
+          // Pass value to markLoaded for caching
+          markLoaded(this._loadState, path, result.total, value);
         }
       } else {
         if (dbOps.read) {
           const result = await dbOps.read(context);
           value = result !== undefined && dbOps.fromDB ? dbOps.fromDB(result) : result;
-          markLoaded(this._loadState, path);
+          // Pass value to markLoaded for caching
+          markLoaded(this._loadState, path, undefined, value);
         }
       }
 
@@ -636,4 +643,7 @@ export {
   markLoaded,
   markStale,
   clearLoadState,
+  getCachedValue,
+  updateCachedValue,
+  syncCachedValues,
 } from './memory-db-bridge';

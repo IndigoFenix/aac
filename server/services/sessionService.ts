@@ -34,7 +34,7 @@ import {
   type Persona,
 } from "@shared/schema";
 import { personaRepository } from "../repositories/personaRepository";
-import { ChatMessageManager, AgentTemplate } from "./chat/chat-handler";
+import { ChatMessageManager, AgentTemplate, CurrentImage } from "./chat/chat-handler";
 import { AgentLike } from "./chat/prompt-kit";
 import {
   ParsedBoardData,
@@ -66,6 +66,22 @@ import {
   LoopDetectionConfig,
   DEFAULT_LOOP_DETECTION_CONFIG 
 } from "./chat/tool-router";
+import {
+  AAC_SYSTEM_PROMPT,
+  getAACMemoryFields,
+} from "./memory-schema/aac-memory-schema";
+import {
+  LIBRARY_TOPICS_FIELD,
+} from "./memory-schema/topic-memory-schema";
+import {
+  STUDENT_MEMORY_FIELDS,
+} from "./memory-schema/student-memory-schema";
+import {
+  USER_MEMORY_FIELDS,
+} from "./memory-schema/user-memory-schema";
+import {
+  RELATIONSHIP_MEMORY_FIELDS,
+} from "./memory-schema/relationship-memory-schema";
 
 
 // ============================================================================
@@ -162,6 +178,16 @@ async function buildPersonaSystemPrompt(
   return basePrompt;
 }
 
+async function buildAACPersonaSystemPrompt(
+  student: Student,
+  framework: string | null
+): Promise<string> {
+  // Get the base general prompt for AAC
+  if (student.aacChatAgentPrompt && student.aacChatAgentPrompt.trim().length > 0) {
+    return processPersonaPrompt(student.aacChatAgentPrompt, framework);
+  }
+  return AAC_SYSTEM_PROMPT;
+}
 // ============================================================================
 // AGENT TEMPLATES (Mode-based, stored locally)
 // ============================================================================
@@ -175,146 +201,27 @@ interface LocalAgentTemplate extends AgentLike {
 /**
  * Memory fields that are populated from User, Student, and UserStudent
  * These are FLAT top-level fields - the memory system requires arrays/maps to be at root level
- * 
+ *
  * PRIVACY COMPLIANCE:
  * - NO medical diagnoses
- * - NO disability classifications  
+ * - NO disability classifications
  * - NO behavioral/psychological notes
  * - NO insurance or financial info
  * - NO detailed evaluation data
+ *
+ * NOTE: These fields now have db.read/db.write operations for lazy loading from database.
+ * See the memory-schema files for implementation details:
+ * - student-memory-schema.ts: Student_* fields
+ * - user-memory-schema.ts: User_* fields
+ * - relationship-memory-schema.ts: Relationship_* fields
  */
-export const MASTER_MEMORY_FIELDS: AgentMemoryField[] = [
-  // === User fields (prefixed with User_) ===
-  {
-    id: "User_AiPersonalityPreferences",
-    type: "string",
-    title: "AI Personality Preferences",
-    description: "User's preferences for how the AI should communicate (tone, style, etc.)",
-    opened: true,
-  },
-  {
-    id: "User_Language",
-    type: "string",
-    title: "Preferred Language",
-    description: "User's preferred language for communication",
-    opened: true,
-  },
-  
-  // === Student fields (prefixed with Student_) - NON-SENSITIVE ONLY ===
-  {
-    id: "Student_People",
-    type: "array",
-    title: "People",
-    description: "Important people in the student's life (names and relationships only)",
-    opened: true,
-    items: {
-      id: "Person",
-      type: "object",
-      properties: {
-        Name: {
-          id: "Name",
-          type: "string",
-          title: "Name",
-          description: "Person's name",
-        },
-        Relationship: {
-          id: "Relationship",
-          type: "string",
-          title: "Relationship",
-          description: "Relationship to the student (e.g., mother, teacher, friend)",
-        },
-        // NOTE: Removed "Notes" array - could contain sensitive information
-      },
-      required: ["Name"],
-    },
-  },
-  {
-    id: "Student_Interests",
-    type: "array",
-    title: "Interests",
-    description: "Things the student enjoys or is interested in",
-    opened: true,
-    items: {
-      id: "Interest",
-      type: "string",
-    },
-  },
-  {
-    id: "Student_CommunicationStyle",
-    type: "object",
-    title: "Communication Style",
-    description: "How the student communicates (method only, not detailed abilities)",
-    opened: true,
-    properties: {
-      PrimaryMethod: {
-        id: "PrimaryMethod",
-        type: "string",
-        title: "Primary Method",
-        description: "verbal, nonverbal, AAC, or mixed",
-      },
-      PreferredModality: {
-        id: "PreferredModality",
-        type: "string",
-        title: "Preferred Modality",
-        description: "If AAC, which type (symbols, text, combined)",
-      },
-    },
-  },
-  {
-    id: "Student_Preferences",
-    type: "object",
-    title: "Preferences",
-    description: "Student's preferences for activities, rewards, and engagement",
-    opened: true,
-    properties: {
-      FavoriteActivities: {
-        id: "FavoriteActivities",
-        type: "array",
-        title: "Favorite Activities",
-        items: { id: "Activity", type: "string" },
-      },
-      RewardPreferences: {
-        id: "RewardPreferences",
-        type: "array",
-        title: "Reward Preferences",
-        items: { id: "Reward", type: "string" },
-      },
-      AvoidTopics: {
-        id: "AvoidTopics",
-        type: "array",
-        title: "Topics to Avoid",
-        description: "Topics that should be avoided in conversation",
-        items: { id: "Topic", type: "string" },
-      },
-    },
-  },
-  {
-    id: "Student_Notes",
-    type: "array",
-    title: "General Notes",
-    description: "General notes about the student (non-sensitive)",
-    opened: false,
-    items: {
-      id: "Note",
-      type: "string"
-    }
-  },
-  // === Relationship fields (prefixed with Relationship_) ===
-  {
-    id: "Relationship_Notes",
-    type: "array",
-    title: "Session Notes",
-    description: "General notes about sessions with this student (non-sensitive)",
-    opened: false,
-    items: {
-      id: "Note",
-      type: "object",
-      properties: {
-        Date: { id: "Date", type: "string", format: "date" },
-        Content: { id: "Content", type: "string" },
-      },
-    },
-  },
+export const MASTER_MEMORY_FIELDS: AgentMemoryFieldWithDB[] = [
+  // User_* fields with db operations
+  ...USER_MEMORY_FIELDS,
+  // Student_* fields with db operations
+  ...STUDENT_MEMORY_FIELDS,
+  // Relationship_* fields with db operations
+  ...RELATIONSHIP_MEMORY_FIELDS,
 ];
 
 /**
@@ -496,6 +403,17 @@ const AGENT_TEMPLATE_BASE: LocalAgentTemplate = {
   name: "CliniAACian Assistant",
   corePrompt: `You are CliniAACian, a helpful AI assistant for AAC (Augmentative and Alternative Communication) professionals and caregivers.`,
   greeting: "Hello! I'm CliniAACian, your AAC assistant. How can I help you today?",
+  intelligence: 2,
+  memory: 2,
+  memoryFields: [...MASTER_MEMORY_FIELDS],
+  tools: {},
+  library: [],
+}
+
+const AAC_TEMPLATE_BASE: LocalAgentTemplate = {
+  name: "CliniAACian AAC Assistant",
+  corePrompt: AAC_SYSTEM_PROMPT,
+  greeting: "Hello! I'm CliniAACian, your AAC communication assistant. How can I support you today?",
   intelligence: 2,
   memory: 2,
   memoryFields: [...MASTER_MEMORY_FIELDS],
@@ -743,6 +661,8 @@ interface GetMessageManagerInput {
   featureContext?: FeatureContext;
   onThinkingUpdate?: (thinkingText: string) => void;
   vectorStoreId?: string;
+  /** Image to include with the current request (not stored in history) */
+  currentImage?: CurrentImage;
 }
 
 interface GetMessageManagerResult {
@@ -752,6 +672,7 @@ interface GetMessageManagerResult {
 
 async function getMessageManager(input: GetMessageManagerInput): Promise<GetMessageManagerResult> {
   const { userId, studentId, sessionId, featureContext, persona, feature = "chat", onThinkingUpdate } = input;
+  const isAACFeature = (feature === 'aac');
 
   // Validate input - at least one identifier must be provided
   if (!userId && !studentId && !sessionId) {
@@ -781,14 +702,22 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     // Relationship is optional - they might not have one yet
   }
 
+  if (isAACFeature && !context.student) {
+    throw { status: 400, message: "AAC feature requires a valid studentId" };
+  }
+
   // Get or create session
   let session: ChatSession | undefined;
   let chatState: ChatState;
   let log: ChatMessage[] = [];
 
-  const template = AGENT_TEMPLATE_BASE;
+  const template = isAACFeature ? AAC_TEMPLATE_BASE : AGENT_TEMPLATE_BASE;
   // Select core prompt based on conversation persona (loaded from database)
-  template.corePrompt = await buildPersonaSystemPrompt(persona, context?.student?.framework || null);
+  if (isAACFeature) {
+    template.corePrompt = await buildAACPersonaSystemPrompt(context.student!, context?.student?.framework || null);
+  } else {
+    template.corePrompt = await buildPersonaSystemPrompt(persona, context?.student?.framework || null);
+  }
   
   const newChatState: ChatState = {
     history: [],
@@ -796,18 +725,6 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     conversationSummary: "",
     openedTopics: [],
   };
-  
-  // Add greeting if template has one (Disabled for now)
-  /*
-  if (template.greeting) {
-    newChatState.history.push({
-      role: "assistant",
-      timestamp: Date.now(),
-      content: template.greeting,
-      credits: 0,
-    });
-  }
-  */
 
   if (sessionId) {
     session = await getSession(sessionId);
@@ -847,14 +764,16 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   // Note: May be the cause of some bugs. If issues arise, consider setting it to undefined.
   const existingLoadState = chatState.loadStateCache ? deserializeLoadState(chatState.loadStateCache) : undefined;
 
-  if (context.student) {
+  // For AAC mode, reports are accessed via read-only Context_* fields (loaded separately)
+  // so we keep report permissions hidden to avoid creating duplicate Context_Reports
+  if (context.student && !isAACFeature) {
     // Determine report permissions based on user rights
     // These could come from the userStudent relationship or be passed in featureContext
     const hasMedicalRights = context.userStudent?.hasMedicalRights ?? false;
     const hasEducationalRights = context.userStudent?.hasEducationalRights ?? false;
 
     const canEdit = true; // For now, assume edit rights if they have any access
-    
+
     // Convert rights to permissions
     accessPermissions.medical = hasMedicalRights ? (canEdit ? 'editable' : 'readonly') : 'hidden';
     accessPermissions.functional = hasEducationalRights ? (canEdit ? 'editable' : 'readonly') : 'hidden';
@@ -862,37 +781,61 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   }
     
   // Create the unified manager
+  // For AAC mode, we don't use chatContextManager.getMemoryFields(), so pass empty array
+  // For other modes, pass MASTER_MEMORY_FIELDS which gets included in the field list
   chatContextManager = await createChatContextManager(
     context.student?.id,
     context.user?.id,
     featureContext?.progress?.programId,
-    MASTER_MEMORY_FIELDS as AgentMemoryFieldWithDB[],
+    isAACFeature ? [] : MASTER_MEMORY_FIELDS,
     existingLoadState,
     context.institute?.id, // instituteId for medical records filtering
     accessPermissions
   );
     
-  // Get memory fields (includes both program and reports based on permissions)
-  contextMemoryFields.push(...chatContextManager.getMemoryFields());
-  
-  // Update template with dynamic configuration
+  // Build memory fields based on mode
   const hasStudent = !!context.student;
-  const additionalPrompt = buildProgressSystemPrompt(accessPermissions, hasStudent);
-  template.corePrompt = template.corePrompt + additionalPrompt;
-  template.memoryFields = contextMemoryFields as AgentMemoryField[];
 
-  // === Board Mode Setup ===
-  // Add board memory field to template.memoryFields when in boards mode
-  if (feature === 'boards') {
-    if (featureContext?.board) {
-      const boardPrompt = BOARD_SYSTEM_PROMPT;
-      template.corePrompt = `${template.corePrompt}\n${boardPrompt}`;
+  if (isAACFeature) {
+    // === AAC Mode Setup ===
+    // AAC mode uses: Student_* fields + Library + AAC-specific context fields
+    // Board updates use formSchema/setValues for single-pass responses (not memory system)
+    // It does NOT use User_*, Relationship_*, institute, progress, or reports fields
+    console.log('[getMessageManager] AAC mode - building memory fields');
+
+    // Filter to only Student_* fields (not User_* or Relationship_*)
+    const studentFields = MASTER_MEMORY_FIELDS.filter(f => f.id.startsWith('Student_'));
+    contextMemoryFields.push(...studentFields);
+
+    // Add library field (Context_Library)
+    contextMemoryFields.push(LIBRARY_TOPICS_FIELD as AgentMemoryFieldWithDB);
+
+    // Note: BOARD_MEMORY_FIELD is NOT added for AAC - board uses formSchema/setValues instead
+
+    // Add AAC-specific read-only context fields
+    const aacFields = getAACMemoryFields();
+    contextMemoryFields.push(...aacFields);
+    console.log('[getMessageManager] AAC mode - added', studentFields.length, 'Student fields +', aacFields.length, 'AAC context fields');
+  } else {
+    // Non-AAC modes use chatContextManager fields (includes institute, library, progress, reports)
+    contextMemoryFields.push(...chatContextManager.getMemoryFields());
+
+    // Add progress system prompt
+    const additionalPrompt = buildProgressSystemPrompt(accessPermissions, hasStudent);
+    template.corePrompt = template.corePrompt + additionalPrompt;
+
+    // === Board Mode Setup ===
+    if (feature === 'boards') {
+      if (featureContext?.board) {
+        const boardPrompt = BOARD_SYSTEM_PROMPT;
+        template.corePrompt = `${template.corePrompt}\n${boardPrompt}`;
+      }
+
+      // Add BOARD_MEMORY_FIELD to contextMemoryFields for prompt rendering
+      contextMemoryFields.push(BOARD_MEMORY_FIELD as AgentMemoryFieldWithDB);
     }
-    
-    // Add BOARD_MEMORY_FIELD to contextMemoryFields for prompt rendering
-    contextMemoryFields.push(BOARD_MEMORY_FIELD as AgentMemoryFieldWithDB);
-    template.memoryFields = contextMemoryFields as AgentMemoryField[];
   }
+  template.memoryFields = contextMemoryFields as AgentMemoryField[];
 
   // Build memory values from context
   let memoryValues = buildMemoryValues(context);
@@ -901,19 +844,28 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   console.log('  - memoryValues keys:', Object.keys(memoryValues));
   console.log('  - memoryValues:', JSON.stringify(memoryValues, null, 2));
 
-  // For progress mode, load program data from database
-  if (chatContextManager) {
-      console.log('[DEBUG] Progress mode - calling injectChatContext');
+  // For AAC mode, context fields are loaded on-demand via the memory tool system
+  // The AI can call memory.read on Context_* fields when it needs them
+  // This is handled by the AAC memory fields having proper db.read functions
+  if (isAACFeature && context.student) {
+    console.log('[getMessageManager] AAC mode - context fields available for on-demand loading');
+    // Note: We don't pre-load context here - it's loaded lazily when AI requests it
+  }
+
+  // For non-AAC modes, load program data from database via chatContextManager
+  // AAC mode uses lazy loading via db.read functions in the memory fields
+  if (!isAACFeature) {
+      console.log('[DEBUG] Non-AAC mode - calling injectChatContext');
       console.log('  - studentId:', context.student?.id);
       console.log('  - baseContext:', chatContextManager.getBaseContext());
-      
+
       const populateResult = await injectChatContext(
         memoryValues,
         chatState.memoryState,
         chatContextManager
       );
       memoryValues = populateResult;
-      
+
       console.log('[DEBUG] After injectChatContext:');
       console.log('  - memoryValues keys:', Object.keys(memoryValues));
       console.log('  - Context_Program:', memoryValues['Context_Program']);
@@ -963,22 +915,24 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     // for the frontend to handle
   };
 
-  const enrichCorePrompt = (context: MemoryContext, corePrompt: string) => {
+  const enrichCorePrompt = (context: MemoryContext, corePrompt: string, isAACFeature: boolean) => {
     // Add any additional instructions or context to the core prompt if needed
     let prefix = "";
     prefix = `Current datetime: ${new Date().toISOString()}\n`;
-    if (context.user) {
-      if (context.student) {
-        if (context.userStudent) {
-          prefix += `You are speaking with ${context.user.fullName}, who is a ${context.userStudent.role} for the student.\n`;
-        } else {
-          prefix += `You are speaking with ${context.user.fullName}, who is connected to the student.\n`;
-        }
-      } else {
-        prefix += `You are speaking with ${context.user.fullName}.\n`;
-      }
-    } else if (context.student) {
+    if (isAACFeature) {
       prefix += `You are speaking with the student.\n`;
+    } else {
+      if (context.user) {
+        if (context.student) {
+          if (context.userStudent) {
+            prefix += `You are speaking with ${context.user.fullName}, who is a ${context.userStudent.role} for the student.\n`;
+          } else {
+            prefix += `You are speaking with ${context.user.fullName}, who is connected to the student.\n`;
+          }
+        } else {
+          prefix += `You are speaking with ${context.user.fullName}.\n`;
+        }
+      }
     }
     if (chatContextManager){
       prefix += chatContextManager.getStudentInfo();
@@ -1033,7 +987,9 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     }
   };
 
-  template.corePrompt = enrichCorePrompt(context, template.corePrompt);
+  template.corePrompt = enrichCorePrompt(context, template.corePrompt, isAACFeature);
+
+  console.log('[getMessageManager] Final template:', template);
 
   // Build agent-like object from template for ChatMessageManager
   const agentFromTemplate: AgentTemplate = {
@@ -1065,46 +1021,41 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   // Calculate max credits (simplified - use user credits if available)
   const maxCredits = context.user?.credits || 10000;
 
-  // Create the memory processor based on mode
-  let memoryProcessor: MemoryProcessor | undefined;
+  // Create the memory processor
+  const loadStateRef = { current: chatContextManager.getLoadState() };
 
-  if (chatContextManager) {
-    // Create a load state ref (or get from chatContextManager)
-    const loadStateRef = { current: chatContextManager.getLoadState() };
-    
-    // Get the base fields from chatContextManager (these have DB ops attached)
-    let fieldsForProcessor = chatContextManager.getMemoryFields();
-    
-    // FIX: If in boards mode, add BOARD_MEMORY_FIELD to the processor's field list
-    // This allows the memory processor to resolve /Context_Board paths
+  // Build fields for the memory processor based on mode
+  let fieldsForProcessor: AgentMemoryFieldWithDB[];
+
+  if (isAACFeature) {
+    // AAC mode: Student_* fields + Library + AAC context fields
+    // Note: BOARD_MEMORY_FIELD is disabled for AAC - board updates use formSchema/setValues instead
+    // for faster single-pass responses
+    const studentFields = MASTER_MEMORY_FIELDS.filter(f => f.id.startsWith('Student_'));
+    fieldsForProcessor = [
+      ...studentFields,
+      LIBRARY_TOPICS_FIELD as AgentMemoryFieldWithDB,
+      // BOARD_MEMORY_FIELD disabled - using formSchema/setValues for board updates
+      ...getAACMemoryFields(),
+    ];
+  } else {
+    // Non-AAC modes: use chatContextManager fields (includes institute, library, progress, reports)
+    fieldsForProcessor = chatContextManager.getMemoryFields();
+
+    // Add BOARD_MEMORY_FIELD for boards mode
     if (feature === 'boards') {
       fieldsForProcessor = [...fieldsForProcessor, BOARD_MEMORY_FIELD as AgentMemoryFieldWithDB];
     }
-    
-    memoryProcessor = createDBMemoryProcessor(
-      processMemoryToolWithDB,
-      fieldsForProcessor,
-      { current: memoryValues },
-      { current: chatState.memoryState },
-      loadStateRef,
-      chatContextManager.getBaseContext()
-    );
-  } else if (feature === 'boards') {
-    // Handle boards mode WITHOUT a student/chatContextManager (edge case)
-    const loadStateRef = { current: createMemoryLoadState() };
-    
-    memoryProcessor = createDBMemoryProcessor(
-      processMemoryToolWithDB,
-      [BOARD_MEMORY_FIELD as AgentMemoryFieldWithDB],
-      { current: memoryValues },
-      { current: chatState.memoryState },
-      loadStateRef,
-      {
-        studentId: context.student?.id,
-        userId: context.user?.id,
-      }
-    );
   }
+
+  const memoryProcessor = createDBMemoryProcessor(
+    processMemoryToolWithDB,
+    fieldsForProcessor,
+    { current: memoryValues },
+    { current: chatState.memoryState },
+    loadStateRef,
+    chatContextManager.getBaseContext()
+  );
 
   const messageManager = new ChatMessageManager({
     agent: agentFromTemplate,
@@ -1120,6 +1071,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     memoryProcessor,
     vectorStoreId: input.vectorStoreId,
     loopDetectionConfig: CLINIAACIAN_LOOP_DETECTION_CONFIG,
+    currentImage: input.currentImage,
   });
 
 
@@ -1142,18 +1094,13 @@ function injectModeContext(
   featureContext?: FeatureContext
 ): void {
   console.log('[injectModeContext] Called with mode:', feature, 'featureContext:', !!featureContext);
-  
-  if (!featureContext) {
-    console.log('[injectModeContext] No featureContext, returning');
-    return;
-  }
 
-  // Board context for "boards" mode
-  if (feature === "boards" && featureContext.board) {
+  // Board context for "boards" or "aac" mode
+  if ((feature === "boards" || feature === "aac") && featureContext?.board) {
     const { data, currentPageId, requestedGridSize } = featureContext.board;
-    
+
     console.log('[injectModeContext] Board mode - data:', !!data, 'currentPageId:', currentPageId, 'requestedGridSize:', requestedGridSize);
-    
+
     if (data) {
       // Use existing board data, optionally override currentPageId
       memoryValues["Context_Board"] = {
@@ -1170,8 +1117,17 @@ function injectModeContext(
       memoryValues["Context_Board"] = createFallbackBoard();
       console.log('[injectModeContext] Set Context_Board from createFallbackBoard');
     }
-    
+
     console.log('[injectModeContext] Context_Board now set:', !!memoryValues["Context_Board"]);
+  } else if (feature === "aac" && !featureContext?.board) {
+    // AAC mode without existing board - create a default empty board
+    memoryValues["Context_Board"] = createEmptyBoard("Communication Board", { rows: 4, cols: 4 });
+    console.log('[injectModeContext] AAC mode - created default empty board');
+  }
+
+  if (!featureContext) {
+    console.log('[injectModeContext] No featureContext for other modes, returning');
+    return;
   }
 
   // Progress context for "progress" mode
@@ -1227,6 +1183,9 @@ export interface OnMessageInput {
 
   /** OpenAI vector store ID for file search (if files are attached) */
   vectorStoreId?: string;
+
+  /** Image to include with the current request (not stored in history) */
+  currentImage?: CurrentImage;
 }
 
 /**
@@ -1239,7 +1198,7 @@ export interface OnMessageStreamingInput extends OnMessageInput {
 
 export async function onMessage(input: OnMessageInput): Promise<MessageResponse> {
   try {
-    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, vectorStoreId } = input;
+    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, vectorStoreId, currentImage } = input;
 
     const { manager: messageManager, memoryValues } = await getMessageManager({
       userId,
@@ -1249,6 +1208,7 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
       persona,
       featureContext,
       vectorStoreId,
+      currentImage,
     });
 
     // Debug: Log what we injected
@@ -1317,7 +1277,7 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
  */
 export async function onMessageStreaming(input: OnMessageStreamingInput): Promise<MessageResponse> {
   try {
-    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, onThinkingUpdate, vectorStoreId } = input;
+    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, onThinkingUpdate, vectorStoreId, currentImage } = input;
 
     const { manager: messageManager, memoryValues } = await getMessageManager({
       userId,
@@ -1328,6 +1288,7 @@ export async function onMessageStreaming(input: OnMessageStreamingInput): Promis
       featureContext,
       onThinkingUpdate, // Pass the callback through to ChatMessageManager
       vectorStoreId,
+      currentImage,
     });
 
     // Debug: Log what we injected
@@ -1418,11 +1379,12 @@ export async function getSessionInfo(sessionId: string): Promise<ChatSession | u
 }
 
 // Export for use in other modules
-export { 
-  getMessageManager, 
+export {
+  getMessageManager,
   BOARD_MEMORY_FIELD,
-  type FeatureType, 
+  type FeatureType,
   type MemoryContext,
   type ParsedBoardData,
   type BoardGrid,
+  type CurrentImage,
 };

@@ -1,0 +1,289 @@
+import { useState, useEffect, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { ChevronLeft, Grid3X3, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import type { BoardButton, BoardPage } from "@shared/schema";
+import { useTextToSpeech } from "@/hooks/useTextToSpeech";
+import { useBoards, type BoardData, type ButtonIR } from "@/contexts/BoardsContext";
+
+interface PrebuiltBoardSectionProps {
+  studentId: string;
+  onSpeakAction: (text: string) => void;
+  language?: string;
+  onBack: () => void;
+}
+
+// Get button background color
+function getButtonColor(color?: string): string {
+  const colorMap: { [key: string]: string } = {
+    "yellow": "#FEF3C7",
+    "blue": "#DBEAFE",
+    "green": "#D1FAE5",
+    "red": "#FEE2E2",
+    "orange": "#FFEDD5",
+    "purple": "#EDE9FE",
+    "pink": "#FCE7F3",
+    "white": "#FFFFFF",
+    "gray": "#F3F4F6",
+    "#FEF3C7": "#FEF3C7",
+    "#DBEAFE": "#DBEAFE",
+    "#D1FAE5": "#D1FAE5",
+    "#FEE2E2": "#FEE2E2",
+    "#FFEDD5": "#FFEDD5",
+    "#EDE9FE": "#EDE9FE",
+    "#FCE7F3": "#FCE7F3",
+  };
+  return colorMap[color?.toLowerCase() || "white"] || color || "#FFFFFF";
+}
+
+// Map label to emoji
+function getEmojiForLabel(label: string): string {
+  const emojiMap: { [key: string]: string } = {
+    "hello": "👋", "hi": "👋", "hey": "👋",
+    "yes": "✅", "no": "❌", "maybe": "🤔",
+    "help": "🆘", "please": "🙏", "thank you": "🙏", "thanks": "🙏",
+    "more": "➕", "less": "➖", "stop": "🛑",
+    "eat": "🍽️", "food": "🍽️", "hungry": "🍽️",
+    "drink": "🥤", "water": "💧", "thirsty": "💧",
+    "happy": "😊", "sad": "😢", "angry": "😠", "tired": "😴",
+    "play": "🎮", "game": "🎮", "fun": "🎉",
+    "home": "🏠", "school": "🏫", "outside": "🌳",
+    "mom": "👩", "dad": "👨", "family": "👨‍👩‍👧",
+    "love": "❤️", "like": "👍", "want": "👆",
+    "go": "🚶", "come": "👋", "wait": "⏳",
+  };
+
+  const lowerLabel = label.toLowerCase();
+  for (const [key, emoji] of Object.entries(emojiMap)) {
+    if (lowerLabel.includes(key)) {
+      return emoji;
+    }
+  }
+  return "💬";
+}
+
+export default function PrebuiltBoardSection({
+  studentId,
+  onSpeakAction,
+  language = "en",
+  onBack,
+}: PrebuiltBoardSectionProps) {
+  const [selectedBoard, setSelectedBoard] = useState<BoardData | null>(null);
+  const [currentPageId, setCurrentPageId] = useState<string | null>(null);
+  const [pageHistory, setPageHistory] = useState<string[]>([]);
+  const { speak } = useTextToSpeech();
+
+  // Get boards from context (pre-fetched during initialization)
+  const { boards, isLoading } = useBoards();
+
+  // Get current page
+  const currentPage = selectedBoard?.irData?.pages?.find(
+    (p) => p.id === currentPageId
+  ) || selectedBoard?.irData?.pages?.[0];
+
+  // Get grid dimensions
+  const grid = currentPage?.layout || selectedBoard?.irData?.grid || { rows: 4, cols: 4 };
+
+  // Navigate to a page
+  const navigateToPage = useCallback((pageId: string) => {
+    if (currentPageId) {
+      setPageHistory((prev) => [...prev, currentPageId]);
+    }
+    setCurrentPageId(pageId);
+  }, [currentPageId]);
+
+  // Go back to previous page
+  const goBack = useCallback(() => {
+    if (pageHistory.length > 0) {
+      const prevPageId = pageHistory[pageHistory.length - 1];
+      setPageHistory((prev) => prev.slice(0, -1));
+      setCurrentPageId(prevPageId);
+    } else if (selectedBoard) {
+      // If no history, go back to board selection
+      setSelectedBoard(null);
+      setCurrentPageId(null);
+    } else {
+      // If no board selected, call parent onBack
+      onBack();
+    }
+  }, [pageHistory, selectedBoard, onBack]);
+
+  // Expose goBack to parent
+  useEffect(() => {
+    // Store the goBack function on window for parent access
+    (window as any).__prebuiltBoardGoBack = goBack;
+    return () => {
+      delete (window as any).__prebuiltBoardGoBack;
+    };
+  }, [goBack]);
+
+  // Handle button click
+  const handleButtonClick = (button: ButtonIR) => {
+    if (button.action?.type === "link" && button.action.toPageId) {
+      navigateToPage(button.action.toPageId);
+      return;
+    }
+
+    // Speak the text
+    const textToSpeak = button.action?.text || button.spokenText || button.label;
+    speak(textToSpeak, language);
+    onSpeakAction(textToSpeak);
+  };
+
+  // Select a board
+  const selectBoard = (board: BoardData) => {
+    setSelectedBoard(board);
+    setCurrentPageId(board.irData?.pages?.[0]?.id || null);
+    setPageHistory([]);
+  };
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
+  // No boards available
+  if (!boards || boards.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-gray-400 p-4">
+        <Grid3X3 className="w-8 h-8 mb-2" />
+        <p className="text-sm text-center">No boards available</p>
+        <p className="text-xs text-center mt-1">Create boards in the admin panel</p>
+      </div>
+    );
+  }
+
+  // Board selection view
+  if (!selectedBoard) {
+    return (
+      <div className="h-full flex flex-col">
+        <div className="p-2 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            Select a Board
+          </h3>
+        </div>
+        <div className="flex-1 overflow-y-auto p-2">
+          <div className="grid grid-cols-2 gap-2">
+            {boards.filter(b => b.irData).map((board) => (
+              <motion.button
+                key={board.id}
+                onClick={() => selectBoard(board)}
+                className="flex flex-col items-center justify-center p-3 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <Grid3X3 className="w-8 h-8 text-primary mb-2" />
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200 text-center">
+                  {board.name}
+                </span>
+              </motion.button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Board navigation view
+  if (!currentPage) {
+    return (
+      <div className="flex items-center justify-center h-full text-gray-400">
+        <p className="text-sm">Board has no pages</p>
+      </div>
+    );
+  }
+
+  // Create grid cells
+  const cells: (ButtonIR | null)[][] = Array(grid.rows)
+    .fill(null)
+    .map(() => Array(grid.cols).fill(null));
+
+  currentPage.buttons.forEach((button) => {
+    if (button.row < grid.rows && button.col < grid.cols) {
+      cells[button.row][button.col] = button;
+    }
+  });
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Header with board name and back button */}
+      <div className="flex items-center justify-between p-2 border-b border-gray-200 dark:border-gray-700">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setSelectedBoard(null);
+            setCurrentPageId(null);
+            setPageHistory([]);
+          }}
+          className="text-xs"
+        >
+          <ChevronLeft className="w-4 h-4 mr-1" />
+          Boards
+        </Button>
+        <span className="text-xs font-medium text-gray-600 dark:text-gray-400 truncate">
+          {currentPage.name || selectedBoard.name}
+        </span>
+      </div>
+
+      {/* Board grid */}
+      <div className="flex-1 p-2 overflow-hidden">
+        <div
+          className="grid gap-1 h-full"
+          style={{
+            gridTemplateColumns: `repeat(${grid.cols}, 1fr)`,
+            gridTemplateRows: `repeat(${grid.rows}, 1fr)`,
+          }}
+        >
+          {cells.flat().map((button, index) => {
+            if (!button) {
+              return (
+                <div
+                  key={`empty-${index}`}
+                  className="rounded-lg bg-gray-100 dark:bg-gray-800 opacity-30"
+                />
+              );
+            }
+
+            const isLink = button.action?.type === "link";
+
+            return (
+              <motion.button
+                key={button.id}
+                onClick={() => handleButtonClick(button)}
+                className="flex flex-col items-center justify-center p-1 rounded-lg shadow-sm border border-gray-200 dark:border-gray-600 relative overflow-hidden"
+                style={{ backgroundColor: getButtonColor(button.color) }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                {button.symbolPath ? (
+                  <img
+                    src={button.symbolPath}
+                    alt={button.label}
+                    className="w-8 h-8 object-contain"
+                  />
+                ) : button.iconRef ? (
+                  <i className={`${button.iconRef} text-xl`} />
+                ) : (
+                  <span className="text-xl">
+                    {getEmojiForLabel(button.label)}
+                  </span>
+                )}
+                <span className="text-[10px] font-medium text-center text-gray-800 leading-tight mt-0.5 line-clamp-2">
+                  {button.label}
+                </span>
+                {isLink && (
+                  <div className="absolute top-0.5 right-0.5 w-2 h-2 bg-blue-500 rounded-full" />
+                )}
+              </motion.button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -149,20 +149,24 @@ export function createMemoryLoadState(): MemoryLoadState {
     loaded: new Set(),
     stale: new Set(),
     loadedAt: new Map(),
-    totals: new Map()
+    totals: new Map(),
+    cachedValues: new Map()
   };
 }
 
 /**
- * Marks a path as loaded.
+ * Marks a path as loaded and optionally caches the value.
  */
-export function markLoaded(state: MemoryLoadState, path: string, total?: number): void {
+export function markLoaded(state: MemoryLoadState, path: string, total?: number, value?: any): void {
   const normalized = normalizePath(path);
   state.loaded.add(normalized);
   state.stale.delete(normalized);
   state.loadedAt.set(normalized, Date.now());
   if (total !== undefined) {
     state.totals.set(normalized, total);
+  }
+  if (value !== undefined) {
+    state.cachedValues.set(normalized, value);
   }
 }
 
@@ -172,7 +176,7 @@ export function markLoaded(state: MemoryLoadState, path: string, total?: number)
 export function markStale(state: MemoryLoadState, path: string, includeDescendants: boolean = false): void {
   const normalized = normalizePath(path);
   state.stale.add(normalized);
-  
+
   if (includeDescendants) {
     for (const loaded of state.loaded) {
       if (loaded.startsWith(normalized + '/')) {
@@ -183,25 +187,75 @@ export function markStale(state: MemoryLoadState, path: string, includeDescendan
 }
 
 /**
- * Checks if a path needs loading (not loaded or stale).
+ * Gets a cached value for a path if available.
+ */
+export function getCachedValue(state: MemoryLoadState, path: string): any | undefined {
+  const normalized = normalizePath(path);
+  return state.cachedValues.get(normalized);
+}
+
+/**
+ * Updates the cached value for a path.
+ */
+export function updateCachedValue(state: MemoryLoadState, path: string, value: any): void {
+  const normalized = normalizePath(path);
+  if (state.cachedValues.has(normalized)) {
+    state.cachedValues.set(normalized, value);
+  }
+}
+
+/**
+ * Syncs cached values from memory values for all loaded paths.
+ * Call this after modifications to ensure cache stays in sync.
+ */
+export function syncCachedValues(state: MemoryLoadState, memoryValues: any): void {
+  for (const path of state.cachedValues.keys()) {
+    const tokens = splitPath(path);
+    const value = getValueAtPath(memoryValues, tokens);
+    if (value !== undefined) {
+      state.cachedValues.set(path, value);
+    }
+  }
+}
+
+/**
+ * Checks if a path needs loading (not loaded, stale, or cache expired).
+ * @param state - The memory load state
+ * @param path - The path to check
+ * @param memoryValues - Optional: pass memoryValues to verify data exists
+ * @param cacheTTL - Optional: cache time-to-live in milliseconds for this field
  */
 export function needsLoading(
-  state: MemoryLoadState, 
+  state: MemoryLoadState,
   path: string,
-  memoryValues?: any  // pass memoryValues to verify data exists
+  memoryValues?: any,
+  cacheTTL?: number
 ): boolean {
   const normalized = normalizePath(path);
-  
+
   // If marked stale, needs loading
   if (state.stale.has(normalized)) {
     return true;
   }
-  
+
   // If not loaded yet, needs loading
   if (!state.loaded.has(normalized)) {
     return true;
   }
-  
+
+  // Check if cache has expired based on cacheTTL
+  if (cacheTTL !== undefined && cacheTTL > 0) {
+    const loadedAt = state.loadedAt.get(normalized);
+    if (loadedAt !== undefined) {
+      const elapsed = Date.now() - loadedAt;
+      if (elapsed > cacheTTL) {
+        // Cache expired, mark as stale and needs loading
+        state.stale.add(normalized);
+        return true;
+      }
+    }
+  }
+
   // Even if marked as loaded, if value is undefined, reload it
   if (memoryValues !== undefined) {
     const tokens = splitPath(normalized);
@@ -212,7 +266,7 @@ export function needsLoading(
       return true;
     }
   }
-  
+
   return false;
 }
 
@@ -225,14 +279,16 @@ export function clearLoadState(state: MemoryLoadState, path: string): void {
   state.stale.delete(normalized);
   state.loadedAt.delete(normalized);
   state.totals.delete(normalized);
-  
+  state.cachedValues.delete(normalized);
+
   // Also clear descendants
-  for (const p of [...state.loaded, ...state.stale]) {
+  for (const p of [...state.loaded, ...state.stale, ...state.cachedValues.keys()]) {
     if (p.startsWith(normalized + '/')) {
       state.loaded.delete(p);
       state.stale.delete(p);
       state.loadedAt.delete(p);
       state.totals.delete(p);
+      state.cachedValues.delete(p);
     }
   }
 }
@@ -606,12 +662,9 @@ export async function populateMemoryFromDB(
   
   for (const path of sortedPaths) {
     try {
-      const shouldLoad = options.forceRefresh || needsLoading(loadState, path, values);
-      
-      if (!shouldLoad) continue;
-
+      // Resolve schema first to get cacheTTL
       const resolution = resolveSchemaWithContext(fields, values, path, options.baseContext);
-      
+
       if (resolution.error) {
         errors.push({ path, error: resolution.error });
         continue;
@@ -621,6 +674,11 @@ export async function populateMemoryFromDB(
         // No schema or DB ops - skip (in-memory only)
         continue;
       }
+
+      const cacheTTL = resolution.schema?.cacheTTL;
+      const shouldLoad = options.forceRefresh || needsLoading(loadState, path, values, cacheTTL);
+
+      if (!shouldLoad) continue;
 
       const { schema, dbOps, context } = resolution;
       const tokens = splitPath(path);
@@ -637,9 +695,10 @@ export async function populateMemoryFromDB(
             ? result.items.map(item => dbOps.fromDB!(item))
             : result.items;
 
-          // Set the value at the path
+          // Set the value at the path and cache it
           if (schema.type === 'array') {
             setValueAtPath(values, tokens, items);
+            markLoaded(loadState, path, result.total, items);
           } else if (schema.type === 'map' || schema.type === 'topic') {
             // For maps/topics, convert array to object using keys
             const obj: Record<string, any> = {};
@@ -658,9 +717,8 @@ export async function populateMemoryFromDB(
             }
             // Use merge to preserve any child data that was already loaded
             setValueAtPath(values, tokens, obj, { merge: true });
+            markLoaded(loadState, path, result.total, obj);
           }
-
-          markLoaded(loadState, path, result.total);
           loadedPaths.push(path);
         }
       } else if (schema.type === 'object') {
@@ -671,8 +729,10 @@ export async function populateMemoryFromDB(
             const value = dbOps.fromDB ? dbOps.fromDB(result) : result;
             // Use merge to preserve any child data that was already loaded
             setValueAtPath(values, tokens, value, { merge: true });
+            markLoaded(loadState, path, undefined, value);
+          } else {
+            markLoaded(loadState, path);
           }
-          markLoaded(loadState, path);
           loadedPaths.push(path);
         }
       } else {
@@ -682,8 +742,10 @@ export async function populateMemoryFromDB(
           if (result !== undefined) {
             const value = dbOps.fromDB ? dbOps.fromDB(result) : result;
             setValueAtPath(values, tokens, value);
+            markLoaded(loadState, path, undefined, value);
+          } else {
+            markLoaded(loadState, path);
           }
-          markLoaded(loadState, path);
           loadedPaths.push(path);
         }
       }
@@ -1410,6 +1472,9 @@ export async function processMemoryToolWithDB(
     };
   });
 
+  // Sync cached values with updated memory values
+  syncCachedValues(loadState, memResult.updatedMemoryValues);
+
   return {
     updatedMemoryValues: memResult.updatedMemoryValues,
     updatedMemoryState: memResult.updatedMemoryState,
@@ -1601,12 +1666,14 @@ export function serializeLoadState(loadState: MemoryLoadState): {
   stale: string[];
   loadedAt: Record<string, number>;
   totals: Record<string, number>;
+  cachedValues: Record<string, any>;
 } {
   return {
     loaded: Array.from(loadState.loaded),
     stale: Array.from(loadState.stale),
     loadedAt: Object.fromEntries(loadState.loadedAt),
     totals: Object.fromEntries(loadState.totals),
+    cachedValues: Object.fromEntries(loadState.cachedValues),
   };
 }
 
@@ -1618,12 +1685,14 @@ export function deserializeLoadState(stored: {
   stale?: string[];
   loadedAt?: Record<string, number>;
   totals?: Record<string, number>;
+  cachedValues?: Record<string, any>;
 }): MemoryLoadState {
   return {
     loaded: new Set(stored.loaded ?? []),
     stale: new Set(stored.stale ?? []),
     loadedAt: new Map(Object.entries(stored.loadedAt ?? {})),
     totals: new Map(Object.entries(stored.totals ?? {})),
+    cachedValues: new Map(Object.entries(stored.cachedValues ?? {})),
   };
 }
 

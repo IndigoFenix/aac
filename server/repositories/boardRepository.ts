@@ -4,7 +4,7 @@ import {
   type InsertBoard,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq } from "drizzle-orm";
+import { eq, and, or, isNull } from "drizzle-orm";
 
 type BoardWithOptionalIrData = Omit<Board, 'irData'> & { irData?: Board['irData'] };
 
@@ -26,6 +26,21 @@ export class BoardRepository {
       updatedAt: boards.updatedAt,
       loadedAt: boards.loadedAt,
     }).from(boards).where(eq(boards.userId, userId));
+  }
+
+  async getStudentBoards(userId: string, studentId: string): Promise<Board[]> {
+    // Get boards that are either assigned to this student or have no student assigned (shared boards)
+    return await db.select()
+      .from(boards)
+      .where(
+        and(
+          eq(boards.userId, userId),
+          or(
+            eq(boards.studentId, studentId),
+            isNull(boards.studentId)
+          )
+        )
+      );
   }
 
   async getBoard(id: string): Promise<Board | undefined> {

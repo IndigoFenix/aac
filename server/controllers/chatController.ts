@@ -1,9 +1,19 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { FeatureType, onMessage } from "../services/sessionService";
+import { FeatureType, onMessage, CurrentImage } from "../services/sessionService";
 import { ChatPersona } from "@shared/schema";
 
 // Validation schemas
+// Message content can be a string or an object with text, formSchema, formValues
+const messageContentSchema = z.union([
+  z.string(),
+  z.object({
+    text: z.string(),
+    formSchema: z.any().optional(),
+    formValues: z.any().optional(),
+  }),
+]);
+
 const messageSchema = z.object({
   studentId: z.string().optional(),
   sessionId: z.string().optional(),
@@ -15,7 +25,7 @@ const messageSchema = z.object({
     .array(
       z.object({
         role: z.enum(["user", "assistant", "system"]),
-        content: z.string(),
+        content: messageContentSchema,
         timestamp: z.number().optional(),
       })
     )
@@ -53,10 +63,32 @@ export class ChatController {
     const startTime = Date.now();
     try {
       const userId = req.user!.id;
-      let { studentId, sessionId, activeFeature, persona, messages, featureContext, vectorStoreId } = messageSchema.parse(req.body);
+
+      // Handle multipart form data - parse JSON fields if they're strings
+      let body = req.body;
+      if (typeof body.messages === 'string') {
+        body.messages = JSON.parse(body.messages);
+      }
+      if (typeof body.featureContext === 'string') {
+        body.featureContext = JSON.parse(body.featureContext);
+      }
+
+      let { studentId, sessionId, activeFeature, persona, messages, featureContext, vectorStoreId, replyType } = messageSchema.parse(body);
       if (!persona) {
         persona = "assistant";
       }
+
+      // Handle uploaded image - pass directly to sessionService (not stored in message history)
+      const imageFile = (req as any).file as Express.Multer.File | undefined;
+      let currentImage: CurrentImage | undefined;
+      if (imageFile) {
+        currentImage = {
+          data: imageFile.buffer,
+          mimeType: imageFile.mimetype || 'image/jpeg',
+        };
+        console.log(`[ChatController] Image received, size: ${imageFile.size} bytes, type: ${currentImage.mimeType}`);
+      }
+
       const messagesWithTimestamp = messages?.map((msg) => ({
         ...msg,
         timestamp: msg.timestamp || startTime,
@@ -70,10 +102,12 @@ export class ChatController {
         messages: messagesWithTimestamp,
         featureContext,
         vectorStoreId,
-        replyType: "html"
+        replyType: replyType || "html",
+        currentImage,
       })
       res.json(response);
     } catch (error: any) {
+      console.error("[ChatController] Error:", error);
       res.status(500).json({
         error: "Failed to process message.",
         details: error.message || String(error),

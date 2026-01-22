@@ -16,6 +16,8 @@ import { StudentsPanel } from '@/features/StudentsPanel';
 import { StudentProgressPanel } from '@/features/StudentProgressPanel';
 import { InstitutePanel } from '@/features/InstitutePanel';
 import { ReportsPanel } from '@/features/ReportsPanel';
+import { SettingsPanel } from '@/features/SettingsPanel';
+import { AACSettingsPanel } from '@/features/AACSettingsPanel';
 
 export function MainLayout() {
   const { 
@@ -125,6 +127,10 @@ export function MainLayout() {
         return <StudentProgressPanel isOpen={isPanelOpen} />;
       case 'reports':
         return <ReportsPanel isOpen={isPanelOpen} />;
+      case 'settings':
+        return <SettingsPanel />;
+      case 'aacsettings':
+        return <AACSettingsPanel isOpen={isPanelOpen} />;
       default:
         return null;
     }

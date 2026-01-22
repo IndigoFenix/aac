@@ -159,6 +159,7 @@ export const he = {
     students: "תלמידים",
     progress: "התקדמות תלמידים",
     reports: "דוחות תלמידים",
+    aacSettings: 'הגדרות תת"ח',
     currentStudent: "תלמיד נוכחי",
     studentManagement: "ניהול תלמידים",
     instituteManagement: 'ניהול מוסדות',

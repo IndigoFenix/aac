@@ -14,7 +14,7 @@ import {
     MessageResponse,
   } from "@shared/schema";
   import { CreditsPerCompletionTokenByIntelligence, CreditsPerPromptTokenByIntelligence, CreditsPerSearchByIntelligence } from "./cost-helpers";
-  import { GPT, GPTResponse, GPTInputItem, GPTFunctionToolCall } from "./gpt";
+  import { GPT, GPTResponse, GPTInputItem, GPTFunctionToolCall, GPTContentPart } from "./gpt";
   import { buildPromptAndTools, formValues, NlpSchema, AgentLike } from "./prompt-kit";
   import { defaultToolRegistry, enrichToolCallMessage, LoopDetectionConfig, makeToolCalls, MemoryProcessor, ToolRegistry } from "./tool-router";
   import { publish } from "./events.service";
@@ -63,6 +63,12 @@ import {
       key?: string,
       apiValues?: { [key: string]: string }
   }
+
+  /** Image data to be passed directly to the API (not stored in ChatMessage) */
+  export interface CurrentImage {
+      data: Buffer;
+      mimeType: string;
+  }
   
   /**
    * Agent template interface - extends AgentLike with additional fields
@@ -96,6 +102,7 @@ import {
       intelligenceLevel: 0 | 1 | 2 | 3;
       memoryLevel: number;
       vectorStoreId?: string; // For file_search tool support
+      currentImage?: CurrentImage; // Image to inject into the next API call (not stored in history)
   
       cullMessages: boolean;
       cullMessagesTo: number;
@@ -143,6 +150,7 @@ import {
           memoryProcessor?: MemoryProcessor,
           vectorStoreId?: string,
           loopDetectionConfig?: LoopDetectionConfig;
+          currentImage?: CurrentImage;
       }){
           this.chatState = JSON.parse(JSON.stringify(settings.chatState));
           this.log = JSON.parse(JSON.stringify(settings.log));
@@ -193,11 +201,19 @@ import {
 
           // File search support
           this.vectorStoreId = settings.vectorStoreId;
+
+          // Image for current request (not persisted in history)
+          this.currentImage = settings.currentImage;
       }
 
       // Set vector store ID for file search (can be set after construction)
       setVectorStoreId(vectorStoreId: string | undefined) {
           this.vectorStoreId = vectorStoreId;
+      }
+
+      // Set image for current request (cleared after use)
+      setCurrentImage(image: CurrentImage | undefined) {
+          this.currentImage = image;
       }
   
       // Add messages to history and run toolCalls if included.
@@ -330,6 +346,31 @@ import {
               }
           }
 
+          // Inject image into the last user message if we have one
+          if (this.currentImage) {
+              // Find the last user message in items
+              for (let i = items.length - 1; i >= 0; i--) {
+                  const item = items[i];
+                  if (item.type === 'message' && item.role === 'user') {
+                      // Convert to multimodal content
+                      const textContent = typeof item.content === 'string' ? item.content : '';
+                      const base64Image = this.currentImage.data.toString('base64');
+                      const imageUrl = `data:${this.currentImage.mimeType};base64,${base64Image}`;
+
+                      const multimodalContent: GPTContentPart[] = [
+                          { type: 'input_text', text: textContent },
+                          { type: 'input_image', image_url: imageUrl }
+                      ];
+
+                      item.content = multimodalContent;
+                      console.log(`[ChatMessageManager] Injected image into user message, size: ${this.currentImage.data.length} bytes`);
+                      break;
+                  }
+              }
+              // Clear the image after use (single-use)
+              this.currentImage = undefined;
+          }
+
           return items;
       }
   
@@ -344,7 +385,8 @@ import {
   
       buildPromptAndTools( params?: {
           lastFormSchema: NlpSchema | undefined,
-          lastFormValues: formValues | undefined
+          lastFormValues: formValues | undefined,
+          replyType?: 'text' | 'html',
       }) {
           return buildPromptAndTools({
               agent: this.agent as any,
@@ -356,6 +398,7 @@ import {
               lastFormSchema: params?.lastFormSchema,
               lastFormValues: params?.lastFormValues,
               describeActions: this.onThinkingUpdate !== undefined,
+              replyType: params?.replyType || 'text',
           });
       }
   
@@ -369,7 +412,8 @@ import {
   
           const promptBuild = this.buildPromptAndTools({
               lastFormSchema: lastFormSchema,
-              lastFormValues: lastFormValues
+              lastFormValues: lastFormValues,
+              replyType: responseType,
           });
 
           const instructionsText = promptBuild.instructions + (promptBuild.endInstructions ? ('\n' + promptBuild.endInstructions) : '');
