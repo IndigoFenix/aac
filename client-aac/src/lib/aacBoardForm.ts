@@ -45,14 +45,14 @@ export interface ButtonFormValue {
 export function generateAACBoardFormSchema(grid: BoardGrid = DEFAULT_GRID): NlpSchema {
   return {
     type: 'object',
-    instructions: `The AAC communication board (${grid.rows}x${grid.cols} grid).
+    instructions: `The AAC communication board.
 Provide an array of buttons for the user to communicate with.
 IMPORTANT: Always provide at least 2-4 relevant buttons based on the conversation context.
 Use clear, simple labels. Consider the user's abilities and preferences.`,
     properties: {
       buttons: {
         type: 'array',
-        instructions: 'Array of board buttons. Each button needs row, col, label, and optionally spokenText, color, iconRef.',
+        instructions: 'Array of board buttons. Each button needs row, col, label, iconRef, and optionally spokenText and color.',
         items: {
           type: 'object',
           properties: {

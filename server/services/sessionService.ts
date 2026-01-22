@@ -68,6 +68,7 @@ import {
 } from "./chat/tool-router";
 import {
   AAC_SYSTEM_PROMPT,
+  AAC_DEFAULT_PERSONA_PROMPT,
   getAACMemoryFields,
 } from "./memory-schema/aac-memory-schema";
 import {
@@ -183,10 +184,14 @@ async function buildAACPersonaSystemPrompt(
   framework: string | null
 ): Promise<string> {
   // Get the base general prompt for AAC
+  let prompt = AAC_SYSTEM_PROMPT;
+  prompt += `=== Guidelines for interacting with ${student.name} ===\n`;
   if (student.aacChatAgentPrompt && student.aacChatAgentPrompt.trim().length > 0) {
-    return processPersonaPrompt(student.aacChatAgentPrompt, framework);
+    prompt += processPersonaPrompt(student.aacChatAgentPrompt, framework);
+  } else {
+    prompt += AAC_DEFAULT_PERSONA_PROMPT;
   }
-  return AAC_SYSTEM_PROMPT;
+  return prompt;
 }
 // ============================================================================
 // AGENT TEMPLATES (Mode-based, stored locally)
