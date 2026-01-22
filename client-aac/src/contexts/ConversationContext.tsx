@@ -166,7 +166,7 @@ export function ConversationProvider({ children, studentId, language = "en" }: C
     } else {
       const response = await apiRequest('POST', '/api/chat', {
         studentId,
-        sessionId,
+        ...(sessionId && { sessionId }),
         activeFeature: 'aac',
         messages: [{ role: 'user', content: messageContent }],
         featureContext,

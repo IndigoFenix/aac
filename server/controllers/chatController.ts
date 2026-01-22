@@ -16,7 +16,7 @@ const messageContentSchema = z.union([
 
 const messageSchema = z.object({
   studentId: z.string().optional(),
-  sessionId: z.string().optional(),
+  sessionId: z.string().nullish(),  // Allow null, undefined, or string
   activeFeature: z.string().optional(),
   persona: z.string().optional(),
   featureContext: z.record(z.any()).optional(),
@@ -96,7 +96,7 @@ export class ChatController {
       const response = await onMessage({
         userId,
         studentId,
-        sessionId,
+        sessionId: sessionId || undefined,
         activeFeature: activeFeature as FeatureType,
         persona: persona as ChatPersona,
         messages: messagesWithTimestamp,
