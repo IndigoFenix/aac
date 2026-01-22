@@ -18,11 +18,13 @@ RUN npm ci
 
 # Copy source code
 COPY client/ ./client/
+COPY client-aac/ ./client-aac/
 COPY server/ ./server/
 COPY shared/ ./shared/
 COPY attached_assets/ ./attached_assets/
 COPY drizzle/ ./drizzle/
 COPY vite.config.ts ./
+COPY vite.config.aac.ts ./
 COPY tsconfig.json ./
 COPY tailwind.config.* ./
 COPY postcss.config.* ./
@@ -30,7 +32,8 @@ COPY drizzle.config.ts ./
 
 # Build the application
 # 1. Vite builds client to dist/public
-# 2. esbuild bundles server/index.prod.ts to dist/index.prod.js
+# 2. Vite builds client-aac to dist/public-aac
+# 3. esbuild bundles server/index.prod.ts to dist/index.prod.js
 RUN npm run build
 
 # =============================================================================

@@ -8,7 +8,7 @@
     "client:dev": "vite",
     "client-aac:dev": "vite --config vite.config.aac.ts",
     "build:client-aac": "vite build --config vite.config.aac.ts",
-    "build": "vite build && esbuild server/index.prod.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+    "build": "vite build && vite build --config vite.config.aac.ts && esbuild server/index.prod.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "build:client": "vite build",
     "build:server:lambda": "esbuild server/index.lambda.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "start": "NODE_ENV=production node dist/index.prod.js",
