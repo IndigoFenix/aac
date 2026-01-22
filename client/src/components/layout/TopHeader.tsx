@@ -35,6 +35,8 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
         return t('nav.institute');
       case 'students':
         return t('nav.students');
+      case 'aacsettings':
+        return t('nav.aacsettings');
       case 'progress':
         return t('nav.progress');
       case 'reports':
