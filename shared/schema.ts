@@ -2605,7 +2605,7 @@ export interface BoardGrid {
  * Board button action type
  */
 export interface BoardButtonAction {
-  type: "speak" | "link";
+  type: "speak" | "link" | "back" | "home";
   text?: string;
   toPageId?: string;
 }

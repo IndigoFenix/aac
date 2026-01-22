@@ -26,7 +26,7 @@ interface ButtonIR {
   iconRef?: string;
   symbolPath?: string;
   action?: {
-    type: "speak" | "link";
+    type: "speak" | "link" | "back" | "home";
     text?: string;
     toPageId?: string;
   };
