@@ -14,4 +14,3 @@ export { recordsController, RecordsController } from "./recordsController";
 export { instituteController, InstituteController } from "./instituteController";
 export { classroomController, ClassroomController } from "./classroomController";
 export { reportController, ReportController } from "./reportController";
-export { aacController, AACController } from "./aacController";
