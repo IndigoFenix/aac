@@ -25,6 +25,8 @@ import { DetectedObject } from "@/hooks/useTwoHandedObjectDetection";
 import { ObjectDetectionDebug } from "@/components/ObjectDetectionDebug";
 import PassiveCoListener from "@/components/PassiveCoListener";
 import InitializationLoadingScreen from "@/components/InitializationLoadingScreen";
+import { CameraAttentivenessWrapper } from "@/components/CameraAttentivenessWrapper";
+import { CameraAttentivenessDebug } from "@/components/CameraAttentivenessDebug";
 
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAppInitialization } from "@/contexts/AppInitializationContext";
@@ -67,6 +69,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const [showObjectDetectionWindow, setShowObjectDetectionWindow] = useState<boolean>(false);
   const [lastObjectDetectionTime, setLastObjectDetectionTime] = useState<number>();
   const [debugMode, setDebugMode] = useState<boolean>(false);
+  const [showAttentivenessDebug, setShowAttentivenessDebug] = useState<boolean>(false);
   
   // Passive Co-Listener state
   const [passiveChoiceOptions, setPassiveChoiceOptions] = useState<Array<{ label: string; emoji: string; confidence: number }>>([]);
@@ -589,6 +592,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   }
 
   return (
+    <CameraAttentivenessWrapper autoStart={true} cameraType="user">
     <div className="h-screen flex flex-col relative overflow-hidden bg-bg-soft">
       {/* Top Navigation Bar */}
       <motion.div 
@@ -918,6 +922,10 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           {/* Debug Windows */}
           <DebugToggle />
           <CameraDebugToggle onToggle={() => setShowCameraDebug(true)} />
+          <CameraAttentivenessDebug
+            isVisible={showAttentivenessDebug}
+            onToggle={setShowAttentivenessDebug}
+          />
           
           {/* AudioBETA Button - triggers unified PassiveCoListener window */}
           {debugMode && (
@@ -1021,5 +1029,6 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
       )}
 
     </div>
+    </CameraAttentivenessWrapper>
   );
 }

@@ -13,11 +13,22 @@ import { BoardsProvider } from "@/contexts/BoardsContext";
 import { ConversationProvider } from "@/contexts/ConversationContext";
 import { useState } from "react";
 
+interface AuthUser {
+  id: string;
+  name?: string;
+  email?: string;
+}
+
+interface AuthResponse {
+  success: boolean;
+  user: AuthUser | null;
+}
+
 function MainApp() {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const { t, isRTL, direction, language } = useLanguage();
 
-  const { data: user, isLoading, error, refetch } = useQuery({
+  const { data: authData, isLoading, error, refetch } = useQuery<AuthResponse>({
     queryKey: ["/auth/user"],
     retry: false,
     staleTime: 0, // Always check fresh auth status
@@ -55,7 +66,9 @@ function MainApp() {
   }
 
   // Step 1: Not authenticated - show login
-  if (error || !user) {
+  // Note: /auth/user returns { success: boolean, user: object|null }
+  // So we need to check authData?.user, not just authData
+  if (error || !authData?.user) {
     return (
       <LoginModal
         isOpen={true}
@@ -68,7 +81,7 @@ function MainApp() {
   if (!selectedStudentId) {
     return (
       <StudentSelector
-        user={user}
+        user={authData.user}
         onStudentSelect={handleStudentSelect}
         onLogout={handleLogout}
       />

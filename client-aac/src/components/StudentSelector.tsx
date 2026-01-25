@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -32,6 +33,13 @@ export default function StudentSelector({ user, onStudentSelect, onLogout }: Stu
   });
 
   const students = data?.students;
+
+  // If we get a 401 error, the session is invalid - trigger logout to show login page
+  useEffect(() => {
+    if (error && error.message?.startsWith("401:")) {
+      onLogout();
+    }
+  }, [error, onLogout]);
 
   const handleLogout = async () => {
     try {
