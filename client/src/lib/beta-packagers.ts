@@ -2,7 +2,6 @@ import JSZip from 'jszip';
 import { BoardIR } from '@/types/board-ir';
 import { AacMaster, AacMasterSchema, validateAacMaster } from '@shared/aac-master-schema';
 import { AacMasterConverter } from './aac-master-converter';
-import syntaacxLogoUrl from '@assets/SyntAACx_logo.png';
 
 // Download utility function
 export function downloadFile(blob: Blob, filename: string) {
@@ -36,17 +35,6 @@ export class BetaGrid3Packager {
     zip.file("Settings0/settings.xml", grid3Data.settingsXml);
     zip.file("Settings0/Styles/styles.xml", grid3Data.stylesXml);
     zip.file("FileMap.xml", grid3Data.fileMapXml);
-    
-    // Add SyntAACx logo as thumbnail
-    try {
-      const logoResponse = await fetch(syntaacxLogoUrl);
-      if (logoResponse.ok) {
-        const logoArrayBuffer = await logoResponse.arrayBuffer();
-        zip.file("Settings0/thumbnail.png", logoArrayBuffer);
-      }
-    } catch (error) {
-      console.error('Failed to load SyntAACx logo for beta export:', error);
-    }
     
     return await zip.generateAsync({ type: "blob" });
   }
