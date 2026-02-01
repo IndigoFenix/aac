@@ -197,6 +197,8 @@ export default function AACBoard({ board, onButtonClick, language = "en" }: AACB
                       alt={button.label}
                       className="w-12 h-12 object-contain mb-1"
                     />
+                  ) : button.iconRef && isEmoji(button.iconRef) ? (
+                    <span className="text-3xl mb-1">{button.iconRef}</span>
                   ) : button.iconRef ? (
                     <i className={`${button.iconRef} text-3xl mb-1`} />
                   ) : (
@@ -257,6 +259,12 @@ export default function AACBoard({ board, onButtonClick, language = "en" }: AACB
 }
 
 // Simple emoji mapping for common words (fallback when no symbol)
+// Check if a string is an emoji (not a FontAwesome class)
+function isEmoji(str: string): boolean {
+  if (!str || str.startsWith('fa') || str.includes(' ')) return false;
+  return /[\u{1F000}-\u{1FFFF}]|[\u{2600}-\u{27BF}]|[\u{FE00}-\u{FEFF}]|[\u{1F900}-\u{1F9FF}]|[\u{2702}-\u{27B0}]|[\u{E000}-\u{F8FF}]|[\u{200D}]|[\u{20E3}]|[\u{FE0F}]|[\u{2190}-\u{21FF}]|[\u{2300}-\u{23FF}]|[\u{2460}-\u{24FF}]|[\u{25A0}-\u{25FF}]|[\u{2B00}-\u{2BFF}]|[\u{3000}-\u{303F}]|[\u{3200}-\u{32FF}]|[\u{1F100}-\u{1F1FF}]|[\u{1F200}-\u{1F2FF}]|[\u{1F300}-\u{1F5FF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F700}-\u{1F77F}]/u.test(str);
+}
+
 function getEmojiForLabel(label: string): string {
   const emojiMap: Record<string, string> = {
     // Common AAC words

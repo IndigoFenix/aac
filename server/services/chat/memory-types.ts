@@ -46,6 +46,11 @@ export interface AgentMemoryFieldBase {
    * used indefinitely within the session.
    */
   cacheTTL?: number;
+  /**
+   * When true, the field is read-only: the AI can view it but the visualization
+   * will not show mutation hints and the tool handler will reject mutations.
+   */
+  readOnly?: boolean;
 }
 
 export interface AgentMemoryFieldObject extends AgentMemoryFieldBase {

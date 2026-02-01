@@ -184,7 +184,8 @@ import {
               onCreditsUsed: this.onCreditsUsed,
               memoryProcessor: this.memoryProcessor,
               onThinkingUpdate: this.onThinkingUpdate,
-              loopDetectionConfig: this.loopDetectionConfig
+              loopDetectionConfig: this.loopDetectionConfig,
+              onPruneMessages: (forget, summary) => this.compressHistory(forget, summary),
           });
   
           this.agent = settings.agent;
@@ -346,6 +347,22 @@ import {
               }
           }
 
+          // Remove orphaned function_call / function_call_output items
+          const callIds = new Set<string>();
+          const outputIds = new Set<string>();
+          for (const item of items) {
+              if (item.type === 'function_call' && item.call_id) callIds.add(item.call_id);
+              if (item.type === 'function_call_output' && item.call_id) outputIds.add(item.call_id);
+          }
+          for (let i = items.length - 1; i >= 0; i--) {
+              const item = items[i];
+              if (item.type === 'function_call' && item.call_id && !outputIds.has(item.call_id)) {
+                  items.splice(i, 1);
+              } else if (item.type === 'function_call_output' && item.call_id && !callIds.has(item.call_id)) {
+                  items.splice(i, 1);
+              }
+          }
+
           // Inject image into the last user message if we have one
           if (this.currentImage) {
               // Find the last user message in items
@@ -382,7 +399,188 @@ import {
           }
           return null;
       }
-  
+
+      /**
+       * Compress history by removing messages at the given indices and appending a summary.
+       * Protects the first 2 anchor messages (indices 0-1).
+       * Always removes paired tool-call/tool-response messages together.
+       */
+      async compressHistory(forget: number[], summary: string): Promise<{ removed: number; warnings: string[] }> {
+          const warnings: string[] = [];
+          const history = this.chatState.history;
+
+          // Build set of indices to remove, skipping protected anchors and out-of-bounds
+          const removalSet = new Set<number>();
+          for (const idx of forget) {
+              if (idx < 0 || idx >= history.length) {
+                  warnings.push(`Index ${idx} out of bounds (history length ${history.length}), skipped.`);
+                  continue;
+              }
+              if (idx < 2) {
+                  warnings.push(`Index ${idx} is a protected anchor message, skipped.`);
+                  continue;
+              }
+              removalSet.add(idx);
+          }
+
+          // Expand removal set to include paired tool-call/tool-response messages
+          for (const idx of [...removalSet]) {
+              const msg = history[idx];
+              if (msg.role === 'tool' && msg.toolCallId) {
+                  // Find the assistant message that contains the matching tool call
+                  for (let j = 0; j < history.length; j++) {
+                      if (j >= 2 && history[j].toolCalls) {
+                          const hasMatch = (history[j].toolCalls as GPTFunctionToolCall[]).some(
+                              tc => tc.call_id === msg.toolCallId
+                          );
+                          if (hasMatch) removalSet.add(j);
+                      }
+                  }
+              }
+              if (msg.toolCalls) {
+                  // Find all tool responses for this message's tool calls
+                  for (const tc of msg.toolCalls as GPTFunctionToolCall[]) {
+                      for (let j = 0; j < history.length; j++) {
+                          if (j >= 2 && history[j].role === 'tool' && history[j].toolCallId === tc.call_id) {
+                              removalSet.add(j);
+                          }
+                      }
+                  }
+              }
+          }
+
+          // Remove in reverse order to preserve indices
+          const sortedIndices = [...removalSet].sort((a, b) => b - a);
+          for (const idx of sortedIndices) {
+              history.splice(idx, 1);
+          }
+
+          // Append summary
+          if (summary) {
+              const existing = this.chatState.conversationSummary || '';
+              const combined = existing ? `${existing}\n\n${summary}` : summary;
+              if (combined.length > 2000) {
+                  this.chatState.conversationSummary = await this.resummarize(combined);
+              } else {
+                  this.chatState.conversationSummary = combined;
+              }
+          }
+
+          return { removed: removalSet.size, warnings };
+      }
+
+      /**
+       * Re-summarize an overly long conversation summary into ~800 chars using gpt-4o-mini.
+       */
+      private async resummarize(longSummary: string): Promise<string> {
+          try {
+              const summaryGpt = new GPT();
+              const inputItems: GPTInputItem[] = [{
+                  type: 'message',
+                  role: 'user',
+                  content: `Condense the following conversation summary into a single concise paragraph of about 800 characters. Keep the most important facts, decisions, and context:\n\n${longSummary}`,
+              }];
+              const response = await summaryGpt.getStructuredResponse(
+                  inputItems,
+                  'resummarize',
+                  { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false },
+                  [],
+                  1000,
+                  0, // gpt-4o-mini
+                  { temperature: 0.3 },
+                  false, 1,
+                  'You are a helpful assistant that condenses conversation summaries. Return only a JSON object with a "text" field.'
+              );
+              if (response.content) {
+                  try {
+                      const parsed = JSON.parse(response.content);
+                      if (parsed.text) return parsed.text;
+                  } catch {}
+              }
+          } catch (e) {
+              console.error('[ChatMessageManager] resummarize failed:', e);
+          }
+          // Fallback: hard truncate
+          return longSummary.slice(0, 800) + '...';
+      }
+
+      /**
+       * Auto-compress history when it exceeds the threshold.
+       * Removes oldest messages (after anchors) down to cullMessagesTo,
+       * generating a summary for the removed messages.
+       */
+      async autoCompress(): Promise<void> {
+          if (!this.cullMessages) return;
+          if (this.chatState.history.length <= this.cullMessagesThreshold) return;
+
+          const removeCount = this.chatState.history.length - this.cullMessagesTo;
+          if (removeCount <= 0) return;
+
+          // Indices to remove: after the 2 anchor messages, take the oldest ones
+          const indicesToRemove: number[] = [];
+          for (let i = 2; i < 2 + removeCount && i < this.chatState.history.length; i++) {
+              indicesToRemove.push(i);
+          }
+
+          if (indicesToRemove.length === 0) return;
+
+          const summary = await this.generateSummaryForMessages(indicesToRemove);
+          await this.compressHistory(indicesToRemove, summary);
+          console.log(`[ChatMessageManager] autoCompress: removed ${indicesToRemove.length} messages, history now ${this.chatState.history.length}`);
+      }
+
+      /**
+       * Generate a concise summary for a set of messages by index using gpt-4o-mini.
+       */
+      private async generateSummaryForMessages(indices: number[]): Promise<string> {
+          try {
+              const history = this.chatState.history;
+              const texts: string[] = [];
+              for (const idx of indices) {
+                  const msg = history[idx];
+                  if (!msg) continue;
+                  if (msg.role === 'user' || msg.role === 'assistant') {
+                      let text = '';
+                      if (typeof msg.content === 'string') {
+                          text = msg.content;
+                      } else if (msg.content && typeof msg.content === 'object') {
+                          text = (msg.content as ChatMessageContent).text || (msg.content as ChatMessageContent).html || '';
+                      }
+                      if (text) texts.push(`${msg.role}: ${text}`);
+                  }
+              }
+
+              if (texts.length === 0) return 'Earlier conversation messages were removed to save context space.';
+
+              const summaryGpt = new GPT();
+              const inputItems: GPTInputItem[] = [{
+                  type: 'message',
+                  role: 'user',
+                  content: `Summarize the following conversation excerpt into one concise paragraph. Focus on key topics discussed, decisions made, and important context:\n\n${texts.join('\n')}`,
+              }];
+              const response = await summaryGpt.getStructuredResponse(
+                  inputItems,
+                  'generate-summary',
+                  { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false },
+                  [],
+                  500,
+                  0, // gpt-4o-mini
+                  { temperature: 0.3 },
+                  false, 1,
+                  'You are a helpful assistant that summarizes conversations. Return only a JSON object with a "text" field containing the summary.'
+              );
+              if (response.content) {
+                  try {
+                      const parsed = JSON.parse(response.content);
+                      if (parsed.text) return parsed.text;
+                  } catch {}
+              }
+          } catch (e) {
+              console.error('[ChatMessageManager] generateSummaryForMessages failed:', e);
+          }
+          return 'Earlier conversation messages were removed to save context space.';
+      }
+
       buildPromptAndTools( params?: {
           lastFormSchema: NlpSchema | undefined,
           lastFormValues: formValues | undefined,
@@ -404,6 +602,7 @@ import {
   
       // Updates the conversation after confirming that the bot should interact
       async updateConversation(totalCreditsUsed: number = 0, responseType: 'text' | 'html', apiValues?: { [key: string]: any }): Promise<ChatResponse> {
+          await this.autoCompress();
           const inputItems = this.getConversationHistoryAsInputItems(this.chatState.history);
           const lastUserMessage = this.getLastUserMessage();
           const lastContent = lastUserMessage?.content ? this.chatState.history[this.chatState.history.length - 1].content : undefined;

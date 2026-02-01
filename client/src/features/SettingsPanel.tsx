@@ -32,6 +32,7 @@ import {
   Building2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { BiometricEnrollment } from '@/components/BiometricEnrollment';
 
 type SystemType = 'tala' | 'us_iep';
 
@@ -121,6 +122,14 @@ export function SettingsPanel() {
                 </div>
               </CardContent>
             </Card>
+          )}
+
+          {/* Biometric Recognition Section */}
+          {user && (
+            <BiometricEnrollment
+              entityType="user"
+              entityId={user.id}
+            />
           )}
 
           {/* System Settings */}

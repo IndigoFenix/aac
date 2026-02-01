@@ -27,7 +27,10 @@ import {
 // ============================================================================
 
 /**
- * Gets a student's chatMemory field value by field ID
+ * Gets a student's chatMemory field value by field ID.
+ * This is the only operation that reads from the DB — used for initial loading
+ * via populateMemoryFromDB. All mutations are handled in-memory first, then
+ * persisted as a batch by onUpdateMemoryValues in sessionService.
  */
 async function getStudentMemoryField(
   ctx: DBOperationContext,
@@ -53,40 +56,45 @@ async function getStudentMemoryField(
   return memory[fieldId];
 }
 
-/**
- * Updates a student's chatMemory field value by field ID
- */
+// ── Write-back no-ops ──────────────────────────────────────────────────────
+// Individual mutations do NOT write to the DB. The in-memory processor handles
+// all mutations synchronously (no race conditions), and onUpdateMemoryValues
+// in sessionService persists the final state as a single atomic write.
+// This eliminates race conditions when parallel tool calls modify the same fields.
+
+/** No-op: returns value immediately. Persistence handled by onUpdateMemoryValues. */
 async function setStudentMemoryField(
-  ctx: DBOperationContext,
-  fieldId: string,
+  _ctx: DBOperationContext,
+  _fieldId: string,
   value: any
 ): Promise<any> {
-  const studentId = ctx.all.studentId;
-  if (!studentId) {
-    throw new Error(`Cannot write to ${fieldId}: no studentId in context`);
-  }
-
-  // Get current chatMemory
-  const [student] = await db
-    .select({ chatMemory: students.chatMemory })
-    .from(students)
-    .where(eq(students.id, studentId));
-
-  if (!student) {
-    throw new Error(`Student not found: ${studentId}`);
-  }
-
-  // Update the specific field in chatMemory
-  const currentMemory = (student.chatMemory as Record<string, any>) || {};
-  const updatedMemory = { ...currentMemory, [fieldId]: value };
-
-  // Save back to database
-  await db
-    .update(students)
-    .set({ chatMemory: updatedMemory, updatedAt: new Date() })
-    .where(eq(students.id, studentId));
-
   return value;
+}
+
+/** No-op: returns value immediately. Persistence handled by onUpdateMemoryValues. */
+async function addToStudentMemoryArray(
+  _ctx: DBOperationContext,
+  _fieldId: string,
+  value: any
+): Promise<any> {
+  return value;
+}
+
+/** No-op: persistence handled by onUpdateMemoryValues. */
+async function deleteFromStudentMemoryArray(
+  _ctx: DBOperationContext,
+  _fieldId: string,
+  _indexOrKey: string | number
+): Promise<void> {
+  // No-op
+}
+
+/** No-op: persistence handled by onUpdateMemoryValues. */
+async function clearStudentMemoryArray(
+  _ctx: DBOperationContext,
+  _fieldId: string
+): Promise<void> {
+  // No-op
 }
 
 // ============================================================================
@@ -124,6 +132,9 @@ export const STUDENT_PEOPLE_FIELD: AgentMemoryFieldArrayWithDB = {
   db: {
     read: async (ctx) => getStudentMemoryField(ctx, "Student_People"),
     write: async (ctx, value) => setStudentMemoryField(ctx, "Student_People", value),
+    add: async (ctx, value) => addToStudentMemoryArray(ctx, "Student_People", value),
+    delete: async (ctx, indexOrKey) => deleteFromStudentMemoryArray(ctx, "Student_People", indexOrKey),
+    clear: async (ctx) => clearStudentMemoryArray(ctx, "Student_People"),
   },
 };
 
@@ -143,6 +154,9 @@ export const STUDENT_INTERESTS_FIELD: AgentMemoryFieldArrayWithDB = {
   db: {
     read: async (ctx) => getStudentMemoryField(ctx, "Student_Interests"),
     write: async (ctx, value) => setStudentMemoryField(ctx, "Student_Interests", value),
+    add: async (ctx, value) => addToStudentMemoryArray(ctx, "Student_Interests", value),
+    delete: async (ctx, indexOrKey) => deleteFromStudentMemoryArray(ctx, "Student_Interests", indexOrKey),
+    clear: async (ctx) => clearStudentMemoryArray(ctx, "Student_Interests"),
   },
 };
 
@@ -219,7 +233,7 @@ export const STUDENT_NOTES_FIELD: AgentMemoryFieldArrayWithDB = {
   type: "array",
   title: "General Notes",
   description: "General notes about the student (non-sensitive)",
-  opened: false,
+  opened: true,
   items: {
     id: "Note",
     type: "string",
@@ -227,6 +241,9 @@ export const STUDENT_NOTES_FIELD: AgentMemoryFieldArrayWithDB = {
   db: {
     read: async (ctx) => getStudentMemoryField(ctx, "Student_Notes"),
     write: async (ctx, value) => setStudentMemoryField(ctx, "Student_Notes", value),
+    add: async (ctx, value) => addToStudentMemoryArray(ctx, "Student_Notes", value),
+    delete: async (ctx, indexOrKey) => deleteFromStudentMemoryArray(ctx, "Student_Notes", indexOrKey),
+    clear: async (ctx) => clearStudentMemoryArray(ctx, "Student_Notes"),
   },
 };
 

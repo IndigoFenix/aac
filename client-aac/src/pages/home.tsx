@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Settings, UserX, Hand, Mic, Maximize, LogOut, ArrowLeft } from "lucide-react";
+import { Settings, UserX, Hand, Mic, Maximize, LogOut, ArrowLeft, Brain } from "lucide-react";
 import DynamicBoard from "@/components/DynamicBoard";
 import PrebuiltBoardSection from "@/components/PrebuiltBoardSection";
 import QuickActions from "@/components/QuickActions";
@@ -10,11 +10,14 @@ import ChatLog from "@/components/ChatLog";
 import ProfileSetup from "@/components/ProfileSetup";
 import UserSettings from "@/components/UserSettings";
 import { ConversationBox } from "@/components/ConversationBox";
+import { DualAgentConversationBox } from "@/components/DualAgentConversationBox";
+import { DualAgentProvider, useDualAgentContext } from "@/contexts/DualAgentContext";
 import { LanguageSelector } from "@/components/LanguageSelector";
 import { Button } from "@/components/ui/button";
 import { useGestures } from "@/hooks/useGestures";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useMultiCamera } from "@/hooks/useMultiCamera";
+import { usePersonIdentification } from "@/hooks/usePersonIdentification";
 import { DebugToggle } from "@/components/DebugWindow";
 import MultiCameraDebugWindow from "@/components/MultiCameraDebugWindow";
 import { CameraDebugToggle } from "@/components/CameraDebugToggle";
@@ -39,6 +42,33 @@ interface HomeProps {
   onExitStudent: () => void;
 }
 
+/**
+ * Inner component that bridges DualAgentContext to parent Home for interpret/mode features.
+ * Must be rendered inside DualAgentProvider.
+ */
+function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange }: {
+  onModeChange: (mode: 'interact' | 'silent') => void;
+  onInterpretReady: (fn: ((buttons: string[]) => Promise<void>) | null) => void;
+  onDetectionChange?: (enabled: boolean) => void;
+}) {
+  const { interactionMode, interpretButtons, detectionEnabled } = useDualAgentContext();
+
+  useEffect(() => {
+    onModeChange(interactionMode);
+  }, [interactionMode, onModeChange]);
+
+  useEffect(() => {
+    onInterpretReady((buttons: string[]) => interpretButtons(buttons));
+    return () => onInterpretReady(null);
+  }, [interpretButtons, onInterpretReady]);
+
+  useEffect(() => {
+    onDetectionChange?.(detectionEnabled);
+  }, [detectionEnabled, onDetectionChange]);
+
+  return null;
+}
+
 export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) {
   // Disable periodic camera detection calls (detect-person, analyze-image) to focus on chat
   const DISABLE_PERIODIC_DETECTION = true;
@@ -60,6 +90,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const { language: currentLanguage, setLanguage: setCurrentLanguage, t, isRTL, direction } = useLanguage();
   const [showCameraDebug, setShowCameraDebug] = useState<boolean>(false);
   const [showAudioCapture, setShowAudioCapture] = useState<boolean>(false);
+  const [useDualAgent, setUseDualAgent] = useState<boolean>(true); // Toggle for dual-agent system
 
   // Use the initialization context for loading state
   const { isComplete: isInitComplete } = useAppInitialization();
@@ -77,6 +108,13 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   // AAC Board state - populated from chat responses
   const [boardData, setBoardData] = useState<ParsedBoardData | null>(null);
 
+  // Recent button presses for Interpret feature (silent mode)
+  const [recentButtonPresses, setRecentButtonPresses] = useState<string[]>([]);
+
+  // Dual-agent mode bridged from context
+  const [dualAgentMode, setDualAgentMode] = useState<'interact' | 'silent'>('interact');
+  const interpretFnRef = useRef<((buttons: string[]) => Promise<void>) | null>(null);
+
   // Get authenticated user
   const { data: authUser, isLoading: isAuthLoading } = useQuery({
     queryKey: ["/auth/user"],
@@ -84,7 +122,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   });
 
   const { speak, isSpeaking } = useTextToSpeech();
-  const { 
+  const {
     cameras,
     isMultiCameraActive,
     getUserCamera,
@@ -92,7 +130,65 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     captureFrameFromCamera,
     autoAssignCameras,
     globalError
-  } = useMultiCamera();
+  } = useMultiCamera({ autoStart: false });
+
+  // Person identification for AAC system (face recognition)
+  const {
+    isReady: isPersonIdReady,
+    currentIdentification,
+    identifyFromVideo,
+    knownPeopleCount,
+  } = usePersonIdentification({
+    studentId,
+    enabled: useDualAgent, // Only enable when dual-agent is active
+  });
+
+  // Get current identified person (non-blocking getter for dual-agent)
+  const getIdentifiedPerson = useCallback(() => {
+    return currentIdentification?.person || null;
+  }, [currentIdentification]);
+
+  // Periodic face identification from camera (runs every 2 seconds when ready)
+  useEffect(() => {
+    if (!isPersonIdReady || !useDualAgent || !isMultiCameraActive) return;
+
+    const runIdentification = async () => {
+      const userCamera = getUserCamera();
+      if (!userCamera || !captureFrameFromCamera) return;
+
+      try {
+        const frame = await captureFrameFromCamera(userCamera.deviceId);
+        if (frame && frame.size > 0) {
+          // Create an image element from the blob
+          const img = new Image();
+          const url = URL.createObjectURL(frame);
+          img.src = url;
+
+          await new Promise<void>((resolve) => {
+            img.onload = async () => {
+              await identifyFromVideo(img as any); // Works with images too
+              URL.revokeObjectURL(url);
+              resolve();
+            };
+            img.onerror = () => {
+              URL.revokeObjectURL(url);
+              resolve();
+            };
+          });
+        }
+      } catch (err) {
+        // Silent fail - identification is non-critical
+      }
+    };
+
+    // Run identification every 2 seconds (fast enough for context, slow enough for performance)
+    const interval = setInterval(runIdentification, 2000);
+
+    // Run once immediately
+    runIdentification();
+
+    return () => clearInterval(interval);
+  }, [isPersonIdReady, useDualAgent, isMultiCameraActive, getUserCamera, captureFrameFromCamera, identifyFromVideo]);
 
   // Initialize gesture handling
   useGestures({
@@ -264,16 +360,42 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     setSelectedSymbols([spokenText]);
     setCurrentSpeech(spokenText);
 
+    // Track for interpret feature (keep last 10)
+    setRecentButtonPresses(prev => [...prev.slice(-9), spokenText]);
+
     // Clear after a moment
     setTimeout(() => {
       setCurrentSpeech("");
     }, 2000);
   }, []);
 
+  // Handle interpret: synthesize recent button presses into speech
+  const handleInterpret = useCallback(() => {
+    if (recentButtonPresses.length > 0 && interpretFnRef.current) {
+      interpretFnRef.current(recentButtonPresses);
+      setRecentButtonPresses([]);
+    }
+  }, [recentButtonPresses]);
+
+  // Board history for back navigation
+  const boardHistoryRef = useRef<ParsedBoardData[]>([]);
+
   // Handle board data updates from conversation
   const handleBoardUpdate = useCallback((board: ParsedBoardData) => {
     console.log('[Home] Board data received:', board.name, board.pages?.length, 'pages');
-    setBoardData(board);
+    setBoardData((prev) => {
+      if (prev) {
+        boardHistoryRef.current.push(prev);
+      }
+      return board;
+    });
+  }, []);
+
+  const handleBoardBack = useCallback(() => {
+    const prev = boardHistoryRef.current.pop();
+    if (prev) {
+      setBoardData(prev);
+    }
   }, []);
 
   // Handle detected objects from two-handed detection
@@ -711,6 +833,8 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           <DynamicBoard
             board={boardData}
             onButtonClick={handleBoardButtonClick}
+            onBack={boardHistoryRef.current.length > 0 ? handleBoardBack : undefined}
+            onMore={() => setSelectedSymbols(["More"])}
             language={currentLanguage}
           />
         </div>
@@ -743,6 +867,8 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
               goBack();
             }
           }}
+          showInterpret={useDualAgent && dualAgentMode === 'silent' && recentButtonPresses.length > 0}
+          onInterpret={handleInterpret}
         />
 
         {/* Passive Choice Options Overlay */}
@@ -851,8 +977,8 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
         onDebugModeChange={setDebugMode}
       />
 
-      {/* Conversation Box */}
-      {studentId && (
+      {/* Conversation Box - Toggle between single-agent and dual-agent */}
+      {studentId && !useDualAgent && (
         <ConversationBox
           studentId={studentId}
           userProfile={userProfile}
@@ -879,6 +1005,42 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           onBoardUpdate={handleBoardUpdate}
           currentBoard={boardData}
         />
+      )}
+
+      {/* Dual-Agent Conversation Box */}
+      {studentId && useDualAgent && (
+        <DualAgentProvider
+          studentId={studentId}
+          language={currentLanguage}
+          captureFrame={async () => {
+            const userCamera = getUserCamera();
+            if (userCamera && captureFrameFromCamera) {
+              try {
+                const frame = await captureFrameFromCamera(userCamera.deviceId);
+                if (frame && frame.size > 0) {
+                  return frame;
+                }
+              } catch (err) {
+                console.log('[Home] Frame capture failed:', err);
+              }
+            }
+            return null;
+          }}
+          getIdentifiedPerson={getIdentifiedPerson}
+        >
+          <DualAgentBridge
+            onModeChange={setDualAgentMode}
+            onInterpretReady={(fn) => { interpretFnRef.current = fn; }}
+          />
+          <DualAgentConversationBox
+            isVisible={showConversation}
+            onToggle={() => setShowConversation(!showConversation)}
+            selectedSymbols={selectedSymbols}
+            onClearSymbols={() => setSelectedSymbols([])}
+            onBoardUpdate={handleBoardUpdate}
+            currentBoard={boardData}
+          />
+        </DualAgentProvider>
       )}
 
       {/* Gesture Hints */}
@@ -968,6 +1130,23 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           >
             <Hand className="w-4 h-4 text-green-600" />
             <span className="text-sm">Objects</span>
+          </Button>
+
+          {/* Dual-Agent System Toggle */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setUseDualAgent(!useDualAgent)}
+            className={`
+              fixed z-40 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-300 dark:border-gray-600 hover:bg-white dark:hover:bg-gray-800 shadow-lg
+              flex items-center gap-2 transition-all duration-200
+              ${useDualAgent ? 'bg-purple-100/90 dark:bg-purple-900/90 border-purple-300 dark:border-purple-700' : ''}
+            `}
+            style={{ bottom: '1rem', right: '33rem' }}
+            title="Toggle Dual-Agent System (Interactive + Monitor)"
+          >
+            <Brain className={`w-4 h-4 ${useDualAgent ? 'text-purple-600' : 'text-gray-500'}`} />
+            <span className="text-sm">{useDualAgent ? 'Dual-Agent ON' : 'Dual-Agent'}</span>
           </Button>
         </>
       )}

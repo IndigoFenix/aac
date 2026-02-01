@@ -1,0 +1,1 @@
+ALTER TABLE "chat_sessions" ADD COLUMN "monitor_busy_since" timestamp;

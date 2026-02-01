@@ -58,6 +58,7 @@ import {
   deserializeLoadState,
   processMemoryToolWithDB,
   serializeLoadState,
+  populateMemoryFromDB,
 } from "./chat/memory-db-bridge";
 import { AgentMemoryFieldWithDB } from "./chat/memory-types";
 import { 
@@ -70,6 +71,10 @@ import {
   AAC_SYSTEM_PROMPT,
   AAC_DEFAULT_PERSONA_PROMPT,
   getAACMemoryFields,
+  AAC_CHAT_PROMPT,
+  AAC_BUTTON_PROMPT,
+  buildInteractiveSystemPrompt,
+  buildMonitorSystemPrompt,
 } from "./memory-schema/aac-memory-schema";
 import {
   LIBRARY_TOPICS_FIELD,
@@ -668,6 +673,8 @@ interface GetMessageManagerInput {
   vectorStoreId?: string;
   /** Image to include with the current request (not stored in history) */
   currentImage?: CurrentImage;
+  /** Override the system prompt instead of building it from persona/student settings */
+  systemPromptOverride?: string;
 }
 
 interface GetMessageManagerResult {
@@ -719,7 +726,11 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   const template = isAACFeature ? AAC_TEMPLATE_BASE : AGENT_TEMPLATE_BASE;
   // Select core prompt based on conversation persona (loaded from database)
   if (isAACFeature) {
-    template.corePrompt = await buildAACPersonaSystemPrompt(context.student!, context?.student?.framework || null);
+    if (input.systemPromptOverride) {
+      template.corePrompt = input.systemPromptOverride;
+    } else {
+      template.corePrompt = await buildAACPersonaSystemPrompt(context.student!, context?.student?.framework || null);
+    }
   } else {
     template.corePrompt = await buildPersonaSystemPrompt(persona, context?.student?.framework || null);
   }
@@ -849,12 +860,37 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   console.log('  - memoryValues keys:', Object.keys(memoryValues));
   console.log('  - memoryValues:', JSON.stringify(memoryValues, null, 2));
 
-  // For AAC mode, context fields are loaded on-demand via the memory tool system
-  // The AI can call memory.read on Context_* fields when it needs them
-  // This is handled by the AAC memory fields having proper db.read functions
+  // For AAC mode, pre-load Student_* fields that have opened: true
+  // This ensures the AI sees the actual data instead of stale/empty values
   if (isAACFeature && context.student) {
-    console.log('[getMessageManager] AAC mode - context fields available for on-demand loading');
-    // Note: We don't pre-load context here - it's loaded lazily when AI requests it
+    console.log('[getMessageManager] AAC mode - loading Student_* fields from database');
+
+    // Get loadState to track what we load
+    const loadState = chatContextManager?.getLoadState() ?? createMemoryLoadState();
+
+    // Pre-load Student_* fields that are marked as opened
+    const studentFields = STUDENT_MEMORY_FIELDS.filter(f => f.opened);
+    if (studentFields.length > 0) {
+      try {
+        const populateResult = await populateMemoryFromDB(
+          studentFields,
+          memoryValues,
+          chatState.memoryState,
+          loadState,
+          {
+            baseContext: { studentId: context.student.id, userId: context.user?.id },
+            defaultLimit: 50,
+            forceRefresh: false,
+          }
+        );
+        console.log('[getMessageManager] AAC mode - loaded paths:', populateResult.loadedPaths);
+        if (populateResult.errors.length > 0) {
+          console.warn('[getMessageManager] AAC mode - load errors:', populateResult.errors);
+        }
+      } catch (error) {
+        console.error('[getMessageManager] AAC mode - failed to load Student_* fields:', error);
+      }
+    }
   }
 
   // For non-AAC modes, load program data from database via chatContextManager
@@ -1191,6 +1227,9 @@ export interface OnMessageInput {
 
   /** Image to include with the current request (not stored in history) */
   currentImage?: CurrentImage;
+
+  /** Override the system prompt instead of building from persona/student settings */
+  systemPromptOverride?: string;
 }
 
 /**
@@ -1203,7 +1242,7 @@ export interface OnMessageStreamingInput extends OnMessageInput {
 
 export async function onMessage(input: OnMessageInput): Promise<MessageResponse> {
   try {
-    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, vectorStoreId, currentImage } = input;
+    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, vectorStoreId, currentImage, systemPromptOverride } = input;
 
     const { manager: messageManager, memoryValues } = await getMessageManager({
       userId,
@@ -1214,6 +1253,7 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
       featureContext,
       vectorStoreId,
       currentImage,
+      systemPromptOverride,
     });
 
     // Debug: Log what we injected
@@ -1282,7 +1322,7 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
  */
 export async function onMessageStreaming(input: OnMessageStreamingInput): Promise<MessageResponse> {
   try {
-    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, onThinkingUpdate, vectorStoreId, currentImage } = input;
+    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, onThinkingUpdate, vectorStoreId, currentImage, systemPromptOverride } = input;
 
     const { manager: messageManager, memoryValues } = await getMessageManager({
       userId,
@@ -1294,6 +1334,7 @@ export async function onMessageStreaming(input: OnMessageStreamingInput): Promis
       onThinkingUpdate, // Pass the callback through to ChatMessageManager
       vectorStoreId,
       currentImage,
+      systemPromptOverride,
     });
 
     // Debug: Log what we injected

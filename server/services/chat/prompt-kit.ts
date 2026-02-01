@@ -2,6 +2,7 @@ import { MemoryState, AgentAPIEndpoint, Topic, ChatMessage } from "@shared/schem
 import { GPTTool, JSONSchema } from "./gpt";
 import { getKeysFromSchema, InteractionSchemaProperties } from "./gpt-schema";
 import { buildMemoryTool, renderMemoryVisualization } from "./memory-system";
+import { memDebugSeparator, memDebug } from "./memory-debug-log";
 
 const API_PREFIX = "api_";
 
@@ -89,6 +90,30 @@ export interface NlpSchema {
             { maxPreviewScalars: 100 }
         );
         startPrompt += memoryPrompt;
+
+        // Debug: log what the AI sees for Student_* arrays
+        memDebugSeparator('buildPromptAndTools — AI memory view');
+        for (const key of Object.keys(ctx.memoryValues)) {
+            if (key.startsWith('Student_')) {
+                const val = ctx.memoryValues[key];
+                if (Array.isArray(val)) {
+                    memDebug(`memoryValues.${key} (${val.length} items)`, val.slice(0, 10));
+                } else if (val && typeof val === 'object') {
+                    memDebug(`memoryValues.${key}`, val);
+                } else {
+                    memDebug(`memoryValues.${key}`, val);
+                }
+            }
+        }
+        // Log the memory data section (skip header/instructions, find "Current Memory" marker)
+        const vizLines = memoryPrompt.split('\n');
+        const memoryStartIdx = vizLines.findIndex(l => l.includes('Current Memory'));
+        if (memoryStartIdx >= 0) {
+            memDebug(`memoryVisualization — data section (${vizLines.length - memoryStartIdx} lines)`, vizLines.slice(memoryStartIdx).join('\n'));
+        } else {
+            // Fallback: log the tail which contains the actual data
+            memDebug(`memoryVisualization (${vizLines.length} lines, tail)`, vizLines.slice(-60).join('\n'));
+        }
     }
 
     // Built-in web search, but not needed for OpenAI's API as it has its own web search tool (Doesn't seem to work with OpenAI's API currently)
@@ -171,20 +196,23 @@ export interface NlpSchema {
         function: {
           name: "pruneMessages",
           description:
-            "Delete low-importance messages and return a one-paragraph recap. \
-             Only call this if the token budget is about to be exceeded.",
+            `Remove old messages from the conversation to keep context focused. ` +
+            `There are currently ${ctx.history.length} messages in the conversation. ` +
+            `Use this when the conversation is getting long and older messages are no longer relevant. ` +
+            `Indices 0-1 are protected anchor messages and cannot be removed. ` +
+            `Always remove tool call and tool response pairs together. ` +
+            `Provide a concise summary of the removed content so context is not lost.`,
           parameters: {
             type: "object",
             properties: {
               forget: {
                 type: "array",
-                description: "Indices of messages to delete, relative to the \
-                  transcript just sent to you.",
+                description: "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
                 items: { type: "integer" }
               },
               summary: {
                 type: "string",
-                description: "A concise summary that replaces the forgotten content."
+                description: "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
               }
             },
             required: ["forget", "summary"],
@@ -340,6 +368,10 @@ export interface NlpSchema {
                 }
             }
         })
+    }
+
+    if (ctx.history.length > 20) {
+        endPrompt += `\n\nNote: The conversation has ${ctx.history.length} messages. If older messages are no longer relevant, you can use the pruneMessages tool to remove them and keep the context focused. Provide a summary of removed content so important context is preserved.`;
     }
 
     return {

@@ -1,6 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Volume2, VolumeX, MessageCircle, X } from "lucide-react";
+import { Volume2, VolumeX, MessageCircle, X, Mic, MicOff, Square } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { ParsedBoardData } from "@shared/schema";
 import { useConversation } from "@/contexts/ConversationContext";
@@ -50,6 +50,16 @@ export function ConversationBox({
     setCaptureFrame,
     setCurrentBoard,
     setOnBoardUpdate,
+    // Voice
+    voiceEnabled,
+    isRecording,
+    audioLevel,
+    recordingDuration,
+    transcription,
+    setVoiceEnabled,
+    startVoiceRecording,
+    stopVoiceRecording,
+    cancelVoiceRecording,
   } = useConversation();
 
   const hasInitializedRef = useRef(false);
@@ -141,11 +151,23 @@ export function ConversationBox({
               <span className="font-medium text-white">Chat Assistant</span>
             </div>
             <div className="flex items-center gap-2">
+              {/* Voice Toggle */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setVoiceEnabled(!voiceEnabled)}
+                className="text-white hover:text-gray-200 hover:bg-white/10"
+                title={voiceEnabled ? "Disable voice input" : "Enable voice input"}
+              >
+                {voiceEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+              </Button>
+              {/* Audio Toggle */}
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setAudioEnabled(!audioEnabled)}
                 className="text-white hover:text-gray-200 hover:bg-white/10"
+                title={audioEnabled ? "Mute audio" : "Unmute audio"}
               >
                 {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
               </Button>
@@ -220,6 +242,76 @@ export function ConversationBox({
               <p className="text-white/80 text-sm">Starting conversation...</p>
             )}
           </div>
+
+          {/* Voice Recording Section */}
+          {voiceEnabled && isInitialized && (
+            <div className="mt-3 flex items-center justify-center gap-4">
+              {/* Recording Button */}
+              {!isRecording ? (
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  onClick={startVoiceRecording}
+                  disabled={isLoading}
+                  className="bg-white/20 hover:bg-white/30 text-white rounded-full w-14 h-14 p-0"
+                >
+                  <Mic className="w-6 h-6" />
+                </Button>
+              ) : (
+                <div className="flex items-center gap-3">
+                  {/* Audio Level Indicator */}
+                  <div className="flex items-center gap-1">
+                    {[0, 1, 2, 3, 4].map((i) => (
+                      <motion.div
+                        key={i}
+                        className="w-1 bg-white rounded-full"
+                        animate={{
+                          height: audioLevel > i * 0.2 ? `${12 + audioLevel * 20}px` : '4px',
+                        }}
+                        transition={{ duration: 0.1 }}
+                      />
+                    ))}
+                  </div>
+
+                  {/* Recording Duration */}
+                  <span className="text-white text-sm font-mono min-w-[40px]">
+                    {Math.floor(recordingDuration / 60)}:{(recordingDuration % 60).toString().padStart(2, '0')}
+                  </span>
+
+                  {/* Stop Button */}
+                  <Button
+                    variant="secondary"
+                    size="lg"
+                    onClick={stopVoiceRecording}
+                    className="bg-red-500 hover:bg-red-600 text-white rounded-full w-14 h-14 p-0 animate-pulse"
+                  >
+                    <Square className="w-5 h-5 fill-current" />
+                  </Button>
+
+                  {/* Cancel Button */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={cancelVoiceRecording}
+                    className="text-white/70 hover:text-white hover:bg-white/10"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
+
+              {/* Transcription Display */}
+              {transcription && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="text-white/80 text-sm italic max-w-md truncate"
+                >
+                  "{transcription}"
+                </motion.div>
+              )}
+            </div>
+          )}
 
         </div>
       </motion.div>

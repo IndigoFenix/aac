@@ -244,26 +244,10 @@ export function CameraProvider({ children }: CameraProviderProps) {
     }
   };
 
-  // Start camera automatically when component mounts
-  useEffect(() => {
-    const initCamera = async () => {
-      try {
-        await getAvailableDevices();
-        // Wait a moment for device enumeration to complete
-        setTimeout(() => {
-          startCamera();
-        }, 500);
-      } catch (error) {
-        console.error('Failed to initialize camera:', error);
-        // Try starting camera anyway with default constraints
-        startCamera();
-      }
-    };
-
-    initCamera();
-    return () => stopCamera();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Camera auto-start disabled: useMultiCamera hook is used instead (see home.tsx).
+  // CameraProvider remains mounted for context compatibility but does not claim the device.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { return () => stopCamera(); }, []);
 
   // Load available devices on mount
   useEffect(() => {

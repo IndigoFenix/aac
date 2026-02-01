@@ -56,6 +56,7 @@ import {
   isArrayIndex,
   parseArrayIndex,
 } from './path-utils';
+import { memDebug } from './memory-debug-log';
 
 const REQUIRE_VISIBLE_TO_UPDATE = false;
 const RETURN_VIEW_DATA = true;
@@ -729,6 +730,13 @@ export function renderMemoryVisualization(
     return arr.length <= limit ? { slice: arr, more: 0 } : { slice: arr.slice(0, limit), more: arr.length - limit };
   }
 
+  /** Returns true when basePath belongs to a field marked readOnly in its schema. */
+  function isReadOnlyPath(basePath: string): boolean {
+    const rootId = splitPath(basePath)[0] ?? '';
+    const field = memoryFields.find(f => f.id === rootId);
+    return !!(field as any)?.readOnly;
+  }
+
   // ---------- snapshot renderers ----------
   function renderObject(
     field: AgentMemoryFieldObject,
@@ -821,7 +829,11 @@ export function renderMemoryVisualization(
   
     lines.push(...slice);
     if (more > 0) lines.push(`  … +${more} more`);
-    lines.push(`  ↪ To expand: view "${basePath}/*". To modify: action "set" on "${basePath}" or "${basePath}/<property>".`);
+    if (isReadOnlyPath(basePath)) {
+      lines.push(`  ↪ To expand: view "${basePath}/*". (read-only)`);
+    } else {
+      lines.push(`  ↪ To expand: view "${basePath}/*". To modify: action "set" on "${basePath}" or "${basePath}/<property>".`);
+    }
     return lines;
   }  
 
@@ -898,7 +910,9 @@ export function renderMemoryVisualization(
       } else {
         lines.push(`  (empty - no items to display)`);
       }
-      lines.push(`  ↪ To append: action "add" at "${basePath}" with value.`);
+      if (!isReadOnlyPath(basePath)) {
+        lines.push(`  ↪ To append: action "add" at "${basePath}" with value.`);
+      }
       return lines;
     }
 
@@ -949,7 +963,9 @@ export function renderMemoryVisualization(
     }
   
     if (end < arr.length) lines.push(`  … more items (use view with page.offset=${end})`);
-    lines.push(`  ↪ To append: action "add" at "${basePath}" with value. To update item: action "set" at "${basePath}/<index>".`);
+    if (!isReadOnlyPath(basePath)) {
+      lines.push(`  ↪ To append: action "add" at "${basePath}" with value. To update item: action "set" at "${basePath}/<index>".`);
+    }
     return lines;
   }
   
@@ -969,7 +985,9 @@ export function renderMemoryVisualization(
       } else {
         lines.push(`  (empty - no items to display)`);
       }
-      lines.push(`  ↪ Add: action "add" at "${basePath}" with key + value.`);
+      if (!isReadOnlyPath(basePath)) {
+        lines.push(`  ↪ Add: action "add" at "${basePath}" with key + value.`);
+      }
       return lines;
     }
 
@@ -1020,7 +1038,9 @@ export function renderMemoryVisualization(
     }
   
     if (end < allKeys.length) lines.push(`  … more keys (use view with page.offset=${end})`);
-    lines.push(`  ↪ Add: action "add" at "${basePath}" with key + value. Rename: action "rename" on child path.`);
+    if (!isReadOnlyPath(basePath)) {
+      lines.push(`  ↪ Add: action "add" at "${basePath}" with key + value. Rename: action "rename" on child path.`);
+    }
     return lines;
   }
   
@@ -1040,7 +1060,9 @@ export function renderMemoryVisualization(
       } else {
         lines.push(`  (empty - no subtopics)`);
       }
-      lines.push(`  ↪ Add subtopic: action "add" at "${basePath}" with key + optional {description}.`);
+      if (!isReadOnlyPath(basePath)) {
+        lines.push(`  ↪ Add subtopic: action "add" at "${basePath}" with key + optional {description}.`);
+      }
       return lines;
     }
 
@@ -1054,7 +1076,9 @@ export function renderMemoryVisualization(
       lines.push(`  - ${k}${desc} ${isOpen(nodePath) ? '' : '(children hidden)'}`);
     }
     if (end < keys.length) lines.push(`  … more subtopics (use view with page.offset=${end})`);
-    lines.push(`  ↪ Add subtopic: action "add" at "${basePath}" with key + optional {description}. Rename/delete under "${basePath}/<key>".`);
+    if (!isReadOnlyPath(basePath)) {
+      lines.push(`  ↪ Add subtopic: action "add" at "${basePath}" with key + optional {description}. Rename/delete under "${basePath}/<key>".`);
+    }
     return lines;
   }
 
@@ -1349,6 +1373,83 @@ export function renderMemoryVisualization(
 }
 
 /* ------------------------------
+ * reorderArrayDeletes(...)
+ * Reorders delete operations on arrays to process from highest index to lowest.
+ * This prevents index shifting from causing incorrect deletions.
+ * ------------------------------ */
+
+function reorderArrayDeletes(ops: MemoryToolInput[]): MemoryToolInput[] {
+  if (ops.length <= 1) return ops;
+
+  // Identify delete operations that target array items (path ends with /number)
+  const arrayDeletePattern = /^(.+)\/(\d+)$/;
+
+  // Separate deletes from other operations, tracking original positions
+  const deletes: Array<{ op: MemoryToolInput; parentPath: string; index: number; originalIndex: number }> = [];
+  const others: Array<{ op: MemoryToolInput; originalIndex: number }> = [];
+
+  ops.forEach((op, i) => {
+    if (op.action === 'delete' && op.path) {
+      const match = op.path.match(arrayDeletePattern);
+      if (match) {
+        deletes.push({
+          op,
+          parentPath: match[1],
+          index: parseInt(match[2], 10),
+          originalIndex: i
+        });
+        return;
+      }
+    }
+    others.push({ op, originalIndex: i });
+  });
+
+  // If no array deletes, return original order
+  if (deletes.length === 0) return ops;
+
+  memDebug('reorderArrayDeletes — BEFORE reorder', ops.map(o => `${o.action} ${o.path}`));
+
+  // Group deletes by parent path
+  const deletesByParent = new Map<string, typeof deletes>();
+  for (const d of deletes) {
+    const group = deletesByParent.get(d.parentPath) || [];
+    group.push(d);
+    deletesByParent.set(d.parentPath, group);
+  }
+
+  // Sort each group by index descending (highest first)
+  for (const group of deletesByParent.values()) {
+    group.sort((a, b) => b.index - a.index);
+  }
+
+  // Rebuild the ops array, preserving relative order of non-deletes
+  // and inserting sorted deletes at their first occurrence position
+  const result: MemoryToolInput[] = [];
+  const processedParents = new Set<string>();
+  const allItems = [...others, ...deletes].sort((a, b) => a.originalIndex - b.originalIndex);
+
+  for (const item of allItems) {
+    if ('parentPath' in item) {
+      // This is a delete - insert all deletes for this parent (sorted) at first occurrence
+      if (!processedParents.has(item.parentPath as string)) {
+        processedParents.add(item.parentPath as string);
+        const group = deletesByParent.get(item.parentPath as string)!;
+        for (const d of group) {
+          result.push(d.op);
+        }
+      }
+      // Skip - already added with the group
+    } else {
+      // Non-delete operation - add as-is
+      result.push(item.op);
+    }
+  }
+
+  memDebug('reorderArrayDeletes — AFTER reorder', result.map(o => `${o.action} ${o.path}`));
+  return result;
+}
+
+/* ------------------------------
  * processMemoryToolResponse(...)
  * ------------------------------ */
 
@@ -1363,11 +1464,15 @@ export function processMemoryToolResponse(
   const results: MemoryOperationResult[] = [];
 
   // Normalize to a batch of ops; tolerate old single-op shape when called directly from app code
-  const batch: MemoryToolInput[] = Array.isArray((input as any)?.ops)
+  let batch: MemoryToolInput[] = Array.isArray((input as any)?.ops)
     ? (input as any).ops
     : Array.isArray((input as any)?.operations)
       ? (input as any).operations
       : [input as MemoryToolInput];
+
+  // Reorder delete operations on arrays to process from highest index to lowest
+  // This prevents index shifting from causing incorrect deletions
+  batch = reorderArrayDeletes(batch);
 
   // Helpers that do not depend on a single op
   const isMutating = (a: MemoryAction) =>
@@ -1700,8 +1805,10 @@ export function processMemoryToolResponse(
             const sv = JSON.stringify(op.value);
             if (arr.some((x: any) => JSON.stringify(x) === sv)) { results.push({ target: rawTarget, action, ok: false, message: 'uniqueItems violated.' }); continue; }
           }
+          memDebug(`ADD to array ${rawTarget} — array has ${arr.length} items, adding`, op.value);
           arr.push(op.value);
           autoOpenIfObject(s.items, joinPath([...splitPath(rawTarget), String(arr.length - 1)]));
+          memDebug(`ADD OK ${rawTarget} — array now has ${arr.length} items`);
           results.push({ target: rawTarget, action, ok: true });
           continue;
         }
@@ -1963,8 +2070,19 @@ export function processMemoryToolResponse(
           continue;
         }
         if (leaf.kind === 'arrayItem' || leaf.kind === 'mapValue' || leaf.kind === 'field') {
+          // Log array state before delete
+          if (leaf.kind === 'arrayItem') {
+            const parentTokens = splitPath(rawTarget).slice(0, -1);
+            const parentKey = parentTokens.join('/');
+            const parentVal = getAtPath(values, parentKey.startsWith('/') ? parentKey : '/' + parentKey);
+            memDebug(`DELETE arrayItem ${rawTarget} — parent array has ${Array.isArray(parentVal) ? parentVal.length : '?'} items`, parentVal);
+          }
           const r = deleteAtPath(values, rawTarget);
-          if (!r.ok) { results.push({ target: rawTarget, action, ok: false, message: r.message }); continue; }
+          if (!r.ok) {
+            memDebug(`DELETE FAILED ${rawTarget}`, r.message);
+            results.push({ target: rawTarget, action, ok: false, message: r.message }); continue;
+          }
+          memDebug(`DELETE OK ${rawTarget}`);
           closePathAndDescendants(state, rawTarget);
           results.push({ target: rawTarget, action, ok: true });
           continue;

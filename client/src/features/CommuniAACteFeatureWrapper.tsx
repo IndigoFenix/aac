@@ -80,9 +80,6 @@ import {
   LogOut,
   LogIn,
 } from "lucide-react";
-import cameraIcon from "@assets/image_icon_36x36_rounded_1757619072314.png";
-import appLogo from "@assets/CommuniAACte_logo.png";
-import creditIcon from "@assets/credit_icon_1757751437047.png";
 import ReactCrop, { Crop, centerCrop, makeAspectCrop } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
 import { useLanguage } from "@/contexts/LanguageContext";

@@ -58,6 +58,7 @@ export class AuthController {
   login(req: Request, res: Response, next: NextFunction): void {
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) {
+        console.error("Login error:", err);
         return res.status(500).json({
           success: false,
           message: "Login failed",
