@@ -41,6 +41,7 @@ import {
   Loader2,
   AlertTriangle,
 } from 'lucide-react';
+import { BiometricEnrollment } from '@/components/BiometricEnrollment';
 
 // =============================================================================
 // TYPES
@@ -688,6 +689,15 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
               </Alert>
             )}
           </div>
+
+          {/* Biometric Enrollment - Only for existing students */}
+          {editingStudent && (
+            <BiometricEnrollment
+              entityType="student"
+              entityId={editingStudent.id}
+              compact
+            />
+          )}
         </div>
 
         <DialogFooter className={isRTL ? 'flex-row-reverse' : ''}>

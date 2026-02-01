@@ -204,6 +204,7 @@ export const LIBRARY_TOPICS_FIELD: AgentMemoryFieldMapWithDB = {
   description:
     "Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics.",
   opened: true,
+  readOnly: true,
   values: topicSchema,
   db: topicsOps,
 };

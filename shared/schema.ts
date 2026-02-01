@@ -269,6 +269,10 @@ export const users = pgTable("users", {
   mfaEnabled: boolean("mfa_enabled").default(false).notNull(),
   mfaSecret: text("mfa_secret"), // Encrypted TOTP secret
   mfaEnforcedByAdmin: boolean("mfa_enforced_by_admin").default(false).notNull(),
+
+  // Biometric recognition fields
+  faceEmbedding: jsonb("face_embedding"), // 128-dimensional face embedding vector
+  voiceEmbedding: jsonb("voice_embedding"), // Voice embedding vector for speaker recognition
 });
 
 export const passwordResetTokens = pgTable("password_reset_tokens", {
@@ -658,6 +662,10 @@ export const students = pgTable("students", {
   aacModelOverride: text("aac_model_override"), // AI model override (e.g., 'chatgpt5')
   aacVoiceType: text("aac_voice_type"), // 'man', 'woman', 'boy', 'girl'
   aacKnownPeople: jsonb("aac_known_people").default([]), // Array of known people for recognition
+
+  // Biometric recognition fields
+  faceEmbedding: jsonb("face_embedding"), // 128-dimensional face embedding vector
+  voiceEmbedding: jsonb("voice_embedding"), // Voice embedding vector for speaker recognition
 
   // Status and metadata
   isActive: boolean("is_active").default(true).notNull(),
@@ -1507,10 +1515,10 @@ export const chatSessions = pgTable("chat_sessions", {
   userId: varchar("user_id").references(() => users.id),
   studentId: varchar("student_id").references(() => students.id),
   userStudentId: varchar("user_student_id").references(() => userStudents.id), // The relationship record if both are provided
-  
+
   // Chat mode determines which agent template to use
   chatMode: varchar("chat_mode").notNull().default("chat"),
-  
+
   started: timestamp("started").notNull().defaultNow(),
   lastUpdate: timestamp("last_update").notNull().defaultNow(),
   state: jsonb("state").notNull(),
@@ -1523,6 +1531,13 @@ export const chatSessions = pgTable("chat_sessions", {
   useResponsesAPI: boolean("use_responses_api").default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+
+  // Dual-agent AAC system fields
+  pendingMessages: jsonb("pending_messages").default([]), // Messages cached while Monitor is busy
+  interactivePrompt: text("interactive_prompt"), // Full prompt for Interactive agent (student base + Monitor additions)
+  monitorBusy: boolean("monitor_busy").default(false), // Is Monitor currently processing?
+  monitorBusySince: timestamp("monitor_busy_since"), // Timestamp when Monitor started (for staleness detection)
+  thinkingMode: boolean("thinking_mode").default(false), // Is thinking mode active? (Monitor responds directly)
 }, (table) => [
   index("idx_chat_sessions_user_id").on(table.userId),
   index("idx_chat_sessions_student_id").on(table.studentId),

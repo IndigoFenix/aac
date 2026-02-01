@@ -81,7 +81,6 @@ import {
   LogOut,
   LogIn,
 } from "lucide-react";
-import cameraIcon from "@assets/image_icon_36x36_rounded_1757619072314.png";
 import ReactCrop, { Crop, centerCrop, makeAspectCrop } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -224,7 +223,6 @@ export function CommuniAACteNewSession(props: Props) {
                       onClick={() => setShowImageMenu(!showImageMenu)}
                       className="w-6 h-6 p-0 hover:bg-primary/10"
                     >
-                      <img src={cameraIcon} alt="Camera" className="w-6 h-6" />
                     </Button>
 
                     {/* Image Menu Dropdown */}

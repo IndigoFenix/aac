@@ -64,6 +64,27 @@
       "when": 1768847183227,
       "tag": "0008_young_tinkerer",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1769437028665,
+      "tag": "0009_dizzy_lake",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1769530581561,
+      "tag": "0010_fancy_puff_adder",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1769682386117,
+      "tag": "0011_giant_la_nuit",
+      "breakpoints": true
     }
   ]
 }

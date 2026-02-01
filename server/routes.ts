@@ -40,6 +40,9 @@ import { reportController } from "./controllers/reportController";
 import { fileUploadController } from "./controllers/fileUploadController";
 import { personaController } from "./controllers/personaController";
 import { topicController } from "./controllers/topicController";
+import { voiceController } from "./controllers/voiceController";
+import { dualAgentController } from "./controllers/dualAgentController";
+import { biometricController } from "./controllers/biometricController";
 
 // Configure multer for image uploads
 const upload = multer({
@@ -828,6 +831,108 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Clean up all files for a session
   app.delete("/api/chat/sessions/:sessionId/files", optionalAuth, (req, res) =>
     fileUploadController.cleanupSessionFiles(req, res)
+  );
+
+  // ============= VOICE ROUTES (AAC) =============
+  // Transcribe audio to text using Whisper
+  app.post("/api/aac/voice/transcribe", optionalAuth, requireOnboardingComplete, aacUpload.single("audio"), (req, res) =>
+    voiceController.transcribe(req, res)
+  );
+  // Text-to-speech using Google TTS (returns audio blob directly)
+  app.post("/api/aac/voice/synthesize", optionalAuth, requireOnboardingComplete, (req, res) =>
+    voiceController.synthesize(req, res)
+  );
+  // Text-to-speech using Google TTS (streaming via SSE)
+  app.post("/api/aac/voice/speak", optionalAuth, requireOnboardingComplete, (req, res) =>
+    voiceController.speak(req, res)
+  );
+  // Full voice chat: audio in → transcription + AI response + audio out (streaming)
+  app.post("/api/aac/voice/chat", optionalAuth, requireOnboardingComplete, aacUpload.single("audio"), (req, res) =>
+    voiceController.voiceChat(req, res)
+  );
+
+  // ============= DUAL-AGENT AAC ROUTES =============
+  // Initialize or resume a dual-agent session
+  app.post("/api/aac/dual/initialize", optionalAuth, requireOnboardingComplete, (req, res) =>
+    dualAgentController.initialize(req, res)
+  );
+  // Send text message (SSE streaming response)
+  app.post("/api/aac/dual/message", optionalAuth, requireOnboardingComplete, aacUpload.single("image"), (req, res) =>
+    dualAgentController.message(req, res)
+  );
+  // Send voice input (SSE streaming response)
+  app.post("/api/aac/dual/voice", optionalAuth, requireOnboardingComplete, aacUpload.single("audio"), (req, res) =>
+    dualAgentController.voice(req, res)
+  );
+  // Interpret button presses into a spoken sentence (SSE streaming response)
+  app.post("/api/aac/dual/interpret", optionalAuth, requireOnboardingComplete, (req, res) =>
+    dualAgentController.interpret(req, res)
+  );
+  // Continuous detection — camera frame in, board update out (JSON, not SSE)
+  app.post("/api/aac/dual/detect", optionalAuth, requireOnboardingComplete, aacUpload.single("image"), (req, res) =>
+    dualAgentController.detect(req, res)
+  );
+  // Get session state
+  app.get("/api/aac/dual/session/:sessionId", optionalAuth, requireOnboardingComplete, (req, res) =>
+    dualAgentController.getSession(req, res)
+  );
+
+  // ============= BIOMETRIC ENROLLMENT ROUTES =============
+  // User face enrollment
+  app.post("/api/biometric/users/:userId/face", requireAuth, (req, res) =>
+    biometricController.enrollUserFace(req, res)
+  );
+  app.get("/api/biometric/users/:userId/face", requireAuth, (req, res) =>
+    biometricController.getUserFaceStatus(req, res)
+  );
+  app.delete("/api/biometric/users/:userId/face", requireAuth, (req, res) =>
+    biometricController.removeUserFace(req, res)
+  );
+
+  // Student face enrollment
+  app.post("/api/biometric/students/:studentId/face", requireAuth, (req, res) =>
+    biometricController.enrollStudentFace(req, res)
+  );
+  app.get("/api/biometric/students/:studentId/face", requireAuth, (req, res) =>
+    biometricController.getStudentFaceStatus(req, res)
+  );
+  app.delete("/api/biometric/students/:studentId/face", requireAuth, (req, res) =>
+    biometricController.removeStudentFace(req, res)
+  );
+
+  // User voice enrollment
+  app.post("/api/biometric/users/:userId/voice", requireAuth, (req, res) =>
+    biometricController.enrollUserVoice(req, res)
+  );
+  app.get("/api/biometric/users/:userId/voice", requireAuth, (req, res) =>
+    biometricController.getUserVoiceStatus(req, res)
+  );
+  app.delete("/api/biometric/users/:userId/voice", requireAuth, (req, res) =>
+    biometricController.removeUserVoice(req, res)
+  );
+
+  // Student voice enrollment
+  app.post("/api/biometric/students/:studentId/voice", requireAuth, (req, res) =>
+    biometricController.enrollStudentVoice(req, res)
+  );
+  app.get("/api/biometric/students/:studentId/voice", requireAuth, (req, res) =>
+    biometricController.getStudentVoiceStatus(req, res)
+  );
+  app.delete("/api/biometric/students/:studentId/voice", requireAuth, (req, res) =>
+    biometricController.removeStudentVoice(req, res)
+  );
+
+  // Biometric matching (for recognition)
+  app.post("/api/biometric/match/face", requireAuth, (req, res) =>
+    biometricController.matchFace(req, res)
+  );
+  app.post("/api/biometric/match/voice", requireAuth, (req, res) =>
+    biometricController.matchVoice(req, res)
+  );
+
+  // Known people for AAC frontend identification (uses optionalAuth for AAC client)
+  app.get("/api/aac/students/:studentId/known-people", optionalAuth, requireOnboardingComplete, (req, res) =>
+    biometricController.getKnownPeople(req, res)
   );
 
   // ============= ADMIN ROUTES =============

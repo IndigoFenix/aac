@@ -10,7 +10,8 @@ interface CameraStream {
   facing: 'user' | 'environment' | 'unknown';
 }
 
-export function useMultiCamera() {
+export function useMultiCamera(options?: { autoStart?: boolean }) {
+  const autoStart = options?.autoStart ?? true;
   const [availableDevices, setAvailableDevices] = useState<MediaDeviceInfo[]>([]);
   const [cameras, setCameras] = useState<Map<string, CameraStream>>(new Map());
   const [isEnumerating, setIsEnumerating] = useState(false);
@@ -198,39 +199,38 @@ export function useMultiCamera() {
       let devices = await navigator.mediaDevices.enumerateDevices();
       let videoDevices = devices.filter(device => device.kind === 'videoinput');
       
-      // If no cameras found, continue without cameras (allow app to work)
-      if (videoDevices.length === 0) {
-        console.log('No cameras found - continuing in camera-less mode');
-        setAvailableDevices([]);
-        return;
-      }
-      
-      // If we got devices but no labels, try to get permissions for better labels
-      if (videoDevices.length > 0 && videoDevices.some(d => !d.label)) {
+      // If no cameras found or no labels, request permission and re-enumerate.
+      // Some browsers hide devices entirely until getUserMedia permission is granted.
+      if (videoDevices.length === 0 || videoDevices.some(d => !d.label)) {
         try {
-          console.log('Requesting camera permissions for device labels...');
+          console.log('Requesting camera permissions...');
           const tempStream = await Promise.race([
             navigator.mediaDevices.getUserMedia({ video: true }),
-            new Promise<never>((_, reject) => 
+            new Promise<never>((_, reject) =>
               setTimeout(() => reject(new Error('Permission request timeout after 5 seconds')), 5000)
             )
           ]);
-          
+
           // Stop the temporary stream immediately
           tempStream.getTracks().forEach(track => track.stop());
-          
+
           // Re-enumerate with permissions granted
           await new Promise(resolve => setTimeout(resolve, 200));
           devices = await navigator.mediaDevices.enumerateDevices();
           videoDevices = devices.filter(device => device.kind === 'videoinput');
-          
+
           console.log('Camera permissions granted, re-enumerated devices');
         } catch (permError) {
           console.warn('Camera permission request failed, continuing in camera-less mode:', permError);
-          // Continue in camera-less mode - don't set as error since audio features still work
           setAvailableDevices([]);
           return;
         }
+      }
+
+      if (videoDevices.length === 0) {
+        console.log('No cameras found - continuing in camera-less mode');
+        setAvailableDevices([]);
+        return;
       }
       
       setAvailableDevices(videoDevices);
@@ -252,14 +252,15 @@ export function useMultiCamera() {
     }
   }, [getFacingMode]);
 
-  // Auto-assign cameras when devices are available
+  // Auto-assign cameras when devices are available (only when autoStart is true)
   useEffect(() => {
+    if (!autoStart) return;
     if (availableDevices.length > 0) {
       autoAssignCameras();
     } else {
       console.log('No cameras available - app will work in camera-less mode with audio features only');
     }
-  }, [availableDevices, autoAssignCameras]);
+  }, [autoStart, availableDevices, autoAssignCameras]);
 
   // Initialize devices on mount
   useEffect(() => {

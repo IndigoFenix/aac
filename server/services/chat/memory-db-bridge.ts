@@ -445,8 +445,8 @@ export function resolveSchemaWithContext(
         };
       }
 
-      // Track this array as the parent container if it has update ops
-      if (arrSchema.db?.update) {
+      // Track this array as the parent container if it has mutation ops
+      if (arrSchema.db?.update || arrSchema.db?.delete || arrSchema.db?.add) {
         parentContainerDbOps = arrSchema.db;
         parentContainerKey = index;
         parentContainerPath = currentPath;
@@ -465,8 +465,8 @@ export function resolveSchemaWithContext(
     } else if (current.type === 'map') {
       const mapSchema = current as AgentMemoryFieldMapWithDB;
       
-      // Track this map as the parent container if it has update ops
-      if (mapSchema.db?.update) {
+      // Track this map as the parent container if it has mutation ops
+      if (mapSchema.db?.update || mapSchema.db?.delete || mapSchema.db?.add) {
         parentContainerDbOps = mapSchema.db;
         parentContainerKey = token;
         parentContainerPath = currentPath;
@@ -685,13 +685,13 @@ export async function populateMemoryFromDB(
 
       // Load based on field type
       if (schema.type === 'array' || schema.type === 'map' || schema.type === 'topic') {
-        // Container type - use list operation
+        // Container type - prefer list, fall back to read
         if (dbOps.list) {
           const page = state.page[path] ?? { offset: 0, limit: defaultLimit };
           const result = await dbOps.list(context, page);
-          
+
           // Transform items if needed
-          const items = dbOps.fromDB 
+          const items = dbOps.fromDB
             ? result.items.map(item => dbOps.fromDB!(item))
             : result.items;
 
@@ -718,6 +718,22 @@ export async function populateMemoryFromDB(
             // Use merge to preserve any child data that was already loaded
             setValueAtPath(values, tokens, obj, { merge: true });
             markLoaded(loadState, path, result.total, obj);
+          }
+          loadedPaths.push(path);
+        } else if (dbOps.read) {
+          // Fallback: arrays/maps that store data as a single value (e.g., chatMemory JSON fields)
+          // These have read/write but not list, so load the whole value at once
+          const result = await dbOps.read(context);
+          if (result !== undefined) {
+            const value = dbOps.fromDB ? dbOps.fromDB(result) : result;
+            setValueAtPath(values, tokens, value);
+            const total = Array.isArray(value) ? value.length : undefined;
+            markLoaded(loadState, path, total, value);
+          } else {
+            // Field exists but has no data yet — initialize to empty
+            const emptyValue = schema.type === 'array' ? [] : {};
+            setValueAtPath(values, tokens, emptyValue);
+            markLoaded(loadState, path, 0, emptyValue);
           }
           loadedPaths.push(path);
         }
@@ -875,8 +891,11 @@ export async function processDBOperation(
 
   // If no DB operations defined at the target path, check if we can use parent container operations
   if (!dbOps) {
-    // For 'set' action on a property, try to use parent container's update OR write operation
-    if (action === 'set' && parentContainerDbOps && parentContainerPath) {
+    // For 'set' action on an OBJECT property, try to use parent container's update OR write operation
+    // IMPORTANT: Do NOT use this for array items — writing {"3": value} to an array field corrupts the data.
+    // Array items should use the parent's write with the full array, not a partial object.
+    const parentIsArray = parentContainerPath && resolveSchemaWithContext(fields, memoryValues, parentContainerPath, baseContext).schema?.type === 'array';
+    if (action === 'set' && parentContainerDbOps && parentContainerPath && !parentIsArray) {
       try {
         // Extract the property name being set (last token in the path)
         const tokens = splitPath(path);
@@ -894,14 +913,12 @@ export async function processDBOperation(
         if (parentContainerDbOps.write) {
           if (!hideLogs) console.log(`[processDBOperation] Using parent object write at ${parentContainerPath}`);
           if (!hideLogs) console.log(`[processDBOperation] Property: ${propertyName}, Value:`, value);
-          
-          // Check if parent object already exists in memory with an ID
+
           const parentTokens = splitPath(parentContainerPath);
           const targetTokens = splitPath(path);
           const depthFromParent = targetTokens.length - parentTokens.length;
-          
+
           // Only use parent operations if target is 1-2 levels deep
-          // (1 level = property of parent, 2 levels = property of array/map item)
           if (depthFromParent > 2) {
             console.warn(
               `[processDBOperation] SAFETY: Target path "${path}" is ${depthFromParent} levels ` +
@@ -909,41 +926,51 @@ export async function processDBOperation(
             );
             return { shouldUpdateMemory: true, dbSynced: false };
           }
-          const currentParentValue = getValueAtPath(memoryValues, parentTokens);
-          const parentExists = currentParentValue && currentParentValue.id;
-          
-          // Call parent's write with partial update
-          const partialUpdate = { [propertyName]: value };
-          const writeResult = await parentContainerDbOps.write(context, partialUpdate);
-          
+
+          // Read FULL current parent value from DB to avoid losing sibling properties
+          let currentParentValue: any = {};
+          if (parentContainerDbOps.read) {
+            const dbParent = await parentContainerDbOps.read(context);
+            if (dbParent && typeof dbParent === 'object') {
+              currentParentValue = parentContainerDbOps.fromDB ? parentContainerDbOps.fromDB(dbParent) : dbParent;
+            }
+          }
+          if (!currentParentValue || Object.keys(currentParentValue).length === 0) {
+            currentParentValue = getValueAtPath(memoryValues, parentTokens) || {};
+          }
+          const parentExists = currentParentValue && Object.keys(currentParentValue).length > 0;
+
+          // Merge property into the full parent object to preserve sibling properties
+          const fullUpdate = { ...currentParentValue, [propertyName]: value };
+          const writeResult = await parentContainerDbOps.write(context, fullUpdate);
+
           markLoaded(loadState, parentContainerPath);
-          
+
           if (writeResult !== undefined) {
-            const transformedResult = parentContainerDbOps.fromDB 
-              ? parentContainerDbOps.fromDB(writeResult) 
+            const transformedResult = parentContainerDbOps.fromDB
+              ? parentContainerDbOps.fromDB(writeResult)
               : writeResult;
-            
+
             if (!parentExists) {
               // CREATE case: Parent didn't exist, apply full object to parent path
               if (!hideLogs) console.log(`[processDBOperation] Parent created, applying to ${parentContainerPath}`);
-              return { 
-                dbResult: transformedResult, 
-                targetPath: parentContainerPath,  // Apply to parent, not property
-                shouldUpdateMemory: true, 
-                dbSynced: true 
+              return {
+                dbResult: transformedResult,
+                targetPath: parentContainerPath,
+                shouldUpdateMemory: true,
+                dbSynced: true
               };
             } else {
               // UPDATE case: Parent existed, just return the property value
-              // The in-memory system will handle setting the property
               if (!hideLogs) console.log(`[processDBOperation] Parent updated, property value applied`);
-              return { 
+              return {
                 dbResult: undefined,  // Let in-memory handle it
-                shouldUpdateMemory: true, 
-                dbSynced: true 
+                shouldUpdateMemory: true,
+                dbSynced: true
               };
             }
           }
-          
+
           // No result from write, let in-memory handle it
           return { shouldUpdateMemory: true, dbSynced: true };
         }
@@ -952,20 +979,51 @@ export async function processDBOperation(
         return { error: err.message || 'DB write failed', shouldUpdateMemory: false, dbSynced: false };
       }
     }
-    
+
+    // For 'set' action on an array ITEM, read the full array, update the index, write back
+    if (action === 'set' && parentIsArray && parentContainerDbOps?.write && parentContainerPath) {
+      try {
+        const itemIndex = parentContainerKey;
+        if (typeof itemIndex !== 'number' || itemIndex < 0) {
+          return { shouldUpdateMemory: true, dbSynced: false, error: `Invalid array index for set: ${itemIndex}` };
+        }
+
+        // Read current array from DB
+        let currentArray: any[];
+        if (parentContainerDbOps.read) {
+          const dbValue = await parentContainerDbOps.read(context);
+          currentArray = Array.isArray(dbValue) ? [...dbValue] : [];
+        } else {
+          // Fall back to in-memory value
+          const parentTokens = splitPath(parentContainerPath);
+          const memValue = getValueAtPath(memoryValues, parentTokens);
+          currentArray = Array.isArray(memValue) ? [...memValue] : [];
+        }
+
+        if (itemIndex >= currentArray.length) {
+          return { shouldUpdateMemory: true, dbSynced: false, error: `Array index ${itemIndex} out of bounds (length: ${currentArray.length})` };
+        }
+
+        // Update the specific index and write the full array back
+        currentArray[itemIndex] = value;
+        await parentContainerDbOps.write(context, currentArray);
+        markLoaded(loadState, parentContainerPath);
+        return { dbResult: value, shouldUpdateMemory: true, dbSynced: true };
+      } catch (err: any) {
+        console.error('[processDBOperation] Array item set failed:', err);
+        return { error: err.message || 'DB set on array item failed', shouldUpdateMemory: false, dbSynced: false };
+      }
+    }
+
     // For 'add' action on an array property inside an object with write ops
     if (action === 'add' && parentContainerDbOps?.write && parentContainerPath) {
       try {
         const tokens = splitPath(path);
         const propertyName = tokens[tokens.length - 1];
-        
-        // Get current parent value and check if it exists with ID
         const parentTokens = splitPath(parentContainerPath);
         const targetTokens = splitPath(path);
         const depthFromParent = targetTokens.length - parentTokens.length;
-        
-        // Only use parent operations if target is 1-2 levels deep
-        // (1 level = property of parent, 2 levels = property of array/map item)
+
         if (depthFromParent > 2) {
           console.warn(
             `[processDBOperation] SAFETY: Target path "${path}" is ${depthFromParent} levels ` +
@@ -973,36 +1031,30 @@ export async function processDBOperation(
           );
           return { shouldUpdateMemory: true, dbSynced: false };
         }
-        const currentParentValue = getValueAtPath(memoryValues, parentTokens) || {};
-        const parentExists = currentParentValue && currentParentValue.id;
-        const currentArray = currentParentValue[propertyName] || [];
-        
-        // Append the new value
+
+        // Read current parent value from in-memory (preferred) or DB
+        let currentParentValue: any = getValueAtPath(memoryValues, parentTokens) || {};
+        if (Object.keys(currentParentValue).length === 0 && parentContainerDbOps.read) {
+          const dbParent = await parentContainerDbOps.read(context);
+          if (dbParent && typeof dbParent === 'object') {
+            currentParentValue = parentContainerDbOps.fromDB ? parentContainerDbOps.fromDB(dbParent) : dbParent;
+          }
+        }
+
+        const currentArray = Array.isArray(currentParentValue[propertyName]) ? currentParentValue[propertyName] : [];
         const updatedArray = [...currentArray, value];
-        const partialUpdate = { [propertyName]: updatedArray };
-        
+        // Merge with full parent to preserve sibling properties (RewardPreferences, AvoidTopics, etc.)
+        const fullUpdate = { ...currentParentValue, [propertyName]: updatedArray };
+
         if (!hideLogs) console.log(`[processDBOperation] Using parent object write for 'add' at ${parentContainerPath}`);
         if (!hideLogs) console.log(`[processDBOperation] Array property: ${propertyName}, Adding:`, value);
-        
-        const writeResult = await parentContainerDbOps.write(context, partialUpdate);
-        
+
+        await parentContainerDbOps.write(context, fullUpdate);
         markLoaded(loadState, parentContainerPath);
-        
-        if (writeResult !== undefined && !parentExists) {
-          // Parent was created, apply full result to parent path
-          const transformedResult = parentContainerDbOps.fromDB 
-            ? parentContainerDbOps.fromDB(writeResult) 
-            : writeResult;
-          if (!hideLogs) console.log(`[processDBOperation] Parent created via add, applying to ${parentContainerPath}`);
-          return { 
-            dbResult: transformedResult, 
-            targetPath: parentContainerPath,
-            shouldUpdateMemory: true, 
-            dbSynced: true 
-          };
-        }
-        
-        // Parent existed or no result, let in-memory handle the add
+
+        // Always return just the added value — the in-memory processor handles the array add.
+        // Never return the full parent object as dbResult, since post-processing for 'add'
+        // would try to set it as the last array element (corrupting the array).
         return { dbResult: value, shouldUpdateMemory: true, dbSynced: true };
       } catch (err: any) {
         console.error('[processDBOperation] Parent container add failed:', err);
@@ -1056,13 +1108,15 @@ export async function processDBOperation(
 
   try {
     let dbResult: any;
+    // Track whether a DB operation was actually executed (some ops like clear/delete don't produce a dbResult)
+    let dbExecuted = false;
 
     switch (action) {
       case 'set':
         if (dbOps.write) {
           const dbValue = dbOps.toDB ? dbOps.toDB(value) : value;
           const writeResult = await dbOps.write(context, dbValue);
-          
+
           // If write returned a value, use it (transformed by fromDB if available)
           // Otherwise fall back to original value
           if (writeResult !== undefined) {
@@ -1071,6 +1125,7 @@ export async function processDBOperation(
             dbResult = value;
           }
           markLoaded(loadState, path);
+          dbExecuted = true;
         }
         break;
 
@@ -1082,6 +1137,7 @@ export async function processDBOperation(
             dbResult = await dbOps.upsert(context, dbValue, key ?? index);
             if (dbOps.fromDB) dbResult = dbOps.fromDB(dbResult);
             markLoaded(loadState, path);
+            dbExecuted = true;
           } else if (dbOps.update && (key !== undefined || index !== undefined)) {
             // UPDATE existing item (has key or index)
             const keyOrIndex = key ?? index;
@@ -1090,6 +1146,7 @@ export async function processDBOperation(
             dbResult = await dbOps.update(context, keyOrIndex!, dbValue);
             if (dbOps.fromDB) dbResult = dbOps.fromDB(dbResult);
             markLoaded(loadState, path);
+            dbExecuted = true;
           } else if (dbOps.write) {
             // Fallback to write (for objects without key)
             const valueWithContext = mergeInheritedContext(value, context);
@@ -1101,6 +1158,7 @@ export async function processDBOperation(
               dbResult = value;
             }
             markLoaded(loadState, path);
+            dbExecuted = true;
           }
           break;
 
@@ -1114,6 +1172,7 @@ export async function processDBOperation(
           if (dbOps.fromDB) dbResult = dbOps.fromDB(dbResult);
           // Invalidate the container's total count
           markStale(loadState, path, false);
+          dbExecuted = true;
         }
         break;
 
@@ -1124,12 +1183,14 @@ export async function processDBOperation(
           dbResult = await dbOps.insert(context, dbValue, index);
           if (dbOps.fromDB) dbResult = dbOps.fromDB(dbResult);
           markStale(loadState, path, false);
+          dbExecuted = true;
         } else if (dbOps.add) {
           const valueWithContext = mergeInheritedContext(value, context);
           const dbValue = dbOps.toDB ? dbOps.toDB(valueWithContext) : valueWithContext;
           dbResult = await dbOps.add(context, dbValue, { index });
           if (dbOps.fromDB) dbResult = dbOps.fromDB(dbResult);
           markStale(loadState, path, false);
+          dbExecuted = true;
         }
         break;
 
@@ -1140,6 +1201,7 @@ export async function processDBOperation(
           const keyToDelete = context.currentKey ?? tokens[tokens.length - 1];
           await dbOps.delete(context, keyToDelete);
           clearLoadState(loadState, path);
+          dbExecuted = true;
         }
         break;
 
@@ -1147,6 +1209,7 @@ export async function processDBOperation(
         if (dbOps.clear) {
           await dbOps.clear(context);
           clearLoadState(loadState, path);
+          dbExecuted = true;
         }
         break;
 
@@ -1157,12 +1220,13 @@ export async function processDBOperation(
           await dbOps.rename(context, oldKey, newKey);
           // Update load state for the renamed path
           clearLoadState(loadState, path);
+          dbExecuted = true;
         }
         break;
     }
 
-    // dbResult is set when a DB operation was successfully performed
-    return { dbResult, shouldUpdateMemory: true, dbSynced: dbResult !== undefined };
+    // dbSynced is true when ANY DB operation was executed (not just ones that return a value)
+    return { dbResult, shouldUpdateMemory: true, dbSynced: dbExecuted };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return { error: `Database error: ${message}`, shouldUpdateMemory: false, dbSynced: false };

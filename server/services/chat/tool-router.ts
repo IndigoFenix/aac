@@ -4,6 +4,7 @@ import { GPTFunctionToolCall, GPTToolCall, GPTFunctionCallItem, JSONSchema } fro
 import { sendEmail } from "./tools/email";
 import { MemoryOperationResult, MemoryToolInput } from "./memory-types";
 import { processMemoryToolResponse } from "./memory-system";
+import { memDebug, memDebugSeparator } from "./memory-debug-log";
 import { ArticleResponse, fetchPage, SearchItem, webSearch } from "./tools/search-engine";
 import { getDistance } from "./tools/map-data";
 import { AgentAPIEndpoint } from "@shared/schema";
@@ -47,6 +48,7 @@ export interface ToolRegistry {
   setRooms: (args: { roomIds: string[] }) => Promise<any>;
   spawn: (args: { subAgentId: string }) => Promise<any>;
   despawn: (args: { subAgentId: string }) => Promise<any>;
+  pruneMessages: (args: { forget: number[]; summary: string }) => Promise<any>;
 }
 
 // ============================================================================
@@ -219,6 +221,12 @@ export interface ToolRegistryDeps {
   onThinkingUpdate?: (description: string) => void;
 
   /**
+   * Optional callback for pruneMessages tool.
+   * When provided, allows the AI to manually compress conversation history.
+   */
+  onPruneMessages?: (forget: number[], summary: string) => Promise<{ removed: number; warnings: string[] }>;
+
+  /**
    * Optional custom memory processor.
    * When provided, this replaces the default processMemoryToolResponse.
    * Use this to inject database-backed memory systems.
@@ -295,10 +303,14 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     },
 
     manageMemory: async (input: MemoryToolInput) => {
+      memDebugSeparator('manageMemory called');
+      memDebug('INPUT', input);
+
       // Check for loop BEFORE processing
       if (loopDetector.isLooping()) {
         const loopMessage = loopDetector.getLoopMessage();
         loopDetector.reset(); // Reset after breaking the loop
+        memDebug('LOOP DETECTED', loopMessage);
         return [{
           target: input.path || 'unknown',
           action: input.action,
@@ -307,12 +319,41 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
         }];
       }
 
+      // Reject mutations on read-only fields
+      const allFields: any[] = deps.agent.memoryFields || [];
+      const inputOps = (input as any).ops || [input];
+      const readOnlyViolations = inputOps.filter((op: any) => {
+        if (!op.path || !op.action || op.action === 'view' || op.action === 'hide') return false;
+        const rootId = op.path.split('/').filter(Boolean)[0];
+        const field = allFields.find((f: any) => f.id === rootId);
+        return field?.readOnly === true;
+      });
+      if (readOnlyViolations.length > 0) {
+        memDebug('REJECTED — mutation on read-only field', readOnlyViolations);
+        return readOnlyViolations.map((op: any) => ({
+          target: op.path || 'unknown',
+          action: op.action,
+          ok: false,
+          message: `This field is read-only. You cannot ${op.action} "${op.path}". Focus on responding to the user.`,
+        }));
+      }
+
       // Use custom processor if provided, otherwise use default
       let result;
       if (deps.memoryProcessor) {
-        if (!hideLogs) console.log(`[manageMemory] memoryValuesRef before processing: ${JSON.stringify(deps.memoryValuesRef.current)}`);
-        if (!hideLogs) console.log(`[manageMemory] visiblePathsAccumulator before: [${[...visiblePathsAccumulator].join(', ')}]`);
-        
+        // Log relevant array values before processing
+        const inputOps = (input as any).ops || [input];
+        for (const op of inputOps) {
+          if (op.path) {
+            const parentPath = op.path.replace(/\/\d+$/, '');
+            const parentKey = parentPath.replace(/^\//, '');
+            const currentVal = deps.memoryValuesRef.current[parentKey];
+            if (Array.isArray(currentVal)) {
+              memDebug(`BEFORE ${op.action} ${op.path} — ${parentKey} array (${currentVal.length} items)`, currentVal);
+            }
+          }
+        }
+
         result = await deps.memoryProcessor(input);
         
         // MERGE memoryValues instead of replacing
@@ -346,9 +387,19 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
           await deps.onUpdateChatState(deps.chatStateRef.current);
         }
 
-        if (!hideLogs) console.log('[manageMemory] After - result:', result);
-        if (!hideLogs) console.log(`[manageMemory] visiblePathsAccumulator after: [${[...visiblePathsAccumulator].join(', ')}]`);
-        if (!hideLogs) console.log(`[manageMemory] memoryValuesRef after processing: ${JSON.stringify(deps.memoryValuesRef.current)}`);
+        memDebug('RESULTS', result.results);
+        // Log relevant array values after processing
+        const afterOps = (input as any).ops || [input];
+        for (const op of afterOps) {
+          if (op.path) {
+            const parentPath = op.path.replace(/\/\d+$/, '');
+            const parentKey = parentPath.replace(/^\//, '');
+            const afterVal = deps.memoryValuesRef.current[parentKey];
+            if (Array.isArray(afterVal)) {
+              memDebug(`AFTER ${op.action} ${op.path} — ${parentKey} array (${afterVal.length} items)`, afterVal);
+            }
+          }
+        }
       } else {
         // Default: use standard in-memory processor
         const memResult = processMemoryToolResponse(
@@ -382,8 +433,15 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
         };
       }
 
-      // Record for loop detection AFTER processing
-      loopDetector.record('manageMemory', input, result.results);
+      // Record for loop detection AFTER processing — but only for mutation operations.
+      // View/hide operations are informational and should not trigger loop detection.
+      const inputOpsForLoop = (input as any).ops || [input];
+      const hasMutations = inputOpsForLoop.some(
+        (op: any) => op.action && op.action !== 'view' && op.action !== 'hide'
+      );
+      if (hasMutations) {
+        loopDetector.record('manageMemory', input, result.results);
+      }
 
       return result.results;
     },
@@ -446,6 +504,13 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
     despawn: async (args: { subAgentId: string }) => {
       const result = {};
       return result;
+    },
+
+    pruneMessages: async (args: { forget: number[]; summary: string }) => {
+      if (deps.onPruneMessages) {
+        return { success: true, ...(await deps.onPruneMessages(args.forget, args.summary)) };
+      }
+      return { success: true, removed: 0 };
     },
   };
 }
@@ -751,7 +816,8 @@ export async function makeToolCalls(
                 insertToolCallResponse(toolCall, response);
                 break;
               case "pruneMessages":
-                insertToolCallResponse(toolCall, { success: true });
+                response = await registry.pruneMessages(args);
+                insertToolCallResponse(toolCall, response);
                 break;
               default:
                 insertToolCallResponse(toolCall, {

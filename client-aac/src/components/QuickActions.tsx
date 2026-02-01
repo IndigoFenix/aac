@@ -6,16 +6,18 @@ import { useLanguage } from "@/contexts/LanguageContext";
 interface QuickActionsProps {
   onAction: (action: string, text: string) => void;
   onBack: () => void;
+  onInterpret?: () => void;
+  showInterpret?: boolean;
 }
 
-export default function QuickActions({ onAction, onBack }: QuickActionsProps) {
+export default function QuickActions({ onAction, onBack, onInterpret, showInterpret }: QuickActionsProps) {
   const { t, language, isRTL } = useLanguage();
   const { speak } = useTextToSpeech();
 
   const quickActions = [
     { id: "yes", labelKey: "quickActions.yes", emoji: "✅", color: "#D1FAE5" },
     { id: "no", labelKey: "quickActions.no", emoji: "❌", color: "#FEE2E2" },
-    { id: "more", labelKey: "quickActions.more", emoji: "➕", color: "#DBEAFE" },
+    { id: "help", labelKey: "quickActions.help", emoji: "🆘", color: "#DBEAFE" },
   ];
 
   const handleAction = (action: typeof quickActions[0]) => {
@@ -49,6 +51,20 @@ export default function QuickActions({ onAction, onBack }: QuickActionsProps) {
           </span>
         </motion.button>
       ))}
+
+      {showInterpret && onInterpret && (
+        <motion.button
+          onClick={onInterpret}
+          className="flex flex-col items-center justify-center px-4 py-2 rounded-xl shadow-sm border border-purple-300 dark:border-purple-600 bg-purple-100 dark:bg-purple-900 min-w-[70px]"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <span className="text-xl">🗣️</span>
+          <span className="text-xs font-semibold text-purple-800 dark:text-purple-200 mt-0.5">
+            Speak
+          </span>
+        </motion.button>
+      )}
 
       <motion.button
         onClick={handleBack}
