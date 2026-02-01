@@ -1,6 +1,5 @@
 import JSZip from 'jszip';
 import { BoardIR } from '@/types/board-ir';
-import syntaacxLogoUrl from '@assets/SyntAACx_logo.png';
 
 export class GridsetPackager {
   static async package(board: BoardIR): Promise<Blob> {
@@ -33,22 +32,6 @@ export class GridsetPackager {
     // Handle cover image - embed SyntAACx logo by default and when selected
     const coverBackground = board.coverImage?.backgroundColor || "#FFFFFFFF"; // White background by default
     let hasThumbnailImage = false;
-    
-    // Always embed the SyntAACx logo as the default cover image
-    try {
-      console.log('Loading SyntAACx logo from:', syntaacxLogoUrl);
-      const logoResponse = await fetch(syntaacxLogoUrl);
-      if (logoResponse.ok) {
-        const logoArrayBuffer = await logoResponse.arrayBuffer();
-        zip.file("Settings0/thumbnail.png", logoArrayBuffer);
-        hasThumbnailImage = true;
-        console.log('Successfully embedded SyntAACx logo in gridset');
-      } else {
-        console.error('Failed to load SyntAACx logo - response not ok:', logoResponse.status);
-      }
-    } catch (error) {
-      console.error('Failed to load SyntAACx logo:', error);
-    }
     
     // Set thumbnail reference based on whether we have the image
     const coverImage = hasThumbnailImage ? ".png" : "[widgit]widgit rebus\\c\\communicate.emf";
