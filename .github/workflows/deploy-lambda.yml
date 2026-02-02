@@ -5,6 +5,16 @@ on:
     branches: [main, staging]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy_profile:
+        description: 'Deployment profile (full = all security/monitoring, lean = minimal cost)'
+        required: true
+        default: 'lean'
+        type: choice
+        options:
+          - full
+          - lean
 
 env:
   AWS_REGION: il-central-1
@@ -98,7 +108,15 @@ jobs:
       - name: Terraform Plan
         working-directory: terraform
         run: |
+          PROFILE="${{ github.event.inputs.deploy_profile || 'full' }}"
+          VAR_FILE_FLAG=""
+          if [ "$PROFILE" = "lean" ]; then
+            VAR_FILE_FLAG="-var-file=lean.tfvars"
+            echo "::notice::Using LEAN deployment profile (security/monitoring disabled)"
+          fi
+
           terraform plan \
+            $VAR_FILE_FLAG \
             -var="environment=${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}" \
             -var="aws_region=${{ env.AWS_REGION }}" \
             -out=tfplan
