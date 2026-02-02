@@ -97,12 +97,12 @@ resource "aws_db_instance" "main" {
   # High Availability (production only)
   multi_az = var.environment == "prod"
 
-  # Monitoring
-  monitoring_interval             = 60
-  monitoring_role_arn             = aws_iam_role.rds_monitoring.arn
-  performance_insights_enabled    = true
-  performance_insights_kms_key_id = aws_kms_key.main.arn
-  performance_insights_retention_period = 7
+  # Monitoring (disabled in lean mode to save costs)
+  monitoring_interval                   = var.enable_rds_enhanced_monitoring ? 60 : 0
+  monitoring_role_arn                   = var.enable_rds_enhanced_monitoring ? aws_iam_role.rds_monitoring[0].arn : null
+  performance_insights_enabled          = var.enable_rds_enhanced_monitoring
+  performance_insights_kms_key_id       = var.enable_rds_enhanced_monitoring ? aws_kms_key.main.arn : null
+  performance_insights_retention_period = var.enable_rds_enhanced_monitoring ? 7 : null
 
   # Logs
   enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
@@ -158,9 +158,11 @@ resource "aws_secretsmanager_secret_version" "database_generated" {
 }
 
 # =============================================================================
-# RDS Enhanced Monitoring Role
+# RDS Enhanced Monitoring Role (only when enhanced monitoring enabled)
 # =============================================================================
 resource "aws_iam_role" "rds_monitoring" {
+  count = var.enable_rds_enhanced_monitoring ? 1 : 0
+
   name = "${local.name_prefix}-rds-monitoring-role"
 
   assume_role_policy = jsonencode({
@@ -182,7 +184,9 @@ resource "aws_iam_role" "rds_monitoring" {
 }
 
 resource "aws_iam_role_policy_attachment" "rds_monitoring" {
-  role       = aws_iam_role.rds_monitoring.name
+  count = var.enable_rds_enhanced_monitoring ? 1 : 0
+
+  role       = aws_iam_role.rds_monitoring[0].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
 }
 

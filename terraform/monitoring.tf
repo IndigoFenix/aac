@@ -1,7 +1,10 @@
 # =============================================================================
 # CloudTrail (Audit Logging - HIPAA requirement)
+# Disabled in lean mode to save costs. Re-enable before handling real PHI data.
 # =============================================================================
 resource "aws_cloudtrail" "main" {
+  count = var.enable_cloudtrail ? 1 : 0
+
   name                          = "${local.name_prefix}-trail"
   s3_bucket_name                = aws_s3_bucket.logs.id
   s3_key_prefix                 = "cloudtrail"
@@ -10,8 +13,8 @@ resource "aws_cloudtrail" "main" {
   enable_log_file_validation    = true
   kms_key_id                    = aws_kms_key.main.arn
 
-  cloud_watch_logs_group_arn = "${aws_cloudwatch_log_group.cloudtrail.arn}:*"
-  cloud_watch_logs_role_arn  = aws_iam_role.cloudtrail.arn
+  cloud_watch_logs_group_arn = "${aws_cloudwatch_log_group.cloudtrail[0].arn}:*"
+  cloud_watch_logs_role_arn  = aws_iam_role.cloudtrail[0].arn
 
   event_selector {
     read_write_type           = "All"
@@ -33,6 +36,8 @@ resource "aws_cloudtrail" "main" {
 }
 
 resource "aws_cloudwatch_log_group" "cloudtrail" {
+  count = var.enable_cloudtrail ? 1 : 0
+
   name              = "/aws/cloudtrail/${local.name_prefix}"
   retention_in_days = var.app_log_retention_days
   kms_key_id        = aws_kms_key.main.arn
@@ -43,6 +48,8 @@ resource "aws_cloudwatch_log_group" "cloudtrail" {
 }
 
 resource "aws_iam_role" "cloudtrail" {
+  count = var.enable_cloudtrail ? 1 : 0
+
   name = "${local.name_prefix}-cloudtrail-role"
 
   assume_role_policy = jsonencode({
@@ -60,8 +67,10 @@ resource "aws_iam_role" "cloudtrail" {
 }
 
 resource "aws_iam_role_policy" "cloudtrail" {
+  count = var.enable_cloudtrail ? 1 : 0
+
   name = "${local.name_prefix}-cloudtrail-policy"
-  role = aws_iam_role.cloudtrail.id
+  role = aws_iam_role.cloudtrail[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -72,7 +81,7 @@ resource "aws_iam_role_policy" "cloudtrail" {
           "logs:CreateLogStream",
           "logs:PutLogEvents"
         ]
-        Resource = "${aws_cloudwatch_log_group.cloudtrail.arn}:*"
+        Resource = "${aws_cloudwatch_log_group.cloudtrail[0].arn}:*"
       }
     ]
   })

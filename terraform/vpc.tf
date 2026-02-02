@@ -59,9 +59,10 @@ resource "aws_subnet" "private" {
 
 # =============================================================================
 # NAT Gateway (for private subnet internet access)
+# single_nat_gateway = true uses one NAT to save ~$32/month (reduced availability)
 # =============================================================================
 resource "aws_eip" "nat" {
-  count  = length(local.azs)
+  count  = var.single_nat_gateway ? 1 : length(local.azs)
   domain = "vpc"
 
   tags = {
@@ -72,13 +73,13 @@ resource "aws_eip" "nat" {
 }
 
 resource "aws_nat_gateway" "main" {
-  count = length(local.azs)
+  count = var.single_nat_gateway ? 1 : length(local.azs)
 
   allocation_id = aws_eip.nat[count.index].id
   subnet_id     = aws_subnet.public[count.index].id
 
   tags = {
-    Name = "${local.name_prefix}-nat-${local.azs[count.index]}"
+    Name = "${local.name_prefix}-nat-${local.azs[min(count.index, length(local.azs) - 1)]}"
   }
 
   depends_on = [aws_internet_gateway.main]
@@ -110,6 +111,7 @@ resource "aws_route_table_association" "public" {
 }
 
 # Private Route Tables (one per AZ for NAT gateway)
+# When single_nat_gateway is true, all private subnets route through the one NAT
 resource "aws_route_table" "private" {
   count = length(local.azs)
 
@@ -117,7 +119,7 @@ resource "aws_route_table" "private" {
 
   route {
     cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.main[count.index].id
+    nat_gateway_id = aws_nat_gateway.main[var.single_nat_gateway ? 0 : count.index].id
   }
 
   tags = {
@@ -134,13 +136,16 @@ resource "aws_route_table_association" "private" {
 
 # =============================================================================
 # VPC Flow Logs (Required for HIPAA audit trail)
+# Disabled in lean mode to save CloudWatch costs. Re-enable before handling PHI.
 # =============================================================================
 resource "aws_flow_log" "main" {
+  count = var.enable_vpc_flow_logs ? 1 : 0
+
   log_destination_type = "cloud-watch-logs"
-  log_destination      = aws_cloudwatch_log_group.vpc_flow_logs.arn
+  log_destination      = aws_cloudwatch_log_group.vpc_flow_logs[0].arn
   traffic_type         = "ALL"
   vpc_id               = aws_vpc.main.id
-  iam_role_arn         = aws_iam_role.vpc_flow_logs.arn
+  iam_role_arn         = aws_iam_role.vpc_flow_logs[0].arn
 
   tags = {
     Name = "${local.name_prefix}-vpc-flow-logs"
@@ -148,6 +153,8 @@ resource "aws_flow_log" "main" {
 }
 
 resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
+  count = var.enable_vpc_flow_logs ? 1 : 0
+
   name              = "/aws/vpc-flow-logs/${local.name_prefix}"
   retention_in_days = var.app_log_retention_days
   kms_key_id        = aws_kms_key.main.arn
@@ -158,6 +165,8 @@ resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
 }
 
 resource "aws_iam_role" "vpc_flow_logs" {
+  count = var.enable_vpc_flow_logs ? 1 : 0
+
   name = "${local.name_prefix}-vpc-flow-logs-role"
 
   assume_role_policy = jsonencode({
@@ -175,8 +184,10 @@ resource "aws_iam_role" "vpc_flow_logs" {
 }
 
 resource "aws_iam_role_policy" "vpc_flow_logs" {
+  count = var.enable_vpc_flow_logs ? 1 : 0
+
   name = "${local.name_prefix}-vpc-flow-logs-policy"
-  role = aws_iam_role.vpc_flow_logs.id
+  role = aws_iam_role.vpc_flow_logs[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -198,9 +209,11 @@ resource "aws_iam_role_policy" "vpc_flow_logs" {
 
 # =============================================================================
 # VPC Endpoints (for private access to AWS services)
+# Interface endpoints cost ~$7/month each per AZ. When disabled, traffic
+# routes through NAT gateway instead (cheaper for low-traffic workloads).
 # =============================================================================
 
-# S3 Gateway Endpoint (free)
+# S3 Gateway Endpoint (always enabled - free)
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = aws_vpc.main.id
   service_name      = "com.amazonaws.${var.aws_region}.s3"
@@ -214,11 +227,13 @@ resource "aws_vpc_endpoint" "s3" {
 
 # ECR Endpoints (for private Docker pulls)
 resource "aws_vpc_endpoint" "ecr_api" {
+  count = var.enable_vpc_interface_endpoints ? 1 : 0
+
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.ecr.api"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = aws_subnet.private[*].id
-  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints[0].id]
   private_dns_enabled = true
 
   tags = {
@@ -227,11 +242,13 @@ resource "aws_vpc_endpoint" "ecr_api" {
 }
 
 resource "aws_vpc_endpoint" "ecr_dkr" {
+  count = var.enable_vpc_interface_endpoints ? 1 : 0
+
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.ecr.dkr"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = aws_subnet.private[*].id
-  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints[0].id]
   private_dns_enabled = true
 
   tags = {
@@ -241,11 +258,13 @@ resource "aws_vpc_endpoint" "ecr_dkr" {
 
 # Secrets Manager Endpoint
 resource "aws_vpc_endpoint" "secretsmanager" {
+  count = var.enable_vpc_interface_endpoints ? 1 : 0
+
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.secretsmanager"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = aws_subnet.private[*].id
-  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints[0].id]
   private_dns_enabled = true
 
   tags = {
@@ -255,11 +274,13 @@ resource "aws_vpc_endpoint" "secretsmanager" {
 
 # CloudWatch Logs Endpoint
 resource "aws_vpc_endpoint" "logs" {
+  count = var.enable_vpc_interface_endpoints ? 1 : 0
+
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.aws_region}.logs"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = aws_subnet.private[*].id
-  security_group_ids  = [aws_security_group.vpc_endpoints.id]
+  security_group_ids  = [aws_security_group.vpc_endpoints[0].id]
   private_dns_enabled = true
 
   tags = {
@@ -269,6 +290,8 @@ resource "aws_vpc_endpoint" "logs" {
 
 # Security group for VPC endpoints
 resource "aws_security_group" "vpc_endpoints" {
+  count = var.enable_vpc_interface_endpoints ? 1 : 0
+
   name        = "${local.name_prefix}-vpc-endpoints-sg"
   description = "Security group for VPC endpoints"
   vpc_id      = aws_vpc.main.id
