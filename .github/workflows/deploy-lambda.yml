@@ -105,6 +105,33 @@ jobs:
           terraform state rm aws_security_group_rule.rds_from_lambda[0] 2>/dev/null || true
           terraform state rm aws_security_group_rule.rds_from_lambda 2>/dev/null || true
 
+      - name: Migrate State for Lean Mode Resources
+        working-directory: terraform
+        continue-on-error: true
+        run: |
+          # VPC interface endpoints (added count for lean mode toggle)
+          terraform state mv aws_vpc_endpoint.ecr_api aws_vpc_endpoint.ecr_api[0] 2>/dev/null || true
+          terraform state mv aws_vpc_endpoint.ecr_dkr aws_vpc_endpoint.ecr_dkr[0] 2>/dev/null || true
+          terraform state mv aws_vpc_endpoint.secretsmanager aws_vpc_endpoint.secretsmanager[0] 2>/dev/null || true
+          terraform state mv aws_vpc_endpoint.logs aws_vpc_endpoint.logs[0] 2>/dev/null || true
+          terraform state mv aws_security_group.vpc_endpoints aws_security_group.vpc_endpoints[0] 2>/dev/null || true
+
+          # CloudTrail (added count for lean mode toggle)
+          terraform state mv aws_cloudtrail.main aws_cloudtrail.main[0] 2>/dev/null || true
+          terraform state mv aws_cloudwatch_log_group.cloudtrail aws_cloudwatch_log_group.cloudtrail[0] 2>/dev/null || true
+          terraform state mv aws_iam_role.cloudtrail aws_iam_role.cloudtrail[0] 2>/dev/null || true
+          terraform state mv aws_iam_role_policy.cloudtrail aws_iam_role_policy.cloudtrail[0] 2>/dev/null || true
+
+          # VPC flow logs (added count for lean mode toggle)
+          terraform state mv aws_flow_log.main aws_flow_log.main[0] 2>/dev/null || true
+          terraform state mv aws_cloudwatch_log_group.vpc_flow_logs aws_cloudwatch_log_group.vpc_flow_logs[0] 2>/dev/null || true
+          terraform state mv aws_iam_role.vpc_flow_logs aws_iam_role.vpc_flow_logs[0] 2>/dev/null || true
+          terraform state mv aws_iam_role_policy.vpc_flow_logs aws_iam_role_policy.vpc_flow_logs[0] 2>/dev/null || true
+
+          # RDS enhanced monitoring (added count for lean mode toggle)
+          terraform state mv aws_iam_role.rds_monitoring aws_iam_role.rds_monitoring[0] 2>/dev/null || true
+          terraform state mv aws_iam_role_policy_attachment.rds_monitoring aws_iam_role_policy_attachment.rds_monitoring[0] 2>/dev/null || true
+
       - name: Terraform Plan
         working-directory: terraform
         run: |
