@@ -149,13 +149,13 @@ jobs:
             -out=tfplan
 
       - name: Terraform Apply
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
         working-directory: terraform
         run: terraform apply -auto-approve tfplan
 
       - name: Get Terraform Outputs
         id: tf-outputs
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
         working-directory: terraform
         run: |
           # Get outputs, defaulting to empty string if not found
@@ -183,7 +183,7 @@ jobs:
     name: Build Frontend
     runs-on: ubuntu-latest
     needs: infrastructure
-    if: github.event_name == 'push' && needs.infrastructure.outputs.frontend_bucket != ''
+    if: github.event_name != 'pull_request' && needs.infrastructure.outputs.frontend_bucket != ''
 
     steps:
       - name: Checkout code
@@ -218,7 +218,7 @@ jobs:
     name: Build Lambda Image
     runs-on: ubuntu-latest
     needs: infrastructure
-    if: github.event_name == 'push' && needs.infrastructure.outputs.lambda_ecr_url != ''
+    if: github.event_name != 'pull_request' && needs.infrastructure.outputs.lambda_ecr_url != ''
     
     outputs:
       image: ${{ steps.build-image.outputs.image }}
@@ -256,7 +256,7 @@ jobs:
     name: Deploy Frontend
     runs-on: ubuntu-latest
     needs: [infrastructure, build-frontend]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.infrastructure.outputs.frontend_bucket != ''
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && needs.infrastructure.outputs.frontend_bucket != ''
 
     steps:
       - name: Configure AWS credentials
@@ -311,7 +311,7 @@ jobs:
     name: Deploy Lambda
     runs-on: ubuntu-latest
     needs: [infrastructure, build-lambda]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.infrastructure.outputs.lambda_exists == 'true'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && needs.infrastructure.outputs.lambda_exists == 'true'
 
     steps:
       - name: Configure AWS credentials
@@ -369,7 +369,7 @@ jobs:
     name: Deployment Summary
     runs-on: ubuntu-latest
     needs: [infrastructure, build-frontend, build-lambda, deploy-frontend, deploy-lambda]
-    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: always() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
 
     steps:
       - name: Summary
