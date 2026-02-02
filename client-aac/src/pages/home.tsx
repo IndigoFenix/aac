@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { useGestures } from "@/hooks/useGestures";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useMultiCamera } from "@/hooks/useMultiCamera";
+import { useCamera } from "@/hooks/useCamera";
 import { usePersonIdentification } from "@/hooks/usePersonIdentification";
 import { DebugToggle } from "@/components/DebugWindow";
 import MultiCameraDebugWindow from "@/components/MultiCameraDebugWindow";
@@ -30,6 +31,10 @@ import PassiveCoListener from "@/components/PassiveCoListener";
 import InitializationLoadingScreen from "@/components/InitializationLoadingScreen";
 import { CameraAttentivenessWrapper } from "@/components/CameraAttentivenessWrapper";
 import { CameraAttentivenessDebug } from "@/components/CameraAttentivenessDebug";
+import { useFaceTracking } from "@/hooks/useFaceTracking";
+import { useFaceEvents } from "@/hooks/useFaceEvents";
+import { useHandGestureTracking } from "@/hooks/useHandGestureTracking";
+import { useHandGestureEvents } from "@/hooks/useHandGestureEvents";
 
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAppInitialization } from "@/contexts/AppInitializationContext";
@@ -101,7 +106,9 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const [lastObjectDetectionTime, setLastObjectDetectionTime] = useState<number>();
   const [debugMode, setDebugMode] = useState<boolean>(false);
   const [showAttentivenessDebug, setShowAttentivenessDebug] = useState<boolean>(false);
-  
+  const [faceTrackingEnabled, setFaceTrackingEnabled] = useState<boolean>(false);
+  const [handGestureEnabled, setHandGestureEnabled] = useState<boolean>(false);
+
   // Passive Co-Listener state
   const [passiveChoiceOptions, setPassiveChoiceOptions] = useState<Array<{ label: string; emoji: string; confidence: number }>>([]);
 
@@ -132,6 +139,29 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     globalError
   } = useMultiCamera({ autoStart: false });
 
+  // Get shared camera stream from CameraProvider context
+  const { stream: sharedCameraStream, startCamera: startSharedCamera } = useCamera();
+
+  // Auto-start the shared camera when face tracking or hand gesture tracking is enabled but no stream exists
+  useEffect(() => {
+    if ((faceTrackingEnabled || handGestureEnabled) && !sharedCameraStream && !getUserCamera()?.stream) {
+      console.log("[Tracking] No camera stream available, starting shared camera");
+      startSharedCamera();
+    }
+  }, [faceTrackingEnabled, handGestureEnabled, sharedCameraStream, getUserCamera, startSharedCamera]);
+
+  // Face expression tracking via MediaPipe FaceLandmarker
+  const faceTrackingStream = sharedCameraStream ?? getUserCamera()?.stream ?? null;
+  const {
+    isReady: faceTrackingReady,
+    error: faceTrackingError,
+    faces: rawFaces,
+    fps: faceTrackingFps,
+  } = useFaceTracking({
+    videoStream: faceTrackingEnabled ? faceTrackingStream : null,
+    enabled: faceTrackingEnabled,
+  });
+
   // Person identification for AAC system (face recognition)
   const {
     isReady: isPersonIdReady,
@@ -141,6 +171,30 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   } = usePersonIdentification({
     studentId,
     enabled: useDualAgent, // Only enable when dual-agent is active
+  });
+
+  // Face event accumulation (derives semantic events from blendshapes)
+  const { trackedFaces } = useFaceEvents({
+    faces: rawFaces,
+    currentIdentification,
+    enabled: faceTrackingEnabled,
+  });
+
+  // Hand gesture tracking via MediaPipe GestureRecognizer
+  const {
+    isReady: handGestureReady,
+    error: handGestureError,
+    hands: rawHands,
+    fps: handGestureFps,
+  } = useHandGestureTracking({
+    videoStream: handGestureEnabled ? faceTrackingStream : null,
+    enabled: handGestureEnabled,
+  });
+
+  // Hand gesture event accumulation (derives semantic events from gestures + landmarks)
+  const { trackedHands } = useHandGestureEvents({
+    hands: rawHands,
+    enabled: handGestureEnabled,
   });
 
   // Get current identified person (non-blocking getter for dual-agent)
@@ -1153,9 +1207,21 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
 
       
       {/* Multi-Camera Debug Window */}
-      <MultiCameraDebugWindow 
+      <MultiCameraDebugWindow
         isOpen={showCameraDebug}
         onClose={() => setShowCameraDebug(false)}
+        faceTrackingEnabled={faceTrackingEnabled}
+        onFaceTrackingToggle={setFaceTrackingEnabled}
+        trackedFaces={trackedFaces}
+        faceTrackingFps={faceTrackingFps}
+        faceTrackingReady={faceTrackingReady}
+        faceTrackingError={faceTrackingError}
+        handGestureEnabled={handGestureEnabled}
+        onHandGestureToggle={setHandGestureEnabled}
+        trackedHands={trackedHands}
+        handGestureFps={handGestureFps}
+        handGestureReady={handGestureReady}
+        handGestureError={handGestureError}
       />
 
       {/* Audio Capture Component - only show in debug mode */}

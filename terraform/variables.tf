@@ -143,3 +143,37 @@ variable "db_max_allocated_storage" {
   type        = number
   default     = 100
 }
+
+# =============================================================================
+# Lean Mode Variables (cost reduction toggles)
+# =============================================================================
+
+variable "enable_cloudtrail" {
+  description = "Enable CloudTrail audit logging (disable for dev/lean to save costs)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_vpc_flow_logs" {
+  description = "Enable VPC flow logs (disable for dev/lean to save CloudWatch costs)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_vpc_interface_endpoints" {
+  description = "Enable VPC interface endpoints (ECR, Secrets Manager, CloudWatch Logs). S3 gateway endpoint is always enabled (free). When disabled, traffic routes through NAT gateway instead."
+  type        = bool
+  default     = true
+}
+
+variable "single_nat_gateway" {
+  description = "Use a single NAT gateway instead of one per AZ (saves ~$32/month, reduces availability)"
+  type        = bool
+  default     = false
+}
+
+variable "enable_rds_enhanced_monitoring" {
+  description = "Enable RDS enhanced monitoring and Performance Insights (disable for dev/lean)"
+  type        = bool
+  default     = true
+}
