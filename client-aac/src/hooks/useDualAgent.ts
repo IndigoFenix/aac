@@ -58,6 +58,7 @@ export interface UseDualAgentReturn {
   // Messages
   currentMessage: DualAgentMessage | null;
   transcription: string | null;
+  detectionText: string | null;
 
   // Audio state
   audioEnabled: boolean;
@@ -103,6 +104,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
   // Message state
   const [currentMessage, setCurrentMessage] = useState<DualAgentMessage | null>(null);
   const [transcription, setTranscription] = useState<string | null>(null);
+  const [detectionText, setDetectionText] = useState<string | null>(null);
 
   // Audio state
   const [audioEnabled, setAudioEnabled] = useState(true);
@@ -638,14 +640,9 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
         });
       }
 
-      // Show AI's observation as a message
+      // Store detection observation separately (does not overwrite conversation message)
       if (result.text) {
-        setCurrentMessage({
-          id: `detect-${Date.now()}`,
-          role: "assistant",
-          content: result.text,
-          timestamp: new Date().toISOString(),
-        });
+        setDetectionText(result.text);
       }
 
       if (result.sessionId && !sessionId) {
@@ -721,6 +718,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
     // Messages
     currentMessage,
     transcription,
+    detectionText,
 
     // Audio state
     audioEnabled,

@@ -37,6 +37,7 @@ import {
 import { whisperService } from "../voice/whisper-service";
 import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
 import { voiceRecordRepository } from "../../repositories/voiceRecordRepository";
+import { logDualAgent } from "./dual-agent-logger";
 
 /**
  * Simple promise-based mutex for per-session concurrency control
@@ -246,9 +247,8 @@ export class DualAgentService {
    * Initialize session AND get initial greeting with buttons
    * This is what should be called when starting a conversation
    *
-   * Uses two-step approach because OpenAI often returns EITHER text OR tool calls:
-   * 1. First request: Get greeting text (no tools)
-   * 2. Second request: Get board buttons (with tools)
+   * Uses a single LLM call: combined greeting + board via processMessageStream
+   * (toolChoice: "required" forces update_board which includes responseText).
    */
   async *initializeWithGreeting(
     studentId: string,
@@ -260,6 +260,8 @@ export class DualAgentService {
     type: "text" | "board" | "audio" | "transcription" | "complete";
     data: any;
   }> {
+    const initStart = Date.now();
+
     // Initialize the session first
     const state = await this.initializeSession(studentId, userId, existingSessionId, interactionMode);
     const cached = sessionCache.get(state.sessionId);
@@ -274,61 +276,43 @@ export class DualAgentService {
 
     let fullText = "";
 
-    if (!isSilent) {
-      // Step 1: Get greeting text (without tool calls) — only in interact mode
-      const greetingMessage = "Say hello to the user with a short, friendly greeting (1-2 sentences). Just respond with the greeting text, nothing else.";
-
-      try {
-        const greetingResponse = await interactiveAgent.processMessage(
-          greetingMessage,
-          [],
-          [],
-          board
-        );
-
-        fullText = greetingResponse.text || "";
-        yield { type: "text", data: fullText };
-
-        if (greetingResponse.usage) {
-          await this.trackInteractiveCredits(state.sessionId, state.studentId, state.userId, greetingResponse.usage);
-        }
-
-        console.log("[DualAgentService] Greeting generated:", fullText);
-      } catch (err) {
-        console.error("[DualAgentService] Greeting error:", err);
-        fullText = "";
-        yield { type: "text", data: fullText };
-      }
-    }
-
-    // Step 2: Get initial board buttons (with tool call)
-    const boardMessage = isSilent
-      ? "Generate 4-8 contextual utterance buttons — complete phrases the user might want to say to people around them. Call the update_board function."
-      : "Now provide initial communication buttons for the user. Create 4-6 buttons with options related to the student or their surroundings. Call the update_board function.";
+    // Combined greeting + board in one LLM call
+    const greetingBoardMessage = isSilent
+      ? "Generate 4-12 contextual utterance buttons — complete phrases the user might want to say. Call update_board."
+      : "Greet the user with a short, friendly greeting (1-2 sentences) and provide initial communication buttons. Include both your greeting in responseText and 4-12 relevant buttons in the update_board call.";
 
     try {
-      let boardStreamUsage: { promptTokens: number; completionTokens: number } | undefined;
+      let streamUsage: { promptTokens: number; completionTokens: number } | undefined;
       for await (const chunk of interactiveAgent.processMessageStream(
-        boardMessage,
-        fullText ? [{ role: "assistant", content: fullText, timestamp: Date.now() }] : [],
+        greetingBoardMessage,
+        [],
         [],
         board
       )) {
-        if (chunk.type === "board") {
+        if (chunk.type === "text") {
+          fullText += chunk.data;
+          if (!isSilent) {
+            yield { type: "text", data: chunk.data };
+          }
+        } else if (chunk.type === "board") {
           console.log("[DualAgentService] Board generated:", JSON.stringify(chunk.data).substring(0, 200));
           yield { type: "board", data: chunk.data };
         } else if (chunk.type === "usage") {
-          boardStreamUsage = chunk.data;
+          streamUsage = chunk.data;
         }
       }
-      if (boardStreamUsage) {
-        await this.trackInteractiveCredits(state.sessionId, state.studentId, state.userId, boardStreamUsage);
+      if (streamUsage) {
+        await this.trackInteractiveCredits(state.sessionId, state.studentId, state.userId, streamUsage);
       }
     } catch (err) {
-      console.error("[DualAgentService] Board generation error:", err);
+      console.error("[DualAgentService] Greeting+board error:", err);
       const defaultBoard = this.createDefaultBoard(board);
       yield { type: "board", data: defaultBoard };
     }
+
+    const initElapsed = Date.now() - initStart;
+    console.log("[DualAgentService] initializeWithGreeting completed in", initElapsed, "ms, text:", fullText.substring(0, 80));
+    logDualAgent("DualAgentService.initializeWithGreeting", { elapsedMs: initElapsed, isSilent, textLength: fullText.length, sessionId: state.sessionId });
 
     // Store the greeting as the first assistant message (interact mode only)
     if (fullText) {
@@ -359,7 +343,7 @@ export class DualAgentService {
    * Create a default board with common communication buttons
    */
   private createDefaultBoard(currentBoard?: ParsedBoardData): ParsedBoardData {
-    const grid = currentBoard?.grid || { rows: 3, cols: 3 };
+    const grid = currentBoard?.grid || { rows: 3, cols: 4 };
     const pageId = `page-${Date.now()}`;
 
     const defaultButtons: Array<{
@@ -371,14 +355,17 @@ export class DualAgentService {
       action: { type: "speak" | "link" | "back" | "home"; text?: string };
     }> = [
       { label: "Hello", row: 0, col: 0 },
-      { label: "Yes", row: 0, col: 1 },
-      { label: "No", row: 0, col: 2 },
-      { label: "I want", row: 1, col: 0 },
-      { label: "Help", row: 1, col: 1 },
-      { label: "More", row: 1, col: 2 },
+      { label: "Goodbye", row: 0, col: 1 },
+      { label: "I want", row: 0, col: 2 },
+      { label: "I need", row: 0, col: 3 },
+      { label: "Eat", row: 1, col: 0 },
+      { label: "Drink", row: 1, col: 1 },
+      { label: "Play", row: 1, col: 2 },
+      { label: "Go", row: 1, col: 3 },
       { label: "Thank you", row: 2, col: 0 },
       { label: "Please", row: 2, col: 1 },
       { label: "Stop", row: 2, col: 2 },
+      { label: "Wait", row: 2, col: 3 },
     ].map((btn, index) => ({
       id: `btn-default-${index}`,
       label: btn.label,
@@ -731,8 +718,10 @@ export class DualAgentService {
     data: any;
   }> {
     const isSilent = interactionMode === 'silent';
+    const modeStart = Date.now();
     let fullText = "";
     console.log("[DualAgentService] handleInteractiveMode: thinkingMode:", state.thinkingMode, "interactionMode:", interactionMode, "messages:", state.messages.length, "pending:", state.pendingMessages.length);
+    logDualAgent("DualAgentService.handleInteractiveMode", { interactionMode, messageCount: state.messages.length, pendingCount: state.pendingMessages.length });
 
     // Build person context string if identified
     let personContext: string | undefined;
@@ -777,6 +766,9 @@ export class DualAgentService {
         interactiveUsage = chunk.data;
       }
     }
+
+    const modeElapsed = Date.now() - modeStart;
+    logDualAgent("DualAgentService.handleInteractiveMode.done", { elapsedMs: modeElapsed, textLength: fullText.length });
 
     // Track credits for the interactive response
     if (interactiveUsage) {
@@ -1193,6 +1185,7 @@ export class DualAgentService {
       : AAC_DETECTION_INTERACT_ADDENDUM;
     const detectionSystemPrompt = AAC_DETECTION_PROMPT + modeAddendum;
 
+    const detStart = Date.now();
     try {
       // Call interactive agent — raw audio buffer goes directly to the provider
       // (Gemini handles audio natively; OpenAI/Claude strip it and fall back to text context)
@@ -1236,6 +1229,9 @@ export class DualAgentService {
       if (changed) {
         this.tryTriggerMonitor(cached, state, monitorAgent, interactiveAgent, input.board);
       }
+
+      const detElapsed = Date.now() - detStart;
+      logDualAgent("DualAgentService.processDetection", { elapsedMs: detElapsed, changed, addCount: addButtons.length, removeCount: removeLabels.length, hasImage: !!input.imageData, hasAudio: !!input.audioBuffer });
 
       return {
         sessionId: state.sessionId,
