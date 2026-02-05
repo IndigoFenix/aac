@@ -1,17 +1,16 @@
 import { motion } from "framer-motion";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 interface QuickActionsProps {
   onAction: (action: string, text: string) => void;
   onBack: () => void;
-  onInterpret?: () => void;
-  showInterpret?: boolean;
+  boardMode: 'ai' | 'db';
+  voiceType?: string;
 }
 
-export default function QuickActions({ onAction, onBack, onInterpret, showInterpret }: QuickActionsProps) {
-  const { t, language, isRTL } = useLanguage();
+export default function QuickActions({ onAction, onBack, boardMode, voiceType }: QuickActionsProps) {
+  const { t, language } = useLanguage();
   const { speak } = useTextToSpeech();
 
   const quickActions = [
@@ -22,25 +21,17 @@ export default function QuickActions({ onAction, onBack, onInterpret, showInterp
 
   const handleAction = (action: typeof quickActions[0]) => {
     const label = t(action.labelKey);
-    speak(label, language);
+    speak(label, language, voiceType as any);
     onAction(action.id, label);
   };
 
-  const handleBack = () => {
-    // Just navigate, don't speak
-    onBack();
-  };
-
-  // Choose correct chevron icon based on RTL
-  const BackIcon = isRTL ? ChevronRight : ChevronLeft;
-
   return (
-    <div className="flex items-center justify-center gap-2 p-2 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">
+    <div className="grid grid-cols-4 gap-2 p-2 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">
       {quickActions.map((action) => (
         <motion.button
           key={action.id}
           onClick={() => handleAction(action)}
-          className="flex flex-col items-center justify-center px-4 py-2 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600 min-w-[70px]"
+          className="flex flex-col items-center justify-center py-3 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600"
           style={{ backgroundColor: action.color }}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
@@ -52,31 +43,32 @@ export default function QuickActions({ onAction, onBack, onInterpret, showInterp
         </motion.button>
       ))}
 
-      {showInterpret && onInterpret && (
+      {/* 4th button: More (AI mode) or Back (DB mode) */}
+      {boardMode === 'ai' ? (
         <motion.button
-          onClick={onInterpret}
-          className="flex flex-col items-center justify-center px-4 py-2 rounded-xl shadow-sm border border-purple-300 dark:border-purple-600 bg-purple-100 dark:bg-purple-900 min-w-[70px]"
+          onClick={() => onAction("more", t("quickActions.more"))}
+          className="flex flex-col items-center justify-center py-3 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600 bg-gray-200 dark:bg-gray-700"
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >
-          <span className="text-xl">🗣️</span>
-          <span className="text-xs font-semibold text-purple-800 dark:text-purple-200 mt-0.5">
-            Speak
+          <span className="text-xl">➕</span>
+          <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 mt-0.5">
+            {t("quickActions.more")}
+          </span>
+        </motion.button>
+      ) : (
+        <motion.button
+          onClick={onBack}
+          className="flex flex-col items-center justify-center py-3 rounded-xl shadow-sm border border-gray-300 dark:border-gray-600 bg-gray-200 dark:bg-gray-700"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <span className="text-xl">◀</span>
+          <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 mt-0.5">
+            {t("quickActions.back")}
           </span>
         </motion.button>
       )}
-
-      <motion.button
-        onClick={handleBack}
-        className="flex flex-col items-center justify-center px-4 py-2 rounded-xl shadow-sm border border-gray-300 dark:border-gray-600 bg-gray-200 dark:bg-gray-700 min-w-[70px]"
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-      >
-        <BackIcon className="w-5 h-5 text-gray-700 dark:text-gray-300" />
-        <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 mt-0.5">
-          {t("quickActions.back")}
-        </span>
-      </motion.button>
     </div>
   );
 }

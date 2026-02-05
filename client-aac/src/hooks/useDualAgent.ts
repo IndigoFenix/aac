@@ -7,6 +7,7 @@ import { fetchWithAuth } from "@/lib/queryClient";
 import type { ParsedBoardData } from "@shared/schema";
 import { useStreamingAudioPlayer } from "./useStreamingAudioPlayer";
 import { useAudioRecorder } from "./useAudioRecorder";
+import { prepareFrameForAI } from "@/lib/prepareFrameForAI";
 
 export interface DualAgentMessage {
   id: string;
@@ -26,16 +27,24 @@ export interface IdentifiedPerson {
   method: "face" | "voice" | "both";
 }
 
+export interface BoardPatch {
+  add: Array<{ label: string; iconRef: string }>;
+  remove: string[];
+}
+
 export interface UseDualAgentOptions {
   studentId: string;
   language?: string;
   onBoardUpdate?: (board: ParsedBoardData) => void;
+  onBoardPatch?: (patch: BoardPatch) => void;
   onThinkingModeChange?: (thinking: boolean) => void;
   autoPlayAudio?: boolean;
   /** Function to capture a camera frame - returns Blob */
   captureFrame?: () => Promise<Blob | null>;
   /** Function to get the current identified person (if any) */
   getIdentifiedPerson?: () => IdentifiedPerson | null;
+  /** Function to get serialized gesture/expression context string (face + hand events) */
+  getGestureContext?: () => string | null;
 }
 
 export interface UseDualAgentReturn {
@@ -81,7 +90,7 @@ export interface UseDualAgentReturn {
 }
 
 export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
-  const { studentId, language = "en", onBoardUpdate, onThinkingModeChange, autoPlayAudio = true, captureFrame, getIdentifiedPerson } = options;
+  const { studentId, language = "en", onBoardUpdate, onBoardPatch, onThinkingModeChange, autoPlayAudio = true, captureFrame, getIdentifiedPerson, getGestureContext } = options;
   const { user } = useAuth();
 
   // Session state
@@ -104,10 +113,22 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
 
   // Detection state
   const [detectionEnabled, setDetectionEnabled] = useState(false);
-  const detectionInFlightRef = useRef(false);
+
+  // Detection mic stream ref (kept open across cycles, closed when detection disabled)
+  const detectionStreamRef = useRef<MediaStream | null>(null);
 
   // Refs
   const currentBoardRef = useRef<ParsedBoardData | null>(null);
+
+  // Stable refs for callbacks that change identity often (avoids restarting detection loop)
+  const captureFrameRef = useRef(captureFrame);
+  captureFrameRef.current = captureFrame;
+  const getGestureContextRef = useRef(getGestureContext);
+  getGestureContextRef.current = getGestureContext;
+  const onBoardUpdateRef = useRef(onBoardUpdate);
+  onBoardUpdateRef.current = onBoardUpdate;
+  const onBoardPatchRef = useRef(onBoardPatch);
+  onBoardPatchRef.current = onBoardPatch;
 
   // Audio recorder
   const audioRecorder = useAudioRecorder();
@@ -289,6 +310,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
           try {
             imageBlob = await captureFrame();
             if (imageBlob) {
+              imageBlob = await prepareFrameForAI(imageBlob);
               console.log("[DualAgent] Captured camera frame for message");
             }
           } catch (err) {
@@ -302,6 +324,12 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
           console.log(`[DualAgent] Including identified person: ${identifiedPerson.name}`);
         }
 
+        // Get gesture context if available (face expressions + hand gestures)
+        const gestureContext = getGestureContext?.() || undefined;
+        if (gestureContext) {
+          console.log(`[DualAgent] Including gesture context (${gestureContext.length} chars)`);
+        }
+
         let response: globalThis.Response;
         const boardData = board || currentBoardRef.current;
 
@@ -313,6 +341,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
           if (language) formData.append("language", language);
           if (boardData) formData.append("board", JSON.stringify(boardData));
           if (identifiedPerson) formData.append("identifiedPerson", JSON.stringify(identifiedPerson));
+          if (gestureContext) formData.append("gestureContext", gestureContext);
           formData.append("interactionMode", interactionMode);
           formData.append("image", imageBlob, "frame.jpg");
 
@@ -331,6 +360,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
               language,
               board: boardData,
               identifiedPerson,
+              gestureContext,
               interactionMode,
             }),
           });
@@ -348,7 +378,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
         setIsLoading(false);
       }
     },
-    [studentId, sessionId, language, isLoading, interactionMode, processSSEStream, captureFrame, getIdentifiedPerson]
+    [studentId, sessionId, language, isLoading, interactionMode, processSSEStream, captureFrame, getIdentifiedPerson, getGestureContext]
   );
 
   /**
@@ -373,6 +403,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
           try {
             imageBlob = await captureFrame();
             if (imageBlob) {
+              imageBlob = await prepareFrameForAI(imageBlob);
               console.log("[DualAgent] Captured camera frame for voice message");
             }
           } catch (err) {
@@ -385,6 +416,9 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
         if (identifiedPerson) {
           console.log(`[DualAgent] Including identified person in voice: ${identifiedPerson.name}`);
         }
+
+        // Get gesture context if available
+        const gestureContext = getGestureContext?.() || undefined;
 
         const formData = new FormData();
         formData.append("audio", audioBlob, "recording.webm");
@@ -403,6 +437,9 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
         }
         if (identifiedPerson) {
           formData.append("identifiedPerson", JSON.stringify(identifiedPerson));
+        }
+        if (gestureContext) {
+          formData.append("gestureContext", gestureContext);
         }
         formData.append("interactionMode", interactionMode);
 
@@ -423,7 +460,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
         setIsLoading(false);
       }
     },
-    [studentId, sessionId, language, interactionMode, audioRecorder, processSSEStream, captureFrame, getIdentifiedPerson]
+    [studentId, sessionId, language, interactionMode, audioRecorder, processSSEStream, captureFrame, getIdentifiedPerson, getGestureContext]
   );
 
   /**
@@ -516,67 +553,75 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
   }, []);
 
   /**
-   * Run a single detection cycle — capture camera frame and send to /detect
+   * Record a clean audio clip from a MediaStream.
+   * Returns a complete, valid webm blob (no ring buffer needed).
    */
-  const runDetection = useCallback(async () => {
-    if (detectionInFlightRef.current) {
-      console.log("[DualAgent] Detection: skipping, request in flight");
-      return;
-    }
-    if (!sessionId) {
-      console.log("[DualAgent] Detection: skipping, no sessionId");
-      return;
-    }
-
-    // Capture camera frame (optional — detection can work without image)
-    let imageBlob: Blob | null = null;
-    if (captureFrame) {
+  const recordAudioClip = useCallback((stream: MediaStream, durationMs: number): Promise<Blob | null> => {
+    return new Promise((resolve) => {
       try {
-        imageBlob = await captureFrame();
+        const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+        const chunks: Blob[] = [];
+        recorder.ondataavailable = (e) => {
+          if (e.data?.size > 0) chunks.push(e.data);
+        };
+        recorder.onstop = () => {
+          resolve(chunks.length > 0 ? new Blob(chunks, { type: "audio/webm" }) : null);
+        };
+        recorder.start();
+        setTimeout(() => {
+          if (recorder.state === "recording") recorder.stop();
+        }, durationMs);
+      } catch {
+        resolve(null);
+      }
+    });
+  }, []);
+
+  /**
+   * Run a single detection cycle — capture camera frame, send to /detect.
+   * Audio blob is passed in from the detection loop.
+   */
+  const runDetection = useCallback(async (audioBlob?: Blob | null) => {
+    if (!sessionId) return;
+
+    // Capture camera frame
+    let imageBlob: Blob | null = null;
+    const capture = captureFrameRef.current;
+    if (capture) {
+      try {
+        imageBlob = await capture();
         if (imageBlob && imageBlob.size > 0) {
+          imageBlob = await prepareFrameForAI(imageBlob);
           console.log("[DualAgent] Detection: captured frame,", imageBlob.size, "bytes");
         } else {
-          console.log("[DualAgent] Detection: frame capture returned empty blob, proceeding without image");
           imageBlob = null;
         }
       } catch (err) {
         console.warn("[DualAgent] Detection: frame capture failed:", err);
         imageBlob = null;
       }
-    } else {
-      console.log("[DualAgent] Detection: no captureFrame function, proceeding without image");
     }
 
-    detectionInFlightRef.current = true;
+    if (audioBlob) {
+      console.log("[DualAgent] Detection: audio clip,", audioBlob.size, "bytes");
+    }
+
+    const gestureContext = getGestureContextRef.current?.() || undefined;
 
     try {
-      // Use FormData if we have an image, otherwise JSON
-      let response: globalThis.Response;
+      const formData = new FormData();
+      formData.append("studentId", studentId);
+      formData.append("sessionId", sessionId);
+      if (currentBoardRef.current) formData.append("board", JSON.stringify(currentBoardRef.current));
+      if (gestureContext) formData.append("gestureContext", gestureContext);
+      formData.append("interactionMode", interactionMode);
+      if (imageBlob) formData.append("image", imageBlob, "detect.jpg");
+      if (audioBlob) formData.append("audio", audioBlob, "ambient.webm");
 
-      if (imageBlob) {
-        const formData = new FormData();
-        formData.append("studentId", studentId);
-        formData.append("sessionId", sessionId);
-        if (currentBoardRef.current) formData.append("board", JSON.stringify(currentBoardRef.current));
-        formData.append("interactionMode", interactionMode);
-        formData.append("image", imageBlob, "detect.jpg");
-
-        response = await fetchWithAuth("/api/aac/dual/detect", {
-          method: "POST",
-          body: formData,
-        });
-      } else {
-        response = await fetchWithAuth("/api/aac/dual/detect", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            studentId,
-            sessionId,
-            board: currentBoardRef.current,
-            interactionMode,
-          }),
-        });
-      }
+      const response = await fetchWithAuth("/api/aac/dual/detect", {
+        method: "POST",
+        body: formData,
+      });
 
       if (!response.ok) {
         console.warn("[DualAgent] Detection request failed:", response.status);
@@ -584,51 +629,86 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
       }
 
       const result = await response.json();
-      console.log("[DualAgent] Detection result: changed =", result.changed);
+      console.log("[DualAgent] Detection result: changed =", result.changed, result.text ? `text: "${result.text.substring(0, 80)}..."` : "");
 
-      if (result.changed && result.board && onBoardUpdate) {
-        console.log("[DualAgent] Detection: board updated with new buttons");
-        currentBoardRef.current = result.board;
-        onBoardUpdate(result.board);
+      if (result.changed && onBoardPatchRef.current) {
+        onBoardPatchRef.current({
+          add: result.addButtons || [],
+          remove: result.removeLabels || [],
+        });
       }
 
-      // Update session ID if returned
+      // Show AI's observation as a message
+      if (result.text) {
+        setCurrentMessage({
+          id: `detect-${Date.now()}`,
+          role: "assistant",
+          content: result.text,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
       if (result.sessionId && !sessionId) {
         setSessionId(result.sessionId);
       }
     } catch (err) {
       console.warn("[DualAgent] Detection error:", err);
-    } finally {
-      detectionInFlightRef.current = false;
     }
-  }, [sessionId, studentId, interactionMode, captureFrame, onBoardUpdate]);
+  }, [sessionId, studentId, interactionMode]);
 
   /**
-   * Detection loop — runs every 10s when enabled
+   * Combined detection loop — records 5s of clean audio per cycle, then runs detection.
+   * Each audio clip is a complete valid webm file (no ring buffer).
    */
   useEffect(() => {
-    if (!detectionEnabled) return;
-    if (!isInitialized) {
-      console.log("[DualAgent] Detection: waiting for initialization");
-      return;
-    }
-    if (!sessionId) {
-      console.log("[DualAgent] Detection: waiting for sessionId");
-      return;
-    }
+    if (!detectionEnabled || !isInitialized || !sessionId) return;
 
-    console.log("[DualAgent] Detection loop started (sessionId:", sessionId, ")");
+    let cancelled = false;
+    let micStream: MediaStream | null = null;
 
-    // Run once immediately
-    runDetection();
+    const loop = async () => {
+      if (cancelled) return;
 
-    const interval = setInterval(runDetection, 10000);
+      // Record 5s of ambient audio (also serves as the delay between detections)
+      let audioBlob: Blob | null = null;
+      if (micStream) {
+        audioBlob = await recordAudioClip(micStream, 5000);
+      } else {
+        // No mic — just wait 5s
+        await new Promise((r) => setTimeout(r, 5000));
+      }
+
+      if (cancelled) return;
+      await runDetection(audioBlob);
+      if (!cancelled) loop();
+    };
+
+    // Get mic access, then start the loop
+    (async () => {
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (cancelled) {
+          micStream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        detectionStreamRef.current = micStream;
+        console.log("[DualAgent] Detection loop started with mic (sessionId:", sessionId, ")");
+      } catch {
+        console.warn("[DualAgent] Detection: mic not available, running without audio");
+      }
+      loop();
+    })();
 
     return () => {
+      cancelled = true;
+      if (detectionStreamRef.current) {
+        detectionStreamRef.current.getTracks().forEach((t) => t.stop());
+        detectionStreamRef.current = null;
+      }
+      micStream = null;
       console.log("[DualAgent] Detection loop stopped");
-      clearInterval(interval);
     };
-  }, [detectionEnabled, isInitialized, sessionId, runDetection]);
+  }, [detectionEnabled, isInitialized, sessionId, runDetection, recordAudioClip]);
 
   return {
     // Session state

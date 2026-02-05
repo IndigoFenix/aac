@@ -30,6 +30,7 @@ const messageSchema = z.object({
   board: z.any().optional(),
   visualContext: z.string().optional(),
   audioContext: z.string().optional(),
+  gestureContext: z.string().optional(), // serialized face/hand gesture events
   imageData: z.string().optional(), // base64 data URL for camera input
   identifiedPerson: identifiedPersonSchema, // Person identified via biometrics
   interactionMode: z.enum(['interact', 'silent']).optional(),
@@ -40,6 +41,7 @@ const detectSchema = z.object({
   sessionId: z.string().optional(),
   board: z.any().optional(),
   audioContext: z.string().optional(),
+  gestureContext: z.string().optional(),
   interactionMode: z.enum(['interact', 'silent']).optional(),
 });
 
@@ -162,6 +164,7 @@ export class DualAgentController {
         board,
         visualContext,
         audioContext,
+        gestureContext,
         imageData,
         identifiedPerson,
         interactionMode,
@@ -173,7 +176,7 @@ export class DualAgentController {
       }
 
       console.log(
-        `[DualAgentController] Message from student ${studentId}: "${message.substring(0, 50)}..."${interactionMode === 'silent' ? " [SILENT]" : ""}${imageData ? " (with image)" : ""}${identifiedPerson ? ` (person: ${identifiedPerson.name})` : ""}`
+        `[DualAgentController] Message from student ${studentId}: "${message.substring(0, 50)}..."${interactionMode === 'silent' ? " [SILENT]" : ""}${imageData ? " (with image)" : ""}${identifiedPerson ? ` (person: ${identifiedPerson.name})` : ""}${gestureContext ? " (with gestures)" : ""}`
       );
 
       // Set up SSE headers
@@ -192,6 +195,7 @@ export class DualAgentController {
         board,
         visualContext,
         audioContext,
+        gestureContext,
         imageData,
         identifiedPerson,
         interactionMode,
@@ -267,11 +271,11 @@ export class DualAgentController {
         }
       }
 
-      const { studentId, sessionId, language, board, visualContext, audioContext, imageData, identifiedPerson, interactionMode } =
+      const { studentId, sessionId, language, board, visualContext, audioContext, gestureContext, imageData, identifiedPerson, interactionMode } =
         messageSchema.parse(body);
 
       console.log(
-        `[DualAgentController] Voice input: ${audioFile.size} bytes, student: ${studentId}${imageData ? " (with image)" : ""}${identifiedPerson ? ` (person: ${identifiedPerson.name})` : ""}`
+        `[DualAgentController] Voice input: ${audioFile.size} bytes, student: ${studentId}${imageData ? " (with image)" : ""}${identifiedPerson ? ` (person: ${identifiedPerson.name})` : ""}${gestureContext ? " (with gestures)" : ""}`
       );
 
       // Set up SSE headers
@@ -290,6 +294,7 @@ export class DualAgentController {
         board,
         visualContext,
         audioContext,
+        gestureContext,
         imageData,
         identifiedPerson,
         interactionMode,
@@ -442,18 +447,30 @@ export class DualAgentController {
         try { body.board = JSON.parse(body.board); } catch { /* leave as-is */ }
       }
 
-      // Convert multer file buffer to base64 data URL
-      const file = (req as any).file as Express.Multer.File | undefined;
+      // Extract files from multer.fields()
+      const files = (req as any).files as { [fieldname: string]: Express.Multer.File[] } | undefined;
+      const imageFile = files?.image?.[0];
+      const audioFile = files?.audio?.[0];
+
+      // Convert image to base64 data URL
       let imageData: string | undefined;
-      if (file) {
-        const base64 = file.buffer.toString("base64");
-        imageData = `data:${file.mimetype};base64,${base64}`;
+      if (imageFile) {
+        const base64 = imageFile.buffer.toString("base64");
+        imageData = `data:${imageFile.mimetype};base64,${base64}`;
       }
 
-      const { studentId, sessionId, board, audioContext, interactionMode } = detectSchema.parse(body);
+      // Extract raw audio buffer + mimetype
+      let audioBuffer: Buffer | undefined;
+      let audioMimeType: string | undefined;
+      if (audioFile) {
+        audioBuffer = audioFile.buffer;
+        audioMimeType = audioFile.mimetype;
+      }
+
+      const { studentId, sessionId, board, audioContext, gestureContext, interactionMode } = detectSchema.parse(body);
 
       console.log(
-        `[DualAgentController] Detect for student ${studentId}${imageData ? " (with image)" : ""} mode: ${interactionMode || "interact"}`
+        `[DualAgentController] Detect for student ${studentId}${imageData ? " (with image)" : ""}${audioBuffer ? " (with audio)" : ""}${gestureContext ? " (with gestures)" : ""} mode: ${interactionMode || "interact"}`
       );
 
       const result = await dualAgentService.processDetection({
@@ -462,14 +479,19 @@ export class DualAgentController {
         userId,
         imageData,
         audioContext,
+        audioBuffer,
+        audioMimeType,
+        gestureContext,
         board,
         interactionMode,
       });
 
       res.json({
         sessionId: result.sessionId,
-        board: result.board,
+        addButtons: result.addButtons,
+        removeLabels: result.removeLabels,
         changed: result.changed,
+        text: result.text,
       });
     } catch (error: any) {
       console.error("[DualAgentController] Detect error:", error);

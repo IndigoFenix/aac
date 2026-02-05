@@ -12,6 +12,8 @@
 
 import { db } from "../db";
 import { eq, and, sql } from "drizzle-orm";
+import { settingsRepository } from "../repositories/settingsRepository";
+import type { UseCaseKey } from "@shared/llm-options";
 import {
   users,
   students,
@@ -1098,6 +1100,10 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     chatContextManager.getBaseContext()
   );
 
+  // Fetch LLM provider config from DB for this use case
+  const llmUseCase: UseCaseKey = isAACFeature ? 'aac_moderator' : 'clinician';
+  const llmConfig = await settingsRepository.getLLMConfig(llmUseCase);
+
   const messageManager = new ChatMessageManager({
     agent: agentFromTemplate,
     session: session as any,
@@ -1113,6 +1119,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     vectorStoreId: input.vectorStoreId,
     loopDetectionConfig: CLINIAACIAN_LOOP_DETECTION_CONFIG,
     currentImage: input.currentImage,
+    providerConfig: llmConfig,
   });
 
 

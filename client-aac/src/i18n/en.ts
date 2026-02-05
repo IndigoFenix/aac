@@ -201,6 +201,11 @@ export const en = {
     help: "Help",
     stop: "Stop",
     thanks: "Thanks",
+    speak: "Speak",
+  },
+
+  silentMode: {
+    placeholder: "Tap buttons to build a phrase...",
   },
 
   labels: {

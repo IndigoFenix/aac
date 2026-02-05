@@ -1,8 +1,9 @@
 import type { Request, Response } from "express";
 import { adminService, userService, creditService } from "../services";
 import { mfaService } from "../services/mfaService";
-import { userRepository, interpretationRepository } from "../repositories";
+import { userRepository, interpretationRepository, settingsRepository } from "../repositories";
 import { insertApiProviderSchemaWithValidation } from "@shared/schema";
+import { MODEL_OPTIONS, USE_CASES, type UseCaseKey, type LLMConfigValue } from "@shared/llm-options";
 
 export class AdminController {
   // Dashboard
@@ -442,6 +443,62 @@ export class AdminController {
     } catch (error: any) {
       console.error("Error fetching admin user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
+    }
+  }
+
+  // LLM Config
+  async getLLMConfigs(req: Request, res: Response): Promise<void> {
+    try {
+      const configs = await settingsRepository.getAllLLMConfigs();
+      res.json({
+        success: true,
+        configs,
+        useCases: USE_CASES,
+        modelOptions: MODEL_OPTIONS,
+      });
+    } catch (error: any) {
+      console.error("Error fetching LLM configs:", error);
+      res.status(500).json({ success: false, message: "Failed to fetch LLM configs" });
+    }
+  }
+
+  async updateLLMConfigs(req: Request, res: Response): Promise<void> {
+    try {
+      const { configs } = req.body as { configs: Record<string, LLMConfigValue> };
+
+      if (!configs || typeof configs !== "object") {
+        res.status(400).json({ success: false, message: "configs object is required" });
+        return;
+      }
+
+      const validUseCases = Object.keys(USE_CASES) as UseCaseKey[];
+
+      for (const [useCase, config] of Object.entries(configs)) {
+        if (!validUseCases.includes(useCase as UseCaseKey)) {
+          res.status(400).json({ success: false, message: `Invalid use case: ${useCase}` });
+          return;
+        }
+
+        // Validate model exists in catalog
+        const modelExists = MODEL_OPTIONS.some(
+          (m) => m.provider === config.provider && m.modelId === config.model
+        );
+        if (!modelExists) {
+          res.status(400).json({
+            success: false,
+            message: `Invalid model ${config.model} for provider ${config.provider}`,
+          });
+          return;
+        }
+
+        await settingsRepository.updateLLMConfig(useCase as UseCaseKey, config);
+      }
+
+      const updated = await settingsRepository.getAllLLMConfigs();
+      res.json({ success: true, configs: updated });
+    } catch (error: any) {
+      console.error("Error updating LLM configs:", error);
+      res.status(500).json({ success: false, message: "Failed to update LLM configs" });
     }
   }
 

@@ -203,6 +203,11 @@ export const he: Translations = {
     help: "עזרה",
     stop: "עצור",
     thanks: "תודה",
+    speak: "דבר",
+  },
+
+  silentMode: {
+    placeholder: "לחץ על כפתורים כדי לבנות משפט...",
   },
 
   labels: {

@@ -31,6 +31,7 @@
     "audit:critical": "npm audit --audit-level=critical"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.72.1",
     "@aws-sdk/client-secrets-manager": "^3.958.0",
     "@google-cloud/text-to-speech": "^6.4.0",
     "@google-cloud/vertexai": "^1.10.0",

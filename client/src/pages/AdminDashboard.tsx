@@ -7,9 +7,11 @@ import { AdminSidebar } from '@/components/admin/AdminSidebar';
 import { PersonaList } from '@/components/admin/PersonaList';
 import { TopicList } from '@/components/admin/TopicList';
 import { TopicView } from '@/components/admin/TopicView';
+import { VoiceList } from '@/components/admin/VoiceList';
+import { ModelSettings } from '@/components/admin/ModelSettings';
 import { cn } from '@/lib/utils';
 
-type AdminSection = 'personas' | 'library';
+type AdminSection = 'personas' | 'library' | 'voices' | 'models';
 
 export function AdminDashboard() {
   const [location, navigate] = useLocation();
@@ -18,6 +20,8 @@ export function AdminDashboard() {
   // Determine active section from URL
   const getActiveSection = (): AdminSection => {
     if (location.startsWith('/admin/library')) return 'library';
+    if (location.startsWith('/admin/voices')) return 'voices';
+    if (location.startsWith('/admin/models')) return 'models';
     if (location.startsWith('/admin/personas')) return 'personas';
     return 'personas'; // default
   };
@@ -35,6 +39,10 @@ export function AdminDashboard() {
       navigate('/admin/personas');
     } else if (section === 'library') {
       navigate('/admin/library');
+    } else if (section === 'voices') {
+      navigate('/admin/voices');
+    } else if (section === 'models') {
+      navigate('/admin/models');
     }
   };
 
@@ -51,6 +59,14 @@ export function AdminDashboard() {
         return <TopicView topicId={currentTopicId} />;
       }
       return <TopicList parentId={null} />;
+    }
+
+    if (activeSection === 'voices') {
+      return <VoiceList />;
+    }
+
+    if (activeSection === 'models') {
+      return <ModelSettings />;
     }
 
     return null;

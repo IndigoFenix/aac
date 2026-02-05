@@ -1,226 +1,190 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { ParsedBoardData, BoardButton } from "@shared/schema";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+
+export interface BoardPatch {
+  add: Array<{ label: string; iconRef: string }>;
+  remove: string[];
+}
 
 interface DynamicBoardProps {
   board: ParsedBoardData | null;
+  boardPatch?: BoardPatch | null;
   onButtonClick: (button: BoardButton, spokenText: string) => void;
   onBack?: () => void;
-  onMore?: () => void;
   language?: string;
+  voiceType?: string;
 }
 
-/** Display state for a button during reconciliation */
-interface DisplayButton {
-  button: BoardButton;
-  state: 'stable' | 'entering' | 'exiting';
-  position: number; // visual order index
-  key: string; // stable unique key for animation
-}
+/** Slot state for the fixed 12-slot grid */
+type SlotState =
+  | { type: "occupied"; button: BoardButton; anim: "stable" | "entering" }
+  | { type: "fading"; button: BoardButton }
+  | { type: "blank" };
+
+const TOTAL_SLOTS = 12;
+const BLANK_SLOT: SlotState = { type: "blank" };
 
 // Check if a string is an emoji (not a FontAwesome class)
 function isEmoji(str: string): boolean {
-  // FontAwesome classes start with "fa" or contain spaces (e.g., "fas fa-home")
-  if (!str || str.startsWith('fa') || str.includes(' ')) return false;
-  // If it's short and contains non-ASCII, it's likely an emoji
+  if (!str || str.startsWith("fa") || str.includes(" ")) return false;
   return /[\u{1F000}-\u{1FFFF}]|[\u{2600}-\u{27BF}]|[\u{FE00}-\u{FEFF}]|[\u{1F900}-\u{1F9FF}]|[\u{2702}-\u{27B0}]|[\u{E000}-\u{F8FF}]|[\u{200D}]|[\u{20E3}]|[\u{FE0F}]|[\u{2190}-\u{21FF}]|[\u{2300}-\u{23FF}]|[\u{2460}-\u{24FF}]|[\u{25A0}-\u{25FF}]|[\u{2B00}-\u{2BFF}]|[\u{3000}-\u{303F}]|[\u{3200}-\u{32FF}]|[\u{1F100}-\u{1F1FF}]|[\u{1F200}-\u{1F2FF}]|[\u{1F300}-\u{1F5FF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F700}-\u{1F77F}]/u.test(str);
 }
 
-// Map label to emoji
+// Map label to emoji fallback
 function getEmojiForLabel(label: string): string {
   const emojiMap: { [key: string]: string } = {
-    "hello": "👋", "hi": "👋", "hey": "👋",
-    "yes": "✅", "no": "❌", "maybe": "🤔",
-    "help": "🆘", "please": "🙏", "thank you": "🙏", "thanks": "🙏",
-    "more": "➕", "less": "➖", "stop": "🛑",
-    "eat": "🍽️", "food": "🍽️", "hungry": "🍽️",
-    "drink": "🥤", "water": "💧", "thirsty": "💧",
-    "happy": "😊", "sad": "😢", "angry": "😠", "tired": "😴",
-    "play": "🎮", "game": "🎮", "fun": "🎉",
-    "home": "🏠", "school": "🏫", "outside": "🌳",
-    "mom": "👩", "dad": "👨", "family": "👨‍👩‍👧",
-    "love": "❤️", "like": "👍", "want": "👆",
-    "go": "🚶", "come": "👋", "wait": "⏳",
-    "bath": "🛁", "toilet": "🚽", "sleep": "😴",
+    hello: "👋", hi: "👋", hey: "👋",
+    yes: "✅", no: "❌", maybe: "🤔",
+    help: "🆘", please: "🙏", "thank you": "🙏", thanks: "🙏",
+    more: "➕", less: "➖", stop: "🛑",
+    eat: "🍽️", food: "🍽️", hungry: "🍽️",
+    drink: "🥤", water: "💧", thirsty: "💧",
+    happy: "😊", sad: "😢", angry: "😠", tired: "😴",
+    play: "🎮", game: "🎮", fun: "🎉",
+    home: "🏠", school: "🏫", outside: "🌳",
+    mom: "👩", dad: "👨", family: "👨‍👩‍👧",
+    love: "❤️", like: "👍", want: "👆",
+    go: "🚶", come: "👋", wait: "⏳",
+    bath: "🛁", toilet: "🚽", sleep: "😴",
   };
-
-  const lowerLabel = label.toLowerCase();
+  const lower = label.toLowerCase();
   for (const [key, emoji] of Object.entries(emojiMap)) {
-    if (lowerLabel.includes(key)) {
-      return emoji;
-    }
+    if (lower.includes(key)) return emoji;
   }
   return "💬";
 }
 
-// Get button background color
 function getButtonColor(color?: string): string {
   const colorMap: { [key: string]: string } = {
-    "yellow": "#FEF3C7",
-    "blue": "#DBEAFE",
-    "green": "#D1FAE5",
-    "red": "#FEE2E2",
-    "orange": "#FFEDD5",
-    "purple": "#EDE9FE",
-    "pink": "#FCE7F3",
-    "white": "#FFFFFF",
-    "gray": "#F3F4F6",
+    yellow: "#FEF3C7", blue: "#DBEAFE", green: "#D1FAE5",
+    red: "#FEE2E2", orange: "#FFEDD5", purple: "#EDE9FE",
+    pink: "#FCE7F3", white: "#FFFFFF", gray: "#F3F4F6",
   };
   return colorMap[color?.toLowerCase() || "white"] || color || "#FFFFFF";
 }
 
-/** Normalize label for matching (case-insensitive, trimmed) */
-function normalizeLabel(label: string): string {
-  return (label || "").toLowerCase().trim();
+/** Create a BoardButton from a patch add entry */
+function makeBoardButton(entry: { label: string; iconRef: string }, index: number): BoardButton {
+  return {
+    id: `btn-patch-${Date.now()}-${index}`,
+    label: entry.label,
+    spokenText: entry.label,
+    row: 0,
+    col: 0,
+    iconRef: entry.iconRef,
+    action: { type: "speak", text: entry.label },
+  } as BoardButton;
 }
 
-/** Create a unique key from label, deduplicating with index suffix */
-function makeUniqueKey(label: string, index: number, usedKeys: Set<string>): string {
-  let key = normalizeLabel(label) || `btn-${index}`;
-  if (usedKeys.has(key)) {
-    key = `${key}-${index}`;
-  }
-  usedKeys.add(key);
-  return key;
-}
-
-export default function DynamicBoard({ board, onButtonClick, onBack, onMore, language = "en" }: DynamicBoardProps) {
+export default function DynamicBoard({
+  board,
+  boardPatch,
+  onButtonClick,
+  onBack,
+  language = "en",
+  voiceType,
+}: DynamicBoardProps) {
   const { speak } = useTextToSpeech();
-  const { t, isRTL } = useLanguage();
+  const { t } = useLanguage();
 
-  // Reconciliation state
-  const [displayButtons, setDisplayButtons] = useState<DisplayButton[]>([]);
-  const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [slots, setSlots] = useState<SlotState[]>(Array(TOTAL_SLOTS).fill(BLANK_SLOT));
+  const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastPatchRef = useRef<BoardPatch | null>(null);
 
-  // Reconcile when board prop changes
+  // Full board update — from board prop (button presses / chat)
   useEffect(() => {
     if (!board || !board.pages || board.pages.length === 0) {
-      setDisplayButtons([]);
+      setSlots(Array(TOTAL_SLOTS).fill(BLANK_SLOT));
       return;
     }
 
     const currentPage = board.pages[0];
-    if (!currentPage) {
-      setDisplayButtons([]);
-      return;
-    }
-    const newButtons: BoardButton[] = currentPage.buttons || [];
+    const buttons: BoardButton[] = currentPage?.buttons || [];
 
-    setDisplayButtons(prev => {
-      try {
-        // Build lookup of old buttons by normalized label
-        const oldByLabel = new Map<string, DisplayButton>();
-        for (const db of prev) {
-          if (db.state !== 'exiting') {
-            const label = normalizeLabel(db.button.label);
-            // Only use first occurrence if duplicates exist
-            if (!oldByLabel.has(label)) {
-              oldByLabel.set(label, db);
-            }
-          }
+    setSlots(
+      Array.from({ length: TOTAL_SLOTS }, (_, i): SlotState => {
+        if (i < buttons.length) {
+          return { type: "occupied", button: buttons[i], anim: "entering" };
         }
-
-        // Build lookup of new buttons by normalized label
-        const newLabels = new Set(newButtons.map(b => normalizeLabel(b.label)));
-
-        // Phase 1: Match — new buttons that exist in old set keep their position
-        const matched = new Map<string, DisplayButton>();
-        const unmatchedNew: { btn: BoardButton; index: number }[] = [];
-        const usedKeys = new Set<string>();
-
-        for (let i = 0; i < newButtons.length; i++) {
-          const btn = newButtons[i];
-          const label = normalizeLabel(btn.label);
-          const existing = oldByLabel.get(label);
-          if (existing && !matched.has(label)) {
-            const key = makeUniqueKey(btn.label, i, usedKeys);
-            matched.set(label, {
-              button: btn,
-              state: 'stable',
-              position: existing.position,
-              key,
-            });
-          } else {
-            unmatchedNew.push({ btn, index: i });
-          }
-        }
-
-        // Phase 2: Exit — old buttons not in new set get 'exiting' state
-        const exiting: DisplayButton[] = [];
-        for (const db of prev) {
-          if (db.state === 'exiting') continue;
-          const label = normalizeLabel(db.button.label);
-          if (!newLabels.has(label)) {
-            exiting.push({ ...db, state: 'exiting' });
-          }
-        }
-
-        // Phase 3: Enter — unmatched new buttons fill empty positions
-        const usedPositions = new Set<number>();
-        for (const [, db] of matched) {
-          usedPositions.add(db.position);
-        }
-        let nextPos = 0;
-        const getNextPosition = () => {
-          while (usedPositions.has(nextPos)) nextPos++;
-          usedPositions.add(nextPos);
-          return nextPos;
-        };
-
-        const entering: DisplayButton[] = unmatchedNew.map(({ btn, index }) => ({
-          button: btn,
-          state: 'entering' as const,
-          position: getNextPosition(),
-          key: makeUniqueKey(btn.label, index, usedKeys),
-        }));
-
-        // Combine: matched + entering + exiting
-        const result = [
-          ...Array.from(matched.values()),
-          ...entering,
-          ...exiting,
-        ];
-
-        result.sort((a, b) => a.position - b.position);
-        return result;
-      } catch (err) {
-        console.error("[DynamicBoard] Reconciliation error:", err);
-        // Fallback: just display new buttons directly
-        const usedKeys = new Set<string>();
-        return newButtons.map((btn, i) => ({
-          button: btn,
-          state: 'stable' as const,
-          position: i,
-          key: makeUniqueKey(btn.label, i, usedKeys),
-        }));
-      }
-    });
+        return BLANK_SLOT;
+      })
+    );
   }, [board]);
 
-  // Remove exiting buttons after animation completes (400ms)
+  // Patch update — from boardPatch prop (detection)
   useEffect(() => {
-    const hasExiting = displayButtons.some(db => db.state === 'exiting');
-    if (!hasExiting) return;
+    if (!boardPatch || boardPatch === lastPatchRef.current) return;
+    lastPatchRef.current = boardPatch;
 
-    if (exitTimerRef.current) {
-      clearTimeout(exitTimerRef.current);
-    }
+    const { add, remove } = boardPatch;
+    if (add.length === 0 && remove.length === 0) return;
 
-    exitTimerRef.current = setTimeout(() => {
-      setDisplayButtons(prev => prev.filter(db => db.state !== 'exiting'));
-    }, 400);
+    const removeLower = new Set(remove.map((r) => r.toLowerCase().trim()));
 
-    return () => {
-      if (exitTimerRef.current) {
-        clearTimeout(exitTimerRef.current);
+    setSlots((prev) => {
+      const next = [...prev];
+
+      // Step 1: Mark buttons to remove as fading
+      for (let i = 0; i < next.length; i++) {
+        const slot = next[i];
+        if (
+          (slot.type === "occupied") &&
+          removeLower.has(slot.button.label.toLowerCase().trim())
+        ) {
+          next[i] = { type: "fading", button: slot.button };
+        }
       }
-    };
-  }, [displayButtons]);
 
-  if (!board || !board.pages || board.pages.length === 0) {
+      // Step 2: Place new buttons in blank slots
+      let addIndex = 0;
+      for (let i = 0; i < next.length && addIndex < add.length; i++) {
+        if (next[i].type === "blank") {
+          next[i] = {
+            type: "occupied",
+            button: makeBoardButton(add[addIndex], addIndex),
+            anim: "entering",
+          };
+          addIndex++;
+        }
+      }
+
+      return next;
+    });
+
+    // Clear fading slots after 1.5s
+    if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
+    if (remove.length > 0) {
+      fadeTimerRef.current = setTimeout(() => {
+        setSlots((prev) =>
+          prev.map((s) => (s.type === "fading" ? BLANK_SLOT : s))
+        );
+      }, 1500);
+    }
+  }, [boardPatch]);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
+    };
+  }, []);
+
+  const handleButtonClick = useCallback(
+    (button: BoardButton) => {
+      const textToSpeak = button.spokenText || button.label;
+      speak(textToSpeak, language, voiceType as any);
+      onButtonClick(button, textToSpeak);
+    },
+    [speak, language, voiceType, onButtonClick]
+  );
+
+  // Render nothing if completely empty
+  const hasAnyContent = slots.some((s) => s.type !== "blank") || board;
+
+  if (!hasAnyContent) {
     return (
       <div className="flex items-center justify-center h-full text-gray-400">
         <p className="text-sm">AI suggestions will appear here</p>
@@ -228,99 +192,82 @@ export default function DynamicBoard({ board, onButtonClick, onBack, onMore, lan
     );
   }
 
-  const handleButtonClick = (button: BoardButton) => {
-    const textToSpeak = button.spokenText || button.label;
-    speak(textToSpeak, language);
-    onButtonClick(button, textToSpeak);
-  };
+  const renderSlot = (slot: SlotState, index: number) => {
+    if (slot.type === "blank") {
+      return (
+        <div
+          key={`blank-${index}`}
+          className="flex items-center justify-center rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700 min-h-0"
+        />
+      );
+    }
 
-  const BackIcon = isRTL ? ChevronRight : ChevronLeft;
+    if (slot.type === "fading") {
+      const { button } = slot;
+      return (
+        <motion.div
+          key={`fading-${button.label}-${index}`}
+          initial={{ opacity: 1, scale: 1 }}
+          animate={{ opacity: 0, scale: 0.9 }}
+          transition={{ duration: 1.5 }}
+          className="flex flex-col items-center justify-center p-2 rounded-xl shadow-sm border border-gray-200 pointer-events-none min-h-0"
+          style={{ backgroundColor: getButtonColor(button.color) }}
+        >
+          {renderIcon(button)}
+          <span className="text-xs font-medium text-center text-gray-800 leading-tight mt-1">
+            {button.label}
+          </span>
+        </motion.div>
+      );
+    }
 
-  const renderDisplayButton = (db: DisplayButton) => {
-    const { button, state, key } = db;
-
-    const initial = state === 'entering'
-      ? { opacity: 0, scale: 0.8 }
-      : { opacity: 1, scale: 1 };
-
-    const animate = state === 'exiting'
-      ? { opacity: 0, scale: 0.8 }
-      : { opacity: 1, scale: 1 };
-
-    const transition = state === 'exiting'
-      ? { duration: 0.4 }
-      : state === 'entering'
-      ? { duration: 0.3 }
-      : { duration: 0.15 };
+    // occupied
+    const { button, anim } = slot;
+    const isEntering = anim === "entering";
 
     return (
       <motion.button
-        key={key}
-        initial={initial}
-        animate={animate}
-        transition={transition}
-        onClick={() => state !== 'exiting' && handleButtonClick(button)}
-        className={`flex flex-col items-center justify-center p-3 rounded-xl shadow-sm border border-gray-200 min-w-[80px] max-w-[100px] ${
-          state === 'exiting' ? 'pointer-events-none' : ''
-        }`}
+        key={`btn-${button.label}-${index}`}
+        initial={isEntering ? { opacity: 0, scale: 0.8 } : { opacity: 1, scale: 1 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: isEntering ? 0.3 : 0.15 }}
+        onClick={() => handleButtonClick(button)}
+        className="flex flex-col items-center justify-center p-2 rounded-xl shadow-sm border border-gray-200 min-h-0"
         style={{ backgroundColor: getButtonColor(button.color) }}
-        whileHover={state !== 'exiting' ? { scale: 1.05 } : undefined}
-        whileTap={state !== 'exiting' ? { scale: 0.95 } : undefined}
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
       >
-        {button.symbolPath ? (
-          <img
-            src={button.symbolPath}
-            alt={button.label}
-            className="w-10 h-10 object-contain mb-1"
-          />
-        ) : button.iconRef && isEmoji(button.iconRef) ? (
-          <span className="text-2xl mb-1">{button.iconRef}</span>
-        ) : button.iconRef ? (
-          <i className={`${button.iconRef} text-2xl mb-1`} />
-        ) : (
-          <span className="text-2xl mb-1">
-            {getEmojiForLabel(button.label)}
-          </span>
-        )}
-        <span className="text-xs font-medium text-center text-gray-800 leading-tight">
+        {renderIcon(button)}
+        <span className="text-xs font-medium text-center text-gray-800 leading-tight mt-1">
           {button.label}
         </span>
       </motion.button>
     );
   };
 
+  const renderIcon = (button: BoardButton) => {
+    if (button.symbolPath) {
+      return <img src={button.symbolPath} alt={button.label} className="w-10 h-10 object-contain" />;
+    }
+    if (button.iconRef && isEmoji(button.iconRef)) {
+      return <span className="text-2xl">{button.iconRef}</span>;
+    }
+    if (button.iconRef) {
+      return <i className={`${button.iconRef} text-2xl`} />;
+    }
+    return <span className="text-2xl">{getEmojiForLabel(button.label)}</span>;
+  };
+
   return (
-    <div className="flex flex-wrap gap-2 p-2 justify-center items-start content-start h-full overflow-y-auto">
-      {onBack && (
-        <motion.button
-          onClick={onBack}
-          className="flex flex-col items-center justify-center p-3 rounded-xl shadow-sm border border-gray-300 bg-gray-200 dark:bg-gray-700 min-w-[80px] max-w-[100px]"
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-        >
-          <BackIcon className="w-6 h-6 text-gray-700 dark:text-gray-300 mb-1" />
-          <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 leading-tight">
-            {t("quickActions.back")}
-          </span>
-        </motion.button>
-      )}
-      <AnimatePresence>
-        {displayButtons.map(renderDisplayButton)}
-      </AnimatePresence>
-      {onMore && (
-        <motion.button
-          onClick={onMore}
-          className="flex flex-col items-center justify-center p-3 rounded-xl shadow-sm border border-gray-200 min-w-[80px] max-w-[100px]"
-          style={{ backgroundColor: "#DBEAFE" }}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-        >
-          <span className="text-2xl mb-1">➕</span>
-          <span className="text-xs font-medium text-center text-gray-800 leading-tight">
-            {t("quickActions.more")}
-          </span>
-        </motion.button>
-      )}
+    <div className="h-full p-2 flex items-center justify-center">
+      <div
+        className="grid gap-2 w-full h-full"
+        style={{ gridTemplateColumns: "repeat(4, 1fr)", gridTemplateRows: "repeat(3, 1fr)" }}
+      >
+        <AnimatePresence mode="popLayout">
+          {slots.map((slot, i) => renderSlot(slot, i))}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

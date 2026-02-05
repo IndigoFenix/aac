@@ -2,7 +2,7 @@
 // Context for the dual-agent AAC system
 
 import React, { createContext, useContext, useCallback, useEffect, useRef } from "react";
-import { useDualAgent, type DualAgentMessage, type IdentifiedPerson } from "@/hooks/useDualAgent";
+import { useDualAgent, type DualAgentMessage, type IdentifiedPerson, type BoardPatch } from "@/hooks/useDualAgent";
 import { useCameraAttentivenessOptional } from "@/contexts/CameraAttentivenessContext";
 import type { ParsedBoardData } from "@shared/schema";
 
@@ -52,6 +52,9 @@ interface DualAgentContextType {
   // Board management
   setCurrentBoard: (board: ParsedBoardData | null) => void;
   setOnBoardUpdate: (callback: ((board: ParsedBoardData) => void) | null) => void;
+
+  // Board patch (from detection)
+  boardPatch: BoardPatch | null;
 }
 
 const DualAgentContext = createContext<DualAgentContextType | null>(null);
@@ -64,6 +67,10 @@ interface DualAgentProviderProps {
   captureFrame?: () => Promise<Blob | null>;
   /** Function to get the current identified person (from biometric recognition) */
   getIdentifiedPerson?: () => IdentifiedPerson | null;
+  /** Function to get serialized gesture/expression context (face + hand events) */
+  getGestureContext?: () => string | null;
+  /** Callback for board patches from detection */
+  onBoardPatch?: (patch: BoardPatch) => void;
 }
 
 export function DualAgentProvider({
@@ -72,8 +79,11 @@ export function DualAgentProvider({
   language = "en",
   captureFrame: captureFrameProp,
   getIdentifiedPerson,
+  getGestureContext,
+  onBoardPatch: onBoardPatchProp,
 }: DualAgentProviderProps) {
   const [currentBoard, setCurrentBoard] = React.useState<ParsedBoardData | null>(null);
+  const [boardPatch, setBoardPatch] = React.useState<BoardPatch | null>(null);
   const onBoardUpdateRef = useRef<((board: ParsedBoardData) => void) | null>(null);
 
   // Use CameraAttentivenessContext for frame capture (shares working camera stream)
@@ -106,6 +116,12 @@ export function DualAgentProvider({
     onBoardUpdateRef.current?.(board);
   }, []);
 
+  // Handle board patches from detection
+  const handleBoardPatch = useCallback((patch: BoardPatch) => {
+    setBoardPatch(patch);
+    onBoardPatchProp?.(patch);
+  }, [onBoardPatchProp]);
+
   // Handle thinking mode changes
   const handleThinkingModeChange = useCallback((thinking: boolean) => {
     console.log("[DualAgentContext] Thinking mode:", thinking);
@@ -115,10 +131,12 @@ export function DualAgentProvider({
     studentId,
     language,
     onBoardUpdate: handleBoardUpdate,
+    onBoardPatch: handleBoardPatch,
     onThinkingModeChange: handleThinkingModeChange,
     autoPlayAudio: true,
     captureFrame,
     getIdentifiedPerson,
+    getGestureContext,
   });
 
   // Wrap sendMessage to include current board
@@ -187,6 +205,9 @@ export function DualAgentProvider({
     // Board management
     setCurrentBoard,
     setOnBoardUpdate,
+
+    // Board patch (from detection)
+    boardPatch,
   };
 
   return (

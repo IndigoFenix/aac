@@ -1,34 +1,50 @@
-export const CREDITS_PER_WEB_SEARCH = 2;
+import { getModelOption, type LLMProviderKey } from "@shared/llm-options";
+
+/*
+Unused right now, but don't delete it - will be needed when we re-enable prepaid credits system.
 
 const ORIGNAL_DOLLARS_PER_CREDIT = 0.00026;
 const PROFIT_MARGIN = 1.3;
 const DOLLARS_PER_CREDIT = ORIGNAL_DOLLARS_PER_CREDIT / PROFIT_MARGIN;
 
-const MILLION = 1000000;
-
 const ChargeToCredits = (charge: number) => {
     return charge / DOLLARS_PER_CREDIT;
 }
+*/
 
-export const CreditsPerPromptTokenByIntelligence = (intelligence: number) => {
-    if (intelligence === 2){
-        return ChargeToCredits(2.50 / MILLION);
-    } else if (intelligence === 3){
-        return ChargeToCredits(20 / MILLION);
-    } else {
-        return ChargeToCredits(0.15 / MILLION);
-    }
+export const CREDITS_PER_WEB_SEARCH = 2;
+
+const MILLION = 1000000;
+
+const ChargeToCredits = (charge: number) => {
+    return charge;
 }
-export const CreditsPerCompletionTokenByIntelligence = (intelligence: number) => {
-    if (intelligence === 2){
-        return ChargeToCredits(10 / MILLION);
-    } else if (intelligence === 3){
-        return ChargeToCredits(80 / MILLION);
-    } else {
-        return ChargeToCredits(0.60 / MILLION);
-    }
-}
-// original cost in dollars / 150
+
+/**
+ * Calculate credits for a specific provider+model using the MODEL_OPTIONS catalog.
+ * Falls back to gpt-4o-mini rates if the model is not found.
+ */
+export const creditsForModelUsage = (
+    provider: LLMProviderKey,
+    model: string,
+    promptTokens: number,
+    completionTokens: number,
+    cachedTokens: number = 0,
+): number => {
+    const option = getModelOption(provider, model);
+    // Fallback: gpt-4o-mini rates
+    const inputPer1M  = option?.inputCostPer1M  ?? 0.15;
+    const outputPer1M = option?.outputCostPer1M ?? 0.60;
+
+    const creditsPerInput  = ChargeToCredits(inputPer1M / MILLION);
+    const creditsPerOutput = ChargeToCredits(outputPer1M / MILLION);
+
+    const fullPromptCharge   = (promptTokens - cachedTokens) * creditsPerInput;
+    const cachedPromptCharge = cachedTokens * (creditsPerInput / 2);
+    const completionCharge   = completionTokens * creditsPerOutput;
+
+    return Math.ceil(fullPromptCharge + cachedPromptCharge + completionCharge);
+};
 
 // number of credits to charge for ONE web_search_preview tool call
 export const CreditsPerSearchByIntelligence = (

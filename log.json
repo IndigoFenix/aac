@@ -1,0 +1,1032 @@
+{
+    "sessionId": "f1519226-55f2-4e65-a5a0-5746f9a4a2a3",
+    "creditsUsed": 0,
+    "chatState": {
+        "history": [
+            {
+                "role": "user",
+                "content": "Tell me what information you have about Gal",
+                "timestamp": 1770227440220
+            }
+        ],
+        "memoryState": {
+            "visible": [],
+            "page": {}
+        },
+        "conversationSummary": "",
+        "openedTopics": []
+    },
+    "memoryValues": {
+        "Student_Notes": [
+            "Gal expressed interest in listening to happy and upbeat music.",
+            "Gal enjoys exploring new activities.",
+            "Gal shared feeling tired today.",
+            "Gal expressed interest in listening to happy and upbeat music.",
+            "Gal expressed a preference for seeking help when needed.",
+            "Gal frequently asks for help with tasks, highlighting a need for ongoing support with communication and problem-solving.",
+            "Gal enjoys playing with toys.",
+            "Gal frequently asks for help.",
+            "Gal shared feeling overwhelmed in a recent interaction.",
+            "Gal mentioned wanting to explore or play today.",
+            "Gal is interested in choosing an activity from the board.",
+            "Gal's board options include playing, listening to music, exploring, and problem-solving.",
+            "Checked in on Gal's mood and activity choices.",
+            "Gal showed interest in listening to stories, indicating progress in imaginative play.",
+            "Gal is exploring board options today."
+        ],
+        "Student_People": [
+            {
+                "Name": "Jordan",
+                "Relationship": "Friend"
+            },
+            {
+                "Name": "Prof. Meir Lotan",
+                "Relationship": "physiotherapist/researcher"
+            },
+            {
+                "Name": "Sara",
+                "Relationship": "Mother"
+            },
+            {
+                "Name": "Avraham",
+                "Relationship": "Father"
+            }
+        ],
+        "Student_Interests": [
+            "using tools",
+            "music",
+            "happy and upbeat music",
+            "exploring new things",
+            "playing with toys",
+            "exploring complex tasks",
+            "problem solving"
+        ],
+        "Student_Preferences": {
+            "FavoriteActivities": [
+                {
+                    "FavoriteActivities": [
+                        "Making crafts"
+                    ]
+                },
+                "Making crafts with scissors",
+                "Board games",
+                "playing with tools"
+            ]
+        },
+        "Student_CommunicationStyle": {
+            "PrimaryMethod": "nonverbal",
+            "PreferredModality": "symbols"
+        },
+        "Context_Institutes": {
+            "7ea0069f-0fdc-4c1d-992a-793613e55528": {
+                "id": "7ea0069f-0fdc-4c1d-992a-793613e55528",
+                "name": "Mel Elementary",
+                "type": "school",
+                "description": null,
+                "address": null,
+                "phone": null,
+                "email": null,
+                "website": null,
+                "logoUrl": null,
+                "isActive": true,
+                "membership": {
+                    "id": "a6461de6-f22e-4731-93c6-4c898c9852b2",
+                    "instituteId": "7ea0069f-0fdc-4c1d-992a-793613e55528",
+                    "userId": "d936e807-7ea3-4ca2-86b4-b486a31d051a",
+                    "isAdmin": true,
+                    "role": "admin",
+                    "data": {},
+                    "isActive": true
+                },
+                "members": {},
+                "students": {},
+                "classrooms": {},
+                "invites": {}
+            },
+            "8c92909e-0f93-45c0-ab38-26bc39c767d7": {
+                "id": "8c92909e-0f93-45c0-ab38-26bc39c767d7",
+                "name": "Test Hospital",
+                "type": "hospital",
+                "description": "",
+                "address": "",
+                "phone": "",
+                "email": "",
+                "website": "",
+                "logoUrl": null,
+                "isActive": true,
+                "membership": {
+                    "id": "9c41a4b8-9761-492e-a08c-fc26a8e71d50",
+                    "instituteId": "8c92909e-0f93-45c0-ab38-26bc39c767d7",
+                    "userId": "d936e807-7ea3-4ca2-86b4-b486a31d051a",
+                    "isAdmin": true,
+                    "role": "admin",
+                    "data": {},
+                    "isActive": true
+                },
+                "members": {},
+                "students": {},
+                "classrooms": {},
+                "invites": {}
+            },
+            "fb3e0e54-8c2d-489a-8fd5-a167b474f258": {
+                "id": "fb3e0e54-8c2d-489a-8fd5-a167b474f258",
+                "name": "Test School",
+                "type": "school",
+                "description": "This is a test school",
+                "address": "",
+                "phone": "",
+                "email": "",
+                "website": "",
+                "logoUrl": null,
+                "isActive": true,
+                "membership": {
+                    "id": "63f189b3-ab55-4da8-ac6d-61faea896fa2",
+                    "instituteId": "fb3e0e54-8c2d-489a-8fd5-a167b474f258",
+                    "userId": "d936e807-7ea3-4ca2-86b4-b486a31d051a",
+                    "isAdmin": true,
+                    "role": "admin",
+                    "data": {},
+                    "isActive": true
+                },
+                "members": {},
+                "students": {},
+                "classrooms": {},
+                "invites": {}
+            }
+        },
+        "Context_Students": {
+            "04f1ea91-3e67-42ec-983e-bc5460ecb5ca": {
+                "id": "04f1ea91-3e67-42ec-983e-bc5460ecb5ca",
+                "firstName": "Hara",
+                "lastName": "Zen",
+                "name": "Hara Zen",
+                "gender": "Female",
+                "birthDate": "2022-12-07",
+                "framework": "tala",
+                "country": "IL",
+                "primaryLanguage": "he",
+                "additionalLanguages": null,
+                "chatMemory": {},
+                "chatCreditsUsed": 715.02,
+                "chatCreditsUpdated": "2026-01-20T14:56:58.742Z",
+                "aacEnabled": false,
+                "aacChatAgentPrompt": null,
+                "aacDemoMode": false,
+                "aacDemoScenario": null,
+                "aacUsePcsSymbols": false,
+                "aacSignLanguageReading": false,
+                "aacMultiCameraMode": false,
+                "aacModelOverride": null,
+                "aacVoiceType": null,
+                "aacStudentVoiceType": null,
+                "aacCustomVoiceId": null,
+                "aacCustomStudentVoiceId": null,
+                "aacKnownPeople": [],
+                "faceEmbedding": null,
+                "voiceEmbedding": null,
+                "isActive": true,
+                "link": {
+                    "id": "4ab3cf33-7ed6-4747-88a0-442ad23b707d",
+                    "userId": "d936e807-7ea3-4ca2-86b4-b486a31d051a",
+                    "studentId": "04f1ea91-3e67-42ec-983e-bc5460ecb5ca",
+                    "role": "owner",
+                    "data": {},
+                    "isActive": true,
+                    "hasEducationalRights": true,
+                    "hasMedicalRights": true,
+                    "chatMemory": {},
+                    "chatCreditsUsed": 581,
+                    "chatCreditsUpdated": "2026-01-20T14:56:58.949Z"
+                },
+                "users": {},
+                "institutes": [],
+                "classrooms": []
+            },
+            "fa4ae4ca-c1d1-4c9d-85a9-498b19be76e4": {
+                "id": "fa4ae4ca-c1d1-4c9d-85a9-498b19be76e4",
+                "firstName": "Freid",
+                "lastName": "Lawn",
+                "name": "Freid Lawn",
+                "gender": "Female",
+                "birthDate": "2023-03-01",
+                "framework": "tala",
+                "country": "IL",
+                "primaryLanguage": "he",
+                "additionalLanguages": null,
+                "chatMemory": {},
+                "chatCreditsUsed": 0,
+                "chatCreditsUpdated": "2026-01-12T19:50:32.475Z",
+                "aacEnabled": false,
+                "aacChatAgentPrompt": null,
+                "aacDemoMode": false,
+                "aacDemoScenario": null,
+                "aacUsePcsSymbols": false,
+                "aacSignLanguageReading": false,
+                "aacMultiCameraMode": false,
+                "aacModelOverride": null,
+                "aacVoiceType": null,
+                "aacStudentVoiceType": null,
+                "aacCustomVoiceId": null,
+                "aacCustomStudentVoiceId": null,
+                "aacKnownPeople": [],
+                "faceEmbedding": null,
+                "voiceEmbedding": null,
+                "isActive": true,
+                "link": {
+                    "id": "74ce6519-0d2a-4817-9c49-be5fc3625ec1",
+                    "userId": "d936e807-7ea3-4ca2-86b4-b486a31d051a",
+                    "studentId": "fa4ae4ca-c1d1-4c9d-85a9-498b19be76e4",
+                    "role": "owner",
+                    "data": {},
+                    "isActive": true,
+                    "hasEducationalRights": true,
+                    "hasMedicalRights": true,
+                    "chatMemory": {},
+                    "chatCreditsUsed": 0,
+                    "chatCreditsUpdated": "2026-01-12T19:50:32.475Z"
+                },
+                "users": {},
+                "institutes": [],
+                "classrooms": []
+            },
+            "02bebb37-498a-4c14-b296-ab8d98dff060": {
+                "id": "02bebb37-498a-4c14-b296-ab8d98dff060",
+                "firstName": "Gal",
+                "lastName": "",
+                "name": "Gal",
+                "gender": "Male",
+                "birthDate": "2021-02-07",
+                "framework": "tala",
+                "country": "IL",
+                "primaryLanguage": "en",
+                "additionalLanguages": null,
+                "chatMemory": {
+                    "Student_Notes": [
+                        "Gal expressed interest in listening to happy and upbeat music.",
+                        "Gal enjoys exploring new activities.",
+                        "Gal shared feeling tired today.",
+                        "Gal expressed interest in listening to happy and upbeat music.",
+                        "Gal expressed a preference for seeking help when needed.",
+                        "Gal frequently asks for help with tasks, highlighting a need for ongoing support with communication and problem-solving.",
+                        "Gal enjoys playing with toys.",
+                        "Gal frequently asks for help.",
+                        "Gal shared feeling overwhelmed in a recent interaction.",
+                        "Gal mentioned wanting to explore or play today.",
+                        "Gal is interested in choosing an activity from the board.",
+                        "Gal's board options include playing, listening to music, exploring, and problem-solving.",
+                        "Checked in on Gal's mood and activity choices.",
+                        "Gal showed interest in listening to stories, indicating progress in imaginative play.",
+                        "Gal is exploring board options today."
+                    ],
+                    "Student_People": [
+                        {
+                            "Name": "Jordan",
+                            "Relationship": "Friend"
+                        },
+                        {
+                            "Name": "Prof. Meir Lotan",
+                            "Relationship": "physiotherapist/researcher"
+                        },
+                        {
+                            "Name": "Sara",
+                            "Relationship": "Mother"
+                        },
+                        {
+                            "Name": "Avraham",
+                            "Relationship": "Father"
+                        }
+                    ],
+                    "Student_Interests": [
+                        "using tools",
+                        "music",
+                        "happy and upbeat music",
+                        "exploring new things",
+                        "playing with toys",
+                        "exploring complex tasks",
+                        "problem solving"
+                    ],
+                    "Student_Preferences": {
+                        "FavoriteActivities": [
+                            {
+                                "FavoriteActivities": [
+                                    "Making crafts"
+                                ]
+                            },
+                            "Making crafts with scissors",
+                            "Board games",
+                            "playing with tools"
+                        ]
+                    },
+                    "Student_CommunicationStyle": {
+                        "PrimaryMethod": "nonverbal",
+                        "PreferredModality": "symbols"
+                    }
+                },
+                "chatCreditsUsed": 39732,
+                "chatCreditsUpdated": "2026-02-02T10:53:00.087Z",
+                "aacEnabled": false,
+                "aacChatAgentPrompt": null,
+                "aacDemoMode": false,
+                "aacDemoScenario": null,
+                "aacUsePcsSymbols": false,
+                "aacSignLanguageReading": false,
+                "aacMultiCameraMode": false,
+                "aacModelOverride": null,
+                "aacVoiceType": null,
+                "aacStudentVoiceType": null,
+                "aacCustomVoiceId": null,
+                "aacCustomStudentVoiceId": null,
+                "aacKnownPeople": [],
+                "faceEmbedding": null,
+                "voiceEmbedding": null,
+                "isActive": true,
+                "link": {
+                    "id": "8c649f11-6fa3-4f9e-9dbe-b26b2fb732ec",
+                    "userId": "d936e807-7ea3-4ca2-86b4-b486a31d051a",
+                    "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+                    "role": "owner",
+                    "data": {},
+                    "isActive": true,
+                    "hasEducationalRights": true,
+                    "hasMedicalRights": true,
+                    "chatMemory": {},
+                    "chatCreditsUsed": 39732,
+                    "chatCreditsUpdated": "2026-02-02T10:53:00.771Z"
+                },
+                "users": {},
+                "institutes": [],
+                "classrooms": []
+            },
+            "d820e281-b68d-40a1-83c6-e38f036594cb": {
+                "id": "d820e281-b68d-40a1-83c6-e38f036594cb",
+                "firstName": "Tal",
+                "lastName": null,
+                "name": "Tal",
+                "gender": "Female",
+                "birthDate": "2019-07-10",
+                "framework": "tala",
+                "country": "IL",
+                "primaryLanguage": "he",
+                "additionalLanguages": null,
+                "chatMemory": {},
+                "chatCreditsUsed": 4951,
+                "chatCreditsUpdated": "2026-01-07T09:22:58.830Z",
+                "aacEnabled": false,
+                "aacChatAgentPrompt": null,
+                "aacDemoMode": false,
+                "aacDemoScenario": null,
+                "aacUsePcsSymbols": false,
+                "aacSignLanguageReading": false,
+                "aacMultiCameraMode": false,
+                "aacModelOverride": null,
+                "aacVoiceType": null,
+                "aacStudentVoiceType": null,
+                "aacCustomVoiceId": null,
+                "aacCustomStudentVoiceId": null,
+                "aacKnownPeople": [],
+                "faceEmbedding": null,
+                "voiceEmbedding": null,
+                "isActive": true,
+                "link": {
+                    "id": "d281f26d-82dc-47ef-840d-3d752d766b07",
+                    "userId": "d936e807-7ea3-4ca2-86b4-b486a31d051a",
+                    "studentId": "d820e281-b68d-40a1-83c6-e38f036594cb",
+                    "role": "owner",
+                    "data": {},
+                    "isActive": true,
+                    "hasEducationalRights": true,
+                    "hasMedicalRights": true,
+                    "chatMemory": {},
+                    "chatCreditsUsed": 4951,
+                    "chatCreditsUpdated": "2026-01-07T09:22:59.032Z"
+                },
+                "users": {},
+                "institutes": [],
+                "classrooms": []
+            },
+            "26a6117e-e75e-4564-a653-7841d2da05cc": {
+                "id": "26a6117e-e75e-4564-a653-7841d2da05cc",
+                "firstName": "מיקה",
+                "lastName": null,
+                "name": "מיקה",
+                "gender": "Female",
+                "birthDate": "2021-01-28",
+                "framework": "tala",
+                "country": "IL",
+                "primaryLanguage": "he",
+                "additionalLanguages": null,
+                "chatMemory": {
+                    "Student_Medical": {
+                        "condition": "CP המיפלגיה",
+                        "additionalConditions": [
+                            "שאנט",
+                            "ליקוי ראיה"
+                        ]
+                    }
+                },
+                "chatCreditsUsed": 1609,
+                "chatCreditsUpdated": "2026-01-06T12:39:31.729Z",
+                "aacEnabled": false,
+                "aacChatAgentPrompt": null,
+                "aacDemoMode": false,
+                "aacDemoScenario": null,
+                "aacUsePcsSymbols": false,
+                "aacSignLanguageReading": false,
+                "aacMultiCameraMode": false,
+                "aacModelOverride": null,
+                "aacVoiceType": null,
+                "aacStudentVoiceType": null,
+                "aacCustomVoiceId": null,
+                "aacCustomStudentVoiceId": null,
+                "aacKnownPeople": [],
+                "faceEmbedding": null,
+                "voiceEmbedding": null,
+                "isActive": true,
+                "link": {
+                    "id": "93d201e7-df9a-4bc7-a96d-a347200070cb",
+                    "userId": "d936e807-7ea3-4ca2-86b4-b486a31d051a",
+                    "studentId": "26a6117e-e75e-4564-a653-7841d2da05cc",
+                    "role": "owner",
+                    "data": {},
+                    "isActive": true,
+                    "hasEducationalRights": true,
+                    "hasMedicalRights": true,
+                    "chatMemory": {},
+                    "chatCreditsUsed": 1609,
+                    "chatCreditsUpdated": "2026-01-06T12:39:31.900Z"
+                },
+                "users": {},
+                "institutes": [],
+                "classrooms": []
+            }
+        },
+        "Context_Library": {
+            "A comprehensive list of articles on Rett Syndrome by Prof. Meir Lotan": {
+                "id": "24ea3fdc-ff95-40ec-8db8-b26e11db6a40",
+                "title": "A comprehensive list of articles on Rett Syndrome by Prof. Meir Lotan",
+                "content": "A comprehensive list of articles on Rett Syndrome by Prof. Meir Lotan\nOverview\nProf. Meir Lotan, a physiotherapist and senior researcher at Ariel University, is one of the world's leading experts in the field of Rett Syndrome treatment with over 30 years of clinical and research experience. His scientific output includes 38 focused articles on Rett Syndrome with over 1,200 citations in total, indicating his significant influence in this field.",
+                "active": true,
+                "subtopics": {}
+            },
+            "Physiotherapy Goals - Gross Motor Skills": {
+                "id": "f0000000-0000-0000-0000-000000000001",
+                "title": "Physiotherapy Goals - Gross Motor Skills",
+                "content": "Individual Physiotherapy Learning Plans (תוכנית לימוד אישית - פיזיותרפיה) for pediatric gross motor development. These structured therapy goal templates are used in Israeli special education (TALA) settings for children with motor development needs. Each goal includes: Long-term objectives, intervention methods, prerequisites/conditions, success criteria, and designated implementers (physiotherapist and/or educational team).",
+                "active": true,
+                "subtopics": {}
+            },
+            "Preschool SLP Goals Bank": {
+                "id": "1ab6aeb0-36fd-4875-bda3-1c100f3c6446",
+                "title": "Preschool SLP Goals Bank",
+                "content": "Preschool SLP Goals Bank",
+                "active": true,
+                "subtopics": {}
+            }
+        },
+        "Context_Program": {
+            "id": "6c92a454-ab2b-45af-8c0b-4f1de38db269",
+            "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+            "instituteId": null,
+            "framework": "tala",
+            "title": "Gal's Educational Program 2026",
+            "status": "active",
+            "startDate": "2026-01-07",
+            "endDate": "2026-12-31",
+            "dueDate": "2025-11-15",
+            "approvalDate": null,
+            "leastRestrictiveEnvironment": null,
+            "notes": null,
+            "metadata": {},
+            "profileDomains": {},
+            "goals": {},
+            "services": {},
+            "teamMembers": {},
+            "meetings": {},
+            "consentForms": {},
+            "progressReports": {}
+        },
+        "Context_Reports": {
+            "medicalRecord": {
+                "id": "d5b4ca26-6f19-4fb5-bb55-8ac6bdc21772",
+                "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+                "userId": "d936e807-7ea3-4ca2-86b4-b486a31d051a",
+                "instituteId": null,
+                "birthDate": null,
+                "isSensitive": true,
+                "sensitivityCategory": "medical",
+                "primaryDiagnosis": "Obsessive-Compulsive Disorder (OCD)",
+                "primaryDiagnosisCode": null,
+                "coMorbidities": [],
+                "secondaryDiagnoses": [],
+                "alertsAllergies": [],
+                "alertsSeizures": [],
+                "alertsCardiac": [],
+                "medications": [],
+                "medicalEquipment": [],
+                "status": "draft",
+                "createdAt": "2026-01-07T11:20:37.572Z",
+                "updatedAt": "2026-01-07T11:20:37.572Z",
+                "finalizedAt": null
+            },
+            "functionalReport": {
+                "id": "6bb4be94-ba76-4e3f-9ab6-56868f35279a",
+                "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+                "userId": "d936e807-7ea3-4ca2-86b4-b486a31d051a",
+                "instituteId": null,
+                "programId": "6c92a454-ab2b-45af-8c0b-4f1de38db269",
+                "isSensitive": true,
+                "sensitivityCategory": "behavioral",
+                "mobilityStatus": [
+                    "Difficulty walking"
+                ],
+                "adlStatus": [],
+                "sensoryProfile": [],
+                "safetyRisks": [],
+                "status": "draft",
+                "createdAt": "2026-01-15T10:02:50.594Z",
+                "updatedAt": "2026-01-15T10:02:50.594Z",
+                "finalizedAt": null
+            }
+        }
+    },
+    "message": {
+        "role": "system",
+        "content": {
+            "text": "An error occured while calling the LLM."
+        },
+        "timestamp": 1770227440248
+    },
+    "contextData": {
+        "institutes": {
+            "7ea0069f-0fdc-4c1d-992a-793613e55528": {
+                "id": "7ea0069f-0fdc-4c1d-992a-793613e55528",
+                "name": "Mel Elementary",
+                "type": "school",
+                "description": null,
+                "address": null,
+                "phone": null,
+                "email": null,
+                "website": null,
+                "logoUrl": null,
+                "isActive": true,
+                "membership": {
+                    "id": "a6461de6-f22e-4731-93c6-4c898c9852b2",
+                    "instituteId": "7ea0069f-0fdc-4c1d-992a-793613e55528",
+                    "userId": "d936e807-7ea3-4ca2-86b4-b486a31d051a",
+                    "isAdmin": true,
+                    "role": "admin",
+                    "data": {},
+                    "isActive": true
+                },
+                "members": {},
+                "students": {},
+                "classrooms": {},
+                "invites": {}
+            },
+            "8c92909e-0f93-45c0-ab38-26bc39c767d7": {
+                "id": "8c92909e-0f93-45c0-ab38-26bc39c767d7",
+                "name": "Test Hospital",
+                "type": "hospital",
+                "description": "",
+                "address": "",
+                "phone": "",
+                "email": "",
+                "website": "",
+                "logoUrl": null,
+                "isActive": true,
+                "membership": {
+                    "id": "9c41a4b8-9761-492e-a08c-fc26a8e71d50",
+                    "instituteId": "8c92909e-0f93-45c0-ab38-26bc39c767d7",
+                    "userId": "d936e807-7ea3-4ca2-86b4-b486a31d051a",
+                    "isAdmin": true,
+                    "role": "admin",
+                    "data": {},
+                    "isActive": true
+                },
+                "members": {},
+                "students": {},
+                "classrooms": {},
+                "invites": {}
+            },
+            "fb3e0e54-8c2d-489a-8fd5-a167b474f258": {
+                "id": "fb3e0e54-8c2d-489a-8fd5-a167b474f258",
+                "name": "Test School",
+                "type": "school",
+                "description": "This is a test school",
+                "address": "",
+                "phone": "",
+                "email": "",
+                "website": "",
+                "logoUrl": null,
+                "isActive": true,
+                "membership": {
+                    "id": "63f189b3-ab55-4da8-ac6d-61faea896fa2",
+                    "instituteId": "fb3e0e54-8c2d-489a-8fd5-a167b474f258",
+                    "userId": "d936e807-7ea3-4ca2-86b4-b486a31d051a",
+                    "isAdmin": true,
+                    "role": "admin",
+                    "data": {},
+                    "isActive": true
+                },
+                "members": {},
+                "students": {},
+                "classrooms": {},
+                "invites": {}
+            }
+        },
+        "students": {
+            "04f1ea91-3e67-42ec-983e-bc5460ecb5ca": {
+                "id": "04f1ea91-3e67-42ec-983e-bc5460ecb5ca",
+                "firstName": "Hara",
+                "lastName": "Zen",
+                "name": "Hara Zen",
+                "gender": "Female",
+                "birthDate": "2022-12-07",
+                "framework": "tala",
+                "country": "IL",
+                "primaryLanguage": "he",
+                "additionalLanguages": null,
+                "chatMemory": {},
+                "chatCreditsUsed": 715.02,
+                "chatCreditsUpdated": "2026-01-20T14:56:58.742Z",
+                "aacEnabled": false,
+                "aacChatAgentPrompt": null,
+                "aacDemoMode": false,
+                "aacDemoScenario": null,
+                "aacUsePcsSymbols": false,
+                "aacSignLanguageReading": false,
+                "aacMultiCameraMode": false,
+                "aacModelOverride": null,
+                "aacVoiceType": null,
+                "aacStudentVoiceType": null,
+                "aacCustomVoiceId": null,
+                "aacCustomStudentVoiceId": null,
+                "aacKnownPeople": [],
+                "faceEmbedding": null,
+                "voiceEmbedding": null,
+                "isActive": true,
+                "link": {
+                    "id": "4ab3cf33-7ed6-4747-88a0-442ad23b707d",
+                    "userId": "d936e807-7ea3-4ca2-86b4-b486a31d051a",
+                    "studentId": "04f1ea91-3e67-42ec-983e-bc5460ecb5ca",
+                    "role": "owner",
+                    "data": {},
+                    "isActive": true,
+                    "hasEducationalRights": true,
+                    "hasMedicalRights": true,
+                    "chatMemory": {},
+                    "chatCreditsUsed": 581,
+                    "chatCreditsUpdated": "2026-01-20T14:56:58.949Z"
+                },
+                "users": {},
+                "institutes": [],
+                "classrooms": []
+            },
+            "fa4ae4ca-c1d1-4c9d-85a9-498b19be76e4": {
+                "id": "fa4ae4ca-c1d1-4c9d-85a9-498b19be76e4",
+                "firstName": "Freid",
+                "lastName": "Lawn",
+                "name": "Freid Lawn",
+                "gender": "Female",
+                "birthDate": "2023-03-01",
+                "framework": "tala",
+                "country": "IL",
+                "primaryLanguage": "he",
+                "additionalLanguages": null,
+                "chatMemory": {},
+                "chatCreditsUsed": 0,
+                "chatCreditsUpdated": "2026-01-12T19:50:32.475Z",
+                "aacEnabled": false,
+                "aacChatAgentPrompt": null,
+                "aacDemoMode": false,
+                "aacDemoScenario": null,
+                "aacUsePcsSymbols": false,
+                "aacSignLanguageReading": false,
+                "aacMultiCameraMode": false,
+                "aacModelOverride": null,
+                "aacVoiceType": null,
+                "aacStudentVoiceType": null,
+                "aacCustomVoiceId": null,
+                "aacCustomStudentVoiceId": null,
+                "aacKnownPeople": [],
+                "faceEmbedding": null,
+                "voiceEmbedding": null,
+                "isActive": true,
+                "link": {
+                    "id": "74ce6519-0d2a-4817-9c49-be5fc3625ec1",
+                    "userId": "d936e807-7ea3-4ca2-86b4-b486a31d051a",
+                    "studentId": "fa4ae4ca-c1d1-4c9d-85a9-498b19be76e4",
+                    "role": "owner",
+                    "data": {},
+                    "isActive": true,
+                    "hasEducationalRights": true,
+                    "hasMedicalRights": true,
+                    "chatMemory": {},
+                    "chatCreditsUsed": 0,
+                    "chatCreditsUpdated": "2026-01-12T19:50:32.475Z"
+                },
+                "users": {},
+                "institutes": [],
+                "classrooms": []
+            },
+            "02bebb37-498a-4c14-b296-ab8d98dff060": {
+                "id": "02bebb37-498a-4c14-b296-ab8d98dff060",
+                "firstName": "Gal",
+                "lastName": "",
+                "name": "Gal",
+                "gender": "Male",
+                "birthDate": "2021-02-07",
+                "framework": "tala",
+                "country": "IL",
+                "primaryLanguage": "en",
+                "additionalLanguages": null,
+                "chatMemory": {
+                    "Student_Notes": [
+                        "Gal expressed interest in listening to happy and upbeat music.",
+                        "Gal enjoys exploring new activities.",
+                        "Gal shared feeling tired today.",
+                        "Gal expressed interest in listening to happy and upbeat music.",
+                        "Gal expressed a preference for seeking help when needed.",
+                        "Gal frequently asks for help with tasks, highlighting a need for ongoing support with communication and problem-solving.",
+                        "Gal enjoys playing with toys.",
+                        "Gal frequently asks for help.",
+                        "Gal shared feeling overwhelmed in a recent interaction.",
+                        "Gal mentioned wanting to explore or play today.",
+                        "Gal is interested in choosing an activity from the board.",
+                        "Gal's board options include playing, listening to music, exploring, and problem-solving.",
+                        "Checked in on Gal's mood and activity choices.",
+                        "Gal showed interest in listening to stories, indicating progress in imaginative play.",
+                        "Gal is exploring board options today."
+                    ],
+                    "Student_People": [
+                        {
+                            "Name": "Jordan",
+                            "Relationship": "Friend"
+                        },
+                        {
+                            "Name": "Prof. Meir Lotan",
+                            "Relationship": "physiotherapist/researcher"
+                        },
+                        {
+                            "Name": "Sara",
+                            "Relationship": "Mother"
+                        },
+                        {
+                            "Name": "Avraham",
+                            "Relationship": "Father"
+                        }
+                    ],
+                    "Student_Interests": [
+                        "using tools",
+                        "music",
+                        "happy and upbeat music",
+                        "exploring new things",
+                        "playing with toys",
+                        "exploring complex tasks",
+                        "problem solving"
+                    ],
+                    "Student_Preferences": {
+                        "FavoriteActivities": [
+                            {
+                                "FavoriteActivities": [
+                                    "Making crafts"
+                                ]
+                            },
+                            "Making crafts with scissors",
+                            "Board games",
+                            "playing with tools"
+                        ]
+                    },
+                    "Student_CommunicationStyle": {
+                        "PrimaryMethod": "nonverbal",
+                        "PreferredModality": "symbols"
+                    }
+                },
+                "chatCreditsUsed": 39732,
+                "chatCreditsUpdated": "2026-02-02T10:53:00.087Z",
+                "aacEnabled": false,
+                "aacChatAgentPrompt": null,
+                "aacDemoMode": false,
+                "aacDemoScenario": null,
+                "aacUsePcsSymbols": false,
+                "aacSignLanguageReading": false,
+                "aacMultiCameraMode": false,
+                "aacModelOverride": null,
+                "aacVoiceType": null,
+                "aacStudentVoiceType": null,
+                "aacCustomVoiceId": null,
+                "aacCustomStudentVoiceId": null,
+                "aacKnownPeople": [],
+                "faceEmbedding": null,
+                "voiceEmbedding": null,
+                "isActive": true,
+                "link": {
+                    "id": "8c649f11-6fa3-4f9e-9dbe-b26b2fb732ec",
+                    "userId": "d936e807-7ea3-4ca2-86b4-b486a31d051a",
+                    "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+                    "role": "owner",
+                    "data": {},
+                    "isActive": true,
+                    "hasEducationalRights": true,
+                    "hasMedicalRights": true,
+                    "chatMemory": {},
+                    "chatCreditsUsed": 39732,
+                    "chatCreditsUpdated": "2026-02-02T10:53:00.771Z"
+                },
+                "users": {},
+                "institutes": [],
+                "classrooms": []
+            },
+            "d820e281-b68d-40a1-83c6-e38f036594cb": {
+                "id": "d820e281-b68d-40a1-83c6-e38f036594cb",
+                "firstName": "Tal",
+                "lastName": null,
+                "name": "Tal",
+                "gender": "Female",
+                "birthDate": "2019-07-10",
+                "framework": "tala",
+                "country": "IL",
+                "primaryLanguage": "he",
+                "additionalLanguages": null,
+                "chatMemory": {},
+                "chatCreditsUsed": 4951,
+                "chatCreditsUpdated": "2026-01-07T09:22:58.830Z",
+                "aacEnabled": false,
+                "aacChatAgentPrompt": null,
+                "aacDemoMode": false,
+                "aacDemoScenario": null,
+                "aacUsePcsSymbols": false,
+                "aacSignLanguageReading": false,
+                "aacMultiCameraMode": false,
+                "aacModelOverride": null,
+                "aacVoiceType": null,
+                "aacStudentVoiceType": null,
+                "aacCustomVoiceId": null,
+                "aacCustomStudentVoiceId": null,
+                "aacKnownPeople": [],
+                "faceEmbedding": null,
+                "voiceEmbedding": null,
+                "isActive": true,
+                "link": {
+                    "id": "d281f26d-82dc-47ef-840d-3d752d766b07",
+                    "userId": "d936e807-7ea3-4ca2-86b4-b486a31d051a",
+                    "studentId": "d820e281-b68d-40a1-83c6-e38f036594cb",
+                    "role": "owner",
+                    "data": {},
+                    "isActive": true,
+                    "hasEducationalRights": true,
+                    "hasMedicalRights": true,
+                    "chatMemory": {},
+                    "chatCreditsUsed": 4951,
+                    "chatCreditsUpdated": "2026-01-07T09:22:59.032Z"
+                },
+                "users": {},
+                "institutes": [],
+                "classrooms": []
+            },
+            "26a6117e-e75e-4564-a653-7841d2da05cc": {
+                "id": "26a6117e-e75e-4564-a653-7841d2da05cc",
+                "firstName": "מיקה",
+                "lastName": null,
+                "name": "מיקה",
+                "gender": "Female",
+                "birthDate": "2021-01-28",
+                "framework": "tala",
+                "country": "IL",
+                "primaryLanguage": "he",
+                "additionalLanguages": null,
+                "chatMemory": {
+                    "Student_Medical": {
+                        "condition": "CP המיפלגיה",
+                        "additionalConditions": [
+                            "שאנט",
+                            "ליקוי ראיה"
+                        ]
+                    }
+                },
+                "chatCreditsUsed": 1609,
+                "chatCreditsUpdated": "2026-01-06T12:39:31.729Z",
+                "aacEnabled": false,
+                "aacChatAgentPrompt": null,
+                "aacDemoMode": false,
+                "aacDemoScenario": null,
+                "aacUsePcsSymbols": false,
+                "aacSignLanguageReading": false,
+                "aacMultiCameraMode": false,
+                "aacModelOverride": null,
+                "aacVoiceType": null,
+                "aacStudentVoiceType": null,
+                "aacCustomVoiceId": null,
+                "aacCustomStudentVoiceId": null,
+                "aacKnownPeople": [],
+                "faceEmbedding": null,
+                "voiceEmbedding": null,
+                "isActive": true,
+                "link": {
+                    "id": "93d201e7-df9a-4bc7-a96d-a347200070cb",
+                    "userId": "d936e807-7ea3-4ca2-86b4-b486a31d051a",
+                    "studentId": "26a6117e-e75e-4564-a653-7841d2da05cc",
+                    "role": "owner",
+                    "data": {},
+                    "isActive": true,
+                    "hasEducationalRights": true,
+                    "hasMedicalRights": true,
+                    "chatMemory": {},
+                    "chatCreditsUsed": 1609,
+                    "chatCreditsUpdated": "2026-01-06T12:39:31.900Z"
+                },
+                "users": {},
+                "institutes": [],
+                "classrooms": []
+            }
+        },
+        "library": {
+            "A comprehensive list of articles on Rett Syndrome by Prof. Meir Lotan": {
+                "id": "24ea3fdc-ff95-40ec-8db8-b26e11db6a40",
+                "title": "A comprehensive list of articles on Rett Syndrome by Prof. Meir Lotan",
+                "content": "A comprehensive list of articles on Rett Syndrome by Prof. Meir Lotan\nOverview\nProf. Meir Lotan, a physiotherapist and senior researcher at Ariel University, is one of the world's leading experts in the field of Rett Syndrome treatment with over 30 years of clinical and research experience. His scientific output includes 38 focused articles on Rett Syndrome with over 1,200 citations in total, indicating his significant influence in this field.",
+                "active": true,
+                "subtopics": {}
+            },
+            "Physiotherapy Goals - Gross Motor Skills": {
+                "id": "f0000000-0000-0000-0000-000000000001",
+                "title": "Physiotherapy Goals - Gross Motor Skills",
+                "content": "Individual Physiotherapy Learning Plans (תוכנית לימוד אישית - פיזיותרפיה) for pediatric gross motor development. These structured therapy goal templates are used in Israeli special education (TALA) settings for children with motor development needs. Each goal includes: Long-term objectives, intervention methods, prerequisites/conditions, success criteria, and designated implementers (physiotherapist and/or educational team).",
+                "active": true,
+                "subtopics": {}
+            },
+            "Preschool SLP Goals Bank": {
+                "id": "1ab6aeb0-36fd-4875-bda3-1c100f3c6446",
+                "title": "Preschool SLP Goals Bank",
+                "content": "Preschool SLP Goals Bank",
+                "active": true,
+                "subtopics": {}
+            }
+        },
+        "program": {
+            "id": "6c92a454-ab2b-45af-8c0b-4f1de38db269",
+            "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+            "instituteId": null,
+            "framework": "tala",
+            "title": "Gal's Educational Program 2026",
+            "status": "active",
+            "startDate": "2026-01-07",
+            "endDate": "2026-12-31",
+            "dueDate": "2025-11-15",
+            "approvalDate": null,
+            "leastRestrictiveEnvironment": null,
+            "notes": null,
+            "metadata": {},
+            "profileDomains": {},
+            "goals": {},
+            "services": {},
+            "teamMembers": {},
+            "meetings": {},
+            "consentForms": {},
+            "progressReports": {}
+        },
+        "reports": {
+            "medicalRecord": {
+                "id": "d5b4ca26-6f19-4fb5-bb55-8ac6bdc21772",
+                "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+                "userId": "d936e807-7ea3-4ca2-86b4-b486a31d051a",
+                "instituteId": null,
+                "birthDate": null,
+                "isSensitive": true,
+                "sensitivityCategory": "medical",
+                "primaryDiagnosis": "Obsessive-Compulsive Disorder (OCD)",
+                "primaryDiagnosisCode": null,
+                "coMorbidities": [],
+                "secondaryDiagnoses": [],
+                "alertsAllergies": [],
+                "alertsSeizures": [],
+                "alertsCardiac": [],
+                "medications": [],
+                "medicalEquipment": [],
+                "status": "draft",
+                "createdAt": "2026-01-07T11:20:37.572Z",
+                "updatedAt": "2026-01-07T11:20:37.572Z",
+                "finalizedAt": null
+            },
+            "functionalReport": {
+                "id": "6bb4be94-ba76-4e3f-9ab6-56868f35279a",
+                "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+                "userId": "d936e807-7ea3-4ca2-86b4-b486a31d051a",
+                "instituteId": null,
+                "programId": "6c92a454-ab2b-45af-8c0b-4f1de38db269",
+                "isSensitive": true,
+                "sensitivityCategory": "behavioral",
+                "mobilityStatus": [
+                    "Difficulty walking"
+                ],
+                "adlStatus": [],
+                "sensoryProfile": [],
+                "safetyRisks": [],
+                "status": "draft",
+                "createdAt": "2026-01-15T10:02:50.594Z",
+                "updatedAt": "2026-01-15T10:02:50.594Z",
+                "finalizedAt": null
+            }
+        }
+    }
+}

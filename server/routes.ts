@@ -41,6 +41,7 @@ import { fileUploadController } from "./controllers/fileUploadController";
 import { personaController } from "./controllers/personaController";
 import { topicController } from "./controllers/topicController";
 import { voiceController } from "./controllers/voiceController";
+import { voiceRecordController } from "./controllers/voiceRecordController";
 import { dualAgentController } from "./controllers/dualAgentController";
 import { biometricController } from "./controllers/biometricController";
 
@@ -266,6 +267,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // User routes (any authenticated user)
   app.get('/api/personas/selectable', requireAuth, personaController.getSelectablePersonas.bind(personaController));
+
+  // ============= VOICE RECORD ROUTES =============
+  // Admin routes (system admin only)
+  app.get('/api/admin/voices', requireAuth, requireSystemAdmin, voiceRecordController.getVoices.bind(voiceRecordController));
+  app.post('/api/admin/voices', requireAuth, requireSystemAdmin, voiceRecordController.createVoice.bind(voiceRecordController));
+  app.get('/api/admin/voices/:id', requireAuth, requireSystemAdmin, voiceRecordController.getVoice.bind(voiceRecordController));
+  app.patch('/api/admin/voices/:id', requireAuth, requireSystemAdmin, voiceRecordController.updateVoice.bind(voiceRecordController));
+  app.delete('/api/admin/voices/:id', requireAuth, requireSystemAdmin, voiceRecordController.deleteVoice.bind(voiceRecordController));
+
+  // User routes (any authenticated user - active voices for settings panel)
+  app.get('/api/voices/active', requireAuth, voiceRecordController.getActiveVoices.bind(voiceRecordController));
 
   // ============= TOPIC/LIBRARY ROUTES =============
   // Admin routes (system admin only)
@@ -868,8 +880,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/aac/dual/interpret", optionalAuth, requireOnboardingComplete, (req, res) =>
     dualAgentController.interpret(req, res)
   );
-  // Continuous detection — camera frame in, board update out (JSON, not SSE)
-  app.post("/api/aac/dual/detect", optionalAuth, requireOnboardingComplete, aacUpload.single("image"), (req, res) =>
+  // Continuous detection — camera frame + ambient audio in, board diff out (JSON, not SSE)
+  app.post("/api/aac/dual/detect", optionalAuth, requireOnboardingComplete, aacUpload.fields([{ name: "image", maxCount: 1 }, { name: "audio", maxCount: 1 }]), (req, res) =>
     dualAgentController.detect(req, res)
   );
   // Get session state
@@ -972,6 +984,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.put("/api/admin/prompt", requireAdmin, (req, res) =>
     adminController.updateSystemPrompt(req, res)
+  );
+
+  // LLM Config (must come before /api/admin/settings/:key to avoid param match)
+  app.get("/api/admin/settings/llm_configs", requireAuth, requireSystemAdmin, (req, res) =>
+    adminController.getLLMConfigs(req, res)
+  );
+  app.put("/api/admin/settings/llm_configs", requireAuth, requireSystemAdmin, (req, res) =>
+    adminController.updateLLMConfigs(req, res)
   );
 
   // Settings

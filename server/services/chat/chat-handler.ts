@@ -13,7 +13,7 @@ import {
     type AgentMemoryField,
     MessageResponse,
   } from "@shared/schema";
-  import { CreditsPerCompletionTokenByIntelligence, CreditsPerPromptTokenByIntelligence, CreditsPerSearchByIntelligence } from "./cost-helpers";
+  import { CreditsPerSearchByIntelligence, creditsForModelUsage } from "./cost-helpers";
   import { GPT, GPTResponse, GPTInputItem, GPTFunctionToolCall, GPTContentPart } from "./gpt";
   import { buildPromptAndTools, formValues, NlpSchema, AgentLike } from "./prompt-kit";
   import { defaultToolRegistry, enrichToolCallMessage, LoopDetectionConfig, makeToolCalls, MemoryProcessor, ToolRegistry } from "./tool-router";
@@ -151,12 +151,13 @@ import {
           vectorStoreId?: string,
           loopDetectionConfig?: LoopDetectionConfig;
           currentImage?: CurrentImage;
+          providerConfig?: { provider: import("@shared/llm-options").LLMProviderKey; model: string };
       }){
           this.chatState = JSON.parse(JSON.stringify(settings.chatState));
           this.log = JSON.parse(JSON.stringify(settings.log));
           this.memoryValues = settings.memoryValues ? JSON.parse(JSON.stringify(settings.memoryValues)) : {};
           this.maxCredits = settings.maxCredits;
-          this.gpt = new GPT();
+          this.gpt = new GPT(settings.providerConfig);
           this.onUpdateMemoryValues = async (memoryValues: any) => {
               memoryValues = JSON.parse(JSON.stringify(memoryValues));
               this.memoryValues = memoryValues;
@@ -617,9 +618,6 @@ import {
 
           const instructionsText = promptBuild.instructions + (promptBuild.endInstructions ? ('\n' + promptBuild.endInstructions) : '');
 
-          const creditsPerPromptToken = CreditsPerPromptTokenByIntelligence(this.intelligenceLevel);
-          const creditsPerCompletionToken = CreditsPerCompletionTokenByIntelligence(this.intelligenceLevel);
-
           const tokensAvailableForResponse = 15000;
           const temperature = 0.7;
           try {
@@ -638,23 +636,28 @@ import {
                   this.vectorStoreId // Pass vector store ID for file search
               );
               let creditsUsed = 0; // Credits used by this one response
-  
+
               if (gptResponse.promptTokens !== undefined) {
-  
-                  const promptCharge        = (gptResponse.promptTokens - gptResponse.cachedTokens) * creditsPerPromptToken;
-                  const cachedPromptCharge  = gptResponse.cachedTokens * (creditsPerPromptToken / 2);
-                  const completionCharge    = gptResponse.completionTokens * creditsPerCompletionToken;
-  
-                  const searchCharge = (promptBuild.searchEnabled && promptBuild.searchContextSize)
-                          ? (gptResponse.searchCalls || 0) * CreditsPerSearchByIntelligence(this.intelligenceLevel, promptBuild.searchContextSize)
-                          : 0;
-  
-                  const rawCredits = promptCharge + cachedPromptCharge + completionCharge + searchCharge;
-                  creditsUsed      = Math.ceil(rawCredits);
-  
+                  const provider = this.gpt.providerConfig?.provider || "openai";
+                  const model = this.gpt.providerConfig?.model || "gpt-4o-mini";
+
+                  creditsUsed = creditsForModelUsage(
+                      provider, model,
+                      gptResponse.promptTokens,
+                      gptResponse.completionTokens,
+                      gptResponse.cachedTokens
+                  );
+
+                  // Search surcharge only applies to OpenAI
+                  if (provider === "openai" && promptBuild.searchEnabled && promptBuild.searchContextSize) {
+                      creditsUsed += Math.ceil(
+                          (gptResponse.searchCalls || 0) * CreditsPerSearchByIntelligence(this.intelligenceLevel, promptBuild.searchContextSize)
+                      );
+                  }
+
                   console.log(`prompt=${gptResponse.promptTokens} cached=${gptResponse.cachedTokens} `
                               + `completion=${gptResponse.completionTokens} searchCalls=${gptResponse.searchCalls} `
-                              + `rawCredits=${rawCredits} billed=${creditsUsed}`);
+                              + `provider=${provider} model=${model} billed=${creditsUsed}`);
               }
               if (gptResponse.toolCalls?.length){
                   // Send thinking update if callback is available
@@ -735,14 +738,30 @@ import {
           try {
               parsedResponse = JSON.parse(response);
           } catch (e) {
-            const loggedMessage = isProd ? 'REDACTED' : response;
-            console.log('Error parsing response:', e, loggedMessage);
-            return {
-                role: 'system',
-                timestamp: new Date().getTime(),
-                content: { text: 'An error occured while processing the response.' },
-                error: 'PARSE_ERROR',
-            };
+              // Model may include text before JSON — try extracting the JSON portion
+              const lastBrace = response.lastIndexOf('{');
+              if (lastBrace >= 0) {
+                  try {
+                      const jsonPart = response.substring(lastBrace);
+                      parsedResponse = JSON.parse(jsonPart);
+                      // Preserve the non-JSON prefix as text content so callers
+                      // (e.g. monitor-agent) can still parse [CONTEXT] blocks
+                      const prefix = response.substring(0, lastBrace).trim();
+                      if (prefix && !parsedResponse.text) {
+                          parsedResponse.text = prefix;
+                      }
+                  } catch {}
+              }
+              if (!parsedResponse) {
+                  const loggedMessage = isProd ? 'REDACTED' : response;
+                  console.log('Error parsing response:', e, loggedMessage);
+                  return {
+                      role: 'system',
+                      timestamp: new Date().getTime(),
+                      content: { text: 'An error occured while processing the response.' },
+                      error: 'PARSE_ERROR',
+                  };
+              }
           }
   
           let reply: ChatMessage = {
