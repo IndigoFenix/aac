@@ -55,7 +55,8 @@ Use this information to personalize communication and provide context-appropriat
  * 2-6 buttons, icon rules, excluded buttons, never list in text.
  * Used by: Interactive (always), Monitor-thinking (yes), Monitor-dual (no).
  */
-export const AAC_BUTTON_PROMPT = `===> IMPORTANT: You must ALWAYS update the board with at least 2-6 buttons that the user can select to respond.
+export const AAC_BUTTON_PROMPT = `===> IMPORTANT: You must ALWAYS update the board with 4-12 buttons that the user can select to respond.
+The board has 12 slots in a 4x3 grid. Fill at least 4 slots but aim for 8-12 to give the user plenty of options.
 - The user relies on this board to communicate. Anticipate their needs based on the conversation and context.
 - Pay attention to images, surroundings, detected objects, and the user's gestures to guess what they want to communicate.
 - The user may not be able to read, so buttons must be simple, with their intent clear from the icon alone.
@@ -151,7 +152,8 @@ Do NOT write any conversational text. Do NOT greet the user. Do NOT ask question
  * AAC_SILENT_BUTTON_PROMPT — Button rules for silent mode.
  * 4-8 utterance-style buttons with complete phrases.
  */
-export const AAC_SILENT_BUTTON_PROMPT = `===> IMPORTANT: You must ALWAYS update the board with 4-8 buttons representing things the user might want to SAY to people around them.
+export const AAC_SILENT_BUTTON_PROMPT = `===> IMPORTANT: You must ALWAYS update the board with 4-12 buttons representing things the user might want to SAY to people around them.
+The board has 12 slots in a 4x3 grid. Fill at least 4 slots but aim for 8-12.
 - Each button should be a COMPLETE phrase or sentence the user could speak aloud (e.g., "I want water", "Can you help me?", "Hello, how are you?").
 - Buttons should be longer and more expressive than simple labels — they are full utterances.
 - Mix different communicative intents: requests ("I need help"), social phrases ("Good morning!"), feelings ("I'm happy"), comments ("That looks interesting"), questions ("What are we doing next?").

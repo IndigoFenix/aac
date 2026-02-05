@@ -15,6 +15,7 @@ import type {
   ChatTool,
   StreamChunk,
 } from "../providers/streaming-provider";
+import { logDualAgent } from "./dual-agent-logger";
 
 /**
  * Interactive Agent
@@ -112,18 +113,21 @@ export class InteractiveAgent {
    * Format board state as context for the AI
    */
   private formatBoardContext(board: ParsedBoardData): string {
-    // Get buttons from the current page
     const currentPage = board.pages?.find(p => p.id === board.currentPageId) || board.pages?.[0];
     const buttons = currentPage?.buttons || [];
+    const TOTAL_SLOTS = 12;
+    const occupiedCount = Math.min(buttons.length, TOTAL_SLOTS);
+    const blankCount = TOTAL_SLOTS - occupiedCount;
     const buttonLabels = buttons
+      .slice(0, TOTAL_SLOTS)
       .filter((b: { label?: string }) => b.label)
       .map((b: { label: string }) => b.label)
       .join(", ");
 
-    return `[Current Board State]
-Grid: ${board.grid?.rows || 4}x${board.grid?.cols || 4}
-Current buttons: ${buttonLabels || "none"}
-Remember to update the board with relevant response options.`;
+    return `[Current Board — 12 slots (4x3 grid)]
+Occupied: ${buttonLabels || "none"} (${occupiedCount} of ${TOTAL_SLOTS})
+Blank slots: ${blankCount}
+You MUST call update_board with 4-12 buttons to replace the entire board.`;
   }
 
   /**
@@ -334,7 +338,9 @@ Remember to update the board with relevant response options.`;
     const tools = this.buildTools();
 
     try {
+      const streamStart = Date.now();
       console.log("[InteractiveAgent] processMessageStream: sending request, model:", this.config.interactiveModel, "messages:", messageHistory.length, "systemPrompt length:", this.systemPrompt.length);
+      logDualAgent("InteractiveAgent.processMessageStream", { model: this.config.interactiveModel, messageCount: messageHistory.length, systemPromptLength: this.systemPrompt.length });
 
       const stream = this.chatProvider.streamChat({
         model: this.config.interactiveModel,
@@ -376,7 +382,9 @@ Remember to update the board with relevant response options.`;
         }
       }
 
-      console.log("[InteractiveAgent] processMessageStream: text length:", fullText.length, "tool calls:", toolCalls.size);
+      const streamElapsed = Date.now() - streamStart;
+      console.log("[InteractiveAgent] processMessageStream: text length:", fullText.length, "tool calls:", toolCalls.size, "elapsed:", streamElapsed, "ms");
+      logDualAgent("InteractiveAgent.processMessageStream.done", { textLength: fullText.length, toolCallCount: toolCalls.size, elapsedMs: streamElapsed });
 
       // Check for command in full text
       if (fullText.trim().startsWith("#")) {
@@ -486,9 +494,11 @@ Remember to update the board with relevant response options.`;
     const tools = this.buildDetectionTools();
 
     try {
+      const detStart = Date.now();
       const hasImage = messageHistory.some(m => Array.isArray(m.content) && (m.content as any[]).some((p: any) => p.type === "image_url"));
       const hasRawAudio = messageHistory.some(m => Array.isArray(m.content) && (m.content as any[]).some((p: any) => p.type === "input_audio"));
       console.log("[InteractiveAgent] processDetection: model:", this.config.interactiveModel, "provider:", this.config.interactiveProvider || "unknown", "image:", hasImage, "rawAudio:", hasRawAudio, "textAudioCtx:", !audioBuffer && !!audioContext, "messages:", messageHistory.length);
+      logDualAgent("InteractiveAgent.processDetection", { model: this.config.interactiveModel, provider: this.config.interactiveProvider, hasImage, hasRawAudio, messageCount: messageHistory.length });
 
       const result = await this.chatProvider.completeChat({
         model: this.config.interactiveModel,
@@ -530,6 +540,8 @@ Remember to update the board with relevant response options.`;
         }
       }
 
+      const detElapsed = Date.now() - detStart;
+      logDualAgent("InteractiveAgent.processDetection.done", { elapsedMs: detElapsed, addCount: addButtons?.length || 0, removeCount: removeLabels?.length || 0, textLength: text.length });
       return { text, isCommand: false, usage: result.usage, addButtons, removeLabels };
     } catch (error) {
       console.error("[InteractiveAgent] Detection error:", error);
@@ -592,7 +604,7 @@ Remember to update the board with relevant response options.`;
         function: {
           name: "update_board",
           description:
-            "Respond to the user AND update the communication board. Always include responseText with your spoken reply and buttons with the new board options.",
+            "Respond to the user AND update the 12-slot (4x3 grid) communication board. Always include responseText with your spoken reply and 4-12 buttons with the new board options. Do not include Yes, No, Help, or More — these are automatic.",
           parameters: {
             type: "object",
             properties: {
@@ -620,7 +632,7 @@ Remember to update the board with relevant response options.`;
                   },
                   required: ["label", "iconRef"],
                 },
-                description: "Array of buttons to display on the board",
+                description: "Array of 4-12 buttons to display on the 12-slot board. Each button needs a label and iconRef.",
               },
             },
             required: ["responseText", "buttons"],

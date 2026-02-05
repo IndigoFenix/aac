@@ -110,7 +110,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const [showObjectDetectionDebug, setShowObjectDetectionDebug] = useState<boolean>(false);
   const [showObjectDetectionWindow, setShowObjectDetectionWindow] = useState<boolean>(false);
   const [lastObjectDetectionTime, setLastObjectDetectionTime] = useState<number>();
-  const [debugMode, setDebugMode] = useState<boolean>(true);
+  const [debugMode, setDebugMode] = useState<boolean>(false);
   const [showAttentivenessDebug, setShowAttentivenessDebug] = useState<boolean>(false);
   const [faceTrackingEnabled, setFaceTrackingEnabled] = useState<boolean>(true);
   const [handGestureEnabled, setHandGestureEnabled] = useState<boolean>(true);

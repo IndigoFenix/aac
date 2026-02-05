@@ -1,0 +1,228 @@
+
+============================================================
+[2026-02-05T13:19:56.179Z] InteractiveAgent.processMessageStream
+----------------------------------------
+{
+  "model": "gpt-4o-mini",
+  "messageCount": 2,
+  "systemPromptLength": 5397
+}
+
+============================================================
+[2026-02-05T13:20:00.132Z] InteractiveAgent.processMessageStream.done
+----------------------------------------
+{
+  "textLength": 0,
+  "toolCallCount": 1,
+  "elapsedMs": 3952
+}
+
+============================================================
+[2026-02-05T13:20:00.683Z] DualAgentService.initializeWithGreeting
+----------------------------------------
+{
+  "elapsedMs": 18583,
+  "isSilent": false,
+  "textLength": 63,
+  "sessionId": "37e3e42e-9090-4237-a6b4-46682baee863"
+}
+
+============================================================
+[2026-02-05T13:20:18.870Z] InteractiveAgent.processDetection
+----------------------------------------
+{
+  "model": "gpt-4o-mini",
+  "provider": "openai",
+  "hasImage": true,
+  "hasRawAudio": true,
+  "messageCount": 4
+}
+
+============================================================
+[2026-02-05T13:20:21.301Z] InteractiveAgent.processDetection.done
+----------------------------------------
+{
+  "elapsedMs": 2432,
+  "addCount": 2,
+  "removeCount": 0,
+  "textLength": 112
+}
+
+============================================================
+[2026-02-05T13:20:21.953Z] DualAgentService.processDetection
+----------------------------------------
+{
+  "elapsedMs": 3086,
+  "changed": true,
+  "addCount": 2,
+  "removeCount": 0,
+  "hasImage": true,
+  "hasAudio": true
+}
+
+============================================================
+[2026-02-05T13:20:33.239Z] InteractiveAgent.processDetection
+----------------------------------------
+{
+  "model": "gpt-4o-mini",
+  "provider": "openai",
+  "hasImage": true,
+  "hasRawAudio": true,
+  "messageCount": 4
+}
+
+============================================================
+[2026-02-05T13:20:35.500Z] InteractiveAgent.processDetection.done
+----------------------------------------
+{
+  "elapsedMs": 2262,
+  "addCount": 0,
+  "removeCount": 0,
+  "textLength": 62
+}
+
+============================================================
+[2026-02-05T13:20:35.991Z] DualAgentService.processDetection
+----------------------------------------
+{
+  "elapsedMs": 2753,
+  "changed": false,
+  "addCount": 0,
+  "removeCount": 0,
+  "hasImage": true,
+  "hasAudio": true
+}
+
+============================================================
+[2026-02-05T13:20:45.008Z] InteractiveAgent.processDetection
+----------------------------------------
+{
+  "model": "gpt-4o-mini",
+  "provider": "openai",
+  "hasImage": true,
+  "hasRawAudio": true,
+  "messageCount": 4
+}
+
+============================================================
+[2026-02-05T13:20:47.140Z] DualAgentService.handleInteractiveMode
+----------------------------------------
+{
+  "interactionMode": "interact",
+  "messageCount": 3,
+  "pendingCount": 1
+}
+
+============================================================
+[2026-02-05T13:20:47.141Z] InteractiveAgent.processMessageStream
+----------------------------------------
+{
+  "model": "gpt-4o-mini",
+  "messageCount": 8,
+  "systemPromptLength": 5397
+}
+
+============================================================
+[2026-02-05T13:20:48.557Z] InteractiveAgent.processDetection.done
+----------------------------------------
+{
+  "elapsedMs": 3549,
+  "addCount": 2,
+  "removeCount": 0,
+  "textLength": 112
+}
+
+============================================================
+[2026-02-05T13:20:49.233Z] DualAgentService.processDetection
+----------------------------------------
+{
+  "elapsedMs": 4226,
+  "changed": true,
+  "addCount": 2,
+  "removeCount": 0,
+  "hasImage": true,
+  "hasAudio": true
+}
+
+============================================================
+[2026-02-05T13:20:54.124Z] InteractiveAgent.processMessageStream.done
+----------------------------------------
+{
+  "textLength": 0,
+  "toolCallCount": 2,
+  "elapsedMs": 6982
+}
+
+============================================================
+[2026-02-05T13:20:54.127Z] DualAgentService.handleInteractiveMode.done
+----------------------------------------
+{
+  "elapsedMs": 6988,
+  "textLength": 108
+}
+
+============================================================
+[2026-02-05T13:20:59.636Z] InteractiveAgent.processDetection
+----------------------------------------
+{
+  "model": "gpt-4o-mini",
+  "provider": "openai",
+  "hasImage": true,
+  "hasRawAudio": true,
+  "messageCount": 4
+}
+
+============================================================
+[2026-02-05T13:21:00.753Z] InteractiveAgent.processDetection.done
+----------------------------------------
+{
+  "elapsedMs": 1118,
+  "addCount": 0,
+  "removeCount": 0,
+  "textLength": 53
+}
+
+============================================================
+[2026-02-05T13:21:01.249Z] DualAgentService.processDetection
+----------------------------------------
+{
+  "elapsedMs": 1614,
+  "changed": false,
+  "addCount": 0,
+  "removeCount": 0,
+  "hasImage": true,
+  "hasAudio": true
+}
+
+============================================================
+[2026-02-05T13:21:10.211Z] InteractiveAgent.processDetection
+----------------------------------------
+{
+  "model": "gpt-4o-mini",
+  "provider": "openai",
+  "hasImage": true,
+  "hasRawAudio": true,
+  "messageCount": 4
+}
+
+============================================================
+[2026-02-05T13:21:11.536Z] InteractiveAgent.processDetection.done
+----------------------------------------
+{
+  "elapsedMs": 1326,
+  "addCount": 0,
+  "removeCount": 0,
+  "textLength": 53
+}
+
+============================================================
+[2026-02-05T13:21:12.029Z] DualAgentService.processDetection
+----------------------------------------
+{
+  "elapsedMs": 1818,
+  "changed": false,
+  "addCount": 0,
+  "removeCount": 0,
+  "hasImage": true,
+  "hasAudio": true
+}
