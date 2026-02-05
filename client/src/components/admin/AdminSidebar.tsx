@@ -8,6 +8,8 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import {
   Bot,
   BookOpen,
+  Volume2,
+  Cpu,
   ArrowLeft,
   Moon,
   Sun,
@@ -16,7 +18,7 @@ import logoImage from '@assets/cliniaacian_logo.png';
 import { cn } from '@/lib/utils';
 import { useLocation } from 'wouter';
 
-type AdminSection = 'personas' | 'library';
+type AdminSection = 'personas' | 'library' | 'voices' | 'models';
 
 type AdminSidebarProps = {
   activeSection: AdminSection;
@@ -40,6 +42,18 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
       label: 'Library',
       section: 'library' as AdminSection,
       testId: 'admin-nav-library',
+    },
+    {
+      icon: Volume2,
+      label: 'Voices',
+      section: 'voices' as AdminSection,
+      testId: 'admin-nav-voices',
+    },
+    {
+      icon: Cpu,
+      label: 'AI Models',
+      section: 'models' as AdminSection,
+      testId: 'admin-nav-models',
     },
   ];
 

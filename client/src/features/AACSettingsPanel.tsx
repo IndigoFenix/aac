@@ -4,6 +4,7 @@ import { useStudent } from '@/hooks/useStudent';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { apiRequest } from '@/lib/queryClient';
+import { useActiveVoices } from '@/hooks/useAdminData';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -40,7 +41,14 @@ You should:
 - Ask clarifying questions when needed
 - Be patient and encouraging`;
 
-const VOICE_OPTIONS = [
+const STUDENT_VOICE_OPTIONS = [
+  { value: 'boy', label: 'Boy Voice' },
+  { value: 'girl', label: 'Girl Voice' },
+  { value: 'man', label: 'Man Voice' },
+  { value: 'woman', label: 'Woman Voice' },
+];
+
+const AI_VOICE_OPTIONS = [
   { value: 'auto', label: 'Auto (based on age & gender)' },
   { value: 'man', label: 'Man Voice' },
   { value: 'woman', label: 'Woman Voice' },
@@ -55,10 +63,14 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const isDark = theme === 'dark';
+  const { data: activeVoices } = useActiveVoices();
 
   // Form state
   const [chatAgentPrompt, setChatAgentPrompt] = useState('');
   const [voiceType, setVoiceType] = useState('auto');
+  const [studentVoiceType, setStudentVoiceType] = useState('boy');
+  const [customVoiceId, setCustomVoiceId] = useState<string | null>(null);
+  const [customStudentVoiceId, setCustomStudentVoiceId] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
 
   // Load student data into form
@@ -66,6 +78,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
     if (student) {
       setChatAgentPrompt(student.aacChatAgentPrompt || DEFAULT_AAC_PROMPT);
       setVoiceType(student.aacVoiceType || 'auto');
+      setStudentVoiceType(student.aacStudentVoiceType || 'boy');
+      setCustomVoiceId(student.aacCustomVoiceId || null);
+      setCustomStudentVoiceId(student.aacCustomStudentVoiceId || null);
       setHasChanges(false);
     }
   }, [student]);
@@ -75,15 +90,28 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
     if (student) {
       const originalPrompt = student.aacChatAgentPrompt || DEFAULT_AAC_PROMPT;
       const originalVoice = student.aacVoiceType || 'auto';
+      const originalStudentVoice = student.aacStudentVoiceType || 'boy';
+      const originalCustomVoice = student.aacCustomVoiceId || null;
+      const originalCustomStudentVoice = student.aacCustomStudentVoiceId || null;
       setHasChanges(
-        chatAgentPrompt !== originalPrompt || voiceType !== originalVoice
+        chatAgentPrompt !== originalPrompt ||
+        voiceType !== originalVoice ||
+        studentVoiceType !== originalStudentVoice ||
+        customVoiceId !== originalCustomVoice ||
+        customStudentVoiceId !== originalCustomStudentVoice
       );
     }
-  }, [chatAgentPrompt, voiceType, student]);
+  }, [chatAgentPrompt, voiceType, studentVoiceType, customVoiceId, customStudentVoiceId, student]);
 
   // Update mutation
   const updateMutation = useMutation({
-    mutationFn: async (data: { aacChatAgentPrompt: string; aacVoiceType: string }) => {
+    mutationFn: async (data: {
+      aacChatAgentPrompt: string;
+      aacVoiceType: string;
+      aacStudentVoiceType: string;
+      aacCustomVoiceId: string | null;
+      aacCustomStudentVoiceId: string | null;
+    }) => {
       const response = await apiRequest('PATCH', `/api/students/${student?.id}`, data);
       return response.json();
     },
@@ -110,6 +138,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
     updateMutation.mutate({
       aacChatAgentPrompt: chatAgentPrompt,
       aacVoiceType: voiceType,
+      aacStudentVoiceType: studentVoiceType,
+      aacCustomVoiceId: customVoiceId,
+      aacCustomStudentVoiceId: customStudentVoiceId,
     });
   };
 
@@ -117,6 +148,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
     if (student) {
       setChatAgentPrompt(student.aacChatAgentPrompt || DEFAULT_AAC_PROMPT);
       setVoiceType(student.aacVoiceType || 'auto');
+      setStudentVoiceType(student.aacStudentVoiceType || 'boy');
+      setCustomVoiceId(student.aacCustomVoiceId || null);
+      setCustomStudentVoiceId(student.aacCustomStudentVoiceId || null);
     }
   };
 
@@ -196,28 +230,28 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 Voice Settings
               </CardTitle>
               <CardDescription>
-                Choose the voice type for text-to-speech output
+                Configure separate voices for the student and the AI assistant
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-6">
               <div className={cn(
                 "flex items-center justify-between",
                 isRTL && "flex-row-reverse"
               )}>
                 <div className={cn("space-y-0.5", isRTL && "text-right")}>
                   <Label className="text-base font-medium">
-                    Voice Type
+                    Student Voice
                   </Label>
                   <p className="text-sm text-muted-foreground">
-                    Select the voice used when speaking symbols
+                    Voice used when speaking the student's words
                   </p>
                 </div>
-                <Select value={voiceType} onValueChange={setVoiceType}>
+                <Select value={studentVoiceType} onValueChange={setStudentVoiceType}>
                   <SelectTrigger className="w-[200px]">
                     <SelectValue placeholder="Select voice" />
                   </SelectTrigger>
                   <SelectContent>
-                    {VOICE_OPTIONS.map((option) => (
+                    {STUDENT_VOICE_OPTIONS.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
                         {option.label}
                       </SelectItem>
@@ -225,6 +259,89 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </SelectContent>
                 </Select>
               </div>
+              {activeVoices && activeVoices.length > 0 && (
+                <div className={cn(
+                  "flex items-center justify-between",
+                  isRTL && "flex-row-reverse"
+                )}>
+                  <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                    <Label className="text-sm text-muted-foreground">
+                      Custom Student Voice
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Overrides fallback when set (ElevenLabs)
+                    </p>
+                  </div>
+                  <Select
+                    value={customStudentVoiceId || "_none"}
+                    onValueChange={(v) => setCustomStudentVoiceId(v === "_none" ? null : v)}
+                  >
+                    <SelectTrigger className="w-[200px]">
+                      <SelectValue placeholder="None" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">None (use fallback)</SelectItem>
+                      {activeVoices.map((v) => (
+                        <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <div className={cn(
+                "flex items-center justify-between",
+                isRTL && "flex-row-reverse"
+              )}>
+                <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                  <Label className="text-base font-medium">
+                    AI Assistant Voice
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    Voice used when the AI responds
+                  </p>
+                </div>
+                <Select value={voiceType} onValueChange={setVoiceType}>
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue placeholder="Select voice" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {AI_VOICE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {activeVoices && activeVoices.length > 0 && (
+                <div className={cn(
+                  "flex items-center justify-between",
+                  isRTL && "flex-row-reverse"
+                )}>
+                  <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                    <Label className="text-sm text-muted-foreground">
+                      Custom AI Voice
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Overrides fallback when set (ElevenLabs)
+                    </p>
+                  </div>
+                  <Select
+                    value={customVoiceId || "_none"}
+                    onValueChange={(v) => setCustomVoiceId(v === "_none" ? null : v)}
+                  >
+                    <SelectTrigger className="w-[200px]">
+                      <SelectValue placeholder="None" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">None (use fallback)</SelectItem>
+                      {activeVoices.map((v) => (
+                        <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </CardContent>
           </Card>
 

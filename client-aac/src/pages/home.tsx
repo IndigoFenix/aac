@@ -35,6 +35,7 @@ import { useFaceTracking } from "@/hooks/useFaceTracking";
 import { useFaceEvents } from "@/hooks/useFaceEvents";
 import { useHandGestureTracking } from "@/hooks/useHandGestureTracking";
 import { useHandGestureEvents } from "@/hooks/useHandGestureEvents";
+import { serializeGestureContext } from "@/lib/gestureContextSerializer";
 
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAppInitialization } from "@/contexts/AppInitializationContext";
@@ -51,12 +52,13 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for interpret/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange }: {
+function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, onBoardPatchChange }: {
   onModeChange: (mode: 'interact' | 'silent') => void;
   onInterpretReady: (fn: ((buttons: string[]) => Promise<void>) | null) => void;
   onDetectionChange?: (enabled: boolean) => void;
+  onBoardPatchChange?: (patch: import("@/hooks/useDualAgent").BoardPatch | null) => void;
 }) {
-  const { interactionMode, interpretButtons, detectionEnabled } = useDualAgentContext();
+  const { interactionMode, interpretButtons, detectionEnabled, boardPatch } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(interactionMode);
@@ -70,6 +72,10 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange }: 
   useEffect(() => {
     onDetectionChange?.(detectionEnabled);
   }, [detectionEnabled, onDetectionChange]);
+
+  useEffect(() => {
+    onBoardPatchChange?.(boardPatch);
+  }, [boardPatch, onBoardPatchChange]);
 
   return null;
 }
@@ -104,10 +110,10 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const [showObjectDetectionDebug, setShowObjectDetectionDebug] = useState<boolean>(false);
   const [showObjectDetectionWindow, setShowObjectDetectionWindow] = useState<boolean>(false);
   const [lastObjectDetectionTime, setLastObjectDetectionTime] = useState<number>();
-  const [debugMode, setDebugMode] = useState<boolean>(false);
+  const [debugMode, setDebugMode] = useState<boolean>(true);
   const [showAttentivenessDebug, setShowAttentivenessDebug] = useState<boolean>(false);
-  const [faceTrackingEnabled, setFaceTrackingEnabled] = useState<boolean>(false);
-  const [handGestureEnabled, setHandGestureEnabled] = useState<boolean>(false);
+  const [faceTrackingEnabled, setFaceTrackingEnabled] = useState<boolean>(true);
+  const [handGestureEnabled, setHandGestureEnabled] = useState<boolean>(true);
 
   // Passive Co-Listener state
   const [passiveChoiceOptions, setPassiveChoiceOptions] = useState<Array<{ label: string; emoji: string; confidence: number }>>([]);
@@ -115,8 +121,14 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   // AAC Board state - populated from chat responses
   const [boardData, setBoardData] = useState<ParsedBoardData | null>(null);
 
+  // Board patch state — from detection (incremental add/remove)
+  const [boardPatchData, setBoardPatchData] = useState<import("@/hooks/useDualAgent").BoardPatch | null>(null);
+
   // Recent button presses for Interpret feature (silent mode)
   const [recentButtonPresses, setRecentButtonPresses] = useState<string[]>([]);
+
+  // Board mode: 'ai' shows DynamicBoard, 'db' shows PrebuiltBoardSection
+  const [boardMode, setBoardMode] = useState<'ai' | 'db'>('ai');
 
   // Dual-agent mode bridged from context
   const [dualAgentMode, setDualAgentMode] = useState<'interact' | 'silent'>('interact');
@@ -201,6 +213,11 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const getIdentifiedPerson = useCallback(() => {
     return currentIdentification?.person || null;
   }, [currentIdentification]);
+
+  // Get serialized gesture/expression context for dual-agent AI
+  const getGestureContext = useCallback(() => {
+    return serializeGestureContext(trackedFaces, trackedHands);
+  }, [trackedFaces, trackedHands]);
 
   // Periodic face identification from camera (runs every 2 seconds when ready)
   useEffect(() => {
@@ -396,10 +413,11 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     const newSymbols = [...selectedSymbols, symbol.label];
     setSelectedSymbols(newSymbols);
 
-    // Create interpretation and speak it
+    // Create interpretation and speak it using student voice
     const interpretation = newSymbols.join(" ");
     setCurrentSpeech(interpretation);
-    await speak(interpretation);
+    const studentVoice = userProfile?.aacStudentVoiceType || 'boy';
+    await speak(interpretation, currentLanguage, studentVoice);
 
     // Clear symbols after speech
     setTimeout(() => {
@@ -882,33 +900,34 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           <i className="fas fa-camera text-accent text-lg" />
         </motion.div>
 
-        {/* Top Section: Dynamic AI-Generated Board */}
-        <div className="flex-shrink-0 h-[25%] min-h-[120px] border-b border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-900/50">
-          <DynamicBoard
-            board={boardData}
-            onButtonClick={handleBoardButtonClick}
-            onBack={boardHistoryRef.current.length > 0 ? handleBoardBack : undefined}
-            onMore={() => setSelectedSymbols(["More"])}
-            language={currentLanguage}
-          />
-        </div>
-
-        {/* Middle Section: Pre-built Boards */}
+        {/* Board Area — fills all remaining space */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          <PrebuiltBoardSection
-            studentId={studentId}
-            onSpeakAction={(text) => {
-              // Send spoken text to AI conversation
-              setSelectedSymbols([text]);
-            }}
-            language={currentLanguage}
-            onBack={() => {
-              // Handle back at root level - could show board selector
-            }}
-          />
+          {boardMode === 'ai' ? (
+            <DynamicBoard
+              board={boardData}
+              boardPatch={boardPatchData}
+              onButtonClick={handleBoardButtonClick}
+              onBack={boardHistoryRef.current.length > 0 ? handleBoardBack : undefined}
+              language={currentLanguage}
+              voiceType={userProfile?.aacStudentVoiceType || 'boy'}
+            />
+          ) : (
+            <PrebuiltBoardSection
+              studentId={studentId}
+              onSpeakAction={(text) => {
+                // Send spoken text to AI conversation
+                setSelectedSymbols([text]);
+              }}
+              language={currentLanguage}
+              voiceType={userProfile?.aacStudentVoiceType || 'boy'}
+              onBack={() => {
+                // Handle back at root level - could show board selector
+              }}
+            />
+          )}
         </div>
 
-        {/* Bottom Section: Quick Actions */}
+        {/* Bottom Row: Quick Actions */}
         <QuickActions
           onAction={(action, text) => {
             // Send quick action to AI
@@ -921,8 +940,8 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
               goBack();
             }
           }}
-          showInterpret={useDualAgent && dualAgentMode === 'silent' && recentButtonPresses.length > 0}
-          onInterpret={handleInterpret}
+          boardMode={boardMode}
+          voiceType={userProfile?.aacStudentVoiceType || 'boy'}
         />
 
         {/* Passive Choice Options Overlay */}
@@ -1081,10 +1100,12 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             return null;
           }}
           getIdentifiedPerson={getIdentifiedPerson}
+          getGestureContext={getGestureContext}
         >
           <DualAgentBridge
             onModeChange={setDualAgentMode}
             onInterpretReady={(fn) => { interpretFnRef.current = fn; }}
+            onBoardPatchChange={setBoardPatchData}
           />
           <DualAgentConversationBox
             isVisible={showConversation}
@@ -1093,6 +1114,10 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             onClearSymbols={() => setSelectedSymbols([])}
             onBoardUpdate={handleBoardUpdate}
             currentBoard={boardData}
+            boardMode={boardMode}
+            onBoardModeChange={setBoardMode}
+            recentButtonPresses={recentButtonPresses}
+            onInterpret={handleInterpret}
           />
         </DualAgentProvider>
       )}

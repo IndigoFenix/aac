@@ -2,6 +2,7 @@
 // Type definitions for the dual-agent AAC system
 
 import type { ChatMessage, ParsedBoardData } from "@shared/schema";
+import type { LLMProviderKey } from "@shared/llm-options";
 
 /**
  * Interaction mode for the AAC system.
@@ -108,6 +109,12 @@ export interface InteractiveResponse {
   isCommand: boolean;
   // Parsed command if any
   command?: string;
+  // Token usage from the provider (for credit tracking)
+  usage?: { promptTokens: number; completionTokens: number };
+  // Detection diff: buttons to add to blank slots
+  addButtons?: Array<{ label: string; iconRef: string }>;
+  // Detection diff: labels of buttons to remove
+  removeLabels?: string[];
 }
 
 /**
@@ -161,6 +168,9 @@ export interface DualAgentInput {
   visualContext?: string;
   audioContext?: string;
 
+  // Face & hand gesture context (serialized summary of recent events from client-side tracking)
+  gestureContext?: string;
+
   // Language settings
   language?: string;
 
@@ -194,13 +204,15 @@ export interface DualAgentConfig {
   interactiveModel: string; // Default: gpt-4o-mini
   monitorModel: string; // Default: gpt-4o
 
+  // Provider for interactive agent (for credit tracking)
+  interactiveProvider?: LLMProviderKey;
+
   // Timeouts
   interactiveTimeout: number; // Max ms for Interactive response
   monitorTimeout: number; // Max ms for Monitor processing
 
   // Voice settings
   enableTTS: boolean;
-  ttsVoiceType: "man" | "woman" | "boy" | "girl";
 
   // Debug
   debug: boolean;
@@ -214,7 +226,10 @@ export interface DetectionInput {
   studentId: string;
   userId?: string;
   imageData?: string;        // base64 data URL from camera
-  audioContext?: string;     // ambient audio transcription
+  audioContext?: string;     // ambient audio transcription (text fallback)
+  audioBuffer?: Buffer;      // raw ambient audio for native processing
+  audioMimeType?: string;    // mime type of audioBuffer (e.g. "audio/webm")
+  gestureContext?: string;   // serialized face expression & hand gesture events
   board?: ParsedBoardData;   // current board state
   interactionMode?: AACInteractionMode;
 }
@@ -224,8 +239,10 @@ export interface DetectionInput {
  */
 export interface DetectionOutput {
   sessionId: string;
-  board?: ParsedBoardData;   // updated buttons (only if changed)
+  addButtons?: Array<{ label: string; iconRef: string }>;
+  removeLabels?: string[];
   changed: boolean;          // whether buttons were updated
+  text?: string;             // AI's observation/description of the environment
 }
 
 export const DEFAULT_CONFIG: DualAgentConfig = {
@@ -234,6 +251,5 @@ export const DEFAULT_CONFIG: DualAgentConfig = {
   interactiveTimeout: 5000,
   monitorTimeout: 30000,
   enableTTS: true,
-  ttsVoiceType: "woman",
   debug: false,
 };

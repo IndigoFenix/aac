@@ -97,11 +97,20 @@ export function DebugWindow() {
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
-  // Fetch context data
-  const { data: context } = useQuery<{time: string; date: string; location?: string; visualContext?: string}>({
-    queryKey: ['/api/aac/context'],
-    refetchInterval: 2000, // Update every 2 seconds
-  });
+  // Local time/date (no server call needed)
+  const [context, setContext] = useState({ time: '', date: '' });
+  useEffect(() => {
+    const update = () => {
+      const now = new Date();
+      setContext({
+        time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        date: now.toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+      });
+    };
+    update();
+    const id = setInterval(update, 2000);
+    return () => clearInterval(id);
+  }, []);
 
   // Fetch debug data (may not be available in new server)
   const { data: debugData } = useQuery<DebugData>({

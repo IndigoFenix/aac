@@ -198,22 +198,35 @@ If there is nothing meaningful to add, simply respond with "OK" and do not use a
  * The AI observes the environment through a camera and decides whether to update buttons.
  * Used by: InteractiveAgent.processDetection()
  */
-export const AAC_DETECTION_PROMPT = `You are observing the environment through a camera. Analyze what you see and decide whether the communication board buttons should be updated.
+export const AAC_DETECTION_PROMPT = `You are observing the environment through a camera (and optionally listening to ambient audio).
+Your task is to manage the user's AAC communication board by adding or removing buttons based on what you detect in the environment.
+The user relies on this board to communicate, so the board should reflect things the user might want to say or communicate about in the current environment.
+The communication board has exactly 12 slots. Some are occupied with buttons, some are blank.
 
-Rules:
-- Update buttons ONLY if the environment has meaningfully changed since the last observation.
-- Keep existing relevant buttons. Only add or remove buttons when the context clearly shifts.
-- Be conservative — do not change buttons for minor scene variations, lighting changes, or camera jitter.
-- If the scene is unchanged or only slightly different, return the SAME buttons.
-- Focus on objects, people, activities, and locations that are relevant for communication.
+First, briefly describe what you see in the image (and hear in the audio if provided). Then use the modify_board tool to add or remove communication buttons if the context has changed.
+
+Your text response should be 1-2 sentences describing the environment (e.g. "I see a child at a table with art supplies. Someone nearby is talking about drawing."). This helps the user and caregivers understand what the system is detecting.
+
+Rules for modify_board:
+- There may be at most 12 buttons at a time. To add new ones, you must remove existing ones if there are no blank slots.
+- Be conservative — only change buttons when the environmental context meaningfully shifts.
+- Try to keep relevant buttons on the board as long as they are still applicable. The most relevant buttons should remain.
+- Do not add "Yes", "No", "Help", or "More" — these are always available on the user interface and do not need to be added.
+- Add buttons that are relevant to the current environment, activities, people, and objects detected, and that are not already on the board.
+- Do not add redundant or duplicate buttons.
+- Remove buttons that are no longer relevant to the current context.
+- Use "add_labels" and "add_icons" (parallel arrays) to add new buttons to blank slots; use "remove" to list labels of buttons to remove.
+- You may pass empty arrays for add_labels/add_icons/remove if there is no meaningful change.
+- Focus on objects, people, activities, locations, and sounds that are relevant for communication.
+- If audio is provided, use it alongside the image to understand the environment better.
 `;
 
 /**
  * AAC_DETECTION_INTERACT_ADDENDUM — Interact mode detection.
  * Buttons are response options relevant to what's happening.
  */
-export const AAC_DETECTION_INTERACT_ADDENDUM = `You are in INTERACT mode. The buttons should be response options the user might want to select to communicate with the AI assistant about what they see.
-- Generate 2-6 short-label buttons (1-3 words each).
+export const AAC_DETECTION_INTERACT_ADDENDUM = `You are in INTERACT mode. The buttons should be response options the user might want to select to communicate with the AI assistant about what they see or hear.
+- Short-label buttons (1-3 words each).
 - Examples: "That's a dog", "I like it", "What is that?", "Go there"
 `;
 
@@ -221,8 +234,8 @@ export const AAC_DETECTION_INTERACT_ADDENDUM = `You are in INTERACT mode. The bu
  * AAC_DETECTION_SILENT_ADDENDUM — Silent mode detection.
  * Buttons are phrases the user might want to say to people around them.
  */
-export const AAC_DETECTION_SILENT_ADDENDUM = `You are in SILENT mode. The buttons should be complete phrases the user might want to say aloud to people around them, based on what is visible in the environment.
-- Generate 4-8 utterance-style buttons (full phrases).
+export const AAC_DETECTION_SILENT_ADDENDUM = `You are in SILENT mode. The buttons should be complete phrases the user might want to say aloud to people around them, based on what is visible and audible in the environment.
+- Utterance-style buttons (full phrases).
 - Examples: "Can you pass me that?", "I want to go outside", "Look at the dog!", "I'm hungry"
 `;
 

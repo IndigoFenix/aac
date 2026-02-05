@@ -4,9 +4,11 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { whisperService } from "../services/voice/whisper-service";
-import { openaiTtsService, VoiceType } from "../services/voice/openai-tts-service";
+import { type VoiceType } from "../services/voice/openai-tts-service";
+import { ttsFacade, type ResolvedVoice } from "../services/voice/tts-facade";
 import { onMessage, FeatureType } from "../services/sessionService";
 import { studentRepository } from "../repositories";
+import { voiceRecordRepository } from "../repositories/voiceRecordRepository";
 import { ChatPersona } from "@shared/schema";
 
 // Validation schemas
@@ -100,28 +102,15 @@ export class VoiceController {
     try {
       const { text, studentId, language, voiceType } = speakSchema.parse(req.body);
 
-      // Get voice settings from student if provided
-      let finalLanguage = language || "en";
-      let finalVoiceType: VoiceType = (voiceType as VoiceType) || "woman";
-
-      if (studentId) {
-        const student = await studentRepository.getStudentById(studentId);
-        if (student) {
-          finalLanguage = language || student.primaryLanguage || "en";
-          finalVoiceType = (voiceType || student.aacVoiceType || "woman") as VoiceType;
-        }
-      }
+      // Resolve voice settings from student if provided
+      const resolvedVoice = await this.resolveVoiceFromStudent(studentId, language, voiceType);
 
       console.log(
-        `[VoiceController] Synthesizing: "${text.substring(0, 50)}..." (lang: ${finalLanguage}, voice: ${finalVoiceType})`
+        `[VoiceController] Synthesizing: "${text.substring(0, 50)}..." (lang: ${resolvedVoice.language}, voice: ${resolvedVoice.fallbackType}, custom: ${resolvedVoice.customVoice?.name || "none"})`
       );
 
       // Synthesize full audio (not streaming)
-      const audioBuffer = await openaiTtsService.synthesize(
-        text,
-        finalLanguage,
-        { voiceType: finalVoiceType }
-      );
+      const audioBuffer = await ttsFacade.synthesize(text, resolvedVoice);
 
       res.setHeader("Content-Type", "audio/mpeg");
       res.setHeader("Content-Length", audioBuffer.length.toString());
@@ -146,20 +135,11 @@ export class VoiceController {
     try {
       const { text, studentId, language, voiceType } = speakSchema.parse(req.body);
 
-      // Get voice settings from student if provided
-      let finalLanguage = language || "en";
-      let finalVoiceType: VoiceType = (voiceType as VoiceType) || "woman";
-
-      if (studentId) {
-        const student = await studentRepository.getStudentById(studentId);
-        if (student) {
-          finalLanguage = language || student.primaryLanguage || "en";
-          finalVoiceType = (voiceType || student.aacVoiceType || "woman") as VoiceType;
-        }
-      }
+      // Resolve voice settings from student if provided
+      const resolvedVoice = await this.resolveVoiceFromStudent(studentId, language, voiceType);
 
       console.log(
-        `[VoiceController] Speaking: "${text.substring(0, 50)}..." (lang: ${finalLanguage}, voice: ${finalVoiceType})`
+        `[VoiceController] Speaking: "${text.substring(0, 50)}..." (lang: ${resolvedVoice.language}, voice: ${resolvedVoice.fallbackType}, custom: ${resolvedVoice.customVoice?.name || "none"})`
       );
 
       // Set up SSE headers
@@ -170,11 +150,7 @@ export class VoiceController {
       res.flushHeaders();
 
       // Stream audio chunks
-      for await (const audioChunk of openaiTtsService.synthesizeStream(
-        text,
-        finalLanguage,
-        { voiceType: finalVoiceType }
-      )) {
+      for await (const audioChunk of ttsFacade.synthesizeStream(text, resolvedVoice)) {
         sendSSEEvent(res, "audio", {
           chunk: audioChunk.toString("base64"),
           format: "mp3",
@@ -313,26 +289,17 @@ export class VoiceController {
         sendSSEEvent(res, "setValues", { setValues });
       }
 
-      // 3. Get voice settings from student
-      let language = transcription.language || "en";
-      let voiceType: VoiceType = "woman";
-
-      if (studentId) {
-        const student = await studentRepository.getStudentById(studentId);
-        if (student) {
-          language = student.primaryLanguage || language;
-          voiceType = (student.aacVoiceType as VoiceType) || "woman";
-        }
-      }
+      // 3. Resolve voice settings from student (with custom voice lookup)
+      const resolvedVoice = await this.resolveVoiceFromStudent(
+        studentId,
+        transcription.language || undefined,
+        undefined
+      );
 
       // 4. Stream audio response (wrapped in try-catch so TTS failure doesn't break the flow)
       if (responseText.trim()) {
         try {
-          for await (const audioChunk of openaiTtsService.synthesizeStream(
-            responseText,
-            language,
-            { voiceType }
-          )) {
+          for await (const audioChunk of ttsFacade.synthesizeStream(responseText, resolvedVoice)) {
             sendSSEEvent(res, "audio", {
               chunk: audioChunk.toString("base64"),
               format: "mp3",
@@ -371,6 +338,38 @@ export class VoiceController {
         });
       }
     }
+  }
+  /**
+   * Helper to resolve a ResolvedVoice from student settings.
+   * Fetches the custom voice record if the student has one set.
+   */
+  private async resolveVoiceFromStudent(
+    studentId?: string,
+    language?: string,
+    voiceType?: string
+  ): Promise<ResolvedVoice> {
+    let finalLanguage = language || "en";
+    let finalVoiceType: VoiceType = (voiceType as VoiceType) || "woman";
+    let customVoice = null;
+
+    if (studentId) {
+      const student = await studentRepository.getStudentById(studentId);
+      if (student) {
+        finalLanguage = language || student.primaryLanguage || "en";
+        finalVoiceType = (voiceType || student.aacVoiceType || "woman") as VoiceType;
+
+        if (student.aacCustomVoiceId) {
+          const voice = await voiceRecordRepository.getVoiceById(student.aacCustomVoiceId);
+          customVoice = voice || null;
+        }
+      }
+    }
+
+    return {
+      fallbackType: finalVoiceType,
+      customVoice,
+      language: finalLanguage,
+    };
   }
 }
 

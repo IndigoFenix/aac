@@ -1,0 +1,260 @@
+// server/services/providers/gemini-chat.ts
+// Gemini implementation of ChatProvider
+
+import { GoogleGenAI } from "@google/genai";
+import type {
+  ChatProvider,
+  ChatRequest,
+  ChatCompletionResult,
+  StreamChunk,
+  ChatMessage,
+} from "./streaming-provider";
+
+export class GeminiChatProvider implements ChatProvider {
+  private client: GoogleGenAI;
+
+  constructor() {
+    this.client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+  }
+
+  // Safety settings to prevent Gemini from blocking legitimate AAC content
+  // (e.g. camera images of a child's environment)
+  private static SAFETY_SETTINGS = [
+    { category: "HARM_CATEGORY_HARASSMENT", threshold: "OFF" },
+    { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "OFF" },
+    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "OFF" },
+    { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "OFF" },
+  ];
+
+  async completeChat(request: ChatRequest): Promise<ChatCompletionResult> {
+    const { systemInstruction, contents, tools, toolConfig } = this.buildRequest(request);
+
+    const config: any = {
+      systemInstruction,
+      temperature: request.temperature ?? 0.7,
+      maxOutputTokens: request.maxTokens || 500,
+      safetySettings: GeminiChatProvider.SAFETY_SETTINGS,
+    };
+    if (tools) config.tools = tools;
+    if (toolConfig) config.toolConfig = toolConfig;
+
+    // Log request summary for debugging
+    const contentSummary = contents.map((c: any) => {
+      const partTypes = c.parts?.map((p: any) => {
+        if (p.text) return `text(${p.text.length}ch)`;
+        if (p.inlineData) return `inlineData(${p.inlineData.mimeType},${Math.round((p.inlineData.data?.length || 0) / 1024)}KB)`;
+        return "unknown";
+      }).join("+") || "empty";
+      return `${c.role}:[${partTypes}]`;
+    }).join(", ");
+    const toolNames = tools?.[0]?.functionDeclarations?.map((f: any) => f.name).join(",") || "none";
+    console.log(`[GeminiChat] Request: model=${request.model}, sysInstr=${systemInstruction.length}ch, contents=[${contentSummary}], tools=[${toolNames}], toolConfig=${JSON.stringify(toolConfig)}, maxTokens=${config.maxOutputTokens}`);
+
+    const response = await this.client.models.generateContent({
+      model: request.model,
+      config,
+      contents,
+    });
+
+    // Diagnostic: log raw response shape to debug empty/blocked responses
+    const candidates = (response as any)?.candidates || [];
+    const finishReason = candidates[0]?.finishReason;
+    const blockReason = (response as any)?.promptFeedback?.blockReason;
+    const safetyRatings = candidates[0]?.safetyRatings?.map((r: any) => `${r.category}:${r.probability}`).join(", ");
+    const candidateParts = candidates[0]?.content?.parts?.length || 0;
+
+    let text = "";
+    try { text = response?.text || ""; } catch { /* .text getter can throw if blocked */ }
+    const toolCalls = this.extractToolCalls(response);
+    const usage = response?.usageMetadata;
+    console.log(`[GeminiChat] Response: finish=${finishReason}, blockReason=${blockReason}, parts=${candidateParts}, text=${text.length}chars, tool_calls=${toolCalls.length}, candidates_tokens=${usage?.candidatesTokenCount}, safety=[${safetyRatings || "none"}]`);
+
+
+    return {
+      content: text || null,
+      toolCalls,
+      usage: usage
+        ? {
+            promptTokens: usage.promptTokenCount || 0,
+            completionTokens: usage.candidatesTokenCount || 0,
+          }
+        : undefined,
+    };
+  }
+
+  async *streamChat(request: ChatRequest): AsyncGenerator<StreamChunk> {
+    const { systemInstruction, contents, tools, toolConfig } = this.buildRequest(request);
+
+    const config: any = {
+      systemInstruction,
+      temperature: request.temperature ?? 0.7,
+      maxOutputTokens: request.maxTokens || 500,
+      safetySettings: GeminiChatProvider.SAFETY_SETTINGS,
+    };
+    if (tools) config.tools = tools;
+    if (toolConfig) config.toolConfig = toolConfig;
+
+    const response = await this.client.models.generateContentStream({
+      model: request.model,
+      config,
+      contents,
+    });
+
+    let toolCallIndex = 0;
+    let finalUsage: { promptTokens: number; completionTokens: number } | undefined;
+
+    for await (const chunk of response) {
+      // Text content
+      const text = chunk?.text;
+      if (text) {
+        yield { type: "text_delta", text };
+      }
+
+      // Function calls in streaming chunks
+      const candidates = chunk?.candidates || [];
+      for (const candidate of candidates) {
+        const parts = candidate?.content?.parts || [];
+        for (const part of parts) {
+          if (part.functionCall) {
+            yield {
+              type: "tool_call_delta",
+              index: toolCallIndex,
+              name: part.functionCall.name,
+              arguments: JSON.stringify(part.functionCall.args || {}),
+            };
+            toolCallIndex++;
+          }
+        }
+      }
+
+      // Capture usage metadata (Gemini includes it in stream chunks, typically the last)
+      const usage = (chunk as any)?.usageMetadata;
+      if (usage) {
+        finalUsage = {
+          promptTokens: usage.promptTokenCount || 0,
+          completionTokens: usage.candidatesTokenCount || 0,
+        };
+      }
+    }
+
+    yield { type: "done", usage: finalUsage };
+  }
+
+  private buildRequest(request: ChatRequest) {
+    // Extract system instruction
+    const systemParts: string[] = [];
+    const contents: Array<{ role: string; parts: Array<any> }> = [];
+
+    for (const msg of request.messages) {
+      if (msg.role === "system") {
+        const text = typeof msg.content === "string"
+          ? msg.content
+          : (msg.content as any[]).map((p: any) => p.text || "").join("\n");
+        systemParts.push(text);
+      } else if (typeof msg.content === "string") {
+        contents.push({
+          role: msg.role === "assistant" ? "model" : "user",
+          parts: [{ text: msg.content }],
+        });
+      } else {
+        // Multi-part content (text + image + audio)
+        const parts: any[] = [];
+        for (const part of msg.content as any[]) {
+          if (part.type === "text" && part.text) {
+            parts.push({ text: part.text });
+          } else if (part.type === "image_url" && part.image_url?.url) {
+            // Convert OpenAI image_url to Gemini inlineData
+            const url: string = part.image_url.url;
+            if (url.startsWith("data:")) {
+              const match = url.match(/^data:([^;]+);base64,(.+)$/);
+              if (match) {
+                parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
+              }
+            } else {
+              // External URL — pass as text fallback
+              parts.push({ text: `[Image: ${url}]` });
+            }
+          } else if (part.type === "input_audio" && part.input_audio?.data) {
+            // Convert OpenAI input_audio to Gemini inlineData
+            const format = part.input_audio.format || "webm";
+            const mimeType = format === "webm" ? "audio/webm" : `audio/${format}`;
+            parts.push({ inlineData: { mimeType, data: part.input_audio.data } });
+          }
+        }
+        if (parts.length === 0) {
+          parts.push({ text: "" });
+        }
+        contents.push({
+          role: msg.role === "assistant" ? "model" : "user",
+          parts,
+        });
+      }
+    }
+
+    if (contents.length === 0) {
+      contents.push({ role: "user", parts: [{ text: "Respond." }] });
+    }
+
+    // Convert tools
+    let tools: any = undefined;
+    let toolConfig: any = undefined;
+
+    if (request.tools && request.tools.length > 0) {
+      const functionDeclarations = request.tools.map((t) => ({
+        name: t.function.name,
+        description: t.function.description || "",
+        parameters: this.cleanSchema(t.function.parameters),
+      }));
+      tools = [{ functionDeclarations }];
+
+      // Map tool_choice
+      if (request.toolChoice === "required") {
+        toolConfig = { functionCallingConfig: { mode: "ANY" } };
+      } else if (request.toolChoice === "none") {
+        toolConfig = { functionCallingConfig: { mode: "NONE" } };
+      }
+    }
+
+    return {
+      systemInstruction: systemParts.join("\n\n"),
+      contents,
+      tools,
+      toolConfig,
+    };
+  }
+
+  private cleanSchema(schema: any): any {
+    if (!schema || typeof schema !== "object") return schema;
+    // Preserve arrays (required, enum, etc.) — recurse into elements
+    if (Array.isArray(schema)) {
+      return schema.map((item: any) => this.cleanSchema(item));
+    }
+    const cleaned: any = {};
+    for (const [key, value] of Object.entries(schema)) {
+      if (key === "additionalProperties" || key === "$ref") continue;
+      if (typeof value === "object" && value !== null) {
+        cleaned[key] = this.cleanSchema(value);
+      } else {
+        cleaned[key] = value;
+      }
+    }
+    return cleaned;
+  }
+
+  private extractToolCalls(response: any): Array<{ name: string; arguments: string }> {
+    const toolCalls: Array<{ name: string; arguments: string }> = [];
+    const candidates = response?.candidates || [];
+    for (const candidate of candidates) {
+      const parts = candidate?.content?.parts || [];
+      for (const part of parts) {
+        if (part.functionCall) {
+          toolCalls.push({
+            name: part.functionCall.name,
+            arguments: JSON.stringify(part.functionCall.args || {}),
+          });
+        }
+      }
+    }
+    return toolCalls;
+  }
+}

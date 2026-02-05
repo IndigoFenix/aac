@@ -8,6 +8,7 @@ interface AACBoardProps {
   board: ParsedBoardData | null;
   onButtonClick: (button: BoardButton, spokenText: string) => void;
   language?: string;
+  voiceType?: string;
 }
 
 // Color palette for buttons (similar to Grid3 style)
@@ -28,7 +29,7 @@ function getButtonColor(color?: string): string {
   return BUTTON_COLORS[color.toLowerCase()] || color;
 }
 
-export default function AACBoard({ board, onButtonClick, language = "en" }: AACBoardProps) {
+export default function AACBoard({ board, onButtonClick, language = "en", voiceType }: AACBoardProps) {
   const [currentPageId, setCurrentPageId] = useState<string | null>(null);
   const [pageHistory, setPageHistory] = useState<string[]>([]);
   const { speak, isSpeaking } = useTextToSpeech();
@@ -63,14 +64,14 @@ export default function AACBoard({ board, onButtonClick, language = "en" }: AACB
         case "speak":
           // Use action text if provided, otherwise use button text
           const speakText = button.action.text || textToSpeak;
-          speak(speakText, language);
+          speak(speakText, language, voiceType as any);
           onButtonClick(button, speakText);
           return;
       }
     }
 
     // Default: speak and send
-    speak(textToSpeak, language);
+    speak(textToSpeak, language, voiceType as any);
     onButtonClick(button, textToSpeak);
   }, [currentPage, speak, language, onButtonClick]);
 

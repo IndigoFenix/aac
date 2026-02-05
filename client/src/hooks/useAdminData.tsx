@@ -47,6 +47,36 @@ export interface UpdatePersonaData {
   active?: boolean;
 }
 
+export interface Voice {
+  id: string;
+  name: string;
+  externalId: string;
+  source: string;
+  description: string | null;
+  sampleUrl: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateVoiceData {
+  name: string;
+  externalId: string;
+  source?: string;
+  description?: string;
+  sampleUrl?: string;
+  active?: boolean;
+}
+
+export interface UpdateVoiceData {
+  name?: string;
+  externalId?: string;
+  source?: string;
+  description?: string;
+  sampleUrl?: string;
+  active?: boolean;
+}
+
 export interface CreateTopicData {
   title: string;
   parentId?: string | null;
@@ -253,5 +283,137 @@ export function useTopicMutations() {
     createTopic,
     updateTopic,
     deleteTopic,
+  };
+}
+
+// =============================================================================
+// LLM CONFIG HOOKS
+// =============================================================================
+
+/**
+ * Hook to fetch all LLM configurations
+ */
+export function useLLMConfigs() {
+  return useQuery({
+    queryKey: ['/api/admin/settings/llm_configs'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', '/api/admin/settings/llm_configs');
+      const data = await res.json();
+      return data as {
+        configs: Record<string, { provider: string; model: string }>;
+        useCases: Record<string, { label: string; description: string; defaultProvider: string; defaultModel: string }>;
+        modelOptions: Array<{
+          provider: string;
+          modelId: string;
+          displayName: string;
+          description: string;
+          tier: string;
+          inputCostPer1M: number;
+          outputCostPer1M: number;
+          supportsTools: boolean;
+          supportsStreaming: boolean;
+          supportsStructuredOutput: boolean;
+        }>;
+      };
+    },
+  });
+}
+
+/**
+ * Hook for LLM config mutations
+ */
+export function useLLMConfigMutations() {
+  const queryClient = useQueryClient();
+
+  const updateConfigs = useMutation({
+    mutationFn: async (configs: Record<string, { provider: string; model: string }>) => {
+      const res = await apiRequest('PUT', '/api/admin/settings/llm_configs', { configs });
+      const result = await res.json();
+      return result;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/settings/llm_configs'] });
+    },
+  });
+
+  return { updateConfigs };
+}
+
+// =============================================================================
+// VOICE HOOKS
+// =============================================================================
+
+/**
+ * Hook to fetch all voices (admin)
+ */
+export function useVoices() {
+  return useQuery({
+    queryKey: ['/api/admin/voices'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', '/api/admin/voices');
+      const data = await res.json();
+      return data.voices as Voice[];
+    },
+  });
+}
+
+/**
+ * Hook to fetch active voices (for settings panel)
+ */
+export function useActiveVoices() {
+  return useQuery({
+    queryKey: ['/api/voices/active'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', '/api/voices/active');
+      const data = await res.json();
+      return data.voices as Voice[];
+    },
+  });
+}
+
+/**
+ * Hook for voice mutations
+ */
+export function useVoiceMutations() {
+  const queryClient = useQueryClient();
+
+  const createVoice = useMutation({
+    mutationFn: async (data: CreateVoiceData) => {
+      const res = await apiRequest('POST', '/api/admin/voices', data);
+      const result = await res.json();
+      return result.voice as Voice;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/voices'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/voices/active'] });
+    },
+  });
+
+  const updateVoice = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: UpdateVoiceData }) => {
+      const res = await apiRequest('PATCH', `/api/admin/voices/${id}`, data);
+      const result = await res.json();
+      return result.voice as Voice;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/voices'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/voices/active'] });
+    },
+  });
+
+  const deleteVoice = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest('DELETE', `/api/admin/voices/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/voices'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/voices/active'] });
+    },
+  });
+
+  return {
+    createVoice,
+    updateVoice,
+    deleteVoice,
   };
 }

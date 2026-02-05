@@ -50,11 +50,14 @@ export default function SymbolBoard({ studentId, onSymbolSelect, conversationAct
   const { cameras, getUserCamera, getEnvironmentCamera } = useMultiCamera();
   const queryClient = useQueryClient();
 
-  // Get environmental context
-  const { data: envContext } = useQuery({
-    queryKey: ["/api/aac/context"],
-    refetchInterval: 60000, // Update every minute (60 seconds minimum)
-  });
+  // Local time context (no server call needed)
+  const [envContext, setEnvContext] = useState<{ time: string } | null>(null);
+  useEffect(() => {
+    const update = () => setEnvContext({ time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
+    update();
+    const id = setInterval(update, 60000);
+    return () => clearInterval(id);
+  }, []);
 
   // Get student profile if available
   const { data: userProfile } = useQuery({

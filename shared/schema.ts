@@ -660,7 +660,10 @@ export const students = pgTable("students", {
   aacSignLanguageReading: boolean("aac_sign_language_reading").default(false), // Sign language detection enabled
   aacMultiCameraMode: boolean("aac_multi_camera_mode").default(false), // Multi-camera support
   aacModelOverride: text("aac_model_override"), // AI model override (e.g., 'chatgpt5')
-  aacVoiceType: text("aac_voice_type"), // 'man', 'woman', 'boy', 'girl'
+  aacVoiceType: text("aac_voice_type"), // AI voice: 'auto', 'man', 'woman', 'boy', 'girl'
+  aacStudentVoiceType: text("aac_student_voice_type"), // Student's voice: 'man', 'woman', 'boy', 'girl'
+  aacCustomVoiceId: varchar("aac_custom_voice_id"), // FK to voices table for custom AI voice (ElevenLabs)
+  aacCustomStudentVoiceId: varchar("aac_custom_student_voice_id"), // FK to voices table for custom student voice (ElevenLabs)
   aacKnownPeople: jsonb("aac_known_people").default([]), // Array of known people for recognition
 
   // Biometric recognition fields
@@ -1666,6 +1669,22 @@ export const personas = pgTable("personas", {
   index("idx_personas_manual_selection").on(table.manualSelection),
 ]);
 
+// Custom Voices - admin-managed TTS voices (e.g. ElevenLabs)
+export const voices = pgTable("voices", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  externalId: text("external_id").notNull(), // Provider voice ID (e.g. ElevenLabs voice_id)
+  source: text("source").notNull().default("elevenlabs"), // TTS provider
+  description: text("description"),
+  sampleUrl: text("sample_url"),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_voices_active").on(table.active),
+  index("idx_voices_source").on(table.source),
+]);
+
 // Library Topics - hierarchical knowledge base for RAG
 export const topics = pgTable("topics", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1680,6 +1699,16 @@ export const topics = pgTable("topics", {
   index("idx_topics_active").on(table.active),
   uniqueIndex("idx_topics_title_parent").on(table.title, table.parentId), // Title unique per parent
 ]);
+
+// =============================================================================
+// SYSTEM SETTINGS (key-value store for LLM config etc.)
+// =============================================================================
+
+export const systemSettings = pgTable("system_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
 
 // =============================================================================
 // INSERT/UPDATE SCHEMAS
@@ -2154,6 +2183,19 @@ export const updatePersonaSchema = createInsertSchema(personas).omit({
   updatedAt: true,
 }).partial();
 
+// Voice schemas
+export const insertVoiceSchema = createInsertSchema(voices).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateVoiceSchema = createInsertSchema(voices).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial();
+
 // Topic schemas
 export const insertTopicSchema = createInsertSchema(topics).omit({
   id: true,
@@ -2473,6 +2515,11 @@ export type ChatPersona = 'assistant' | 'coach' | 'clinical' | 'teacher' | 'pedi
 export type Persona = typeof personas.$inferSelect;
 export type InsertPersona = z.infer<typeof insertPersonaSchema>;
 export type UpdatePersona = z.infer<typeof updatePersonaSchema>;
+
+// Voice types
+export type Voice = typeof voices.$inferSelect;
+export type InsertVoice = z.infer<typeof insertVoiceSchema>;
+export type UpdateVoice = z.infer<typeof updateVoiceSchema>;
 
 // Library Topic types (renamed to avoid conflict with agent memory Topic interface)
 export type LibraryTopic = typeof topics.$inferSelect;

@@ -2,14 +2,18 @@
 // Main coordinator for the dual-agent AAC system
 
 import { db } from "../../db";
-import { chatSessions } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { chatSessions, students, users } from "@shared/schema";
+import { eq, sql } from "drizzle-orm";
 import type { ChatMessage, ParsedBoardData } from "@shared/schema";
+import { creditsForModelUsage } from "../chat/cost-helpers";
 import {
   InteractiveAgent,
   createInteractiveAgent,
 } from "./interactive-agent";
 import { MonitorAgent, createMonitorAgent } from "./monitor-agent";
+import { settingsRepository } from "../../repositories/settingsRepository";
+import { getChatProvider } from "../providers/provider-factory";
+import type { ChatProvider } from "../providers/streaming-provider";
 import type {
   AACInteractionMode,
   DualAgentConfig,
@@ -31,7 +35,8 @@ import {
   buildInteractiveSystemPrompt,
 } from "../memory-schema/aac-memory-schema";
 import { whisperService } from "../voice/whisper-service";
-import { openaiTtsService } from "../voice/openai-tts-service";
+import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
+import { voiceRecordRepository } from "../../repositories/voiceRecordRepository";
 
 /**
  * Simple promise-based mutex for per-session concurrency control
@@ -103,8 +108,107 @@ setInterval(cleanupCache, 5 * 60 * 1000);
 export class DualAgentService {
   private config: DualAgentConfig;
 
+  // Whisper hallucinates these phrases on silence / ambient noise
+  private static WHISPER_HALLUCINATION_PATTERNS = [
+    /^thank\s*you/i,
+    /^thanks\s*(for\s*(watching|listening|viewing))?\.?$/i,
+    /^(please\s+)?subscribe/i,
+    /^(please\s+)?like\s+and\s+subscribe/i,
+    /^bye[\.\s]*$/i,
+    /^you$/i,
+    /^\.+$/,
+    /^(\s|\.|\,)+$/,
+    /^music$/i,
+    /^silence$/i,
+    /^\[.*\]$/, // [Music], [Silence], etc.
+  ];
+
   constructor(config: Partial<DualAgentConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+  }
+
+  /**
+   * Detect common Whisper hallucinations on ambient/silent audio.
+   */
+  private isWhisperHallucination(text: string): boolean {
+    const trimmed = text.trim();
+    if (trimmed.length === 0) return true;
+    // Very short transcriptions from 5s audio are almost always hallucinations
+    if (trimmed.length < 4) return true;
+    return DualAgentService.WHISPER_HALLUCINATION_PATTERNS.some((p) => p.test(trimmed));
+  }
+
+  /**
+   * Track credits for an interactive agent call.
+   * Updates chatSessions.creditsUsed, students.chatCreditsUsed, and users.chatCreditsUsed.
+   */
+  private async trackInteractiveCredits(
+    sessionId: string,
+    studentId: string,
+    userId: string | undefined,
+    usage: { promptTokens: number; completionTokens: number }
+  ): Promise<void> {
+    const provider = this.config.interactiveProvider || "openai";
+    const model = this.config.interactiveModel;
+    const credits = creditsForModelUsage(provider, model, usage.promptTokens, usage.completionTokens);
+    if (credits <= 0) return;
+
+    try {
+      await db
+        .update(chatSessions)
+        .set({ creditsUsed: sql`${chatSessions.creditsUsed} + ${credits}`, lastUpdate: new Date() })
+        .where(eq(chatSessions.id, sessionId));
+
+      if (studentId) {
+        await db
+          .update(students)
+          .set({ chatCreditsUsed: sql`${students.chatCreditsUsed} + ${credits}`, chatCreditsUpdated: new Date() })
+          .where(eq(students.id, studentId));
+      }
+
+      if (userId) {
+        await db
+          .update(users)
+          .set({ chatCreditsUsed: sql`${users.chatCreditsUsed} + ${credits}`, chatCreditsUpdated: new Date() })
+          .where(eq(users.id, userId));
+      }
+
+      console.log(`[DualAgentService] Tracked ${credits} credits (provider=${provider}, model=${model}, prompt=${usage.promptTokens}, completion=${usage.completionTokens})`);
+    } catch (error) {
+      console.error("[DualAgentService] Error tracking credits:", error);
+    }
+  }
+
+  /**
+   * Resolve voice settings from a cached session's student data.
+   * Fetches custom voice records in parallel when FK is set.
+   * Returns ResolvedVoice objects that the TTS facade uses to route to the correct provider.
+   */
+  private async resolveVoices(cached: SessionCache): Promise<{
+    aiVoice: ResolvedVoice;
+    studentVoice: ResolvedVoice;
+  }> {
+    const student = cached.monitorAgent.getStudent();
+    const [aiCustom, studentCustom] = await Promise.all([
+      student?.aacCustomVoiceId
+        ? voiceRecordRepository.getVoiceById(student.aacCustomVoiceId)
+        : Promise.resolve(undefined),
+      student?.aacCustomStudentVoiceId
+        ? voiceRecordRepository.getVoiceById(student.aacCustomStudentVoiceId)
+        : Promise.resolve(undefined),
+    ]);
+    return {
+      aiVoice: {
+        fallbackType: (student?.aacVoiceType as any) || "woman",
+        customVoice: aiCustom || null,
+        language: student?.primaryLanguage || "en",
+      },
+      studentVoice: {
+        fallbackType: (student?.aacStudentVoiceType as any) || "boy",
+        customVoice: studentCustom || null,
+        language: student?.primaryLanguage || "en",
+      },
+    };
   }
 
   /**
@@ -185,6 +289,10 @@ export class DualAgentService {
         fullText = greetingResponse.text || "";
         yield { type: "text", data: fullText };
 
+        if (greetingResponse.usage) {
+          await this.trackInteractiveCredits(state.sessionId, state.studentId, state.userId, greetingResponse.usage);
+        }
+
         console.log("[DualAgentService] Greeting generated:", fullText);
       } catch (err) {
         console.error("[DualAgentService] Greeting error:", err);
@@ -199,6 +307,7 @@ export class DualAgentService {
       : "Now provide initial communication buttons for the user. Create 4-6 buttons with options related to the student or their surroundings. Call the update_board function.";
 
     try {
+      let boardStreamUsage: { promptTokens: number; completionTokens: number } | undefined;
       for await (const chunk of interactiveAgent.processMessageStream(
         boardMessage,
         fullText ? [{ role: "assistant", content: fullText, timestamp: Date.now() }] : [],
@@ -208,7 +317,12 @@ export class DualAgentService {
         if (chunk.type === "board") {
           console.log("[DualAgentService] Board generated:", JSON.stringify(chunk.data).substring(0, 200));
           yield { type: "board", data: chunk.data };
+        } else if (chunk.type === "usage") {
+          boardStreamUsage = chunk.data;
         }
+      }
+      if (boardStreamUsage) {
+        await this.trackInteractiveCredits(state.sessionId, state.studentId, state.userId, boardStreamUsage);
       }
     } catch (err) {
       console.error("[DualAgentService] Board generation error:", err);
@@ -229,11 +343,8 @@ export class DualAgentService {
     // Generate audio for greeting if TTS enabled (interact mode only)
     if (this.config.enableTTS && fullText && !isSilent) {
       try {
-        for await (const audioChunk of openaiTtsService.synthesizeStream(
-          fullText,
-          "en",
-          { voiceType: this.config.ttsVoiceType }
-        )) {
+        const voices = await this.resolveVoices(cached);
+        for await (const audioChunk of ttsFacade.synthesizeStream(fullText, voices.aiVoice)) {
           yield { type: "audio", data: audioChunk.toString("base64") };
         }
       } catch (err) {
@@ -293,6 +404,12 @@ export class DualAgentService {
     userId?: string,
     interactionMode: AACInteractionMode = 'interact'
   ): Promise<DualAgentSessionState> {
+    // Fetch AAC chat LLM config from DB
+    const aacChatConfig = await settingsRepository.getLLMConfig('aac_chat');
+    this.config.interactiveModel = aacChatConfig.model;
+    this.config.interactiveProvider = aacChatConfig.provider;
+    const chatProvider = getChatProvider(aacChatConfig.provider);
+
     // Create Monitor agent first to initialize
     const monitorAgent = createMonitorAgent(
       studentId,
@@ -306,7 +423,8 @@ export class DualAgentService {
     // Create Interactive agent with the prompt
     const interactiveAgent = createInteractiveAgent(
       initResult.interactivePrompt,
-      this.config
+      this.config,
+      chatProvider
     );
 
     // Create session state
@@ -387,6 +505,12 @@ export class DualAgentService {
         lastMonitorActivity: Date.now(),
       };
 
+      // Fetch AAC chat LLM config from DB
+      const aacChatConfig = await settingsRepository.getLLMConfig('aac_chat');
+      this.config.interactiveModel = aacChatConfig.model;
+      this.config.interactiveProvider = aacChatConfig.provider;
+      const chatProvider = getChatProvider(aacChatConfig.provider);
+
       // Recreate agents
       const monitorAgent = createMonitorAgent(
         state.studentId,
@@ -400,7 +524,8 @@ export class DualAgentService {
 
       const interactiveAgent = createInteractiveAgent(
         state.interactivePrompt,
-        this.config
+        this.config,
+        chatProvider
       );
 
       // Cache the session
@@ -573,7 +698,8 @@ export class DualAgentService {
         input.audioContext,
         input.imageData,
         input.identifiedPerson,
-        interactionMode
+        interactionMode,
+        input.gestureContext
       );
     }
 
@@ -598,7 +724,8 @@ export class DualAgentService {
     audioContext?: string,
     imageData?: string,
     identifiedPerson?: import("./types").IdentifiedPersonContext,
-    interactionMode: AACInteractionMode = 'interact'
+    interactionMode: AACInteractionMode = 'interact',
+    gestureContext?: string
   ): AsyncGenerator<{
     type: "text" | "board" | "audio";
     data: any;
@@ -618,7 +745,14 @@ export class DualAgentService {
       }
     }
 
+    // Combine additional context strings (person identification + gesture/expression data)
+    const contextParts: string[] = [];
+    if (personContext) contextParts.push(personContext);
+    if (gestureContext) contextParts.push(gestureContext);
+    const combinedContext = contextParts.length > 0 ? contextParts.join("\n") : undefined;
+
     // Stream response from Interactive agent (with image if provided)
+    let interactiveUsage: { promptTokens: number; completionTokens: number } | undefined;
     for await (const chunk of interactiveAgent.processMessageStream(
       userMessage,
       state.messages,
@@ -627,7 +761,7 @@ export class DualAgentService {
       visualContext,
       audioContext,
       imageData,
-      personContext
+      combinedContext
     )) {
       if (chunk.type === "text") {
         fullText += chunk.data;
@@ -639,7 +773,14 @@ export class DualAgentService {
       } else if (chunk.type === "command") {
         // Handle command from Interactive
         await this.handleInteractiveCommand(state, chunk.data);
+      } else if (chunk.type === "usage") {
+        interactiveUsage = chunk.data;
       }
+    }
+
+    // Track credits for the interactive response
+    if (interactiveUsage) {
+      await this.trackInteractiveCredits(state.sessionId, state.studentId, state.userId, interactiveUsage);
     }
 
     // Add assistant response to pending
@@ -657,11 +798,8 @@ export class DualAgentService {
 
     // Generate audio if enabled (skip in silent mode)
     if (this.config.enableTTS && fullText && !isSilent) {
-      for await (const audioChunk of openaiTtsService.synthesizeStream(
-        fullText,
-        "en", // TODO: Get from student settings
-        { voiceType: this.config.ttsVoiceType }
-      )) {
+      const voices = await this.resolveVoices(cached);
+      for await (const audioChunk of ttsFacade.synthesizeStream(fullText, voices.aiVoice)) {
         yield { type: "audio", data: audioChunk.toString("base64") };
       }
     }
@@ -725,12 +863,12 @@ export class DualAgentService {
 
     // Generate audio if enabled
     if (this.config.enableTTS && fullText) {
-      for await (const audioChunk of openaiTtsService.synthesizeStream(
-        fullText,
-        "en",
-        { voiceType: this.config.ttsVoiceType }
-      )) {
-        yield { type: "audio", data: audioChunk.toString("base64") };
+      const cached = sessionCache.get(state.sessionId);
+      if (cached) {
+        const voices = await this.resolveVoices(cached);
+        for await (const audioChunk of ttsFacade.synthesizeStream(fullText, voices.aiVoice)) {
+          yield { type: "audio", data: audioChunk.toString("base64") };
+        }
       }
     }
   }
@@ -953,6 +1091,10 @@ export class DualAgentService {
       );
 
       fullText = response.text || recentButtons.join(" ");
+
+      if (response.usage) {
+        await this.trackInteractiveCredits(state.sessionId, state.studentId, state.userId, response.usage);
+      }
     } catch (err) {
       console.error("[DualAgentService] Interpret error:", err);
       fullText = recentButtons.join(". ");
@@ -961,13 +1103,11 @@ export class DualAgentService {
     yield { type: "text", data: fullText };
 
     // Always generate TTS for interpret — the whole point is to speak aloud
+    // Use STUDENT voice since this is the student's own words
     if (this.config.enableTTS && fullText) {
       try {
-        for await (const audioChunk of openaiTtsService.synthesizeStream(
-          fullText,
-          "en",
-          { voiceType: this.config.ttsVoiceType }
-        )) {
+        const voices = await this.resolveVoices(cached);
+        for await (const audioChunk of ttsFacade.synthesizeStream(fullText, voices.studentVoice)) {
           yield { type: "audio", data: audioChunk.toString("base64") };
         }
       } catch (err) {
@@ -980,8 +1120,7 @@ export class DualAgentService {
 
   /**
    * Process a detection frame — lightweight, non-streaming environment observation.
-   * Returns updated board only if buttons meaningfully changed.
-   * Does NOT trigger Monitor or TTS.
+   * Returns add/remove diff. Triggers Monitor with pending messages (fire-and-forget).
    */
   async processDetection(input: DetectionInput): Promise<DetectionOutput> {
     const interactionMode: AACInteractionMode = input.interactionMode || 'interact';
@@ -1021,67 +1160,94 @@ export class DualAgentService {
       }
     }
 
+    // Transcribe ambient audio via Whisper for monitor context only.
+    // The interactive agent receives raw audio directly (Gemini handles it natively).
+    // Skip very small audio blobs (<15KB for 5s = likely silence) — Whisper hallucinates on silence.
+    let audioTranscript: string | undefined;
+    if (input.audioBuffer && input.audioBuffer.length > 15000) {
+      try {
+        const transcription = await whisperService.transcribeToText(
+          input.audioBuffer,
+          input.audioMimeType || "audio/webm"
+        );
+        if (transcription && !this.isWhisperHallucination(transcription)) {
+          audioTranscript = transcription;
+          console.log("[DualAgentService] Transcribed ambient audio:", audioTranscript.substring(0, 100));
+        } else if (transcription) {
+          console.log("[DualAgentService] Filtered Whisper hallucination:", transcription.substring(0, 80));
+        }
+      } catch (err) {
+        console.warn("[DualAgentService] Whisper transcription failed for detection audio:", err);
+      }
+    } else if (input.audioBuffer) {
+      console.log("[DualAgentService] Skipping audio transcription — too small:", input.audioBuffer.length, "bytes (likely silence)");
+    }
+
+    // NOTE: We no longer push a pre-detection pending message — it was confusing
+    // the monitor into thinking the student did something. We only push a post-detection
+    // message when there's actually a board change to report.
+
     // Build detection-specific system prompt
     const modeAddendum = interactionMode === 'silent'
       ? AAC_DETECTION_SILENT_ADDENDUM
       : AAC_DETECTION_INTERACT_ADDENDUM;
-    const buttonRules = interactionMode === 'silent'
-      ? AAC_SILENT_BUTTON_PROMPT
-      : AAC_BUTTON_PROMPT;
-    const detectionSystemPrompt = AAC_DETECTION_PROMPT + modeAddendum + buttonRules;
+    const detectionSystemPrompt = AAC_DETECTION_PROMPT + modeAddendum;
 
     try {
+      // Call interactive agent — raw audio buffer goes directly to the provider
+      // (Gemini handles audio natively; OpenAI/Claude strip it and fall back to text context)
       const result = await interactiveAgent.processDetection(
         state.messages,
         input.board,
         input.imageData,
-        input.audioContext,
-        detectionSystemPrompt
+        audioTranscript || input.audioContext,
+        detectionSystemPrompt,
+        input.gestureContext,
+        input.audioBuffer
       );
 
-      // Compare returned buttons to current board to determine if changed
-      const changed = this.boardLabelsChanged(input.board, result.board);
+      console.log("[DualAgentService] Detection processed:", JSON.stringify(result));
 
-      if (changed && result.board) {
-        state.currentBoard = result.board;
-        // Save board state (lightweight save, skip full session persist)
-        console.log("[DualAgentService] Detection: board changed, updating state");
+      // Track credits for detection
+      if (result.usage) {
+        await this.trackInteractiveCredits(state.sessionId, state.studentId, state.userId, result.usage);
+      }
+
+      const addButtons = result.addButtons || [];
+      const removeLabels = result.removeLabels || [];
+      const changed = addButtons.length > 0 || removeLabels.length > 0;
+
+      if (changed) {
+        // Push post-detection pending message (assistant role = system observation, not a user action)
+        const changeParts: string[] = [];
+        if (addButtons.length > 0) changeParts.push(`Added buttons to AAC board: ${addButtons.map(b => b.label).join(", ")}`);
+        if (removeLabels.length > 0) changeParts.push(`Removed buttons from AAC board: ${removeLabels.join(", ")}`);
+        const envDesc = result.text ? ` Environment: ${result.text}` : "";
+        state.pendingMessages.push({
+          role: "assistant",
+          content: `[SYSTEM — Automatic board update based on camera/environment scan. ${changeParts.join(". ")}.${envDesc}]`,
+          timestamp: Date.now(),
+        });
+        await this.updatePendingMessages(state.sessionId, state.pendingMessages);
+        console.log("[DualAgentService] Detection: board changed —", changeParts.join("; "));
+      }
+
+      // Only trigger monitor when there was a meaningful change
+      if (changed) {
+        this.tryTriggerMonitor(cached, state, monitorAgent, interactiveAgent, input.board);
       }
 
       return {
         sessionId: state.sessionId,
-        board: result.board,
+        addButtons: changed ? addButtons : undefined,
+        removeLabels: changed ? removeLabels : undefined,
         changed,
+        text: result.text || undefined,
       };
     } catch (error) {
       console.error("[DualAgentService] processDetection error:", error);
       return { sessionId: state.sessionId, changed: false };
     }
-  }
-
-  /**
-   * Compare two boards by button labels (case-insensitive) to determine if they differ.
-   */
-  private boardLabelsChanged(
-    oldBoard?: ParsedBoardData,
-    newBoard?: ParsedBoardData
-  ): boolean {
-    if (!oldBoard && !newBoard) return false;
-    if (!oldBoard || !newBoard) return true;
-
-    const getLabels = (board: ParsedBoardData): string[] => {
-      const page = board.pages?.find(p => p.id === board.currentPageId) || board.pages?.[0];
-      return (page?.buttons || [])
-        .map((b: { label?: string }) => (b.label || "").toLowerCase().trim())
-        .filter(Boolean)
-        .sort();
-    };
-
-    const oldLabels = getLabels(oldBoard);
-    const newLabels = getLabels(newBoard);
-
-    if (oldLabels.length !== newLabels.length) return true;
-    return oldLabels.some((label, i) => label !== newLabels[i]);
   }
 
   /**

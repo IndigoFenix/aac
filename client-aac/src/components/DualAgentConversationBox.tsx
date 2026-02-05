@@ -10,16 +10,18 @@ import {
   X,
   Mic,
   MicOff,
-  Square,
   Brain,
   Eye,
   EyeOff,
+  Grid3X3,
+  Speech,
 } from "lucide-react";
 import axolotlImg from "@assets/axolotl.png";
 import axolotlSleepImg from "@assets/axolotl-sleep.png";
 import { motion, AnimatePresence } from "framer-motion";
 import type { ParsedBoardData } from "@shared/schema";
 import { useDualAgentContext } from "@/contexts/DualAgentContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface DualAgentConversationBoxProps {
   isVisible: boolean;
@@ -28,6 +30,10 @@ interface DualAgentConversationBoxProps {
   onClearSymbols?: () => void;
   onBoardUpdate?: (board: ParsedBoardData) => void;
   currentBoard?: ParsedBoardData | null;
+  boardMode: 'ai' | 'db';
+  onBoardModeChange: (mode: 'ai' | 'db') => void;
+  recentButtonPresses?: string[];
+  onInterpret?: () => void;
 }
 
 export function DualAgentConversationBox({
@@ -37,6 +43,10 @@ export function DualAgentConversationBox({
   onClearSymbols,
   onBoardUpdate,
   currentBoard,
+  boardMode,
+  onBoardModeChange,
+  recentButtonPresses,
+  onInterpret,
 }: DualAgentConversationBoxProps) {
   const {
     currentMessage,
@@ -67,6 +77,7 @@ export function DualAgentConversationBox({
     setCurrentBoard,
     setOnBoardUpdate,
   } = useDualAgentContext();
+  const { t } = useLanguage();
 
   const hasInitializedRef = useRef(false);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -183,6 +194,16 @@ export function DualAgentConversationBox({
                   className="w-10 h-10 object-contain"
                 />
               </Button>
+              {/* Board Mode Toggle */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onBoardModeChange(boardMode === 'ai' ? 'db' : 'ai')}
+                className={`text-white hover:text-gray-200 hover:bg-white/10 ${boardMode === 'db' ? 'bg-white/20' : ''}`}
+                title={boardMode === 'ai' ? "Switch to database boards" : "Switch to AI board"}
+              >
+                {boardMode === 'ai' ? <Grid3X3 className="w-4 h-4" /> : <Brain className="w-4 h-4" />}
+              </Button>
               {/* Detection Toggle */}
               <Button
                 variant="ghost"
@@ -224,8 +245,8 @@ export function DualAgentConversationBox({
             </div>
           </div>
 
-          {/* Message Display — hidden in silent mode */}
-          {interactionMode === 'interact' && (
+          {/* Message Display — interact mode: AI transcript, silent mode: recent presses + Speak */}
+          {interactionMode === 'interact' ? (
             <div className="flex items-center justify-center mt-3">
               {isLoading ? (
                 <div className="flex items-center gap-2 text-white">
@@ -294,78 +315,35 @@ export function DualAgentConversationBox({
                 <p className="text-white/80 text-sm">Starting conversation...</p>
               )}
             </div>
-          )}
-
-          {/* Voice Recording Section — hidden in silent mode */}
-          {interactionMode === 'interact' && voiceEnabled && isInitialized && (
-            <div className="mt-3 flex items-center justify-center gap-4">
-              {/* Recording Button */}
-              {!isRecording ? (
+          ) : (
+            /* Silent mode: show recent button presses + Speak button */
+            <div className="flex items-center gap-2 mt-3">
+              <div className="flex-1 bg-white/10 rounded-lg px-3 py-2 min-h-[36px] flex items-center">
+                {recentButtonPresses && recentButtonPresses.length > 0 ? (
+                  <span className="text-sm text-white/90 truncate">
+                    {recentButtonPresses.join(" · ")}
+                  </span>
+                ) : (
+                  <span className="text-sm text-white/40 italic">
+                    {t("silentMode.placeholder")}
+                  </span>
+                )}
+              </div>
+              {recentButtonPresses && recentButtonPresses.length > 0 && onInterpret && (
                 <Button
                   variant="secondary"
-                  size="lg"
-                  onClick={startVoiceRecording}
-                  disabled={isLoading}
-                  className="bg-white/20 hover:bg-white/30 text-white rounded-full w-14 h-14 p-0"
+                  size="sm"
+                  onClick={onInterpret}
+                  className="bg-purple-500 hover:bg-purple-600 text-white border-0 px-3 py-2 shrink-0"
+                  title="Interpret selected buttons as speech"
                 >
-                  <Mic className="w-6 h-6" />
+                  <Speech className="w-4 h-4 mr-1" />
+                  {t("quickActions.speak")}
                 </Button>
-              ) : (
-                <div className="flex items-center gap-3">
-                  {/* Audio Level Indicator */}
-                  <div className="flex items-center gap-1">
-                    {[0, 1, 2, 3, 4].map((i) => (
-                      <motion.div
-                        key={i}
-                        className="w-1 bg-white rounded-full"
-                        animate={{
-                          height: audioLevel > i * 0.2 ? `${12 + audioLevel * 20}px` : "4px",
-                        }}
-                        transition={{ duration: 0.1 }}
-                      />
-                    ))}
-                  </div>
-
-                  {/* Recording Duration */}
-                  <span className="text-white text-sm font-mono min-w-[40px]">
-                    {Math.floor(recordingDuration / 60)}:
-                    {(recordingDuration % 60).toString().padStart(2, "0")}
-                  </span>
-
-                  {/* Stop Button */}
-                  <Button
-                    variant="secondary"
-                    size="lg"
-                    onClick={stopVoiceRecording}
-                    className="bg-red-500 hover:bg-red-600 text-white rounded-full w-14 h-14 p-0 animate-pulse"
-                  >
-                    <Square className="w-5 h-5 fill-current" />
-                  </Button>
-
-                  {/* Cancel Button */}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={cancelVoiceRecording}
-                    className="text-white/70 hover:text-white hover:bg-white/10"
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
-                </div>
-              )}
-
-              {/* Transcription Display */}
-              {transcription && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="text-white/80 text-sm italic max-w-md truncate"
-                >
-                  "{transcription}"
-                </motion.div>
               )}
             </div>
           )}
+
         </div>
       </motion.div>
     </AnimatePresence>

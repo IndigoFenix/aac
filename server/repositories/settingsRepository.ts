@@ -1,9 +1,8 @@
 import {
-  //systemSettings,
+  systemSettings,
   passwordResetTokens,
   subscriptionPlans,
   adminUsers,
-  systemPrompt,
   type PasswordResetToken,
   type InsertPasswordResetToken,
   type SubscriptionPlan,
@@ -11,14 +10,18 @@ import {
   type AdminUser,
   type UpsertAdminUser,
 } from "@shared/schema";
+import {
+  SETTING_KEYS,
+  USE_CASES,
+  type UseCaseKey,
+  type LLMConfigValue,
+} from "@shared/llm-options";
 import { db } from "../db";
 import { eq, sql, desc } from "drizzle-orm";
 
 export class SettingsRepository {
   // System settings
   async getSetting(key: string, defaultValue?: string): Promise<string | null> {
-    return null; // Temporarily disabled
-    /*
     try {
       const [setting] = await db
         .select()
@@ -30,11 +33,9 @@ export class SettingsRepository {
       console.error(`Error getting setting ${key}:`, error);
       return defaultValue || null;
     }
-    */
   }
 
   async updateSetting(key: string, value: string): Promise<void> {
-    /*
     try {
       await db
         .insert(systemSettings)
@@ -47,25 +48,48 @@ export class SettingsRepository {
       console.error(`Error updating setting ${key}:`, error);
       throw error;
     }
-    */
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // LLM Config Helpers
+  // ──────────────────────────────────────────────────────────────────
+
+  async getLLMConfig(useCase: UseCaseKey): Promise<LLMConfigValue> {
+    const key = SETTING_KEYS[useCase];
+    const raw = await this.getSetting(key);
+    if (raw) {
+      try {
+        return JSON.parse(raw) as LLMConfigValue;
+      } catch {
+        console.warn(`[SettingsRepository] Invalid JSON for ${key}, using default`);
+      }
+    }
+    // Fall back to defaults from USE_CASES
+    const info = USE_CASES[useCase];
+    return { provider: info.defaultProvider, model: info.defaultModel };
+  }
+
+  async updateLLMConfig(useCase: UseCaseKey, config: LLMConfigValue): Promise<void> {
+    const key = SETTING_KEYS[useCase];
+    await this.updateSetting(key, JSON.stringify(config));
+  }
+
+  async getAllLLMConfigs(): Promise<Record<UseCaseKey, LLMConfigValue>> {
+    const result = {} as Record<UseCaseKey, LLMConfigValue>;
+    const useCases = Object.keys(SETTING_KEYS) as UseCaseKey[];
+    for (const uc of useCases) {
+      result[uc] = await this.getLLMConfig(uc);
+    }
+    return result;
   }
 
   // System prompt operations
   async getSystemPrompt(): Promise<string> {
     return ""; // Temporarily disabled
-    /*
-    const [prompt] = await db
-      .select()
-      .from(systemPrompt)
-      .orderBy(desc(systemPrompt.createdAt))
-      .limit(1);
-
-    return prompt?.prompt || "";
-    */
   }
 
   async updateSystemPrompt(prompt: string): Promise<void> {
-    //await db.insert(systemPrompt).values({ prompt });
+    // Temporarily disabled
   }
 
   // Password reset token operations

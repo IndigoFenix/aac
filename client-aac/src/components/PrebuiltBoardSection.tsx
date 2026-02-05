@@ -10,6 +10,7 @@ interface PrebuiltBoardSectionProps {
   studentId: string;
   onSpeakAction: (text: string) => void;
   language?: string;
+  voiceType?: string;
   onBack: () => void;
 }
 
@@ -72,6 +73,7 @@ export default function PrebuiltBoardSection({
   studentId,
   onSpeakAction,
   language = "en",
+  voiceType,
   onBack,
 }: PrebuiltBoardSectionProps) {
   const [selectedBoard, setSelectedBoard] = useState<BoardData | null>(null);
@@ -148,7 +150,7 @@ export default function PrebuiltBoardSection({
 
     // Speak the text and send to chat
     const textToSpeak = button.action?.text || button.spokenText || button.label;
-    speak(textToSpeak, language);
+    speak(textToSpeak, language, voiceType as any);
     onSpeakAction(textToSpeak);
   };
 

@@ -1,14 +1,11 @@
 // ──────────────────────────────────────────────────────────────────────────────
 // Imports
 // ──────────────────────────────────────────────────────────────────────────────
-import OpenAI from "openai";
 import * as tiktoken from "js-tiktoken";
+import type { LLMProviderKey } from "@shared/llm-options";
+import { getStructuredProvider } from "../providers/provider-factory";
 
 const { getEncoding, getEncodingNameForModel } = tiktoken as any;
-
-const openAIConfiguration = {
-  apiKey: process.env["OPENAI_API_KEY"],
-};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // RESPONSE TYPES
@@ -168,18 +165,18 @@ export function GPTToolsToRSP(tools: GPTTool[]): any[] {
 // ──────────────────────────────────────────────────────────────────────────────
 
 export class GPT {
-  openai: OpenAI;
   lastPrompt: string;
   promptTokens: number;
   completionTokens: number;
   model: string;
+  providerConfig?: { provider: LLMProviderKey; model: string };
 
-  constructor() {
-    this.openai = new OpenAI(openAIConfiguration);
+  constructor(providerConfig?: { provider: LLMProviderKey; model: string }) {
     this.lastPrompt = "";
     this.promptTokens = 0;
     this.completionTokens = 0;
     this.model = "gpt-4o-mini";
+    this.providerConfig = providerConfig;
   }
 
   tokenCount(text: string) {
@@ -193,7 +190,7 @@ export class GPT {
   }
 
   /**
-   * Get a structured response from the Responses API
+   * Get a structured response, delegating to the appropriate provider
    */
   public async getStructuredResponse(
     input: GPTInputItem[],
@@ -213,80 +210,24 @@ export class GPT {
     instructionsText: string | undefined = undefined,
     vectorStoreId: string | undefined = undefined
   ): Promise<GPTResponse> {
+    const providerKey = this.providerConfig?.provider || "openai";
     const models = ["gpt-4o-mini", "gpt-4o-mini", "gpt-4o", "o3"];
-    const model = models[intelligenceLevel];
+    const model = this.providerConfig?.model || models[intelligenceLevel];
 
-    // Convert tools to Responses API format
-    const rspTools = GPTToolsToRSP(tools);
-
-    // Add web search tool if requested
-    if (useSearch) {
-      rspTools.push({
-        type: "web_search_preview",
-        search_context_size: ["low", "medium", "high"][searchContextSize - 1] as "low" | "medium" | "high",
-      });
-    }
-
-    // Add file_search tool if vector store is provided
-    if (vectorStoreId) {
-      rspTools.push({
-        type: "file_search",
-        vector_store_ids: [vectorStoreId],
-      });
-      console.log(`[GPT] Added file_search tool with vector store: ${vectorStoreId}`);
-    }
-
-    const jsonSchemaFmt = {
-      type: "json_schema",
-      json_schema: { strict: true, name: schema_name, schema },
-    };
-
-    const rspParams: any = {
+    const provider = getStructuredProvider(providerKey);
+    return provider.structuredComplete({
       model,
-      instructions: instructionsText,
       input,
-      max_output_tokens: max_tokens,
-      tools: rspTools.length > 0 ? rspTools : undefined,
-      text: {
-        format: { ...jsonSchemaFmt.json_schema, type: jsonSchemaFmt.type },
-      },
-    };
-
-    const response = await this.openai.responses.create(rspParams);
-
-    return this.parseResponsesResult(response);
-  }
-
-  /**
-   * Parse the Responses API result into our standard format
-   */
-  private parseResponsesResult(resp: any): GPTResponse {
-    const outs = resp.output || [];
-    const searchCalls = outs.filter((o: any) => o.type === "web_search_call");
-    const lastMsg = [...outs]
-      .reverse()
-      .find((o: any) => o.type === "message" && o.role === "assistant");
-
-    // Extract function calls in Responses API format
-    const functionCalls: GPTFunctionToolCall[] = outs
-      .filter((o: any) => o.type === "function_call")
-      .map((fc: any) => ({
-        type: "function_call" as const,
-        call_id: fc.call_id,
-        name: fc.name,
-        arguments: fc.arguments,
-      }));
-
-    return {
-      promptTokens: resp.usage?.input_tokens ?? 0,
-      completionTokens: resp.usage?.output_tokens ?? 0,
-      cachedTokens: resp.usage?.input_tokens_details?.cached_tokens ?? 0,
-      output: outs,
-      content: resp.output_text,
-      toolCalls: functionCalls,
-      refused: lastMsg?.refusal ?? false,
-      searchCalls: searchCalls.length,
-    };
+      instructions: instructionsText,
+      schemaName: schema_name,
+      schema,
+      tools: tools.length > 0 ? tools : undefined,
+      maxTokens: max_tokens,
+      temperature: additionalParams.temperature,
+      useSearch,
+      searchContextSize,
+      vectorStoreId,
+    });
   }
 
   /**
