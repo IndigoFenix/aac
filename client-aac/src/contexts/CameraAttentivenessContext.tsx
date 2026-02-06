@@ -18,6 +18,7 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useMemo,
   ReactNode,
 } from 'react';
 import {
@@ -103,6 +104,13 @@ export function CameraAttentivenessProvider({
   const frameCapturedCallbackRef = useRef<FrameCapturedCallback | null>(null);
   const motionStateCallbackRef = useRef<MotionStateCallback | null>(null);
 
+  // State ref for use in monitoringTick to avoid recreating the callback on every state change
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  // Ref for monitoringTick to use in interval without causing effect re-runs
+  const monitoringTickRef = useRef<() => Promise<void>>(() => Promise.resolve());
+
   // Create hidden video and canvas elements
   useEffect(() => {
     const video = document.createElement('video');
@@ -173,6 +181,7 @@ export function CameraAttentivenessProvider({
 
   /**
    * Capture a frame at the specified resolution
+   * Uses stateRef for motionLevel to avoid recreating callback on every state change
    */
   const captureFrame = useCallback(
     async (resolution: CaptureResolution): Promise<CapturedFrame | null> => {
@@ -210,7 +219,7 @@ export function CameraAttentivenessProvider({
           dataUrl,
           resolution,
           timestamp: Date.now(),
-          motionLevel: state.motionLevel,
+          motionLevel: stateRef.current.motionLevel,
         };
 
         lastFrameRef.current = frame;
@@ -220,7 +229,7 @@ export function CameraAttentivenessProvider({
         return null;
       }
     },
-    [videoStream, state.motionLevel]
+    [videoStream]
   );
 
   /**
@@ -252,9 +261,11 @@ export function CameraAttentivenessProvider({
 
   /**
    * Main monitoring tick - called at the configured frequency
+   * Uses stateRef to avoid recreating callback on every state change (prevents infinite loop)
    */
   const monitoringTick = useCallback(async () => {
-    if (!state.isRunning || !videoStream) return;
+    const currentState = stateRef.current;
+    if (!currentState.isRunning || !videoStream) return;
 
     setState((prev) => ({ ...prev, isCapturing: true }));
 
@@ -273,7 +284,8 @@ export function CameraAttentivenessProvider({
         previousFrameDataRef.current = currentFrameData;
 
         const now = Date.now();
-        const wasAwake = state.isAwake;
+        const wasAwake = currentState.isAwake;
+        const prevMotionLevel = currentState.motionLevel;
 
         setState((prev) => {
           let newIsAwake = prev.isAwake;
@@ -299,14 +311,14 @@ export function CameraAttentivenessProvider({
           };
         });
 
-        // Notify motion state change
-        if (wasAwake !== state.isAwake || motionLevel !== state.motionLevel) {
-          motionStateCallbackRef.current?.(state.isAwake, motionLevel);
+        // Notify motion state change (use values captured before setState)
+        if (wasAwake !== currentState.isAwake || motionLevel !== prevMotionLevel) {
+          motionStateCallbackRef.current?.(currentState.isAwake, motionLevel);
         }
 
         // Capture full frame if awake and callback is registered
-        if (state.isAwake && frameCapturedCallbackRef.current) {
-          const frame = await captureFrame(state.mode.resolution);
+        if (currentState.isAwake && frameCapturedCallbackRef.current) {
+          const frame = await captureFrame(currentState.mode.resolution);
           if (frame) {
             setState((prev) => ({ ...prev, lastFrameUrl: frame.dataUrl }));
             frameCapturedCallbackRef.current(frame);
@@ -318,16 +330,10 @@ export function CameraAttentivenessProvider({
     } finally {
       setState((prev) => ({ ...prev, isCapturing: false }));
     }
-  }, [
-    state.isRunning,
-    state.isAwake,
-    state.mode.resolution,
-    state.motionLevel,
-    videoStream,
-    getMotionDetectionData,
-    detectMotion,
-    captureFrame,
-  ]);
+  }, [videoStream, getMotionDetectionData, detectMotion, captureFrame]);
+
+  // Keep ref updated with latest monitoringTick
+  monitoringTickRef.current = monitoringTick;
 
   /**
    * Check for sleep timeout
@@ -364,6 +370,7 @@ export function CameraAttentivenessProvider({
 
   /**
    * Set up the capture interval based on current frequency
+   * Note: monitoringTick uses stateRef so it doesn't need to be in dependencies
    */
   useEffect(() => {
     // Clear existing interval
@@ -380,17 +387,21 @@ export function CameraAttentivenessProvider({
 
     console.log(`[CameraAttentiveness] Setting capture interval: ${interval}ms (${frequency})`);
 
-    captureIntervalRef.current = setInterval(monitoringTick, interval);
+    // Use ref wrapper to avoid re-running effect when monitoringTick changes
+    const tick = () => monitoringTickRef.current();
 
-    // Run immediately
-    monitoringTick();
+    captureIntervalRef.current = setInterval(tick, interval);
+
+    // Run first tick after a short delay to avoid immediate state updates triggering re-runs
+    const initialTimeout = setTimeout(tick, 100);
 
     return () => {
+      clearTimeout(initialTimeout);
       if (captureIntervalRef.current) {
         clearInterval(captureIntervalRef.current);
       }
     };
-  }, [state.isRunning, state.isAwake, state.mode.frequency, videoStream, monitoringTick]);
+  }, [state.isRunning, state.isAwake, state.mode.frequency, videoStream]);
 
   // Control methods
   const start = useCallback(() => {
@@ -429,8 +440,9 @@ export function CameraAttentivenessProvider({
       isAwake: true,
       lastMotionDetected: Date.now(),
     }));
-    motionStateCallbackRef.current?.(true, state.motionLevel);
-  }, [state.motionLevel]);
+    // Call callback after state update (use current motion level from ref)
+    motionStateCallbackRef.current?.(true, stateRef.current.motionLevel);
+  }, []);
 
   const sleep = useCallback(() => {
     console.log('[CameraAttentiveness] Manual sleep');
@@ -476,9 +488,9 @@ export function CameraAttentivenessProvider({
 
   const captureNow = useCallback(
     async (resolution?: CaptureResolution): Promise<CapturedFrame | null> => {
-      return captureFrame(resolution ?? state.mode.resolution);
+      return captureFrame(resolution ?? stateRef.current.mode.resolution);
     },
-    [captureFrame, state.mode.resolution]
+    [captureFrame]
   );
 
   // Auto-start when stream becomes available
@@ -499,7 +511,7 @@ export function CameraAttentivenessProvider({
     };
   }, [stop]);
 
-  const value: CameraAttentivenessContextType = {
+  const value: CameraAttentivenessContextType = useMemo(() => ({
     state,
     start,
     stop,
@@ -512,7 +524,7 @@ export function CameraAttentivenessProvider({
     onMotionStateChange,
     getLastFrame,
     captureNow,
-  };
+  }), [state, start, stop, wake, sleep, setFrequency, setResolution, setMode, onFrameCaptured, onMotionStateChange, getLastFrame, captureNow]);
 
   return (
     <CameraAttentivenessContext.Provider value={value}>

@@ -58,7 +58,8 @@ export interface UseDualAgentReturn {
   // Messages
   currentMessage: DualAgentMessage | null;
   transcription: string | null;
-  detectionText: string | null;
+  interpretationText: string | null;
+  debugText: string | null;
 
   // Audio state
   audioEnabled: boolean;
@@ -104,7 +105,8 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
   // Message state
   const [currentMessage, setCurrentMessage] = useState<DualAgentMessage | null>(null);
   const [transcription, setTranscription] = useState<string | null>(null);
-  const [detectionText, setDetectionText] = useState<string | null>(null);
+  const [interpretationText, setInterpretationText] = useState<string | null>(null);
+  const [debugText, setDebugText] = useState<string | null>(null);
 
   // Audio state
   const [audioEnabled, setAudioEnabled] = useState(true);
@@ -122,6 +124,53 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
   // Refs
   const currentBoardRef = useRef<ParsedBoardData | null>(null);
 
+  /**
+   * Apply a board patch (add/remove) to the current board
+   */
+  const applyBoardPatch = useCallback((patch: BoardPatch): ParsedBoardData | null => {
+    const board = currentBoardRef.current;
+    if (!board) return null;
+
+    const currentPage = board.pages?.find(p => p.id === board.currentPageId) || board.pages?.[0];
+    if (!currentPage) return board;
+
+    let buttons = [...(currentPage.buttons || [])];
+    const grid = board.grid || { rows: 3, cols: 4 };
+    const totalCells = grid.rows * grid.cols;
+
+    // Remove buttons by label
+    if (patch.remove && patch.remove.length > 0) {
+      const removeSet = new Set(patch.remove.map(l => l.toLowerCase()));
+      buttons = buttons.filter(b => !removeSet.has((b.label || "").toLowerCase()));
+    }
+
+    // Add new buttons to available slots
+    if (patch.add && patch.add.length > 0) {
+      for (const newBtn of patch.add) {
+        if (buttons.length >= totalCells) break;
+        const index = buttons.length;
+        buttons.push({
+          id: `btn-${Date.now()}-${index}`,
+          label: newBtn.label,
+          spokenText: newBtn.label,
+          row: Math.floor(index / grid.cols),
+          col: index % grid.cols,
+          iconRef: newBtn.iconRef || undefined,
+          action: { type: "speak" as const, text: newBtn.label },
+        });
+      }
+    }
+
+    const updatedBoard: ParsedBoardData = {
+      ...board,
+      pages: board.pages?.map(p =>
+        p.id === currentPage.id ? { ...p, buttons } : p
+      ) || [{ ...currentPage, buttons }],
+    };
+
+    return updatedBoard;
+  }, []);
+
   // Stable refs for callbacks that change identity often (avoids restarting detection loop)
   const captureFrameRef = useRef(captureFrame);
   captureFrameRef.current = captureFrame;
@@ -131,6 +180,14 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
   onBoardUpdateRef.current = onBoardUpdate;
   const onBoardPatchRef = useRef(onBoardPatch);
   onBoardPatchRef.current = onBoardPatch;
+
+  // Stable refs for values used inside runDetection (avoids restarting detection loop)
+  const audioEnabledRef = useRef(audioEnabled);
+  audioEnabledRef.current = audioEnabled;
+  const streamingPlayerRef = useRef<ReturnType<typeof useStreamingAudioPlayer>>(null!);
+
+  // Ref for runDetection to avoid restarting detection loop when function identity changes
+  const runDetectionRef = useRef<(audioBlob?: Blob | null) => Promise<void>>(async () => {});
 
   // Audio recorder
   const audioRecorder = useAudioRecorder();
@@ -142,6 +199,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
     onPlaybackEnd: () => console.log("[DualAgent] Audio playback ended"),
     onError: (err) => console.error("[DualAgent] Audio error:", err),
   });
+  streamingPlayerRef.current = streamingPlayer;
 
   // Notify when thinking mode changes
   useEffect(() => {
@@ -206,6 +264,49 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
                 }
                 break;
 
+              case "interpretation":
+                setInterpretationText(data.text);
+                break;
+
+              case "interpretation_audio":
+                if (audioEnabled) {
+                  streamingPlayer.queueChunk({
+                    chunk: data.chunk,
+                    format: data.format || "mp3",
+                  });
+                }
+                break;
+
+              case "debug":
+                setDebugText(data.text);
+                break;
+
+              case "transcript":
+                // Voice transcript from AI detection
+                console.log("[DualAgent] Transcript:", data.text, "speaker:", data.speaker);
+                break;
+
+              case "context":
+                // Context update from AI observation
+                console.log("[DualAgent] Context update:", data.text);
+                break;
+
+              case "board_patch":
+                // Board patch from detection (add/remove)
+                if (data.add?.length > 0 || data.remove?.length > 0) {
+                  const patch = { add: data.add || [], remove: data.remove || [] };
+                  // Update internal ref so subsequent requests have correct board state
+                  const updatedBoard = applyBoardPatch(patch);
+                  if (updatedBoard) {
+                    currentBoardRef.current = updatedBoard;
+                  }
+                  // Notify parent component
+                  if (onBoardPatchRef.current) {
+                    onBoardPatchRef.current(patch);
+                  }
+                }
+                break;
+
               case "complete":
                 if (data.sessionId) {
                   setSessionId(data.sessionId);
@@ -253,7 +354,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
         }
       }
     },
-    [audioEnabled, thinkingMode, onBoardUpdate, streamingPlayer]
+    [audioEnabled, thinkingMode, onBoardUpdate, streamingPlayer, applyBoardPatch]
   );
 
   /**
@@ -267,15 +368,51 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
     setError(null);
 
     try {
-      const response = await fetchWithAuth("/api/aac/dual/initialize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          studentId,
-          sessionId: sessionId || undefined,
-          interactionMode,
-        }),
-      });
+      // Capture camera frame if available for context-aware initialization (use ref for stability)
+      let imageBlob: Blob | null = null;
+      const capture = captureFrameRef.current;
+      if (capture) {
+        try {
+          imageBlob = await capture();
+          if (imageBlob) {
+            imageBlob = await prepareFrameForAI(imageBlob);
+            console.log("[DualAgent] Captured camera frame for initialization");
+          }
+        } catch (err) {
+          console.warn("[DualAgent] Failed to capture frame for init:", err);
+        }
+      }
+
+      // Get gesture context if available (use ref for stability)
+      const gestureContext = getGestureContextRef.current?.() || undefined;
+
+      let response: globalThis.Response;
+
+      if (imageBlob) {
+        // Use FormData for image upload
+        const formData = new FormData();
+        formData.append("studentId", studentId);
+        if (sessionId) formData.append("sessionId", sessionId);
+        formData.append("interactionMode", interactionMode);
+        if (gestureContext) formData.append("gestureContext", gestureContext);
+        formData.append("image", imageBlob, "init.jpg");
+
+        response = await fetchWithAuth("/api/aac/dual/initialize", {
+          method: "POST",
+          body: formData,
+        });
+      } else {
+        response = await fetchWithAuth("/api/aac/dual/initialize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            studentId,
+            sessionId: sessionId || undefined,
+            interactionMode,
+            gestureContext,
+          }),
+        });
+      }
 
       if (!response.ok) {
         throw new Error(`Failed to initialize: ${response.status}`);
@@ -542,6 +679,8 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
     setIsInitialized(false);
     setCurrentMessage(null);
     setTranscription(null);
+    setInterpretationText(null);
+    setDebugText(null);
     setError(null);
     setThinkingMode(false);
     streamingPlayer.clear();
@@ -582,6 +721,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
   /**
    * Run a single detection cycle — capture camera frame, send to /detect.
    * Audio blob is passed in from the detection loop.
+   * Now uses SSE streaming like message/voice endpoints.
    */
   const runDetection = useCallback(async (audioBlob?: Blob | null) => {
     if (!sessionId) return;
@@ -630,32 +770,21 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
         return;
       }
 
-      const result = await response.json();
-      console.log("[DualAgent] Detection result: changed =", result.changed, result.text ? `text: "${result.text.substring(0, 80)}..."` : "");
-
-      if (result.changed && onBoardPatchRef.current) {
-        onBoardPatchRef.current({
-          add: result.addButtons || [],
-          remove: result.removeLabels || [],
-        });
-      }
-
-      // Store detection observation separately (does not overwrite conversation message)
-      if (result.text) {
-        setDetectionText(result.text);
-      }
-
-      if (result.sessionId && !sessionId) {
-        setSessionId(result.sessionId);
-      }
+      // Process SSE stream (same as message/voice)
+      await processSSEStream(response);
+      console.log("[DualAgent] Detection stream processed");
     } catch (err) {
       console.warn("[DualAgent] Detection error:", err);
     }
-  }, [sessionId, studentId, interactionMode]);
+  }, [sessionId, studentId, interactionMode, processSSEStream]);
+
+  // Keep runDetectionRef updated with latest version (avoids restarting detection loop when deps change)
+  runDetectionRef.current = runDetection;
 
   /**
    * Combined detection loop — records 5s of clean audio per cycle, then runs detection.
    * Each audio clip is a complete valid webm file (no ring buffer).
+   * Uses runDetectionRef to avoid restarting when runDetection changes identity.
    */
   useEffect(() => {
     if (!detectionEnabled || !isInitialized || !sessionId) return;
@@ -676,7 +805,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
       }
 
       if (cancelled) return;
-      await runDetection(audioBlob);
+      await runDetectionRef.current(audioBlob);
       if (!cancelled) loop();
     };
 
@@ -705,7 +834,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
       micStream = null;
       console.log("[DualAgent] Detection loop stopped");
     };
-  }, [detectionEnabled, isInitialized, sessionId, runDetection, recordAudioClip]);
+  }, [detectionEnabled, isInitialized, sessionId, recordAudioClip]);
 
   return {
     // Session state
@@ -718,7 +847,8 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
     // Messages
     currentMessage,
     transcription,
-    detectionText,
+    interpretationText,
+    debugText,
 
     // Audio state
     audioEnabled,

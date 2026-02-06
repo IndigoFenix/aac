@@ -11,6 +11,8 @@ const initializeSchema = z.object({
   studentId: z.string(),
   sessionId: z.string().optional(),
   interactionMode: z.enum(['interact', 'silent']).optional(),
+  imageData: z.string().optional(), // base64 data URL from camera
+  gestureContext: z.string().optional(), // serialized face/hand gesture events
 });
 
 const identifiedPersonSchema = z.object({
@@ -77,10 +79,24 @@ export class DualAgentController {
   async initialize(req: Request, res: Response): Promise<void> {
     try {
       const userId = req.user?.id;
-      const { studentId, sessionId, interactionMode } = initializeSchema.parse(req.body);
+
+      // Parse JSON string fields from multipart form body
+      const body = { ...req.body };
+      if (typeof body.board === "string") {
+        try { body.board = JSON.parse(body.board); } catch { /* leave as-is */ }
+      }
+
+      // Convert multer file buffer to base64 data URL
+      const file = (req as any).file as Express.Multer.File | undefined;
+      if (file) {
+        const base64 = file.buffer.toString("base64");
+        body.imageData = `data:${file.mimetype};base64,${base64}`;
+      }
+
+      const { studentId, sessionId, interactionMode, imageData, gestureContext } = initializeSchema.parse(body);
 
       console.log(
-        `[DualAgentController] Initializing session for student: ${studentId} mode: ${interactionMode || 'interact'}`
+        `[DualAgentController] Initializing session for student: ${studentId} mode: ${interactionMode || 'interact'}${imageData ? " (with image)" : ""}${gestureContext ? " (with gestures)" : ""}`
       );
 
       // Set up SSE headers
@@ -96,7 +112,9 @@ export class DualAgentController {
         userId,
         sessionId,
         undefined,
-        interactionMode || 'interact'
+        interactionMode || 'interact',
+        imageData,
+        gestureContext
       )) {
         switch (chunk.type) {
           case "text":
@@ -107,6 +125,21 @@ export class DualAgentController {
             break;
           case "audio":
             sendSSEEvent(res, "audio", { chunk: chunk.data, format: "mp3" });
+            break;
+          case "interpretation":
+            sendSSEEvent(res, "interpretation", { text: chunk.data });
+            break;
+          case "interpretation_audio":
+            sendSSEEvent(res, "interpretation_audio", { chunk: chunk.data, format: "mp3" });
+            break;
+          case "debug":
+            sendSSEEvent(res, "debug", { text: chunk.data });
+            break;
+          case "transcript":
+            sendSSEEvent(res, "transcript", { text: chunk.data, speaker: chunk.speaker });
+            break;
+          case "context":
+            sendSSEEvent(res, "context", { text: chunk.data });
             break;
           case "complete":
             sendSSEEvent(res, "complete", chunk.data);
@@ -216,6 +249,21 @@ export class DualAgentController {
           case "transcription":
             sendSSEEvent(res, "transcription", chunk.data);
             break;
+          case "interpretation":
+            sendSSEEvent(res, "interpretation", { text: chunk.data });
+            break;
+          case "interpretation_audio":
+            sendSSEEvent(res, "interpretation_audio", { chunk: chunk.data, format: "mp3" });
+            break;
+          case "debug":
+            sendSSEEvent(res, "debug", { text: chunk.data });
+            break;
+          case "transcript":
+            sendSSEEvent(res, "transcript", { text: chunk.data, speaker: chunk.speaker });
+            break;
+          case "context":
+            sendSSEEvent(res, "context", { text: chunk.data });
+            break;
           case "complete":
             sendSSEEvent(res, "complete", chunk.data);
             break;
@@ -314,6 +362,21 @@ export class DualAgentController {
             break;
           case "transcription":
             sendSSEEvent(res, "transcription", chunk.data);
+            break;
+          case "interpretation":
+            sendSSEEvent(res, "interpretation", { text: chunk.data });
+            break;
+          case "interpretation_audio":
+            sendSSEEvent(res, "interpretation_audio", { chunk: chunk.data, format: "mp3" });
+            break;
+          case "debug":
+            sendSSEEvent(res, "debug", { text: chunk.data });
+            break;
+          case "transcript":
+            sendSSEEvent(res, "transcript", { text: chunk.data, speaker: chunk.speaker });
+            break;
+          case "context":
+            sendSSEEvent(res, "context", { text: chunk.data });
             break;
           case "complete":
             sendSSEEvent(res, "complete", chunk.data);
@@ -435,7 +498,7 @@ export class DualAgentController {
   /**
    * POST /api/aac/dual/detect
    * Continuous detection — send camera frame, get updated board if environment changed.
-   * Returns JSON (not SSE) since detection is lightweight and non-streaming.
+   * Returns SSE stream for unified handling with message/voice endpoints.
    */
   async detect(req: Request, res: Response): Promise<void> {
     try {
@@ -473,7 +536,15 @@ export class DualAgentController {
         `[DualAgentController] Detect for student ${studentId}${imageData ? " (with image)" : ""}${audioBuffer ? " (with audio)" : ""}${gestureContext ? " (with gestures)" : ""} mode: ${interactionMode || "interact"}`
       );
 
-      const result = await dualAgentService.processDetection({
+      // Set up SSE headers
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("X-Accel-Buffering", "no");
+      res.flushHeaders();
+
+      // Process and stream response
+      for await (const chunk of dualAgentService.processDetectionStream({
         sessionId,
         studentId,
         userId,
@@ -484,21 +555,53 @@ export class DualAgentController {
         gestureContext,
         board,
         interactionMode,
-      });
+      })) {
+        switch (chunk.type) {
+          case "text":
+            sendSSEEvent(res, "text", { chunk: chunk.data });
+            break;
+          case "board_patch":
+            sendSSEEvent(res, "board_patch", chunk.data);
+            break;
+          case "audio":
+            sendSSEEvent(res, "audio", { chunk: chunk.data, format: "mp3" });
+            break;
+          case "interpretation":
+            sendSSEEvent(res, "interpretation", { text: chunk.data });
+            break;
+          case "interpretation_audio":
+            sendSSEEvent(res, "interpretation_audio", { chunk: chunk.data, format: "mp3" });
+            break;
+          case "debug":
+            sendSSEEvent(res, "debug", { text: chunk.data });
+            break;
+          case "transcript":
+            sendSSEEvent(res, "transcript", { text: chunk.data, speaker: chunk.speaker });
+            break;
+          case "context":
+            sendSSEEvent(res, "context", { text: chunk.data });
+            break;
+          case "complete":
+            sendSSEEvent(res, "complete", chunk.data);
+            break;
+        }
+      }
 
-      res.json({
-        sessionId: result.sessionId,
-        addButtons: result.addButtons,
-        removeLabels: result.removeLabels,
-        changed: result.changed,
-        text: result.text,
-      });
+      res.end();
     } catch (error: any) {
       console.error("[DualAgentController] Detect error:", error);
-      res.status(500).json({
-        error: "Failed to process detection",
-        details: error.message || String(error),
-      });
+
+      if (res.headersSent) {
+        sendSSEEvent(res, "error", {
+          error: error.message || "Failed to process detection",
+        });
+        res.end();
+      } else {
+        res.status(500).json({
+          error: "Failed to process detection",
+          details: error.message || String(error),
+        });
+      }
     }
   }
 }

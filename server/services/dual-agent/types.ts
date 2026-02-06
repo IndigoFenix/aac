@@ -101,7 +101,7 @@ export interface DualAgentSessionState {
  * Response from Interactive agent
  */
 export interface InteractiveResponse {
-  // The text response (may start with # for commands)
+  // The text response (AI voice, may start with # for commands)
   text: string;
   // Updated board buttons
   board?: ParsedBoardData;
@@ -115,6 +115,20 @@ export interface InteractiveResponse {
   addButtons?: Array<{ label: string; iconRef: string }>;
   // Detection diff: labels of buttons to remove
   removeLabels?: string[];
+  // Full board rebuild (replaces all buttons)
+  rebuildBoard?: Array<{ label: string; iconRef: string }>;
+  // Message inferred from gestures/context to process as user input
+  triggeredMessage?: string;
+  // Student's interpreted intent (student voice) — mutually exclusive with text
+  interpretation?: string;
+  // What AI saw and why (debug/moderator only)
+  debugDescription?: string;
+  // Voice transcript from audio input
+  transcript?: string;
+  // Who spoke the transcript
+  transcriptSpeaker?: string;
+  // Environmental context changes observed
+  contextUpdate?: string;
 }
 
 /**
@@ -242,7 +256,14 @@ export interface DetectionOutput {
   addButtons?: Array<{ label: string; iconRef: string }>;
   removeLabels?: string[];
   changed: boolean;          // whether buttons were updated
-  text?: string;             // AI's observation/description of the environment
+  text?: string;             // AI voice (speak field) — only when high confidence
+  triggeredMessage?: string; // deprecated: use interpretation instead
+  interpretation?: string;         // student's interpreted intent (student voice)
+  interpretationAudio?: string;    // base64 audio (student voice TTS)
+  debugDescription?: string;       // what AI saw/decided
+  transcript?: string;             // voice transcript from audio input
+  transcriptSpeaker?: string;      // who spoke the transcript
+  contextUpdate?: string;          // environmental context changes observed
 }
 
 export const DEFAULT_CONFIG: DualAgentConfig = {

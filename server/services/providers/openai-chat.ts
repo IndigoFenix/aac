@@ -37,14 +37,18 @@ export class OpenAIChatProvider implements ChatProvider {
 
   async completeChat(request: ChatRequest): Promise<ChatCompletionResult> {
     const messages = this.sanitizeMessages(request.messages);
-    const response = await this.openai.chat.completions.create({
+    const params: any = {
       model: request.model,
       messages: messages as any,
-      tools: request.tools as any,
-      tool_choice: request.toolChoice === "required" ? "required" : request.toolChoice || "auto",
       max_tokens: request.maxTokens || 500,
       temperature: request.temperature ?? 0.7,
-    });
+    };
+    // Only include tools and tool_choice if tools are provided
+    if (request.tools && request.tools.length > 0) {
+      params.tools = request.tools;
+      params.tool_choice = request.toolChoice === "required" ? "required" : request.toolChoice || "auto";
+    }
+    const response = await this.openai.chat.completions.create(params);
 
     const message = response.choices[0]?.message;
     const finishReason = response.choices[0]?.finish_reason;
@@ -72,16 +76,20 @@ export class OpenAIChatProvider implements ChatProvider {
 
   async *streamChat(request: ChatRequest): AsyncGenerator<StreamChunk> {
     const messages = this.sanitizeMessages(request.messages);
-    const stream = await this.openai.chat.completions.create({
+    const params: any = {
       model: request.model,
       messages: messages as any,
-      tools: request.tools as any,
-      tool_choice: request.toolChoice === "required" ? "required" : request.toolChoice || "auto",
       max_tokens: request.maxTokens || 500,
       temperature: request.temperature ?? 0.7,
-      stream: true,
+      stream: true as const,
       stream_options: { include_usage: true },
-    });
+    };
+    // Only include tools and tool_choice if tools are provided
+    if (request.tools && request.tools.length > 0) {
+      params.tools = request.tools;
+      params.tool_choice = request.toolChoice === "required" ? "required" : request.toolChoice || "auto";
+    }
+    const stream = await this.openai.chat.completions.create(params) as unknown as AsyncIterable<any>;
 
     let finalUsage: { promptTokens: number; completionTokens: number } | undefined;
 

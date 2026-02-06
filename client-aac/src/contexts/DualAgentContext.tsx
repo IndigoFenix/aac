@@ -17,7 +17,8 @@ interface DualAgentContextType {
   // Messages
   currentMessage: DualAgentMessage | null;
   transcription: string | null;
-  detectionText: string | null;
+  interpretationText: string | null;
+  debugText: string | null;
 
   // Audio state
   audioEnabled: boolean;
@@ -171,7 +172,8 @@ export function DualAgentProvider({
     // Messages
     currentMessage: dualAgent.currentMessage,
     transcription: dualAgent.transcription,
-    detectionText: dualAgent.detectionText,
+    interpretationText: dualAgent.interpretationText,
+    debugText: dualAgent.debugText,
 
     // Audio state
     audioEnabled: dualAgent.audioEnabled,

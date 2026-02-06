@@ -2,7 +2,7 @@
 // Event accumulation hook: derives semantic events from blendshapes,
 // correlates faces to identities, maintains rolling buffer per face.
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import type {
   FaceTrackingConfig,
   RawTrackedFace,
@@ -46,10 +46,11 @@ function centroidDistance(
   return Math.sqrt((ca.cx - cb.cx) ** 2 + (ca.cy - cb.cy) ** 2);
 }
 
-// Derive events from a blendshape map, returning all detected events with probabilities
+// Derive events from a blendshape map and head pose, returning all detected events
 function deriveEvents(
   blendshapes: Map<string, number>,
-  thresholds: FaceTrackingConfig["thresholds"]
+  thresholds: FaceTrackingConfig["thresholds"],
+  headPose?: { yaw: number; pitch: number } | null,
 ): FaceEvent[] {
   const now = Date.now();
   const events: FaceEvent[] = [];
@@ -136,14 +137,120 @@ function deriveEvents(
     events.push({ type: "brow_furrow", timestamp: now, confidence: browFurrow });
   }
 
+  // Head turn direction (from landmark-based head pose)
+  if (headPose) {
+    const ht = thresholds.headTurn;
+    const absYaw = Math.abs(headPose.yaw);
+    const absPitch = Math.abs(headPose.pitch);
+
+    // Pick the dominant axis if both exceed threshold
+    if (absYaw > ht || absPitch > ht) {
+      if (absYaw >= absPitch) {
+        const type: FaceEventType = headPose.yaw > 0 ? "head_turn_right" : "head_turn_left";
+        events.push({ type, timestamp: now, confidence: Math.min(1, absYaw / 0.4) });
+      } else {
+        const type: FaceEventType = headPose.pitch > 0 ? "head_turn_down" : "head_turn_up";
+        events.push({ type, timestamp: now, confidence: Math.min(1, absPitch / 0.4) });
+      }
+    }
+  }
+
   return events;
 }
 
 // Get the re-fire interval category for an event type
-function getRefireCategory(type: FaceEventType): "blink" | "gaze" | "expression" {
+function getRefireCategory(type: FaceEventType): "blink" | "gaze" | "expression" | "headGesture" | "headTurn" {
   if (type.startsWith("blink")) return "blink";
   if (type.startsWith("gaze")) return "gaze";
+  if (type === "head_nod" || type === "head_shake") return "headGesture";
+  if (type.startsWith("head_turn_")) return "headTurn";
   return "expression";
+}
+
+// Detect head nod/shake from nose tip position history
+function detectHeadGestures(
+  history: Array<{ x: number; y: number; ts: number }>,
+  faceWidth: number,
+  faceHeight: number,
+): { nod: boolean; shake: boolean; nodConf: number; shakeConf: number } {
+  const result = { nod: false, shake: false, nodConf: 0, shakeConf: 0 };
+  if (history.length < 3) return result;
+
+  const minNodAmplitude = faceHeight * 0.06;
+  const minShakeAmplitude = faceWidth * 0.06;
+
+  // Count direction reversals on each axis
+  let yReversals = 0;
+  let xReversals = 0;
+  let yMaxAmplitude = 0;
+  let xMaxAmplitude = 0;
+
+  let prevYDir = 0; // -1 = down, +1 = up, 0 = undetermined
+  let prevXDir = 0;
+  let yAnchor = history[0].y;
+  let xAnchor = history[0].x;
+
+  for (let i = 1; i < history.length; i++) {
+    const dy = history[i].y - history[i - 1].y;
+    const dx = history[i].x - history[i - 1].x;
+
+    // Y-axis (nod) - track direction changes with minimum amplitude
+    if (Math.abs(dy) > 0.001) {
+      const yDir = dy > 0 ? 1 : -1;
+      if (prevYDir !== 0 && yDir !== prevYDir) {
+        const amplitude = Math.abs(history[i].y - yAnchor);
+        if (amplitude >= minNodAmplitude) {
+          yReversals++;
+          yMaxAmplitude = Math.max(yMaxAmplitude, amplitude);
+          yAnchor = history[i].y;
+        }
+      }
+      if (prevYDir !== yDir && prevYDir === 0) {
+        yAnchor = history[i - 1].y;
+      }
+      prevYDir = yDir;
+    }
+
+    // X-axis (shake) - track direction changes with minimum amplitude
+    if (Math.abs(dx) > 0.001) {
+      const xDir = dx > 0 ? 1 : -1;
+      if (prevXDir !== 0 && xDir !== prevXDir) {
+        const amplitude = Math.abs(history[i].x - xAnchor);
+        if (amplitude >= minShakeAmplitude) {
+          xReversals++;
+          xMaxAmplitude = Math.max(xMaxAmplitude, amplitude);
+          xAnchor = history[i].x;
+        }
+      }
+      if (prevXDir !== xDir && prevXDir === 0) {
+        xAnchor = history[i - 1].x;
+      }
+      prevXDir = xDir;
+    }
+  }
+
+  // 2+ reversals = gesture detected (one full oscillation cycle)
+  if (yReversals >= 2) {
+    result.nod = true;
+    result.nodConf = Math.min(1, yMaxAmplitude / (faceHeight * 0.15));
+  }
+  if (xReversals >= 2) {
+    result.shake = true;
+    result.shakeConf = Math.min(1, xMaxAmplitude / (faceWidth * 0.15));
+  }
+
+  // If both detected, pick the dominant one
+  if (result.nod && result.shake) {
+    if (yReversals > xReversals || (yReversals === xReversals && yMaxAmplitude > xMaxAmplitude)) {
+      result.shake = false;
+      result.shakeConf = 0;
+    } else {
+      result.nod = false;
+      result.nodConf = 0;
+    }
+  }
+
+  return result;
 }
 
 // Determine dominant expression from a set of events (ignoring blinks/gaze)
@@ -169,7 +276,9 @@ function getDominantExpression(events: FaceEvent[]): FaceEventType | null {
 export function useFaceEvents(options: UseFaceEventsOptions): UseFaceEventsReturn {
   const { faces, currentIdentification, enabled = true, config: configOverrides } = options;
 
-  const config: FaceTrackingConfig = {
+  // Memoize config to avoid creating new object references every render
+  // (which would cause the useEffect to fire infinitely)
+  const config = useMemo<FaceTrackingConfig>(() => ({
     ...DEFAULT_FACE_TRACKING_CONFIG,
     ...configOverrides,
     thresholds: {
@@ -180,7 +289,7 @@ export function useFaceEvents(options: UseFaceEventsOptions): UseFaceEventsRetur
       ...DEFAULT_FACE_TRACKING_CONFIG.refireIntervals,
       ...configOverrides?.refireIntervals,
     },
-  };
+  }), [configOverrides]);
 
   const [trackedFaces, setTrackedFaces] = useState<TrackedFace[]>([]);
   const [updateCount, setUpdateCount] = useState(0);
@@ -188,6 +297,7 @@ export function useFaceEvents(options: UseFaceEventsOptions): UseFaceEventsRetur
   // Stable refs for mutable state
   const trackedRef = useRef<TrackedFace[]>([]);
   const lastFireRef = useRef<Map<string, Map<FaceEventType, number>>>(new Map());
+  const noseTipHistoryRef = useRef<Map<string, Array<{ x: number; y: number; ts: number }>>>(new Map());
 
   // Process incoming raw faces
   useEffect(() => {
@@ -250,7 +360,7 @@ export function useFaceEvents(options: UseFaceEventsOptions): UseFaceEventsRetur
 
       if (incomingIdx !== undefined) {
         const incoming = faces[incomingIdx];
-        const newEvents = deriveEvents(incoming.blendshapes, config.thresholds);
+        const newEvents = deriveEvents(incoming.blendshapes, config.thresholds, incoming.headPose);
 
         // Deduplicate events with re-fire intervals
         const faceKey = face.personId || `face_${face.faceIndex}`;
@@ -268,6 +378,35 @@ export function useFaceEvents(options: UseFaceEventsOptions): UseFaceEventsRetur
           if (now - last >= interval) {
             accepted.push(ev);
             lastFire.set(ev.type, now);
+          }
+        }
+
+        // Head gesture detection from nose tip history
+        if (incoming.noseTip) {
+          if (!noseTipHistoryRef.current.has(faceKey)) {
+            noseTipHistoryRef.current.set(faceKey, []);
+          }
+          const history = noseTipHistoryRef.current.get(faceKey)!;
+          history.push({ x: incoming.noseTip.x, y: incoming.noseTip.y, ts: now });
+
+          // Prune entries older than 2s
+          const gestureWindow = 2000;
+          while (history.length > 0 && now - history[0].ts > gestureWindow) {
+            history.shift();
+          }
+
+          // Detect gestures if we have a bounding box for amplitude reference
+          if (incoming.boundingBox && history.length >= 3) {
+            const gestures = detectHeadGestures(history, incoming.boundingBox.width, incoming.boundingBox.height);
+
+            if (gestures.nod) {
+              accepted.push({ type: "head_nod", timestamp: now, confidence: gestures.nodConf });
+              // Clear history after detection to prevent re-triggering
+              history.length = 0;
+            } else if (gestures.shake) {
+              accepted.push({ type: "head_shake", timestamp: now, confidence: gestures.shakeConf });
+              history.length = 0;
+            }
           }
         }
 
@@ -304,7 +443,15 @@ export function useFaceEvents(options: UseFaceEventsOptions): UseFaceEventsRetur
       if (usedIncoming.has(fi)) continue;
 
       const incoming = faces[fi];
-      const newEvents = deriveEvents(incoming.blendshapes, config.thresholds);
+      const newEvents = deriveEvents(incoming.blendshapes, config.thresholds, incoming.headPose);
+
+      // Initialize nose tip tracking for new faces
+      if (incoming.noseTip) {
+        const newFaceKey = `face_${incoming.faceIndex}`;
+        noseTipHistoryRef.current.set(newFaceKey, [
+          { x: incoming.noseTip.x, y: incoming.noseTip.y, ts: now },
+        ]);
+      }
 
       newTracked.push({
         faceIndex: incoming.faceIndex,
