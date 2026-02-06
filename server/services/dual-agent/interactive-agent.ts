@@ -457,7 +457,7 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
       const result = await this.chatProvider.completeChat({
         model: this.config.interactiveModel,
         messages: messageHistory,
-        maxTokens: 500,
+        maxTokens: 1024,  // Enough for greeting + board operations
         temperature: 0.7,
       });
 
@@ -511,8 +511,9 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
         transcriptSpeaker,
         contextUpdate,
       };
-    } catch (error) {
-      console.error("[InteractiveAgent] Error:", error);
+    } catch (error: any) {
+      console.error("[InteractiveAgent] processMessage error:", error?.message || error);
+      if (error?.stack) console.error("[InteractiveAgent] Stack trace:", error.stack);
       throw error;
     }
   }
@@ -663,7 +664,7 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
       const stream = this.chatProvider.streamChat({
         model: this.config.interactiveModel,
         messages: messageHistory,
-        maxTokens: 500,
+        maxTokens: 1024, // Enough for greeting + board rebuild
         temperature: 0.7,
       });
 
@@ -772,8 +773,9 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
       if (streamUsage) {
         yield { type: "usage", data: streamUsage };
       }
-    } catch (error) {
-      console.error("[InteractiveAgent] Stream error:", error);
+    } catch (error: any) {
+      console.error("[InteractiveAgent] processMessageStream error:", error?.message || error);
+      if (error?.stack) console.error("[InteractiveAgent] Stack trace:", error.stack);
       throw error;
     }
   }
@@ -947,8 +949,9 @@ If unsure, add a button instead. Never use both [SPEAK] and [INTERPRET].`;
       });
 
       return { text, isCommand: false, usage: result.usage, addButtons, removeLabels, interpretation, transcript, transcriptSpeaker, contextUpdate, rebuildBoard };
-    } catch (error) {
-      console.error("[InteractiveAgent] Detection error:", error);
+    } catch (error: any) {
+      console.error("[InteractiveAgent] processDetection error:", error?.message || error);
+      if (error?.stack) console.error("[InteractiveAgent] Stack trace:", error.stack);
       throw error;
     }
   }

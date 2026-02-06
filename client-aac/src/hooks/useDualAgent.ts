@@ -30,6 +30,7 @@ export interface IdentifiedPerson {
 export interface BoardPatch {
   add: Array<{ label: string; iconRef: string }>;
   remove: string[];
+  rebuild?: Array<{ label: string; iconRef: string }>; // full board replacement
 }
 
 export interface UseDualAgentOptions {
@@ -115,8 +116,8 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
   // Interaction mode
   const [interactionMode, setInteractionMode] = useState<'interact' | 'silent'>('interact');
 
-  // Detection state
-  const [detectionEnabled, setDetectionEnabled] = useState(false);
+  // Detection state (enabled by default - only sends data after initialized)
+  const [detectionEnabled, setDetectionEnabled] = useState(true);
 
   // Detection mic stream ref (kept open across cycles, closed when detection disabled)
   const detectionStreamRef = useRef<MediaStream | null>(null);
@@ -125,7 +126,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
   const currentBoardRef = useRef<ParsedBoardData | null>(null);
 
   /**
-   * Apply a board patch (add/remove) to the current board
+   * Apply a board patch (add/remove/rebuild) to the current board
    */
   const applyBoardPatch = useCallback((patch: BoardPatch): ParsedBoardData | null => {
     const board = currentBoardRef.current;
@@ -134,30 +135,47 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
     const currentPage = board.pages?.find(p => p.id === board.currentPageId) || board.pages?.[0];
     if (!currentPage) return board;
 
-    let buttons = [...(currentPage.buttons || [])];
     const grid = board.grid || { rows: 3, cols: 4 };
     const totalCells = grid.rows * grid.cols;
 
-    // Remove buttons by label
-    if (patch.remove && patch.remove.length > 0) {
-      const removeSet = new Set(patch.remove.map(l => l.toLowerCase()));
-      buttons = buttons.filter(b => !removeSet.has((b.label || "").toLowerCase()));
-    }
+    let buttons: typeof currentPage.buttons;
 
-    // Add new buttons to available slots
-    if (patch.add && patch.add.length > 0) {
-      for (const newBtn of patch.add) {
-        if (buttons.length >= totalCells) break;
-        const index = buttons.length;
-        buttons.push({
-          id: `btn-${Date.now()}-${index}`,
-          label: newBtn.label,
-          spokenText: newBtn.label,
-          row: Math.floor(index / grid.cols),
-          col: index % grid.cols,
-          iconRef: newBtn.iconRef || undefined,
-          action: { type: "speak" as const, text: newBtn.label },
-        });
+    // If rebuild is present, replace all buttons
+    if (patch.rebuild && patch.rebuild.length > 0) {
+      buttons = patch.rebuild.slice(0, totalCells).map((btn, index) => ({
+        id: `btn-${Date.now()}-${index}`,
+        label: btn.label,
+        spokenText: btn.label,
+        row: Math.floor(index / grid.cols),
+        col: index % grid.cols,
+        iconRef: btn.iconRef || undefined,
+        action: { type: "speak" as const, text: btn.label },
+      }));
+    } else {
+      // Incremental add/remove
+      buttons = [...(currentPage.buttons || [])];
+
+      // Remove buttons by label
+      if (patch.remove && patch.remove.length > 0) {
+        const removeSet = new Set(patch.remove.map(l => l.toLowerCase()));
+        buttons = buttons.filter(b => !removeSet.has((b.label || "").toLowerCase()));
+      }
+
+      // Add new buttons to available slots
+      if (patch.add && patch.add.length > 0) {
+        for (const newBtn of patch.add) {
+          if (buttons.length >= totalCells) break;
+          const index = buttons.length;
+          buttons.push({
+            id: `btn-${Date.now()}-${index}`,
+            label: newBtn.label,
+            spokenText: newBtn.label,
+            row: Math.floor(index / grid.cols),
+            col: index % grid.cols,
+            iconRef: newBtn.iconRef || undefined,
+            action: { type: "speak" as const, text: newBtn.label },
+          });
+        }
       }
     }
 
@@ -292,9 +310,9 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
                 break;
 
               case "board_patch":
-                // Board patch from detection (add/remove)
-                if (data.add?.length > 0 || data.remove?.length > 0) {
-                  const patch = { add: data.add || [], remove: data.remove || [] };
+                // Board patch from detection (add/remove/rebuild)
+                if (data.add?.length > 0 || data.remove?.length > 0 || data.rebuild?.length > 0) {
+                  const patch: BoardPatch = { add: data.add || [], remove: data.remove || [], rebuild: data.rebuild };
                   // Update internal ref so subsequent requests have correct board state
                   const updatedBoard = applyBoardPatch(patch);
                   if (updatedBoard) {
@@ -374,12 +392,15 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
       if (capture) {
         try {
           imageBlob = await capture();
-          if (imageBlob) {
+          if (imageBlob && imageBlob.size > 0) {
             imageBlob = await prepareFrameForAI(imageBlob);
-            console.log("[DualAgent] Captured camera frame for initialization");
+            console.log("[DualAgent] [InitialCapture] Captured camera frame for initialization,", imageBlob.size, "bytes");
+          } else {
+            imageBlob = null;
+            console.warn("[DualAgent] [InitialCapture] Frame capture returned empty blob");
           }
         } catch (err) {
-          console.warn("[DualAgent] Failed to capture frame for init:", err);
+          console.warn("[DualAgent] [InitialCapture] Failed to capture frame for init:", err);
         }
       }
 

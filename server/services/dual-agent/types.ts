@@ -255,6 +255,7 @@ export interface DetectionOutput {
   sessionId: string;
   addButtons?: Array<{ label: string; iconRef: string }>;
   removeLabels?: string[];
+  rebuildBoard?: Array<{ label: string; iconRef: string }>; // full board replacement
   changed: boolean;          // whether buttons were updated
   text?: string;             // AI voice (speak field) — only when high confidence
   triggeredMessage?: string; // deprecated: use interpretation instead
@@ -264,6 +265,7 @@ export interface DetectionOutput {
   transcript?: string;             // voice transcript from audio input
   transcriptSpeaker?: string;      // who spoke the transcript
   contextUpdate?: string;          // environmental context changes observed
+  error?: string;                  // error message if processing failed
 }
 
 export const DEFAULT_CONFIG: DualAgentConfig = {

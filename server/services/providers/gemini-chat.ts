@@ -102,17 +102,25 @@ export class GeminiChatProvider implements ChatProvider {
 
     let toolCallIndex = 0;
     let finalUsage: { promptTokens: number; completionTokens: number } | undefined;
+    let lastFinishReason: string | undefined;
+    let totalTextLength = 0;
 
     for await (const chunk of response) {
       // Text content
       const text = chunk?.text;
       if (text) {
+        totalTextLength += text.length;
         yield { type: "text_delta", text };
       }
 
       // Function calls in streaming chunks
       const candidates = chunk?.candidates || [];
       for (const candidate of candidates) {
+        // Capture finish reason from any candidate
+        if (candidate?.finishReason) {
+          lastFinishReason = candidate.finishReason;
+        }
+
         const parts = candidate?.content?.parts || [];
         for (const part of parts) {
           if (part.functionCall) {
@@ -135,6 +143,11 @@ export class GeminiChatProvider implements ChatProvider {
           completionTokens: usage.candidatesTokenCount || 0,
         };
       }
+    }
+
+    // Log diagnostic info if stream ended unexpectedly
+    if (lastFinishReason && lastFinishReason !== "STOP") {
+      console.warn(`[GeminiChat] Stream ended with finishReason=${lastFinishReason}, totalText=${totalTextLength}chars, completionTokens=${finalUsage?.completionTokens}`);
     }
 
     yield { type: "done", usage: finalUsage };

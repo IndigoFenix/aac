@@ -297,6 +297,7 @@ export class DualAgentService {
       ? `Generate 4-12 contextual utterance buttons — complete phrases the user might want to say. Use the student's profile and interests from the system prompt to make them relevant.${imageHint} Use [REBUILD_BOARD] to create the initial board.${personaHint}`
       : `Greet the user with a short, friendly greeting (1-2 sentences) and provide 4-12 initial communication buttons that reflect the student's interests, needs, and communication level from the system prompt. The buttons should be appropriate responses to your greeting.${imageHint} Use [SPEAK] for your greeting and [REBUILD_BOARD] for the buttons.${personaHint}`;
 
+    let boardCreated = false;
     try {
       let streamUsage: { promptTokens: number; completionTokens: number } | undefined;
       for await (const chunk of interactiveAgent.processMessageStream(
@@ -318,9 +319,11 @@ export class DualAgentService {
         } else if (chunk.type === "board") {
           console.log("[DualAgentService] Board generated:", JSON.stringify(chunk.data).substring(0, 200));
           yield { type: "board", data: chunk.data };
+          boardCreated = true;
         } else if (chunk.type === "board_patch") {
           console.log("[DualAgentService] Board patch:", JSON.stringify(chunk.data).substring(0, 200));
           yield { type: "board_patch", data: chunk.data };
+          boardCreated = true;
         } else if (chunk.type === "usage") {
           streamUsage = chunk.data;
         }
@@ -328,8 +331,15 @@ export class DualAgentService {
       if (streamUsage) {
         await this.trackInteractiveCredits(state.sessionId, state.studentId, state.userId, streamUsage);
       }
-    } catch (err) {
-      console.error("[DualAgentService] Greeting+board error:", err);
+      // Fallback: create default board if the model didn't produce one (e.g., stream cut off early)
+      if (!boardCreated) {
+        console.warn("[DualAgentService] No board generated during initialization, creating default board");
+        const defaultBoard = this.createDefaultBoard(board);
+        yield { type: "board", data: defaultBoard };
+      }
+    } catch (err: any) {
+      console.error("[DualAgentService] Greeting+board error:", err?.message || err);
+      if (err?.stack) console.error("[DualAgentService] Stack trace:", err.stack);
       const defaultBoard = this.createDefaultBoard(board);
       yield { type: "board", data: defaultBoard };
     }
@@ -1050,6 +1060,7 @@ export class DualAgentService {
       await this.saveSessionToDB(state);
     } catch (error: any) {
       console.error("[DualAgentService] Monitor processing error:", error?.message || error);
+      if (error?.stack) console.error("[DualAgentService] Stack trace:", error.stack);
     } finally {
       clearTimeout(timeout);
       state.monitorBusy = false;
@@ -1269,15 +1280,17 @@ export class DualAgentService {
 
       const addButtons = result.addButtons || [];
       const removeLabels = result.removeLabels || [];
+      const rebuildBoard = result.rebuildBoard || [];
       const triggeredMessage = result.triggeredMessage;
       const interpretation = result.interpretation || result.triggeredMessage;
       const debugDescription = result.debugDescription;
-      const changed = addButtons.length > 0 || removeLabels.length > 0;
+      const changed = addButtons.length > 0 || removeLabels.length > 0 || rebuildBoard.length > 0;
 
       if (changed) {
         // Push post-detection pending message (assistant role = system observation, not a user action)
         const changeParts: string[] = [];
-        if (addButtons.length > 0) changeParts.push(`Added buttons to AAC board: ${addButtons.map(b => b.label).join(", ")}`);
+        if (rebuildBoard.length > 0) changeParts.push(`Rebuilt AAC board with: ${rebuildBoard.map(b => b.label).join(", ")}`);
+        else if (addButtons.length > 0) changeParts.push(`Added buttons to AAC board: ${addButtons.map(b => b.label).join(", ")}`);
         if (removeLabels.length > 0) changeParts.push(`Removed buttons from AAC board: ${removeLabels.join(", ")}`);
         const envDesc = result.text ? ` Environment: ${result.text}` : "";
         state.pendingMessages.push({
@@ -1307,12 +1320,13 @@ export class DualAgentService {
       }
 
       const detElapsed = Date.now() - detStart;
-      logDualAgent("DualAgentService.processDetection", { elapsedMs: detElapsed, changed, addCount: addButtons.length, removeCount: removeLabels.length, hasImage: !!input.imageData, hasAudio: !!input.audioBuffer, hasInterpretation: !!interpretation });
+      logDualAgent("DualAgentService.processDetection", { elapsedMs: detElapsed, changed, addCount: addButtons.length, removeCount: removeLabels.length, rebuildCount: rebuildBoard.length, hasImage: !!input.imageData, hasAudio: !!input.audioBuffer, hasInterpretation: !!interpretation });
 
       return {
         sessionId: state.sessionId,
-        addButtons: changed ? addButtons : undefined,
-        removeLabels: changed ? removeLabels : undefined,
+        addButtons: addButtons.length > 0 ? addButtons : undefined,
+        removeLabels: removeLabels.length > 0 ? removeLabels : undefined,
+        rebuildBoard: rebuildBoard.length > 0 ? rebuildBoard : undefined,
         changed,
         text: result.text || undefined,
         triggeredMessage, // deprecated alias for interpretation
@@ -1323,9 +1337,12 @@ export class DualAgentService {
         transcriptSpeaker: result.transcriptSpeaker,
         contextUpdate: result.contextUpdate,
       };
-    } catch (error) {
-      console.error("[DualAgentService] processDetection error:", error);
-      return { sessionId: state.sessionId, changed: false };
+    } catch (error: any) {
+      const errorMessage = error?.message || String(error);
+      const errorStack = error?.stack || "";
+      console.error("[DualAgentService] processDetection error:", errorMessage);
+      if (errorStack) console.error("[DualAgentService] Stack trace:", errorStack);
+      return { sessionId: state.sessionId, changed: false, error: errorMessage };
     }
   }
 
@@ -1335,7 +1352,7 @@ export class DualAgentService {
    * This provides streaming audio without requiring streaming LLM.
    */
   async *processDetectionStream(input: DetectionInput): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "complete";
+    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "error" | "complete";
     data: any;
     speaker?: string;
   }> {
@@ -1343,6 +1360,11 @@ export class DualAgentService {
 
     // Use existing non-streaming detection for LLM call
     const result = await this.processDetection(input);
+
+    // Yield error if detection failed
+    if (result.error) {
+      yield { type: "error", data: result.error };
+    }
 
     // Yield transcript if present
     if (result.transcript) {
@@ -1366,7 +1388,7 @@ export class DualAgentService {
 
     // Yield board patch if changed
     if (result.changed) {
-      yield { type: "board_patch", data: { add: result.addButtons || [], remove: result.removeLabels || [] } };
+      yield { type: "board_patch", data: { add: result.addButtons || [], remove: result.removeLabels || [], rebuild: result.rebuildBoard } };
     }
 
     // Debug description is included in the JSON response already, no need to yield for streaming

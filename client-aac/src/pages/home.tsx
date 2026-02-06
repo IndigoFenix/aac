@@ -149,7 +149,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     captureFrameFromCamera,
     autoAssignCameras,
     globalError
-  } = useMultiCamera({ autoStart: false });
+  } = useMultiCamera({ autoStart: true });
 
   // Get shared camera stream from CameraProvider context
   const { stream: sharedCameraStream, startCamera: startSharedCamera } = useCamera();
@@ -1086,6 +1086,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           studentId={studentId}
           language={currentLanguage}
           captureFrame={async () => {
+            // Try multiCamera first
             const userCamera = getUserCamera();
             if (userCamera && captureFrameFromCamera) {
               try {
@@ -1094,7 +1095,40 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
                   return frame;
                 }
               } catch (err) {
-                console.log('[Home] Frame capture failed:', err);
+                console.log('[Home] multiCamera frame capture failed:', err);
+              }
+            }
+            // Fall back to shared camera stream (from face tracking)
+            const stream = sharedCameraStream ?? getUserCamera()?.stream;
+            if (stream) {
+              try {
+                const video = document.createElement('video');
+                video.srcObject = stream;
+                video.muted = true;
+                video.playsInline = true;
+                await new Promise<void>((resolve, reject) => {
+                  video.onloadedmetadata = () => { video.play().then(() => resolve()).catch(reject); };
+                  video.onerror = () => reject(new Error('Video load failed'));
+                  setTimeout(() => reject(new Error('Video load timeout')), 2000);
+                });
+                const canvas = document.createElement('canvas');
+                canvas.width = 640;
+                canvas.height = 480;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                  ctx.drawImage(video, 0, 0, 640, 480);
+                  const blob = await new Promise<Blob | null>((resolve) => {
+                    canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.7);
+                  });
+                  video.pause();
+                  video.srcObject = null;
+                  if (blob && blob.size > 0) {
+                    console.log('[Home] Captured from shared stream:', blob.size, 'bytes');
+                    return blob;
+                  }
+                }
+              } catch (err) {
+                console.log('[Home] Shared stream capture failed:', err);
               }
             }
             return null;
