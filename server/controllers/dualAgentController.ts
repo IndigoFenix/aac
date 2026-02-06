@@ -149,7 +149,8 @@ export class DualAgentController {
 
       res.end();
     } catch (error: any) {
-      console.error("[DualAgentController] Initialize error:", error);
+      console.error("[DualAgentController] Initialize error:", error?.message || error);
+      if (error?.stack) console.error("[DualAgentController] Stack trace:", error.stack);
 
       if (res.headersSent) {
         sendSSEEvent(res, "error", {
@@ -272,7 +273,8 @@ export class DualAgentController {
 
       res.end();
     } catch (error: any) {
-      console.error("[DualAgentController] Message error:", error);
+      console.error("[DualAgentController] Message error:", error?.message || error);
+      if (error?.stack) console.error("[DualAgentController] Stack trace:", error.stack);
 
       if (res.headersSent) {
         sendSSEEvent(res, "error", {
@@ -386,7 +388,8 @@ export class DualAgentController {
 
       res.end();
     } catch (error: any) {
-      console.error("[DualAgentController] Voice error:", error);
+      console.error("[DualAgentController] Voice error:", error?.message || error);
+      if (error?.stack) console.error("[DualAgentController] Stack trace:", error.stack);
 
       if (res.headersSent) {
         sendSSEEvent(res, "error", {
@@ -430,7 +433,8 @@ export class DualAgentController {
         pendingCount: state.pendingMessages.length,
       });
     } catch (error: any) {
-      console.error("[DualAgentController] GetSession error:", error);
+      console.error("[DualAgentController] GetSession error:", error?.message || error);
+      if (error?.stack) console.error("[DualAgentController] Stack trace:", error.stack);
       res.status(500).json({
         error: "Failed to get session",
         details: error.message || String(error),
@@ -480,11 +484,12 @@ export class DualAgentController {
 
       res.end();
     } catch (error: any) {
-      console.error("[DualAgentController] Interpret error:", error);
+      console.error("[DualAgentController] Interpret error:", error?.message || error);
+      if (error?.stack) console.error("[DualAgentController] Stack trace:", error.stack);
 
       if (res.headersSent) {
         sendSSEEvent(res, "error", {
-          error: error.message || "Failed to interpret buttons",
+          error: error?.message || "Failed to interpret buttons",
         });
         res.end();
       } else {
@@ -581,6 +586,9 @@ export class DualAgentController {
           case "context":
             sendSSEEvent(res, "context", { text: chunk.data });
             break;
+          case "error":
+            sendSSEEvent(res, "error", { error: chunk.data });
+            break;
           case "complete":
             sendSSEEvent(res, "complete", chunk.data);
             break;
@@ -589,7 +597,8 @@ export class DualAgentController {
 
       res.end();
     } catch (error: any) {
-      console.error("[DualAgentController] Detect error:", error);
+      console.error("[DualAgentController] Detect error:", error?.message || error);
+      if (error?.stack) console.error("[DualAgentController] Stack trace:", error.stack);
 
       if (res.headersSent) {
         sendSSEEvent(res, "error", {

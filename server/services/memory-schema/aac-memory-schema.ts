@@ -367,6 +367,8 @@ Be CONSERVATIVE with board changes — only modify when context meaningfully shi
 - [REBUILD_BOARD] label|icon, label|icon - create a fresh set of buttons based on current context.
 
 Example: "[REBUILD_BOARD] Play|🎮, Eat|🍎, Drink|💧, Sleep|😴"
+
+If you see no buttons in the context, you MUST call REBUILD_BOARD to create the starting board.
 `}
 
 Button format: label|icon where icon is FontAwesome (e.g., "fas fa-water") or emoji (e.g., "💧")
