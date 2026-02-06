@@ -17,6 +17,243 @@ import type {
 } from "../providers/streaming-provider";
 import { logDualAgent } from "./dual-agent-logger";
 
+// =============================================================================
+// STREAMING PREFIX TOKEN TYPES
+// =============================================================================
+
+/**
+ * Parsed streaming output from prefix tokens in text.
+ * The AI outputs text with these prefixes, which we parse into structured data.
+ */
+export interface ParsedStreamOutput {
+  transcript?: string;
+  transcriptSpeaker?: string;
+  contextUpdate?: string;
+  speak?: string;
+  interpret?: string;
+  /** Buttons to add incrementally: "label|icon, label|icon, ..." */
+  addButtons?: Array<{ label: string; iconRef: string }>;
+  /** Button labels to remove */
+  removeButtons?: string[];
+  /** Complete board rebuild: "label|icon, label|icon, ..." (replaces entire board) */
+  rebuildBoard?: Array<{ label: string; iconRef: string }>;
+}
+
+/**
+ * Parse prefix tokens from streamed text.
+ * Format:
+ *   [TRANSCRIPT speaker] text...
+ *   [CONTEXT] observations...
+ *   [SPEAK] ai voice message...
+ *   [INTERPRET] student message...
+ *   [ADD_BUTTONS] label|icon, label|icon, ...
+ *   [REMOVE_BUTTONS] label, label, ...
+ *   [REBUILD_BOARD] label|icon, label|icon, ...
+ *
+ * Returns the parsed sections and any unparsed remainder.
+ */
+function parseStreamedText(text: string): ParsedStreamOutput {
+  const result: ParsedStreamOutput = {};
+
+  // Match [TRANSCRIPT speaker] content (speaker can have spaces)
+  const transcriptMatch = text.match(/\[TRANSCRIPT\s+([^\]]+)\]\s*([^\[]*)/i);
+  if (transcriptMatch) {
+    result.transcriptSpeaker = transcriptMatch[1].trim();
+    result.transcript = transcriptMatch[2].trim();
+  }
+
+  // Match [CONTEXT] content
+  const contextMatch = text.match(/\[CONTEXT\]\s*([^\[]*)/i);
+  if (contextMatch) {
+    result.contextUpdate = contextMatch[1].trim();
+  }
+
+  // Match [SPEAK] content
+  const speakMatch = text.match(/\[SPEAK\]\s*([^\[]*)/i);
+  if (speakMatch) {
+    result.speak = speakMatch[1].trim();
+  }
+
+  // Match [INTERPRET] content
+  const interpretMatch = text.match(/\[INTERPRET\]\s*([^\[]*)/i);
+  if (interpretMatch) {
+    result.interpret = interpretMatch[1].trim();
+  }
+
+  // Match [ADD_BUTTONS] label|icon, label|icon, ...
+  const addMatch = text.match(/\[ADD_BUTTONS\]\s*([^\[]*)/i);
+  if (addMatch) {
+    const content = addMatch[1].trim();
+    if (content) {
+      result.addButtons = parseBoardButtons(content);
+    }
+  }
+
+  // Match [REMOVE_BUTTONS] label, label, ...
+  const removeMatch = text.match(/\[REMOVE_BUTTONS\]\s*([^\[]*)/i);
+  if (removeMatch) {
+    const content = removeMatch[1].trim();
+    if (content) {
+      result.removeButtons = content.split(',').map(s => s.trim()).filter(s => s);
+    }
+  }
+
+  // Match [REBUILD_BOARD] label|icon, label|icon, ... (replaces entire board)
+  const rebuildMatch = text.match(/\[REBUILD_BOARD\]\s*([^\[]*)/i);
+  if (rebuildMatch) {
+    const content = rebuildMatch[1].trim();
+    if (content) {
+      result.rebuildBoard = parseBoardButtons(content);
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Parse board button format: "label|icon, label|icon, ..."
+ * If no icon is provided, defaults to comment icon.
+ */
+function parseBoardButtons(content: string): Array<{ label: string; iconRef: string }> {
+  const buttons: Array<{ label: string; iconRef: string }> = [];
+  const items = content.split(',');
+
+  for (const item of items) {
+    const trimmed = item.trim();
+    if (!trimmed) continue;
+
+    // Check for label|icon format
+    const pipeIndex = trimmed.indexOf('|');
+    if (pipeIndex > 0) {
+      const label = trimmed.substring(0, pipeIndex).trim();
+      const iconRef = trimmed.substring(pipeIndex + 1).trim();
+      if (label) {
+        buttons.push({ label, iconRef: iconRef || "fas fa-comment" });
+      }
+    } else {
+      // Just a label, use default icon
+      buttons.push({ label: trimmed, iconRef: "fas fa-comment" });
+    }
+  }
+
+  return buttons;
+}
+
+/** Types that the streaming parser can emit */
+export type StreamingSegmentType = "speak" | "interpret" | "transcript" | "context" | "add_buttons" | "remove_buttons" | "rebuild_board";
+
+export interface StreamingSegment {
+  type: StreamingSegmentType;
+  data: string;
+  speaker?: string;
+}
+
+/**
+ * Streaming state machine for parsing prefix tokens incrementally.
+ * Detects when a complete prefix token + content is available and emits it.
+ */
+export class StreamingPrefixParser {
+  private buffer = "";
+  private currentMode: "none" | "transcript" | "context" | "speak" | "interpret" | "add_buttons" | "remove_buttons" | "rebuild_board" = "none";
+  private transcriptSpeaker = "";
+
+  /**
+   * Add a chunk of text and return any complete segments to emit.
+   * Returns array of { type, data } to yield.
+   */
+  addChunk(chunk: string): StreamingSegment[] {
+    this.buffer += chunk;
+    const results: StreamingSegment[] = [];
+
+    // Process buffer looking for prefix tokens
+    while (true) {
+      if (this.currentMode === "none") {
+        // Look for a prefix token
+        const transcriptMatch = this.buffer.match(/^\s*\[TRANSCRIPT\s+([^\]]+)\]\s*/i);
+        const contextMatch = this.buffer.match(/^\s*\[CONTEXT\]\s*/i);
+        const speakMatch = this.buffer.match(/^\s*\[SPEAK\]\s*/i);
+        const interpretMatch = this.buffer.match(/^\s*\[INTERPRET\]\s*/i);
+        const addButtonsMatch = this.buffer.match(/^\s*\[ADD_BUTTONS\]\s*/i);
+        const removeButtonsMatch = this.buffer.match(/^\s*\[REMOVE_BUTTONS\]\s*/i);
+        const rebuildBoardMatch = this.buffer.match(/^\s*\[REBUILD_BOARD\]\s*/i);
+
+        if (transcriptMatch) {
+          this.currentMode = "transcript";
+          this.transcriptSpeaker = transcriptMatch[1].trim();
+          this.buffer = this.buffer.slice(transcriptMatch[0].length);
+        } else if (contextMatch) {
+          this.currentMode = "context";
+          this.buffer = this.buffer.slice(contextMatch[0].length);
+        } else if (speakMatch) {
+          this.currentMode = "speak";
+          this.buffer = this.buffer.slice(speakMatch[0].length);
+        } else if (interpretMatch) {
+          this.currentMode = "interpret";
+          this.buffer = this.buffer.slice(interpretMatch[0].length);
+        } else if (addButtonsMatch) {
+          this.currentMode = "add_buttons";
+          this.buffer = this.buffer.slice(addButtonsMatch[0].length);
+        } else if (removeButtonsMatch) {
+          this.currentMode = "remove_buttons";
+          this.buffer = this.buffer.slice(removeButtonsMatch[0].length);
+        } else if (rebuildBoardMatch) {
+          this.currentMode = "rebuild_board";
+          this.buffer = this.buffer.slice(rebuildBoardMatch[0].length);
+        } else {
+          // No prefix found yet, wait for more data
+          // But trim leading whitespace/newlines that aren't part of a token
+          this.buffer = this.buffer.replace(/^[\s\n]+/, "");
+          break;
+        }
+      } else {
+        // We're in a mode, collect content until the next prefix or end
+        const nextPrefixMatch = this.buffer.match(/\[(?:TRANSCRIPT|CONTEXT|SPEAK|INTERPRET|ADD_BUTTONS|REMOVE_BUTTONS|REBUILD_BOARD)[\s\]]/i);
+
+        if (nextPrefixMatch && nextPrefixMatch.index !== undefined && nextPrefixMatch.index > 0) {
+          // Found next prefix, emit current content
+          const content = this.buffer.slice(0, nextPrefixMatch.index).trim();
+          if (content) {
+            if (this.currentMode === "transcript") {
+              results.push({ type: "transcript", data: content, speaker: this.transcriptSpeaker });
+            } else {
+              results.push({ type: this.currentMode, data: content });
+            }
+          }
+          this.buffer = this.buffer.slice(nextPrefixMatch.index);
+          this.currentMode = "none";
+        } else if (nextPrefixMatch && nextPrefixMatch.index === 0) {
+          // Prefix at start with no content, just switch modes
+          this.currentMode = "none";
+        } else {
+          // No next prefix found, keep buffering
+          break;
+        }
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Flush any remaining content in the buffer.
+   */
+  flush(): StreamingSegment[] {
+    const results: StreamingSegment[] = [];
+
+    if (this.currentMode !== "none" && this.buffer.trim()) {
+      if (this.currentMode === "transcript") {
+        results.push({ type: "transcript", data: this.buffer.trim(), speaker: this.transcriptSpeaker });
+      } else {
+        results.push({ type: this.currentMode, data: this.buffer.trim() });
+      }
+    }
+
+    this.buffer = "";
+    this.currentMode = "none";
+    return results;
+  }
+}
+
 /**
  * Interactive Agent
  *
@@ -127,7 +364,7 @@ export class InteractiveAgent {
     return `[Current Board — 12 slots (4x3 grid)]
 Occupied: ${buttonLabels || "none"} (${occupiedCount} of ${TOTAL_SLOTS})
 Blank slots: ${blankCount}
-You MUST call update_board with 4-12 buttons to replace the entire board.`;
+Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS] for incremental changes.`;
   }
 
   /**
@@ -213,48 +450,52 @@ You MUST call update_board with 4-12 buttons to replace the entire board.`;
       });
     }
 
-    const tools = this.buildTools();
-
     try {
       console.log("[InteractiveAgent] processMessage: sending request, model:", this.config.interactiveModel, "messages:", messageHistory.length, "systemPrompt length:", this.systemPrompt.length);
 
+      // No tools - everything is text-based with prefix tokens
       const result = await this.chatProvider.completeChat({
         model: this.config.interactiveModel,
         messages: messageHistory,
-        tools,
-        toolChoice: "required",
         maxTokens: 500,
         temperature: 0.7,
       });
 
-      let text = result.content || "";
+      const rawText = result.content || "";
       let board: ParsedBoardData | undefined;
 
-      console.log("[InteractiveAgent] processMessage: response text length:", text.length, "tool_calls:", result.toolCalls.length);
+      console.log("[InteractiveAgent] processMessage: response text length:", rawText.length);
 
-      // Check for tool calls (board updates)
-      if (result.toolCalls.length > 0) {
-        for (const toolCall of result.toolCalls) {
-          if (toolCall.name === "update_board") {
-            try {
-              const args = JSON.parse(toolCall.arguments);
-              if (args.responseText && !text) {
-                text = args.responseText;
-              }
-              console.log("[InteractiveAgent] processMessage: update_board called with", args.buttons?.length || 0, "buttons, responseText:", (args.responseText || "").substring(0, 80));
-              board = this.createBoardFromButtons(args.buttons, currentBoard);
-            } catch (e) {
-              console.error("[InteractiveAgent] Failed to parse board update:", e, "raw args:", toolCall.arguments?.substring(0, 200));
-            }
-          }
-        }
-      } else {
-        console.warn("[InteractiveAgent] processMessage: NO tool calls returned — board will not update");
+      // Parse prefix tokens from text content
+      const parsed = parseStreamedText(rawText);
+      const text = parsed.speak || "";
+      const interpretation = parsed.interpret;
+      const transcript = parsed.transcript;
+      const transcriptSpeaker = parsed.transcriptSpeaker;
+      const contextUpdate = parsed.contextUpdate;
+
+      // Extract board changes from parsed tokens
+      let addButtons = parsed.addButtons;
+      let removeLabels = parsed.removeButtons;
+      let rebuildBoard = parsed.rebuildBoard;
+
+      console.log("[InteractiveAgent] processMessage parsed: speak:", text.length, "addButtons:", addButtons?.length || 0, "removeButtons:", removeLabels?.length || 0, "rebuildBoard:", rebuildBoard?.length || 0);
+
+      // Build board from parsed tokens
+      if (rebuildBoard && rebuildBoard.length > 0) {
+        // Full board rebuild
+        board = this.createBoardFromButtons(rebuildBoard, currentBoard);
+      } else if (currentBoard && (addButtons?.length || removeLabels?.length)) {
+        // Incremental board update
+        board = this.applyBoardDiff(currentBoard, addButtons, removeLabels);
+      } else if (addButtons?.length) {
+        // Create new board from buttons
+        board = this.createBoardFromButtons(addButtons, undefined);
       }
 
       // Check if response is a command
-      const isCommand = text.trim().startsWith("#");
-      const command = isCommand ? this.parseCommand(text.trim()) : undefined;
+      const isCommand = rawText.trim().startsWith("#");
+      const command = isCommand ? this.parseCommand(rawText.trim()) : undefined;
 
       return {
         text: isCommand ? "" : text,
@@ -262,6 +503,13 @@ You MUST call update_board with 4-12 buttons to replace the entire board.`;
         isCommand,
         command,
         usage: result.usage,
+        interpretation,
+        addButtons,
+        removeLabels,
+        rebuildBoard,
+        transcript,
+        transcriptSpeaker,
+        contextUpdate,
       };
     } catch (error) {
       console.error("[InteractiveAgent] Error:", error);
@@ -270,8 +518,66 @@ You MUST call update_board with 4-12 buttons to replace the entire board.`;
   }
 
   /**
+   * Apply board diff (add/remove) to current board state
+   */
+  private applyBoardDiff(
+    currentBoard: ParsedBoardData,
+    addButtons?: Array<{ label: string; iconRef: string }>,
+    removeLabels?: string[]
+  ): ParsedBoardData {
+    const grid = currentBoard.grid || { rows: 4, cols: 4 };
+    const totalCells = grid.rows * grid.cols;
+    const currentPage = currentBoard.pages?.find(p => p.id === currentBoard.currentPageId) || currentBoard.pages?.[0];
+    let buttons = [...(currentPage?.buttons || [])];
+
+    // Remove buttons by label
+    if (removeLabels && removeLabels.length > 0) {
+      const removeSet = new Set(removeLabels.map(l => l.toLowerCase()));
+      buttons = buttons.filter(b => !removeSet.has((b.label || "").toLowerCase()));
+    }
+
+    // Add new buttons to available slots
+    if (addButtons && addButtons.length > 0) {
+      for (const newBtn of addButtons) {
+        if (buttons.length >= totalCells) break; // No room
+        const index = buttons.length;
+        buttons.push({
+          id: `btn-${Date.now()}-${index}`,
+          label: newBtn.label,
+          spokenText: newBtn.label,
+          row: Math.floor(index / grid.cols),
+          col: index % grid.cols,
+          iconRef: newBtn.iconRef || undefined,
+          action: { type: "speak" as const, text: newBtn.label },
+        });
+      }
+    }
+
+    const pageId = currentBoard.currentPageId || `page-${Date.now()}`;
+    return {
+      name: currentBoard.name || "Communication Board",
+      grid,
+      pages: [{
+        id: pageId,
+        name: "Main",
+        buttons,
+      }],
+      currentPageId: pageId,
+    };
+  }
+
+  /**
    * Process a message and stream the response
    * Supports optional image data for vision capabilities
+   *
+   * Text-only response format (no tools):
+   *   [TRANSCRIPT speaker] text...
+   *   [CONTEXT] observations...
+   *   [SPEAK] ai voice message...
+   *   [INTERPRET] student message...
+   *   [ADD_BUTTONS] label|icon, label|icon, ...
+   *   [REMOVE_BUTTONS] label, label, ...
+   *   [REBUILD_BOARD] label|icon, label|icon, ... (replaces entire board)
    */
   async *processMessageStream(
     userMessage: string,
@@ -282,7 +588,7 @@ You MUST call update_board with 4-12 buttons to replace the entire board.`;
     audioContext?: string,
     imageData?: string, // base64 data URL or URL
     personContext?: string // Identified person context from biometrics
-  ): AsyncGenerator<{ type: "text" | "board" | "command" | "usage"; data: any }> {
+  ): AsyncGenerator<{ type: "speak" | "interpret" | "transcript" | "context" | "board" | "board_patch" | "command" | "usage"; data: any; speaker?: string }> {
     // Build context message if we have visual/audio/person context
     let contextMessage = "";
     if (personContext) {
@@ -335,56 +641,113 @@ You MUST call update_board with 4-12 buttons to replace the entire board.`;
       });
     }
 
-    const tools = this.buildTools();
-
     try {
       const streamStart = Date.now();
       console.log("[InteractiveAgent] processMessageStream: sending request, model:", this.config.interactiveModel, "messages:", messageHistory.length, "systemPrompt length:", this.systemPrompt.length);
-      logDualAgent("InteractiveAgent.processMessageStream", { model: this.config.interactiveModel, messageCount: messageHistory.length, systemPromptLength: this.systemPrompt.length });
 
+      // Log full prompt to debug file (no truncation)
+      logDualAgent("InteractiveAgent.processMessageStream.PROMPT", {
+        model: this.config.interactiveModel,
+        messageCount: messageHistory.length,
+        messages: messageHistory.map(m => ({
+          role: m.role,
+          content: typeof m.content === "string"
+            ? m.content
+            : Array.isArray(m.content)
+              ? m.content.map((p: any) => p.type === "image_url" ? { type: "image_url", detail: p.image_url?.detail, hasUrl: !!p.image_url?.url } : p)
+              : m.content,
+        })),
+      });
+
+      // No tools - everything is text-based with prefix tokens
       const stream = this.chatProvider.streamChat({
         model: this.config.interactiveModel,
         messages: messageHistory,
-        tools,
-        toolChoice: "required",
         maxTokens: 500,
         temperature: 0.7,
       });
 
       let fullText = "";
-      // Track tool calls by index
-      const toolCalls: Map<number, { name: string; args: string }> = new Map();
+      const prefixParser = new StreamingPrefixParser();
       let streamUsage: { promptTokens: number; completionTokens: number } | undefined;
+
+      // Collect board changes to yield at the end (after all text is parsed)
+      let addButtons: Array<{ label: string; iconRef: string }> = [];
+      let removeButtons: string[] = [];
+      let rebuildBoard: Array<{ label: string; iconRef: string }> | null = null;
 
       for await (const chunk of stream) {
         if (chunk.type === "text_delta") {
           fullText += chunk.text;
 
+          // Check for command prefix early
           if (fullText.trim().startsWith("#")) {
             continue;
           }
 
-          yield { type: "text", data: chunk.text };
-        } else if (chunk.type === "tool_call_delta") {
-          const idx = chunk.index;
-          if (!toolCalls.has(idx)) {
-            toolCalls.set(idx, { name: "", args: "" });
-          }
-          const entry = toolCalls.get(idx)!;
-          if (chunk.name) {
-            entry.name = chunk.name;
-          }
-          if (chunk.arguments) {
-            entry.args += chunk.arguments;
+          // Parse prefix tokens and yield immediately for TTS
+          const segments = prefixParser.addChunk(chunk.text);
+          for (const seg of segments) {
+            if (seg.type === "speak") {
+              yield { type: "speak", data: seg.data };
+            } else if (seg.type === "interpret") {
+              yield { type: "interpret", data: seg.data };
+            } else if (seg.type === "transcript") {
+              yield { type: "transcript", data: seg.data, speaker: seg.speaker };
+            } else if (seg.type === "context") {
+              yield { type: "context", data: seg.data };
+            } else if (seg.type === "add_buttons") {
+              // Parse and accumulate buttons to add
+              const buttons = parseBoardButtons(seg.data);
+              addButtons.push(...buttons);
+            } else if (seg.type === "remove_buttons") {
+              // Parse and accumulate labels to remove
+              const labels = seg.data.split(',').map((s: string) => s.trim()).filter((s: string) => s);
+              removeButtons.push(...labels);
+            } else if (seg.type === "rebuild_board") {
+              // Full board rebuild - this overrides add/remove
+              rebuildBoard = parseBoardButtons(seg.data);
+            }
           }
         } else if (chunk.type === "done" && chunk.usage) {
           streamUsage = chunk.usage;
         }
       }
 
+      // Flush any remaining buffered content
+      const remaining = prefixParser.flush();
+      for (const seg of remaining) {
+        if (seg.type === "speak") {
+          yield { type: "speak", data: seg.data };
+        } else if (seg.type === "interpret") {
+          yield { type: "interpret", data: seg.data };
+        } else if (seg.type === "transcript") {
+          yield { type: "transcript", data: seg.data, speaker: seg.speaker };
+        } else if (seg.type === "context") {
+          yield { type: "context", data: seg.data };
+        } else if (seg.type === "add_buttons") {
+          const buttons = parseBoardButtons(seg.data);
+          addButtons.push(...buttons);
+        } else if (seg.type === "remove_buttons") {
+          const labels = seg.data.split(',').map((s: string) => s.trim()).filter((s: string) => s);
+          removeButtons.push(...labels);
+        } else if (seg.type === "rebuild_board") {
+          rebuildBoard = parseBoardButtons(seg.data);
+        }
+      }
+
       const streamElapsed = Date.now() - streamStart;
-      console.log("[InteractiveAgent] processMessageStream: text length:", fullText.length, "tool calls:", toolCalls.size, "elapsed:", streamElapsed, "ms");
-      logDualAgent("InteractiveAgent.processMessageStream.done", { textLength: fullText.length, toolCallCount: toolCalls.size, elapsedMs: streamElapsed });
+      console.log("[InteractiveAgent] processMessageStream: text length:", fullText.length, "addButtons:", addButtons.length, "removeButtons:", removeButtons.length, "rebuildBoard:", rebuildBoard?.length ?? "null", "elapsed:", streamElapsed, "ms");
+
+      // Log full response to debug file (no truncation)
+      logDualAgent("InteractiveAgent.processMessageStream.RESPONSE", {
+        elapsedMs: streamElapsed,
+        fullText,
+        addButtons,
+        removeButtons,
+        rebuildBoard,
+        usage: streamUsage,
+      });
 
       // Check for command in full text
       if (fullText.trim().startsWith("#")) {
@@ -393,29 +756,16 @@ You MUST call update_board with 4-12 buttons to replace the entire board.`;
         return;
       }
 
-      // Process all tool calls
-      let boardYielded = false;
-      for (const [idx, tc] of toolCalls) {
-        if (tc.name === "update_board" && tc.args) {
-          try {
-            const args = JSON.parse(tc.args);
-            console.log("[InteractiveAgent] processMessageStream: update_board[" + idx + "] with", args.buttons?.length || 0, "buttons, iconRefs:", args.buttons?.map((b: any) => b.iconRef).join(", "));
-            const board = this.createBoardFromButtons(args.buttons, currentBoard);
-            yield { type: "board", data: board };
-            boardYielded = true;
-            // Yield responseText extracted from the tool call
-            if (args.responseText) {
-              console.log("[InteractiveAgent] processMessageStream: responseText:", args.responseText.substring(0, 80));
-              yield { type: "text", data: args.responseText };
-            }
-          } catch (e) {
-            console.error("[InteractiveAgent] Failed to parse board update[" + idx + "]:", e, "raw args:", tc.args.substring(0, 200));
-          }
-        }
-      }
-
-      if (!boardYielded) {
-        console.warn("[InteractiveAgent] processMessageStream: NO board yielded. Tool calls:", Array.from(toolCalls.entries()).map(([i, t]) => `${i}:${t.name}`).join(", ") || "none");
+      // Yield board changes
+      if (rebuildBoard && rebuildBoard.length > 0) {
+        // Full board rebuild - create new board from buttons
+        console.log("[InteractiveAgent] processMessageStream: yielding full board rebuild with", rebuildBoard.length, "buttons");
+        const board = this.createBoardFromButtons(rebuildBoard, currentBoard);
+        yield { type: "board", data: board };
+      } else if (addButtons.length > 0 || removeButtons.length > 0) {
+        // Incremental board patch
+        console.log("[InteractiveAgent] processMessageStream: yielding board_patch, add:", addButtons.length, "remove:", removeButtons.length);
+        yield { type: "board_patch", data: { add: addButtons, remove: removeButtons } };
       }
 
       // Yield usage data for credit tracking
@@ -430,7 +780,9 @@ You MUST call update_board with 4-12 buttons to replace the entire board.`;
 
   /**
    * Process a detection frame (camera snapshot + optional audio) and return board diff.
-   * Uses the modify_board tool for incremental add/remove instead of full replacement.
+   * Uses text-based prefix tokens for all output:
+   *   [TRANSCRIPT], [CONTEXT], [SPEAK], [INTERPRET]
+   *   [ADD_BUTTONS], [REMOVE_BUTTONS], [REBUILD_BOARD]
    */
   async processDetection(
     messages: ChatMessage[],
@@ -472,7 +824,37 @@ You MUST call update_board with 4-12 buttons to replace the entire board.`;
     // Build the user message with optional image + raw audio
     // Raw audio goes as input_audio — Gemini converts to inlineData natively.
     // OpenAI/Claude providers strip input_audio blocks they can't handle.
-    const userText = "Observe the environment and use modify_board to add or remove buttons if the context has meaningfully changed. If nothing significant changed, call modify_board with empty add_labels, add_icons, and remove arrays.";
+    const userText = `Observe the environment and respond using prefix tokens.
+
+== Response Format (all text-based, output in this order) ==
+
+1. [TRANSCRIPT speaker] text — if you hear voice (omit if none)
+2. [CONTEXT] observations — if there are context changes (omit if none)
+3. [SPEAK] message — OR — [INTERPRET] message — only ONE, only if HIGH CONFIDENCE (omit if unsure)
+4. Board changes (choose ONE or omit if no changes):
+   - [ADD_BUTTONS] label|icon, label|icon, ... — add buttons to existing board
+   - [REMOVE_BUTTONS] label, label, ... — remove buttons by label
+   - [REBUILD_BOARD] label|icon, label|icon, ... — replace entire board
+
+== Observation Guidelines ==
+Record any voice transcripts you hear. Record context changes (new objects, people leaving, gestures, etc.).
+
+Update the board only if the context has meaningfully changed. Consider:
+- objects in the environment
+- potential responses to questions from audio
+- objects the user is holding or indicating
+- gestures or facial expressions
+
+Do not add "Yes", "No", "Help", or "More" — these are automatic.
+For icons, use emoji (🍕) or FontAwesome (fas fa-home).
+
+== Speaking / Interpreting (HIGH CONFIDENCE only) ==
+Only use [SPEAK] or [INTERPRET] when you have HIGH CONFIDENCE:
+- A distinct gesture (nodding, shaking head, pointing, waving)
+- Repeated gaze at specific object
+- Someone directly asking the user a question
+
+If unsure, add a button instead. Never use both [SPEAK] and [INTERPRET].`;
 
     const contentParts: any[] = [{ type: "text", text: userText }];
     if (imageData) {
@@ -491,155 +873,84 @@ You MUST call update_board with 4-12 buttons to replace the entire board.`;
       messageHistory.push({ role: "user", content: userText });
     }
 
-    const tools = this.buildDetectionTools();
-
     try {
       const detStart = Date.now();
       const hasImage = messageHistory.some(m => Array.isArray(m.content) && (m.content as any[]).some((p: any) => p.type === "image_url"));
       const hasRawAudio = messageHistory.some(m => Array.isArray(m.content) && (m.content as any[]).some((p: any) => p.type === "input_audio"));
       console.log("[InteractiveAgent] processDetection: model:", this.config.interactiveModel, "provider:", this.config.interactiveProvider || "unknown", "image:", hasImage, "rawAudio:", hasRawAudio, "textAudioCtx:", !audioBuffer && !!audioContext, "messages:", messageHistory.length);
-      logDualAgent("InteractiveAgent.processDetection", { model: this.config.interactiveModel, provider: this.config.interactiveProvider, hasImage, hasRawAudio, messageCount: messageHistory.length });
 
+      // Log full prompt to debug file (no truncation)
+      logDualAgent("InteractiveAgent.processDetection.PROMPT", {
+        model: this.config.interactiveModel,
+        provider: this.config.interactiveProvider,
+        hasImage,
+        hasRawAudio,
+        messageCount: messageHistory.length,
+        messages: messageHistory.map(m => ({
+          role: m.role,
+          content: typeof m.content === "string"
+            ? m.content
+            : Array.isArray(m.content)
+              ? m.content.map((p: any) => {
+                  if (p.type === "image_url") return { type: "image_url", detail: p.image_url?.detail, hasUrl: !!p.image_url?.url };
+                  if (p.type === "input_audio") return { type: "input_audio", format: p.input_audio?.format, dataLength: p.input_audio?.data?.length };
+                  return p;
+                })
+              : m.content,
+        })),
+      });
+
+      // No tools - everything is text-based with prefix tokens
       const result = await this.chatProvider.completeChat({
         model: this.config.interactiveModel,
         messages: messageHistory,
-        tools,
-        toolChoice: "required",
         maxTokens: 1024,
         temperature: 0.3,
       });
 
-      console.log("[InteractiveAgent] processDetection result: content:", (result.content || "").length, "chars, toolCalls:", result.toolCalls.length, "usage:", JSON.stringify(result.usage));
+      console.log("[InteractiveAgent] processDetection result: content:", (result.content || "").length, "chars, usage:", JSON.stringify(result.usage));
 
-      let text = result.content || "";
-      let addButtons: Array<{ label: string; iconRef: string }> | undefined;
-      let removeLabels: string[] | undefined;
+      const rawText = result.content || "";
 
-      if (result.toolCalls.length > 0) {
-        for (const toolCall of result.toolCalls) {
-          if (toolCall.name === "modify_board") {
-            try {
-              const args = JSON.parse(toolCall.arguments);
-              // Parallel arrays: add_labels + add_icons → addButtons
-              const labels = Array.isArray(args.add_labels) ? args.add_labels : [];
-              const icons = Array.isArray(args.add_icons) ? args.add_icons : [];
-              addButtons = labels.map((label: string, i: number) => ({
-                label,
-                iconRef: icons[i] || "fas fa-comment",
-              }));
-              removeLabels = Array.isArray(args.remove) ? args.remove : [];
-              // Use reasoning as fallback text only if model didn't provide a text response
-              if (args.reasoning && !text) {
-                text = args.reasoning;
-              }
-              console.log("[InteractiveAgent] processDetection: modify_board add:", addButtons?.length || 0, "remove:", removeLabels?.length || 0, "reasoning:", (args.reasoning || "").substring(0, 80));
-            } catch (e) {
-              console.error("[InteractiveAgent] Detection: failed to parse modify_board:", e);
-            }
-          }
-        }
-      }
+      // Parse all prefix tokens from text content
+      const parsed = parseStreamedText(rawText);
+      const text = parsed.speak || "";
+      const interpretation = parsed.interpret;
+      const transcript = parsed.transcript;
+      const transcriptSpeaker = parsed.transcriptSpeaker;
+      const contextUpdate = parsed.contextUpdate;
+
+      // Extract board changes from parsed text
+      let addButtons = parsed.addButtons;
+      let removeLabels = parsed.removeButtons;
+      let rebuildBoard = parsed.rebuildBoard;
+
+      console.log("[InteractiveAgent] processDetection parsed: speak:", text.length, "interpret:", (interpretation || "").substring(0, 40), "addButtons:", addButtons?.length || 0, "removeButtons:", removeLabels?.length || 0, "rebuildBoard:", rebuildBoard?.length || 0);
 
       const detElapsed = Date.now() - detStart;
-      logDualAgent("InteractiveAgent.processDetection.done", { elapsedMs: detElapsed, addCount: addButtons?.length || 0, removeCount: removeLabels?.length || 0, textLength: text.length });
-      return { text, isCommand: false, usage: result.usage, addButtons, removeLabels };
+
+      // Log full response to debug file (no truncation)
+      logDualAgent("InteractiveAgent.processDetection.RESPONSE", {
+        elapsedMs: detElapsed,
+        rawText,
+        parsed: {
+          speak: text,
+          interpretation,
+          transcript,
+          transcriptSpeaker,
+          contextUpdate,
+          addButtons,
+          removeLabels,
+          rebuildBoard,
+        },
+        usage: result.usage,
+      });
+
+      return { text, isCommand: false, usage: result.usage, addButtons, removeLabels, interpretation, transcript, transcriptSpeaker, contextUpdate, rebuildBoard };
     } catch (error) {
       console.error("[InteractiveAgent] Detection error:", error);
       throw error;
     }
-  }
-
-  /**
-   * Build the detection-specific tool — modify_board for incremental add/remove.
-   */
-  private buildDetectionTools(): ChatTool[] {
-    // Flat schema (no nested objects) — Gemini produces MALFORMED_FUNCTION_CALL
-    // with nested object items inside arrays. Use parallel string arrays instead.
-    return [
-      {
-        type: "function",
-        function: {
-          name: "modify_board",
-          description:
-            "Add or remove buttons on the 12-slot communication board based on environmental changes. add_labels and add_icons must have the same length (one icon per label).",
-          parameters: {
-            type: "object",
-            properties: {
-              add_labels: {
-                type: "array",
-                items: { type: "string" },
-                description: "Labels for new buttons to add to blank slots (e.g. [\"Hungry\", \"Play outside\"]). Empty array if no buttons to add.",
-              },
-              add_icons: {
-                type: "array",
-                items: { type: "string" },
-                description: "Icon for each new button, matching add_labels by index. Use a single emoji (e.g. \"🍕\") or FontAwesome class (e.g. \"fas fa-home\"). Must be same length as add_labels.",
-              },
-              remove: {
-                type: "array",
-                items: { type: "string" },
-                description: "Labels of existing buttons to remove from the board. Empty array if none to remove.",
-              },
-              reasoning: {
-                type: "string",
-                description: "Brief explanation of why you are making these changes (or why no changes are needed)",
-              },
-            },
-            required: ["add_labels", "add_icons", "remove", "reasoning"],
-          },
-        },
-      },
-    ];
-  }
-
-  /**
-   * Build the OpenAI tools definition for the update_board function.
-   * responseText is included so the model can return both text and board in a single tool call
-   * (required when tool_choice is "required").
-   */
-  private buildTools(): ChatTool[] {
-    return [
-      {
-        type: "function",
-        function: {
-          name: "update_board",
-          description:
-            "Respond to the user AND update the 12-slot (4x3 grid) communication board. Always include responseText with your spoken reply and 4-12 buttons with the new board options. Do not include Yes, No, Help, or More — these are automatic.",
-          parameters: {
-            type: "object",
-            properties: {
-              responseText: {
-                type: "string",
-                description: "Your spoken/text response to the user. Keep it concise (1-2 sentences). This will be displayed and read aloud.",
-              },
-              buttons: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    label: {
-                      type: "string",
-                      description: "The text label for the button",
-                    },
-                    action: {
-                      type: "string",
-                      description: "The action type (speak, navigate, etc.)",
-                    },
-                    iconRef: {
-                      type: "string",
-                      description: "Icon for the button: either a FontAwesome class (e.g., 'fas fa-home') or a single emoji (e.g., '🏠'). Required.",
-                    },
-                  },
-                  required: ["label", "iconRef"],
-                },
-                description: "Array of 4-12 buttons to display on the 12-slot board. Each button needs a label and iconRef.",
-              },
-            },
-            required: ["responseText", "buttons"],
-          },
-        },
-      },
-    ];
   }
 
   /**

@@ -865,7 +865,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ============= DUAL-AGENT AAC ROUTES =============
   // Initialize or resume a dual-agent session
-  app.post("/api/aac/dual/initialize", optionalAuth, requireOnboardingComplete, (req, res) =>
+  app.post("/api/aac/dual/initialize", optionalAuth, requireOnboardingComplete, aacUpload.single("image"), (req, res) =>
     dualAgentController.initialize(req, res)
   );
   // Send text message (SSE streaming response)

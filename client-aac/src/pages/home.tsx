@@ -1262,13 +1262,15 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
         />
       )}
 
-      {/* Two-Handed Object Detection - background detection controlled by settings, window visibility separate */}
-      <TwoHandedObjectDetection
-        isEnabled={userProfile?.objectDetectionEnabled || userProfile?.object_detection_enabled || false}
-        showWindow={showObjectDetectionWindow}
-        onObjectsDetected={handleObjectsDetected}
-        onToggle={setShowObjectDetectionWindow}
-      />
+      {/* Two-Handed Object Detection - only render when explicitly enabled in user settings */}
+      {(userProfile?.objectDetectionEnabled || userProfile?.object_detection_enabled) && (
+        <TwoHandedObjectDetection
+          isEnabled={true}
+          showWindow={showObjectDetectionWindow}
+          onObjectsDetected={handleObjectsDetected}
+          onToggle={setShowObjectDetectionWindow}
+        />
+      )}
 
       {/* Object Detection Debug Window */}
       <ObjectDetectionDebug

@@ -236,10 +236,44 @@ export function useFaceTracking(options: UseFaceTrackingOptions): UseFaceTrackin
               };
             }
 
+            // Extract nose tip and head pose from landmarks
+            let noseTip: { x: number; y: number } | null = null;
+            let headPose: { yaw: number; pitch: number } | null = null;
+            if (results.faceLandmarks && results.faceLandmarks[i]) {
+              const lms = results.faceLandmarks[i];
+              const lm4 = lms[4]; // nose tip
+              if (lm4) {
+                noseTip = { x: lm4.x, y: lm4.y };
+              }
+
+              // Head pose from landmark asymmetry
+              // #234 = right face edge, #454 = left face edge, #10 = forehead, #152 = chin
+              const rFace = lms[234];
+              const lFace = lms[454];
+              const top = lms[10];
+              const bottom = lms[152];
+              if (lm4 && rFace && lFace && top && bottom) {
+                const dLeft = Math.abs(lm4.x - lFace.x);
+                const dRight = Math.abs(lm4.x - rFace.x);
+                const dUp = Math.abs(lm4.y - top.y);
+                const dDown = Math.abs(lm4.y - bottom.y);
+                const hSum = dLeft + dRight;
+                const vSum = dUp + dDown;
+                if (hSum > 0 && vSum > 0) {
+                  headPose = {
+                    yaw: (dLeft - dRight) / hSum,   // +right, -left (person perspective)
+                    pitch: (dUp - dDown) / vSum,     // +down, -up
+                  };
+                }
+              }
+            }
+
             rawFaces.push({
               faceIndex: i,
               boundingBox,
               blendshapes: blendshapeMap,
+              noseTip,
+              headPose,
             });
           }
         }

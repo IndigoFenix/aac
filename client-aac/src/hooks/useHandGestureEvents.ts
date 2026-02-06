@@ -2,7 +2,7 @@
 // Event accumulation hook: derives semantic gesture events from raw hand data,
 // matches hands by handedness, maintains rolling buffer per hand.
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import type {
   HandGestureConfig,
   RawTrackedHand,
@@ -289,7 +289,8 @@ export function useHandGestureEvents(
 ): UseHandGestureEventsReturn {
   const { hands, enabled = true, config: configOverrides } = options;
 
-  const config: HandGestureConfig = {
+  // Memoize config to prevent effect from running on every render
+  const config = useMemo<HandGestureConfig>(() => ({
     ...DEFAULT_HAND_GESTURE_CONFIG,
     ...configOverrides,
     thresholds: {
@@ -300,7 +301,22 @@ export function useHandGestureEvents(
       ...DEFAULT_HAND_GESTURE_CONFIG.refireIntervals,
       ...configOverrides?.refireIntervals,
     },
-  };
+  }), [
+    configOverrides?.thresholds?.gesture,
+    configOverrides?.thresholds?.handRaise,
+    configOverrides?.thresholds?.pointingAngle,
+    configOverrides?.thresholds?.pinch,
+    configOverrides?.thresholds?.wave,
+    configOverrides?.thresholds?.signLanguage,
+    configOverrides?.refireIntervals?.gesture,
+    configOverrides?.refireIntervals?.wave,
+    configOverrides?.refireIntervals?.signLanguage,
+    configOverrides?.eventWindowMs,
+    configOverrides?.handPersistenceTicks,
+    configOverrides?.waveOscillationsRequired,
+    configOverrides?.waveTimeWindowMs,
+    configOverrides?.signLanguageLocale,
+  ]);
 
   const [trackedHands, setTrackedHands] = useState<TrackedHand[]>([]);
   const [updateCount, setUpdateCount] = useState(0);
@@ -505,17 +521,7 @@ export function useHandGestureEvents(
     trackedRef.current = newTracked;
     setTrackedHands([...newTracked]);
     setUpdateCount((c) => c + 1);
-  }, [
-    hands,
-    enabled,
-    config.thresholds,
-    config.eventWindowMs,
-    config.handPersistenceTicks,
-    config.refireIntervals,
-    config.waveOscillationsRequired,
-    config.waveTimeWindowMs,
-    config.signLanguageLocale,
-  ]);
+  }, [hands, enabled, config]);
 
   return { trackedHands, updateCount };
 }

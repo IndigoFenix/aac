@@ -27,11 +27,6 @@ import type {
 import { INTERACTIVE_COMMANDS, DEFAULT_CONFIG } from "./types";
 import {
   AAC_DEFAULT_PERSONA_PROMPT,
-  AAC_DETECTION_PROMPT,
-  AAC_DETECTION_INTERACT_ADDENDUM,
-  AAC_DETECTION_SILENT_ADDENDUM,
-  AAC_BUTTON_PROMPT,
-  AAC_SILENT_BUTTON_PROMPT,
   buildInteractiveSystemPrompt,
 } from "../memory-schema/aac-memory-schema";
 import { whisperService } from "../voice/whisper-service";
@@ -248,19 +243,33 @@ export class DualAgentService {
    * This is what should be called when starting a conversation
    *
    * Uses a single LLM call: combined greeting + board via processMessageStream
-   * (toolChoice: "required" forces update_board which includes responseText).
+   * with text-based prefix tokens ([SPEAK] for greeting, [REBUILD_BOARD] for buttons).
    */
   async *initializeWithGreeting(
     studentId: string,
     userId?: string,
     existingSessionId?: string,
     board?: ParsedBoardData,
-    interactionMode: AACInteractionMode = 'interact'
+    interactionMode: AACInteractionMode = 'interact',
+    imageData?: string,
+    gestureContext?: string
   ): AsyncGenerator<{
-    type: "text" | "board" | "audio" | "transcription" | "complete";
+    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context";
     data: any;
+    speaker?: string;
   }> {
     const initStart = Date.now();
+
+    // Log what we received
+    logDualAgent("DualAgentService.initializeWithGreeting.start", {
+      studentId,
+      hasExistingSession: !!existingSessionId,
+      interactionMode,
+      hasImage: !!imageData,
+      imageDataLength: imageData?.length || 0,
+      hasGestureContext: !!gestureContext,
+      gestureContextLength: gestureContext?.length || 0,
+    });
 
     // Initialize the session first
     const state = await this.initializeSession(studentId, userId, existingSessionId, interactionMode);
@@ -271,15 +280,22 @@ export class DualAgentService {
       return;
     }
 
-    const { interactiveAgent } = cached;
+    const { interactiveAgent, monitorAgent } = cached;
     const isSilent = interactionMode === 'silent';
 
     let fullText = "";
 
+    // Build a context-aware greeting message using student persona
+    const student = monitorAgent.getStudent();
+    const personaHint = student?.aacChatAgentPrompt?.trim()
+      ? `\nThe student is ${student.name}. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs.`
+      : "";
+
     // Combined greeting + board in one LLM call
+    const imageHint = imageData ? "\nUse the camera image to observe the environment and make the buttons contextually relevant." : "";
     const greetingBoardMessage = isSilent
-      ? "Generate 4-12 contextual utterance buttons — complete phrases the user might want to say. Call update_board."
-      : "Greet the user with a short, friendly greeting (1-2 sentences) and provide initial communication buttons. Include both your greeting in responseText and 4-12 relevant buttons in the update_board call.";
+      ? `Generate 4-12 contextual utterance buttons — complete phrases the user might want to say. Use the student's profile and interests from the system prompt to make them relevant.${imageHint} Use [REBUILD_BOARD] to create the initial board.${personaHint}`
+      : `Greet the user with a short, friendly greeting (1-2 sentences) and provide 4-12 initial communication buttons that reflect the student's interests, needs, and communication level from the system prompt. The buttons should be appropriate responses to your greeting.${imageHint} Use [SPEAK] for your greeting and [REBUILD_BOARD] for the buttons.${personaHint}`;
 
     try {
       let streamUsage: { promptTokens: number; completionTokens: number } | undefined;
@@ -287,16 +303,24 @@ export class DualAgentService {
         greetingBoardMessage,
         [],
         [],
-        board
+        board,
+        gestureContext, // Pass gesture context as visual context
+        undefined, // audioContext
+        imageData // image from camera
       )) {
-        if (chunk.type === "text") {
+        if (chunk.type === "speak") {
           fullText += chunk.data;
           if (!isSilent) {
             yield { type: "text", data: chunk.data };
           }
+        } else if (chunk.type === "interpret") {
+          yield { type: "interpretation", data: chunk.data };
         } else if (chunk.type === "board") {
           console.log("[DualAgentService] Board generated:", JSON.stringify(chunk.data).substring(0, 200));
           yield { type: "board", data: chunk.data };
+        } else if (chunk.type === "board_patch") {
+          console.log("[DualAgentService] Board patch:", JSON.stringify(chunk.data).substring(0, 200));
+          yield { type: "board_patch", data: chunk.data };
         } else if (chunk.type === "usage") {
           streamUsage = chunk.data;
         }
@@ -596,8 +620,9 @@ export class DualAgentService {
   async *processInput(
     input: DualAgentInput
   ): AsyncGenerator<{
-    type: "text" | "board" | "audio" | "transcription" | "complete";
+    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context";
     data: any;
+    speaker?: string;
   }> {
     // Initialize or resume session
     const state = await this.initializeSession(
@@ -714,12 +739,14 @@ export class DualAgentService {
     interactionMode: AACInteractionMode = 'interact',
     gestureContext?: string
   ): AsyncGenerator<{
-    type: "text" | "board" | "audio";
+    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context";
     data: any;
+    speaker?: string;
   }> {
     const isSilent = interactionMode === 'silent';
     const modeStart = Date.now();
     let fullText = "";
+    let fullInterpretation = "";
     console.log("[DualAgentService] handleInteractiveMode: thinkingMode:", state.thinkingMode, "interactionMode:", interactionMode, "messages:", state.messages.length, "pending:", state.pendingMessages.length);
     logDualAgent("DualAgentService.handleInteractiveMode", { interactionMode, messageCount: state.messages.length, pendingCount: state.pendingMessages.length });
 
@@ -752,13 +779,26 @@ export class DualAgentService {
       imageData,
       combinedContext
     )) {
-      if (chunk.type === "text") {
+      if (chunk.type === "speak") {
         fullText += chunk.data;
+        // Only forward AI voice text in interact mode
         if (!isSilent) {
           yield { type: "text", data: chunk.data };
         }
+      } else if (chunk.type === "interpret") {
+        fullInterpretation += chunk.data;
+        // Interpretation is always forwarded (both modes)
+        yield { type: "interpretation", data: chunk.data };
+      } else if (chunk.type === "transcript") {
+        // Forward transcript to client
+        yield { type: "transcript", data: chunk.data, speaker: chunk.speaker };
+      } else if (chunk.type === "context") {
+        // Forward context updates to client
+        yield { type: "context", data: chunk.data };
       } else if (chunk.type === "board") {
         yield { type: "board", data: chunk.data };
+      } else if (chunk.type === "board_patch") {
+        yield { type: "board_patch", data: chunk.data };
       } else if (chunk.type === "command") {
         // Handle command from Interactive
         await this.handleInteractiveCommand(state, chunk.data);
@@ -768,7 +808,7 @@ export class DualAgentService {
     }
 
     const modeElapsed = Date.now() - modeStart;
-    logDualAgent("DualAgentService.handleInteractiveMode.done", { elapsedMs: modeElapsed, textLength: fullText.length });
+    logDualAgent("DualAgentService.handleInteractiveMode.done", { elapsedMs: modeElapsed, textLength: fullText.length, interpretationLength: fullInterpretation.length });
 
     // Track credits for the interactive response
     if (interactiveUsage) {
@@ -788,11 +828,23 @@ export class DualAgentService {
     const cached = sessionCache.get(state.sessionId)!;
     this.tryTriggerMonitor(cached, state, monitorAgent, interactiveAgent, board);
 
-    // Generate audio if enabled (skip in silent mode)
+    // Generate AI voice audio if enabled (skip in silent mode)
     if (this.config.enableTTS && fullText && !isSilent) {
       const voices = await this.resolveVoices(cached);
       for await (const audioChunk of ttsFacade.synthesizeStream(fullText, voices.aiVoice)) {
         yield { type: "audio", data: audioChunk.toString("base64") };
+      }
+    }
+
+    // Generate student voice audio for interpretation (both modes)
+    if (this.config.enableTTS && fullInterpretation) {
+      try {
+        const voices = await this.resolveVoices(cached);
+        for await (const audioChunk of ttsFacade.synthesizeStream(fullInterpretation, voices.studentVoice)) {
+          yield { type: "interpretation_audio", data: audioChunk.toString("base64") };
+        }
+      } catch (err) {
+        console.error("[DualAgentService] Interpretation TTS error:", err);
       }
     }
   }
@@ -1179,11 +1231,20 @@ export class DualAgentService {
     // the monitor into thinking the student did something. We only push a post-detection
     // message when there's actually a board change to report.
 
-    // Build detection-specific system prompt
-    const modeAddendum = interactionMode === 'silent'
-      ? AAC_DETECTION_SILENT_ADDENDUM
-      : AAC_DETECTION_INTERACT_ADDENDUM;
-    const detectionSystemPrompt = AAC_DETECTION_PROMPT + modeAddendum;
+    // Build detection system prompt using the unified builder with isDetection=true
+    // This ensures detection has full student context, memory, language, etc.
+    const student = monitorAgent.getStudent();
+    const personaPrompt = student?.aacChatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+    const detectionSystemPrompt = buildInteractiveSystemPrompt(
+      student?.name || "the student",
+      personaPrompt,
+      student?.primaryLanguage || undefined,
+      undefined, // memoryContext - could be added if needed
+      interactionMode,
+      undefined, // studentAge
+      undefined, // studentDiagnosis
+      true // isDetection - adds conservative guidance and HIGH CONFIDENCE emphasis
+    );
 
     const detStart = Date.now();
     try {
@@ -1208,6 +1269,9 @@ export class DualAgentService {
 
       const addButtons = result.addButtons || [];
       const removeLabels = result.removeLabels || [];
+      const triggeredMessage = result.triggeredMessage;
+      const interpretation = result.interpretation || result.triggeredMessage;
+      const debugDescription = result.debugDescription;
       const changed = addButtons.length > 0 || removeLabels.length > 0;
 
       if (changed) {
@@ -1230,8 +1294,20 @@ export class DualAgentService {
         this.tryTriggerMonitor(cached, state, monitorAgent, interactiveAgent, input.board);
       }
 
+      // Generate interpretation audio (student voice TTS) inline for JSON response
+      let interpretationAudio: string | undefined;
+      if (this.config.enableTTS && interpretation) {
+        try {
+          const voices = await this.resolveVoices(cached);
+          const audioBuffer = await ttsFacade.synthesize(interpretation, voices.studentVoice);
+          interpretationAudio = audioBuffer.toString("base64");
+        } catch (err) {
+          console.error("[DualAgentService] Detection interpretation TTS error:", err);
+        }
+      }
+
       const detElapsed = Date.now() - detStart;
-      logDualAgent("DualAgentService.processDetection", { elapsedMs: detElapsed, changed, addCount: addButtons.length, removeCount: removeLabels.length, hasImage: !!input.imageData, hasAudio: !!input.audioBuffer });
+      logDualAgent("DualAgentService.processDetection", { elapsedMs: detElapsed, changed, addCount: addButtons.length, removeCount: removeLabels.length, hasImage: !!input.imageData, hasAudio: !!input.audioBuffer, hasInterpretation: !!interpretation });
 
       return {
         sessionId: state.sessionId,
@@ -1239,11 +1315,91 @@ export class DualAgentService {
         removeLabels: changed ? removeLabels : undefined,
         changed,
         text: result.text || undefined,
+        triggeredMessage, // deprecated alias for interpretation
+        interpretation,
+        interpretationAudio,
+        debugDescription,
+        transcript: result.transcript,
+        transcriptSpeaker: result.transcriptSpeaker,
+        contextUpdate: result.contextUpdate,
       };
     } catch (error) {
       console.error("[DualAgentService] processDetection error:", error);
       return { sessionId: state.sessionId, changed: false };
     }
+  }
+
+  /**
+   * Process a detection frame with SSE streaming.
+   * Uses existing processDetection for LLM, then streams TTS audio.
+   * This provides streaming audio without requiring streaming LLM.
+   */
+  async *processDetectionStream(input: DetectionInput): AsyncGenerator<{
+    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "complete";
+    data: any;
+    speaker?: string;
+  }> {
+    const isSilent = (input.interactionMode || 'interact') === 'silent';
+
+    // Use existing non-streaming detection for LLM call
+    const result = await this.processDetection(input);
+
+    // Yield transcript if present
+    if (result.transcript) {
+      yield { type: "transcript", data: result.transcript, speaker: result.transcriptSpeaker };
+    }
+
+    // Yield context update if present
+    if (result.contextUpdate) {
+      yield { type: "context", data: result.contextUpdate };
+    }
+
+    // Yield AI voice text (only in interact mode)
+    if (result.text && !isSilent) {
+      yield { type: "text", data: result.text };
+    }
+
+    // Yield interpretation text
+    if (result.interpretation) {
+      yield { type: "interpretation", data: result.interpretation };
+    }
+
+    // Yield board patch if changed
+    if (result.changed) {
+      yield { type: "board_patch", data: { add: result.addButtons || [], remove: result.removeLabels || [] } };
+    }
+
+    // Debug description is included in the JSON response already, no need to yield for streaming
+
+    // Stream TTS audio
+    const cached = sessionCache.get(result.sessionId);
+    if (this.config.enableTTS && cached) {
+      const voices = await this.resolveVoices(cached);
+
+      // AI voice audio (only in interact mode)
+      if (result.text && !isSilent) {
+        try {
+          for await (const audioChunk of ttsFacade.synthesizeStream(result.text, voices.aiVoice)) {
+            yield { type: "audio", data: audioChunk.toString("base64") };
+          }
+        } catch (err) {
+          console.error("[DualAgentService] Detection stream TTS error:", err);
+        }
+      }
+
+      // Interpretation audio (student voice, both modes)
+      if (result.interpretation) {
+        try {
+          for await (const audioChunk of ttsFacade.synthesizeStream(result.interpretation, voices.studentVoice)) {
+            yield { type: "interpretation_audio", data: audioChunk.toString("base64") };
+          }
+        } catch (err) {
+          console.error("[DualAgentService] Detection stream interpretation TTS error:", err);
+        }
+      }
+    }
+
+    yield { type: "complete", data: { sessionId: result.sessionId } };
   }
 
   /**
@@ -1274,8 +1430,9 @@ export const dualAgentService = new DualAgentService();
 export async function* processInput(
   input: DualAgentInput
 ): AsyncGenerator<{
-  type: "text" | "board" | "audio" | "transcription" | "complete";
+  type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context";
   data: any;
+  speaker?: string;
 }> {
   yield* dualAgentService.processInput(input);
 }
