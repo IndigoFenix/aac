@@ -7,15 +7,20 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import {
   translations,
   SUPPORTED_LANGUAGES,
+  SUPPORTED_SIGN_LANGUAGES,
   DEFAULT_LANGUAGE,
   type LanguageCode,
   type Language,
+  type SignLanguageCode,
+  type SignLanguage,
   type Translations,
   isValidLanguageCode,
+  isValidSignLanguageCode,
   getLanguageByCode,
 } from "@/i18n";
 
 const STORAGE_KEY = "aac-language";
+const SIGN_LANGUAGE_STORAGE_KEY = "aac-sign-language";
 
 interface LanguageContextType {
   /** Current language code */
@@ -32,6 +37,12 @@ interface LanguageContextType {
   t: (key: string, params?: Record<string, string | number>) => string;
   /** List of supported languages */
   supportedLanguages: Language[];
+  /** Current sign language (null = disabled) */
+  signLanguage: SignLanguageCode | null;
+  /** Change the current sign language (null to disable) */
+  setSignLanguage: (code: SignLanguageCode | null) => void;
+  /** List of supported sign languages */
+  supportedSignLanguages: SignLanguage[];
 }
 
 const LanguageContext = createContext<LanguageContextType | null>(null);
@@ -59,6 +70,15 @@ export function LanguageProvider({ children, defaultLanguage = DEFAULT_LANGUAGE 
     return defaultLanguage;
   });
 
+  // Initialize sign language from localStorage
+  const [signLanguage, setSignLanguageState] = useState<SignLanguageCode | null>(() => {
+    const stored = localStorage.getItem(SIGN_LANGUAGE_STORAGE_KEY);
+    if (stored && isValidSignLanguageCode(stored)) {
+      return stored;
+    }
+    return null;
+  });
+
   // Get current language info
   const languageInfo = useMemo(() => {
     return getLanguageByCode(language) || SUPPORTED_LANGUAGES[0];
@@ -82,6 +102,16 @@ export function LanguageProvider({ children, defaultLanguage = DEFAULT_LANGUAGE 
   const setLanguage = useCallback((code: LanguageCode) => {
     setLanguageState(code);
     localStorage.setItem(STORAGE_KEY, code);
+  }, []);
+
+  // Change sign language handler
+  const setSignLanguage = useCallback((code: SignLanguageCode | null) => {
+    setSignLanguageState(code);
+    if (code) {
+      localStorage.setItem(SIGN_LANGUAGE_STORAGE_KEY, code);
+    } else {
+      localStorage.removeItem(SIGN_LANGUAGE_STORAGE_KEY);
+    }
   }, []);
 
   // Translation function with parameter interpolation
@@ -137,8 +167,11 @@ export function LanguageProvider({ children, defaultLanguage = DEFAULT_LANGUAGE 
       setLanguage,
       t,
       supportedLanguages: SUPPORTED_LANGUAGES,
+      signLanguage,
+      setSignLanguage,
+      supportedSignLanguages: SUPPORTED_SIGN_LANGUAGES,
     }),
-    [language, languageInfo, isRTL, direction, setLanguage, t]
+    [language, languageInfo, isRTL, direction, setLanguage, t, signLanguage, setSignLanguage]
   );
 
   return (
@@ -160,4 +193,4 @@ export function useLanguage() {
   return context;
 }
 
-export { type LanguageCode, type Language };
+export { type LanguageCode, type Language, type SignLanguageCode, type SignLanguage };

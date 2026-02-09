@@ -2,7 +2,7 @@
 // Context for the dual-agent AAC system
 
 import React, { createContext, useContext, useCallback, useEffect, useRef, useState } from "react";
-import { useDualAgent, type DualAgentMessage, type IdentifiedPerson, type BoardPatch } from "@/hooks/useDualAgent";
+import { useDualAgent, type DualAgentMessage, type IdentifiedPerson, type BoardPatch, type ActiveAppData } from "@/hooks/useDualAgent";
 import type { CachedRequest } from "@/hooks/useDebugRequestCache";
 import { useCameraAttentivenessOptional } from "@/contexts/CameraAttentivenessContext";
 import { useActivityMonitor } from "@/hooks/useActivityMonitor";
@@ -65,6 +65,15 @@ interface DualAgentContextType {
   // Debug
   debugData: Record<string, any>;
   requestCache: CachedRequest[];
+
+  // Active app
+  activeApp: ActiveAppData | null;
+  dismissApp: () => void;
+  registerAppCanvasCapture: (fn: (() => Promise<Blob | null>) | null) => void;
+
+  // Avatar
+  emote: "happy" | "sad" | "neutral";
+  speakingVolume: number;
 
   // Monitor status
   monitorError: string | null;
@@ -190,6 +199,11 @@ export function DualAgentProvider({
     getGestureContext,
     debugMode,
   });
+
+  // Allow app components to register canvas capture functions
+  const registerAppCanvasCapture = useCallback((fn: (() => Promise<Blob | null>) | null) => {
+    dualAgent.captureAppCanvasRef.current = fn;
+  }, [dualAgent.captureAppCanvasRef]);
 
   // Stable ref for runDetectionWithGrid (avoids re-creating activity monitor)
   const runDetectionWithGridRef = useRef(dualAgent.runDetectionWithGrid);
@@ -326,6 +340,15 @@ export function DualAgentProvider({
     // Debug
     debugData: dualAgent.debugData,
     requestCache: dualAgent.requestCache,
+
+    // Active app
+    activeApp: dualAgent.activeApp,
+    dismissApp: dualAgent.dismissApp,
+    registerAppCanvasCapture,
+
+    // Avatar
+    emote: dualAgent.emote,
+    speakingVolume: dualAgent.speakingVolume,
 
     // Monitor status
     monitorError: dualAgent.monitorError,

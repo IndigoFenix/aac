@@ -35,4 +35,25 @@ export function isValidLanguageCode(code: string): code is LanguageCode {
   return SUPPORTED_LANGUAGES.some((lang) => lang.code === code);
 }
 
+// =============================================================================
+// SIGN LANGUAGES
+// =============================================================================
+
+export type SignLanguageCode = "asl" | "isl";
+
+export interface SignLanguage {
+  code: SignLanguageCode;
+  name: string;
+  nativeName: string;
+}
+
+export const SUPPORTED_SIGN_LANGUAGES: SignLanguage[] = [
+  { code: "asl", name: "American Sign Language", nativeName: "ASL" },
+  { code: "isl", name: "Israeli Sign Language", nativeName: "שפת הסימנים" },
+];
+
+export function isValidSignLanguageCode(code: string): code is SignLanguageCode {
+  return SUPPORTED_SIGN_LANGUAGES.some((lang) => lang.code === code);
+}
+
 export { type Translations } from "./en";

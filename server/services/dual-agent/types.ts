@@ -12,6 +12,29 @@ import type { LLMProviderKey } from "@shared/llm-options";
 export type AACInteractionMode = 'interact' | 'silent';
 
 /**
+ * Definition of an add-on app in the registry
+ */
+export interface AACAppDefinition {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  enabledByDefault: boolean;
+  /** If true, the app's canvas is captured and sent with detection requests */
+  supportsDetectionCapture?: boolean;
+}
+
+/**
+ * Runtime app state on a session
+ */
+export interface AACAppState {
+  /** IDs of apps enabled for this session */
+  enabledApps: string[];
+  /** Currently open app ID, or null if none */
+  activeApp: string | null;
+}
+
+/**
  * Message as seen by the Interactive Agent
  * Monitor's messages appear as system messages
  */
@@ -96,6 +119,12 @@ export interface DualAgentSessionState {
   lastInteractiveActivity: number;
   lastMonitorActivity: number;
 
+  // Add-on apps state
+  appState: AACAppState;
+
+  // Avatar emotion state
+  currentEmote: "happy" | "sad" | "neutral";
+
   // Monitor error tracking
   monitorError?: string;           // Last error message from monitor processing
   monitorErrorTimestamp?: number;   // When the error occurred
@@ -136,6 +165,12 @@ export interface InteractiveResponse {
   contextUpdate?: string;
   // Interactive agent requesting early monitor call
   callMonitor?: string;
+  // Open an add-on app (generic replacement for playVideo)
+  openApp?: { appId: string; data?: string };
+  // Close the currently open app
+  closeApp?: boolean;
+  // Avatar emotion from [EMOTE] token
+  emote?: "happy" | "sad" | "neutral";
   // Provider finish reason (e.g. "STOP", "MAX_TOKENS", "SAFETY", "RECITATION")
   finishReason?: string;
 }
@@ -260,6 +295,7 @@ export interface DetectionInput {
   interactionMode?: AACInteractionMode;
   frameTimestamps?: number[]; // timestamps (ms since epoch) for composite grid frames
   debugMode?: boolean;        // when true, yield debug SSE events with prompt/usage info
+  appCanvasData?: string;     // base64 data URL of active app canvas (e.g. drawing)
 }
 
 /**
@@ -279,6 +315,9 @@ export interface DetectionOutput {
   transcript?: string;             // voice transcript from audio input
   transcriptSpeaker?: string;      // who spoke the transcript
   contextUpdate?: string;          // environmental context changes observed
+  openApp?: { appId: string; data?: string }; // Open an add-on app
+  closeApp?: boolean;              // Close the currently open app
+  emote?: "happy" | "sad" | "neutral"; // Avatar emotion from [EMOTE] token
   error?: string;                  // error message if processing failed
 }
 

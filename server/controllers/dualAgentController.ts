@@ -148,6 +148,15 @@ export class DualAgentController {
           case "context":
             sendSSEEvent(res, "context", { text: chunk.data });
             break;
+          case "app_open":
+            sendSSEEvent(res, "app_open", chunk.data);
+            break;
+          case "app_close":
+            sendSSEEvent(res, "app_close", chunk.data);
+            break;
+          case "emote":
+            sendSSEEvent(res, "emote", { emote: chunk.data });
+            break;
           case "complete":
             sendSSEEvent(res, "complete", chunk.data);
             break;
@@ -277,6 +286,15 @@ export class DualAgentController {
           case "context":
             sendSSEEvent(res, "context", { text: chunk.data });
             break;
+          case "app_open":
+            sendSSEEvent(res, "app_open", chunk.data);
+            break;
+          case "app_close":
+            sendSSEEvent(res, "app_close", chunk.data);
+            break;
+          case "emote":
+            sendSSEEvent(res, "emote", { emote: chunk.data });
+            break;
           case "complete":
             sendSSEEvent(res, "complete", chunk.data);
             break;
@@ -396,6 +414,15 @@ export class DualAgentController {
           case "context":
             sendSSEEvent(res, "context", { text: chunk.data });
             break;
+          case "app_open":
+            sendSSEEvent(res, "app_open", chunk.data);
+            break;
+          case "app_close":
+            sendSSEEvent(res, "app_close", chunk.data);
+            break;
+          case "emote":
+            sendSSEEvent(res, "emote", { emote: chunk.data });
+            break;
           case "complete":
             sendSSEEvent(res, "complete", chunk.data);
             break;
@@ -458,6 +485,7 @@ export class DualAgentController {
           monitorError: state.monitorError || null,
           monitorErrorTimestamp: state.monitorErrorTimestamp || null,
           monitorConsecutiveFailures: state.monitorConsecutiveFailures || 0,
+          currentEmote: state.currentEmote || "neutral",
         });
       } else {
         res.json({
@@ -557,6 +585,7 @@ export class DualAgentController {
       const files = (req as any).files as { [fieldname: string]: Express.Multer.File[] } | undefined;
       const imageFile = files?.image?.[0];
       const audioFile = files?.audio?.[0];
+      const appCanvasFile = files?.appCanvas?.[0];
 
       // Convert image to base64 data URL
       let imageData: string | undefined;
@@ -571,6 +600,13 @@ export class DualAgentController {
       if (audioFile) {
         audioBuffer = audioFile.buffer;
         audioMimeType = audioFile.mimetype;
+      }
+
+      // Extract app canvas (e.g. drawing snapshot) as base64 data URL
+      let appCanvasData: string | undefined;
+      if (appCanvasFile) {
+        const base64 = appCanvasFile.buffer.toString("base64");
+        appCanvasData = `data:${appCanvasFile.mimetype};base64,${base64}`;
       }
 
       const { studentId, sessionId, board, audioContext, gestureContext, interactionMode, frameTimestamps: frameTimestampsRaw, debugMode: debugModeRaw } = detectSchema.parse(body);
@@ -606,6 +642,7 @@ export class DualAgentController {
         interactionMode,
         frameTimestamps,
         debugMode: debugModeRaw === "true",
+        appCanvasData,
       })) {
         switch (chunk.type) {
           case "text":
@@ -634,6 +671,15 @@ export class DualAgentController {
             break;
           case "context":
             sendSSEEvent(res, "context", { text: chunk.data });
+            break;
+          case "app_open":
+            sendSSEEvent(res, "app_open", chunk.data);
+            break;
+          case "app_close":
+            sendSSEEvent(res, "app_close", chunk.data);
+            break;
+          case "emote":
+            sendSSEEvent(res, "emote", { emote: chunk.data });
             break;
           case "error":
             sendSSEEvent(res, "error", { error: chunk.data });

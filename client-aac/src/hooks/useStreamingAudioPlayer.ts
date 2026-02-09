@@ -12,6 +12,8 @@ export interface UseStreamingAudioPlayerReturn {
   isPlaying: boolean;
   isBuffering: boolean;
   error: string | null;
+  /** Current speaking volume 0-1, updated via AudioContext analyser while playing */
+  speakingVolume: number;
   queueChunk: (chunk: AudioChunk) => void;
   play: () => void;
   stop: () => void;
@@ -44,6 +46,7 @@ export function useStreamingAudioPlayer(
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [speakingVolume, setSpeakingVolume] = useState(0);
 
   // Single audio element for all playback
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -56,20 +59,75 @@ export function useStreamingAudioPlayer(
   // Track if we've been stopped (to prevent playing after stop)
   const stoppedRef = useRef(false);
 
-  // Initialize audio element
+  // AudioContext analyser for volume tracking
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const volumeRafRef = useRef<number>(0);
+
+  // Initialize audio element + AudioContext analyser
   useEffect(() => {
-    audioRef.current = new Audio();
+    const audio = new Audio();
+    audio.crossOrigin = "anonymous";
+    audioRef.current = audio;
+
+    // Set up AudioContext for volume analysis
+    try {
+      const ctx = new AudioContext();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.3;
+      const source = ctx.createMediaElementSource(audio);
+      source.connect(analyser);
+      analyser.connect(ctx.destination);
+      audioContextRef.current = ctx;
+      analyserRef.current = analyser;
+      sourceRef.current = source;
+    } catch (err) {
+      console.warn("[StreamingAudioPlayer] AudioContext setup failed:", err);
+    }
+
     return () => {
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current.src = "";
         audioRef.current = null;
       }
+      if (volumeRafRef.current) cancelAnimationFrame(volumeRafRef.current);
+      try { audioContextRef.current?.close(); } catch { /* ignore */ }
+      audioContextRef.current = null;
+      analyserRef.current = null;
+      sourceRef.current = null;
       // Clean up any remaining blob URLs
       queueRef.current.forEach((url) => URL.revokeObjectURL(url));
       queueRef.current = [];
     };
   }, []);
+
+  // Volume polling loop — runs while playing
+  useEffect(() => {
+    if (!isPlaying || !analyserRef.current) {
+      setSpeakingVolume(0);
+      return;
+    }
+    const analyser = analyserRef.current;
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+    const poll = () => {
+      analyser.getByteFrequencyData(dataArray);
+      // RMS-ish: average of frequency bins, normalized to 0-1
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+      const avg = sum / dataArray.length / 255;
+      setSpeakingVolume(avg);
+      volumeRafRef.current = requestAnimationFrame(poll);
+    };
+    volumeRafRef.current = requestAnimationFrame(poll);
+    return () => {
+      if (volumeRafRef.current) cancelAnimationFrame(volumeRafRef.current);
+      setSpeakingVolume(0);
+    };
+  }, [isPlaying]);
 
   // Get MIME type from format
   const getMimeType = useCallback((format: string): string => {
@@ -263,6 +321,7 @@ export function useStreamingAudioPlayer(
     isPlaying,
     isBuffering,
     error,
+    speakingVolume,
     queueChunk,
     play,
     stop,
