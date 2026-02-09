@@ -11,7 +11,7 @@ import type {
 } from "./types";
 import { MONITOR_COMMANDS } from "./types";
 import { studentRepository } from "../../repositories";
-import type { AACInteractionMode } from "./types";
+import type { AACInteractionMode, AACAppDefinition } from "./types";
 import {
   AAC_DEFAULT_PERSONA_PROMPT,
   buildInteractiveSystemPrompt,
@@ -56,7 +56,7 @@ export class MonitorAgent {
    * Initialize a new session and create the Interactive Agent's prompt
    * This is called when starting a new dual-agent session
    */
-  async initializeSession(interactionMode: AACInteractionMode = 'interact'): Promise<{
+  async initializeSession(interactionMode: AACInteractionMode = 'interact', enabledApps: AACAppDefinition[] = []): Promise<{
     interactivePrompt: string;
     sessionId: string;
     initialContext?: string;
@@ -84,7 +84,13 @@ export class MonitorAgent {
       personaPrompt,
       student.primaryLanguage || undefined,
       contextResult.additionalContext,
-      interactionMode
+      interactionMode,
+      undefined,
+      undefined,
+      false,
+      enabledApps,
+      null, // activeApp
+      "happy" // currentEmote - monitor init always starts happy
     );
 
     // Store the session ID if we created one

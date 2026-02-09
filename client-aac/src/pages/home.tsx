@@ -23,11 +23,15 @@ import TwoHandedObjectDetection from "@/components/TwoHandedObjectDetection";
 import { DetectedObject } from "@/hooks/useTwoHandedObjectDetection";
 import { ObjectDetectionDebug } from "@/components/ObjectDetectionDebug";
 import InitializationLoadingScreen from "@/components/InitializationLoadingScreen";
+import YouTubeApp from "@/components/apps/YouTubeApp";
+import DrawingApp from "@/components/apps/DrawingApp";
+import MusicApp from "@/components/apps/MusicApp";
 import { CameraAttentivenessWrapper } from "@/components/CameraAttentivenessWrapper";
 import { useFaceTracking } from "@/hooks/useFaceTracking";
 import { useFaceEvents } from "@/hooks/useFaceEvents";
 import { useHandGestureTracking } from "@/hooks/useHandGestureTracking";
 import { useHandGestureEvents } from "@/hooks/useHandGestureEvents";
+import { useSignLanguageClassifier } from "@/hooks/useSignLanguageClassifier";
 import { serializeGestureContext } from "@/lib/gestureContextSerializer";
 
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -73,6 +77,34 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
   return null;
 }
 
+/**
+ * Renders the correct add-on app overlay based on the active app.
+ * Must be rendered inside DualAgentProvider.
+ */
+function AppOverlayBridge() {
+  const { activeApp, dismissApp, registerAppCanvasCapture } = useDualAgentContext();
+  return (
+    <AnimatePresence>
+      {activeApp?.appId === "youtube" && activeApp.appData?.videoId && (
+        <YouTubeApp
+          videoId={activeApp.appData.videoId}
+          title={activeApp.appData.title || "Video"}
+          onClose={dismissApp}
+        />
+      )}
+      {activeApp?.appId === "drawing" && (
+        <DrawingApp
+          onClose={dismissApp}
+          onRegisterCapture={registerAppCanvasCapture}
+        />
+      )}
+      {activeApp?.appId === "music" && (
+        <MusicApp onClose={dismissApp} />
+      )}
+    </AnimatePresence>
+  );
+}
+
 export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) {
   // Disable periodic camera detection calls (detect-person, analyze-image) to focus on chat
   const DISABLE_PERIODIC_DETECTION = true;
@@ -91,7 +123,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const [isCameraBlocked, setIsCameraBlocked] = useState<boolean>(false);
   const [isStandbyMode, setIsStandbyMode] = useState<boolean>(false);
   // Language is now managed by LanguageContext
-  const { language: currentLanguage, setLanguage: setCurrentLanguage, t, isRTL, direction } = useLanguage();
+  const { language: currentLanguage, setLanguage: setCurrentLanguage, t, isRTL, direction, signLanguage } = useLanguage();
   const [useDualAgent, setUseDualAgent] = useState<boolean>(true); // Toggle for dual-agent system
 
   // Use the initialization context for loading state
@@ -204,10 +236,17 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     enabled: handGestureEnabled,
   });
 
+  // Sign language classifier: augments raw hands with sign language classifications
+  const augmentedHands = useSignLanguageClassifier({
+    hands: rawHands,
+    signLanguage,
+  });
+
   // Hand gesture event accumulation (derives semantic events from gestures + landmarks)
   const { trackedHands } = useHandGestureEvents({
-    hands: rawHands,
+    hands: augmentedHands,
     enabled: handGestureEnabled,
+    config: signLanguage ? { signLanguageLocale: signLanguage } : undefined,
   });
 
   // Get current identified person (non-blocking getter for dual-agent)
@@ -993,6 +1032,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             onInterpretReady={(fn) => { interpretFnRef.current = fn; }}
             onBoardPatchChange={setBoardPatchData}
           />
+          <AppOverlayBridge />
           <DualAgentConversationBox
             isVisible={showConversation}
             onToggle={() => setShowConversation(!showConversation)}

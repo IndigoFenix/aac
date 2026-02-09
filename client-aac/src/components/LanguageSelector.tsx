@@ -9,9 +9,11 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import { Globe } from "lucide-react";
-import { useLanguage, type LanguageCode } from "@/contexts/LanguageContext";
+import { Globe, Check } from "lucide-react";
+import { useLanguage, type LanguageCode, type SignLanguageCode } from "@/contexts/LanguageContext";
 import { cn } from "@/lib/utils";
 
 interface LanguageSelectorProps {
@@ -24,15 +26,15 @@ export function LanguageSelector({
   variant = "icon",
   className = ""
 }: LanguageSelectorProps) {
-  const { language, languageInfo, setLanguage, supportedLanguages, isRTL, t } = useLanguage();
+  const { language, languageInfo, setLanguage, supportedLanguages, isRTL, t, signLanguage, setSignLanguage, supportedSignLanguages } = useLanguage();
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-          variant="outline"
+          variant="ghost"
           size="sm"
-          className={cn("gap-2", className)}
+          className={cn("gap-2 text-white hover:text-gray-200 hover:bg-white/10", className)}
         >
           <Globe className="h-4 w-4" />
           {variant === "full" && (
@@ -62,6 +64,25 @@ export function LanguageSelector({
                 {lang.name}
               </span>
             )}
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className="text-xs text-muted-foreground">Sign Language</DropdownMenuLabel>
+        {supportedSignLanguages.map((sl) => (
+          <DropdownMenuItem
+            key={sl.code}
+            onClick={() => setSignLanguage(signLanguage === sl.code ? null : sl.code as SignLanguageCode)}
+            className="cursor-pointer flex items-center justify-between"
+          >
+            <span className="font-medium">{sl.nativeName}</span>
+            <span className="flex items-center gap-1">
+              {signLanguage !== sl.code && (
+                <span className="text-xs text-muted-foreground">{sl.name}</span>
+              )}
+              {signLanguage === sl.code && (
+                <Check className="h-4 w-4 text-green-600" />
+              )}
+            </span>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

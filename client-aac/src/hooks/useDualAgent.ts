@@ -29,6 +29,12 @@ export interface IdentifiedPerson {
   method: "face" | "voice" | "both";
 }
 
+/** Data for an active add-on app */
+export interface ActiveAppData {
+  appId: string;
+  appData?: any;
+}
+
 export interface BoardPatch {
   add: Array<{ label: string; iconRef: string }>;
   remove: string[];
@@ -88,6 +94,16 @@ export interface UseDualAgentReturn {
   debugData: Record<string, any>;
   requestCache: CachedRequest[];
 
+  // Active app
+  activeApp: ActiveAppData | null;
+  dismissApp: () => void;
+  /** Register a function to capture the app canvas (e.g. drawing) for detection */
+  captureAppCanvasRef: React.MutableRefObject<(() => Promise<Blob | null>) | null>;
+
+  // Avatar
+  emote: "happy" | "sad" | "neutral";
+  speakingVolume: number;
+
   // Monitor status
   monitorError: string | null;
   monitorConsecutiveFailures: number;
@@ -142,6 +158,27 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
 
   // Video capture state (enabled by default - only sends data after initialized)
   const [videoCaptureEnabled, setVideoCaptureEnabled] = useState(true);
+
+  // Active app state
+  const [activeApp, setActiveApp] = useState<ActiveAppData | null>(null);
+
+  // Ref for app canvas capture (e.g. drawing app registers this)
+  const captureAppCanvasRef = useRef<(() => Promise<Blob | null>) | null>(null);
+
+  // Avatar emote state
+  const [emote, setEmote] = useState<"happy" | "sad" | "neutral">("happy");
+
+  // Track whether current audio is AI voice (not interpretation)
+  const isAiVoiceRef = useRef(true);
+
+  // Mutex: prevent concurrent message + detection API calls
+  // "message" | "detect" | null — tracks what's currently in flight
+  const inflightRef = useRef<"message" | "detect" | null>(null);
+  // Queued message to send after detection finishes
+  const queuedMessageRef = useRef<{ message: string; board?: ParsedBoardData } | null>(null);
+
+  // Dismiss app callback
+  const dismissApp = useCallback(() => setActiveApp(null), []);
 
   // Refs
   const currentBoardRef = useRef<ParsedBoardData | null>(null);
@@ -294,6 +331,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
 
               case "audio":
                 if (audioEnabled) {
+                  isAiVoiceRef.current = true;
                   streamingPlayer.queueChunk({
                     chunk: data.chunk,
                     format: data.format || "mp3",
@@ -307,6 +345,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
 
               case "interpretation_audio":
                 if (audioEnabled) {
+                  isAiVoiceRef.current = false;
                   streamingPlayer.queueChunk({
                     chunk: data.chunk,
                     format: data.format || "mp3",
@@ -353,6 +392,25 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
                     ...prev,
                     last_context_update: { text: data.text, timestamp: Date.now() },
                   }));
+                }
+                break;
+
+              case "app_open":
+                // Add-on app open event
+                if (data.appId) {
+                  setActiveApp({ appId: data.appId, appData: data.appData });
+                }
+                break;
+
+              case "app_close":
+                // Add-on app close event
+                setActiveApp(null);
+                break;
+
+              case "emote":
+                // Avatar emotion from [EMOTE] token
+                if (data.emote) {
+                  setEmote(data.emote);
                 }
                 break;
 
@@ -518,8 +576,18 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
    */
   const sendMessage = useCallback(
     async (message: string, board?: ParsedBoardData) => {
-      if (isLoading || !message.trim()) return;
+      if (!message.trim()) return;
 
+      // If detection is in flight, queue this message for after it finishes
+      if (inflightRef.current === "detect") {
+        console.log("[DualAgent] Detection in flight — queuing message:", message);
+        queuedMessageRef.current = { message, board };
+        return;
+      }
+      // If another message is already in flight, skip (prevents double-send)
+      if (inflightRef.current === "message") return;
+
+      inflightRef.current = "message";
       setIsLoading(true);
       setError(null);
       setTranscription(null);
@@ -612,11 +680,16 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
         console.error("[DualAgent] Message error:", err);
         setError(err.message || "Failed to send message");
       } finally {
+        inflightRef.current = null;
         setIsLoading(false);
       }
     },
-    [studentId, sessionId, language, isLoading, interactionMode, processSSEStream, captureFrame, getIdentifiedPerson, getGestureContext]
+    [studentId, sessionId, language, interactionMode, processSSEStream, captureFrame, getIdentifiedPerson, getGestureContext]
   );
+
+  // Stable ref for sendMessage — used by detection flush to avoid circular deps
+  const sendMessageRef = useRef(sendMessage);
+  sendMessageRef.current = sendMessage;
 
   /**
    * Send voice input (with optional camera frame)
@@ -811,6 +884,14 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
   const runDetectionWithGrid = useCallback(async (grid: ComposedGrid | null, audioClip: Blob | null) => {
     if (!sessionId) return;
 
+    // Skip if a message (or another detection) is in flight — activity monitor will retrigger
+    if (inflightRef.current) {
+      console.log(`[DualAgent] Skipping detection — ${inflightRef.current} in flight`);
+      return;
+    }
+
+    inflightRef.current = "detect";
+
     console.log(`[DualAgent] Detection: grid ${grid ? grid.frameCount + ' frames, ' + grid.blob.size + ' bytes' : 'none'}${audioClip ? `, audio ${audioClip.size} bytes` : ""}`);
 
     const gestureContext = getGestureContextRef.current?.() || undefined;
@@ -844,6 +925,19 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
       }
       if (audioClip) formData.append("audio", audioClip, "ambient.webm");
 
+      // Capture app canvas if drawing app is active
+      if (activeApp?.appId === "drawing" && captureAppCanvasRef.current) {
+        try {
+          const canvasBlob = await captureAppCanvasRef.current();
+          if (canvasBlob && canvasBlob.size > 0) {
+            formData.append("appCanvas", canvasBlob, "drawing.png");
+            console.log("[DualAgent] Attached drawing canvas:", canvasBlob.size, "bytes");
+          }
+        } catch (err) {
+          console.warn("[DualAgent] Failed to capture drawing canvas:", err);
+        }
+      }
+
       const response = await fetchWithAuth("/api/aac/dual/detect", {
         method: "POST",
         body: formData,
@@ -858,8 +952,19 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
       console.log("[DualAgent] Detection stream processed");
     } catch (err) {
       console.warn("[DualAgent] Detection error:", err);
+    } finally {
+      inflightRef.current = null;
+
+      // Flush queued message that arrived during detection
+      const queued = queuedMessageRef.current;
+      if (queued) {
+        queuedMessageRef.current = null;
+        console.log("[DualAgent] Flushing queued message after detection:", queued.message);
+        // Use setTimeout(0) to avoid calling sendMessage synchronously within the detection callback
+        setTimeout(() => sendMessageRef.current(queued.message, queued.board), 0);
+      }
     }
-  }, [sessionId, studentId, interactionMode, processSSEStream]);
+  }, [sessionId, studentId, interactionMode, processSSEStream, activeApp]);
 
   return {
     // Session state
@@ -895,6 +1000,15 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
     // Debug
     debugData,
     requestCache: requestCache.cache,
+
+    // Active app
+    activeApp,
+    dismissApp,
+    captureAppCanvasRef,
+
+    // Avatar
+    emote,
+    speakingVolume: isAiVoiceRef.current ? streamingPlayer.speakingVolume : 0,
 
     // Monitor status
     monitorError,

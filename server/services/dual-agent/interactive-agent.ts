@@ -39,6 +39,12 @@ export interface ParsedStreamOutput {
   rebuildBoard?: Array<{ label: string; iconRef: string }>;
   /** Request early monitor check-in with reason */
   callMonitor?: string;
+  /** Open an add-on app */
+  openApp?: { appId: string; data?: string };
+  /** Close the currently open app */
+  closeApp?: boolean;
+  /** Avatar emotion */
+  emote?: "happy" | "sad" | "neutral";
 }
 
 /**
@@ -115,6 +121,29 @@ function parseStreamedText(text: string): ParsedStreamOutput {
     result.callMonitor = callMonitorMatch[1].trim();
   }
 
+  // Match [OPEN_APP] appId (optionally followed by data)
+  const openAppMatch = text.match(/\[OPEN_APP\]\s*([^\[]*)/i);
+  if (openAppMatch) {
+    const parts = openAppMatch[1].trim().split(/\s+/);
+    const appId = parts[0] || "";
+    const data = parts.slice(1).join(" ") || undefined;
+    if (appId) {
+      result.openApp = { appId, data };
+    }
+  }
+
+  // Match [CLOSE_APP]
+  const closeAppMatch = text.match(/\[CLOSE_APP\]/i);
+  if (closeAppMatch) {
+    result.closeApp = true;
+  }
+
+  // Match [EMOTE] happy|sad|neutral
+  const emoteMatch = text.match(/\[EMOTE\]\s*(happy|sad|neutral)/i);
+  if (emoteMatch) {
+    result.emote = emoteMatch[1].toLowerCase() as "happy" | "sad" | "neutral";
+  }
+
   return result;
 }
 
@@ -148,7 +177,7 @@ function parseBoardButtons(content: string): Array<{ label: string; iconRef: str
 }
 
 /** Types that the streaming parser can emit */
-export type StreamingSegmentType = "speak" | "interpret" | "transcript" | "context" | "add_buttons" | "remove_buttons" | "rebuild_board" | "call_monitor";
+export type StreamingSegmentType = "speak" | "interpret" | "transcript" | "context" | "add_buttons" | "remove_buttons" | "rebuild_board" | "call_monitor" | "open_app" | "close_app" | "emote";
 
 export interface StreamingSegment {
   type: StreamingSegmentType;
@@ -162,7 +191,7 @@ export interface StreamingSegment {
  */
 export class StreamingPrefixParser {
   private buffer = "";
-  private currentMode: "none" | "transcript" | "context" | "speak" | "interpret" | "add_buttons" | "remove_buttons" | "rebuild_board" | "call_monitor" = "none";
+  private currentMode: "none" | "transcript" | "context" | "speak" | "interpret" | "add_buttons" | "remove_buttons" | "rebuild_board" | "call_monitor" | "open_app" | "close_app" | "emote" = "none";
   private transcriptSpeaker = "";
 
   /**
@@ -185,6 +214,9 @@ export class StreamingPrefixParser {
         const removeButtonsMatch = this.buffer.match(/^\s*\[REMOVE_BUTTONS\]\s*/i);
         const rebuildBoardMatch = this.buffer.match(/^\s*\[REBUILD_BOARD\]\s*/i);
         const callMonitorMatch = this.buffer.match(/^\s*\[CALL_MONITOR\]\s*/i);
+        const openAppMatch = this.buffer.match(/^\s*\[OPEN_APP\]\s*/i);
+        const closeAppMatch = this.buffer.match(/^\s*\[CLOSE_APP\]\s*/i);
+        const emoteMatch = this.buffer.match(/^\s*\[EMOTE\]\s*/i);
 
         if (transcriptMatch) {
           this.currentMode = "transcript";
@@ -211,6 +243,15 @@ export class StreamingPrefixParser {
         } else if (callMonitorMatch) {
           this.currentMode = "call_monitor";
           this.buffer = this.buffer.slice(callMonitorMatch[0].length);
+        } else if (openAppMatch) {
+          this.currentMode = "open_app";
+          this.buffer = this.buffer.slice(openAppMatch[0].length);
+        } else if (closeAppMatch) {
+          this.currentMode = "close_app";
+          this.buffer = this.buffer.slice(closeAppMatch[0].length);
+        } else if (emoteMatch) {
+          this.currentMode = "emote";
+          this.buffer = this.buffer.slice(emoteMatch[0].length);
         } else {
           // No prefix found yet, wait for more data
           // But trim leading whitespace/newlines that aren't part of a token
@@ -219,7 +260,7 @@ export class StreamingPrefixParser {
         }
       } else {
         // We're in a mode, collect content until the next prefix or end
-        const nextPrefixMatch = this.buffer.match(/\[(?:TRANSCRIPT|CONTEXT|SPEAK|INTERPRET|ADD_BUTTONS|REMOVE_BUTTONS|REBUILD_BOARD|CALL_MONITOR)[\s\]]/i);
+        const nextPrefixMatch = this.buffer.match(/\[(?:TRANSCRIPT|CONTEXT|SPEAK|INTERPRET|ADD_BUTTONS|REMOVE_BUTTONS|REBUILD_BOARD|CALL_MONITOR|OPEN_APP|CLOSE_APP|EMOTE)[\s\]]/i);
 
         if (nextPrefixMatch && nextPrefixMatch.index !== undefined && nextPrefixMatch.index > 0) {
           // Found next prefix, emit current content
@@ -601,7 +642,7 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
     audioContext?: string,
     imageData?: string, // base64 data URL or URL
     personContext?: string // Identified person context from biometrics
-  ): AsyncGenerator<{ type: "speak" | "interpret" | "transcript" | "context" | "board" | "board_patch" | "command" | "usage" | "call_monitor"; data: any; speaker?: string }> {
+  ): AsyncGenerator<{ type: "speak" | "interpret" | "transcript" | "context" | "board" | "board_patch" | "command" | "usage" | "call_monitor" | "open_app" | "close_app" | "emote"; data: any; speaker?: string }> {
     // Build context message if we have visual/audio/person context
     let contextMessage = "";
     if (personContext) {
@@ -689,6 +730,9 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
       let removeButtons: string[] = [];
       let rebuildBoard: Array<{ label: string; iconRef: string }> | null = null;
       let callMonitorReason: string | undefined;
+      let openAppData: { appId: string; data?: string } | undefined;
+      let closeAppTriggered = false;
+      let emoteValue: string | undefined;
 
       for await (const chunk of stream) {
         if (chunk.type === "text_delta") {
@@ -723,6 +767,15 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
               rebuildBoard = parseBoardButtons(seg.data);
             } else if (seg.type === "call_monitor") {
               callMonitorReason = seg.data;
+            } else if (seg.type === "open_app") {
+              const parts = seg.data.trim().split(/\s+/);
+              const appId = parts[0] || "";
+              const data = parts.slice(1).join(" ") || undefined;
+              if (appId) openAppData = { appId, data };
+            } else if (seg.type === "close_app") {
+              closeAppTriggered = true;
+            } else if (seg.type === "emote") {
+              emoteValue = seg.data;
             }
           }
         } else if (chunk.type === "done" && chunk.usage) {
@@ -751,6 +804,15 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
           rebuildBoard = parseBoardButtons(seg.data);
         } else if (seg.type === "call_monitor") {
           callMonitorReason = seg.data;
+        } else if (seg.type === "open_app") {
+          const parts = seg.data.trim().split(/\s+/);
+          const appId = parts[0] || "";
+          const data = parts.slice(1).join(" ") || undefined;
+          if (appId) openAppData = { appId, data };
+        } else if (seg.type === "close_app") {
+          closeAppTriggered = true;
+        } else if (seg.type === "emote") {
+          emoteValue = seg.data;
         }
       }
 
@@ -795,6 +857,21 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
       if (callMonitorReason) {
         yield { type: "call_monitor", data: callMonitorReason };
       }
+
+      // Yield open_app request if present
+      if (openAppData) {
+        yield { type: "open_app", data: openAppData };
+      }
+
+      // Yield close_app if triggered
+      if (closeAppTriggered) {
+        yield { type: "close_app", data: true };
+      }
+
+      // Yield emote if present
+      if (emoteValue) {
+        yield { type: "emote", data: emoteValue };
+      }
     } catch (error: any) {
       console.error("[InteractiveAgent] processMessageStream error:", error?.message || error);
       if (error?.stack) console.error("[InteractiveAgent] Stack trace:", error.stack);
@@ -817,7 +894,8 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
     detectionSystemPrompt?: string,
     gestureContext?: string,
     audioBuffer?: Buffer,
-    frameTimestamps?: number[]
+    frameTimestamps?: number[],
+    appCanvasData?: string
   ): Promise<InteractiveResponse> {
     const messageHistory: ProviderChatMessage[] = [
       { role: "system", content: detectionSystemPrompt || this.systemPrompt },
@@ -844,8 +922,16 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
         const age = Date.now() - m.timestamp;
         const ageStr = age < 60000 ? `${Math.round(age / 1000)}s ago` : `${Math.round(age / 60000)}m ago`;
         const roleLabel = m.role === "assistant" ? "AI" : m.role === "user" ? "User" : "System";
-        // Truncate long messages to keep context compact
-        const content = m.content.length > 150 ? m.content.substring(0, 150) + "..." : m.content;
+        // Summarize messages: strip boilerplate prefixes from system messages,
+        // keep user/AI messages shorter since they're less critical for detection context
+        let content = m.content;
+        const isSystemMsg = content.startsWith("[SYSTEM");
+        if (isSystemMsg) {
+          // Strip wrapper brackets and known prefixes to keep the substance
+          content = content.replace(/^\[SYSTEM\s*[—–-]\s*/, "").replace(/\]$/, "");
+        }
+        const limit = isSystemMsg ? 300 : 150;
+        if (content.length > limit) content = content.substring(0, limit) + "...";
         return `[${ageStr}] ${roleLabel}: ${content}`;
       });
       messageHistory.push({
@@ -937,6 +1023,10 @@ If unsure, add a button instead. You may use both — always output [INTERPRET] 
     const contentParts: any[] = [{ type: "text", text: userText }];
     if (imageData) {
       contentParts.push({ type: "image_url", image_url: { url: imageData, detail: "low" } });
+    }
+    if (appCanvasData) {
+      contentParts.push({ type: "text", text: "The student is using the Drawing app. The second image shows their current drawing." });
+      contentParts.push({ type: "image_url", image_url: { url: appCanvasData, detail: "low" } });
     }
     if (audioBuffer) {
       contentParts.push({
@@ -1044,7 +1134,7 @@ If unsure, add a button instead. You may use both — always output [INTERPRET] 
         usage: result.usage,
       });
 
-      return { text, isCommand: false, usage: result.usage, addButtons, removeLabels, interpretation, transcript, transcriptSpeaker, contextUpdate, rebuildBoard, callMonitor: parsed.callMonitor, finishReason: result.finishReason };
+      return { text, isCommand: false, usage: result.usage, addButtons, removeLabels, interpretation, transcript, transcriptSpeaker, contextUpdate, rebuildBoard, callMonitor: parsed.callMonitor, openApp: parsed.openApp, closeApp: parsed.closeApp, emote: parsed.emote, finishReason: result.finishReason };
     } catch (error: any) {
       console.error("[InteractiveAgent] processDetection error:", error?.message || error);
       if (error?.stack) console.error("[InteractiveAgent] Stack trace:", error.stack);

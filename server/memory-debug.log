@@ -1,10 +1,10 @@
-=== Memory Debug Log - 2026-02-09T13:51:48.941Z ===
+=== Memory Debug Log - 2026-02-09T21:09:17.278Z ===
 
 
 ────────────────────────────────────────────────────────────
   buildPromptAndTools — AI memory view
 ────────────────────────────────────────────────────────────
-[13:51:48.943] memoryValues.Student_Notes (25 items): [
+[21:09:17.282] memoryValues.Student_Notes (25 items): [
   "Gal shared feeling tired today.",
   "Gal frequently asks for help.",
   "Gal mentioned wanting to explore or play today.",
@@ -16,7 +16,7 @@
   "Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication",
   "Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support"
 ]
-[13:51:48.943] memoryValues.Student_People (4 items): [
+[21:09:17.284] memoryValues.Student_People (4 items): [
   {
     "Name": "Jordan",
     "Relationship": "Friend"
@@ -34,10 +34,10 @@
     "Relationship": "Father"
   }
 ]
-[13:51:48.945] memoryValues.Student_Interests (1 items): [
-  "cutting strings and using scissors"
+[21:09:17.285] memoryValues.Student_Interests (1 items): [
+  "exploring pictures, drawing, and listening to music"
 ]
-[13:51:48.947] memoryValues.Student_Preferences: {
+[21:09:17.286] memoryValues.Student_Preferences: {
   "FavoriteActivities": [
     {
       "FavoriteActivities": [
@@ -49,16 +49,16 @@
     "playing with tools"
   ]
 }
-[13:51:48.948] memoryValues.Student_CommunicationStyle: {
+[21:09:17.287] memoryValues.Student_CommunicationStyle: {
   "PrimaryMethod": "nonverbal",
   "PreferredModality": "symbols"
 }
-[13:51:48.949] memoryVisualization — data section (87 lines): "=== Current Memory ===\n• /Student_People (array, 4 items) — Important people in the student's life (names and relationships only) \n  - [0]: {object} (view to expand)\n  - [1]: {object} (view to expand)\n  - [2]: {object} (view to expand)\n  - [3]: {object} (view to expand)\n  ↪ To append: action \"add\" at \"/Student_People\" with value. To update item: action \"set\" at \"/Student_People/<index>\".\n• /Student_Interests (array, 1 items) — Things the student enjoys or is interested in \n  - [0]: \"cutting strings and using scissors\"\n  ↪ To append: action \"add\" at \"/Student_Interests\" with value. To update item: action \"set\" at \"/Student_Interests/<index>\".\n• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) \n  - PrimaryMethod: \"nonverbal\" — verbal, nonverbal, AAC, or mixed\n  - PreferredModality: \"symbols\" — If AAC, which type (symbols, text, combined)\n  ↪ To expand: view \"/Student_CommunicationStyle/*\". To modify: action \"set\" on \"/Student_CommunicationStyle\" or \"/Student_CommunicationStyle/<property>\".\n• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement \n  - FavoriteActivities: {array} (hidden)\n  - RewardPreferences: {array} (empty)\n  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)\n  ↪ To expand: view \"/Student_Preferences/*\". To modify: action \"set\" on \"/Student_Preferences\" or \"/Student_Preferences/<property>\".\n• /Student_Notes (array, 25 items) — General notes about the student (non-sensitive) \n  - [0]: \"Gal shared feeling tired today.\"\n  - [1]: \"Gal frequently asks for help.\"\n  - [2]: \"Gal mentioned wanting to explore or play today.\"\n  - [3]: \"Gal is interested in choosing an activity from the board.\"\n  - [4]: \"Gal's board options include playing, listening to music, exploring, and problem-solving.\"\n  - [5]: \"Checked in on Gal's mood and activity choices.\"\n  - [6]: \"Gal showed interest in listening to stories, indicating progress in imaginative play.\"\n  - [7]: \"Gal is present and ready to engage - environment scans detected, waiting for activity selection\"\n  - [8]: \"Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication\"\n  - [9]: \"Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support\"\n  - [10]: \"Gal performed an environment detection scan, showing active engagement and readiness for communication\"\n  - [11]: \"Gal is actively engaged with multiple environment detection scans, showing sustained attention and readiness for communication support\"\n  - [12]: \"Gal continues to show sustained engagement and attention through repeated environment scans, indicating he is actively present and ready for interaction\"\n  - [13]: \"Gal is showing very high engagement with multiple consecutive environment detection scans, indicating strong attention and active participation\"\n  - [14]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [15]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [16]: \"Gal is engaging with exploration activities and showing interest in environmental objects like scissors and people around him\"\n  - [17]: \"Gal is engaging with exploration activities and showing interest in environmental objects like wrenches and people around him\"\n  - [18]: \"Gal is present and ready to engage - automatic board update detected with environment interaction buttons showing active participation\"\n  - [19]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [20]: \"Gal expressed interest in cutting a string but did not proceed.\"\n  - [21]: \"Gal regularly expresses interest in using tools like scissors.\"\n  - [22]: \"Performed system update, revising memory management.\"\n  - [23]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [24]: \"Gal showed interest in exploring, which can support imaginative play development.\"\n  ↪ To append: action \"add\" at \"/Student_Notes\" with value. To update item: action \"set\" at \"/Student_Notes/<index>\".\n• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. \n  (may contain items - view \"/Context_Library\" to load from database)\n• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) \n  ↪ To expand: view \"/Context_StudentInfo/*\". (read-only)\n• /Context_StudentInstitutes (array, 0 items) — Schools and hospitals the student attends — hidden; view to list items\n• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items\n• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items\n• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys\n• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys\n• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys\n• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \n  ↪ To expand: view \"/Context_Progress/*\". (read-only)\n\nAllowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}\nOperate only on visible paths or their parent container. To reveal children:\n  manageMemory { \"ops\": [ { \"action\": \"view\", \"path\": \"/path/*\" } ] }\nPagination: include { \"page\": { \"offset\": N, \"limit\": M } } in a view op on a container.\n\n=== Schema Hints (add/insert/upsert in current scope) ===\n• /Student_People — ARRAY of object\n  item.required: [Name]\n  item.props: Name:string, Relationship:string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_People\",\"value\": {\"Name\":\"text\"} }] }\n• /Student_Interests — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Interests\",\"value\": \"text\" }] }\n• /Student_Preferences/FavoriteActivities — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/FavoriteActivities\",\"value\": \"text\" }] }\n• /Student_Preferences/RewardPreferences — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/RewardPreferences\",\"value\": \"text\" }] }\n• /Student_Preferences/AvoidTopics — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/AvoidTopics\",\"value\": \"text\" }] }\n• /Student_Notes — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Notes\",\"value\": \"text\" }] }\n• /Context_Library — MAP<string, object>\n  value.props: id:string, title:string, content:string, subtopics:map<string, object>\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Library\",\"key\":\"<key>\",\"value\": {} }] }\n\nNotes:\n- When item/value is an OBJECT, include all listed \"required\" keys when creating it.\n- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}."
+[21:09:17.288] memoryVisualization — data section (87 lines): "=== Current Memory ===\n• /Student_People (array, 4 items) — Important people in the student's life (names and relationships only) \n  - [0]: {object} (view to expand)\n  - [1]: {object} (view to expand)\n  - [2]: {object} (view to expand)\n  - [3]: {object} (view to expand)\n  ↪ To append: action \"add\" at \"/Student_People\" with value. To update item: action \"set\" at \"/Student_People/<index>\".\n• /Student_Interests (array, 1 items) — Things the student enjoys or is interested in \n  - [0]: \"exploring pictures, drawing, and listening to music\"\n  ↪ To append: action \"add\" at \"/Student_Interests\" with value. To update item: action \"set\" at \"/Student_Interests/<index>\".\n• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) \n  - PrimaryMethod: \"nonverbal\" — verbal, nonverbal, AAC, or mixed\n  - PreferredModality: \"symbols\" — If AAC, which type (symbols, text, combined)\n  ↪ To expand: view \"/Student_CommunicationStyle/*\". To modify: action \"set\" on \"/Student_CommunicationStyle\" or \"/Student_CommunicationStyle/<property>\".\n• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement \n  - FavoriteActivities: {array} (hidden)\n  - RewardPreferences: {array} (empty)\n  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)\n  ↪ To expand: view \"/Student_Preferences/*\". To modify: action \"set\" on \"/Student_Preferences\" or \"/Student_Preferences/<property>\".\n• /Student_Notes (array, 25 items) — General notes about the student (non-sensitive) \n  - [0]: \"Gal shared feeling tired today.\"\n  - [1]: \"Gal frequently asks for help.\"\n  - [2]: \"Gal mentioned wanting to explore or play today.\"\n  - [3]: \"Gal is interested in choosing an activity from the board.\"\n  - [4]: \"Gal's board options include playing, listening to music, exploring, and problem-solving.\"\n  - [5]: \"Checked in on Gal's mood and activity choices.\"\n  - [6]: \"Gal showed interest in listening to stories, indicating progress in imaginative play.\"\n  - [7]: \"Gal is present and ready to engage - environment scans detected, waiting for activity selection\"\n  - [8]: \"Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication\"\n  - [9]: \"Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support\"\n  - [10]: \"Gal performed an environment detection scan, showing active engagement and readiness for communication\"\n  - [11]: \"Gal is actively engaged with multiple environment detection scans, showing sustained attention and readiness for communication support\"\n  - [12]: \"Gal continues to show sustained engagement and attention through repeated environment scans, indicating he is actively present and ready for interaction\"\n  - [13]: \"Gal is showing very high engagement with multiple consecutive environment detection scans, indicating strong attention and active participation\"\n  - [14]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [15]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [16]: \"Gal is engaging with exploration activities and showing interest in environmental objects like scissors and people around him\"\n  - [17]: \"Gal is engaging with exploration activities and showing interest in environmental objects like wrenches and people around him\"\n  - [18]: \"Gal is present and ready to engage - automatic board update detected with environment interaction buttons showing active participation\"\n  - [19]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [20]: \"Gal expressed interest in cutting a string but did not proceed.\"\n  - [21]: \"Gal regularly expresses interest in using tools like scissors.\"\n  - [22]: \"Performed system update, revising memory management.\"\n  - [23]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [24]: \"Gal showed interest in exploring, which can support imaginative play development.\"\n  ↪ To append: action \"add\" at \"/Student_Notes\" with value. To update item: action \"set\" at \"/Student_Notes/<index>\".\n• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. \n  (may contain items - view \"/Context_Library\" to load from database)\n• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) \n  ↪ To expand: view \"/Context_StudentInfo/*\". (read-only)\n• /Context_StudentInstitutes (array, 0 items) — Schools and hospitals the student attends — hidden; view to list items\n• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items\n• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items\n• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys\n• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys\n• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys\n• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \n  ↪ To expand: view \"/Context_Progress/*\". (read-only)\n\nAllowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}\nOperate only on visible paths or their parent container. To reveal children:\n  manageMemory { \"ops\": [ { \"action\": \"view\", \"path\": \"/path/*\" } ] }\nPagination: include { \"page\": { \"offset\": N, \"limit\": M } } in a view op on a container.\n\n=== Schema Hints (add/insert/upsert in current scope) ===\n• /Student_People — ARRAY of object\n  item.required: [Name]\n  item.props: Name:string, Relationship:string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_People\",\"value\": {\"Name\":\"text\"} }] }\n• /Student_Interests — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Interests\",\"value\": \"text\" }] }\n• /Student_Preferences/FavoriteActivities — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/FavoriteActivities\",\"value\": \"text\" }] }\n• /Student_Preferences/RewardPreferences — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/RewardPreferences\",\"value\": \"text\" }] }\n• /Student_Preferences/AvoidTopics — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/AvoidTopics\",\"value\": \"text\" }] }\n• /Student_Notes — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Notes\",\"value\": \"text\" }] }\n• /Context_Library — MAP<string, object>\n  value.props: id:string, title:string, content:string, subtopics:map<string, object>\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Library\",\"key\":\"<key>\",\"value\": {} }] }\n\nNotes:\n- When item/value is an OBJECT, include all listed \"required\" keys when creating it.\n- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}."
 
 ────────────────────────────────────────────────────────────
   manageMemory called
 ────────────────────────────────────────────────────────────
-[13:51:54.576] INPUT: {
+[21:09:19.499] INPUT: {
   "ops": [
     {
       "action": "view",
@@ -66,7 +66,7 @@
     }
   ]
 }
-[13:51:54.577] BEFORE view /Student_Notes — Student_Notes array (25 items): [
+[21:09:19.500] BEFORE view /Student_Notes — Student_Notes array (25 items): [
   "Gal shared feeling tired today.",
   "Gal frequently asks for help.",
   "Gal mentioned wanting to explore or play today.",
@@ -97,7 +97,7 @@
 ────────────────────────────────────────────────────────────
   manageMemory called
 ────────────────────────────────────────────────────────────
-[13:51:54.608] INPUT: {
+[21:09:19.524] INPUT: {
   "ops": [
     {
       "action": "view",
@@ -105,7 +105,7 @@
     }
   ]
 }
-[13:51:54.613] RESULTS: [
+[21:09:19.537] RESULTS: [
   {
     "target": "/Student_Notes",
     "action": "view",
@@ -116,7 +116,7 @@
     "summary": "Array with 25 item(s)"
   }
 ]
-[13:51:54.614] AFTER view /Student_Notes — Student_Notes array (25 items): [
+[21:09:19.538] AFTER view /Student_Notes — Student_Notes array (25 items): [
   "Gal shared feeling tired today.",
   "Gal frequently asks for help.",
   "Gal mentioned wanting to explore or play today.",
@@ -143,7 +143,7 @@
   "Gal expressed interest in cutting a string but decided not to proceed.",
   "Gal showed interest in exploring, which can support imaginative play development."
 ]
-[13:51:54.615] RESULTS: [
+[21:09:19.541] RESULTS: [
   {
     "target": "/Student_CommunicationStyle",
     "action": "view",
@@ -158,7 +158,7 @@
 ────────────────────────────────────────────────────────────
   buildPromptAndTools — AI memory view
 ────────────────────────────────────────────────────────────
-[13:51:54.624] memoryValues.Student_Notes (25 items): [
+[21:09:19.560] memoryValues.Student_Notes (25 items): [
   "Gal shared feeling tired today.",
   "Gal frequently asks for help.",
   "Gal mentioned wanting to explore or play today.",
@@ -170,7 +170,7 @@
   "Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication",
   "Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support"
 ]
-[13:51:54.625] memoryValues.Student_People (4 items): [
+[21:09:19.563] memoryValues.Student_People (4 items): [
   {
     "Name": "Jordan",
     "Relationship": "Friend"
@@ -188,10 +188,10 @@
     "Relationship": "Father"
   }
 ]
-[13:51:54.626] memoryValues.Student_Interests (1 items): [
-  "cutting strings and using scissors"
+[21:09:19.567] memoryValues.Student_Interests (1 items): [
+  "exploring pictures, drawing, and listening to music"
 ]
-[13:51:54.627] memoryValues.Student_Preferences: {
+[21:09:19.570] memoryValues.Student_Preferences: {
   "FavoriteActivities": [
     {
       "FavoriteActivities": [
@@ -203,8 +203,476 @@
     "playing with tools"
   ]
 }
-[13:51:54.627] memoryValues.Student_CommunicationStyle: {
+[21:09:19.571] memoryValues.Student_CommunicationStyle: {
   "PrimaryMethod": "nonverbal",
   "PreferredModality": "symbols"
 }
-[13:51:54.628] memoryVisualization — data section (87 lines): "=== Current Memory ===\n• /Student_People (array, 4 items) — Important people in the student's life (names and relationships only) \n  - [0]: {object} (view to expand)\n  - [1]: {object} (view to expand)\n  - [2]: {object} (view to expand)\n  - [3]: {object} (view to expand)\n  ↪ To append: action \"add\" at \"/Student_People\" with value. To update item: action \"set\" at \"/Student_People/<index>\".\n• /Student_Interests (array, 1 items) — Things the student enjoys or is interested in \n  - [0]: \"cutting strings and using scissors\"\n  ↪ To append: action \"add\" at \"/Student_Interests\" with value. To update item: action \"set\" at \"/Student_Interests/<index>\".\n• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) \n  - PrimaryMethod: \"nonverbal\" — verbal, nonverbal, AAC, or mixed\n  - PreferredModality: \"symbols\" — If AAC, which type (symbols, text, combined)\n  ↪ To expand: view \"/Student_CommunicationStyle/*\". To modify: action \"set\" on \"/Student_CommunicationStyle\" or \"/Student_CommunicationStyle/<property>\".\n• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement \n  - FavoriteActivities: {array} (hidden)\n  - RewardPreferences: {array} (empty)\n  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)\n  ↪ To expand: view \"/Student_Preferences/*\". To modify: action \"set\" on \"/Student_Preferences\" or \"/Student_Preferences/<property>\".\n• /Student_Notes (array, 25 items) — General notes about the student (non-sensitive) \n  - [0]: \"Gal shared feeling tired today.\"\n  - [1]: \"Gal frequently asks for help.\"\n  - [2]: \"Gal mentioned wanting to explore or play today.\"\n  - [3]: \"Gal is interested in choosing an activity from the board.\"\n  - [4]: \"Gal's board options include playing, listening to music, exploring, and problem-solving.\"\n  - [5]: \"Checked in on Gal's mood and activity choices.\"\n  - [6]: \"Gal showed interest in listening to stories, indicating progress in imaginative play.\"\n  - [7]: \"Gal is present and ready to engage - environment scans detected, waiting for activity selection\"\n  - [8]: \"Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication\"\n  - [9]: \"Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support\"\n  - [10]: \"Gal performed an environment detection scan, showing active engagement and readiness for communication\"\n  - [11]: \"Gal is actively engaged with multiple environment detection scans, showing sustained attention and readiness for communication support\"\n  - [12]: \"Gal continues to show sustained engagement and attention through repeated environment scans, indicating he is actively present and ready for interaction\"\n  - [13]: \"Gal is showing very high engagement with multiple consecutive environment detection scans, indicating strong attention and active participation\"\n  - [14]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [15]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [16]: \"Gal is engaging with exploration activities and showing interest in environmental objects like scissors and people around him\"\n  - [17]: \"Gal is engaging with exploration activities and showing interest in environmental objects like wrenches and people around him\"\n  - [18]: \"Gal is present and ready to engage - automatic board update detected with environment interaction buttons showing active participation\"\n  - [19]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [20]: \"Gal expressed interest in cutting a string but did not proceed.\"\n  - [21]: \"Gal regularly expresses interest in using tools like scissors.\"\n  - [22]: \"Performed system update, revising memory management.\"\n  - [23]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [24]: \"Gal showed interest in exploring, which can support imaginative play development.\"\n  ↪ To append: action \"add\" at \"/Student_Notes\" with value. To update item: action \"set\" at \"/Student_Notes/<index>\".\n• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. \n  (may contain items - view \"/Context_Library\" to load from database)\n• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) \n  ↪ To expand: view \"/Context_StudentInfo/*\". (read-only)\n• /Context_StudentInstitutes (array, 0 items) — Schools and hospitals the student attends — hidden; view to list items\n• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items\n• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items\n• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys\n• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys\n• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys\n• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \n  ↪ To expand: view \"/Context_Progress/*\". (read-only)\n\nAllowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}\nOperate only on visible paths or their parent container. To reveal children:\n  manageMemory { \"ops\": [ { \"action\": \"view\", \"path\": \"/path/*\" } ] }\nPagination: include { \"page\": { \"offset\": N, \"limit\": M } } in a view op on a container.\n\n=== Schema Hints (add/insert/upsert in current scope) ===\n• /Student_People — ARRAY of object\n  item.required: [Name]\n  item.props: Name:string, Relationship:string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_People\",\"value\": {\"Name\":\"text\"} }] }\n• /Student_Interests — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Interests\",\"value\": \"text\" }] }\n• /Student_Preferences/FavoriteActivities — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/FavoriteActivities\",\"value\": \"text\" }] }\n• /Student_Preferences/RewardPreferences — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/RewardPreferences\",\"value\": \"text\" }] }\n• /Student_Preferences/AvoidTopics — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/AvoidTopics\",\"value\": \"text\" }] }\n• /Student_Notes — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Notes\",\"value\": \"text\" }] }\n• /Context_Library — MAP<string, object>\n  value.props: id:string, title:string, content:string, subtopics:map<string, object>\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Library\",\"key\":\"<key>\",\"value\": {} }] }\n\nNotes:\n- When item/value is an OBJECT, include all listed \"required\" keys when creating it.\n- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}."
+[21:09:19.572] memoryVisualization — data section (87 lines): "=== Current Memory ===\n• /Student_People (array, 4 items) — Important people in the student's life (names and relationships only) \n  - [0]: {object} (view to expand)\n  - [1]: {object} (view to expand)\n  - [2]: {object} (view to expand)\n  - [3]: {object} (view to expand)\n  ↪ To append: action \"add\" at \"/Student_People\" with value. To update item: action \"set\" at \"/Student_People/<index>\".\n• /Student_Interests (array, 1 items) — Things the student enjoys or is interested in \n  - [0]: \"exploring pictures, drawing, and listening to music\"\n  ↪ To append: action \"add\" at \"/Student_Interests\" with value. To update item: action \"set\" at \"/Student_Interests/<index>\".\n• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) \n  - PrimaryMethod: \"nonverbal\" — verbal, nonverbal, AAC, or mixed\n  - PreferredModality: \"symbols\" — If AAC, which type (symbols, text, combined)\n  ↪ To expand: view \"/Student_CommunicationStyle/*\". To modify: action \"set\" on \"/Student_CommunicationStyle\" or \"/Student_CommunicationStyle/<property>\".\n• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement \n  - FavoriteActivities: {array} (hidden)\n  - RewardPreferences: {array} (empty)\n  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)\n  ↪ To expand: view \"/Student_Preferences/*\". To modify: action \"set\" on \"/Student_Preferences\" or \"/Student_Preferences/<property>\".\n• /Student_Notes (array, 25 items) — General notes about the student (non-sensitive) \n  - [0]: \"Gal shared feeling tired today.\"\n  - [1]: \"Gal frequently asks for help.\"\n  - [2]: \"Gal mentioned wanting to explore or play today.\"\n  - [3]: \"Gal is interested in choosing an activity from the board.\"\n  - [4]: \"Gal's board options include playing, listening to music, exploring, and problem-solving.\"\n  - [5]: \"Checked in on Gal's mood and activity choices.\"\n  - [6]: \"Gal showed interest in listening to stories, indicating progress in imaginative play.\"\n  - [7]: \"Gal is present and ready to engage - environment scans detected, waiting for activity selection\"\n  - [8]: \"Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication\"\n  - [9]: \"Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support\"\n  - [10]: \"Gal performed an environment detection scan, showing active engagement and readiness for communication\"\n  - [11]: \"Gal is actively engaged with multiple environment detection scans, showing sustained attention and readiness for communication support\"\n  - [12]: \"Gal continues to show sustained engagement and attention through repeated environment scans, indicating he is actively present and ready for interaction\"\n  - [13]: \"Gal is showing very high engagement with multiple consecutive environment detection scans, indicating strong attention and active participation\"\n  - [14]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [15]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [16]: \"Gal is engaging with exploration activities and showing interest in environmental objects like scissors and people around him\"\n  - [17]: \"Gal is engaging with exploration activities and showing interest in environmental objects like wrenches and people around him\"\n  - [18]: \"Gal is present and ready to engage - automatic board update detected with environment interaction buttons showing active participation\"\n  - [19]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [20]: \"Gal expressed interest in cutting a string but did not proceed.\"\n  - [21]: \"Gal regularly expresses interest in using tools like scissors.\"\n  - [22]: \"Performed system update, revising memory management.\"\n  - [23]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [24]: \"Gal showed interest in exploring, which can support imaginative play development.\"\n  ↪ To append: action \"add\" at \"/Student_Notes\" with value. To update item: action \"set\" at \"/Student_Notes/<index>\".\n• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. \n  (may contain items - view \"/Context_Library\" to load from database)\n• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) \n  ↪ To expand: view \"/Context_StudentInfo/*\". (read-only)\n• /Context_StudentInstitutes (array, 0 items) — Schools and hospitals the student attends — hidden; view to list items\n• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items\n• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items\n• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys\n• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys\n• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys\n• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \n  ↪ To expand: view \"/Context_Progress/*\". (read-only)\n\nAllowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}\nOperate only on visible paths or their parent container. To reveal children:\n  manageMemory { \"ops\": [ { \"action\": \"view\", \"path\": \"/path/*\" } ] }\nPagination: include { \"page\": { \"offset\": N, \"limit\": M } } in a view op on a container.\n\n=== Schema Hints (add/insert/upsert in current scope) ===\n• /Student_People — ARRAY of object\n  item.required: [Name]\n  item.props: Name:string, Relationship:string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_People\",\"value\": {\"Name\":\"text\"} }] }\n• /Student_Interests — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Interests\",\"value\": \"text\" }] }\n• /Student_Preferences/FavoriteActivities — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/FavoriteActivities\",\"value\": \"text\" }] }\n• /Student_Preferences/RewardPreferences — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/RewardPreferences\",\"value\": \"text\" }] }\n• /Student_Preferences/AvoidTopics — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/AvoidTopics\",\"value\": \"text\" }] }\n• /Student_Notes — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Notes\",\"value\": \"text\" }] }\n• /Context_Library — MAP<string, object>\n  value.props: id:string, title:string, content:string, subtopics:map<string, object>\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Library\",\"key\":\"<key>\",\"value\": {} }] }\n\nNotes:\n- When item/value is an OBJECT, include all listed \"required\" keys when creating it.\n- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}."
+
+────────────────────────────────────────────────────────────
+  buildPromptAndTools — AI memory view
+────────────────────────────────────────────────────────────
+[21:15:58.212] memoryValues.Student_Notes (25 items): [
+  "Gal shared feeling tired today.",
+  "Gal frequently asks for help.",
+  "Gal mentioned wanting to explore or play today.",
+  "Gal is interested in choosing an activity from the board.",
+  "Gal's board options include playing, listening to music, exploring, and problem-solving.",
+  "Checked in on Gal's mood and activity choices.",
+  "Gal showed interest in listening to stories, indicating progress in imaginative play.",
+  "Gal is present and ready to engage - environment scans detected, waiting for activity selection",
+  "Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication",
+  "Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support"
+]
+[21:15:58.214] memoryValues.Student_People (4 items): [
+  {
+    "Name": "Jordan",
+    "Relationship": "Friend"
+  },
+  {
+    "Name": "Prof. Meir Lotan",
+    "Relationship": "physiotherapist/researcher"
+  },
+  {
+    "Name": "Sara",
+    "Relationship": "Mother"
+  },
+  {
+    "Name": "Avraham",
+    "Relationship": "Father"
+  }
+]
+[21:15:58.215] memoryValues.Student_Interests (1 items): [
+  "exploring pictures, drawing, and listening to music"
+]
+[21:15:58.217] memoryValues.Student_Preferences: {
+  "FavoriteActivities": [
+    {
+      "FavoriteActivities": [
+        "Making crafts"
+      ]
+    },
+    "Making crafts with scissors",
+    "Board games",
+    "playing with tools"
+  ]
+}
+[21:15:58.218] memoryValues.Student_CommunicationStyle: {
+  "PrimaryMethod": "nonverbal",
+  "PreferredModality": "symbols"
+}
+[21:15:58.220] memoryVisualization — data section (87 lines): "=== Current Memory ===\n• /Student_People (array, 4 items) — Important people in the student's life (names and relationships only) \n  - [0]: {object} (view to expand)\n  - [1]: {object} (view to expand)\n  - [2]: {object} (view to expand)\n  - [3]: {object} (view to expand)\n  ↪ To append: action \"add\" at \"/Student_People\" with value. To update item: action \"set\" at \"/Student_People/<index>\".\n• /Student_Interests (array, 1 items) — Things the student enjoys or is interested in \n  - [0]: \"exploring pictures, drawing, and listening to music\"\n  ↪ To append: action \"add\" at \"/Student_Interests\" with value. To update item: action \"set\" at \"/Student_Interests/<index>\".\n• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) \n  - PrimaryMethod: \"nonverbal\" — verbal, nonverbal, AAC, or mixed\n  - PreferredModality: \"symbols\" — If AAC, which type (symbols, text, combined)\n  ↪ To expand: view \"/Student_CommunicationStyle/*\". To modify: action \"set\" on \"/Student_CommunicationStyle\" or \"/Student_CommunicationStyle/<property>\".\n• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement \n  - FavoriteActivities: {array} (hidden)\n  - RewardPreferences: {array} (empty)\n  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)\n  ↪ To expand: view \"/Student_Preferences/*\". To modify: action \"set\" on \"/Student_Preferences\" or \"/Student_Preferences/<property>\".\n• /Student_Notes (array, 25 items) — General notes about the student (non-sensitive) \n  - [0]: \"Gal shared feeling tired today.\"\n  - [1]: \"Gal frequently asks for help.\"\n  - [2]: \"Gal mentioned wanting to explore or play today.\"\n  - [3]: \"Gal is interested in choosing an activity from the board.\"\n  - [4]: \"Gal's board options include playing, listening to music, exploring, and problem-solving.\"\n  - [5]: \"Checked in on Gal's mood and activity choices.\"\n  - [6]: \"Gal showed interest in listening to stories, indicating progress in imaginative play.\"\n  - [7]: \"Gal is present and ready to engage - environment scans detected, waiting for activity selection\"\n  - [8]: \"Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication\"\n  - [9]: \"Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support\"\n  - [10]: \"Gal performed an environment detection scan, showing active engagement and readiness for communication\"\n  - [11]: \"Gal is actively engaged with multiple environment detection scans, showing sustained attention and readiness for communication support\"\n  - [12]: \"Gal continues to show sustained engagement and attention through repeated environment scans, indicating he is actively present and ready for interaction\"\n  - [13]: \"Gal is showing very high engagement with multiple consecutive environment detection scans, indicating strong attention and active participation\"\n  - [14]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [15]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [16]: \"Gal is engaging with exploration activities and showing interest in environmental objects like scissors and people around him\"\n  - [17]: \"Gal is engaging with exploration activities and showing interest in environmental objects like wrenches and people around him\"\n  - [18]: \"Gal is present and ready to engage - automatic board update detected with environment interaction buttons showing active participation\"\n  - [19]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [20]: \"Gal expressed interest in cutting a string but did not proceed.\"\n  - [21]: \"Gal regularly expresses interest in using tools like scissors.\"\n  - [22]: \"Performed system update, revising memory management.\"\n  - [23]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [24]: \"Gal showed interest in exploring, which can support imaginative play development.\"\n  ↪ To append: action \"add\" at \"/Student_Notes\" with value. To update item: action \"set\" at \"/Student_Notes/<index>\".\n• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. \n  (may contain items - view \"/Context_Library\" to load from database)\n• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) \n  ↪ To expand: view \"/Context_StudentInfo/*\". (read-only)\n• /Context_StudentInstitutes (array, 0 items) — Schools and hospitals the student attends — hidden; view to list items\n• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items\n• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items\n• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys\n• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys\n• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys\n• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \n  ↪ To expand: view \"/Context_Progress/*\". (read-only)\n\nAllowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}\nOperate only on visible paths or their parent container. To reveal children:\n  manageMemory { \"ops\": [ { \"action\": \"view\", \"path\": \"/path/*\" } ] }\nPagination: include { \"page\": { \"offset\": N, \"limit\": M } } in a view op on a container.\n\n=== Schema Hints (add/insert/upsert in current scope) ===\n• /Student_People — ARRAY of object\n  item.required: [Name]\n  item.props: Name:string, Relationship:string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_People\",\"value\": {\"Name\":\"text\"} }] }\n• /Student_Interests — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Interests\",\"value\": \"text\" }] }\n• /Student_Preferences/FavoriteActivities — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/FavoriteActivities\",\"value\": \"text\" }] }\n• /Student_Preferences/RewardPreferences — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/RewardPreferences\",\"value\": \"text\" }] }\n• /Student_Preferences/AvoidTopics — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/AvoidTopics\",\"value\": \"text\" }] }\n• /Student_Notes — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Notes\",\"value\": \"text\" }] }\n• /Context_Library — MAP<string, object>\n  value.props: id:string, title:string, content:string, subtopics:map<string, object>\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Library\",\"key\":\"<key>\",\"value\": {} }] }\n\nNotes:\n- When item/value is an OBJECT, include all listed \"required\" keys when creating it.\n- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}."
+
+────────────────────────────────────────────────────────────
+  manageMemory called
+────────────────────────────────────────────────────────────
+[21:16:00.175] INPUT: {
+  "ops": [
+    {
+      "action": "view",
+      "path": "/Student_Notes"
+    },
+    {
+      "action": "view",
+      "path": "/Student_CommunicationStyle"
+    }
+  ]
+}
+[21:16:00.176] BEFORE view /Student_Notes — Student_Notes array (25 items): [
+  "Gal shared feeling tired today.",
+  "Gal frequently asks for help.",
+  "Gal mentioned wanting to explore or play today.",
+  "Gal is interested in choosing an activity from the board.",
+  "Gal's board options include playing, listening to music, exploring, and problem-solving.",
+  "Checked in on Gal's mood and activity choices.",
+  "Gal showed interest in listening to stories, indicating progress in imaginative play.",
+  "Gal is present and ready to engage - environment scans detected, waiting for activity selection",
+  "Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication",
+  "Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support",
+  "Gal performed an environment detection scan, showing active engagement and readiness for communication",
+  "Gal is actively engaged with multiple environment detection scans, showing sustained attention and readiness for communication support",
+  "Gal continues to show sustained engagement and attention through repeated environment scans, indicating he is actively present and ready for interaction",
+  "Gal is showing very high engagement with multiple consecutive environment detection scans, indicating strong attention and active participation",
+  "Gal performed environment detection scan showing active engagement and readiness for communication",
+  "Gal performed environment detection scan showing active engagement and readiness for communication",
+  "Gal is engaging with exploration activities and showing interest in environmental objects like scissors and people around him",
+  "Gal is engaging with exploration activities and showing interest in environmental objects like wrenches and people around him",
+  "Gal is present and ready to engage - automatic board update detected with environment interaction buttons showing active participation",
+  "Gal expressed interest in cutting a string but decided not to proceed.",
+  "Gal expressed interest in cutting a string but did not proceed.",
+  "Gal regularly expresses interest in using tools like scissors.",
+  "Performed system update, revising memory management.",
+  "Gal expressed interest in cutting a string but decided not to proceed.",
+  "Gal showed interest in exploring, which can support imaginative play development."
+]
+[21:16:00.181] RESULTS: [
+  {
+    "target": "/Student_Notes",
+    "action": "view",
+    "ok": true,
+    "mutatedPaths": [
+      "/Student_Notes"
+    ],
+    "summary": "Array with 25 item(s)"
+  },
+  {
+    "target": "/Student_CommunicationStyle",
+    "action": "view",
+    "ok": true,
+    "mutatedPaths": [
+      "/Student_CommunicationStyle"
+    ],
+    "summary": "2 item(s): PrimaryMethod, PreferredModality"
+  }
+]
+[21:16:00.182] AFTER view /Student_Notes — Student_Notes array (25 items): [
+  "Gal shared feeling tired today.",
+  "Gal frequently asks for help.",
+  "Gal mentioned wanting to explore or play today.",
+  "Gal is interested in choosing an activity from the board.",
+  "Gal's board options include playing, listening to music, exploring, and problem-solving.",
+  "Checked in on Gal's mood and activity choices.",
+  "Gal showed interest in listening to stories, indicating progress in imaginative play.",
+  "Gal is present and ready to engage - environment scans detected, waiting for activity selection",
+  "Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication",
+  "Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support",
+  "Gal performed an environment detection scan, showing active engagement and readiness for communication",
+  "Gal is actively engaged with multiple environment detection scans, showing sustained attention and readiness for communication support",
+  "Gal continues to show sustained engagement and attention through repeated environment scans, indicating he is actively present and ready for interaction",
+  "Gal is showing very high engagement with multiple consecutive environment detection scans, indicating strong attention and active participation",
+  "Gal performed environment detection scan showing active engagement and readiness for communication",
+  "Gal performed environment detection scan showing active engagement and readiness for communication",
+  "Gal is engaging with exploration activities and showing interest in environmental objects like scissors and people around him",
+  "Gal is engaging with exploration activities and showing interest in environmental objects like wrenches and people around him",
+  "Gal is present and ready to engage - automatic board update detected with environment interaction buttons showing active participation",
+  "Gal expressed interest in cutting a string but decided not to proceed.",
+  "Gal expressed interest in cutting a string but did not proceed.",
+  "Gal regularly expresses interest in using tools like scissors.",
+  "Performed system update, revising memory management.",
+  "Gal expressed interest in cutting a string but decided not to proceed.",
+  "Gal showed interest in exploring, which can support imaginative play development."
+]
+
+────────────────────────────────────────────────────────────
+  buildPromptAndTools — AI memory view
+────────────────────────────────────────────────────────────
+[21:16:00.186] memoryValues.Student_Notes (25 items): [
+  "Gal shared feeling tired today.",
+  "Gal frequently asks for help.",
+  "Gal mentioned wanting to explore or play today.",
+  "Gal is interested in choosing an activity from the board.",
+  "Gal's board options include playing, listening to music, exploring, and problem-solving.",
+  "Checked in on Gal's mood and activity choices.",
+  "Gal showed interest in listening to stories, indicating progress in imaginative play.",
+  "Gal is present and ready to engage - environment scans detected, waiting for activity selection",
+  "Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication",
+  "Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support"
+]
+[21:16:00.187] memoryValues.Student_People (4 items): [
+  {
+    "Name": "Jordan",
+    "Relationship": "Friend"
+  },
+  {
+    "Name": "Prof. Meir Lotan",
+    "Relationship": "physiotherapist/researcher"
+  },
+  {
+    "Name": "Sara",
+    "Relationship": "Mother"
+  },
+  {
+    "Name": "Avraham",
+    "Relationship": "Father"
+  }
+]
+[21:16:00.187] memoryValues.Student_Interests (1 items): [
+  "exploring pictures, drawing, and listening to music"
+]
+[21:16:00.188] memoryValues.Student_Preferences: {
+  "FavoriteActivities": [
+    {
+      "FavoriteActivities": [
+        "Making crafts"
+      ]
+    },
+    "Making crafts with scissors",
+    "Board games",
+    "playing with tools"
+  ]
+}
+[21:16:00.189] memoryValues.Student_CommunicationStyle: {
+  "PrimaryMethod": "nonverbal",
+  "PreferredModality": "symbols"
+}
+[21:16:00.192] memoryVisualization — data section (87 lines): "=== Current Memory ===\n• /Student_People (array, 4 items) — Important people in the student's life (names and relationships only) \n  - [0]: {object} (view to expand)\n  - [1]: {object} (view to expand)\n  - [2]: {object} (view to expand)\n  - [3]: {object} (view to expand)\n  ↪ To append: action \"add\" at \"/Student_People\" with value. To update item: action \"set\" at \"/Student_People/<index>\".\n• /Student_Interests (array, 1 items) — Things the student enjoys or is interested in \n  - [0]: \"exploring pictures, drawing, and listening to music\"\n  ↪ To append: action \"add\" at \"/Student_Interests\" with value. To update item: action \"set\" at \"/Student_Interests/<index>\".\n• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) \n  - PrimaryMethod: \"nonverbal\" — verbal, nonverbal, AAC, or mixed\n  - PreferredModality: \"symbols\" — If AAC, which type (symbols, text, combined)\n  ↪ To expand: view \"/Student_CommunicationStyle/*\". To modify: action \"set\" on \"/Student_CommunicationStyle\" or \"/Student_CommunicationStyle/<property>\".\n• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement \n  - FavoriteActivities: {array} (hidden)\n  - RewardPreferences: {array} (empty)\n  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)\n  ↪ To expand: view \"/Student_Preferences/*\". To modify: action \"set\" on \"/Student_Preferences\" or \"/Student_Preferences/<property>\".\n• /Student_Notes (array, 25 items) — General notes about the student (non-sensitive) \n  - [0]: \"Gal shared feeling tired today.\"\n  - [1]: \"Gal frequently asks for help.\"\n  - [2]: \"Gal mentioned wanting to explore or play today.\"\n  - [3]: \"Gal is interested in choosing an activity from the board.\"\n  - [4]: \"Gal's board options include playing, listening to music, exploring, and problem-solving.\"\n  - [5]: \"Checked in on Gal's mood and activity choices.\"\n  - [6]: \"Gal showed interest in listening to stories, indicating progress in imaginative play.\"\n  - [7]: \"Gal is present and ready to engage - environment scans detected, waiting for activity selection\"\n  - [8]: \"Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication\"\n  - [9]: \"Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support\"\n  - [10]: \"Gal performed an environment detection scan, showing active engagement and readiness for communication\"\n  - [11]: \"Gal is actively engaged with multiple environment detection scans, showing sustained attention and readiness for communication support\"\n  - [12]: \"Gal continues to show sustained engagement and attention through repeated environment scans, indicating he is actively present and ready for interaction\"\n  - [13]: \"Gal is showing very high engagement with multiple consecutive environment detection scans, indicating strong attention and active participation\"\n  - [14]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [15]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [16]: \"Gal is engaging with exploration activities and showing interest in environmental objects like scissors and people around him\"\n  - [17]: \"Gal is engaging with exploration activities and showing interest in environmental objects like wrenches and people around him\"\n  - [18]: \"Gal is present and ready to engage - automatic board update detected with environment interaction buttons showing active participation\"\n  - [19]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [20]: \"Gal expressed interest in cutting a string but did not proceed.\"\n  - [21]: \"Gal regularly expresses interest in using tools like scissors.\"\n  - [22]: \"Performed system update, revising memory management.\"\n  - [23]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [24]: \"Gal showed interest in exploring, which can support imaginative play development.\"\n  ↪ To append: action \"add\" at \"/Student_Notes\" with value. To update item: action \"set\" at \"/Student_Notes/<index>\".\n• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. \n  (may contain items - view \"/Context_Library\" to load from database)\n• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) \n  ↪ To expand: view \"/Context_StudentInfo/*\". (read-only)\n• /Context_StudentInstitutes (array, 0 items) — Schools and hospitals the student attends — hidden; view to list items\n• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items\n• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items\n• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys\n• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys\n• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys\n• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \n  ↪ To expand: view \"/Context_Progress/*\". (read-only)\n\nAllowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}\nOperate only on visible paths or their parent container. To reveal children:\n  manageMemory { \"ops\": [ { \"action\": \"view\", \"path\": \"/path/*\" } ] }\nPagination: include { \"page\": { \"offset\": N, \"limit\": M } } in a view op on a container.\n\n=== Schema Hints (add/insert/upsert in current scope) ===\n• /Student_People — ARRAY of object\n  item.required: [Name]\n  item.props: Name:string, Relationship:string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_People\",\"value\": {\"Name\":\"text\"} }] }\n• /Student_Interests — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Interests\",\"value\": \"text\" }] }\n• /Student_Preferences/FavoriteActivities — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/FavoriteActivities\",\"value\": \"text\" }] }\n• /Student_Preferences/RewardPreferences — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/RewardPreferences\",\"value\": \"text\" }] }\n• /Student_Preferences/AvoidTopics — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/AvoidTopics\",\"value\": \"text\" }] }\n• /Student_Notes — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Notes\",\"value\": \"text\" }] }\n• /Context_Library — MAP<string, object>\n  value.props: id:string, title:string, content:string, subtopics:map<string, object>\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Library\",\"key\":\"<key>\",\"value\": {} }] }\n\nNotes:\n- When item/value is an OBJECT, include all listed \"required\" keys when creating it.\n- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}."
+
+────────────────────────────────────────────────────────────
+  buildPromptAndTools — AI memory view
+────────────────────────────────────────────────────────────
+[21:18:22.580] memoryValues.Student_Notes (25 items): [
+  "Gal shared feeling tired today.",
+  "Gal frequently asks for help.",
+  "Gal mentioned wanting to explore or play today.",
+  "Gal is interested in choosing an activity from the board.",
+  "Gal's board options include playing, listening to music, exploring, and problem-solving.",
+  "Checked in on Gal's mood and activity choices.",
+  "Gal showed interest in listening to stories, indicating progress in imaginative play.",
+  "Gal is present and ready to engage - environment scans detected, waiting for activity selection",
+  "Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication",
+  "Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support"
+]
+[21:18:22.581] memoryValues.Student_People (4 items): [
+  {
+    "Name": "Jordan",
+    "Relationship": "Friend"
+  },
+  {
+    "Name": "Prof. Meir Lotan",
+    "Relationship": "physiotherapist/researcher"
+  },
+  {
+    "Name": "Sara",
+    "Relationship": "Mother"
+  },
+  {
+    "Name": "Avraham",
+    "Relationship": "Father"
+  }
+]
+[21:18:22.582] memoryValues.Student_Interests (1 items): [
+  "exploring pictures, drawing, and listening to music"
+]
+[21:18:22.583] memoryValues.Student_Preferences: {
+  "FavoriteActivities": [
+    {
+      "FavoriteActivities": [
+        "Making crafts"
+      ]
+    },
+    "Making crafts with scissors",
+    "Board games",
+    "playing with tools"
+  ]
+}
+[21:18:22.583] memoryValues.Student_CommunicationStyle: {
+  "PrimaryMethod": "nonverbal",
+  "PreferredModality": "symbols"
+}
+[21:18:22.584] memoryVisualization — data section (87 lines): "=== Current Memory ===\n• /Student_People (array, 4 items) — Important people in the student's life (names and relationships only) \n  - [0]: {object} (view to expand)\n  - [1]: {object} (view to expand)\n  - [2]: {object} (view to expand)\n  - [3]: {object} (view to expand)\n  ↪ To append: action \"add\" at \"/Student_People\" with value. To update item: action \"set\" at \"/Student_People/<index>\".\n• /Student_Interests (array, 1 items) — Things the student enjoys or is interested in \n  - [0]: \"exploring pictures, drawing, and listening to music\"\n  ↪ To append: action \"add\" at \"/Student_Interests\" with value. To update item: action \"set\" at \"/Student_Interests/<index>\".\n• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) \n  - PrimaryMethod: \"nonverbal\" — verbal, nonverbal, AAC, or mixed\n  - PreferredModality: \"symbols\" — If AAC, which type (symbols, text, combined)\n  ↪ To expand: view \"/Student_CommunicationStyle/*\". To modify: action \"set\" on \"/Student_CommunicationStyle\" or \"/Student_CommunicationStyle/<property>\".\n• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement \n  - FavoriteActivities: {array} (hidden)\n  - RewardPreferences: {array} (empty)\n  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)\n  ↪ To expand: view \"/Student_Preferences/*\". To modify: action \"set\" on \"/Student_Preferences\" or \"/Student_Preferences/<property>\".\n• /Student_Notes (array, 25 items) — General notes about the student (non-sensitive) \n  - [0]: \"Gal shared feeling tired today.\"\n  - [1]: \"Gal frequently asks for help.\"\n  - [2]: \"Gal mentioned wanting to explore or play today.\"\n  - [3]: \"Gal is interested in choosing an activity from the board.\"\n  - [4]: \"Gal's board options include playing, listening to music, exploring, and problem-solving.\"\n  - [5]: \"Checked in on Gal's mood and activity choices.\"\n  - [6]: \"Gal showed interest in listening to stories, indicating progress in imaginative play.\"\n  - [7]: \"Gal is present and ready to engage - environment scans detected, waiting for activity selection\"\n  - [8]: \"Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication\"\n  - [9]: \"Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support\"\n  - [10]: \"Gal performed an environment detection scan, showing active engagement and readiness for communication\"\n  - [11]: \"Gal is actively engaged with multiple environment detection scans, showing sustained attention and readiness for communication support\"\n  - [12]: \"Gal continues to show sustained engagement and attention through repeated environment scans, indicating he is actively present and ready for interaction\"\n  - [13]: \"Gal is showing very high engagement with multiple consecutive environment detection scans, indicating strong attention and active participation\"\n  - [14]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [15]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [16]: \"Gal is engaging with exploration activities and showing interest in environmental objects like scissors and people around him\"\n  - [17]: \"Gal is engaging with exploration activities and showing interest in environmental objects like wrenches and people around him\"\n  - [18]: \"Gal is present and ready to engage - automatic board update detected with environment interaction buttons showing active participation\"\n  - [19]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [20]: \"Gal expressed interest in cutting a string but did not proceed.\"\n  - [21]: \"Gal regularly expresses interest in using tools like scissors.\"\n  - [22]: \"Performed system update, revising memory management.\"\n  - [23]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [24]: \"Gal showed interest in exploring, which can support imaginative play development.\"\n  ↪ To append: action \"add\" at \"/Student_Notes\" with value. To update item: action \"set\" at \"/Student_Notes/<index>\".\n• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. \n  (may contain items - view \"/Context_Library\" to load from database)\n• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) \n  ↪ To expand: view \"/Context_StudentInfo/*\". (read-only)\n• /Context_StudentInstitutes (array, 0 items) — Schools and hospitals the student attends — hidden; view to list items\n• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items\n• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items\n• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys\n• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys\n• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys\n• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \n  ↪ To expand: view \"/Context_Progress/*\". (read-only)\n\nAllowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}\nOperate only on visible paths or their parent container. To reveal children:\n  manageMemory { \"ops\": [ { \"action\": \"view\", \"path\": \"/path/*\" } ] }\nPagination: include { \"page\": { \"offset\": N, \"limit\": M } } in a view op on a container.\n\n=== Schema Hints (add/insert/upsert in current scope) ===\n• /Student_People — ARRAY of object\n  item.required: [Name]\n  item.props: Name:string, Relationship:string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_People\",\"value\": {\"Name\":\"text\"} }] }\n• /Student_Interests — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Interests\",\"value\": \"text\" }] }\n• /Student_Preferences/FavoriteActivities — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/FavoriteActivities\",\"value\": \"text\" }] }\n• /Student_Preferences/RewardPreferences — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/RewardPreferences\",\"value\": \"text\" }] }\n• /Student_Preferences/AvoidTopics — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/AvoidTopics\",\"value\": \"text\" }] }\n• /Student_Notes — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Notes\",\"value\": \"text\" }] }\n• /Context_Library — MAP<string, object>\n  value.props: id:string, title:string, content:string, subtopics:map<string, object>\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Library\",\"key\":\"<key>\",\"value\": {} }] }\n\nNotes:\n- When item/value is an OBJECT, include all listed \"required\" keys when creating it.\n- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}."
+
+────────────────────────────────────────────────────────────
+  manageMemory called
+────────────────────────────────────────────────────────────
+[21:18:24.282] INPUT: {
+  "ops": [
+    {
+      "action": "add",
+      "path": "/Student_Interests",
+      "value": "coloring"
+    }
+  ]
+}
+[21:18:24.283] BEFORE add /Student_Interests — Student_Interests array (1 items): [
+  "exploring pictures, drawing, and listening to music"
+]
+[21:18:24.291] ADD to array /Student_Interests — array has 1 items, adding: "coloring"
+[21:18:24.291] ADD OK /Student_Interests — array now has 2 items
+[21:18:24.298] RESULTS: [
+  {
+    "target": "/Student_Interests",
+    "action": "add",
+    "ok": true
+  }
+]
+[21:18:24.299] AFTER add /Student_Interests — Student_Interests array (2 items): [
+  "exploring pictures, drawing, and listening to music",
+  "coloring"
+]
+
+────────────────────────────────────────────────────────────
+  buildPromptAndTools — AI memory view
+────────────────────────────────────────────────────────────
+[21:18:24.304] memoryValues.Student_Notes (25 items): [
+  "Gal shared feeling tired today.",
+  "Gal frequently asks for help.",
+  "Gal mentioned wanting to explore or play today.",
+  "Gal is interested in choosing an activity from the board.",
+  "Gal's board options include playing, listening to music, exploring, and problem-solving.",
+  "Checked in on Gal's mood and activity choices.",
+  "Gal showed interest in listening to stories, indicating progress in imaginative play.",
+  "Gal is present and ready to engage - environment scans detected, waiting for activity selection",
+  "Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication",
+  "Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support"
+]
+[21:18:24.305] memoryValues.Student_People (4 items): [
+  {
+    "Name": "Jordan",
+    "Relationship": "Friend"
+  },
+  {
+    "Name": "Prof. Meir Lotan",
+    "Relationship": "physiotherapist/researcher"
+  },
+  {
+    "Name": "Sara",
+    "Relationship": "Mother"
+  },
+  {
+    "Name": "Avraham",
+    "Relationship": "Father"
+  }
+]
+[21:18:24.306] memoryValues.Student_Interests (2 items): [
+  "exploring pictures, drawing, and listening to music",
+  "coloring"
+]
+[21:18:24.308] memoryValues.Student_Preferences: {
+  "FavoriteActivities": [
+    {
+      "FavoriteActivities": [
+        "Making crafts"
+      ]
+    },
+    "Making crafts with scissors",
+    "Board games",
+    "playing with tools"
+  ]
+}
+[21:18:24.309] memoryValues.Student_CommunicationStyle: {
+  "PrimaryMethod": "nonverbal",
+  "PreferredModality": "symbols"
+}
+[21:18:24.310] memoryVisualization — data section (88 lines): "=== Current Memory ===\n• /Student_People (array, 4 items) — Important people in the student's life (names and relationships only) \n  - [0]: {object} (view to expand)\n  - [1]: {object} (view to expand)\n  - [2]: {object} (view to expand)\n  - [3]: {object} (view to expand)\n  ↪ To append: action \"add\" at \"/Student_People\" with value. To update item: action \"set\" at \"/Student_People/<index>\".\n• /Student_Interests (array, 2 items) — Things the student enjoys or is interested in \n  - [0]: \"exploring pictures, drawing, and listening to music\"\n  - [1]: \"coloring\"\n  ↪ To append: action \"add\" at \"/Student_Interests\" with value. To update item: action \"set\" at \"/Student_Interests/<index>\".\n• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) \n  - PrimaryMethod: \"nonverbal\" — verbal, nonverbal, AAC, or mixed\n  - PreferredModality: \"symbols\" — If AAC, which type (symbols, text, combined)\n  ↪ To expand: view \"/Student_CommunicationStyle/*\". To modify: action \"set\" on \"/Student_CommunicationStyle\" or \"/Student_CommunicationStyle/<property>\".\n• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement \n  - FavoriteActivities: {array} (hidden)\n  - RewardPreferences: {array} (empty)\n  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)\n  ↪ To expand: view \"/Student_Preferences/*\". To modify: action \"set\" on \"/Student_Preferences\" or \"/Student_Preferences/<property>\".\n• /Student_Notes (array, 25 items) — General notes about the student (non-sensitive) \n  - [0]: \"Gal shared feeling tired today.\"\n  - [1]: \"Gal frequently asks for help.\"\n  - [2]: \"Gal mentioned wanting to explore or play today.\"\n  - [3]: \"Gal is interested in choosing an activity from the board.\"\n  - [4]: \"Gal's board options include playing, listening to music, exploring, and problem-solving.\"\n  - [5]: \"Checked in on Gal's mood and activity choices.\"\n  - [6]: \"Gal showed interest in listening to stories, indicating progress in imaginative play.\"\n  - [7]: \"Gal is present and ready to engage - environment scans detected, waiting for activity selection\"\n  - [8]: \"Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication\"\n  - [9]: \"Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support\"\n  - [10]: \"Gal performed an environment detection scan, showing active engagement and readiness for communication\"\n  - [11]: \"Gal is actively engaged with multiple environment detection scans, showing sustained attention and readiness for communication support\"\n  - [12]: \"Gal continues to show sustained engagement and attention through repeated environment scans, indicating he is actively present and ready for interaction\"\n  - [13]: \"Gal is showing very high engagement with multiple consecutive environment detection scans, indicating strong attention and active participation\"\n  - [14]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [15]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [16]: \"Gal is engaging with exploration activities and showing interest in environmental objects like scissors and people around him\"\n  - [17]: \"Gal is engaging with exploration activities and showing interest in environmental objects like wrenches and people around him\"\n  - [18]: \"Gal is present and ready to engage - automatic board update detected with environment interaction buttons showing active participation\"\n  - [19]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [20]: \"Gal expressed interest in cutting a string but did not proceed.\"\n  - [21]: \"Gal regularly expresses interest in using tools like scissors.\"\n  - [22]: \"Performed system update, revising memory management.\"\n  - [23]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [24]: \"Gal showed interest in exploring, which can support imaginative play development.\"\n  ↪ To append: action \"add\" at \"/Student_Notes\" with value. To update item: action \"set\" at \"/Student_Notes/<index>\".\n• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. \n  (may contain items - view \"/Context_Library\" to load from database)\n• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) \n  ↪ To expand: view \"/Context_StudentInfo/*\". (read-only)\n• /Context_StudentInstitutes (array, 0 items) — Schools and hospitals the student attends — hidden; view to list items\n• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items\n• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items\n• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys\n• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys\n• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys\n• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \n  ↪ To expand: view \"/Context_Progress/*\". (read-only)\n\nAllowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}\nOperate only on visible paths or their parent container. To reveal children:\n  manageMemory { \"ops\": [ { \"action\": \"view\", \"path\": \"/path/*\" } ] }\nPagination: include { \"page\": { \"offset\": N, \"limit\": M } } in a view op on a container.\n\n=== Schema Hints (add/insert/upsert in current scope) ===\n• /Student_People — ARRAY of object\n  item.required: [Name]\n  item.props: Name:string, Relationship:string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_People\",\"value\": {\"Name\":\"text\"} }] }\n• /Student_Interests — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Interests\",\"value\": \"text\" }] }\n• /Student_Preferences/FavoriteActivities — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/FavoriteActivities\",\"value\": \"text\" }] }\n• /Student_Preferences/RewardPreferences — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/RewardPreferences\",\"value\": \"text\" }] }\n• /Student_Preferences/AvoidTopics — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/AvoidTopics\",\"value\": \"text\" }] }\n• /Student_Notes — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Notes\",\"value\": \"text\" }] }\n• /Context_Library — MAP<string, object>\n  value.props: id:string, title:string, content:string, subtopics:map<string, object>\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Library\",\"key\":\"<key>\",\"value\": {} }] }\n\nNotes:\n- When item/value is an OBJECT, include all listed \"required\" keys when creating it.\n- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}."
+
+────────────────────────────────────────────────────────────
+  manageMemory called
+────────────────────────────────────────────────────────────
+[21:18:26.585] INPUT: {
+  "ops": [
+    {
+      "action": "add",
+      "path": "/Student_Notes",
+      "value": "Gal expressed interest in coloring, demonstrating a preference for creative activities."
+    }
+  ]
+}
+[21:18:26.586] BEFORE add /Student_Notes — Student_Notes array (25 items): [
+  "Gal shared feeling tired today.",
+  "Gal frequently asks for help.",
+  "Gal mentioned wanting to explore or play today.",
+  "Gal is interested in choosing an activity from the board.",
+  "Gal's board options include playing, listening to music, exploring, and problem-solving.",
+  "Checked in on Gal's mood and activity choices.",
+  "Gal showed interest in listening to stories, indicating progress in imaginative play.",
+  "Gal is present and ready to engage - environment scans detected, waiting for activity selection",
+  "Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication",
+  "Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support",
+  "Gal performed an environment detection scan, showing active engagement and readiness for communication",
+  "Gal is actively engaged with multiple environment detection scans, showing sustained attention and readiness for communication support",
+  "Gal continues to show sustained engagement and attention through repeated environment scans, indicating he is actively present and ready for interaction",
+  "Gal is showing very high engagement with multiple consecutive environment detection scans, indicating strong attention and active participation",
+  "Gal performed environment detection scan showing active engagement and readiness for communication",
+  "Gal performed environment detection scan showing active engagement and readiness for communication",
+  "Gal is engaging with exploration activities and showing interest in environmental objects like scissors and people around him",
+  "Gal is engaging with exploration activities and showing interest in environmental objects like wrenches and people around him",
+  "Gal is present and ready to engage - automatic board update detected with environment interaction buttons showing active participation",
+  "Gal expressed interest in cutting a string but decided not to proceed.",
+  "Gal expressed interest in cutting a string but did not proceed.",
+  "Gal regularly expresses interest in using tools like scissors.",
+  "Performed system update, revising memory management.",
+  "Gal expressed interest in cutting a string but decided not to proceed.",
+  "Gal showed interest in exploring, which can support imaginative play development."
+]
+[21:18:26.590] ADD to array /Student_Notes — array has 25 items, adding: "Gal expressed interest in coloring, demonstrating a preference for creative activities."
+[21:18:26.590] ADD OK /Student_Notes — array now has 26 items
+[21:18:26.596] RESULTS: [
+  {
+    "target": "/Student_Notes",
+    "action": "add",
+    "ok": true
+  }
+]
+[21:18:26.597] AFTER add /Student_Notes — Student_Notes array (26 items): [
+  "Gal shared feeling tired today.",
+  "Gal frequently asks for help.",
+  "Gal mentioned wanting to explore or play today.",
+  "Gal is interested in choosing an activity from the board.",
+  "Gal's board options include playing, listening to music, exploring, and problem-solving.",
+  "Checked in on Gal's mood and activity choices.",
+  "Gal showed interest in listening to stories, indicating progress in imaginative play.",
+  "Gal is present and ready to engage - environment scans detected, waiting for activity selection",
+  "Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication",
+  "Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support",
+  "Gal performed an environment detection scan, showing active engagement and readiness for communication",
+  "Gal is actively engaged with multiple environment detection scans, showing sustained attention and readiness for communication support",
+  "Gal continues to show sustained engagement and attention through repeated environment scans, indicating he is actively present and ready for interaction",
+  "Gal is showing very high engagement with multiple consecutive environment detection scans, indicating strong attention and active participation",
+  "Gal performed environment detection scan showing active engagement and readiness for communication",
+  "Gal performed environment detection scan showing active engagement and readiness for communication",
+  "Gal is engaging with exploration activities and showing interest in environmental objects like scissors and people around him",
+  "Gal is engaging with exploration activities and showing interest in environmental objects like wrenches and people around him",
+  "Gal is present and ready to engage - automatic board update detected with environment interaction buttons showing active participation",
+  "Gal expressed interest in cutting a string but decided not to proceed.",
+  "Gal expressed interest in cutting a string but did not proceed.",
+  "Gal regularly expresses interest in using tools like scissors.",
+  "Performed system update, revising memory management.",
+  "Gal expressed interest in cutting a string but decided not to proceed.",
+  "Gal showed interest in exploring, which can support imaginative play development.",
+  "Gal expressed interest in coloring, demonstrating a preference for creative activities."
+]
+
+────────────────────────────────────────────────────────────
+  buildPromptAndTools — AI memory view
+────────────────────────────────────────────────────────────
+[21:18:26.603] memoryValues.Student_Notes (26 items): [
+  "Gal shared feeling tired today.",
+  "Gal frequently asks for help.",
+  "Gal mentioned wanting to explore or play today.",
+  "Gal is interested in choosing an activity from the board.",
+  "Gal's board options include playing, listening to music, exploring, and problem-solving.",
+  "Checked in on Gal's mood and activity choices.",
+  "Gal showed interest in listening to stories, indicating progress in imaginative play.",
+  "Gal is present and ready to engage - environment scans detected, waiting for activity selection",
+  "Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication",
+  "Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support"
+]
+[21:18:26.604] memoryValues.Student_People (4 items): [
+  {
+    "Name": "Jordan",
+    "Relationship": "Friend"
+  },
+  {
+    "Name": "Prof. Meir Lotan",
+    "Relationship": "physiotherapist/researcher"
+  },
+  {
+    "Name": "Sara",
+    "Relationship": "Mother"
+  },
+  {
+    "Name": "Avraham",
+    "Relationship": "Father"
+  }
+]
+[21:18:26.604] memoryValues.Student_Interests (2 items): [
+  "exploring pictures, drawing, and listening to music",
+  "coloring"
+]
+[21:18:26.605] memoryValues.Student_Preferences: {
+  "FavoriteActivities": [
+    {
+      "FavoriteActivities": [
+        "Making crafts"
+      ]
+    },
+    "Making crafts with scissors",
+    "Board games",
+    "playing with tools"
+  ]
+}
+[21:18:26.606] memoryValues.Student_CommunicationStyle: {
+  "PrimaryMethod": "nonverbal",
+  "PreferredModality": "symbols"
+}
+[21:18:26.607] memoryVisualization — data section (89 lines): "=== Current Memory ===\n• /Student_People (array, 4 items) — Important people in the student's life (names and relationships only) \n  - [0]: {object} (view to expand)\n  - [1]: {object} (view to expand)\n  - [2]: {object} (view to expand)\n  - [3]: {object} (view to expand)\n  ↪ To append: action \"add\" at \"/Student_People\" with value. To update item: action \"set\" at \"/Student_People/<index>\".\n• /Student_Interests (array, 2 items) — Things the student enjoys or is interested in \n  - [0]: \"exploring pictures, drawing, and listening to music\"\n  - [1]: \"coloring\"\n  ↪ To append: action \"add\" at \"/Student_Interests\" with value. To update item: action \"set\" at \"/Student_Interests/<index>\".\n• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) \n  - PrimaryMethod: \"nonverbal\" — verbal, nonverbal, AAC, or mixed\n  - PreferredModality: \"symbols\" — If AAC, which type (symbols, text, combined)\n  ↪ To expand: view \"/Student_CommunicationStyle/*\". To modify: action \"set\" on \"/Student_CommunicationStyle\" or \"/Student_CommunicationStyle/<property>\".\n• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement \n  - FavoriteActivities: {array} (hidden)\n  - RewardPreferences: {array} (empty)\n  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)\n  ↪ To expand: view \"/Student_Preferences/*\". To modify: action \"set\" on \"/Student_Preferences\" or \"/Student_Preferences/<property>\".\n• /Student_Notes (array, 26 items) — General notes about the student (non-sensitive) \n  - [0]: \"Gal shared feeling tired today.\"\n  - [1]: \"Gal frequently asks for help.\"\n  - [2]: \"Gal mentioned wanting to explore or play today.\"\n  - [3]: \"Gal is interested in choosing an activity from the board.\"\n  - [4]: \"Gal's board options include playing, listening to music, exploring, and problem-solving.\"\n  - [5]: \"Checked in on Gal's mood and activity choices.\"\n  - [6]: \"Gal showed interest in listening to stories, indicating progress in imaginative play.\"\n  - [7]: \"Gal is present and ready to engage - environment scans detected, waiting for activity selection\"\n  - [8]: \"Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication\"\n  - [9]: \"Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support\"\n  - [10]: \"Gal performed an environment detection scan, showing active engagement and readiness for communication\"\n  - [11]: \"Gal is actively engaged with multiple environment detection scans, showing sustained attention and readiness for communication support\"\n  - [12]: \"Gal continues to show sustained engagement and attention through repeated environment scans, indicating he is actively present and ready for interaction\"\n  - [13]: \"Gal is showing very high engagement with multiple consecutive environment detection scans, indicating strong attention and active participation\"\n  - [14]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [15]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [16]: \"Gal is engaging with exploration activities and showing interest in environmental objects like scissors and people around him\"\n  - [17]: \"Gal is engaging with exploration activities and showing interest in environmental objects like wrenches and people around him\"\n  - [18]: \"Gal is present and ready to engage - automatic board update detected with environment interaction buttons showing active participation\"\n  - [19]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [20]: \"Gal expressed interest in cutting a string but did not proceed.\"\n  - [21]: \"Gal regularly expresses interest in using tools like scissors.\"\n  - [22]: \"Performed system update, revising memory management.\"\n  - [23]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [24]: \"Gal showed interest in exploring, which can support imaginative play development.\"\n  - [25]: \"Gal expressed interest in coloring, demonstrating a preference for creative activities.\"\n  ↪ To append: action \"add\" at \"/Student_Notes\" with value. To update item: action \"set\" at \"/Student_Notes/<index>\".\n• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. \n  (may contain items - view \"/Context_Library\" to load from database)\n• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) \n  ↪ To expand: view \"/Context_StudentInfo/*\". (read-only)\n• /Context_StudentInstitutes (array, 0 items) — Schools and hospitals the student attends — hidden; view to list items\n• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items\n• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items\n• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys\n• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys\n• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys\n• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \n  ↪ To expand: view \"/Context_Progress/*\". (read-only)\n\nAllowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}\nOperate only on visible paths or their parent container. To reveal children:\n  manageMemory { \"ops\": [ { \"action\": \"view\", \"path\": \"/path/*\" } ] }\nPagination: include { \"page\": { \"offset\": N, \"limit\": M } } in a view op on a container.\n\n=== Schema Hints (add/insert/upsert in current scope) ===\n• /Student_People — ARRAY of object\n  item.required: [Name]\n  item.props: Name:string, Relationship:string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_People\",\"value\": {\"Name\":\"text\"} }] }\n• /Student_Interests — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Interests\",\"value\": \"text\" }] }\n• /Student_Preferences/FavoriteActivities — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/FavoriteActivities\",\"value\": \"text\" }] }\n• /Student_Preferences/RewardPreferences — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/RewardPreferences\",\"value\": \"text\" }] }\n• /Student_Preferences/AvoidTopics — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/AvoidTopics\",\"value\": \"text\" }] }\n• /Student_Notes — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Notes\",\"value\": \"text\" }] }\n• /Context_Library — MAP<string, object>\n  value.props: id:string, title:string, content:string, subtopics:map<string, object>\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Library\",\"key\":\"<key>\",\"value\": {} }] }\n\nNotes:\n- When item/value is an OBJECT, include all listed \"required\" keys when creating it.\n- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}."

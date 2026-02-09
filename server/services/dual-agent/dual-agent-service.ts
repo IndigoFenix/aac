@@ -33,6 +33,8 @@ import { whisperService } from "../voice/whisper-service";
 import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
 import { voiceRecordRepository } from "../../repositories/voiceRecordRepository";
 import { logDualAgent } from "./dual-agent-logger";
+import { searchYouTube } from "../youtube/youtube-search";
+import { APP_REGISTRY, getAppDefinition, getDefaultEnabledApps } from "./app-registry";
 
 /**
  * Simple promise-based mutex for per-session concurrency control
@@ -245,7 +247,7 @@ export class DualAgentService {
     imageData?: string,
     gestureContext?: string
   ): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status";
+    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote";
     data: any;
     speaker?: string;
   }> {
@@ -317,6 +319,9 @@ export class DualAgentService {
           boardCreated = true;
         } else if (chunk.type === "usage") {
           streamUsage = chunk.data;
+        } else if (chunk.type === "emote") {
+          state.currentEmote = chunk.data as "happy" | "sad" | "neutral";
+          yield { type: "emote", data: chunk.data };
         }
       }
       if (streamUsage) {
@@ -430,7 +435,9 @@ export class DualAgentService {
     );
 
     // Initialize session - Monitor searches memory and creates prompt
-    const initResult = await monitorAgent.initializeSession(interactionMode);
+    const defaultApps = getDefaultEnabledApps();
+    const enabledAppDefs = APP_REGISTRY.filter(a => defaultApps.includes(a.id));
+    const initResult = await monitorAgent.initializeSession(interactionMode, enabledAppDefs);
 
     // Create Interactive agent with the prompt
     const interactiveAgent = createInteractiveAgent(
@@ -450,6 +457,8 @@ export class DualAgentService {
       messages: [],
       pendingMessages: [],
       interactionMode,
+      appState: { enabledApps: getDefaultEnabledApps(), activeApp: null },
+      currentEmote: "happy",
       lastInteractiveActivity: Date.now(),
       lastMonitorActivity: Date.now(),
       monitorConsecutiveFailures: 0,
@@ -514,6 +523,8 @@ export class DualAgentService {
         messages: chatState?.history || [],
         pendingMessages: (session.pendingMessages as PendingMessage[]) || [],
         interactionMode: chatState?.interactionMode || 'interact',
+        appState: { enabledApps: getDefaultEnabledApps(), activeApp: null },
+        currentEmote: "neutral",
         lastInteractiveActivity: Date.now(),
         lastMonitorActivity: Date.now(),
         monitorConsecutiveFailures: 0,
@@ -535,6 +546,26 @@ export class DualAgentService {
 
       // Ensure monitor has student data (since initializeSession wasn't called)
       await monitorAgent.ensureStudentLoaded();
+
+      // Rebuild prompt with correct enabledApps (the stored prompt may have stale app info)
+      const student = monitorAgent.getStudent();
+      if (student) {
+        const personaPrompt = student.aacChatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+        const enabledApps = APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id));
+        state.interactivePrompt = buildInteractiveSystemPrompt(
+          student.name,
+          personaPrompt,
+          student.primaryLanguage || undefined,
+          undefined,
+          state.interactionMode,
+          undefined,
+          undefined,
+          false,
+          enabledApps,
+          state.appState.activeApp,
+          state.currentEmote
+        );
+      }
 
       const interactiveAgent = createInteractiveAgent(
         state.interactivePrompt,
@@ -623,7 +654,7 @@ export class DualAgentService {
   async *processInput(
     input: DualAgentInput
   ): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status";
+    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote";
     data: any;
     speaker?: string;
   }> {
@@ -664,12 +695,19 @@ export class DualAgentService {
       const student = monitorAgent.getStudent();
       if (student) {
         const personaPrompt = student.aacChatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+        const enabledApps = APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id));
         const newPrompt = buildInteractiveSystemPrompt(
           student.name,
           personaPrompt,
           student.primaryLanguage || undefined,
           undefined,
-          interactionMode
+          interactionMode,
+          undefined,
+          undefined,
+          false,
+          enabledApps,
+          state.appState.activeApp,
+          state.currentEmote
         );
         interactiveAgent.setSystemPrompt(newPrompt);
         state.interactivePrompt = newPrompt;
@@ -756,7 +794,7 @@ export class DualAgentService {
     gestureContext?: string,
     debugMode?: boolean
   ): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug";
+    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "app_open" | "app_close" | "emote";
     data: any;
     speaker?: string;
   }> {
@@ -765,6 +803,8 @@ export class DualAgentService {
     let fullText = "";
     let fullInterpretation = "";
     let callMonitorReason: string | undefined;
+    let openAppData: { appId: string; data?: string } | undefined;
+    let closeAppTriggered = false;
     console.log("[DualAgentService] handleInteractiveMode: thinkingMode:", state.thinkingMode, "interactionMode:", interactionMode, "messages:", state.messages.length, "pending:", state.pendingMessages.length);
     logDualAgent("DualAgentService.handleInteractiveMode", { interactionMode, messageCount: state.messages.length, pendingCount: state.pendingMessages.length });
 
@@ -785,12 +825,18 @@ export class DualAgentService {
     if (gestureContext) contextParts.push(gestureContext);
     const combinedContext = contextParts.length > 0 ? contextParts.join("\n") : undefined;
 
+    // Filter out the current user message from pendingMessages since processMessageStream
+    // adds it explicitly as the final user turn (avoids duplicate "Music" / "Draw" etc.)
+    const pendingForPrompt = state.pendingMessages.filter(
+      p => !(p.role === "user" && p.content === userMessage && p.timestamp >= modeStart - 1000)
+    );
+
     // Stream response from Interactive agent (with image if provided)
     let interactiveUsage: { promptTokens: number; completionTokens: number } | undefined;
     for await (const chunk of interactiveAgent.processMessageStream(
       userMessage,
       state.messages,
-      state.pendingMessages,
+      pendingForPrompt,
       board,
       visualContext,
       audioContext,
@@ -824,6 +870,14 @@ export class DualAgentService {
         interactiveUsage = chunk.data;
       } else if (chunk.type === "call_monitor") {
         callMonitorReason = chunk.data;
+      } else if (chunk.type === "open_app") {
+        openAppData = chunk.data;
+      } else if (chunk.type === "close_app") {
+        closeAppTriggered = true;
+      } else if (chunk.type === "emote") {
+        const emoteValue = chunk.data as "happy" | "sad" | "neutral";
+        state.currentEmote = emoteValue;
+        yield { type: "emote", data: emoteValue };
       }
     }
 
@@ -841,8 +895,33 @@ export class DualAgentService {
         textLength: fullText.length,
         interpretationLength: fullInterpretation.length,
         hasCallMonitor: !!callMonitorReason,
+        hasOpenApp: !!openAppData,
         timestamp: Date.now(),
       }};
+    }
+
+    // Handle app open/close
+    if (openAppData && state.appState.enabledApps.includes(openAppData.appId)) {
+      console.log("[DualAgentService] AI requested app open:", openAppData.appId, openAppData.data);
+      let appData: any = openAppData.data;
+      // YouTube needs server-side search
+      if (openAppData.appId === "youtube" && openAppData.data) {
+        const videoResult = await searchYouTube(openAppData.data);
+        if (videoResult) {
+          appData = videoResult;
+        } else {
+          appData = null; // Search failed, don't open
+        }
+      }
+      if (appData !== null) {
+        state.appState.activeApp = openAppData.appId;
+        yield { type: "app_open", data: { appId: openAppData.appId, appData } };
+      }
+    }
+    if (closeAppTriggered && state.appState.activeApp) {
+      console.log("[DualAgentService] AI requested app close");
+      state.appState.activeApp = null;
+      yield { type: "app_close", data: {} };
     }
 
     // Track credits for the interactive response
@@ -1267,12 +1346,19 @@ export class DualAgentService {
       const student = monitorAgent.getStudent();
       if (student) {
         const personaPrompt = student.aacChatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+        const enabledApps = APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id));
         const newPrompt = buildInteractiveSystemPrompt(
           student.name,
           personaPrompt,
           student.primaryLanguage || undefined,
           undefined,
-          interactionMode
+          interactionMode,
+          undefined,
+          undefined,
+          false,
+          enabledApps,
+          state.appState.activeApp,
+          state.currentEmote
         );
         interactiveAgent.setSystemPrompt(newPrompt);
         state.interactivePrompt = newPrompt;
@@ -1287,6 +1373,7 @@ export class DualAgentService {
     // This ensures detection has full student context, memory, language, etc.
     const student = monitorAgent.getStudent();
     const personaPrompt = student?.aacChatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+    const enabledApps = APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id));
     const detectionSystemPrompt = buildInteractiveSystemPrompt(
       student?.name || "the student",
       personaPrompt,
@@ -1295,7 +1382,10 @@ export class DualAgentService {
       interactionMode,
       undefined, // studentAge
       undefined, // studentDiagnosis
-      true // isDetection - adds conservative guidance and HIGH CONFIDENCE emphasis
+      true, // isDetection - adds conservative guidance and HIGH CONFIDENCE emphasis
+      enabledApps,
+      state.appState.activeApp,
+      state.currentEmote
     );
 
     const detStart = Date.now();
@@ -1311,7 +1401,8 @@ export class DualAgentService {
         detectionSystemPrompt,
         input.gestureContext,
         input.audioBuffer,
-        input.frameTimestamps
+        input.frameTimestamps,
+        input.appCanvasData
       );
 
       console.log("[DualAgentService] Detection processed:", JSON.stringify(result));
@@ -1335,18 +1426,34 @@ export class DualAgentService {
 
       if (changed) {
         // Push post-detection pending message (assistant role = system observation, not a user action)
-        const changeParts: string[] = [];
-        if (rebuildBoard.length > 0) changeParts.push(`Rebuilt AAC board with: ${rebuildBoard.map(b => b.label).join(", ")}`);
-        else if (addButtons.length > 0) changeParts.push(`Added buttons to AAC board: ${addButtons.map(b => b.label).join(", ")}`);
-        if (removeLabels.length > 0) changeParts.push(`Removed buttons from AAC board: ${removeLabels.join(", ")}`);
-        const envDesc = result.text ? ` Environment: ${result.text}` : "";
+        // Environment description goes FIRST so it isn't truncated by the 300-char limit in Recent Activity
+        const boardParts: string[] = [];
+        if (rebuildBoard.length > 0) boardParts.push(`rebuilt: ${rebuildBoard.map(b => b.label).join(", ")}`);
+        else if (addButtons.length > 0) boardParts.push(`+${addButtons.map(b => b.label).join(", ")}`);
+        if (removeLabels.length > 0) boardParts.push(`-${removeLabels.join(", ")}`);
+        const envDesc = result.text ? `${result.text} ` : "";
+        const boardSuffix = boardParts.length > 0 ? `Board changes: ${boardParts.join("; ")}` : "";
         state.pendingMessages.push({
           role: "assistant",
-          content: `[SYSTEM — Automatic board update based on camera/environment scan. ${changeParts.join(". ")}.${envDesc}]`,
+          content: `[SYSTEM — Detection: ${envDesc}${boardSuffix}]`,
           timestamp: Date.now(),
         });
         await this.updatePendingMessages(state.sessionId, state.pendingMessages);
-        console.log("[DualAgentService] Detection: board changed —", changeParts.join("; "));
+        console.log("[DualAgentService] Detection: board changed —", boardParts.join("; "));
+      }
+
+      // Record detection speech/interpretation in pendingMessages so future detections see it
+      // (Board-change messages already include the environment description; this handles speech-only detections)
+      if (!changed && (result.text || result.interpretation)) {
+        const speechParts: string[] = [];
+        if (result.interpretation) speechParts.push(`[INTERPRET] ${result.interpretation}`);
+        if (result.text) speechParts.push(`[SPEAK] ${result.text}`);
+        state.pendingMessages.push({
+          role: "assistant",
+          content: `[SYSTEM — Detection speech: ${speechParts.join(" ")}]`,
+          timestamp: Date.now(),
+        });
+        await this.updatePendingMessages(state.sessionId, state.pendingMessages);
       }
 
       // Push CALL_MONITOR reason as pending message so monitor sees why it was called
@@ -1393,6 +1500,8 @@ export class DualAgentService {
         transcript: result.transcript,
         transcriptSpeaker: result.transcriptSpeaker,
         contextUpdate: result.contextUpdate,
+        openApp: result.openApp,
+        closeApp: result.closeApp,
       };
     } catch (error: any) {
       const errorMessage = error?.message || String(error);
@@ -1409,7 +1518,7 @@ export class DualAgentService {
    * This provides streaming audio without requiring streaming LLM.
    */
   async *processDetectionStream(input: DetectionInput): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "error" | "complete" | "monitor_status";
+    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "error" | "complete" | "monitor_status" | "app_open" | "app_close" | "emote";
     data: any;
     speaker?: string;
   }> {
@@ -1466,6 +1575,37 @@ export class DualAgentService {
     // Yield board patch if changed
     if (result.changed) {
       yield { type: "board_patch", data: { add: result.addButtons || [], remove: result.removeLabels || [], rebuild: result.rebuildBoard } };
+    }
+
+    // Update and yield emote if detection set one
+    if (result.emote) {
+      const cached2 = sessionCache.get(result.sessionId);
+      if (cached2) cached2.state.currentEmote = result.emote;
+      yield { type: "emote", data: result.emote };
+    }
+
+    // Handle app open/close from detection
+    if (result.openApp) {
+      const cached2 = sessionCache.get(result.sessionId);
+      if (cached2 && cached2.state.appState.enabledApps.includes(result.openApp.appId)) {
+        let appData: any = result.openApp.data;
+        if (result.openApp.appId === "youtube" && result.openApp.data) {
+          const videoResult = await searchYouTube(result.openApp.data);
+          if (videoResult) appData = videoResult;
+          else appData = null;
+        }
+        if (appData !== null) {
+          cached2.state.appState.activeApp = result.openApp.appId;
+          yield { type: "app_open", data: { appId: result.openApp.appId, appData } };
+        }
+      }
+    }
+    if (result.closeApp) {
+      const cached2 = sessionCache.get(result.sessionId);
+      if (cached2 && cached2.state.appState.activeApp) {
+        cached2.state.appState.activeApp = null;
+        yield { type: "app_close", data: {} };
+      }
     }
 
     // Debug description is included in the JSON response already, no need to yield for streaming
@@ -1542,7 +1682,7 @@ export const dualAgentService = new DualAgentService();
 export async function* processInput(
   input: DualAgentInput
 ): AsyncGenerator<{
-  type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status";
+  type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote";
   data: any;
   speaker?: string;
 }> {

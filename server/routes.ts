@@ -881,7 +881,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     dualAgentController.interpret(req, res)
   );
   // Continuous detection — camera frame + ambient audio in, board diff out (JSON, not SSE)
-  app.post("/api/aac/dual/detect", optionalAuth, requireOnboardingComplete, aacUpload.fields([{ name: "image", maxCount: 1 }, { name: "audio", maxCount: 1 }]), (req, res) =>
+  app.post("/api/aac/dual/detect", optionalAuth, requireOnboardingComplete, aacUpload.fields([{ name: "image", maxCount: 1 }, { name: "audio", maxCount: 1 }, { name: "appCanvas", maxCount: 1 }]), (req, res) =>
     dualAgentController.detect(req, res)
   );
   // Get session state
