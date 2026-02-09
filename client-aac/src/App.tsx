@@ -25,7 +25,9 @@ interface AuthResponse {
 }
 
 function MainApp() {
-  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
+    () => localStorage.getItem('synapse_student_id')
+  );
   const { t, isRTL, direction, language } = useLanguage();
 
   const { data: authData, isLoading, error, refetch } = useQuery<AuthResponse>({
@@ -41,15 +43,19 @@ function MainApp() {
 
   const handleLogout = () => {
     setSelectedStudentId(null);
+    localStorage.removeItem('synapse_student_id');
+    localStorage.removeItem('synapse_user_profile');
     // Set user to null to immediately trigger login screen, then refetch to confirm
     queryClient.setQueryData(["/auth/user"], null);
   };
 
   const handleStudentSelect = (studentId: string) => {
+    localStorage.setItem('synapse_student_id', studentId);
     setSelectedStudentId(studentId);
   };
 
   const handleExitStudent = () => {
+    localStorage.removeItem('synapse_student_id');
     setSelectedStudentId(null);
   };
 

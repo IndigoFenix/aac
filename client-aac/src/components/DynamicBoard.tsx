@@ -21,7 +21,7 @@ interface DynamicBoardProps {
 /** Slot state for the fixed 12-slot grid */
 type SlotState =
   | { type: "occupied"; button: BoardButton; anim: "stable" | "entering" }
-  | { type: "fading"; button: BoardButton }
+  | { type: "fading"; button: BoardButton; replaceWith?: BoardButton }
   | { type: "blank" };
 
 const TOTAL_SLOTS = 12;
@@ -138,7 +138,7 @@ export default function DynamicBoard({
         }
       }
 
-      // Step 2: Place new buttons in blank slots
+      // Step 2: Place new buttons in blank slots first
       let addIndex = 0;
       for (let i = 0; i < next.length && addIndex < add.length; i++) {
         if (next[i].type === "blank") {
@@ -151,15 +151,33 @@ export default function DynamicBoard({
         }
       }
 
+      // Step 3: Queue remaining new buttons as replacements for fading slots
+      for (let i = 0; i < next.length && addIndex < add.length; i++) {
+        if (next[i].type === "fading" && !(next[i] as any).replaceWith) {
+          next[i] = {
+            type: "fading",
+            button: (next[i] as { type: "fading"; button: BoardButton }).button,
+            replaceWith: makeBoardButton(add[addIndex], addIndex),
+          };
+          addIndex++;
+        }
+      }
+
       return next;
     });
 
-    // Clear fading slots after 1.5s
+    // After fade completes: replace with queued button or go blank
     if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
     if (remove.length > 0) {
       fadeTimerRef.current = setTimeout(() => {
         setSlots((prev) =>
-          prev.map((s) => (s.type === "fading" ? BLANK_SLOT : s))
+          prev.map((s): SlotState => {
+            if (s.type !== "fading") return s;
+            if (s.replaceWith) {
+              return { type: "occupied", button: s.replaceWith, anim: "entering" };
+            }
+            return BLANK_SLOT;
+          })
         );
       }, 1500);
     }
