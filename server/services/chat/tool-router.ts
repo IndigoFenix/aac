@@ -224,7 +224,7 @@ export interface ToolRegistryDeps {
    * Optional callback for pruneMessages tool.
    * When provided, allows the AI to manually compress conversation history.
    */
-  onPruneMessages?: (forget: number[], summary: string) => Promise<{ removed: number; warnings: string[] }>;
+  onPruneMessages?: (forget: number[], summary: string) => Promise<{ removed: number; warnings: string[]; historyLength: number }>;
 
   /**
    * Optional custom memory processor.

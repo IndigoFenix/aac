@@ -13,6 +13,7 @@ const initializeSchema = z.object({
   interactionMode: z.enum(['interact', 'silent']).optional(),
   imageData: z.string().optional(), // base64 data URL from camera
   gestureContext: z.string().optional(), // serialized face/hand gesture events
+  debugMode: z.string().optional(), // "true" to enable debug SSE events
 });
 
 const identifiedPersonSchema = z.object({
@@ -36,6 +37,7 @@ const messageSchema = z.object({
   imageData: z.string().optional(), // base64 data URL for camera input
   identifiedPerson: identifiedPersonSchema, // Person identified via biometrics
   interactionMode: z.enum(['interact', 'silent']).optional(),
+  debugMode: z.string().optional(), // "true" to enable debug SSE events
 });
 
 const detectSchema = z.object({
@@ -45,6 +47,8 @@ const detectSchema = z.object({
   audioContext: z.string().optional(),
   gestureContext: z.string().optional(),
   interactionMode: z.enum(['interact', 'silent']).optional(),
+  frameTimestamps: z.string().optional(), // JSON array of timestamps for composite grid frames
+  debugMode: z.string().optional(), // "true" to enable debug SSE events
 });
 
 const interpretSchema = z.object({
@@ -93,7 +97,7 @@ export class DualAgentController {
         body.imageData = `data:${file.mimetype};base64,${base64}`;
       }
 
-      const { studentId, sessionId, interactionMode, imageData, gestureContext } = initializeSchema.parse(body);
+      const { studentId, sessionId, interactionMode, imageData, gestureContext, debugMode: debugModeRaw } = initializeSchema.parse(body);
 
       console.log(
         `[DualAgentController] Initializing session for student: ${studentId} mode: ${interactionMode || 'interact'}${imageData ? " (with image)" : ""}${gestureContext ? " (with gestures)" : ""}`
@@ -133,7 +137,10 @@ export class DualAgentController {
             sendSSEEvent(res, "interpretation_audio", { chunk: chunk.data, format: "mp3" });
             break;
           case "debug":
-            sendSSEEvent(res, "debug", { text: chunk.data });
+            sendSSEEvent(res, "debug", chunk.data);
+            break;
+          case "monitor_status":
+            sendSSEEvent(res, "monitor_status", chunk.data);
             break;
           case "transcript":
             sendSSEEvent(res, "transcript", { text: chunk.data, speaker: chunk.speaker });
@@ -202,6 +209,7 @@ export class DualAgentController {
         imageData,
         identifiedPerson,
         interactionMode,
+        debugMode: debugModeRaw,
       } = messageSchema.parse(body);
 
       if (!message?.trim()) {
@@ -233,6 +241,7 @@ export class DualAgentController {
         imageData,
         identifiedPerson,
         interactionMode,
+        debugMode: debugModeRaw === "true",
       };
 
       // Process and stream response
@@ -257,7 +266,10 @@ export class DualAgentController {
             sendSSEEvent(res, "interpretation_audio", { chunk: chunk.data, format: "mp3" });
             break;
           case "debug":
-            sendSSEEvent(res, "debug", { text: chunk.data });
+            sendSSEEvent(res, "debug", chunk.data);
+            break;
+          case "monitor_status":
+            sendSSEEvent(res, "monitor_status", chunk.data);
             break;
           case "transcript":
             sendSSEEvent(res, "transcript", { text: chunk.data, speaker: chunk.speaker });
@@ -321,7 +333,7 @@ export class DualAgentController {
         }
       }
 
-      const { studentId, sessionId, language, board, visualContext, audioContext, gestureContext, imageData, identifiedPerson, interactionMode } =
+      const { studentId, sessionId, language, board, visualContext, audioContext, gestureContext, imageData, identifiedPerson, interactionMode, debugMode: debugModeRaw } =
         messageSchema.parse(body);
 
       console.log(
@@ -348,6 +360,7 @@ export class DualAgentController {
         imageData,
         identifiedPerson,
         interactionMode,
+        debugMode: debugModeRaw === "true",
       };
 
       // Process and stream response
@@ -372,7 +385,10 @@ export class DualAgentController {
             sendSSEEvent(res, "interpretation_audio", { chunk: chunk.data, format: "mp3" });
             break;
           case "debug":
-            sendSSEEvent(res, "debug", { text: chunk.data });
+            sendSSEEvent(res, "debug", chunk.data);
+            break;
+          case "monitor_status":
+            sendSSEEvent(res, "monitor_status", chunk.data);
             break;
           case "transcript":
             sendSSEEvent(res, "transcript", { text: chunk.data, speaker: chunk.speaker });
@@ -412,7 +428,7 @@ export class DualAgentController {
   async getSession(req: Request, res: Response): Promise<void> {
     try {
       const { sessionId } = req.params;
-      const { studentId } = req.query;
+      const { studentId, debugMode } = req.query;
 
       if (!studentId || typeof studentId !== "string") {
         res.status(400).json({ error: "studentId is required" });
@@ -425,13 +441,35 @@ export class DualAgentController {
         sessionId
       );
 
-      res.json({
-        sessionId: state.sessionId,
-        thinkingMode: state.thinkingMode,
-        monitorBusy: state.monitorBusy,
-        messageCount: state.messages.length,
-        pendingCount: state.pendingMessages.length,
-      });
+      if (debugMode === "true") {
+        // Full debug data for the unified debug panel
+        res.json({
+          sessionId: state.sessionId,
+          thinkingMode: state.thinkingMode,
+          monitorBusy: state.monitorBusy,
+          messageCount: state.messages.length,
+          pendingCount: state.pendingMessages.length,
+          interactivePrompt: state.interactivePrompt,
+          lastMonitorActivity: state.lastMonitorActivity,
+          lastInteractiveActivity: state.lastInteractiveActivity,
+          interactionMode: state.interactionMode,
+          messages: state.messages.slice(-50),
+          pendingMessages: state.pendingMessages,
+          monitorError: state.monitorError || null,
+          monitorErrorTimestamp: state.monitorErrorTimestamp || null,
+          monitorConsecutiveFailures: state.monitorConsecutiveFailures || 0,
+        });
+      } else {
+        res.json({
+          sessionId: state.sessionId,
+          thinkingMode: state.thinkingMode,
+          monitorBusy: state.monitorBusy,
+          messageCount: state.messages.length,
+          pendingCount: state.pendingMessages.length,
+          monitorError: state.monitorError || null,
+          monitorConsecutiveFailures: state.monitorConsecutiveFailures || 0,
+        });
+      }
     } catch (error: any) {
       console.error("[DualAgentController] GetSession error:", error?.message || error);
       if (error?.stack) console.error("[DualAgentController] Stack trace:", error.stack);
@@ -535,10 +573,16 @@ export class DualAgentController {
         audioMimeType = audioFile.mimetype;
       }
 
-      const { studentId, sessionId, board, audioContext, gestureContext, interactionMode } = detectSchema.parse(body);
+      const { studentId, sessionId, board, audioContext, gestureContext, interactionMode, frameTimestamps: frameTimestampsRaw, debugMode: debugModeRaw } = detectSchema.parse(body);
+
+      // Parse frame timestamps if provided (from composite grid)
+      let frameTimestamps: number[] | undefined;
+      if (frameTimestampsRaw) {
+        try { frameTimestamps = JSON.parse(frameTimestampsRaw); } catch { /* ignore */ }
+      }
 
       console.log(
-        `[DualAgentController] Detect for student ${studentId}${imageData ? " (with image)" : ""}${audioBuffer ? " (with audio)" : ""}${gestureContext ? " (with gestures)" : ""} mode: ${interactionMode || "interact"}`
+        `[DualAgentController] Detect for student ${studentId}${imageData ? " (with image)" : ""}${audioBuffer ? " (with audio)" : ""}${gestureContext ? " (with gestures)" : ""}${frameTimestamps ? ` (grid: ${frameTimestamps.length} frames)` : ""} mode: ${interactionMode || "interact"}`
       );
 
       // Set up SSE headers
@@ -560,6 +604,8 @@ export class DualAgentController {
         gestureContext,
         board,
         interactionMode,
+        frameTimestamps,
+        debugMode: debugModeRaw === "true",
       })) {
         switch (chunk.type) {
           case "text":
@@ -578,7 +624,10 @@ export class DualAgentController {
             sendSSEEvent(res, "interpretation_audio", { chunk: chunk.data, format: "mp3" });
             break;
           case "debug":
-            sendSSEEvent(res, "debug", { text: chunk.data });
+            sendSSEEvent(res, "debug", chunk.data);
+            break;
+          case "monitor_status":
+            sendSSEEvent(res, "monitor_status", chunk.data);
             break;
           case "transcript":
             sendSSEEvent(res, "transcript", { text: chunk.data, speaker: chunk.speaker });

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Settings, UserX, Hand, Mic, Maximize, LogOut, ArrowLeft, Brain } from "lucide-react";
+import { UserX } from "lucide-react";
 import DynamicBoard from "@/components/DynamicBoard";
 import PrebuiltBoardSection from "@/components/PrebuiltBoardSection";
 import QuickActions from "@/components/QuickActions";
@@ -12,25 +12,18 @@ import UserSettings from "@/components/UserSettings";
 import { ConversationBox } from "@/components/ConversationBox";
 import { DualAgentConversationBox } from "@/components/DualAgentConversationBox";
 import { DualAgentProvider, useDualAgentContext } from "@/contexts/DualAgentContext";
-import { LanguageSelector } from "@/components/LanguageSelector";
 import { Button } from "@/components/ui/button";
 import { useGestures } from "@/hooks/useGestures";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useMultiCamera } from "@/hooks/useMultiCamera";
 import { useCamera } from "@/hooks/useCamera";
 import { usePersonIdentification } from "@/hooks/usePersonIdentification";
-import { DebugToggle } from "@/components/DebugWindow";
-import MultiCameraDebugWindow from "@/components/MultiCameraDebugWindow";
-import { CameraDebugToggle } from "@/components/CameraDebugToggle";
-import AudioCapture from "@/components/AudioCapture";
-// AudioToggle now merged into PassiveCoListener
+import UnifiedDebugPanel from "@/components/UnifiedDebugPanel";
 import TwoHandedObjectDetection from "@/components/TwoHandedObjectDetection";
 import { DetectedObject } from "@/hooks/useTwoHandedObjectDetection";
 import { ObjectDetectionDebug } from "@/components/ObjectDetectionDebug";
-import PassiveCoListener from "@/components/PassiveCoListener";
 import InitializationLoadingScreen from "@/components/InitializationLoadingScreen";
 import { CameraAttentivenessWrapper } from "@/components/CameraAttentivenessWrapper";
-import { CameraAttentivenessDebug } from "@/components/CameraAttentivenessDebug";
 import { useFaceTracking } from "@/hooks/useFaceTracking";
 import { useFaceEvents } from "@/hooks/useFaceEvents";
 import { useHandGestureTracking } from "@/hooks/useHandGestureTracking";
@@ -58,7 +51,7 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
   onDetectionChange?: (enabled: boolean) => void;
   onBoardPatchChange?: (patch: import("@/hooks/useDualAgent").BoardPatch | null) => void;
 }) {
-  const { interactionMode, interpretButtons, detectionEnabled, boardPatch } = useDualAgentContext();
+  const { interactionMode, interpretButtons, videoCaptureEnabled, voiceEnabled, boardPatch } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(interactionMode);
@@ -70,8 +63,8 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
   }, [interpretButtons, onInterpretReady]);
 
   useEffect(() => {
-    onDetectionChange?.(detectionEnabled);
-  }, [detectionEnabled, onDetectionChange]);
+    onDetectionChange?.(videoCaptureEnabled || voiceEnabled);
+  }, [videoCaptureEnabled, voiceEnabled, onDetectionChange]);
 
   useEffect(() => {
     onBoardPatchChange?.(boardPatch);
@@ -99,8 +92,6 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const [isStandbyMode, setIsStandbyMode] = useState<boolean>(false);
   // Language is now managed by LanguageContext
   const { language: currentLanguage, setLanguage: setCurrentLanguage, t, isRTL, direction } = useLanguage();
-  const [showCameraDebug, setShowCameraDebug] = useState<boolean>(false);
-  const [showAudioCapture, setShowAudioCapture] = useState<boolean>(false);
   const [useDualAgent, setUseDualAgent] = useState<boolean>(true); // Toggle for dual-agent system
 
   // Use the initialization context for loading state
@@ -110,13 +101,10 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const [showObjectDetectionDebug, setShowObjectDetectionDebug] = useState<boolean>(false);
   const [showObjectDetectionWindow, setShowObjectDetectionWindow] = useState<boolean>(false);
   const [lastObjectDetectionTime, setLastObjectDetectionTime] = useState<number>();
-  const [debugMode, setDebugMode] = useState<boolean>(false);
-  const [showAttentivenessDebug, setShowAttentivenessDebug] = useState<boolean>(false);
+  const [debugMode, setDebugMode] = useState<boolean>(true); // Enable debug mode by default for development
+  const [showDebugPanel, setShowDebugPanel] = useState<boolean>(false);
   const [faceTrackingEnabled, setFaceTrackingEnabled] = useState<boolean>(true);
   const [handGestureEnabled, setHandGestureEnabled] = useState<boolean>(true);
-
-  // Passive Co-Listener state
-  const [passiveChoiceOptions, setPassiveChoiceOptions] = useState<Array<{ label: string; emoji: string; confidence: number }>>([]);
 
   // AAC Board state - populated from chat responses
   const [boardData, setBoardData] = useState<ParsedBoardData | null>(null);
@@ -126,6 +114,19 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
 
   // Recent button presses for Interpret feature (silent mode)
   const [recentButtonPresses, setRecentButtonPresses] = useState<string[]>([]);
+
+  // Button press buffering — accumulate presses before sending
+  const BUTTON_SEND_DELAY_MS = 2000;
+  const buttonBufferRef = useRef<string[]>([]);
+  const buttonSendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastButtonRef = useRef<string | null>(null);
+
+  // Clean up buffer timer on unmount
+  useEffect(() => {
+    return () => {
+      if (buttonSendTimerRef.current) clearTimeout(buttonSendTimerRef.current);
+    };
+  }, []);
 
   // Board mode: 'ai' shows DynamicBoard, 'db' shows PrebuiltBoardSection
   const [boardMode, setBoardMode] = useState<'ai' | 'db'>('ai');
@@ -426,20 +427,47 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     }, 2000);
   };
 
-  // Handle AAC board button click - sends to conversation
-  const handleBoardButtonClick = useCallback((button: BoardButton, spokenText: string) => {
-    // Add to selected symbols to trigger conversation send
-    setSelectedSymbols([spokenText]);
-    setCurrentSpeech(spokenText);
+  // Flush the button buffer — send accumulated presses as one message
+  const flushButtonBuffer = useCallback(() => {
+    if (buttonBufferRef.current.length === 0) return;
+    const message = buttonBufferRef.current.join(" ");
+    setSelectedSymbols([...buttonBufferRef.current]);
+    buttonBufferRef.current = [];
+    lastButtonRef.current = null;
+    if (buttonSendTimerRef.current) {
+      clearTimeout(buttonSendTimerRef.current);
+      buttonSendTimerRef.current = null;
+    }
+    setTimeout(() => setCurrentSpeech(""), 2000);
+  }, []);
 
+  // Handle AAC board button click — buffer presses, send after delay or on double-tap
+  const handleBoardButtonClick = useCallback((button: BoardButton, spokenText: string) => {
     // Track for interpret feature (keep last 10)
     setRecentButtonPresses(prev => [...prev.slice(-9), spokenText]);
 
-    // Clear after a moment
-    setTimeout(() => {
-      setCurrentSpeech("");
-    }, 2000);
-  }, []);
+    // Same button pressed twice in a row → send immediately
+    if (lastButtonRef.current === spokenText) {
+      // Add to buffer (it's a repeat, so it's already in there once)
+      buttonBufferRef.current.push(spokenText);
+      setCurrentSpeech(buttonBufferRef.current.join(" "));
+      flushButtonBuffer();
+      return;
+    }
+
+    // Different button — accumulate and reset timer
+    buttonBufferRef.current.push(spokenText);
+    lastButtonRef.current = spokenText;
+    setCurrentSpeech(buttonBufferRef.current.join(" "));
+
+    // Reset the send timer
+    if (buttonSendTimerRef.current) {
+      clearTimeout(buttonSendTimerRef.current);
+    }
+    buttonSendTimerRef.current = setTimeout(() => {
+      flushButtonBuffer();
+    }, BUTTON_SEND_DELAY_MS);
+  }, [flushButtonBuffer]);
 
   // Handle interpret: synthesize recent button presses into speech
   const handleInterpret = useCallback(() => {
@@ -476,31 +504,6 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     setLastObjectDetectionTime(Date.now());
   }, []);
 
-  // Handle choice detection from passive co-listener
-  const handleChoiceDetected = useCallback((options: Array<{ label: string; emoji: string; confidence: number }>) => {
-    console.log('🎯 Choice detected, showing options:', options);
-    setPassiveChoiceOptions(options);
-    
-    // Auto-clear after 30 seconds
-    setTimeout(() => {
-      setPassiveChoiceOptions([]);
-    }, 30000);
-  }, []);
-
-  // Handle selection of a passive choice option
-  const handlePassiveChoiceSelect = useCallback(async (option: { label: string; emoji: string }) => {
-    console.log('✨ Selected passive choice option:', option);
-    
-    // Add to selected symbols and speak
-    await handleSymbolSelect({ 
-      label: option.label, 
-      emoji: option.emoji 
-    });
-    
-    // Clear choice options
-    setPassiveChoiceOptions([]);
-  }, [handleSymbolSelect]);
-
   const handleProfileComplete = (_studentId: string, profile?: any) => {
     setUserProfile(profile);
     setShowProfileSetup(false);
@@ -519,13 +522,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           console.log('Using authenticated user data as profile:', authUser);
           setUserProfile(authUser);
           localStorage.setItem('synapse_user_profile', JSON.stringify(authUser));
-          
-          // Auto-enable audio capture if user has audioMonitoring enabled
-          if ((authUser as any).audioMonitoring === true) {
-            console.log('Auto-enabling audio capture from authenticated user profile');
-            setShowAudioCapture(true);
-          }
-          
+
           // Load debug mode from user profile
           if ((authUser as any).debugMode === true) {
             console.log('Enabling debug mode from authenticated user profile');
@@ -538,13 +535,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             const profile = await response.json();
             setUserProfile(profile);
             localStorage.setItem('synapse_user_profile', JSON.stringify(profile));
-            
-            // Auto-enable audio capture if user has audioMonitoring enabled
-            if (profile.audioMonitoring === true) {
-              console.log('Auto-enabling audio capture from API user profile');
-              setShowAudioCapture(true);
-            }
-            
+
             // Load debug mode from user profile
             if (profile.debugMode === true) {
               console.log('Enabling debug mode from API user profile');
@@ -788,93 +779,9 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   return (
     <CameraAttentivenessWrapper autoStart={true} cameraType="user">
     <div className="h-screen flex flex-col relative overflow-hidden bg-bg-soft">
-      {/* Top Navigation Bar */}
-      <motion.div 
-        className="absolute top-0 left-0 right-0 z-20 bg-white/90 backdrop-blur-sm border-b border-gray-200 px-4 py-2"
-        initial={{ y: -48 }}
-        animate={{ y: 0 }}
-        transition={{ delay: 0.5 }}
-      >
-        <div className="flex justify-between items-center">
-          <div className="flex-1 text-sm text-text-secondary">
-            <span>{new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</span>
-          </div>
-          
-          <div className="text-sm">
-            {!isMultiCameraActive || globalError || !getUserCamera() ? (
-              <div className="flex items-center space-x-2 text-red-500 font-medium">
-                <UserX className="w-4 h-4" />
-                <span>CAMERA BLOCKED</span>
-              </div>
-            ) : !anyPersonPresent ? (
-              <div className="flex items-center space-x-2 text-orange-500 font-medium">
-                <UserX className="w-4 h-4" />
-                <span>NO ONE PRESENT</span>
-              </div>
-            ) : !isMainUserPresent && userProfile ? (
-              <div className="flex items-center space-x-2 text-orange-500 font-medium">
-                <UserX className="w-4 h-4" />
-                <span>{userProfile.name || 'USER'} NOT PRESENT</span>
-              </div>
-            ) : (
-              <span className="text-text-secondary">Home</span>
-            )}
-          </div>
-          
-          <div className="flex-1 flex justify-end space-x-2">
-            <LanguageSelector className="text-xs" />
-
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleFullScreen}
-              className="text-text-secondary hover:text-text-primary hover:bg-gray-100"
-              title="Toggle Full Screen (F11)"
-            >
-              <Maximize className="w-4 h-4" />
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowUserSettings(true)}
-              className="text-text-secondary hover:text-text-primary hover:bg-gray-100"
-              title="Settings"
-            >
-              <Settings className="w-4 h-4" />
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onExitStudent}
-              className="text-text-secondary hover:text-orange-600 hover:bg-orange-50"
-              title="Switch Student"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={async () => {
-                try {
-                  await apiRequest("POST", "/auth/logout", {});
-                } catch (e) {}
-                onLogout();
-              }}
-              className="text-text-secondary hover:text-red-600 hover:bg-red-50"
-              title="Log Out"
-            >
-              <LogOut className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      </motion.div>
-
       {/* Main 3-Section Board Layout */}
       <main className={`flex-1 flex flex-col relative ${
-        showConversation ? 'pt-28' : 'pt-12'
+        showConversation ? 'pt-24' : 'pt-4'
       }`}>
         {/* Audio Feedback Indicator */}
         <AnimatePresence>
@@ -944,62 +851,6 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           voiceType={userProfile?.aacStudentVoiceType || 'boy'}
         />
 
-        {/* Passive Choice Options Overlay */}
-        <AnimatePresence>
-          {passiveChoiceOptions.length > 0 && (
-            <motion.div
-              className="absolute inset-0 bg-black/60 z-30 flex items-center justify-center p-6"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            >
-              <motion.div
-                className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-2xl w-full shadow-2xl"
-                initial={{ scale: 0.8, y: 20 }}
-                animate={{ scale: 1, y: 0 }}
-                exit={{ scale: 0.8, y: 20 }}
-              >
-                <div className="text-center mb-6">
-                  <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                    💬 Choice Question Detected
-                  </h3>
-                  <p className="text-gray-600 dark:text-gray-300">
-                    Tap an option to respond
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  {passiveChoiceOptions.map((option, index) => (
-                    <motion.button
-                      key={index}
-                      onClick={() => handlePassiveChoiceSelect(option)}
-                      className="flex flex-col items-center p-4 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded-xl border-2 border-blue-200 dark:border-blue-700 hover:border-blue-300 dark:hover:border-blue-600 transition-colors"
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      <div className="text-4xl mb-2">{option.emoji}</div>
-                      <div className="text-lg font-medium text-gray-900 dark:text-white">
-                        {option.label}
-                      </div>
-                      <div className="text-xs text-blue-600 dark:text-blue-400">
-                        {Math.round(option.confidence * 100)}% confident
-                      </div>
-                    </motion.button>
-                  ))}
-                </div>
-
-                <motion.button
-                  onClick={() => setPassiveChoiceOptions([])}
-                  className="mt-4 w-full py-2 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  Dismiss
-                </motion.button>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </main>
 
       {/* Text-to-Speech Output Display */}
@@ -1135,6 +986,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           }}
           getIdentifiedPerson={getIdentifiedPerson}
           getGestureContext={getGestureContext}
+          debugMode={debugMode}
         >
           <DualAgentBridge
             onModeChange={setDualAgentMode}
@@ -1152,7 +1004,35 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             onBoardModeChange={setBoardMode}
             recentButtonPresses={recentButtonPresses}
             onInterpret={handleInterpret}
+            onSettings={() => setShowUserSettings(true)}
+            onExitStudent={onExitStudent}
+            onLogout={async () => {
+              try { await apiRequest("POST", "/auth/logout", {}); } catch (e) {}
+              onLogout();
+            }}
+            onFullScreen={handleFullScreen}
+            debugMode={debugMode}
+            showDebugPanel={showDebugPanel}
+            onDebugPanelToggle={() => setShowDebugPanel(!showDebugPanel)}
           />
+          {debugMode && (
+            <UnifiedDebugPanel
+              isOpen={showDebugPanel}
+              onClose={() => setShowDebugPanel(false)}
+              faceTrackingEnabled={faceTrackingEnabled}
+              onFaceTrackingToggle={setFaceTrackingEnabled}
+              trackedFaces={trackedFaces}
+              faceTrackingFps={faceTrackingFps}
+              faceTrackingReady={faceTrackingReady}
+              faceTrackingError={faceTrackingError}
+              handGestureEnabled={handGestureEnabled}
+              onHandGestureToggle={setHandGestureEnabled}
+              trackedHands={trackedHands}
+              handGestureFps={handGestureFps}
+              handGestureReady={handGestureReady}
+              handGestureError={handGestureError}
+            />
+          )}
         </DualAgentProvider>
       )}
 
@@ -1191,110 +1071,6 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
         )}
       </AnimatePresence>
 
-      {/* Debug Controls - Only shown when debug mode is enabled */}
-      {debugMode && (
-        <>
-          {/* Debug Windows */}
-          <DebugToggle />
-          <CameraDebugToggle onToggle={() => setShowCameraDebug(true)} />
-          <CameraAttentivenessDebug
-            isVisible={showAttentivenessDebug}
-            onToggle={setShowAttentivenessDebug}
-          />
-          
-          {/* AudioBETA Button - triggers unified PassiveCoListener window */}
-          {debugMode && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                // Enable passive co-listener if user is authenticated
-                if (studentId && userProfile) {
-                  setUserProfile({ ...userProfile, passiveCoListenerEnabled: !userProfile.passiveCoListenerEnabled });
-                }
-              }}
-              className={`
-                fixed z-40 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-300 dark:border-gray-600 hover:bg-white dark:hover:bg-gray-800 shadow-lg
-                flex items-center gap-2 transition-all duration-200
-                ${userProfile?.passiveCoListenerEnabled ? 'bg-blue-100/90 dark:bg-blue-900/90 border-blue-300 dark:border-blue-700' : ''}
-              `}
-              style={{ bottom: '1rem', right: '15rem' }}
-              title="Audio Debug Monitor (Beta) - Unified passive co-listener with real-time audio analysis"
-            >
-              <Mic className="w-4 h-4 text-green-500" />
-              <span className="text-sm">
-                AudioBETA
-              </span>
-            </Button>
-          )}
-
-          {/* Object Detection Window Toggle */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowObjectDetectionWindow(!showObjectDetectionWindow)}
-            className={`
-              fixed z-40 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-300 dark:border-gray-600 hover:bg-white dark:hover:bg-gray-800 shadow-lg
-              flex items-center gap-2 transition-all duration-200
-              ${showObjectDetectionWindow ? 'bg-green-100/90 dark:bg-green-900/90 border-green-300 dark:border-green-700' : ''}
-            `}
-            style={{ bottom: '1rem', right: '24rem' }}
-            title="Object Detection Window"
-          >
-            <Hand className="w-4 h-4 text-green-600" />
-            <span className="text-sm">Objects</span>
-          </Button>
-
-          {/* Dual-Agent System Toggle */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setUseDualAgent(!useDualAgent)}
-            className={`
-              fixed z-40 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-300 dark:border-gray-600 hover:bg-white dark:hover:bg-gray-800 shadow-lg
-              flex items-center gap-2 transition-all duration-200
-              ${useDualAgent ? 'bg-purple-100/90 dark:bg-purple-900/90 border-purple-300 dark:border-purple-700' : ''}
-            `}
-            style={{ bottom: '1rem', right: '33rem' }}
-            title="Toggle Dual-Agent System (Interactive + Monitor)"
-          >
-            <Brain className={`w-4 h-4 ${useDualAgent ? 'text-purple-600' : 'text-gray-500'}`} />
-            <span className="text-sm">{useDualAgent ? 'Dual-Agent ON' : 'Dual-Agent'}</span>
-          </Button>
-        </>
-      )}
-
-      
-      {/* Multi-Camera Debug Window */}
-      <MultiCameraDebugWindow
-        isOpen={showCameraDebug}
-        onClose={() => setShowCameraDebug(false)}
-        faceTrackingEnabled={faceTrackingEnabled}
-        onFaceTrackingToggle={setFaceTrackingEnabled}
-        trackedFaces={trackedFaces}
-        faceTrackingFps={faceTrackingFps}
-        faceTrackingReady={faceTrackingReady}
-        faceTrackingError={faceTrackingError}
-        handGestureEnabled={handGestureEnabled}
-        onHandGestureToggle={setHandGestureEnabled}
-        trackedHands={trackedHands}
-        handGestureFps={handGestureFps}
-        handGestureReady={handGestureReady}
-        handGestureError={handGestureError}
-      />
-
-      {/* Audio Capture Component - only show in debug mode */}
-      {debugMode && showAudioCapture && (
-        <AudioCapture
-          enabled={userProfile?.audioMonitoring !== false}
-          isVisible={showAudioCapture}
-          onClose={() => setShowAudioCapture(false)}
-          onAudioProcessed={(context) => {
-            console.log('Audio context received:', context);
-            // Integration with existing visual context for enhanced scene understanding
-          }}
-        />
-      )}
 
       {/* Two-Handed Object Detection - only render when explicitly enabled in user settings */}
       {(userProfile?.objectDetectionEnabled || userProfile?.object_detection_enabled) && (
@@ -1314,25 +1090,6 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
         isDetectionActive={userProfile?.objectDetectionEnabled || userProfile?.object_detection_enabled || false}
         lastDetectionTime={lastObjectDetectionTime}
       />
-      {/* Passive Co-Listener with Audio Debug Monitor - only show in debug mode */}
-      {debugMode && studentId && userProfile && (
-        <PassiveCoListener
-          enabled={userProfile.passiveCoListenerEnabled || false}
-          onEnabledChange={(enabled) => {
-            // Update user profile
-            setUserProfile({ ...userProfile, passiveCoListenerEnabled: enabled });
-          }}
-          onChoiceDetected={handleChoiceDetected}
-          studentId={studentId}
-          language={currentLanguage as 'en' | 'he'}
-          userProfile={userProfile}
-          // Audio capture integration
-          showAudioCapture={showAudioCapture}
-          onAudioCaptureToggle={() => setShowAudioCapture(!showAudioCapture)}
-          isAudioCaptureEnabled={userProfile?.audioMonitoring !== false}
-          isAudioMonitoring={false} // Will be updated by audio monitoring logic
-        />
-      )}
 
     </div>
     </CameraAttentivenessWrapper>

@@ -48,10 +48,10 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
 
   private convertInputItems(items: GPTInputItem[]): {
     system: string;
-    messages: Array<{ role: "user" | "assistant"; content: string }>;
+    messages: Array<{ role: "user" | "assistant"; content: string | any[] }>;
   } {
     const systemParts: string[] = [];
-    const messages: Array<{ role: "user" | "assistant"; content: string }> = [];
+    const messages: Array<{ role: "user" | "assistant"; content: string | any[] }> = [];
 
     for (const item of items) {
       if (item.type === "message") {
@@ -60,14 +60,41 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
             ? item.content
             : (item.content as any[]).map((p: any) => p.text || "").join("\n");
           systemParts.push(text);
-        } else {
-          const text = typeof item.content === "string"
-            ? item.content
-            : (item.content as any[]).map((p: any) => p.text || "").join("\n");
+        } else if (typeof item.content === "string") {
           messages.push({
             role: item.role as "user" | "assistant",
-            content: text,
+            content: item.content,
           });
+        } else {
+          // Multimodal content — convert input_image parts to Claude's native format
+          const parts = (item.content as any[]);
+          const hasImages = parts.some((p: any) => p.type === "input_image");
+          if (hasImages) {
+            const claudeParts: any[] = [];
+            for (const p of parts) {
+              if (p.type === "input_text" && p.text) {
+                claudeParts.push({ type: "text", text: p.text });
+              } else if (p.type === "input_image" && p.image_url) {
+                // Parse data URL: "data:image/png;base64,AAAA..."
+                const match = (p.image_url as string).match(/^data:([^;]+);base64,(.+)$/);
+                if (match) {
+                  claudeParts.push({
+                    type: "image",
+                    source: { type: "base64", media_type: match[1], data: match[2] },
+                  });
+                }
+              }
+            }
+            messages.push({
+              role: item.role as "user" | "assistant",
+              content: claudeParts,
+            });
+          } else {
+            messages.push({
+              role: item.role as "user" | "assistant",
+              content: parts.map((p: any) => p.text || "").join("\n"),
+            });
+          }
         }
       } else if (item.type === "function_call") {
         messages.push({
@@ -89,10 +116,18 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
 
     // Claude requires alternating user/assistant messages
     // Merge consecutive same-role messages
-    const merged: Array<{ role: "user" | "assistant"; content: string }> = [];
+    const merged: Array<{ role: "user" | "assistant"; content: string | any[] }> = [];
     for (const msg of messages) {
       if (merged.length > 0 && merged[merged.length - 1].role === msg.role) {
-        merged[merged.length - 1].content += "\n" + msg.content;
+        const prev = merged[merged.length - 1];
+        // If either side is multimodal (array), merge as arrays
+        if (Array.isArray(prev.content) || Array.isArray(msg.content)) {
+          const prevParts = Array.isArray(prev.content) ? prev.content : [{ type: "text", text: prev.content }];
+          const newParts = Array.isArray(msg.content) ? msg.content : [{ type: "text", text: msg.content }];
+          prev.content = [...prevParts, ...newParts];
+        } else {
+          prev.content += "\n" + msg.content;
+        }
       } else {
         merged.push({ ...msg });
       }

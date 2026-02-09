@@ -54,22 +54,37 @@ export class GeminiStructuredProvider implements StructuredLLMProvider {
     let systemParts: string[] = [];
     if (instructions) systemParts.push(instructions);
 
-    const contents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
+    const contents: Array<{ role: string; parts: any[] }> = [];
 
     for (const item of items) {
       if (item.type === "message") {
         if (item.role === "system") {
           const text = typeof item.content === "string"
             ? item.content
-            : item.content.map((p: any) => p.text || "").join("\n");
+            : (item.content as any[]).map((p: any) => p.text || "").join("\n");
           systemParts.push(text);
-        } else {
-          const text = typeof item.content === "string"
-            ? item.content
-            : item.content.map((p: any) => p.text || "").join("\n");
+        } else if (typeof item.content === "string") {
           contents.push({
             role: item.role === "assistant" ? "model" : "user",
-            parts: [{ text }],
+            parts: [{ text: item.content }],
+          });
+        } else {
+          // Multimodal content — convert input_image parts to Gemini's inlineData format
+          const parts: any[] = [];
+          for (const p of item.content as any[]) {
+            if (p.type === "input_text" && p.text) {
+              parts.push({ text: p.text });
+            } else if (p.type === "input_image" && p.image_url) {
+              const match = (p.image_url as string).match(/^data:([^;]+);base64,(.+)$/);
+              if (match) {
+                parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
+              }
+            }
+          }
+          if (parts.length === 0) parts.push({ text: "" });
+          contents.push({
+            role: item.role === "assistant" ? "model" : "user",
+            parts,
           });
         }
       } else if (item.type === "function_call") {

@@ -79,6 +79,7 @@ export class GeminiChatProvider implements ChatProvider {
             completionTokens: usage.candidatesTokenCount || 0,
           }
         : undefined,
+      finishReason: finishReason || undefined,
     };
   }
 

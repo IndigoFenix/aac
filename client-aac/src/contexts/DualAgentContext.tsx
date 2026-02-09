@@ -1,13 +1,17 @@
 // client-aac/src/contexts/DualAgentContext.tsx
 // Context for the dual-agent AAC system
 
-import React, { createContext, useContext, useCallback, useEffect, useRef } from "react";
+import React, { createContext, useContext, useCallback, useEffect, useRef, useState } from "react";
 import { useDualAgent, type DualAgentMessage, type IdentifiedPerson, type BoardPatch } from "@/hooks/useDualAgent";
+import type { CachedRequest } from "@/hooks/useDebugRequestCache";
 import { useCameraAttentivenessOptional } from "@/contexts/CameraAttentivenessContext";
+import { useActivityMonitor } from "@/hooks/useActivityMonitor";
+import type { BufferedFrame } from "@/lib/frameRingBuffer";
 import type { ParsedBoardData } from "@shared/schema";
 
 interface DualAgentContextType {
   // Session state
+  studentId: string;
   sessionId: string | null;
   isInitialized: boolean;
   isLoading: boolean;
@@ -35,9 +39,9 @@ interface DualAgentContextType {
   interactionMode: 'interact' | 'silent';
   setInteractionMode: (mode: 'interact' | 'silent') => void;
 
-  // Detection
-  detectionEnabled: boolean;
-  setDetectionEnabled: (enabled: boolean) => void;
+  // Detection — video and audio independently toggleable
+  videoCaptureEnabled: boolean;
+  setVideoCaptureEnabled: (enabled: boolean) => void;
 
   // Actions
   initialize: () => Promise<void>;
@@ -57,6 +61,14 @@ interface DualAgentContextType {
 
   // Board patch (from detection)
   boardPatch: BoardPatch | null;
+
+  // Debug
+  debugData: Record<string, any>;
+  requestCache: CachedRequest[];
+
+  // Monitor status
+  monitorError: string | null;
+  monitorConsecutiveFailures: number;
 }
 
 const DualAgentContext = createContext<DualAgentContextType | null>(null);
@@ -73,6 +85,8 @@ interface DualAgentProviderProps {
   getGestureContext?: () => string | null;
   /** Callback for board patches from detection */
   onBoardPatch?: (patch: BoardPatch) => void;
+  /** Enable debug mode — sends debugMode to backend, collects debug SSE events */
+  debugMode?: boolean;
 }
 
 export function DualAgentProvider({
@@ -83,10 +97,15 @@ export function DualAgentProvider({
   getIdentifiedPerson,
   getGestureContext,
   onBoardPatch: onBoardPatchProp,
+  debugMode,
 }: DualAgentProviderProps) {
   const [currentBoard, setCurrentBoard] = React.useState<ParsedBoardData | null>(null);
   const [boardPatch, setBoardPatch] = React.useState<BoardPatch | null>(null);
   const onBoardUpdateRef = useRef<((board: ParsedBoardData) => void) | null>(null);
+
+  // Mic stream for activity monitor (created when detection enabled + initialized)
+  const [micStream, setMicStream] = useState<MediaStream | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
 
   // Use CameraAttentivenessContext for frame capture (shares working camera stream)
   const attentiveness = useCameraAttentivenessOptional();
@@ -108,6 +127,36 @@ export function DualAgentProvider({
     // Fall back to prop-provided captureFrame
     if (captureFrameProp) {
       return captureFrameProp();
+    }
+    return null;
+  }, [attentiveness, captureFrameProp]);
+
+  // Capture a BufferedFrame (with motion metadata) for the activity monitor ring buffer
+  const captureBufferedFrame = useCallback(async (): Promise<BufferedFrame | null> => {
+    if (attentiveness) {
+      try {
+        const frame = await attentiveness.captureNow('medium');
+        if (frame && frame.blob && frame.blob.size > 0) {
+          return {
+            blob: frame.blob,
+            timestamp: frame.timestamp,
+            motionLevel: frame.motionLevel,
+          };
+        }
+      } catch {
+        // Fall through
+      }
+    }
+    // Fallback: use prop captureFrame with zero motion
+    if (captureFrameProp) {
+      try {
+        const blob = await captureFrameProp();
+        if (blob && blob.size > 0) {
+          return { blob, timestamp: Date.now(), motionLevel: 0 };
+        }
+      } catch {
+        // Fall through
+      }
     }
     return null;
   }, [attentiveness, captureFrameProp]);
@@ -139,6 +188,66 @@ export function DualAgentProvider({
     captureFrame,
     getIdentifiedPerson,
     getGestureContext,
+    debugMode,
+  });
+
+  // Stable ref for runDetectionWithGrid (avoids re-creating activity monitor)
+  const runDetectionWithGridRef = useRef(dualAgent.runDetectionWithGrid);
+  runDetectionWithGridRef.current = dualAgent.runDetectionWithGrid;
+
+  // Activity-driven trigger callback — returns the promise so the monitor can await it
+  const handleActivityTrigger = useCallback(async (grid: any, audioClip: Blob | null) => {
+    await runDetectionWithGridRef.current(grid, audioClip);
+  }, []);
+
+  // Manage mic stream lifecycle: acquire when audio capture (voiceEnabled) + initialized, release on disable
+  useEffect(() => {
+    if (!dualAgent.voiceEnabled || !dualAgent.isInitialized || !dualAgent.sessionId) {
+      // Release mic if we have one
+      if (micStreamRef.current) {
+        micStreamRef.current.getTracks().forEach(t => t.stop());
+        micStreamRef.current = null;
+        setMicStream(null);
+        console.log("[DualAgentContext] Mic stream released");
+      }
+      return;
+    }
+
+    // Acquire mic
+    let cancelled = false;
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (cancelled) {
+          stream.getTracks().forEach(t => t.stop());
+          return;
+        }
+        micStreamRef.current = stream;
+        setMicStream(stream);
+        console.log("[DualAgentContext] Mic stream acquired for activity monitor");
+      } catch {
+        console.warn("[DualAgentContext] Mic not available, running detection without audio");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (micStreamRef.current) {
+        micStreamRef.current.getTracks().forEach(t => t.stop());
+        micStreamRef.current = null;
+        setMicStream(null);
+      }
+    };
+  }, [dualAgent.voiceEnabled, dualAgent.isInitialized, dualAgent.sessionId]);
+
+  // Activity monitor: drives the detection pipeline (active when either video or audio is on)
+  const activityMonitor = useActivityMonitor({
+    enabled: (dualAgent.videoCaptureEnabled || dualAgent.voiceEnabled) && dualAgent.isInitialized && !!dualAgent.sessionId,
+    videoEnabled: dualAgent.videoCaptureEnabled,
+    audioEnabled: dualAgent.voiceEnabled,
+    micStream,
+    captureFrame: captureBufferedFrame,
+    onTrigger: handleActivityTrigger,
   });
 
   // Wrap sendMessage to include current board
@@ -163,6 +272,7 @@ export function DualAgentProvider({
 
   const value: DualAgentContextType = {
     // Session state
+    studentId,
     sessionId: dualAgent.sessionId,
     isInitialized: dualAgent.isInitialized,
     isLoading: dualAgent.isLoading,
@@ -191,8 +301,8 @@ export function DualAgentProvider({
     setInteractionMode: dualAgent.setInteractionMode,
 
     // Detection
-    detectionEnabled: dualAgent.detectionEnabled,
-    setDetectionEnabled: dualAgent.setDetectionEnabled,
+    videoCaptureEnabled: dualAgent.videoCaptureEnabled,
+    setVideoCaptureEnabled: dualAgent.setVideoCaptureEnabled,
 
     // Actions
     initialize: dualAgent.initialize,
@@ -212,6 +322,14 @@ export function DualAgentProvider({
 
     // Board patch (from detection)
     boardPatch,
+
+    // Debug
+    debugData: dualAgent.debugData,
+    requestCache: dualAgent.requestCache,
+
+    // Monitor status
+    monitorError: dualAgent.monitorError,
+    monitorConsecutiveFailures: dualAgent.monitorConsecutiveFailures,
   };
 
   return (

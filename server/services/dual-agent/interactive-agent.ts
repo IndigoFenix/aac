@@ -37,6 +37,8 @@ export interface ParsedStreamOutput {
   removeButtons?: string[];
   /** Complete board rebuild: "label|icon, label|icon, ..." (replaces entire board) */
   rebuildBoard?: Array<{ label: string; iconRef: string }>;
+  /** Request early monitor check-in with reason */
+  callMonitor?: string;
 }
 
 /**
@@ -107,6 +109,12 @@ function parseStreamedText(text: string): ParsedStreamOutput {
     }
   }
 
+  // Match [CALL_MONITOR] reason
+  const callMonitorMatch = text.match(/\[CALL_MONITOR\]\s*([^\[]*)/i);
+  if (callMonitorMatch) {
+    result.callMonitor = callMonitorMatch[1].trim();
+  }
+
   return result;
 }
 
@@ -140,7 +148,7 @@ function parseBoardButtons(content: string): Array<{ label: string; iconRef: str
 }
 
 /** Types that the streaming parser can emit */
-export type StreamingSegmentType = "speak" | "interpret" | "transcript" | "context" | "add_buttons" | "remove_buttons" | "rebuild_board";
+export type StreamingSegmentType = "speak" | "interpret" | "transcript" | "context" | "add_buttons" | "remove_buttons" | "rebuild_board" | "call_monitor";
 
 export interface StreamingSegment {
   type: StreamingSegmentType;
@@ -154,7 +162,7 @@ export interface StreamingSegment {
  */
 export class StreamingPrefixParser {
   private buffer = "";
-  private currentMode: "none" | "transcript" | "context" | "speak" | "interpret" | "add_buttons" | "remove_buttons" | "rebuild_board" = "none";
+  private currentMode: "none" | "transcript" | "context" | "speak" | "interpret" | "add_buttons" | "remove_buttons" | "rebuild_board" | "call_monitor" = "none";
   private transcriptSpeaker = "";
 
   /**
@@ -176,6 +184,7 @@ export class StreamingPrefixParser {
         const addButtonsMatch = this.buffer.match(/^\s*\[ADD_BUTTONS\]\s*/i);
         const removeButtonsMatch = this.buffer.match(/^\s*\[REMOVE_BUTTONS\]\s*/i);
         const rebuildBoardMatch = this.buffer.match(/^\s*\[REBUILD_BOARD\]\s*/i);
+        const callMonitorMatch = this.buffer.match(/^\s*\[CALL_MONITOR\]\s*/i);
 
         if (transcriptMatch) {
           this.currentMode = "transcript";
@@ -199,6 +208,9 @@ export class StreamingPrefixParser {
         } else if (rebuildBoardMatch) {
           this.currentMode = "rebuild_board";
           this.buffer = this.buffer.slice(rebuildBoardMatch[0].length);
+        } else if (callMonitorMatch) {
+          this.currentMode = "call_monitor";
+          this.buffer = this.buffer.slice(callMonitorMatch[0].length);
         } else {
           // No prefix found yet, wait for more data
           // But trim leading whitespace/newlines that aren't part of a token
@@ -207,7 +219,7 @@ export class StreamingPrefixParser {
         }
       } else {
         // We're in a mode, collect content until the next prefix or end
-        const nextPrefixMatch = this.buffer.match(/\[(?:TRANSCRIPT|CONTEXT|SPEAK|INTERPRET|ADD_BUTTONS|REMOVE_BUTTONS|REBUILD_BOARD)[\s\]]/i);
+        const nextPrefixMatch = this.buffer.match(/\[(?:TRANSCRIPT|CONTEXT|SPEAK|INTERPRET|ADD_BUTTONS|REMOVE_BUTTONS|REBUILD_BOARD|CALL_MONITOR)[\s\]]/i);
 
         if (nextPrefixMatch && nextPrefixMatch.index !== undefined && nextPrefixMatch.index > 0) {
           // Found next prefix, emit current content
@@ -589,7 +601,7 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
     audioContext?: string,
     imageData?: string, // base64 data URL or URL
     personContext?: string // Identified person context from biometrics
-  ): AsyncGenerator<{ type: "speak" | "interpret" | "transcript" | "context" | "board" | "board_patch" | "command" | "usage"; data: any; speaker?: string }> {
+  ): AsyncGenerator<{ type: "speak" | "interpret" | "transcript" | "context" | "board" | "board_patch" | "command" | "usage" | "call_monitor"; data: any; speaker?: string }> {
     // Build context message if we have visual/audio/person context
     let contextMessage = "";
     if (personContext) {
@@ -676,6 +688,7 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
       let addButtons: Array<{ label: string; iconRef: string }> = [];
       let removeButtons: string[] = [];
       let rebuildBoard: Array<{ label: string; iconRef: string }> | null = null;
+      let callMonitorReason: string | undefined;
 
       for await (const chunk of stream) {
         if (chunk.type === "text_delta") {
@@ -708,6 +721,8 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
             } else if (seg.type === "rebuild_board") {
               // Full board rebuild - this overrides add/remove
               rebuildBoard = parseBoardButtons(seg.data);
+            } else if (seg.type === "call_monitor") {
+              callMonitorReason = seg.data;
             }
           }
         } else if (chunk.type === "done" && chunk.usage) {
@@ -734,6 +749,8 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
           removeButtons.push(...labels);
         } else if (seg.type === "rebuild_board") {
           rebuildBoard = parseBoardButtons(seg.data);
+        } else if (seg.type === "call_monitor") {
+          callMonitorReason = seg.data;
         }
       }
 
@@ -773,6 +790,11 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
       if (streamUsage) {
         yield { type: "usage", data: streamUsage };
       }
+
+      // Yield call_monitor request if present
+      if (callMonitorReason) {
+        yield { type: "call_monitor", data: callMonitorReason };
+      }
     } catch (error: any) {
       console.error("[InteractiveAgent] processMessageStream error:", error?.message || error);
       if (error?.stack) console.error("[InteractiveAgent] Stack trace:", error.stack);
@@ -788,16 +810,49 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
    */
   async processDetection(
     messages: ChatMessage[],
+    pendingMessages: PendingMessage[],
     currentBoard?: ParsedBoardData,
     imageData?: string,
     audioContext?: string,
     detectionSystemPrompt?: string,
     gestureContext?: string,
-    audioBuffer?: Buffer
+    audioBuffer?: Buffer,
+    frameTimestamps?: number[]
   ): Promise<InteractiveResponse> {
     const messageHistory: ProviderChatMessage[] = [
       { role: "system", content: detectionSystemPrompt || this.systemPrompt },
     ];
+
+    // Add recent conversation context so the AI knows what just happened
+    // Include last 10 processed messages + all pending (unprocessed) messages
+    const recentMessages = messages.slice(-10);
+    const allRecent = [
+      ...recentMessages.map(m => ({
+        role: (typeof m.role === "string" ? m.role : "assistant") as string,
+        content: typeof m.content === "string" ? m.content : (m.content as any)?.text || (m.content as any)?.html || "",
+        timestamp: m.timestamp || 0,
+      })),
+      ...pendingMessages.map(m => ({
+        role: m.role as string,
+        content: m.content,
+        timestamp: m.timestamp || 0,
+      })),
+    ];
+
+    if (allRecent.length > 0) {
+      const contextLines = allRecent.map(m => {
+        const age = Date.now() - m.timestamp;
+        const ageStr = age < 60000 ? `${Math.round(age / 1000)}s ago` : `${Math.round(age / 60000)}m ago`;
+        const roleLabel = m.role === "assistant" ? "AI" : m.role === "user" ? "User" : "System";
+        // Truncate long messages to keep context compact
+        const content = m.content.length > 150 ? m.content.substring(0, 150) + "..." : m.content;
+        return `[${ageStr}] ${roleLabel}: ${content}`;
+      });
+      messageHistory.push({
+        role: "system",
+        content: `== Recent Activity (${allRecent.length} messages) ==\n${contextLines.join("\n")}`,
+      });
+    }
 
     // Add current board with 12-slot layout so the AI knows what's already shown
     if (currentBoard) {
@@ -823,6 +878,25 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
       });
     }
 
+    // Build composite grid context if frame timestamps provided
+    let gridContext = "";
+    if (frameTimestamps && frameTimestamps.length > 1) {
+      const firstTs = frameTimestamps[0];
+      const gridCols = 4; // matches client default
+      const rows: string[] = [];
+      for (let r = 0; r * gridCols < frameTimestamps.length; r++) {
+        const rowTimestamps = frameTimestamps
+          .slice(r * gridCols, (r + 1) * gridCols)
+          .map(ts => `+${((ts - firstTs) / 1000).toFixed(1)}s`);
+        rows.push(`Row ${r + 1}: ${rowTimestamps.join(", ")}`);
+      }
+      gridContext = `\n\n== Composite Grid ==
+This image is a composite grid of ${frameTimestamps.length} camera frames arranged left-to-right, top-to-bottom.
+Each sub-frame is timestamped relative to the first frame:
+${rows.join("\n")}
+Observe changes across frames to understand motion, gestures, and temporal context.`;
+    }
+
     // Build the user message with optional image + raw audio
     // Raw audio goes as input_audio — Gemini converts to inlineData natively.
     // OpenAI/Claude providers strip input_audio blocks they can't handle.
@@ -832,7 +906,9 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
 
 1. [TRANSCRIPT speaker] text — if you hear voice (omit if none)
 2. [CONTEXT] observations — if there are context changes (omit if none)
-3. [SPEAK] message — OR — [INTERPRET] message — only ONE, only if HIGH CONFIDENCE (omit if unsure)
+3. [INTERPRET] message — speak on behalf of user (student voice), HIGH CONFIDENCE ONLY (omit if unsure)
+   [SPEAK] message — your spoken reply (AI voice), HIGH CONFIDENCE ONLY (omit if unsure)
+   You may use both — [INTERPRET] is always spoken first, then [SPEAK].
 4. Board changes (choose ONE or omit if no changes):
    - [ADD_BUTTONS] label|icon, label|icon, ... — add buttons to existing board
    - [REMOVE_BUTTONS] label, label, ... — remove buttons by label
@@ -856,7 +932,7 @@ Only use [SPEAK] or [INTERPRET] when you have HIGH CONFIDENCE:
 - Repeated gaze at specific object
 - Someone directly asking the user a question
 
-If unsure, add a button instead. Never use both [SPEAK] and [INTERPRET].`;
+If unsure, add a button instead. You may use both — always output [INTERPRET] before [SPEAK].${gridContext}`;
 
     const contentParts: any[] = [{ type: "text", text: userText }];
     if (imageData) {
@@ -903,14 +979,33 @@ If unsure, add a button instead. Never use both [SPEAK] and [INTERPRET].`;
       });
 
       // No tools - everything is text-based with prefix tokens
-      const result = await this.chatProvider.completeChat({
+      let result = await this.chatProvider.completeChat({
         model: this.config.interactiveModel,
         messages: messageHistory,
         maxTokens: 1024,
         temperature: 0.3,
       });
 
-      console.log("[InteractiveAgent] processDetection result: content:", (result.content || "").length, "chars, usage:", JSON.stringify(result.usage));
+      const completionTokens = result.usage?.completionTokens || 0;
+      console.log("[InteractiveAgent] processDetection result: content:", (result.content || "").length, "chars, finishReason:", result.finishReason, "completionTokens:", completionTokens, "usage:", JSON.stringify(result.usage));
+
+      // Retry once if:
+      // - Non-STOP/non-MAX_TOKENS finish reason (SAFETY, RECITATION, etc.)
+      // - MAX_TOKENS but suspiciously short (< 200 tokens) — Gemini occasionally
+      //   reports false MAX_TOKENS on multimodal requests with image+audio
+      const shouldRetry = result.finishReason && result.finishReason !== "STOP" && (
+        result.finishReason !== "MAX_TOKENS" || completionTokens < 200
+      );
+      if (shouldRetry) {
+        console.warn(`[InteractiveAgent] processDetection: finishReason="${result.finishReason}" with ${completionTokens} tokens, retrying once...`);
+        result = await this.chatProvider.completeChat({
+          model: this.config.interactiveModel,
+          messages: messageHistory,
+          maxTokens: 1024,
+          temperature: 0.3,
+        });
+        console.log(`[InteractiveAgent] processDetection retry: content=${(result.content || "").length}chars, finishReason=${result.finishReason}, completionTokens=${result.usage?.completionTokens}`);
+      }
 
       const rawText = result.content || "";
 
@@ -935,6 +1030,7 @@ If unsure, add a button instead. Never use both [SPEAK] and [INTERPRET].`;
       logDualAgent("InteractiveAgent.processDetection.RESPONSE", {
         elapsedMs: detElapsed,
         rawText,
+        finishReason: result.finishReason,
         parsed: {
           speak: text,
           interpretation,
@@ -948,7 +1044,7 @@ If unsure, add a button instead. Never use both [SPEAK] and [INTERPRET].`;
         usage: result.usage,
       });
 
-      return { text, isCommand: false, usage: result.usage, addButtons, removeLabels, interpretation, transcript, transcriptSpeaker, contextUpdate, rebuildBoard };
+      return { text, isCommand: false, usage: result.usage, addButtons, removeLabels, interpretation, transcript, transcriptSpeaker, contextUpdate, rebuildBoard, callMonitor: parsed.callMonitor, finishReason: result.finishReason };
     } catch (error: any) {
       console.error("[InteractiveAgent] processDetection error:", error?.message || error);
       if (error?.stack) console.error("[InteractiveAgent] Stack trace:", error.stack);

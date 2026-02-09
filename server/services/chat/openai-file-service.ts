@@ -100,19 +100,21 @@ export class OpenAIFileService {
       const startTime = Date.now();
 
       let currentStatus = vectorStoreFile.status;
+      let lastFileStatus: any = vectorStoreFile;
       while (currentStatus === 'in_progress' && (Date.now() - startTime) < maxWaitMs) {
         await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
 
         // Retrieve file status from vector store (file_id first, then options with vector_store_id)
-        const fileStatus = await openai.vectorStores.files.retrieve(uploadedFile.id, {
+        lastFileStatus = await openai.vectorStores.files.retrieve(uploadedFile.id, {
           vector_store_id: vectorStoreId,
         } as any);
-        currentStatus = fileStatus.status;
+        currentStatus = lastFileStatus.status;
         console.log(`[OpenAIFileService] File ${uploadedFile.id} processing status: ${currentStatus}`);
       }
 
       if (currentStatus === 'failed') {
-        throw new Error('File processing failed in vector store');
+        const detail = lastFileStatus?.last_error?.message || "unknown reason";
+        throw new Error(`File processing failed: ${detail} (${filename})`);
       }
 
       if (currentStatus === 'in_progress') {

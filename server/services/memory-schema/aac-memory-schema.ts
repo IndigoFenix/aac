@@ -60,7 +60,7 @@ The board has 12 slots in a 4x3 grid. Fill at least 4 slots but aim for 8-12 to 
 - The user relies on this board to communicate. Anticipate their needs based on the conversation and context.
 - Pay attention to images, surroundings, detected objects, and the user's gestures to guess what they want to communicate.
 - The user may not be able to read, so buttons must be simple, with their intent clear from the icon alone.
-- Icons may use font-awesome references (e.g., "fas fa-water") or emojis (e.g., "💧").
+- Icons are emojis (e.g., "💧").
 - Button format: label|icon (e.g., "Water|💧", "Play|🎮")
 - Do not use the same icon more than once on the board.
 - Never list buttons in your voice or text responses; use [ADD_BUTTONS], [REMOVE_BUTTONS], or [REBUILD_BOARD] tokens.
@@ -165,7 +165,7 @@ The board has 12 slots in a 4x3 grid. Fill at least 4 slots but aim for 8-12.
 - Mix different communicative intents: requests ("I need help"), social phrases ("Good morning!"), feelings ("I'm happy"), comments ("That looks interesting"), questions ("What are we doing next?").
 - Pay attention to images, surroundings, detected objects, and people to make contextually relevant suggestions.
 - The user may not be able to read, so buttons must have clear icons that convey the meaning.
-- Icons may use font-awesome references (e.g., "fas fa-water") or emojis (e.g., "💧").
+- Icons are emojis (e.g., "💧").
 - Button format: label|icon (e.g., "I want water|💧", "Good morning!|☀️")
 - Do not use the same icon more than once on the board.
 - Do not use the following buttons, since they are automatically included: "Yes", "No", "Help", "More".
@@ -223,7 +223,7 @@ The board has 12 slots in a 4x3 grid. Fill at least 4 slots but aim for 8-12 to 
 - The user relies on this board to communicate. Anticipate their needs based on the conversation and context.
 - Pay attention to images, surroundings, detected objects, and the user's gestures to guess what they want to communicate.
 - The user may not be able to read, so buttons must be simple, with their intent clear from the icon alone.
-- Icons may use font-awesome references (e.g., "fas fa-water") or emojis (e.g., "💧").
+- Icons are emojis (e.g., "💧").
 - Button format: label|icon (e.g., "Water|💧", "Play|🎮")
 - Do not use the same icon more than once on the board.
 - Never list buttons in your voice or text responses; use [ADD_BUTTONS], [REMOVE_BUTTONS], or [REBUILD_BOARD] tokens.
@@ -263,6 +263,18 @@ You can inject the following commands (they will be forwarded to the Interactive
 - [CONTEXT]...[/CONTEXT] — Inject contextual commands for the Interactive Agent to use. Use this to make specific, immediate commands.
 
 If there is nothing meaningful to add, simply respond with "OK" and do not use any commands or memory tools.
+
+## Callback Triggers
+The Interactive Agent can call you early using [CALL_MONITOR] when it needs help.
+You can guide when it should call you by including instructions in your [CONTEXT] injection.
+
+Example:
+[CONTEXT]Student is working on goal: "Request items using 2-word phrases". Call me ([CALL_MONITOR]) when:
+- The student attempts to combine buttons
+- You notice frustration or disengagement
+- A new communication partner arrives[/CONTEXT]
+
+This helps the Interactive Agent know when your guidance is needed, without requiring you to check in on every turn.
 `;
 
 // ============================================================================
@@ -312,17 +324,27 @@ Your response is ALL TEXT using prefix tokens. Output in this order:
 
 1. [TRANSCRIPT speaker] text... — Record voice you heard. Speaker can be "Mom", "Teacher", "Unknown", etc. Omit if nothing heard.
 2. [CONTEXT] observations... — Record context changes (new objects, gestures, sounds, etc.) Omit if no meaningful changes.
-3. [SPEAK] message... — Your spoken reply (AI voice). ${mode === 'silent' ? 'NEVER use this in silent mode.' : (isDetection ? 'HIGH CONFIDENCE ONLY.' : 'Use when responding to the user.')}
-   [INTERPRET] message... — Speak on behalf of user (student voice). ${isDetection ? 'HIGH CONFIDENCE ONLY.' : 'Only when highly confident about intent.'}
-   Do NOT use both [SPEAK] and [INTERPRET] in the same response.
+3. [INTERPRET] message... — Speak on behalf of user (student voice). ${isDetection ? 'HIGH CONFIDENCE ONLY.' : 'Only when highly confident about intent.'}
+   [SPEAK] message... — Your spoken reply (AI voice). ${mode === 'silent' ? 'NEVER use this in silent mode.' : (isDetection ? 'HIGH CONFIDENCE ONLY.' : 'Use when responding to the user.')}
+   You may use both in the same response — [INTERPRET] is always spoken first (student voice), then [SPEAK] (AI voice).
 4. Board changes:${isDetection ? `
    - [ADD_BUTTONS] label|icon, label|icon, ... — add buttons to existing board
    - [REMOVE_BUTTONS] label, label, ... — remove buttons by label` : `
    - [REBUILD_BOARD] label|icon, label|icon, ... — replace entire board`}
 
+5. [CALL_MONITOR] reason — Request a supervisor check-in. MUST include a reason.
+   Use when:
+   - You notice progress or setbacks on student goals/objectives
+   - You need guidance on how to handle a situation
+   - The context has shifted significantly (new person, new activity, location change)
+   Rules:
+   - Always provide a clear reason (e.g., "[CALL_MONITOR] Student combined two buttons to form a phrase — possible goal progress")
+   - Do NOT call monitor repeatedly for the same event. Once called, do not call again until circumstances change.
+   - Do not overuse — only when genuinely helpful.
+
 Rules:
 - Output [TRANSCRIPT] and [CONTEXT] BEFORE [SPEAK] or [INTERPRET] (observe first, then respond based on observed context.)
-- NEVER output both [SPEAK] and [INTERPRET] — they are mutually exclusive
+- If using both [INTERPRET] and [SPEAK], output [INTERPRET] BEFORE [SPEAK]
 - Output board changes LAST, after transcripts and speech, so the user sees the updated board after hearing your response. The options should be based on the context you observed and your spoken response.
 - Omit tags entirely if nothing to report (don't output empty tags)
 - All tags are optional. If nothing to report or change, you may output no text at all.
@@ -371,7 +393,7 @@ Example: "[REBUILD_BOARD] Play|🎮, Eat|🍎, Drink|💧, Sleep|😴"
 If you see no buttons in the context, you MUST call REBUILD_BOARD to create the starting board.
 `}
 
-Button format: label|icon where icon is FontAwesome (e.g., "fas fa-water") or emoji (e.g., "💧")
+Button format: label|icon where icon is an emoji (e.g., "💧")
 Board change lists should be comma-separated with no extra conjunctions or formatting. Do not include reasoning or explanations in the board change text — just the button info.
 
 Button guidelines:
@@ -429,7 +451,7 @@ Mix different intents: requests, social phrases, feelings, comments, questions.
 
   prompt += `
 IMPORTANT:
-- NEVER use both [SPEAK] and [INTERPRET] in the same turn
+- You may use both [INTERPRET] and [SPEAK] in the same turn — always output [INTERPRET] first
 - If there are no changes, transcripts, or button presses, you may omit text output entirely
 
 ## Interaction Style
@@ -437,7 +459,7 @@ ${persona}
 `;
 
   if (language) {
-    prompt += `\nThe student's primary language is ${language}. ${mode === 'silent' ? 'Generate buttons in this language.' : 'Respond in this language when appropriate.'}`;
+    prompt += `\nThe student's primary language is ${language}. All button labels generated, and all [SPEAK] and [INTERPRET] outputs should default to this language, except when interacting with others who speak a different language. If you know the language of the people around the student, you can switch languages accordingly when speaking or interpreting for the student. Always prioritize the student's primary language when in doubt.`;
   }
 
   if (memoryContext) {
@@ -588,6 +610,7 @@ function createReadOnlyArrayField(
       id: `${id}_item`,
       type: 'object',
       properties: {},
+      additionalProperties: true,
     } as AgentMemoryFieldObjectWithDB,
     db: {
       read: readFunction,
@@ -616,6 +639,7 @@ function createReadOnlyObjectField(
     opened,
     readOnly: true,
     properties: {},
+    additionalProperties: true,
     db: {
       read: readFunction,
       write: async () => {

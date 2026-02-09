@@ -46,6 +46,8 @@ export interface ChatCompletionResult {
     promptTokens: number;
     completionTokens: number;
   };
+  /** Provider-specific finish reason (e.g. "STOP", "MAX_TOKENS", "SAFETY", "RECITATION") */
+  finishReason?: string;
 }
 
 /**

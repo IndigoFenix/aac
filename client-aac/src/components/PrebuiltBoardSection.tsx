@@ -284,22 +284,24 @@ export default function PrebuiltBoardSection({
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.95 }}
               >
-                {button.symbolPath ? (
-                  <img
-                    src={button.symbolPath}
-                    alt={button.label}
-                    className="w-8 h-8 object-contain"
-                  />
-                ) : button.iconRef && isEmoji(button.iconRef) ? (
-                  <span className="text-xl">{button.iconRef}</span>
-                ) : button.iconRef ? (
-                  <i className={`${button.iconRef} text-xl`} />
-                ) : (
-                  <span className="text-xl">
-                    {getEmojiForLabel(button.label)}
-                  </span>
-                )}
-                <span className="text-[10px] font-medium text-center text-gray-800 leading-tight mt-0.5 line-clamp-2">
+                <div className="flex-1 flex items-center justify-center min-h-0">
+                  {button.symbolPath ? (
+                    <img
+                      src={button.symbolPath}
+                      alt={button.label}
+                      className="w-[55%] h-[55%] object-contain"
+                    />
+                  ) : button.iconRef && isEmoji(button.iconRef) ? (
+                    <span className="text-[1.5rem] sm:text-[1.75rem] leading-none">{button.iconRef}</span>
+                  ) : button.iconRef ? (
+                    <i className={`${button.iconRef} text-[1.5rem] sm:text-[1.75rem] leading-none`} />
+                  ) : (
+                    <span className="text-[1.5rem] sm:text-[1.75rem] leading-none">
+                      {getEmojiForLabel(button.label)}
+                    </span>
+                  )}
+                </div>
+                <span className="flex-shrink-0 text-[10px] font-medium text-center text-gray-800 leading-tight line-clamp-2">
                   {button.label}
                 </span>
                 {isLink && (

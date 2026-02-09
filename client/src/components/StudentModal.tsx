@@ -61,6 +61,7 @@ interface StudentFormData {
   framework: string;
   country: string;
   grade: string;
+  primaryLanguage: string;
 }
 
 // Grade options for UI
@@ -91,6 +92,7 @@ const INITIAL_FORM_STATE: StudentFormData = {
   framework: 'tala',
   country: 'IL',
   grade: '',
+  primaryLanguage: '',
 };
 
 // =============================================================================
@@ -98,7 +100,7 @@ const INITIAL_FORM_STATE: StudentFormData = {
 // =============================================================================
 
 export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalProps) {
-  const { t, isRTL } = useLanguage();
+  const { t, isRTL, language } = useLanguage();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { refetchStudent } = useStudent();
@@ -209,6 +211,7 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
         framework: editingStudent.framework || 'tala',
         country: editingStudent.country || 'IL',
         grade: (editingStudent as any).grade || '',
+        primaryLanguage: editingStudent.primaryLanguage || language,
       });
       loadStudentInstitutes(editingStudent.id);
     } else {
@@ -325,6 +328,7 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
       birthDate: formData.birthDate || undefined,
       framework: formData.framework,
       country: formData.country,
+      primaryLanguage: formData.primaryLanguage || undefined,
     };
 
     if (editingStudent) {
@@ -335,7 +339,7 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
   };
 
   const resetForm = () => {
-    setFormData(INITIAL_FORM_STATE);
+    setFormData({ ...INITIAL_FORM_STATE, primaryLanguage: language });
     setSelectedInstituteId('');
     setSelectedClassroomId('');
     setAvailableClassrooms([]);
@@ -459,22 +463,22 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
             </div>
           </div>
 
-          {/* Row 3: System Type and Country */}
+          {/* Row 3: Language and Country */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="studentFramework">
-                {t('student.systemType') || 'Educational System'}
+              <Label htmlFor="studentLanguage">
+                {t('student.primaryLanguage') || 'Primary Language'}
               </Label>
               <Select
-                value={formData.framework}
-                onValueChange={(value) => setFormData(prev => ({ ...prev, framework: value }))}
+                value={formData.primaryLanguage}
+                onValueChange={(value) => setFormData(prev => ({ ...prev, primaryLanguage: value }))}
               >
-                <SelectTrigger id="studentFramework">
-                  <SelectValue />
+                <SelectTrigger id="studentLanguage">
+                  <SelectValue placeholder={t('student.selectLanguage') || 'Select language'} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="tala">{t('student.frameworkTala') || 'TALA (Israel)'}</SelectItem>
-                  <SelectItem value="us_iep">{t('student.frameworkIep') || 'IEP (US)'}</SelectItem>
+                  <SelectItem value="en">English</SelectItem>
+                  <SelectItem value="he">עברית (Hebrew)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -494,6 +498,27 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
                   <SelectItem value="US">{t('student.countryUS') || 'United States'}</SelectItem>
                   <SelectItem value="UK">{t('student.countryUK') || 'United Kingdom'}</SelectItem>
                   <SelectItem value="Other">{t('student.countryOther') || 'Other'}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Row 4: System Type */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="studentFramework">
+                {t('student.systemType') || 'Educational System'}
+              </Label>
+              <Select
+                value={formData.framework}
+                onValueChange={(value) => setFormData(prev => ({ ...prev, framework: value }))}
+              >
+                <SelectTrigger id="studentFramework">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="tala">{t('student.frameworkTala') || 'TALA (Israel)'}</SelectItem>
+                  <SelectItem value="us_iep">{t('student.frameworkIep') || 'IEP (US)'}</SelectItem>
                 </SelectContent>
               </Select>
             </div>

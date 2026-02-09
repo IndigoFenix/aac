@@ -43,7 +43,7 @@ export const creditsForModelUsage = (
     const cachedPromptCharge = cachedTokens * (creditsPerInput / 2);
     const completionCharge   = completionTokens * creditsPerOutput;
 
-    return Math.ceil(fullPromptCharge + cachedPromptCharge + completionCharge);
+    return fullPromptCharge + cachedPromptCharge + completionCharge;
 };
 
 // number of credits to charge for ONE web_search_preview tool call

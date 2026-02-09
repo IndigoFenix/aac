@@ -232,13 +232,15 @@ export default function DynamicBoard({
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: isEntering ? 0.3 : 0.15 }}
         onClick={() => handleButtonClick(button)}
-        className="flex flex-col items-center justify-center p-2 rounded-xl shadow-sm border border-gray-200 min-h-0"
+        className="flex flex-col items-center justify-center p-2 rounded-xl shadow-sm border border-gray-200 min-h-0 overflow-hidden"
         style={{ backgroundColor: getButtonColor(button.color) }}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
       >
-        {renderIcon(button)}
-        <span className="text-xs font-medium text-center text-gray-800 leading-tight mt-1">
+        <div className="flex-1 flex items-center justify-center min-h-0">
+          {renderIcon(button)}
+        </div>
+        <span className="flex-shrink-0 text-xs font-medium text-center text-gray-800 leading-tight mt-0.5">
           {button.label}
         </span>
       </motion.button>
@@ -247,15 +249,15 @@ export default function DynamicBoard({
 
   const renderIcon = (button: BoardButton) => {
     if (button.symbolPath) {
-      return <img src={button.symbolPath} alt={button.label} className="w-10 h-10 object-contain" />;
+      return <img src={button.symbolPath} alt={button.label} className="w-[60%] h-[60%] object-contain" />;
     }
     if (button.iconRef && isEmoji(button.iconRef)) {
-      return <span className="text-2xl">{button.iconRef}</span>;
+      return <span className="text-[3rem] sm:text-[5rem] md:text-[7rem] leading-none">{button.iconRef}</span>;
     }
     if (button.iconRef) {
-      return <i className={`${button.iconRef} text-2xl`} />;
+      return <i className={`${button.iconRef} text-[3rem] sm:text-[5rem] md:text-[7rem] leading-none`} />;
     }
-    return <span className="text-2xl">{getEmojiForLabel(button.label)}</span>;
+    return <span className="text-[3rem] sm:text-[5rem] md:text-[7rem] leading-none">{getEmojiForLabel(button.label)}</span>;
   };
 
   return (

@@ -8,6 +8,7 @@ import { useAuth } from './useAuth';
 import { useFeaturePanel, useSharedState } from '@/contexts/FeaturePanelContext';
 import { ChatMessage, FeatureType, ChatSession } from '@shared/schema';
 import { useChatStream } from './useChatStream';
+import { toast } from '@/hooks/use-toast';
 
 // ============================================================================
 // TYPES
@@ -43,6 +44,9 @@ export interface AttachedFile {
   size: number;
   // Local file reference for display (not sent to server)
   localFile?: File;
+  type?: "document" | "image";
+  // Base64 data URL for images (e.g. "data:image/png;base64,...")
+  dataUrl?: string;
 }
 
 // Icon name type - matches Lucide icon names (for legacy support)
@@ -257,6 +261,7 @@ export const ChatProvider = ({
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [vectorStoreId, setVectorStoreId] = useState<string | null>(null);
 
+
   // Streaming hook
   const { sendStreamingMessage } = useChatStream();
   
@@ -319,11 +324,12 @@ export const ChatProvider = ({
     setSession(null);
     setHistory([]);
     setError(null);
-    
+    setAttachedFiles([]);
+
     if (persistSession && typeof window !== 'undefined') {
       window.localStorage.removeItem(getStorageKey());
     }
-    
+
     return true;
   }, [persistSession, getStorageKey]);
 
@@ -331,7 +337,8 @@ export const ChatProvider = ({
     setSession(null);
     setHistory([]);
     setError(null);
-    
+    setAttachedFiles([]);
+
     if (persistSession && typeof window !== 'undefined') {
       window.localStorage.removeItem(getStorageKey());
     }
@@ -368,6 +375,29 @@ export const ChatProvider = ({
     setError(null);
 
     try {
+      // Intercept image files — convert to base64 data URL, send inline with message
+      const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+      if (IMAGE_TYPES.includes(file.type)) {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        const attachedFile: AttachedFile = {
+          fileId: `local-img-${Date.now()}`,
+          vectorStoreId: "",
+          filename: file.name,
+          mimeType: file.type,
+          size: file.size,
+          localFile: file,
+          type: "image",
+          dataUrl,
+        };
+        setAttachedFiles(prev => [...prev, attachedFile]);
+        return attachedFile;
+      }
+
       const formData = new FormData();
       formData.append('file', file);
       formData.append('sessionId', getOrCreateSessionId());
@@ -383,6 +413,7 @@ export const ChatProvider = ({
       const attachedFile: AttachedFile = {
         ...data.file,
         localFile: file,
+        type: "document",
       };
 
       setAttachedFiles(prev => [...prev, attachedFile]);
@@ -393,7 +424,7 @@ export const ChatProvider = ({
       return attachedFile;
     } catch (err: any) {
       console.error('File upload failed:', err);
-      setError(err.message || 'Failed to upload file');
+      toast({ variant: "destructive", title: "Upload failed", description: err.message || "Failed to upload file" });
       return null;
     } finally {
       setIsUploadingFile(false);
@@ -401,12 +432,18 @@ export const ChatProvider = ({
   }, [getOrCreateSessionId]);
 
   const removeFile = useCallback((fileId: string) => {
+    // Skip server call for locally-stored images
+    if (attachedFiles.find(f => f.fileId === fileId)?.type === "image") {
+      setAttachedFiles(prev => prev.filter(f => f.fileId !== fileId));
+      return;
+    }
+
     setAttachedFiles(prev => prev.filter(f => f.fileId !== fileId));
 
     // Optionally delete from OpenAI (fire and forget)
     apiRequest('DELETE', `/api/chat/files/${fileId}`)
       .catch(err => console.warn('Failed to delete file from OpenAI:', err));
-  }, []);
+  }, [attachedFiles]);
 
   const clearFiles = useCallback(() => {
     // Delete all files from OpenAI
@@ -723,6 +760,12 @@ export const ChatProvider = ({
     // Ref to track result from streaming (needed for closure)
     let streamingResult: ChatMessage | null = null;
 
+    // Include all session images so the AI can reference earlier images
+    const imageUrls = attachedFiles.filter(f => f.type === "image" && f.dataUrl).map(f => f.dataUrl!);
+    if (imageUrls.length > 0) {
+      requestBody.images = imageUrls;
+    }
+
     try {
       // Try streaming endpoint first for real-time thinking updates
       const streamCompleted = await sendStreamingMessage(requestBody, {
@@ -756,6 +799,7 @@ export const ChatProvider = ({
       console.error('Send message failed:', err);
       const errorText = err.message || 'Failed to send message';
       setError(errorText);
+      toast({ variant: "destructive", title: "Send failed", description: errorText });
 
       const errorMessage: ChatMessage = {
         role: 'system',
@@ -771,7 +815,7 @@ export const ChatProvider = ({
       setIsThinking(false);
       setThinkingText(null);
     }
-  }, [session, activeFeature, user, student, history, persistSession, getStorageKey, getFeatureMetadata, handleContextData, persona, sendStreamingMessage, vectorStoreId]);
+  }, [session, activeFeature, user, student, history, persistSession, getStorageKey, getFeatureMetadata, handleContextData, persona, sendStreamingMessage, vectorStoreId, attachedFiles]);
   
   useEffect(() => {
     console.log('[ChatProvider] sendMessage was recreated, activeFeature is:', activeFeature);
