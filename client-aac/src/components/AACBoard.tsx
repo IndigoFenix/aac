@@ -192,24 +192,26 @@ export default function AACBoard({ board, onButtonClick, language = "en", voiceT
                   }}
                 >
                   {/* Symbol/Icon */}
-                  {button.symbolPath ? (
-                    <img
-                      src={button.symbolPath}
-                      alt={button.label}
-                      className="w-12 h-12 object-contain mb-1"
-                    />
-                  ) : button.iconRef && isEmoji(button.iconRef) ? (
-                    <span className="text-3xl mb-1">{button.iconRef}</span>
-                  ) : button.iconRef ? (
-                    <i className={`${button.iconRef} text-3xl mb-1`} />
-                  ) : (
-                    <div className="text-3xl mb-1">
-                      {getEmojiForLabel(button.label)}
-                    </div>
-                  )}
+                  <div className="flex-1 flex items-center justify-center min-h-0">
+                    {button.symbolPath ? (
+                      <img
+                        src={button.symbolPath}
+                        alt={button.label}
+                        className="w-[60%] h-[60%] object-contain"
+                      />
+                    ) : button.iconRef && isEmoji(button.iconRef) ? (
+                      <span className="text-[2.5rem] sm:text-[3rem] md:text-[3.5rem] leading-none">{button.iconRef}</span>
+                    ) : button.iconRef ? (
+                      <i className={`${button.iconRef} text-[2.5rem] sm:text-[3rem] md:text-[3.5rem] leading-none`} />
+                    ) : (
+                      <span className="text-[2.5rem] sm:text-[3rem] md:text-[3.5rem] leading-none">
+                        {getEmojiForLabel(button.label)}
+                      </span>
+                    )}
+                  </div>
 
                   {/* Label */}
-                  <span className="text-sm font-semibold text-center leading-tight text-gray-800">
+                  <span className="flex-shrink-0 text-xs sm:text-sm font-semibold text-center leading-tight text-gray-800">
                     {button.label}
                   </span>
 

@@ -7,7 +7,6 @@ import {
   Volume2,
   VolumeX,
   MessageCircle,
-  X,
   Mic,
   MicOff,
   Brain,
@@ -15,6 +14,12 @@ import {
   EyeOff,
   Grid3X3,
   Speech,
+  Settings,
+  Maximize,
+  LogOut,
+  ArrowLeft,
+  Bug,
+  AlertTriangle,
 } from "lucide-react";
 import axolotlImg from "@assets/axolotl.png";
 import axolotlSleepImg from "@assets/axolotl-sleep.png";
@@ -22,6 +27,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { ParsedBoardData } from "@shared/schema";
 import { useDualAgentContext } from "@/contexts/DualAgentContext";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { LanguageSelector } from "@/components/LanguageSelector";
 
 interface DualAgentConversationBoxProps {
   isVisible: boolean;
@@ -34,6 +40,14 @@ interface DualAgentConversationBoxProps {
   onBoardModeChange: (mode: 'ai' | 'db') => void;
   recentButtonPresses?: string[];
   onInterpret?: () => void;
+  // App-level controls (moved from top nav bar)
+  onSettings?: () => void;
+  onExitStudent?: () => void;
+  onLogout?: () => void;
+  onFullScreen?: () => void;
+  debugMode?: boolean;
+  showDebugPanel?: boolean;
+  onDebugPanelToggle?: () => void;
 }
 
 export function DualAgentConversationBox({
@@ -47,6 +61,13 @@ export function DualAgentConversationBox({
   onBoardModeChange,
   recentButtonPresses,
   onInterpret,
+  onSettings,
+  onExitStudent,
+  onLogout,
+  onFullScreen,
+  debugMode,
+  showDebugPanel,
+  onDebugPanelToggle,
 }: DualAgentConversationBoxProps) {
   const {
     currentMessage,
@@ -63,8 +84,8 @@ export function DualAgentConversationBox({
     transcription,
     interactionMode,
     setInteractionMode,
-    detectionEnabled,
-    setDetectionEnabled,
+    videoCaptureEnabled,
+    setVideoCaptureEnabled,
     initialize,
     sendMessage,
     clearSession,
@@ -76,6 +97,8 @@ export function DualAgentConversationBox({
     cancelVoiceRecording,
     setCurrentBoard,
     setOnBoardUpdate,
+    monitorError,
+    monitorConsecutiveFailures,
   } = useDualAgentContext();
   const { t } = useLanguage();
 
@@ -178,6 +201,15 @@ export function DualAgentConversationBox({
                   Deep Processing
                 </span>
               )}
+              {monitorError && monitorConsecutiveFailures > 0 && (
+                <span
+                  className="flex items-center gap-1 text-xs bg-red-500/80 px-2 py-0.5 rounded cursor-help"
+                  title={`Monitor agent error (${monitorConsecutiveFailures} failures): ${monitorError}`}
+                >
+                  <AlertTriangle className="w-3 h-3" />
+                  Monitor
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2">
               {/* Mode Toggle */}
@@ -204,23 +236,23 @@ export function DualAgentConversationBox({
               >
                 {boardMode === 'ai' ? <Grid3X3 className="w-4 h-4" /> : <Brain className="w-4 h-4" />}
               </Button>
-              {/* Detection Toggle */}
+              {/* Video Capture Toggle */}
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setDetectionEnabled(!detectionEnabled)}
-                className={`text-white hover:text-gray-200 hover:bg-white/10 ${detectionEnabled ? 'bg-white/20' : ''}`}
-                title={detectionEnabled ? "Disable continuous detection" : "Enable continuous detection"}
+                onClick={() => setVideoCaptureEnabled(!videoCaptureEnabled)}
+                className={`text-white hover:text-gray-200 hover:bg-white/10 ${videoCaptureEnabled ? 'bg-white/20' : ''}`}
+                title={videoCaptureEnabled ? "Disable video capture" : "Enable video capture"}
               >
-                {detectionEnabled ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                {videoCaptureEnabled ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
               </Button>
-              {/* Voice Toggle */}
+              {/* Audio Capture Toggle */}
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setVoiceEnabled(!voiceEnabled)}
-                className="text-white hover:text-gray-200 hover:bg-white/10"
-                title={voiceEnabled ? "Disable voice input" : "Enable voice input"}
+                className={`text-white hover:text-gray-200 hover:bg-white/10 ${voiceEnabled ? 'bg-white/20' : ''}`}
+                title={voiceEnabled ? "Disable audio capture" : "Enable audio capture"}
               >
                 {voiceEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
               </Button>
@@ -234,14 +266,73 @@ export function DualAgentConversationBox({
               >
                 {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onToggle}
-                className="text-white hover:text-gray-200 hover:bg-white/10"
-              >
-                <X className="w-4 h-4" />
-              </Button>
+
+              {/* Separator */}
+              <div className="w-px h-5 bg-white/30 mx-1" />
+
+              {/* App Controls */}
+              <LanguageSelector className="text-xs" />
+
+              {debugMode && onDebugPanelToggle && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onDebugPanelToggle}
+                  className={showDebugPanel ? 'text-yellow-300 bg-white/20' : 'text-white hover:text-gray-200 hover:bg-white/10'}
+                  title="Debug Panel"
+                >
+                  <Bug className="w-4 h-4" />
+                </Button>
+              )}
+
+              {onFullScreen && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onFullScreen}
+                  className="text-white hover:text-gray-200 hover:bg-white/10"
+                  title="Toggle Full Screen"
+                >
+                  <Maximize className="w-4 h-4" />
+                </Button>
+              )}
+
+              {onSettings && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onSettings}
+                  className="text-white hover:text-gray-200 hover:bg-white/10"
+                  title="Settings"
+                >
+                  <Settings className="w-4 h-4" />
+                </Button>
+              )}
+
+              {onExitStudent && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onExitStudent}
+                  className="text-white hover:text-orange-300 hover:bg-white/10"
+                  title="Switch Student"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </Button>
+              )}
+
+              {onLogout && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onLogout}
+                  className="text-white hover:text-red-300 hover:bg-white/10"
+                  title="Log Out"
+                >
+                  <LogOut className="w-4 h-4" />
+                </Button>
+              )}
+
             </div>
           </div>
 

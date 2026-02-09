@@ -481,7 +481,11 @@ export function ChatFeature() {
               key={file.fileId}
               className="flex items-center gap-2 bg-muted/50 border border-border rounded-lg px-3 py-1.5 text-sm"
             >
-              {getFileIcon(file.mimeType)}
+              {file.type === "image" && file.dataUrl ? (
+                <img src={file.dataUrl} className="w-6 h-6 rounded object-cover" />
+              ) : (
+                getFileIcon(file.mimeType)
+              )}
               <span className="max-w-[150px] truncate">{file.filename}</span>
               <span className="text-xs text-muted-foreground">
                 ({formatFileSize(file.size)})

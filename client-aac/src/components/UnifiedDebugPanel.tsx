@@ -1,0 +1,794 @@
+// client-aac/src/components/UnifiedDebugPanel.tsx
+// Single draggable, resizable debug panel with collapsible sections
+
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { X, ChevronDown, ChevronRight, Copy, Camera, Mic, Image, MessageSquare, Eye, Brain, Clock, Filter, Activity } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
+import { useDualAgentContext } from "@/contexts/DualAgentContext";
+import { useDebugSession, type DebugSessionMessage } from "@/hooks/useDebugSession";
+import { useCameraAttentivenessOptional } from "@/contexts/CameraAttentivenessContext";
+import type { TrackedFace } from "@/lib/faceTrackingTypes";
+import { getEventColorCategory, EVENT_COLOR_MAP } from "@/lib/faceTrackingTypes";
+import type { TrackedHand } from "@/lib/handGestureTypes";
+import { getHandEventColorCategory, HAND_EVENT_COLOR_MAP } from "@/lib/handGestureTypes";
+
+const EXPRESSION_COLORS: Record<string, string> = {
+  smile: 'bg-green-200 text-green-800',
+  frown: 'bg-red-200 text-red-800',
+  surprise: 'bg-yellow-200 text-yellow-800',
+  neutral: 'bg-gray-200 text-gray-700',
+  wink: 'bg-purple-200 text-purple-800',
+  mouth_open: 'bg-orange-200 text-orange-800',
+};
+
+const GESTURE_COLORS: Record<string, string> = {
+  open_palm: 'bg-indigo-200 text-indigo-800',
+  closed_fist: 'bg-indigo-200 text-indigo-800',
+  pointing_up: 'bg-indigo-200 text-indigo-800',
+  thumbs_up: 'bg-green-200 text-green-800',
+  thumbs_down: 'bg-red-200 text-red-800',
+  victory: 'bg-yellow-200 text-yellow-800',
+  iloveyou: 'bg-pink-200 text-pink-800',
+};
+
+interface UnifiedDebugPanelProps {
+  isOpen: boolean;
+  onClose: () => void;
+  // Face tracking props (from home)
+  faceTrackingEnabled?: boolean;
+  onFaceTrackingToggle?: (enabled: boolean) => void;
+  trackedFaces?: TrackedFace[];
+  faceTrackingFps?: number;
+  faceTrackingReady?: boolean;
+  faceTrackingError?: string | null;
+  // Hand tracking props (from home)
+  handGestureEnabled?: boolean;
+  onHandGestureToggle?: (enabled: boolean) => void;
+  trackedHands?: TrackedHand[];
+  handGestureFps?: number;
+  handGestureReady?: boolean;
+  handGestureError?: string | null;
+}
+
+const SECTION_STORAGE_KEY = "debug-panel-sections";
+const POSITION_STORAGE_KEY = "debug-panel-position";
+const SIZE_STORAGE_KEY = "debug-panel-size";
+
+const MIN_WIDTH = 400;
+const MIN_HEIGHT = 300;
+const DEFAULT_WIDTH = 550;
+const DEFAULT_HEIGHT = 700;
+
+function loadSections(): Record<string, boolean> {
+  try {
+    const stored = localStorage.getItem(SECTION_STORAGE_KEY);
+    return stored ? JSON.parse(stored) : {};
+  } catch { return {}; }
+}
+
+function saveSections(sections: Record<string, boolean>) {
+  localStorage.setItem(SECTION_STORAGE_KEY, JSON.stringify(sections));
+}
+
+function loadPosition(): { x: number; y: number } {
+  try {
+    const stored = localStorage.getItem(POSITION_STORAGE_KEY);
+    return stored ? JSON.parse(stored) : { x: 20, y: 60 };
+  } catch { return { x: 20, y: 60 }; }
+}
+
+function loadSize(): { width: number; height: number } {
+  try {
+    const stored = localStorage.getItem(SIZE_STORAGE_KEY);
+    return stored ? JSON.parse(stored) : { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT };
+  } catch { return { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT }; }
+}
+
+function formatRelativeTime(ts: number): string {
+  const diff = Date.now() - ts;
+  if (diff < 1000) return "now";
+  if (diff < 60000) return `${Math.floor(diff / 1000)}s`;
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m`;
+  return `${Math.floor(diff / 3600000)}h`;
+}
+
+// ---- Sub-components for Cameras section ----
+
+function FaceCard({ face, index }: { face: TrackedFace; index: number }) {
+  const displayName = face.personName || `Person ${index + 1}`;
+  const topBlendshapes = Array.from(face.currentBlendshapes.entries())
+    .filter(([name]) => !name.startsWith('_'))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4);
+  const recentEvents = [...face.events].sort((a, b) => b.timestamp - a.timestamp).slice(0, 5);
+
+  return (
+    <div className="p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium truncate">{displayName}</span>
+        {face.currentExpression && (
+          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+            EXPRESSION_COLORS[face.currentExpression] || 'bg-gray-200 text-gray-700'
+          }`}>
+            {face.currentExpression.replace('_', ' ')}
+          </span>
+        )}
+      </div>
+      {topBlendshapes.length > 0 && (
+        <div className="space-y-0.5">
+          {topBlendshapes.map(([name, score]) => (
+            <div key={name} className="flex items-center gap-1 text-[10px]">
+              <span className="w-20 truncate text-gray-500">{name}</span>
+              <div className="flex-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                <div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.round(score * 100)}%` }} />
+              </div>
+              <span className="w-6 text-right text-gray-500">{(score * 100).toFixed(0)}%</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {recentEvents.length > 0 && (
+        <div className="flex flex-wrap gap-0.5">
+          {recentEvents.map((event, i) => {
+            const colors = EVENT_COLOR_MAP[getEventColorCategory(event.type)];
+            return (
+              <span key={`${event.type}_${i}`} className={`text-[9px] px-1 py-0.5 rounded ${colors}`}>
+                {event.type.replace('_', ' ')} {formatRelativeTime(event.timestamp)}
+              </span>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HandCard({ hand, index }: { hand: TrackedHand; index: number }) {
+  const recentEvents = [...hand.events].sort((a, b) => b.timestamp - a.timestamp).slice(0, 5);
+  return (
+    <div className="p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium">{hand.handedness} Hand</span>
+        {hand.currentGesture && (
+          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+            GESTURE_COLORS[hand.currentGesture] || 'bg-gray-200 text-gray-700'
+          }`}>
+            {hand.currentGesture.replace(/_/g, ' ')} {(hand.currentGestureConfidence * 100).toFixed(0)}%
+          </span>
+        )}
+      </div>
+      {recentEvents.length > 0 && (
+        <div className="flex flex-wrap gap-0.5">
+          {recentEvents.map((event, i) => {
+            const colors = HAND_EVENT_COLOR_MAP[getHandEventColorCategory(event.type)];
+            const label = event.type === 'sign_language' && event.signLabel ? event.signLabel : event.type.replace(/_/g, ' ');
+            return (
+              <span key={`${event.type}_${i}`} className={`text-[9px] px-1 py-0.5 rounded ${colors}`}>
+                {label} {formatRelativeTime(event.timestamp)}
+              </span>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- Section header ----
+
+function SectionHeader({ title, icon, isOpen, onClick, badge }: {
+  title: string;
+  icon: React.ReactNode;
+  isOpen: boolean;
+  onClick: () => void;
+  badge?: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-2 w-full px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+    >
+      {isOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+      {icon}
+      <span className="flex-1 text-left">{title}</span>
+      {badge}
+    </button>
+  );
+}
+
+// ---- Endpoint color ----
+const ENDPOINT_COLORS: Record<string, string> = {
+  "/detect": "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
+  "/message": "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+  "/voice": "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+  "/initialize": "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
+};
+
+// ---- Role colors ----
+const ROLE_COLORS: Record<string, string> = {
+  user: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+  assistant: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+  system: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
+};
+
+// ---- Main panel ----
+
+export default function UnifiedDebugPanel({
+  isOpen,
+  onClose,
+  faceTrackingEnabled,
+  onFaceTrackingToggle,
+  trackedFaces,
+  faceTrackingFps,
+  faceTrackingReady,
+  faceTrackingError,
+  handGestureEnabled,
+  onHandGestureToggle,
+  trackedHands,
+  handGestureFps,
+  handGestureReady,
+  handGestureError,
+}: UnifiedDebugPanelProps) {
+  // Context data
+  const ctx = useDualAgentContext();
+  const attentiveness = useCameraAttentivenessOptional();
+
+  // Session debug polling
+  const { data: sessionData } = useDebugSession(ctx.sessionId, ctx.studentId, isOpen);
+
+  // Position / size state (persisted to localStorage)
+  const [position, setPosition] = useState(loadPosition);
+  const [size, setSize] = useState(loadSize);
+  const windowRef = useRef<HTMLDivElement>(null);
+
+  // Section collapsed state (persisted)
+  const [sections, setSections] = useState<Record<string, boolean>>(() => {
+    const stored = loadSections();
+    return {
+      cameras: stored.cameras ?? true,
+      requests: stored.requests ?? true,
+      interactive: stored.interactive ?? true,
+      monitor: stored.monitor ?? true,
+      sessionLog: stored.sessionLog ?? false,
+    };
+  });
+
+  // Session log filter
+  const [logFilter, setLogFilter] = useState<"all" | "user" | "assistant" | "system">("all");
+
+  // Expanded request/message IDs
+  const [expandedRequest, setExpandedRequest] = useState<string | null>(null);
+  const [expandedMessage, setExpandedMessage] = useState<number | null>(null);
+
+  // Persist position/size
+  useEffect(() => {
+    localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify(position));
+  }, [position]);
+
+  useEffect(() => {
+    localStorage.setItem(SIZE_STORAGE_KEY, JSON.stringify(size));
+  }, [size]);
+
+  // Toggle section
+  const toggleSection = useCallback((key: string) => {
+    setSections(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      saveSections(next);
+      return next;
+    });
+  }, []);
+
+  // ---- Drag ----
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (!windowRef.current) return;
+    const rect = windowRef.current.getBoundingClientRect();
+    const offsetX = e.clientX - rect.left;
+    const offsetY = e.clientY - rect.top;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      setPosition({ x: e.clientX - offsetX, y: e.clientY - offsetY });
+    };
+    const handleMouseUp = () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  }, []);
+
+  // ---- Resize ----
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startW = size.width;
+    const startH = size.height;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      setSize({
+        width: Math.max(MIN_WIDTH, startW + (e.clientX - startX)),
+        height: Math.max(MIN_HEIGHT, startH + (e.clientY - startY)),
+      });
+    };
+    const handleMouseUp = () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  }, [size]);
+
+  // Copy to clipboard
+  const copyToClipboard = useCallback((text: string) => {
+    navigator.clipboard.writeText(text).catch(() => {});
+  }, []);
+
+  if (!isOpen) return null;
+
+  // Derive data — merge processed messages + pending messages for the session log
+  const processedMessages: Array<DebugSessionMessage & { isPending?: boolean }> = (sessionData?.messages || []).map(m => ({ ...m, isPending: false }));
+  const pendingMessages: Array<DebugSessionMessage & { isPending?: boolean }> = (sessionData?.pendingMessages || []).map(m => ({
+    ...m, role: m.role as "user" | "assistant" | "system", isPending: true,
+  }));
+  const messages = [...processedMessages, ...pendingMessages].sort((a, b) => a.timestamp - b.timestamp);
+  const filteredMessages = logFilter === "all" ? messages : messages.filter(m => m.role === logFilter);
+  const lastInteractiveDebug = ctx.debugData?.interactive_response;
+  const lastDetectionDebug = ctx.debugData?.detection_result;
+  const lastTranscript = ctx.debugData?.last_transcript;
+  const lastContextUpdate = ctx.debugData?.last_context_update;
+
+  return (
+    <div
+      ref={windowRef}
+      className="fixed z-50 bg-white dark:bg-gray-900 rounded-lg shadow-2xl border border-gray-300 dark:border-gray-700 flex flex-col overflow-hidden"
+      style={{
+        left: `${position.x}px`,
+        top: `${position.y}px`,
+        width: `${size.width}px`,
+        height: `${size.height}px`,
+      }}
+    >
+      {/* Header - drag handle */}
+      <div
+        className="flex items-center justify-between px-3 py-2 bg-purple-600 text-white cursor-grab active:cursor-grabbing select-none shrink-0"
+        onMouseDown={handleMouseDown}
+      >
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <Activity className="w-4 h-4" />
+          Debug Panel
+          {ctx.sessionId && (
+            <span className="text-[10px] font-mono opacity-70">{ctx.sessionId.substring(0, 8)}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          {ctx.isInitialized ? (
+            <Badge className="bg-green-500 text-white text-[10px] px-1.5">Live</Badge>
+          ) : (
+            <Badge className="bg-gray-500 text-white text-[10px] px-1.5">Offline</Badge>
+          )}
+          <button onClick={onClose} className="p-1 hover:bg-purple-700 rounded">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Scrollable content */}
+      <ScrollArea className="flex-1 min-h-0">
+        <div className="divide-y divide-gray-200 dark:divide-gray-700">
+
+          {/* ===== Section 1: Cameras ===== */}
+          <div>
+            <SectionHeader
+              title="Cameras"
+              icon={<Camera className="w-3.5 h-3.5" />}
+              isOpen={sections.cameras}
+              onClick={() => toggleSection("cameras")}
+              badge={
+                <div className="flex gap-1">
+                  {faceTrackingReady && <Badge className="bg-green-500 text-white text-[9px] px-1">Face</Badge>}
+                  {handGestureReady && <Badge className="bg-blue-500 text-white text-[9px] px-1">Hand</Badge>}
+                </div>
+              }
+            />
+            {sections.cameras && (
+              <div className="p-2 space-y-2 text-xs">
+                {/* Attentiveness */}
+                {attentiveness && (
+                  <div className="flex items-center gap-2 p-1.5 bg-gray-50 dark:bg-gray-800 rounded text-[11px]">
+                    <Eye className="w-3 h-3" />
+                    <span>State: <strong>{attentiveness.state.isAwake ? "Awake" : "Sleep"}</strong></span>
+                    <span>Motion: {(attentiveness.state.motionLevel * 100).toFixed(0)}%</span>
+                    <span>Frames: {attentiveness.state.frameCount}</span>
+                  </div>
+                )}
+
+                {/* Face tracking controls */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Eye className="w-3 h-3 text-gray-500" />
+                    <span className="text-[11px]">Face Tracking</span>
+                    {faceTrackingFps !== undefined && <span className="text-[10px] text-gray-400">{faceTrackingFps} fps</span>}
+                  </div>
+                  {onFaceTrackingToggle && (
+                    <Switch
+                      checked={faceTrackingEnabled || false}
+                      onCheckedChange={onFaceTrackingToggle}
+                    />
+                  )}
+                </div>
+                {faceTrackingError && <p className="text-[10px] text-red-500">{faceTrackingError}</p>}
+
+                {/* Tracked faces */}
+                {trackedFaces && trackedFaces.length > 0 && (
+                  <div className="space-y-1">
+                    {trackedFaces.map((face, i) => <FaceCard key={face.faceIndex ?? i} face={face} index={i} />)}
+                  </div>
+                )}
+
+                {/* Hand gesture controls */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px]">Hand Gestures</span>
+                    {handGestureFps !== undefined && <span className="text-[10px] text-gray-400">{handGestureFps} fps</span>}
+                  </div>
+                  {onHandGestureToggle && (
+                    <Switch
+                      checked={handGestureEnabled || false}
+                      onCheckedChange={onHandGestureToggle}
+                    />
+                  )}
+                </div>
+                {handGestureError && <p className="text-[10px] text-red-500">{handGestureError}</p>}
+
+                {/* Tracked hands */}
+                {trackedHands && trackedHands.length > 0 && (
+                  <div className="space-y-1">
+                    {trackedHands.map((hand, i) => <HandCard key={`${hand.handedness}-${i}`} hand={hand} index={i} />)}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ===== Section 2: Request Overview ===== */}
+          <div>
+            <SectionHeader
+              title="Requests"
+              icon={<MessageSquare className="w-3.5 h-3.5" />}
+              isOpen={sections.requests}
+              onClick={() => toggleSection("requests")}
+              badge={
+                ctx.requestCache.length > 0 ? (
+                  <Badge variant="secondary" className="text-[9px] px-1">{ctx.requestCache.length}</Badge>
+                ) : undefined
+              }
+            />
+            {sections.requests && (
+              <div className="p-2 space-y-1 text-xs max-h-48 overflow-y-auto">
+                {ctx.requestCache.length === 0 ? (
+                  <p className="text-gray-400 text-[11px] text-center py-2">No requests yet</p>
+                ) : (
+                  ctx.requestCache.map(req => (
+                    <div
+                      key={req.id}
+                      className="flex items-center gap-1.5 p-1.5 bg-gray-50 dark:bg-gray-800 rounded cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+                      onClick={() => setExpandedRequest(expandedRequest === req.id ? null : req.id)}
+                    >
+                      <span className="text-[10px] text-gray-400 w-8">{formatRelativeTime(req.timestamp)}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${ENDPOINT_COLORS[req.endpoint] || "bg-gray-200 text-gray-700"}`}>
+                        {req.endpoint.replace("/", "")}
+                      </span>
+                      <div className="flex gap-0.5">
+                        {req.hasImage && <Image className="w-3 h-3 text-amber-500" />}
+                        {req.hasAudio && <Mic className="w-3 h-3 text-green-500" />}
+                        {req.hasGestureContext && <Eye className="w-3 h-3 text-blue-500" />}
+                      </div>
+                      {req.gridFrameCount && <span className="text-[9px] text-gray-400">{req.gridFrameCount}f</span>}
+                      {expandedRequest === req.id && (
+                        <div className="flex-1 text-[10px] text-gray-500 truncate">
+                          {req.messagePreview || `board:${req.boardSlotCount} ${req.interactionMode || ""}`}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ===== Section 3: Interactive Agent ===== */}
+          <div>
+            <SectionHeader
+              title="Interactive Agent"
+              icon={<Brain className="w-3.5 h-3.5" />}
+              isOpen={sections.interactive}
+              onClick={() => toggleSection("interactive")}
+              badge={
+                sessionData?.interactionMode ? (
+                  <Badge className={`text-[9px] px-1 ${sessionData.interactionMode === "interact" ? "bg-blue-500 text-white" : "bg-orange-500 text-white"}`}>
+                    {sessionData.interactionMode}
+                  </Badge>
+                ) : undefined
+              }
+            />
+            {sections.interactive && (
+              <div className="p-2 space-y-2 text-xs">
+                {/* Last response info */}
+                {(lastInteractiveDebug || lastDetectionDebug) && (
+                  <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded space-y-1">
+                    <div className="text-[11px] font-medium text-gray-600 dark:text-gray-400">Last Response</div>
+                    {lastInteractiveDebug && (
+                      <div className="flex flex-wrap gap-2 text-[10px]">
+                        <span>Model: <strong>{lastInteractiveDebug.model}</strong></span>
+                        <span>Provider: {lastInteractiveDebug.provider}</span>
+                        {lastInteractiveDebug.usage && (
+                          <>
+                            <span>Prompt: {lastInteractiveDebug.usage.promptTokens}t</span>
+                            <span>Completion: {lastInteractiveDebug.usage.completionTokens}t</span>
+                          </>
+                        )}
+                        {lastInteractiveDebug.latencyMs && <span>Latency: {lastInteractiveDebug.latencyMs}ms</span>}
+                      </div>
+                    )}
+                    {lastDetectionDebug && (
+                      <div className="flex flex-wrap gap-2 text-[10px]">
+                        <Badge variant="outline" className="text-[9px]">Detection</Badge>
+                        <span>Model: <strong>{lastDetectionDebug.model}</strong></span>
+                        <span>Changed: {lastDetectionDebug.changed ? "Yes" : "No"}</span>
+                        <span>Msgs: {lastDetectionDebug.messageCount || 0}</span>
+                        <span>Pending: {lastDetectionDebug.pendingCount || 0}</span>
+                        {lastDetectionDebug.hasImage && <Badge className="bg-blue-100 text-blue-700 text-[8px] px-1">IMG</Badge>}
+                        {lastDetectionDebug.hasAudio && <Badge className="bg-green-100 text-green-700 text-[8px] px-1">AUD</Badge>}
+                        {lastDetectionDebug.hasGesture && <Badge className="bg-purple-100 text-purple-700 text-[8px] px-1">GST</Badge>}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Last transcript / context from detection */}
+                {(lastTranscript || lastContextUpdate) && (
+                  <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded space-y-1">
+                    {lastTranscript && (
+                      <div className="text-[10px]">
+                        <span className="text-gray-500">Transcript</span>{" "}
+                        <span className="text-[9px] text-gray-400">{formatRelativeTime(lastTranscript.timestamp)}</span>
+                        <div className="text-gray-700 dark:text-gray-300">
+                          {lastTranscript.speaker && <strong>[{lastTranscript.speaker}]</strong>} {lastTranscript.text}
+                        </div>
+                      </div>
+                    )}
+                    {lastContextUpdate && (
+                      <div className="text-[10px]">
+                        <span className="text-gray-500">Context Update</span>{" "}
+                        <span className="text-[9px] text-gray-400">{formatRelativeTime(lastContextUpdate.timestamp)}</span>
+                        <div className="text-gray-700 dark:text-gray-300">{lastContextUpdate.text}</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* System prompt */}
+                {sessionData?.interactivePrompt && (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-medium text-gray-600 dark:text-gray-400">System Prompt</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 px-1.5 text-[10px]"
+                        onClick={() => copyToClipboard(sessionData.interactivePrompt)}
+                      >
+                        <Copy className="w-3 h-3 mr-0.5" />
+                        Copy
+                      </Button>
+                    </div>
+                    <pre className="text-[10px] bg-gray-50 dark:bg-gray-800 p-2 rounded max-h-32 overflow-y-auto whitespace-pre-wrap break-words font-mono text-gray-600 dark:text-gray-400">
+                      {sessionData.interactivePrompt}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ===== Section 4: Monitor Agent ===== */}
+          <div>
+            <SectionHeader
+              title="Monitor Agent"
+              icon={<Clock className="w-3.5 h-3.5" />}
+              isOpen={sections.monitor}
+              onClick={() => toggleSection("monitor")}
+              badge={
+                <div className="flex gap-1">
+                  {sessionData?.monitorBusy && <Badge className="bg-yellow-500 text-white text-[9px] px-1">Busy</Badge>}
+                  {(sessionData?.pendingCount ?? 0) > 0 && (
+                    <Badge variant="secondary" className="text-[9px] px-1">{sessionData!.pendingCount} pending</Badge>
+                  )}
+                </div>
+              }
+            />
+            {sections.monitor && (
+              <div className="p-2 space-y-2 text-xs">
+                <div className="grid grid-cols-2 gap-2">
+                  {/* Last called */}
+                  <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded">
+                    <div className="text-[10px] text-gray-500">Last Called</div>
+                    <div className="text-[11px] font-medium">
+                      {sessionData?.lastMonitorActivity
+                        ? formatRelativeTime(sessionData.lastMonitorActivity) + " ago"
+                        : "Never"}
+                    </div>
+                    {sessionData?.lastMonitorActivity && (
+                      <div className="text-[9px] text-gray-400">
+                        {new Date(sessionData.lastMonitorActivity).toLocaleTimeString()}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Throttle countdown */}
+                  <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded">
+                    <div className="text-[10px] text-gray-500">Throttle</div>
+                    <ThrottleCountdown lastActivity={sessionData?.lastMonitorActivity} />
+                  </div>
+                </div>
+
+                {/* Trigger reason */}
+                <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded">
+                  <div className="text-[10px] text-gray-500">Last Trigger</div>
+                  <div className="text-[11px]">
+                    {(() => {
+                      const callMonitorMsg = messages.slice().reverse().find(m =>
+                        m.content.startsWith("[CALL_MONITOR]")
+                      );
+                      if (callMonitorMsg) {
+                        return callMonitorMsg.content.replace("[CALL_MONITOR] ", "");
+                      }
+                      return "auto (throttle)";
+                    })()}
+                  </div>
+                </div>
+
+                {/* Last context injection */}
+                {(() => {
+                  const contextMsg = messages.slice().reverse().find(m =>
+                    m.role === "system" && m.content.startsWith("[CONTEXT]")
+                  );
+                  if (!contextMsg) return null;
+                  return (
+                    <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded">
+                      <div className="text-[10px] text-gray-500">Last Context Injection</div>
+                      <div className="text-[10px] text-gray-600 dark:text-gray-400 line-clamp-2">
+                        {contextMsg.content.replace("[CONTEXT] ", "")}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+
+          {/* ===== Section 5: Session Log ===== */}
+          <div>
+            <SectionHeader
+              title="Session Log"
+              icon={<Filter className="w-3.5 h-3.5" />}
+              isOpen={sections.sessionLog}
+              onClick={() => toggleSection("sessionLog")}
+              badge={
+                <div className="flex gap-1">
+                  <Badge variant="secondary" className="text-[9px] px-1">{messages.length}</Badge>
+                  {pendingMessages.length > 0 && (
+                    <Badge className="bg-yellow-500 text-white text-[9px] px-1">{pendingMessages.length} pending</Badge>
+                  )}
+                </div>
+              }
+            />
+            {sections.sessionLog && (
+              <div className="p-2 space-y-1.5 text-xs">
+                {/* Filter buttons */}
+                <div className="flex gap-1">
+                  {(["all", "user", "assistant", "system"] as const).map(f => (
+                    <button
+                      key={f}
+                      onClick={() => setLogFilter(f)}
+                      className={`text-[10px] px-2 py-0.5 rounded ${
+                        logFilter === f
+                          ? "bg-purple-600 text-white"
+                          : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
+                      }`}
+                    >
+                      {f.charAt(0).toUpperCase() + f.slice(1)}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Messages */}
+                <div className="max-h-64 overflow-y-auto space-y-1">
+                  {filteredMessages.length === 0 ? (
+                    <p className="text-gray-400 text-[11px] text-center py-2">No messages</p>
+                  ) : (
+                    filteredMessages.map((msg, i) => (
+                      <div
+                        key={`${msg.timestamp}-${i}`}
+                        className={`p-1.5 rounded cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 ${
+                          (msg as any).isPending
+                            ? "bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800"
+                            : "bg-gray-50 dark:bg-gray-800"
+                        }`}
+                        onClick={() => setExpandedMessage(expandedMessage === i ? null : i)}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${ROLE_COLORS[msg.role] || "bg-gray-200 text-gray-700"}`}>
+                            {msg.role}
+                          </span>
+                          {(msg as any).isPending && (
+                            <span className="text-[8px] px-1 py-0.5 rounded bg-yellow-200 text-yellow-800 font-medium">pending</span>
+                          )}
+                          <span className="text-[10px] text-gray-400">{formatRelativeTime(msg.timestamp)}</span>
+                          <span className="flex-1 text-[10px] text-gray-600 dark:text-gray-400 truncate">
+                            {expandedMessage === i ? "" : msg.content.substring(0, 80)}
+                          </span>
+                        </div>
+                        {expandedMessage === i && (
+                          <pre className="mt-1 text-[10px] whitespace-pre-wrap break-words font-mono text-gray-600 dark:text-gray-400 max-h-40 overflow-y-auto">
+                            {msg.content}
+                          </pre>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+        </div>
+      </ScrollArea>
+
+      {/* Resize handle */}
+      <div
+        className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize"
+        onMouseDown={handleResizeMouseDown}
+      >
+        <svg viewBox="0 0 16 16" className="w-full h-full text-gray-400">
+          <path d="M14 14L8 14L14 8Z" fill="currentColor" opacity="0.4" />
+          <path d="M14 14L11 14L14 11Z" fill="currentColor" opacity="0.6" />
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+// ---- Throttle countdown sub-component ----
+
+function ThrottleCountdown({ lastActivity }: { lastActivity?: number }) {
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (!lastActivity) return <div className="text-[11px] font-medium">--</div>;
+
+  const THROTTLE_MS = 120_000;
+  const elapsed = now - lastActivity;
+  const remaining = Math.max(0, THROTTLE_MS - elapsed);
+
+  if (remaining === 0) {
+    return <div className="text-[11px] font-medium text-green-600">Ready</div>;
+  }
+
+  return (
+    <div className="text-[11px] font-medium text-orange-600">
+      {Math.ceil(remaining / 1000)}s
+    </div>
+  );
+}

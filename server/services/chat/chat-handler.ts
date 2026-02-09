@@ -103,6 +103,7 @@ import {
       memoryLevel: number;
       vectorStoreId?: string; // For file_search tool support
       currentImage?: CurrentImage; // Image to inject into the next API call (not stored in history)
+      images?: string[]; // Base64 data URLs for inline images (single-use, cleared after API call)
   
       cullMessages: boolean;
       cullMessagesTo: number;
@@ -151,6 +152,7 @@ import {
           vectorStoreId?: string,
           loopDetectionConfig?: LoopDetectionConfig;
           currentImage?: CurrentImage;
+          images?: string[];
           providerConfig?: { provider: import("@shared/llm-options").LLMProviderKey; model: string };
       }){
           this.chatState = JSON.parse(JSON.stringify(settings.chatState));
@@ -206,6 +208,9 @@ import {
 
           // Image for current request (not persisted in history)
           this.currentImage = settings.currentImage;
+
+          // Inline images from client (base64 data URLs, single-use)
+          this.images = settings.images;
       }
 
       // Set vector store ID for file search (can be set after construction)
@@ -389,6 +394,25 @@ import {
               this.currentImage = undefined;
           }
 
+          // Inject inline images (base64 data URLs from client) into the last user message
+          if (this.images && this.images.length > 0) {
+              for (let i = items.length - 1; i >= 0; i--) {
+                  const item = items[i];
+                  if (item.type === 'message' && item.role === 'user') {
+                      const textContent = typeof item.content === 'string' ? item.content : '';
+                      const multimodalContent: GPTContentPart[] = [
+                          { type: 'input_text', text: textContent },
+                          ...this.images.map(url => ({ type: 'input_image' as const, image_url: url })),
+                      ];
+                      item.content = multimodalContent;
+                      console.log(`[ChatMessageManager] Injected ${this.images.length} inline image(s) into user message`);
+                      break;
+                  }
+              }
+              // Clear after use (single-use per request)
+              this.images = undefined;
+          }
+
           return items;
       }
   
@@ -406,7 +430,7 @@ import {
        * Protects the first 2 anchor messages (indices 0-1).
        * Always removes paired tool-call/tool-response messages together.
        */
-      async compressHistory(forget: number[], summary: string): Promise<{ removed: number; warnings: string[] }> {
+      async compressHistory(forget: number[], summary: string): Promise<{ removed: number; warnings: string[]; historyLength: number }> {
           const warnings: string[] = [];
           const history = this.chatState.history;
 
@@ -467,7 +491,7 @@ import {
               }
           }
 
-          return { removed: removalSet.size, warnings };
+          return { removed: removalSet.size, warnings, historyLength: history.length };
       }
 
       /**
@@ -650,9 +674,7 @@ import {
 
                   // Search surcharge only applies to OpenAI
                   if (provider === "openai" && promptBuild.searchEnabled && promptBuild.searchContextSize) {
-                      creditsUsed += Math.ceil(
-                          (gptResponse.searchCalls || 0) * CreditsPerSearchByIntelligence(this.intelligenceLevel, promptBuild.searchContextSize)
-                      );
+                      creditsUsed += (gptResponse.searchCalls || 0) * CreditsPerSearchByIntelligence(this.intelligenceLevel, promptBuild.searchContextSize);
                   }
 
                   console.log(`prompt=${gptResponse.promptTokens} cached=${gptResponse.cachedTokens} `

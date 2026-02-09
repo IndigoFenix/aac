@@ -2,8 +2,8 @@
 // Main coordinator for the dual-agent AAC system
 
 import { db } from "../../db";
-import { chatSessions, students, users } from "@shared/schema";
-import { eq, sql } from "drizzle-orm";
+import { chatSessions, students, users, userStudents } from "@shared/schema";
+import { and, eq, sql } from "drizzle-orm";
 import type { ChatMessage, ParsedBoardData } from "@shared/schema";
 import { creditsForModelUsage } from "../chat/cost-helpers";
 import {
@@ -79,6 +79,9 @@ const CACHE_TTL = 30 * 60 * 1000;
 // Monitor staleness timeout: 30 seconds
 const MONITOR_TIMEOUT_MS = 30_000;
 
+// Monitor throttle: minimum interval between monitor calls (unless forced by [CALL_MONITOR])
+const MONITOR_THROTTLE_MS = 120_000; // 2 minutes
+
 /**
  * Clean up stale sessions from cache
  */
@@ -104,34 +107,8 @@ setInterval(cleanupCache, 5 * 60 * 1000);
 export class DualAgentService {
   private config: DualAgentConfig;
 
-  // Whisper hallucinates these phrases on silence / ambient noise
-  private static WHISPER_HALLUCINATION_PATTERNS = [
-    /^thank\s*you/i,
-    /^thanks\s*(for\s*(watching|listening|viewing))?\.?$/i,
-    /^(please\s+)?subscribe/i,
-    /^(please\s+)?like\s+and\s+subscribe/i,
-    /^bye[\.\s]*$/i,
-    /^you$/i,
-    /^\.+$/,
-    /^(\s|\.|\,)+$/,
-    /^music$/i,
-    /^silence$/i,
-    /^\[.*\]$/, // [Music], [Silence], etc.
-  ];
-
   constructor(config: Partial<DualAgentConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
-  }
-
-  /**
-   * Detect common Whisper hallucinations on ambient/silent audio.
-   */
-  private isWhisperHallucination(text: string): boolean {
-    const trimmed = text.trim();
-    if (trimmed.length === 0) return true;
-    // Very short transcriptions from 5s audio are almost always hallucinations
-    if (trimmed.length < 4) return true;
-    return DualAgentService.WHISPER_HALLUCINATION_PATTERNS.some((p) => p.test(trimmed));
   }
 
   /**
@@ -167,6 +144,20 @@ export class DualAgentService {
           .update(users)
           .set({ chatCreditsUsed: sql`${users.chatCreditsUsed} + ${credits}`, chatCreditsUpdated: new Date() })
           .where(eq(users.id, userId));
+      }
+
+      if (studentId && userId) {
+        await db
+          .update(userStudents)
+          .set({
+            chatCreditsUsed: sql`${userStudents.chatCreditsUsed} + ${credits}`,
+            chatCreditsUpdated: new Date(),
+          })
+          .where(and(
+            eq(userStudents.userId, userId),
+            eq(userStudents.studentId, studentId),
+            eq(userStudents.isActive, true)
+          ));
       }
 
       console.log(`[DualAgentService] Tracked ${credits} credits (provider=${provider}, model=${model}, prompt=${usage.promptTokens}, completion=${usage.completionTokens})`);
@@ -254,7 +245,7 @@ export class DualAgentService {
     imageData?: string,
     gestureContext?: string
   ): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context";
+    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status";
     data: any;
     speaker?: string;
   }> {
@@ -461,6 +452,7 @@ export class DualAgentService {
       interactionMode,
       lastInteractiveActivity: Date.now(),
       lastMonitorActivity: Date.now(),
+      monitorConsecutiveFailures: 0,
     };
 
     // Save to database
@@ -524,6 +516,7 @@ export class DualAgentService {
         interactionMode: chatState?.interactionMode || 'interact',
         lastInteractiveActivity: Date.now(),
         lastMonitorActivity: Date.now(),
+        monitorConsecutiveFailures: 0,
       };
 
       // Fetch AAC chat LLM config from DB
@@ -630,7 +623,7 @@ export class DualAgentService {
   async *processInput(
     input: DualAgentInput
   ): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context";
+    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status";
     data: any;
     speaker?: string;
   }> {
@@ -721,7 +714,8 @@ export class DualAgentService {
         input.imageData,
         input.identifiedPerson,
         interactionMode,
-        input.gestureContext
+        input.gestureContext,
+        input.debugMode
       );
     }
 
@@ -729,6 +723,18 @@ export class DualAgentService {
     // - Interactive mode: doMonitorProcessing saves when complete
     // - Thinking mode: handleThinkingMode saves at the end
     // Pending messages are already persisted at line 509 for crash recovery
+
+    // Alert frontend if the monitor agent has been failing
+    if (state.monitorError && state.monitorConsecutiveFailures > 0) {
+      yield {
+        type: "monitor_status",
+        data: {
+          error: state.monitorError,
+          errorTimestamp: state.monitorErrorTimestamp,
+          consecutiveFailures: state.monitorConsecutiveFailures,
+        },
+      };
+    }
 
     yield { type: "complete", data: { sessionId: state.sessionId } };
   }
@@ -747,9 +753,10 @@ export class DualAgentService {
     imageData?: string,
     identifiedPerson?: import("./types").IdentifiedPersonContext,
     interactionMode: AACInteractionMode = 'interact',
-    gestureContext?: string
+    gestureContext?: string,
+    debugMode?: boolean
   ): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context";
+    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug";
     data: any;
     speaker?: string;
   }> {
@@ -757,6 +764,7 @@ export class DualAgentService {
     const modeStart = Date.now();
     let fullText = "";
     let fullInterpretation = "";
+    let callMonitorReason: string | undefined;
     console.log("[DualAgentService] handleInteractiveMode: thinkingMode:", state.thinkingMode, "interactionMode:", interactionMode, "messages:", state.messages.length, "pending:", state.pendingMessages.length);
     logDualAgent("DualAgentService.handleInteractiveMode", { interactionMode, messageCount: state.messages.length, pendingCount: state.pendingMessages.length });
 
@@ -814,11 +822,28 @@ export class DualAgentService {
         await this.handleInteractiveCommand(state, chunk.data);
       } else if (chunk.type === "usage") {
         interactiveUsage = chunk.data;
+      } else if (chunk.type === "call_monitor") {
+        callMonitorReason = chunk.data;
       }
     }
 
     const modeElapsed = Date.now() - modeStart;
     logDualAgent("DualAgentService.handleInteractiveMode.done", { elapsedMs: modeElapsed, textLength: fullText.length, interpretationLength: fullInterpretation.length });
+
+    // Yield debug event with usage info
+    if (debugMode && interactiveUsage) {
+      yield { type: "debug", data: {
+        debugType: "interactive_response",
+        model: this.config.interactiveModel,
+        provider: this.config.interactiveProvider || "openai",
+        usage: interactiveUsage,
+        latencyMs: modeElapsed,
+        textLength: fullText.length,
+        interpretationLength: fullInterpretation.length,
+        hasCallMonitor: !!callMonitorReason,
+        timestamp: Date.now(),
+      }};
+    }
 
     // Track credits for the interactive response
     if (interactiveUsage) {
@@ -834,19 +859,23 @@ export class DualAgentService {
       });
     }
 
-    // Trigger Monitor processing with proper concurrency control
-    const cached = sessionCache.get(state.sessionId)!;
-    this.tryTriggerMonitor(cached, state, monitorAgent, interactiveAgent, board);
-
-    // Generate AI voice audio if enabled (skip in silent mode)
-    if (this.config.enableTTS && fullText && !isSilent) {
-      const voices = await this.resolveVoices(cached);
-      for await (const audioChunk of ttsFacade.synthesizeStream(fullText, voices.aiVoice)) {
-        yield { type: "audio", data: audioChunk.toString("base64") };
-      }
+    // If Interactive requested monitor, force-trigger it
+    const forceMonitor = !!callMonitorReason;
+    if (forceMonitor) {
+      console.log("[DualAgentService] Interactive requested monitor:", callMonitorReason);
+      state.pendingMessages.push({
+        role: "assistant",
+        content: `[CALL_MONITOR] ${callMonitorReason}`,
+        timestamp: Date.now(),
+      });
+      await this.updatePendingMessages(state.sessionId, state.pendingMessages);
     }
 
-    // Generate student voice audio for interpretation (both modes)
+    // Trigger Monitor processing with proper concurrency control
+    const cached = sessionCache.get(state.sessionId)!;
+    this.tryTriggerMonitor(cached, state, monitorAgent, interactiveAgent, board, forceMonitor);
+
+    // Generate student voice audio for interpretation first (both modes)
     if (this.config.enableTTS && fullInterpretation) {
       try {
         const voices = await this.resolveVoices(cached);
@@ -855,6 +884,14 @@ export class DualAgentService {
         }
       } catch (err) {
         console.error("[DualAgentService] Interpretation TTS error:", err);
+      }
+    }
+
+    // Generate AI voice audio second (skip in silent mode)
+    if (this.config.enableTTS && fullText && !isSilent) {
+      const voices = await this.resolveVoices(cached);
+      for await (const audioChunk of ttsFacade.synthesizeStream(fullText, voices.aiVoice)) {
+        yield { type: "audio", data: audioChunk.toString("base64") };
       }
     }
   }
@@ -959,12 +996,21 @@ export class DualAgentService {
     state: DualAgentSessionState,
     monitorAgent: MonitorAgent,
     interactiveAgent: InteractiveAgent,
-    board?: ParsedBoardData
+    board?: ParsedBoardData,
+    force: boolean = false
   ): Promise<void> {
     const { monitorMutex } = cached;
 
     // Acquire mutex to make check-and-set atomic
     await monitorMutex.acquire();
+
+    // Throttle: skip if called recently (unless forced by [CALL_MONITOR])
+    if (!force && (Date.now() - state.lastMonitorActivity) < MONITOR_THROTTLE_MS) {
+      console.log("[DualAgentService] Monitor throttled, next in",
+        Math.round((MONITOR_THROTTLE_MS - (Date.now() - state.lastMonitorActivity)) / 1000), "s");
+      monitorMutex.release();
+      return;
+    }
 
     if (state.monitorBusy) {
       console.log("[DualAgentService] Monitor already busy, skipping trigger");
@@ -1002,6 +1048,9 @@ export class DualAgentService {
       await this.updateMonitorBusy(state.sessionId, false, null);
       return;
     }
+
+    // Mark the actual processing start time for throttle tracking
+    state.lastMonitorActivity = Date.now();
 
     // Timeout guard: abort if monitor takes too long (30 seconds)
     const timeoutController = new AbortController();
@@ -1056,11 +1105,26 @@ export class DualAgentService {
 
       console.log("[DualAgentService] doMonitorProcessing: completed successfully");
 
+      // Clear error state on success
+      state.monitorError = undefined;
+      state.monitorErrorTimestamp = undefined;
+      state.monitorConsecutiveFailures = 0;
+
       // Save updated state
       await this.saveSessionToDB(state);
     } catch (error: any) {
-      console.error("[DualAgentService] Monitor processing error:", error?.message || error);
+      const errorMsg = error?.message || String(error);
+      console.error("[DualAgentService] Monitor processing error:", errorMsg);
       if (error?.stack) console.error("[DualAgentService] Stack trace:", error.stack);
+
+      // Track error on session state so frontend can be alerted
+      state.monitorError = errorMsg;
+      state.monitorErrorTimestamp = Date.now();
+      state.monitorConsecutiveFailures = (state.monitorConsecutiveFailures || 0) + 1;
+
+      console.warn(
+        `[DualAgentService] Monitor consecutive failures: ${state.monitorConsecutiveFailures}`
+      );
     } finally {
       clearTimeout(timeout);
       state.monitorBusy = false;
@@ -1215,29 +1279,6 @@ export class DualAgentService {
       }
     }
 
-    // Transcribe ambient audio via Whisper for monitor context only.
-    // The interactive agent receives raw audio directly (Gemini handles it natively).
-    // Skip very small audio blobs (<15KB for 5s = likely silence) — Whisper hallucinates on silence.
-    let audioTranscript: string | undefined;
-    if (input.audioBuffer && input.audioBuffer.length > 15000) {
-      try {
-        const transcription = await whisperService.transcribeToText(
-          input.audioBuffer,
-          input.audioMimeType || "audio/webm"
-        );
-        if (transcription && !this.isWhisperHallucination(transcription)) {
-          audioTranscript = transcription;
-          console.log("[DualAgentService] Transcribed ambient audio:", audioTranscript.substring(0, 100));
-        } else if (transcription) {
-          console.log("[DualAgentService] Filtered Whisper hallucination:", transcription.substring(0, 80));
-        }
-      } catch (err) {
-        console.warn("[DualAgentService] Whisper transcription failed for detection audio:", err);
-      }
-    } else if (input.audioBuffer) {
-      console.log("[DualAgentService] Skipping audio transcription — too small:", input.audioBuffer.length, "bytes (likely silence)");
-    }
-
     // NOTE: We no longer push a pre-detection pending message — it was confusing
     // the monitor into thinking the student did something. We only push a post-detection
     // message when there's actually a board change to report.
@@ -1263,12 +1304,14 @@ export class DualAgentService {
       // (Gemini handles audio natively; OpenAI/Claude strip it and fall back to text context)
       const result = await interactiveAgent.processDetection(
         state.messages,
+        state.pendingMessages,
         input.board,
         input.imageData,
-        audioTranscript || input.audioContext,
+        input.audioContext,
         detectionSystemPrompt,
         input.gestureContext,
-        input.audioBuffer
+        input.audioBuffer,
+        input.frameTimestamps
       );
 
       console.log("[DualAgentService] Detection processed:", JSON.stringify(result));
@@ -1285,6 +1328,10 @@ export class DualAgentService {
       const interpretation = result.interpretation || result.triggeredMessage;
       const debugDescription = result.debugDescription;
       const changed = addButtons.length > 0 || removeLabels.length > 0 || rebuildBoard.length > 0;
+      const forceMonitor = !!result.callMonitor;
+      if (forceMonitor) {
+        console.log("[DualAgentService] Detection requested monitor:", result.callMonitor);
+      }
 
       if (changed) {
         // Push post-detection pending message (assistant role = system observation, not a user action)
@@ -1302,9 +1349,19 @@ export class DualAgentService {
         console.log("[DualAgentService] Detection: board changed —", changeParts.join("; "));
       }
 
-      // Only trigger monitor when there was a meaningful change
-      if (changed) {
-        this.tryTriggerMonitor(cached, state, monitorAgent, interactiveAgent, input.board);
+      // Push CALL_MONITOR reason as pending message so monitor sees why it was called
+      if (forceMonitor && result.callMonitor) {
+        state.pendingMessages.push({
+          role: "assistant",
+          content: `[CALL_MONITOR] ${result.callMonitor}`,
+          timestamp: Date.now(),
+        });
+        await this.updatePendingMessages(state.sessionId, state.pendingMessages);
+      }
+
+      // Trigger monitor when there was a meaningful change or force-requested
+      if (changed || forceMonitor) {
+        this.tryTriggerMonitor(cached, state, monitorAgent, interactiveAgent, input.board, forceMonitor);
       }
 
       // Generate interpretation audio (student voice TTS) inline for JSON response
@@ -1352,7 +1409,7 @@ export class DualAgentService {
    * This provides streaming audio without requiring streaming LLM.
    */
   async *processDetectionStream(input: DetectionInput): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "error" | "complete";
+    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "error" | "complete" | "monitor_status";
     data: any;
     speaker?: string;
   }> {
@@ -1360,6 +1417,27 @@ export class DualAgentService {
 
     // Use existing non-streaming detection for LLM call
     const result = await this.processDetection(input);
+
+    // Yield debug info if debugMode is active
+    if (input.debugMode) {
+      // Get current session state for context info
+      const debugState = sessionCache.get(result.sessionId)?.state;
+      yield { type: "debug", data: {
+        debugType: "detection_result",
+        model: this.config.interactiveModel,
+        provider: this.config.interactiveProvider || "openai",
+        changed: result.changed,
+        hasInterpretation: !!result.interpretation,
+        hasTranscript: !!result.transcript,
+        hasImage: !!input.imageData,
+        hasAudio: !!input.audioBuffer,
+        hasGesture: !!input.gestureContext,
+        messageCount: debugState?.messages?.length || 0,
+        pendingCount: debugState?.pendingMessages?.length || 0,
+        debugDescription: result.debugDescription,
+        timestamp: Date.now(),
+      }};
+    }
 
     // Yield error if detection failed
     if (result.error) {
@@ -1376,14 +1454,13 @@ export class DualAgentService {
       yield { type: "context", data: result.contextUpdate };
     }
 
-    // Yield AI voice text (only in interact mode)
-    if (result.text && !isSilent) {
-      yield { type: "text", data: result.text };
-    }
-
-    // Yield interpretation text
+    // Yield interpretation text first (student voice), then AI voice text
     if (result.interpretation) {
       yield { type: "interpretation", data: result.interpretation };
+    }
+
+    if (result.text && !isSilent) {
+      yield { type: "text", data: result.text };
     }
 
     // Yield board patch if changed
@@ -1398,18 +1475,7 @@ export class DualAgentService {
     if (this.config.enableTTS && cached) {
       const voices = await this.resolveVoices(cached);
 
-      // AI voice audio (only in interact mode)
-      if (result.text && !isSilent) {
-        try {
-          for await (const audioChunk of ttsFacade.synthesizeStream(result.text, voices.aiVoice)) {
-            yield { type: "audio", data: audioChunk.toString("base64") };
-          }
-        } catch (err) {
-          console.error("[DualAgentService] Detection stream TTS error:", err);
-        }
-      }
-
-      // Interpretation audio (student voice, both modes)
+      // Interpretation audio first (student voice, both modes)
       if (result.interpretation) {
         try {
           for await (const audioChunk of ttsFacade.synthesizeStream(result.interpretation, voices.studentVoice)) {
@@ -1419,6 +1485,30 @@ export class DualAgentService {
           console.error("[DualAgentService] Detection stream interpretation TTS error:", err);
         }
       }
+
+      // AI voice audio second (only in interact mode)
+      if (result.text && !isSilent) {
+        try {
+          for await (const audioChunk of ttsFacade.synthesizeStream(result.text, voices.aiVoice)) {
+            yield { type: "audio", data: audioChunk.toString("base64") };
+          }
+        } catch (err) {
+          console.error("[DualAgentService] Detection stream TTS error:", err);
+        }
+      }
+    }
+
+    // Alert frontend if the monitor agent has been failing
+    const detectionState = sessionCache.get(result.sessionId)?.state;
+    if (detectionState?.monitorError && detectionState.monitorConsecutiveFailures > 0) {
+      yield {
+        type: "monitor_status",
+        data: {
+          error: detectionState.monitorError,
+          errorTimestamp: detectionState.monitorErrorTimestamp,
+          consecutiveFailures: detectionState.monitorConsecutiveFailures,
+        },
+      };
     }
 
     yield { type: "complete", data: { sessionId: result.sessionId } };
@@ -1452,7 +1542,7 @@ export const dualAgentService = new DualAgentService();
 export async function* processInput(
   input: DualAgentInput
 ): AsyncGenerator<{
-  type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context";
+  type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status";
   data: any;
   speaker?: string;
 }> {

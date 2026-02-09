@@ -95,6 +95,11 @@ export interface DualAgentSessionState {
   // Timestamps
   lastInteractiveActivity: number;
   lastMonitorActivity: number;
+
+  // Monitor error tracking
+  monitorError?: string;           // Last error message from monitor processing
+  monitorErrorTimestamp?: number;   // When the error occurred
+  monitorConsecutiveFailures: number; // Count of consecutive failures (resets on success)
 }
 
 /**
@@ -119,7 +124,7 @@ export interface InteractiveResponse {
   rebuildBoard?: Array<{ label: string; iconRef: string }>;
   // Message inferred from gestures/context to process as user input
   triggeredMessage?: string;
-  // Student's interpreted intent (student voice) — mutually exclusive with text
+  // Student's interpreted intent (student voice) — can coexist with text (speak)
   interpretation?: string;
   // What AI saw and why (debug/moderator only)
   debugDescription?: string;
@@ -129,6 +134,10 @@ export interface InteractiveResponse {
   transcriptSpeaker?: string;
   // Environmental context changes observed
   contextUpdate?: string;
+  // Interactive agent requesting early monitor call
+  callMonitor?: string;
+  // Provider finish reason (e.g. "STOP", "MAX_TOKENS", "SAFETY", "RECITATION")
+  finishReason?: string;
 }
 
 /**
@@ -190,6 +199,9 @@ export interface DualAgentInput {
 
   // Interaction mode: 'interact' (conversational) or 'silent' (buttons only, no text/voice)
   interactionMode?: AACInteractionMode;
+
+  // Debug mode: when true, yield debug SSE events with prompt/usage info
+  debugMode?: boolean;
 }
 
 /**
@@ -246,6 +258,8 @@ export interface DetectionInput {
   gestureContext?: string;   // serialized face expression & hand gesture events
   board?: ParsedBoardData;   // current board state
   interactionMode?: AACInteractionMode;
+  frameTimestamps?: number[]; // timestamps (ms since epoch) for composite grid frames
+  debugMode?: boolean;        // when true, yield debug SSE events with prompt/usage info
 }
 
 /**

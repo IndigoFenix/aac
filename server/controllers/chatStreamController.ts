@@ -21,6 +21,7 @@ const messageSchema = z.object({
   persona: z.string().optional(),
   featureContext: z.record(z.any()).optional(),
   vectorStoreId: z.string().optional(), // For file search support
+  images: z.array(z.string()).optional(), // Base64 data URLs for inline images
   messages: z
     .array(
       z.object({
@@ -53,7 +54,7 @@ export class ChatStreamController {
 
     try {
       const userId = req.user!.id;
-      let { studentId, sessionId, activeFeature, persona, messages, featureContext, vectorStoreId, replyType } =
+      let { studentId, sessionId, activeFeature, persona, messages, featureContext, vectorStoreId, images, replyType } =
         messageSchema.parse(req.body);
 
       if (!persona) {
@@ -91,6 +92,7 @@ export class ChatStreamController {
         messages: messagesWithTimestamp,
         featureContext,
         vectorStoreId,
+        images,
         replyType: replyType || "html",
         onThinkingUpdate,
       });

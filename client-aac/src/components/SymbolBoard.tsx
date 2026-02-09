@@ -737,8 +737,10 @@ export default function SymbolBoard({ studentId, onSymbolSelect, conversationAct
                               </div>
                             </div>
                           )}
-                          <div className="text-4xl mb-1">{symbol.emoji}</div>
-                          <span className="text-sm font-semibold text-text-primary text-center leading-tight">
+                          <div className="flex-1 flex items-center justify-center min-h-0">
+                            <span className="text-[2.5rem] sm:text-[3rem] md:text-[3.5rem] leading-none">{symbol.emoji}</span>
+                          </div>
+                          <span className="flex-shrink-0 text-xs sm:text-sm font-semibold text-text-primary text-center leading-tight">
                             {symbol.label}
                           </span>
                         </motion.div>

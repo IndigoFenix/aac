@@ -673,6 +673,8 @@ interface GetMessageManagerInput {
   featureContext?: FeatureContext;
   onThinkingUpdate?: (thinkingText: string) => void;
   vectorStoreId?: string;
+  /** Base64 data URLs for inline images */
+  images?: string[];
   /** Image to include with the current request (not stored in history) */
   currentImage?: CurrentImage;
   /** Override the system prompt instead of building it from persona/student settings */
@@ -1117,6 +1119,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     onThinkingUpdate,
     memoryProcessor,
     vectorStoreId: input.vectorStoreId,
+    images: input.images,
     loopDetectionConfig: CLINIAACIAN_LOOP_DETECTION_CONFIG,
     currentImage: input.currentImage,
     providerConfig: llmConfig,
@@ -1232,6 +1235,9 @@ export interface OnMessageInput {
   /** OpenAI vector store ID for file search (if files are attached) */
   vectorStoreId?: string;
 
+  /** Base64 data URLs for inline images (sent as multimodal content to the LLM) */
+  images?: string[];
+
   /** Image to include with the current request (not stored in history) */
   currentImage?: CurrentImage;
 
@@ -1249,7 +1255,7 @@ export interface OnMessageStreamingInput extends OnMessageInput {
 
 export async function onMessage(input: OnMessageInput): Promise<MessageResponse> {
   try {
-    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, vectorStoreId, currentImage, systemPromptOverride } = input;
+    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, vectorStoreId, images, currentImage, systemPromptOverride } = input;
 
     const { manager: messageManager, memoryValues } = await getMessageManager({
       userId,
@@ -1259,6 +1265,7 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
       persona,
       featureContext,
       vectorStoreId,
+      images,
       currentImage,
       systemPromptOverride,
     });
@@ -1329,7 +1336,7 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
  */
 export async function onMessageStreaming(input: OnMessageStreamingInput): Promise<MessageResponse> {
   try {
-    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, onThinkingUpdate, vectorStoreId, currentImage, systemPromptOverride } = input;
+    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, onThinkingUpdate, vectorStoreId, images, currentImage, systemPromptOverride } = input;
 
     const { manager: messageManager, memoryValues } = await getMessageManager({
       userId,
@@ -1340,6 +1347,7 @@ export async function onMessageStreaming(input: OnMessageStreamingInput): Promis
       featureContext,
       onThinkingUpdate, // Pass the callback through to ChatMessageManager
       vectorStoreId,
+      images,
       currentImage,
       systemPromptOverride,
     });

@@ -21,6 +21,7 @@ const messageSchema = z.object({
   persona: z.string().optional(),
   featureContext: z.record(z.any()).optional(),
   vectorStoreId: z.string().optional(), // For file search support
+  images: z.array(z.string()).optional(), // Base64 data URLs for inline images
   messages: z
     .array(
       z.object({
@@ -73,7 +74,7 @@ export class ChatController {
         body.featureContext = JSON.parse(body.featureContext);
       }
 
-      let { studentId, sessionId, activeFeature, persona, messages, featureContext, vectorStoreId, replyType } = messageSchema.parse(body);
+      let { studentId, sessionId, activeFeature, persona, messages, featureContext, vectorStoreId, images, replyType } = messageSchema.parse(body);
       if (!persona) {
         persona = "assistant";
       }
@@ -102,6 +103,7 @@ export class ChatController {
         messages: messagesWithTimestamp,
         featureContext,
         vectorStoreId,
+        images,
         replyType: replyType || "html",
         currentImage,
       })
