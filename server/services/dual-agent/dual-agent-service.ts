@@ -16,6 +16,7 @@ import { getChatProvider } from "../providers/provider-factory";
 import type { ChatProvider } from "../providers/streaming-provider";
 import type {
   AACInteractionMode,
+  AACResponseMode,
   DualAgentConfig,
   DualAgentInput,
   DualAgentOutput,
@@ -563,7 +564,8 @@ export class DualAgentService {
           false,
           enabledApps,
           state.appState.activeApp,
-          state.currentEmote
+          state.currentEmote,
+          'analyze' // default on session resume
         );
       }
 
@@ -687,6 +689,7 @@ export class DualAgentService {
 
     // Handle interaction mode — detect changes and rebuild prompt if needed
     const interactionMode: AACInteractionMode = input.interactionMode || 'interact';
+    const responseMode: AACResponseMode = input.responseMode || 'analyze';
     if (interactionMode !== state.interactionMode) {
       console.log(`[DualAgentService] Mode switch: ${state.interactionMode} → ${interactionMode}`);
       state.interactionMode = interactionMode;
@@ -707,7 +710,8 @@ export class DualAgentService {
           false,
           enabledApps,
           state.appState.activeApp,
-          state.currentEmote
+          state.currentEmote,
+          responseMode
         );
         interactiveAgent.setSystemPrompt(newPrompt);
         state.interactivePrompt = newPrompt;
@@ -1338,6 +1342,8 @@ export class DualAgentService {
 
     const { interactiveAgent, monitorAgent } = cached;
 
+    const responseMode: AACResponseMode = input.responseMode || 'analyze';
+
     // Handle mode switch if needed
     if (interactionMode !== state.interactionMode) {
       console.log(`[DualAgentService] Detection mode switch: ${state.interactionMode} → ${interactionMode}`);
@@ -1358,7 +1364,8 @@ export class DualAgentService {
           false,
           enabledApps,
           state.appState.activeApp,
-          state.currentEmote
+          state.currentEmote,
+          responseMode
         );
         interactiveAgent.setSystemPrompt(newPrompt);
         state.interactivePrompt = newPrompt;
@@ -1385,7 +1392,8 @@ export class DualAgentService {
       true, // isDetection - adds conservative guidance and HIGH CONFIDENCE emphasis
       enabledApps,
       state.appState.activeApp,
-      state.currentEmote
+      state.currentEmote,
+      responseMode
     );
 
     const detStart = Date.now();
@@ -1523,6 +1531,7 @@ export class DualAgentService {
     speaker?: string;
   }> {
     const isSilent = (input.interactionMode || 'interact') === 'silent';
+    const responseMode: AACResponseMode = input.responseMode || 'analyze';
 
     // Use existing non-streaming detection for LLM call
     const result = await this.processDetection(input);
@@ -1544,6 +1553,7 @@ export class DualAgentService {
         messageCount: debugState?.messages?.length || 0,
         pendingCount: debugState?.pendingMessages?.length || 0,
         debugDescription: result.debugDescription,
+        responseMode,
         timestamp: Date.now(),
       }};
     }
@@ -1553,28 +1563,40 @@ export class DualAgentService {
       yield { type: "error", data: result.error };
     }
 
-    // Yield transcript if present
-    if (result.transcript) {
-      yield { type: "transcript", data: result.transcript, speaker: result.transcriptSpeaker };
-    }
-
-    // Yield context update if present
-    if (result.contextUpdate) {
-      yield { type: "context", data: result.contextUpdate };
-    }
-
-    // Yield interpretation text first (student voice), then AI voice text
-    if (result.interpretation) {
-      yield { type: "interpretation", data: result.interpretation };
-    }
-
-    if (result.text && !isSilent) {
-      yield { type: "text", data: result.text };
-    }
-
-    // Yield board patch if changed
-    if (result.changed) {
-      yield { type: "board_patch", data: { add: result.addButtons || [], remove: result.removeLabels || [], rebuild: result.rebuildBoard } };
+    if (responseMode === 'fast') {
+      // Fast mode: yield voice/board FIRST, then observations
+      if (result.interpretation) {
+        yield { type: "interpretation", data: result.interpretation };
+      }
+      if (result.text && !isSilent) {
+        yield { type: "text", data: result.text };
+      }
+      if (result.changed) {
+        yield { type: "board_patch", data: { add: result.addButtons || [], remove: result.removeLabels || [], rebuild: result.rebuildBoard } };
+      }
+      if (result.transcript) {
+        yield { type: "transcript", data: result.transcript, speaker: result.transcriptSpeaker };
+      }
+      if (result.contextUpdate) {
+        yield { type: "context", data: result.contextUpdate };
+      }
+    } else {
+      // Analyze mode (default): yield observations FIRST, then voice/board
+      if (result.transcript) {
+        yield { type: "transcript", data: result.transcript, speaker: result.transcriptSpeaker };
+      }
+      if (result.contextUpdate) {
+        yield { type: "context", data: result.contextUpdate };
+      }
+      if (result.interpretation) {
+        yield { type: "interpretation", data: result.interpretation };
+      }
+      if (result.text && !isSilent) {
+        yield { type: "text", data: result.text };
+      }
+      if (result.changed) {
+        yield { type: "board_patch", data: { add: result.addButtons || [], remove: result.removeLabels || [], rebuild: result.rebuildBoard } };
+      }
     }
 
     // Update and yield emote if detection set one

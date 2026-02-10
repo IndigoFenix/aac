@@ -84,6 +84,10 @@ export interface UseDualAgentReturn {
   interactionMode: 'interact' | 'silent';
   setInteractionMode: (mode: 'interact' | 'silent') => void;
 
+  // Response mode
+  responseMode: 'fast' | 'analyze';
+  setResponseMode: (mode: 'fast' | 'analyze') => void;
+
   // Detection — video and audio can be toggled independently
   videoCaptureEnabled: boolean;
   setVideoCaptureEnabled: (enabled: boolean) => void;
@@ -155,6 +159,9 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
 
   // Interaction mode
   const [interactionMode, setInteractionMode] = useState<'interact' | 'silent'>('interact');
+
+  // Response mode: 'fast' (voice first) or 'analyze' (observe first)
+  const [responseMode, setResponseMode] = useState<'fast' | 'analyze'>('fast');
 
   // Video capture state (enabled by default - only sends data after initialized)
   const [videoCaptureEnabled, setVideoCaptureEnabled] = useState(true);
@@ -532,6 +539,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
         formData.append("studentId", studentId);
         if (sessionId) formData.append("sessionId", sessionId);
         formData.append("interactionMode", interactionMode);
+        formData.append("responseMode", responseMode);
         if (gestureContext) formData.append("gestureContext", gestureContext);
         if (debugModeRef.current) formData.append("debugMode", "true");
         formData.append("image", imageBlob, "init.jpg");
@@ -548,6 +556,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
             studentId,
             sessionId: sessionId || undefined,
             interactionMode,
+            responseMode,
             gestureContext,
             ...(debugModeRef.current ? { debugMode: "true" } : {}),
           }),
@@ -569,7 +578,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [studentId, sessionId, isLoading, interactionMode, processSSEStream]);
+  }, [studentId, sessionId, isLoading, interactionMode, responseMode, processSSEStream]);
 
   /**
    * Send a text message (with optional camera frame)
@@ -646,6 +655,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
           if (identifiedPerson) formData.append("identifiedPerson", JSON.stringify(identifiedPerson));
           if (gestureContext) formData.append("gestureContext", gestureContext);
           formData.append("interactionMode", interactionMode);
+          formData.append("responseMode", responseMode);
           if (debugModeRef.current) formData.append("debugMode", "true");
           formData.append("image", imageBlob, "frame.jpg");
 
@@ -666,6 +676,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
               identifiedPerson,
               gestureContext,
               interactionMode,
+              responseMode,
               ...(debugModeRef.current ? { debugMode: "true" } : {}),
             }),
           });
@@ -684,7 +695,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
         setIsLoading(false);
       }
     },
-    [studentId, sessionId, language, interactionMode, processSSEStream, captureFrame, getIdentifiedPerson, getGestureContext]
+    [studentId, sessionId, language, interactionMode, responseMode, processSSEStream, captureFrame, getIdentifiedPerson, getGestureContext]
   );
 
   // Stable ref for sendMessage — used by detection flush to avoid circular deps
@@ -764,6 +775,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
           formData.append("gestureContext", gestureContext);
         }
         formData.append("interactionMode", interactionMode);
+        formData.append("responseMode", responseMode);
         if (debugModeRef.current) formData.append("debugMode", "true");
 
         const response = await fetchWithAuth("/api/aac/dual/voice", {
@@ -783,7 +795,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
         setIsLoading(false);
       }
     },
-    [studentId, sessionId, language, interactionMode, audioRecorder, processSSEStream, captureFrame, getIdentifiedPerson, getGestureContext]
+    [studentId, sessionId, language, interactionMode, responseMode, audioRecorder, processSSEStream, captureFrame, getIdentifiedPerson, getGestureContext]
   );
 
   /**
@@ -916,6 +928,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
       if (currentBoardRef.current) formData.append("board", JSON.stringify(currentBoardRef.current));
       if (gestureContext) formData.append("gestureContext", gestureContext);
       formData.append("interactionMode", interactionMode);
+      formData.append("responseMode", responseMode);
       if (debugModeRef.current) formData.append("debugMode", "true");
       if (grid) {
         formData.append("image", grid.blob, "detect.jpg");
@@ -964,7 +977,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
         setTimeout(() => sendMessageRef.current(queued.message, queued.board), 0);
       }
     }
-  }, [sessionId, studentId, interactionMode, processSSEStream, activeApp]);
+  }, [sessionId, studentId, interactionMode, responseMode, processSSEStream, activeApp]);
 
   return {
     // Session state
@@ -991,6 +1004,10 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
     // Interaction mode
     interactionMode,
     setInteractionMode,
+
+    // Response mode
+    responseMode,
+    setResponseMode,
 
     // Detection
     videoCaptureEnabled,

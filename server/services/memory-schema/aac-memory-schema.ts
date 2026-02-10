@@ -306,7 +306,8 @@ export function buildInteractiveSystemPrompt(
   isDetection: boolean = false,
   enabledApps: import("../dual-agent/types").AACAppDefinition[] = [],
   activeApp: string | null = null,
-  currentEmote: "happy" | "sad" | "neutral" = "happy"
+  currentEmote: "happy" | "sad" | "neutral" = "happy",
+  responseMode: 'fast' | 'analyze' = 'analyze'
 ): string {
   // Header with student context
   const ageStr = studentAge ? `a ${studentAge} year old` : 'a student';
@@ -319,58 +320,57 @@ Your task is to manage the user's AAC communication board by adding or removing 
     : `You are a companion AI for ${studentName}, ${ageStr}${diagnosisStr}.
 Your purpose is to assist your user with daily tasks, guide them to complete personal goals and help them communicate their intent to other people.`;
 
+  // Build individual token descriptions
+  const transcriptTokenDesc = `[TRANSCRIPT speaker] text... — Record voice you heard. Speaker can be "Mom", "Teacher", "Unknown", etc. Omit if nothing heard.`;
+  const contextTokenDesc = `[CONTEXT] observations... — Record context changes (new objects, gestures, sounds, etc.) Omit if no meaningful changes.`;
+  const interpretTokenDesc = `[INTERPRET] message... — Speak on behalf of user (student voice).\n   - Be cautious and consider multiple possible interpretations based on context.\n   ${mode === 'silent'
+    ? '- Use this to respond to other people when you understand the user\'s intent and want to speak for them.'
+    : '- Only use this output when highly confident about intent, otherwise omit it and ask for clarification via [SPEAK].'}`;
+  const speakTokenDesc = `[SPEAK] message... — Your spoken reply (AI voice). ${mode === 'silent' ? 'NEVER use this in silent mode.' : (isDetection ? 'HIGH CONFIDENCE ONLY.' : 'Use when responding to the user.')}\n   — [INTERPRET] is always spoken first (student voice), then [SPEAK] (AI voice).`;
+  const boardTokenDesc = isDetection
+    ? `Board changes:\n   - [ADD_BUTTONS] label|icon, label|icon, ... — add buttons to existing board\n   - [REMOVE_BUTTONS] label, label, ... — remove buttons by label`
+    : `Board changes:\n   - [REBUILD_BOARD] label|icon, label|icon, ... — replace entire board`;
+  const appTokenDesc = enabledApps.length > 0
+    ? `[OPEN_APP] appId — Open an app for the student. Data is optional and app-specific. You may suggest apps based on context, but only open if you have HIGH CONFIDENCE it's what the student wants.\nThe following apps are available for the student:\n${enabledApps.map(app => `- ${app.name} (${app.icon}): ${app.description}\n  Open with: [OPEN_APP] ${app.id}`).join("\n")}\n- Close any open app with: [CLOSE_APP]${activeApp ? `\nThe student currently has the "${activeApp}" app open.` : ''}`
+    : 'App commands are available but no apps are currently enabled.';
+  const emoteTokenDesc = `[EMOTE] happy|sad|neutral — Set your avatar's displayed emotion.\n   Use to reflect the emotional tone of the conversation. Your current emotion: ${currentEmote}.\n   - "happy" — when encouraging or having fun (default)\n   - "sad" — when empathizing with frustration, disappointment, or difficulty\n   - "neutral" — when displaying seriousness or confusion\n   Include this when the emotional tone changes. You don't need to include it every response.`;
+  const monitorTokenDesc = `[CALL_MONITOR] reason — Request a supervisor check-in. MUST include a reason.\n   Use when:\n   - You notice progress or setbacks on student goals/objectives\n   - You need guidance on how to handle a situation\n   - The context has shifted significantly (new person, new activity, location change)\n   Rules:\n   - Always provide a clear reason (e.g., "[CALL_MONITOR] Student combined two buttons to form a phrase — possible goal progress")\n   - Do NOT call monitor repeatedly for the same event. Once called, do not call again until circumstances change.\n   - Do not overuse — only when genuinely helpful.`;
+
+  // Order tokens based on responseMode
+  let orderedTokens: string[];
+  let rulesText: string;
+
+  if (responseMode === 'fast') {
+    // Fast mode: voice/board FIRST, then observations
+    orderedTokens = [interpretTokenDesc, speakTokenDesc, boardTokenDesc, appTokenDesc, emoteTokenDesc, transcriptTokenDesc, contextTokenDesc, monitorTokenDesc];
+    rulesText = `Rules:
+- Output [INTERPRET] or [SPEAK] FIRST for fastest response (respond first, then record observations.)
+- If using both [INTERPRET] and [SPEAK], output [INTERPRET] BEFORE [SPEAK]
+- Output board changes AFTER speech, then [TRANSCRIPT] and [CONTEXT] LAST
+- Omit tags entirely if nothing to report (don't output empty tags)
+- All tags are optional. If nothing to report or change, you may output no text at all.`;
+  } else {
+    // Analyze mode (default): observations FIRST, then voice/board
+    orderedTokens = [transcriptTokenDesc, contextTokenDesc, interpretTokenDesc, speakTokenDesc, boardTokenDesc, appTokenDesc, emoteTokenDesc, monitorTokenDesc];
+    rulesText = `Rules:
+- Output [TRANSCRIPT] and [CONTEXT] BEFORE [INTERPRET] or [SPEAK] (observe first, then respond based on observed context.)
+- If using both [INTERPRET] and [SPEAK], output [INTERPRET] BEFORE [SPEAK]
+- Output board changes LAST, after transcripts and speech, so the user sees the updated board after hearing your response. The options should be based on the context you observed and your spoken response.
+- Omit tags entirely if nothing to report (don't output empty tags)
+- All tags are optional. If nothing to report or change, you may output no text at all.`;
+  }
+
+  const tokenList = orderedTokens.map((desc, i) => `${i + 1}. ${desc}`).join('\n');
+
   let prompt = `${headerText}
 
 == Response Format ==
 
 Your response is ALL TEXT using prefix tokens. Output in this order:
 
-1. [TRANSCRIPT speaker] text... — Record voice you heard. Speaker can be "Mom", "Teacher", "Unknown", etc. Omit if nothing heard.
-2. [CONTEXT] observations... — Record context changes (new objects, gestures, sounds, etc.) Omit if no meaningful changes.
-3. [INTERPRET] message... — Speak on behalf of user (student voice). 
-   - Be cautious and consider multiple possible interpretations based on context.
-  ${mode === 'silent' ? 
-`   - Use this to respond to other people when you understand the user's intent and want to speak for them.` : 
-`   - Only use this output when highly confident about intent, otherwise omit it and ask for clarification via [SPEAK].`
-  }
-4. [SPEAK] message... — Your spoken reply (AI voice). ${mode === 'silent' ? 'NEVER use this in silent mode.' : (isDetection ? 'HIGH CONFIDENCE ONLY.' : 'Use when responding to the user.')}
-   — [INTERPRET] is always spoken first (student voice), then [SPEAK] (AI voice).
-5. Board changes:${isDetection ? `
-   - [ADD_BUTTONS] label|icon, label|icon, ... — add buttons to existing board
-   - [REMOVE_BUTTONS] label, label, ... — remove buttons by label` : `
-   - [REBUILD_BOARD] label|icon, label|icon, ... — replace entire board`}
-${enabledApps.length > 0 ? `
-6. [OPEN_APP] appId — Open an app for the student. Data is optional and app-specific. You may suggest apps based on context, but only open if you have HIGH CONFIDENCE it's what the student wants.
-The following apps are available for the student:
-${enabledApps.map(app => {
-  return `- ${app.name} (${app.icon}): ${app.description}
-  Open with: [OPEN_APP] ${app.id}`;
-}).join("\n")}
-- Close any open app with: [CLOSE_APP]
-${activeApp ? `The student currently has the "${activeApp}" app open.` : ''}
-` : '6. App commands are available but no apps are currently enabled.'}
-7. [EMOTE] happy|sad|neutral — Set your avatar's displayed emotion.
-   Use to reflect the emotional tone of the conversation. Your current emotion: ${currentEmote}.
-   - "happy" — when encouraging or having fun (default)
-   - "sad" — when empathizing with frustration, disappointment, or difficulty
-   - "neutral" — when displaying seriousness or confusion
-   Include this when the emotional tone changes. You don't need to include it every response.
-8. [CALL_MONITOR] reason — Request a supervisor check-in. MUST include a reason.
-   Use when:
-   - You notice progress or setbacks on student goals/objectives
-   - You need guidance on how to handle a situation
-   - The context has shifted significantly (new person, new activity, location change)
-   Rules:
-   - Always provide a clear reason (e.g., "[CALL_MONITOR] Student combined two buttons to form a phrase — possible goal progress")
-   - Do NOT call monitor repeatedly for the same event. Once called, do not call again until circumstances change.
-   - Do not overuse — only when genuinely helpful.
+${tokenList}
 
-Rules:
-- Output [TRANSCRIPT] and [CONTEXT] BEFORE [INTERPRET] or [SPEAK] (observe first, then respond based on observed context.)
-- If using both [INTERPRET] and [SPEAK], output [INTERPRET] BEFORE [SPEAK]
-- Output board changes LAST, after transcripts and speech, so the user sees the updated board after hearing your response. The options should be based on the context you observed and your spoken response.
-- Omit tags entirely if nothing to report (don't output empty tags)
-- All tags are optional. If nothing to report or change, you may output no text at all.
+${rulesText}
 
 == Recording Context ==
 
