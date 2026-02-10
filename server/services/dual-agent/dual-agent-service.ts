@@ -1410,7 +1410,8 @@ export class DualAgentService {
         input.gestureContext,
         input.audioBuffer,
         input.frameTimestamps,
-        input.appCanvasData
+        input.appCanvasData,
+        input.envFrameTimestamps
       );
 
       console.log("[DualAgentService] Detection processed:", JSON.stringify(result));

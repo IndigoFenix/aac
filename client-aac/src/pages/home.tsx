@@ -27,12 +27,16 @@ import YouTubeApp from "@/components/apps/YouTubeApp";
 import DrawingApp from "@/components/apps/DrawingApp";
 import MusicApp from "@/components/apps/MusicApp";
 import { CameraAttentivenessWrapper } from "@/components/CameraAttentivenessWrapper";
+import { CameraFrameCollector } from "@/lib/cameraFrameCollector";
 import { useFaceTracking } from "@/hooks/useFaceTracking";
 import { useFaceEvents } from "@/hooks/useFaceEvents";
 import { useHandGestureTracking } from "@/hooks/useHandGestureTracking";
 import { useHandGestureEvents } from "@/hooks/useHandGestureEvents";
 import { useSignLanguageClassifier } from "@/hooks/useSignLanguageClassifier";
 import { serializeGestureContext } from "@/lib/gestureContextSerializer";
+import { EyeTrackingDwellProvider } from "@/contexts/EyeTrackingDwellContext";
+import DwellOverlay from "@/components/DwellOverlay";
+import GazeCalibrationOverlay from "@/components/GazeCalibrationOverlay";
 
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAppInitialization } from "@/contexts/AppInitializationContext";
@@ -138,6 +142,22 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const [faceTrackingEnabled, setFaceTrackingEnabled] = useState<boolean>(true);
   const [handGestureEnabled, setHandGestureEnabled] = useState<boolean>(true);
 
+  // Eyegaze dwell settings — stored in localStorage (not in DB)
+  const readEyegazeSettings = useCallback(() => {
+    try {
+      const enabled = localStorage.getItem("eyetracking_enabled") === "true";
+      const mode = (localStorage.getItem("eyetracking_mode") as "camera" | "mouse") || "camera";
+      const timeout = parseInt(localStorage.getItem("eyetracking_timeout") || "2000", 10);
+      return { enabled, mode, timeout };
+    } catch {
+      return { enabled: false, mode: "camera" as const, timeout: 2000 };
+    }
+  }, []);
+  const [eyegazeSettings, setEyegazeSettings] = useState(readEyegazeSettings);
+
+  // Environment camera frame collector (for dual-camera detection)
+  const envCollectorRef = useRef<CameraFrameCollector | null>(null);
+
   // AAC Board state - populated from chat responses
   const [boardData, setBoardData] = useState<ParsedBoardData | null>(null);
 
@@ -186,6 +206,35 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
 
   // Get shared camera stream from CameraProvider context
   const { stream: sharedCameraStream, startCamera: startSharedCamera } = useCamera();
+
+  // Wire environment camera stream to CameraFrameCollector
+  useEffect(() => {
+    const envCamera = getEnvironmentCamera();
+    const envStream = envCamera?.stream ?? null;
+
+    if (envStream) {
+      if (!envCollectorRef.current) {
+        envCollectorRef.current = new CameraFrameCollector();
+      }
+      envCollectorRef.current.setStream(envStream);
+      envCollectorRef.current.start(250); // 4fps
+    } else {
+      envCollectorRef.current?.setStream(null);
+      envCollectorRef.current?.stop();
+    }
+
+    return () => {
+      envCollectorRef.current?.stop();
+    };
+  }, [getEnvironmentCamera]);
+
+  // Destroy env collector on unmount
+  useEffect(() => {
+    return () => {
+      envCollectorRef.current?.destroy();
+      envCollectorRef.current = null;
+    };
+  }, []);
 
   // Auto-start the shared camera when face tracking or hand gesture tracking is enabled but no stream exists
   useEffect(() => {
@@ -817,6 +866,11 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
 
   return (
     <CameraAttentivenessWrapper autoStart={true} cameraType="user">
+    <EyeTrackingDwellProvider
+      mode={eyegazeSettings.enabled ? eyegazeSettings.mode : "off"}
+      dwellTimeMs={eyegazeSettings.timeout}
+      rawFaces={rawFaces}
+    >
     <div className="h-screen flex flex-col relative overflow-hidden bg-bg-soft">
       {/* Main 3-Section Board Layout */}
       <main className={`flex-1 flex flex-col relative ${
@@ -932,12 +986,13 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
       {/* User Settings */}
       <UserSettings
         isOpen={showUserSettings}
-        onClose={() => setShowUserSettings(false)}
+        onClose={() => { setShowUserSettings(false); setEyegazeSettings(readEyegazeSettings()); }}
         studentId={studentId}
         userProfile={userProfile}
         onProfileUpdate={setUserProfile}
         debugMode={debugMode}
         onDebugModeChange={setDebugMode}
+        onEyegazeChange={setEyegazeSettings}
       />
 
       {/* Conversation Box - Toggle between single-agent and dual-agent */}
@@ -1022,6 +1077,13 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
               }
             }
             return null;
+          }}
+          captureEnvFrame={async () => {
+            const collector = envCollectorRef.current;
+            if (!collector || !collector.getIsAwake()) return null;
+            const frame = await collector.captureNow('medium');
+            if (!frame) return null;
+            return { blob: frame.blob, timestamp: frame.timestamp, motionLevel: collector.getMotionLevel() };
           }}
           getIdentifiedPerson={getIdentifiedPerson}
           getGestureContext={getGestureContext}
@@ -1132,6 +1194,9 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
       />
 
     </div>
+    <DwellOverlay />
+    <GazeCalibrationOverlay />
+    </EyeTrackingDwellProvider>
     </CameraAttentivenessWrapper>
   );
 }

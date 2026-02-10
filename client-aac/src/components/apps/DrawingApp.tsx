@@ -155,6 +155,7 @@ export default function DrawingApp({ onClose, onRegisterCapture }: DrawingAppPro
         {/* Color buttons */}
         {COLORS.map((c) => (
           <button
+            data-dwell
             key={c.hex}
             onClick={() => { setActiveColor(c.hex); setIsEraser(false); }}
             className={`${btnBase} w-14 h-14 border-4 ${
@@ -170,6 +171,7 @@ export default function DrawingApp({ onClose, onRegisterCapture }: DrawingAppPro
 
         {/* Eraser */}
         <button
+          data-dwell
           onClick={() => setIsEraser(true)}
           className={`${btnBase} w-14 h-14 bg-gray-200 ${isEraser ? "ring-4 ring-gray-800 scale-110" : ""}`}
           aria-label="Eraser"
@@ -179,6 +181,7 @@ export default function DrawingApp({ onClose, onRegisterCapture }: DrawingAppPro
 
         {/* Clear */}
         <button
+          data-dwell
           onClick={clearCanvas}
           className={`${btnBase} w-14 h-14 bg-yellow-100`}
           aria-label="Clear"
@@ -188,6 +191,7 @@ export default function DrawingApp({ onClose, onRegisterCapture }: DrawingAppPro
 
         {/* Close */}
         <button
+          data-dwell
           onClick={onClose}
           className={`${btnBase} w-14 h-14 bg-red-500 text-white`}
           aria-label="Close"

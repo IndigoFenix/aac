@@ -303,7 +303,8 @@ export interface DetectionInput {
   gestureContext?: string;   // serialized face expression & hand gesture events
   board?: ParsedBoardData;   // current board state
   interactionMode?: AACInteractionMode;
-  frameTimestamps?: number[]; // timestamps (ms since epoch) for composite grid frames
+  frameTimestamps?: number[]; // timestamps (ms since epoch) for composite grid frames (user camera)
+  envFrameTimestamps?: number[]; // timestamps (ms since epoch) for environment camera frames
   debugMode?: boolean;        // when true, yield debug SSE events with prompt/usage info
   appCanvasData?: string;     // base64 data URL of active app canvas (e.g. drawing)
   responseMode?: AACResponseMode; // 'fast' (voice first) or 'analyze' (observe first)

@@ -49,7 +49,8 @@ const detectSchema = z.object({
   audioContext: z.string().optional(),
   gestureContext: z.string().optional(),
   interactionMode: z.enum(['interact', 'silent']).optional(),
-  frameTimestamps: z.string().optional(), // JSON array of timestamps for composite grid frames
+  frameTimestamps: z.string().optional(), // JSON array of timestamps for composite grid frames (user camera)
+  envFrameTimestamps: z.string().optional(), // JSON array of timestamps for environment camera frames
   debugMode: z.string().optional(), // "true" to enable debug SSE events
   responseMode: z.enum(['fast', 'analyze']).optional(), // 'fast' (voice first) or 'analyze' (observe first)
 });
@@ -615,16 +616,20 @@ export class DualAgentController {
         appCanvasData = `data:${appCanvasFile.mimetype};base64,${base64}`;
       }
 
-      const { studentId, sessionId, board, audioContext, gestureContext, interactionMode, frameTimestamps: frameTimestampsRaw, debugMode: debugModeRaw, responseMode } = detectSchema.parse(body);
+      const { studentId, sessionId, board, audioContext, gestureContext, interactionMode, frameTimestamps: frameTimestampsRaw, envFrameTimestamps: envFrameTimestampsRaw, debugMode: debugModeRaw, responseMode } = detectSchema.parse(body);
 
       // Parse frame timestamps if provided (from composite grid)
       let frameTimestamps: number[] | undefined;
       if (frameTimestampsRaw) {
         try { frameTimestamps = JSON.parse(frameTimestampsRaw); } catch { /* ignore */ }
       }
+      let envFrameTimestamps: number[] | undefined;
+      if (envFrameTimestampsRaw) {
+        try { envFrameTimestamps = JSON.parse(envFrameTimestampsRaw); } catch { /* ignore */ }
+      }
 
       console.log(
-        `[DualAgentController] Detect for student ${studentId}${imageData ? " (with image)" : ""}${audioBuffer ? " (with audio)" : ""}${gestureContext ? " (with gestures)" : ""}${frameTimestamps ? ` (grid: ${frameTimestamps.length} frames)` : ""} mode: ${interactionMode || "interact"}`
+        `[DualAgentController] Detect for student ${studentId}${imageData ? " (with image)" : ""}${audioBuffer ? " (with audio)" : ""}${gestureContext ? " (with gestures)" : ""}${frameTimestamps ? ` (grid: ${frameTimestamps.length} frames)` : ""}${envFrameTimestamps ? ` (env: ${envFrameTimestamps.length} frames)` : ""} mode: ${interactionMode || "interact"}`
       );
 
       // Set up SSE headers
@@ -647,6 +652,7 @@ export class DualAgentController {
         board,
         interactionMode,
         frameTimestamps,
+        envFrameTimestamps,
         debugMode: debugModeRaw === "true",
         appCanvasData,
         responseMode,

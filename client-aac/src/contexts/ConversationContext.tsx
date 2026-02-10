@@ -539,6 +539,8 @@ export function ConversationProvider({ children, studentId, language = "en" }: C
                 if (data.sessionId) {
                   setSessionId(data.sessionId);
                 }
+                // Stream completed successfully — clear any stale connection error
+                setError(null);
                 // Update current message with full response
                 const message: ConversationMessage = {
                   id: Date.now().toString(),

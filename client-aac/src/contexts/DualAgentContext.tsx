@@ -92,6 +92,8 @@ interface DualAgentProviderProps {
   language?: string;
   /** Function to capture a camera frame - returns Blob */
   captureFrame?: () => Promise<Blob | null>;
+  /** Function to capture a frame from the environment camera (optional) */
+  captureEnvFrame?: () => Promise<BufferedFrame | null>;
   /** Function to get the current identified person (from biometric recognition) */
   getIdentifiedPerson?: () => IdentifiedPerson | null;
   /** Function to get serialized gesture/expression context (face + hand events) */
@@ -107,6 +109,7 @@ export function DualAgentProvider({
   studentId,
   language = "en",
   captureFrame: captureFrameProp,
+  captureEnvFrame: captureEnvFrameProp,
   getIdentifiedPerson,
   getGestureContext,
   onBoardPatch: onBoardPatchProp,
@@ -265,6 +268,7 @@ export function DualAgentProvider({
     audioEnabled: dualAgent.voiceEnabled,
     micStream,
     captureFrame: captureBufferedFrame,
+    captureEnvFrame: captureEnvFrameProp,
     onTrigger: handleActivityTrigger,
   });
 

@@ -387,6 +387,43 @@ export class InteractiveAgent {
       });
     }
 
+    // Add interaction timing context so the AI knows pacing
+    const allTimestamps = [
+      ...messages.filter(m => m.role === "user" || m.role === "assistant").map(m => ({ role: m.role, ts: m.timestamp || 0 })),
+      ...pendingMessages.map(m => ({ role: m.role, ts: m.timestamp || 0 })),
+    ].filter(t => t.ts > 0).sort((a, b) => a.ts - b.ts);
+
+    if (allTimestamps.length > 0) {
+      const now = Date.now();
+      const sessionStart = allTimestamps[0].ts;
+      const sessionDurMin = Math.round((now - sessionStart) / 60000);
+      const lastUser = [...allTimestamps].reverse().find(t => t.role === "user");
+      const lastAI = [...allTimestamps].reverse().find(t => t.role === "assistant");
+
+      // Count messages in last 5 minutes
+      const fiveMinAgo = now - 5 * 60000;
+      const recentCount = allTimestamps.filter(t => t.ts >= fiveMinAgo).length;
+
+      // Compute average gap between consecutive user messages
+      const userTimestamps = allTimestamps.filter(t => t.role === "user").map(t => t.ts);
+      let avgGap = "";
+      if (userTimestamps.length >= 2) {
+        const gaps = userTimestamps.slice(1).map((ts, i) => ts - userTimestamps[i]);
+        const avgMs = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+        avgGap = avgMs < 60000 ? `${Math.round(avgMs / 1000)}s` : `${Math.round(avgMs / 60000)}m`;
+      }
+
+      const formatAge = (ms: number) => ms < 60000 ? `${Math.round(ms / 1000)}s ago` : `${Math.round(ms / 60000)}m ago`;
+
+      let timing = `== Interaction Timing ==\nSession: ${sessionDurMin}m`;
+      timing += ` | Messages (last 5m): ${recentCount}`;
+      if (avgGap) timing += ` | Avg gap between user messages: ${avgGap}`;
+      if (lastUser) timing += `\nLast user message: ${formatAge(now - lastUser.ts)}`;
+      if (lastAI) timing += ` | Last AI response: ${formatAge(now - lastAI.ts)}`;
+
+      result.push({ role: "system", content: timing });
+    }
+
     // Add current board context if available
     if (currentBoard) {
       const boardContext = this.formatBoardContext(currentBoard);
@@ -895,7 +932,8 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
     gestureContext?: string,
     audioBuffer?: Buffer,
     frameTimestamps?: number[],
-    appCanvasData?: string
+    appCanvasData?: string,
+    envFrameTimestamps?: number[]
   ): Promise<InteractiveResponse> {
     const messageHistory: ProviderChatMessage[] = [
       { role: "system", content: detectionSystemPrompt || this.systemPrompt },
@@ -918,8 +956,9 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
     ];
 
     if (allRecent.length > 0) {
+      const now = Date.now();
       const contextLines = allRecent.map(m => {
-        const age = Date.now() - m.timestamp;
+        const age = now - m.timestamp;
         const ageStr = age < 60000 ? `${Math.round(age / 1000)}s ago` : `${Math.round(age / 60000)}m ago`;
         const roleLabel = m.role === "assistant" ? "AI" : m.role === "user" ? "User" : "System";
         // Summarize messages: strip boilerplate prefixes from system messages,
@@ -934,9 +973,21 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
         if (content.length > limit) content = content.substring(0, limit) + "...";
         return `[${ageStr}] ${roleLabel}: ${content}`;
       });
+
+      // Compute interaction pace summary
+      const userMsgs = allRecent.filter(m => m.role === "user" && m.timestamp > 0);
+      const lastUserAge = userMsgs.length > 0 ? now - userMsgs[userMsgs.length - 1].timestamp : null;
+      const fiveMinAgo = now - 5 * 60000;
+      const recentCount = allRecent.filter(m => m.timestamp >= fiveMinAgo).length;
+      let paceLine = `Pace: ${recentCount} messages in last 5m`;
+      if (lastUserAge !== null) {
+        const lastUserStr = lastUserAge < 60000 ? `${Math.round(lastUserAge / 1000)}s ago` : `${Math.round(lastUserAge / 60000)}m ago`;
+        paceLine += ` | Last user interaction: ${lastUserStr}`;
+      }
+
       messageHistory.push({
         role: "system",
-        content: `== Recent Activity (${allRecent.length} messages) ==\n${contextLines.join("\n")}`,
+        content: `== Recent Activity (${allRecent.length} messages) ==\n${paceLine}\n${contextLines.join("\n")}`,
       });
     }
 
@@ -966,7 +1017,35 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
 
     // Build composite grid context if frame timestamps provided
     let gridContext = "";
-    if (frameTimestamps && frameTimestamps.length > 1) {
+    if (envFrameTimestamps && envFrameTimestamps.length > 0 && frameTimestamps && frameTimestamps.length > 0) {
+      // Dual-camera grid: top rows = user camera, bottom rows = env camera
+      const gridCols = 4;
+      const totalFrames = frameTimestamps.length + envFrameTimestamps.length;
+      const userFirstTs = frameTimestamps[0];
+      const envFirstTs = envFrameTimestamps[0];
+      const userRows: string[] = [];
+      for (let r = 0; r * gridCols < frameTimestamps.length; r++) {
+        const rowTs = frameTimestamps
+          .slice(r * gridCols, (r + 1) * gridCols)
+          .map(ts => `+${((ts - userFirstTs) / 1000).toFixed(1)}s`);
+        userRows.push(`Row ${r + 1} (User Camera): ${rowTs.join(", ")}`);
+      }
+      const envRows: string[] = [];
+      const envRowOffset = Math.ceil(frameTimestamps.length / gridCols);
+      for (let r = 0; r * gridCols < envFrameTimestamps.length; r++) {
+        const rowTs = envFrameTimestamps
+          .slice(r * gridCols, (r + 1) * gridCols)
+          .map(ts => `+${((ts - envFirstTs) / 1000).toFixed(1)}s`);
+        envRows.push(`Row ${envRowOffset + r + 1} (Environment Camera): ${rowTs.join(", ")}`);
+      }
+      gridContext = `\n\n== Dual-Camera Composite Grid ==
+This image is a composite grid of ${totalFrames} frames from TWO cameras arranged left-to-right, top-to-bottom.
+The TOP rows show the USER CAMERA (facing the student).
+The BOTTOM rows show the ENVIRONMENT CAMERA (facing the room/surroundings).
+${userRows.join("\n")}
+${envRows.join("\n")}
+Observe changes across frames from both cameras to understand the full context.`;
+    } else if (frameTimestamps && frameTimestamps.length > 1) {
       const firstTs = frameTimestamps[0];
       const gridCols = 4; // matches client default
       const rows: string[] = [];

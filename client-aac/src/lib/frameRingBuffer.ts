@@ -11,6 +11,8 @@ export interface BufferedFrame {
   motionLevel: number;
   /** Low-res pixel data for similarity comparison between frames */
   imageData?: ImageData;
+  /** Which camera produced this frame (for debugging) */
+  cameraSource?: 'user' | 'environment';
 }
 
 export interface FrameRingBufferConfig {

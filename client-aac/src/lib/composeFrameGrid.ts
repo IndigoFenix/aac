@@ -33,11 +33,18 @@ export interface ComposedGrid {
   frameCount: number;
 }
 
+export interface DualComposedGrid extends ComposedGrid {
+  /** Timestamps from the user camera frames */
+  userTimestamps: number[];
+  /** Timestamps from the environment camera frames */
+  envTimestamps: number[];
+}
+
 /**
  * Select the most important frames from a candidate set.
  * Uses a greedy algorithm balancing temporal spread and visual diversity.
  */
-function selectKeyFrames(frames: BufferedFrame[], maxCount: number): BufferedFrame[] {
+export function selectKeyFrames(frames: BufferedFrame[], maxCount: number): BufferedFrame[] {
   if (frames.length <= maxCount) return [...frames];
 
   const selected: BufferedFrame[] = [];
@@ -200,4 +207,137 @@ export async function composeFrameGrid(
 
   const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.7 });
   return { blob, timestamps, frameCount: selected.length };
+}
+
+/**
+ * Compose a dual-camera grid: top rows = user camera, bottom rows = environment camera.
+ * If envFrames is empty, falls back to single-camera composeFrameGrid.
+ * Uses the same 4x4 640x480 canvas, splitting rows between cameras.
+ */
+export async function composeDualCameraGrid(
+  userFrames: BufferedFrame[],
+  envFrames: BufferedFrame[],
+  config?: Partial<FrameGridConfig>
+): Promise<DualComposedGrid | ComposedGrid> {
+  // Fallback: no env frames → single camera
+  if (envFrames.length === 0) {
+    return composeFrameGrid(userFrames, config);
+  }
+
+  const cfg = { ...DEFAULT_GRID_CONFIG, ...config };
+  const totalWidth = cfg.gridCols * cfg.subFrameWidth;
+  const totalHeight = cfg.gridRows * cfg.subFrameHeight;
+
+  // Split rows: top half = user, bottom half = env
+  const userRows = Math.ceil(cfg.gridRows / 2);
+  const envRows = cfg.gridRows - userRows;
+  const maxUserFrames = userRows * cfg.gridCols;
+  const maxEnvFrames = envRows * cfg.gridCols;
+
+  const selectedUser = selectKeyFrames(userFrames, maxUserFrames);
+  const selectedEnv = selectKeyFrames(envFrames, maxEnvFrames);
+
+  if (selectedUser.length === 0 && selectedEnv.length === 0) {
+    const canvas = new OffscreenCanvas(1, 1);
+    const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.5 });
+    return { blob, timestamps: [], frameCount: 0, userTimestamps: [], envTimestamps: [] };
+  }
+
+  const canvas = new OffscreenCanvas(totalWidth, totalHeight);
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, totalWidth, totalHeight);
+
+  const allTimestamps: number[] = [];
+  const userTimestamps: number[] = [];
+  const envTimestamps: number[] = [];
+
+  // Helper to draw a set of frames starting at a given row offset
+  const drawFrames = async (
+    frames: BufferedFrame[],
+    rowOffset: number,
+    firstTs: number,
+    timestamps: number[]
+  ) => {
+    for (let i = 0; i < frames.length; i++) {
+      const frame = frames[i];
+      const col = i % cfg.gridCols;
+      const row = rowOffset + Math.floor(i / cfg.gridCols);
+      const x = col * cfg.subFrameWidth;
+      const y = row * cfg.subFrameHeight;
+
+      try {
+        const bitmap = await createImageBitmap(frame.blob);
+        ctx.save();
+        ctx.translate(x + cfg.subFrameWidth, y);
+        ctx.scale(-1, 1);
+        ctx.drawImage(bitmap, 0, 0, cfg.subFrameWidth, cfg.subFrameHeight);
+        ctx.restore();
+        bitmap.close();
+      } catch {
+        ctx.fillStyle = "#300";
+        ctx.fillRect(x, y, cfg.subFrameWidth, cfg.subFrameHeight);
+      }
+
+      // Timestamp overlay
+      const relativeMs = frame.timestamp - firstTs;
+      const relativeSec = (relativeMs / 1000).toFixed(1);
+      const label = `+${relativeSec}s`;
+      const fontSize = Math.max(9, Math.round(cfg.subFrameHeight * 0.1));
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      ctx.textBaseline = "top";
+      const textWidth = ctx.measureText(label).width;
+      const padding = 2;
+      ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+      ctx.fillRect(x + 1, y + 1, textWidth + padding * 2, fontSize + padding * 2);
+      ctx.fillStyle = "#fff";
+      ctx.fillText(label, x + 1 + padding, y + 1 + padding);
+
+      timestamps.push(frame.timestamp);
+      allTimestamps.push(frame.timestamp);
+    }
+  };
+
+  const userFirstTs = selectedUser.length > 0 ? selectedUser[0].timestamp : 0;
+  const envFirstTs = selectedEnv.length > 0 ? selectedEnv[0].timestamp : 0;
+
+  await drawFrames(selectedUser, 0, userFirstTs, userTimestamps);
+  await drawFrames(selectedEnv, userRows, envFirstTs, envTimestamps);
+
+  // Draw camera section labels
+  const labelFontSize = Math.max(11, Math.round(totalHeight * 0.035));
+  ctx.font = `bold ${labelFontSize}px sans-serif`;
+  ctx.textBaseline = "top";
+  const labelPad = Math.round(labelFontSize * 0.3);
+  const labelMargin = 4;
+
+  for (const { text, ly } of [
+    { text: "USER CAM", ly: labelMargin },
+    { text: "ENV CAM", ly: userRows * cfg.subFrameHeight + labelMargin },
+  ]) {
+    const tw = ctx.measureText(text).width;
+    const pillW = tw + labelPad * 2;
+    const pillH = labelFontSize + labelPad * 2;
+    const lx = totalWidth - labelMargin - pillW;
+
+    ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+    ctx.beginPath();
+    ctx.roundRect(lx, ly, pillW, pillH, 4);
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
+    ctx.lineWidth = 2;
+    ctx.strokeText(text, lx + labelPad, ly + labelPad);
+    ctx.fillStyle = "#fff";
+    ctx.fillText(text, lx + labelPad, ly + labelPad);
+  }
+
+  const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.7 });
+  return {
+    blob,
+    timestamps: allTimestamps,
+    frameCount: selectedUser.length + selectedEnv.length,
+    userTimestamps,
+    envTimestamps,
+  };
 }
