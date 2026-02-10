@@ -22,6 +22,8 @@ import {
   AlertTriangle,
   Sun,
   Moon,
+  Zap,
+  ScanSearch,
 } from "lucide-react";
 // Emotion-based avatar body images
 import avatarHappy from "@assets/axolotl-happy.png";
@@ -135,6 +137,8 @@ export function DualAgentConversationBox({
     monitorConsecutiveFailures,
     emote,
     speakingVolume,
+    responseMode,
+    setResponseMode,
   } = useDualAgentContext();
   const { t } = useLanguage();
   const { theme, toggleTheme } = useTheme();
@@ -303,6 +307,16 @@ export function DualAgentConversationBox({
                   title={audioEnabled ? "Mute audio" : "Unmute audio"}
                 >
                   {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                </Button>
+                {/* Response Mode Toggle: Fast (Zap) vs Analyze (ScanSearch) */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setResponseMode(responseMode === 'fast' ? 'analyze' : 'fast')}
+                  className={`text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0 ${responseMode === 'fast' ? 'bg-white/20' : ''}`}
+                  title={responseMode === 'fast' ? "Fast mode (respond first)" : "Analyze mode (observe first)"}
+                >
+                  {responseMode === 'fast' ? <Zap className="w-4 h-4" /> : <ScanSearch className="w-4 h-4" />}
                 </Button>
 
                 <div className="w-px h-4 bg-white/30 mx-0.5" />

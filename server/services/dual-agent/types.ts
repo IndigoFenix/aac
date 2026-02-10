@@ -12,6 +12,13 @@ import type { LLMProviderKey } from "@shared/llm-options";
 export type AACInteractionMode = 'interact' | 'silent';
 
 /**
+ * Response mode for the AAC system.
+ * - 'fast':    Output voice/board tokens FIRST, then observation tokens (reduces time-to-first-audio)
+ * - 'analyze': Output observation tokens FIRST, then voice/board tokens (current default behavior)
+ */
+export type AACResponseMode = 'fast' | 'analyze';
+
+/**
  * Definition of an add-on app in the registry
  */
 export interface AACAppDefinition {
@@ -237,6 +244,9 @@ export interface DualAgentInput {
 
   // Debug mode: when true, yield debug SSE events with prompt/usage info
   debugMode?: boolean;
+
+  // Response mode: 'fast' (voice first) or 'analyze' (observe first)
+  responseMode?: AACResponseMode;
 }
 
 /**
@@ -296,6 +306,7 @@ export interface DetectionInput {
   frameTimestamps?: number[]; // timestamps (ms since epoch) for composite grid frames
   debugMode?: boolean;        // when true, yield debug SSE events with prompt/usage info
   appCanvasData?: string;     // base64 data URL of active app canvas (e.g. drawing)
+  responseMode?: AACResponseMode; // 'fast' (voice first) or 'analyze' (observe first)
 }
 
 /**

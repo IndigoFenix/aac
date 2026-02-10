@@ -39,6 +39,10 @@ interface DualAgentContextType {
   interactionMode: 'interact' | 'silent';
   setInteractionMode: (mode: 'interact' | 'silent') => void;
 
+  // Response mode
+  responseMode: 'fast' | 'analyze';
+  setResponseMode: (mode: 'fast' | 'analyze') => void;
+
   // Detection — video and audio independently toggleable
   videoCaptureEnabled: boolean;
   setVideoCaptureEnabled: (enabled: boolean) => void;
@@ -313,6 +317,10 @@ export function DualAgentProvider({
     // Interaction mode
     interactionMode: dualAgent.interactionMode,
     setInteractionMode: dualAgent.setInteractionMode,
+
+    // Response mode
+    responseMode: dualAgent.responseMode,
+    setResponseMode: dualAgent.setResponseMode,
 
     // Detection
     videoCaptureEnabled: dualAgent.videoCaptureEnabled,

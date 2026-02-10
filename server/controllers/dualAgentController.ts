@@ -14,6 +14,7 @@ const initializeSchema = z.object({
   imageData: z.string().optional(), // base64 data URL from camera
   gestureContext: z.string().optional(), // serialized face/hand gesture events
   debugMode: z.string().optional(), // "true" to enable debug SSE events
+  responseMode: z.enum(['fast', 'analyze']).optional(), // 'fast' (voice first) or 'analyze' (observe first)
 });
 
 const identifiedPersonSchema = z.object({
@@ -38,6 +39,7 @@ const messageSchema = z.object({
   identifiedPerson: identifiedPersonSchema, // Person identified via biometrics
   interactionMode: z.enum(['interact', 'silent']).optional(),
   debugMode: z.string().optional(), // "true" to enable debug SSE events
+  responseMode: z.enum(['fast', 'analyze']).optional(), // 'fast' (voice first) or 'analyze' (observe first)
 });
 
 const detectSchema = z.object({
@@ -49,6 +51,7 @@ const detectSchema = z.object({
   interactionMode: z.enum(['interact', 'silent']).optional(),
   frameTimestamps: z.string().optional(), // JSON array of timestamps for composite grid frames
   debugMode: z.string().optional(), // "true" to enable debug SSE events
+  responseMode: z.enum(['fast', 'analyze']).optional(), // 'fast' (voice first) or 'analyze' (observe first)
 });
 
 const interpretSchema = z.object({
@@ -219,6 +222,7 @@ export class DualAgentController {
         identifiedPerson,
         interactionMode,
         debugMode: debugModeRaw,
+        responseMode,
       } = messageSchema.parse(body);
 
       if (!message?.trim()) {
@@ -251,6 +255,7 @@ export class DualAgentController {
         identifiedPerson,
         interactionMode,
         debugMode: debugModeRaw === "true",
+        responseMode,
       };
 
       // Process and stream response
@@ -351,7 +356,7 @@ export class DualAgentController {
         }
       }
 
-      const { studentId, sessionId, language, board, visualContext, audioContext, gestureContext, imageData, identifiedPerson, interactionMode, debugMode: debugModeRaw } =
+      const { studentId, sessionId, language, board, visualContext, audioContext, gestureContext, imageData, identifiedPerson, interactionMode, debugMode: debugModeRaw, responseMode } =
         messageSchema.parse(body);
 
       console.log(
@@ -379,6 +384,7 @@ export class DualAgentController {
         identifiedPerson,
         interactionMode,
         debugMode: debugModeRaw === "true",
+        responseMode,
       };
 
       // Process and stream response
@@ -609,7 +615,7 @@ export class DualAgentController {
         appCanvasData = `data:${appCanvasFile.mimetype};base64,${base64}`;
       }
 
-      const { studentId, sessionId, board, audioContext, gestureContext, interactionMode, frameTimestamps: frameTimestampsRaw, debugMode: debugModeRaw } = detectSchema.parse(body);
+      const { studentId, sessionId, board, audioContext, gestureContext, interactionMode, frameTimestamps: frameTimestampsRaw, debugMode: debugModeRaw, responseMode } = detectSchema.parse(body);
 
       // Parse frame timestamps if provided (from composite grid)
       let frameTimestamps: number[] | undefined;
@@ -643,6 +649,7 @@ export class DualAgentController {
         frameTimestamps,
         debugMode: debugModeRaw === "true",
         appCanvasData,
+        responseMode,
       })) {
         switch (chunk.type) {
           case "text":
