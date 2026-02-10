@@ -29,6 +29,7 @@ export default function QuickActions({ onAction, onBack, boardMode, voiceType }:
     <div className="grid grid-cols-4 gap-2 p-2 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">
       {quickActions.map((action) => (
         <motion.button
+          data-dwell
           key={action.id}
           onClick={() => handleAction(action)}
           className="flex flex-col items-center justify-center py-3 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600"
@@ -46,6 +47,7 @@ export default function QuickActions({ onAction, onBack, boardMode, voiceType }:
       {/* 4th button: More (AI mode) or Back (DB mode) */}
       {boardMode === 'ai' ? (
         <motion.button
+          data-dwell
           onClick={() => onAction("more", t("quickActions.more"))}
           className="flex flex-col items-center justify-center py-3 rounded-xl shadow-sm border border-gray-200 dark:border-gray-600 bg-gray-200 dark:bg-gray-700"
           whileHover={{ scale: 1.05 }}
@@ -58,6 +60,7 @@ export default function QuickActions({ onAction, onBack, boardMode, voiceType }:
         </motion.button>
       ) : (
         <motion.button
+          data-dwell
           onClick={onBack}
           className="flex flex-col items-center justify-center py-3 rounded-xl shadow-sm border border-gray-300 dark:border-gray-600 bg-gray-200 dark:bg-gray-700"
           whileHover={{ scale: 1.05 }}

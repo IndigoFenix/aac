@@ -8,7 +8,7 @@ import type { ParsedBoardData } from "@shared/schema";
 import { useStreamingAudioPlayer } from "./useStreamingAudioPlayer";
 import { useAudioRecorder } from "./useAudioRecorder";
 import { prepareFrameForAI } from "@/lib/prepareFrameForAI";
-import type { ComposedGrid } from "@/lib/composeFrameGrid";
+import type { ComposedGrid, DualComposedGrid } from "@/lib/composeFrameGrid";
 import { useDebugRequestCache, type CachedRequest } from "./useDebugRequestCache";
 
 export interface DualAgentMessage {
@@ -441,6 +441,8 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
                 if (data.sessionId) {
                   setSessionId(data.sessionId);
                 }
+                // Stream completed successfully — clear any stale connection error
+                setError(null);
                 // Final message update
                 if (responseText) {
                   setCurrentMessage({
@@ -932,7 +934,12 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
       if (debugModeRef.current) formData.append("debugMode", "true");
       if (grid) {
         formData.append("image", grid.blob, "detect.jpg");
-        if (grid.timestamps.length > 0) {
+        // Check for dual-camera grid (has userTimestamps + envTimestamps)
+        const dualGrid = grid as DualComposedGrid;
+        if (dualGrid.userTimestamps && dualGrid.envTimestamps && dualGrid.envTimestamps.length > 0) {
+          formData.append("frameTimestamps", JSON.stringify(dualGrid.userTimestamps));
+          formData.append("envFrameTimestamps", JSON.stringify(dualGrid.envTimestamps));
+        } else if (grid.timestamps.length > 0) {
           formData.append("frameTimestamps", JSON.stringify(grid.timestamps));
         }
       }

@@ -79,6 +79,7 @@ export default function MusicApp({ onClose }: MusicAppProps) {
       <div className="flex-1 flex items-stretch gap-3 px-3 pt-14 pb-3">
         {NOTES.map((note) => (
           <button
+            data-dwell
             key={note.name}
             className="flex-1 rounded-3xl flex flex-col items-center justify-end pb-8 text-white text-2xl font-bold shadow-xl transition-transform active:scale-[0.97] select-none touch-none"
             style={{ backgroundColor: note.color }}
@@ -99,6 +100,7 @@ export default function MusicApp({ onClose }: MusicAppProps) {
       {/* Close button at bottom — large and visible */}
       <div className="px-3 pb-4">
         <button
+          data-dwell
           onClick={onClose}
           className={`${btnBase} w-full h-14 bg-red-500 text-white text-lg gap-2`}
           aria-label="Close Music Maker"

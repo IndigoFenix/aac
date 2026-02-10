@@ -331,7 +331,7 @@ Your purpose is to assist your user with daily tasks, guide them to complete per
     ? `Board changes:\n   - [ADD_BUTTONS] label|icon, label|icon, ... — add buttons to existing board\n   - [REMOVE_BUTTONS] label, label, ... — remove buttons by label`
     : `Board changes:\n   - [REBUILD_BOARD] label|icon, label|icon, ... — replace entire board`;
   const appTokenDesc = enabledApps.length > 0
-    ? `[OPEN_APP] appId — Open an app for the student. Data is optional and app-specific. You may suggest apps based on context, but only open if you have HIGH CONFIDENCE it's what the student wants.\nThe following apps are available for the student:\n${enabledApps.map(app => `- ${app.name} (${app.icon}): ${app.description}\n  Open with: [OPEN_APP] ${app.id}`).join("\n")}\n- Close any open app with: [CLOSE_APP]${activeApp ? `\nThe student currently has the "${activeApp}" app open.` : ''}`
+    ? `[OPEN_APP] appId — Open an app for the student. Data is optional and app-specific. You may suggest apps based on context, but only open if you have HIGH CONFIDENCE it's what the student wants.\nThe following apps are available for the student:\n${enabledApps.map(app => `- ${app.name} (${app.icon}): ${app.description}\n  Open with: [OPEN_APP] ${app.id}`).join("\n")}\n- Close any open app with: [CLOSE_APP]${activeApp ? `\nThe student currently has the "${activeApp}" app open.` : '\nNo apps are currently open.'}`
     : 'App commands are available but no apps are currently enabled.';
   const emoteTokenDesc = `[EMOTE] happy|sad|neutral — Set your avatar's displayed emotion.\n   Use to reflect the emotional tone of the conversation. Your current emotion: ${currentEmote}.\n   - "happy" — when encouraging or having fun (default)\n   - "sad" — when empathizing with frustration, disappointment, or difficulty\n   - "neutral" — when displaying seriousness or confusion\n   Include this when the emotional tone changes. You don't need to include it every response.`;
   const monitorTokenDesc = `[CALL_MONITOR] reason — Request a supervisor check-in. MUST include a reason.\n   Use when:\n   - You notice progress or setbacks on student goals/objectives\n   - You need guidance on how to handle a situation\n   - The context has shifted significantly (new person, new activity, location change)\n   Rules:\n   - Always provide a clear reason (e.g., "[CALL_MONITOR] Student combined two buttons to form a phrase — possible goal progress")\n   - Do NOT call monitor repeatedly for the same event. Once called, do not call again until circumstances change.\n   - Do not overuse — only when genuinely helpful.`;
@@ -348,6 +348,7 @@ Your purpose is to assist your user with daily tasks, guide them to complete per
 - If using both [INTERPRET] and [SPEAK], output [INTERPRET] BEFORE [SPEAK]
 - Output board changes AFTER speech, then [TRANSCRIPT] and [CONTEXT] LAST
 - Omit tags entirely if nothing to report (don't output empty tags)
+- Avoid repeating the same dialogue within a short period — only output changes. If the situation is the same as the last turn, you can omit all tags and output no text at all.
 - All tags are optional. If nothing to report or change, you may output no text at all.`;
   } else {
     // Analyze mode (default): observations FIRST, then voice/board
@@ -357,6 +358,7 @@ Your purpose is to assist your user with daily tasks, guide them to complete per
 - If using both [INTERPRET] and [SPEAK], output [INTERPRET] BEFORE [SPEAK]
 - Output board changes LAST, after transcripts and speech, so the user sees the updated board after hearing your response. The options should be based on the context you observed and your spoken response.
 - Omit tags entirely if nothing to report (don't output empty tags)
+- Avoid repeating the same dialogue within a short period — only output changes. If the situation is the same as the last turn, you can omit all tags and output no text at all.
 - All tags are optional. If nothing to report or change, you may output no text at all.`;
   }
 
@@ -488,6 +490,11 @@ ${persona}
   if (memoryContext) {
     prompt += `\n\n## Additional Context from Memory\n${memoryContext}`;
   }
+
+  // Current time so the AI is always aware of the time of day
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  prompt += `\n\nCurrent time: ${timeStr}`;
 
   return prompt;
 }

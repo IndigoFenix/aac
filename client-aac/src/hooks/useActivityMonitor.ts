@@ -8,7 +8,7 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { FrameRingBuffer, type BufferedFrame } from "@/lib/frameRingBuffer";
-import { composeFrameGrid, type ComposedGrid } from "@/lib/composeFrameGrid";
+import { composeFrameGrid, composeDualCameraGrid, type ComposedGrid } from "@/lib/composeFrameGrid";
 import { AudioActivityMonitor, type AudioActivityState } from "@/lib/audioActivityMonitor";
 
 export interface ActivityMonitorConfig {
@@ -57,6 +57,8 @@ interface UseActivityMonitorParams {
   audioEnabled?: boolean;
   micStream: MediaStream | null;
   captureFrame: () => Promise<BufferedFrame | null>;
+  /** Optional: capture frame from environment camera */
+  captureEnvFrame?: () => Promise<BufferedFrame | null>;
   onTrigger: (grid: ComposedGrid | null, audioClip: Blob | null) => Promise<void> | void;
   options?: Partial<ActivityMonitorConfig>;
 }
@@ -67,6 +69,7 @@ export function useActivityMonitor({
   audioEnabled = true,
   micStream,
   captureFrame,
+  captureEnvFrame,
   onTrigger,
   options,
 }: UseActivityMonitorParams): ActivityMonitorResult {
@@ -82,6 +85,8 @@ export function useActivityMonitor({
   // Stable refs to avoid re-running effects
   const captureFrameRef = useRef(captureFrame);
   captureFrameRef.current = captureFrame;
+  const captureEnvFrameRef = useRef(captureEnvFrame);
+  captureEnvFrameRef.current = captureEnvFrame;
   const onTriggerRef = useRef(onTrigger);
   onTriggerRef.current = onTrigger;
   const configRef = useRef(config);
@@ -89,6 +94,8 @@ export function useActivityMonitor({
 
   // Frame buffer (persists across renders but resets on enable/disable)
   const frameBufferRef = useRef<FrameRingBuffer | null>(null);
+  // Environment camera frame buffer
+  const envFrameBufferRef = useRef<FrameRingBuffer | null>(null);
 
   // Audio activity state
   const audioStateRef = useRef<AudioActivityState>({
@@ -108,9 +115,12 @@ export function useActivityMonitor({
   const audioChunksRef = useRef<Blob[]>([]);
   const lastAudioBlobRef = useRef<Blob | null>(null);
 
-  // Motion tracking for "motion settled" trigger
+  // Motion tracking for "motion settled" trigger (user camera)
   const highMotionDetectedRef = useRef(false);
   const lastHighMotionRef = useRef<number>(0);
+  // Motion tracking for environment camera
+  const highMotionEnvDetectedRef = useRef(false);
+  const lastHighMotionEnvRef = useRef<number>(0);
 
   // In-flight guard: prevents concurrent triggers
   const inFlightRef = useRef(false);
@@ -192,6 +202,7 @@ export function useActivityMonitor({
 
     // Compose grid from buffered frames (only if we have frames)
     const buffer = frameBufferRef.current;
+    const envBuffer = envFrameBufferRef.current;
     let grid: ComposedGrid | null = null;
     if (buffer && buffer.length > 0) {
       const sinceTimestamp = lastSendTimestampRef.current || 0;
@@ -200,10 +211,22 @@ export function useActivityMonitor({
         frames = buffer.getRecent(cfg.gridCols * cfg.gridRows);
       }
       try {
-        grid = await composeFrameGrid(frames, {
-          gridCols: cfg.gridCols,
-          gridRows: cfg.gridRows,
-        });
+        // If env buffer has frames, compose dual-camera grid
+        if (envBuffer && envBuffer.length > 0) {
+          let envFrames = envBuffer.getSince(sinceTimestamp);
+          if (envFrames.length === 0) {
+            envFrames = envBuffer.getRecent(cfg.gridCols * cfg.gridRows);
+          }
+          grid = await composeDualCameraGrid(frames, envFrames, {
+            gridCols: cfg.gridCols,
+            gridRows: cfg.gridRows,
+          });
+        } else {
+          grid = await composeFrameGrid(frames, {
+            gridCols: cfg.gridCols,
+            gridRows: cfg.gridRows,
+          });
+        }
       } catch (err) {
         console.warn("[ActivityMonitor] Grid composition failed:", err);
       }
@@ -222,6 +245,7 @@ export function useActivityMonitor({
       lastSendAtRef.current = Date.now();
       lastSendTimestampRef.current = Date.now();
       highMotionDetectedRef.current = false;
+      highMotionEnvDetectedRef.current = false;
 
       setResult(prev => ({ ...prev, lastSendAt: Date.now() }));
       await onTriggerRef.current(grid, audioClip);
@@ -252,6 +276,11 @@ export function useActivityMonitor({
     const maxFrames = Math.ceil(cfg.maxBufferSeconds * cfg.frameCaptureRate);
     const buffer = new FrameRingBuffer(maxFrames);
     frameBufferRef.current = buffer;
+
+    // Environment camera buffer (same capacity)
+    const envBuffer = new FrameRingBuffer(maxFrames);
+    envFrameBufferRef.current = envBuffer;
+
     lastSendAtRef.current = Date.now();
     lastSendTimestampRef.current = Date.now();
 
@@ -276,6 +305,7 @@ export function useActivityMonitor({
 
     // Frame capture interval (only when video capture is enabled)
     let captureTimerId: ReturnType<typeof setInterval> | null = null;
+    let envCaptureTimerId: ReturnType<typeof setInterval> | null = null;
     if (videoEnabled) {
       const captureIntervalMs = Math.round(1000 / cfg.frameCaptureRate);
       captureTimerId = setInterval(async () => {
@@ -293,6 +323,25 @@ export function useActivityMonitor({
           }
         } catch {
           // Frame capture failed — skip this tick
+        }
+      }, captureIntervalMs);
+
+      // Environment camera capture interval (same rate)
+      envCaptureTimerId = setInterval(async () => {
+        try {
+          const capEnv = captureEnvFrameRef.current;
+          if (!capEnv) return;
+          const frame = await capEnv();
+          if (frame) {
+            envBuffer.push(frame);
+            // Track env motion for "motion settled" trigger
+            if (frame.motionLevel > 0.03) {
+              highMotionEnvDetectedRef.current = true;
+              lastHighMotionEnvRef.current = Date.now();
+            }
+          }
+        } catch {
+          // Env frame capture failed — skip this tick
         }
       }, captureIntervalMs);
     }
@@ -318,7 +367,7 @@ export function useActivityMonitor({
         return;
       }
 
-      // Trigger 2: Motion settled (only if video enabled)
+      // Trigger 2: User camera motion settled (only if video enabled)
       if (
         videoEnabled &&
         highMotionDetectedRef.current &&
@@ -326,6 +375,17 @@ export function useActivityMonitor({
         now - lastHighMotionRef.current >= cfg.activitySettleMs
       ) {
         fireTrigger("motion settled");
+        return;
+      }
+
+      // Trigger 2b: Env camera motion settled (only if video enabled)
+      if (
+        videoEnabled &&
+        highMotionEnvDetectedRef.current &&
+        lastHighMotionEnvRef.current > 0 &&
+        now - lastHighMotionEnvRef.current >= cfg.activitySettleMs
+      ) {
+        fireTrigger("env motion settled");
         return;
       }
 
@@ -338,11 +398,14 @@ export function useActivityMonitor({
 
     return () => {
       if (captureTimerId) clearInterval(captureTimerId);
+      if (envCaptureTimerId) clearInterval(envCaptureTimerId);
       clearInterval(triggerTimerId);
       audioMonitor.stop();
       stopAudioRecording();
       buffer.clear();
+      envBuffer.clear();
       frameBufferRef.current = null;
+      envFrameBufferRef.current = null;
       inFlightRef.current = false;
       pendingTriggerRef.current = null;
       setResult({ isActive: false, isSpeaking: false, energyLevel: 0, frameCount: 0, lastSendAt: null });

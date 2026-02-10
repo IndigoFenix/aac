@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, User, Save, Trash2, Camera, Volume2, MessageSquare, LogOut, Sun, Moon } from "lucide-react";
+import { X, User, Save, Trash2, Camera, Volume2, MessageSquare, LogOut, Sun, Moon, Crosshair } from "lucide-react";
+import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +17,12 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { LanguageSelector } from "@/components/LanguageSelector";
 
+export interface EyegazeSettings {
+  enabled: boolean;
+  mode: "camera" | "mouse";
+  timeout: number;
+}
+
 interface UserSettingsProps {
   isOpen: boolean;
   onClose: () => void;
@@ -24,6 +31,7 @@ interface UserSettingsProps {
   onProfileUpdate: (profile: any) => void;
   debugMode?: boolean;
   onDebugModeChange?: (enabled: boolean) => void;
+  onEyegazeChange?: (settings: EyegazeSettings) => void;
 }
 
 export default function UserSettings({
@@ -33,9 +41,11 @@ export default function UserSettings({
   userProfile,
   onProfileUpdate,
   debugMode = false,
-  onDebugModeChange
+  onDebugModeChange,
+  onEyegazeChange
 }: UserSettingsProps) {
   const { t, language, isRTL, direction } = useLanguage();
+  const eyeTracking = useEyeTrackingDwell();
   const [name, setName] = useState("");
   const [age, setAge] = useState("");
   const [gender, setGender] = useState("male");
@@ -60,8 +70,25 @@ export default function UserSettings({
   const [partsOfSpeechColors, setPartsOfSpeechColors] = useState(false);
   const [partsOfSpeechOrdering, setPartsOfSpeechOrdering] = useState("english");
   const [objectDetectionEnabled, setObjectDetectionEnabled] = useState(false);
-  const [eyegazeEnabled, setEyegazeEnabled] = useState(false);
-  const [eyegazeTimeout, setEyegazeTimeout] = useState(3000);
+  const [eyegazeEnabled, setEyegazeEnabled] = useState(() => {
+    try { return localStorage.getItem("eyetracking_enabled") === "true"; } catch { return false; }
+  });
+  const [eyegazeMode, setEyegazeMode] = useState<"camera" | "mouse">(() => {
+    try { return (localStorage.getItem("eyetracking_mode") as "camera" | "mouse") || "camera"; } catch { return "camera"; }
+  });
+  const [eyegazeTimeout, setEyegazeTimeout] = useState(() => {
+    try { return parseInt(localStorage.getItem("eyetracking_timeout") || "2000", 10); } catch { return 2000; }
+  });
+
+  // Push eyegaze changes live to parent (no save required)
+  useEffect(() => {
+    onEyegazeChange?.({ enabled: eyegazeEnabled, mode: eyegazeMode, timeout: eyegazeTimeout });
+    try {
+      localStorage.setItem("eyetracking_enabled", String(eyegazeEnabled));
+      localStorage.setItem("eyetracking_mode", eyegazeMode);
+      localStorage.setItem("eyetracking_timeout", String(eyegazeTimeout));
+    } catch { /* ignore */ }
+  }, [eyegazeEnabled, eyegazeMode, eyegazeTimeout, onEyegazeChange]);
 
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
@@ -89,8 +116,15 @@ export default function UserSettings({
       setPartsOfSpeechColors(userProfile.partsOfSpeechColors || false);
       setPartsOfSpeechOrdering(userProfile.partsOfSpeechOrdering || "english");
       setObjectDetectionEnabled(userProfile.objectDetectionEnabled || userProfile.object_detection_enabled || false);
-      setEyegazeEnabled(userProfile.eyegazeEnabled || false);
-      setEyegazeTimeout(userProfile.eyegazeTimeout || 3000);
+      // Eyegaze settings are stored in localStorage (not in DB schema)
+      try {
+        const storedEnabled = localStorage.getItem("eyetracking_enabled");
+        const storedMode = localStorage.getItem("eyetracking_mode");
+        const storedTimeout = localStorage.getItem("eyetracking_timeout");
+        if (storedEnabled !== null) setEyegazeEnabled(storedEnabled === "true");
+        if (storedMode) setEyegazeMode(storedMode as "camera" | "mouse");
+        if (storedTimeout) setEyegazeTimeout(parseInt(storedTimeout, 10));
+      } catch { /* ignore */ }
 
     }
   }, [userProfile]);
@@ -199,10 +233,14 @@ export default function UserSettings({
       partsOfSpeechColors: partsOfSpeechColors,
       partsOfSpeechOrdering: partsOfSpeechOrdering,
       objectDetectionEnabled: objectDetectionEnabled,
-      eyegazeEnabled: eyegazeEnabled,
-      eyegazeTimeout: eyegazeTimeout,
-
     };
+
+    // Persist eyegaze settings to localStorage (not in DB schema)
+    try {
+      localStorage.setItem("eyetracking_enabled", String(eyegazeEnabled));
+      localStorage.setItem("eyetracking_mode", eyegazeMode);
+      localStorage.setItem("eyetracking_timeout", String(eyegazeTimeout));
+    } catch { /* ignore */ }
 
     updateUserMutation.mutate(userData);
   };
@@ -659,11 +697,39 @@ export default function UserSettings({
                     />
                   </div>
                   <p className="text-xs text-gray-500">
-                    Enable symbol selection by hovering over symbols for a set duration
+                    Enable symbol selection by looking at any button for a set duration
                   </p>
 
                   {eyegazeEnabled && (
                     <div className="ml-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg space-y-3">
+                      {/* Mode selector */}
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">Input Mode</Label>
+                        <div className="flex gap-2">
+                          <Button
+                            variant={eyegazeMode === "camera" ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setEyegazeMode("camera")}
+                            className="flex-1"
+                          >
+                            Camera Gaze
+                          </Button>
+                          <Button
+                            variant={eyegazeMode === "mouse" ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setEyegazeMode("mouse")}
+                            className="flex-1"
+                          >
+                            Mouse / External
+                          </Button>
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          {eyegazeMode === "camera"
+                            ? "Uses the camera to estimate where you're looking"
+                            : "Uses mouse position — works with built-in eye trackers that map gaze to cursor"}
+                        </p>
+                      </div>
+
                       <div className="space-y-2">
                         <Label htmlFor="eyegazeTimeout" className="text-sm font-medium">
                           Selection Timeout: {eyegazeTimeout / 1000}s
@@ -686,8 +752,39 @@ export default function UserSettings({
                         </div>
                       </div>
                       <p className="text-xs text-blue-600 dark:text-blue-400">
-                        💡 Hover over any symbol for {eyegazeTimeout / 1000} seconds to select it automatically
+                        💡 Look at any button for {eyegazeTimeout / 1000} seconds to select it automatically
                       </p>
+
+                      {/* Calibration controls (camera mode only) */}
+                      {eyegazeMode === "camera" && (
+                        <div className="flex items-center gap-2 pt-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              onClose(); // close settings to show calibration overlay
+                              setTimeout(() => eyeTracking.startCalibration(), 300);
+                            }}
+                            className="flex items-center gap-1.5"
+                          >
+                            <Crosshair className="w-3.5 h-3.5" />
+                            {eyeTracking.isCalibrated ? "Recalibrate" : "Calibrate"}
+                          </Button>
+                          {eyeTracking.isCalibrated && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => eyeTracking.clearCalibration()}
+                              className="text-red-600 dark:text-red-400 text-xs"
+                            >
+                              Clear
+                            </Button>
+                          )}
+                          <span className="text-xs text-gray-500">
+                            {eyeTracking.isCalibrated ? "Calibrated" : "Not calibrated"}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

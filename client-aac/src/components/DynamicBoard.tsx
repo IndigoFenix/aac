@@ -245,6 +245,7 @@ export default function DynamicBoard({
 
     return (
       <motion.button
+        data-dwell
         key={`btn-${button.label}-${index}`}
         initial={isEntering ? { opacity: 0, scale: 0.8 } : { opacity: 1, scale: 1 }}
         animate={{ opacity: 1, scale: 1 }}
