@@ -198,8 +198,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build frontend
-        run: npm run build:client
+      - name: Build frontend (main + AAC)
+        run: |
+          npm run build:client
+          npm run build:client-aac
         env:
           NODE_ENV: production
           VITE_STRIPE_PUBLIC_KEY: ${{ secrets.VITE_STRIPE_PUBLIC_KEY }}
@@ -208,7 +210,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: frontend-build
-          path: dist/public/
+          path: |
+            dist/public/
+            dist/public-aac/
           retention-days: 1
 
   # ===========================================
@@ -276,24 +280,49 @@ jobs:
           BUCKET: ${{ needs.infrastructure.outputs.frontend_bucket }}
         run: |
           echo "Deploying to bucket: $BUCKET"
-          
+
+          # === Main client (/) ===
           # Sync all files except index.html and JSON
           aws s3 sync dist/public/ s3://$BUCKET/ \
             --delete \
             --cache-control "public, max-age=31536000, immutable" \
             --exclude "index.html" \
-            --exclude "*.json"
-          
+            --exclude "*.json" \
+            --exclude "aac/*"
+
           # Upload index.html with no-cache
           aws s3 cp dist/public/index.html s3://$BUCKET/index.html \
             --cache-control "no-cache, no-store, must-revalidate"
-          
+
           # Upload JSON files with short cache
           for f in $(find dist/public -name "*.json" -type f 2>/dev/null); do
             key="${f#dist/public/}"
             aws s3 cp "$f" "s3://$BUCKET/$key" \
               --cache-control "public, max-age=0, must-revalidate"
           done
+
+          # === AAC client (/aac/) ===
+          if [ -d "dist/public-aac" ]; then
+            echo "Deploying AAC client to /aac/"
+
+            # Sync AAC files under /aac/ prefix
+            aws s3 sync dist/public-aac/ s3://$BUCKET/aac/ \
+              --delete \
+              --cache-control "public, max-age=31536000, immutable" \
+              --exclude "index.html" \
+              --exclude "*.json"
+
+            # Upload AAC index.html with no-cache
+            aws s3 cp dist/public-aac/index.html s3://$BUCKET/aac/index.html \
+              --cache-control "no-cache, no-store, must-revalidate"
+
+            # Upload AAC JSON files with short cache
+            for f in $(find dist/public-aac -name "*.json" -type f 2>/dev/null); do
+              key="${f#dist/public-aac/}"
+              aws s3 cp "$f" "s3://$BUCKET/aac/$key" \
+                --cache-control "public, max-age=0, must-revalidate"
+            done
+          fi
 
       - name: Invalidate CloudFront cache
         env:
