@@ -70,6 +70,9 @@ export default function UserSettings({
   const [partsOfSpeechColors, setPartsOfSpeechColors] = useState(false);
   const [partsOfSpeechOrdering, setPartsOfSpeechOrdering] = useState("english");
   const [objectDetectionEnabled, setObjectDetectionEnabled] = useState(false);
+  const [elevenlabsApiKey, setElevenlabsApiKey] = useState("");
+  const [elevenlabsAiVoiceId, setElevenlabsAiVoiceId] = useState("");
+  const [elevenlabsStudentVoiceId, setElevenlabsStudentVoiceId] = useState("");
   const [eyegazeEnabled, setEyegazeEnabled] = useState(() => {
     try { return localStorage.getItem("eyetracking_enabled") === "true"; } catch { return false; }
   });
@@ -116,6 +119,9 @@ export default function UserSettings({
       setPartsOfSpeechColors(userProfile.partsOfSpeechColors || false);
       setPartsOfSpeechOrdering(userProfile.partsOfSpeechOrdering || "english");
       setObjectDetectionEnabled(userProfile.objectDetectionEnabled || userProfile.object_detection_enabled || false);
+      setElevenlabsApiKey(userProfile.aacElevenlabsApiKey || "");
+      setElevenlabsAiVoiceId(userProfile.aacElevenlabsAiVoiceId || "");
+      setElevenlabsStudentVoiceId(userProfile.aacElevenlabsStudentVoiceId || "");
       // Eyegaze settings are stored in localStorage (not in DB schema)
       try {
         const storedEnabled = localStorage.getItem("eyetracking_enabled");
@@ -233,6 +239,9 @@ export default function UserSettings({
       partsOfSpeechColors: partsOfSpeechColors,
       partsOfSpeechOrdering: partsOfSpeechOrdering,
       objectDetectionEnabled: objectDetectionEnabled,
+      aacElevenlabsApiKey: elevenlabsApiKey.trim() || null,
+      aacElevenlabsAiVoiceId: elevenlabsAiVoiceId.trim() || null,
+      aacElevenlabsStudentVoiceId: elevenlabsStudentVoiceId.trim() || null,
     };
 
     // Persist eyegaze settings to localStorage (not in DB schema)
@@ -631,6 +640,60 @@ export default function UserSettings({
                     <p className="text-xs text-gray-500">
                       {t("settings.voiceTypeHint")}
                     </p>
+                  </div>
+
+                  {/* ElevenLabs Custom Voice Settings */}
+                  <div className="space-y-3 p-4 border border-purple-200 dark:border-purple-700 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                    <div className="space-y-1">
+                      <Label className="text-sm font-medium text-purple-900 dark:text-purple-200">
+                        ElevenLabs Custom Voice
+                      </Label>
+                      <p className="text-xs text-purple-700 dark:text-purple-300">
+                        Use your own ElevenLabs API key and voice IDs for custom AI and student voices
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="elevenlabsApiKey" className="text-xs font-medium">
+                        API Key
+                      </Label>
+                      <Input
+                        id="elevenlabsApiKey"
+                        type="password"
+                        value={elevenlabsApiKey}
+                        onChange={(e) => setElevenlabsApiKey(e.target.value)}
+                        placeholder="xi-..."
+                        className="w-full text-sm"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="elevenlabsAiVoiceId" className="text-xs font-medium">
+                        AI Voice ID
+                      </Label>
+                      <Input
+                        id="elevenlabsAiVoiceId"
+                        value={elevenlabsAiVoiceId}
+                        onChange={(e) => setElevenlabsAiVoiceId(e.target.value)}
+                        placeholder="e.g. 21m00Tcm4TlvDq8ikWAM"
+                        className="w-full text-sm"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="elevenlabsStudentVoiceId" className="text-xs font-medium">
+                        Student Voice ID
+                      </Label>
+                      <Input
+                        id="elevenlabsStudentVoiceId"
+                        value={elevenlabsStudentVoiceId}
+                        onChange={(e) => setElevenlabsStudentVoiceId(e.target.value)}
+                        placeholder="e.g. EXAVITQu4vr4xnSDxMaL"
+                        className="w-full text-sm"
+                      />
+                    </div>
+                    {elevenlabsApiKey && (!elevenlabsAiVoiceId && !elevenlabsStudentVoiceId) && (
+                      <p className="text-xs text-orange-600 dark:text-orange-400">
+                        Add at least one voice ID to use your ElevenLabs key
+                      </p>
+                    )}
                   </div>
 
                   <div className="flex items-center space-x-3">

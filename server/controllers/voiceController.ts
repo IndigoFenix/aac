@@ -351,12 +351,20 @@ export class VoiceController {
     let finalLanguage = language || "en";
     let finalVoiceType: VoiceType = (voiceType as VoiceType) || "woman";
     let customVoice = null;
+    let elevenlabsApiKey: string | undefined;
+    let elevenlabsVoiceId: string | undefined;
 
     if (studentId) {
       const student = await studentRepository.getStudentById(studentId);
       if (student) {
         finalLanguage = language || student.primaryLanguage || "en";
         finalVoiceType = (voiceType || student.aacVoiceType || "woman") as VoiceType;
+
+        // Student-level ElevenLabs settings take priority
+        if (student.aacElevenlabsApiKey && student.aacElevenlabsAiVoiceId) {
+          elevenlabsApiKey = student.aacElevenlabsApiKey;
+          elevenlabsVoiceId = student.aacElevenlabsAiVoiceId;
+        }
 
         if (student.aacCustomVoiceId) {
           const voice = await voiceRecordRepository.getVoiceById(student.aacCustomVoiceId);
@@ -369,6 +377,8 @@ export class VoiceController {
       fallbackType: finalVoiceType,
       customVoice,
       language: finalLanguage,
+      elevenlabsApiKey,
+      elevenlabsVoiceId,
     };
   }
 }
