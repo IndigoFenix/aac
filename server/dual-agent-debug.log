@@ -13156,3 +13156,16 @@
   "hasAudio": true,
   "hasInterpretation": true
 }
+
+============================================================
+[2026-02-11T12:50:45.033Z] DualAgentService.initializeWithGreeting.start
+----------------------------------------
+{
+  "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+  "hasExistingSession": false,
+  "interactionMode": "interact",
+  "hasImage": true,
+  "imageDataLength": 37275,
+  "hasGestureContext": true,
+  "gestureContextLength": 124
+}
