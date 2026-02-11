@@ -192,11 +192,15 @@ export class DualAgentService {
         fallbackType: (student?.aacVoiceType as any) || "woman",
         customVoice: aiCustom || null,
         language: student?.primaryLanguage || "en",
+        elevenlabsApiKey: student?.aacElevenlabsApiKey || undefined,
+        elevenlabsVoiceId: student?.aacElevenlabsAiVoiceId || undefined,
       },
       studentVoice: {
         fallbackType: (student?.aacStudentVoiceType as any) || "boy",
         customVoice: studentCustom || null,
         language: student?.primaryLanguage || "en",
+        elevenlabsApiKey: student?.aacElevenlabsApiKey || undefined,
+        elevenlabsVoiceId: student?.aacElevenlabsStudentVoiceId || undefined,
       },
     };
   }

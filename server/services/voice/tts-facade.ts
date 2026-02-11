@@ -9,6 +9,8 @@ export interface ResolvedVoice {
   fallbackType: VoiceType; // man/woman/boy/girl — used when no custom voice
   customVoice: Voice | null; // from voices table — when set, use ElevenLabs
   language: string;
+  elevenlabsApiKey?: string; // student-level ElevenLabs API key
+  elevenlabsVoiceId?: string; // student-level ElevenLabs voice ID (direct, bypasses voices table)
 }
 
 /**
@@ -18,6 +20,23 @@ export async function synthesize(
   text: string,
   voice: ResolvedVoice
 ): Promise<Buffer> {
+  // Student-level ElevenLabs voice (direct voice ID + API key)
+  if (voice.elevenlabsVoiceId && voice.elevenlabsApiKey) {
+    try {
+      return await elevenlabsTtsService.synthesize(text, {
+        voiceId: voice.elevenlabsVoiceId,
+        apiKeyOverride: voice.elevenlabsApiKey,
+      });
+    } catch (error: any) {
+      console.error(
+        `[TTSFacade] Student-level ElevenLabs failed (voice: ${voice.elevenlabsVoiceId}), falling back:`,
+        error.message
+      );
+      // Fall through to admin custom voice or OpenAI
+    }
+  }
+
+  // Admin-level custom voice from voices table
   if (voice.customVoice && voice.customVoice.active) {
     try {
       return await elevenlabsTtsService.synthesize(text, {
@@ -44,6 +63,24 @@ export async function* synthesizeStream(
   text: string,
   voice: ResolvedVoice
 ): AsyncGenerator<Buffer> {
+  // Student-level ElevenLabs voice (direct voice ID + API key)
+  if (voice.elevenlabsVoiceId && voice.elevenlabsApiKey) {
+    try {
+      yield* elevenlabsTtsService.synthesizeStream(text, {
+        voiceId: voice.elevenlabsVoiceId,
+        apiKeyOverride: voice.elevenlabsApiKey,
+      });
+      return;
+    } catch (error: any) {
+      console.error(
+        `[TTSFacade] Student-level ElevenLabs streaming failed (voice: ${voice.elevenlabsVoiceId}), falling back:`,
+        error.message
+      );
+      // Fall through to admin custom voice or OpenAI
+    }
+  }
+
+  // Admin-level custom voice from voices table
   if (voice.customVoice && voice.customVoice.active) {
     try {
       yield* elevenlabsTtsService.synthesizeStream(text, {

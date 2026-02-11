@@ -30,7 +30,7 @@ export class MonitorAgent {
   private studentId: string;
   private userId?: string;
   private sessionId?: string;
-  private student?: { name: string; aacChatAgentPrompt?: string | null; framework?: string | null; primaryLanguage?: string | null; aacVoiceType?: string | null; aacStudentVoiceType?: string | null; aacCustomVoiceId?: string | null; aacCustomStudentVoiceId?: string | null };
+  private student?: { name: string; aacChatAgentPrompt?: string | null; framework?: string | null; primaryLanguage?: string | null; aacVoiceType?: string | null; aacStudentVoiceType?: string | null; aacCustomVoiceId?: string | null; aacCustomStudentVoiceId?: string | null; aacElevenlabsApiKey?: string | null; aacElevenlabsAiVoiceId?: string | null; aacElevenlabsStudentVoiceId?: string | null };
   private framework: string | null = null;
 
   constructor(

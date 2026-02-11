@@ -666,6 +666,11 @@ export const students = pgTable("students", {
   aacCustomStudentVoiceId: varchar("aac_custom_student_voice_id"), // FK to voices table for custom student voice (ElevenLabs)
   aacKnownPeople: jsonb("aac_known_people").default([]), // Array of known people for recognition
 
+  // Student-level ElevenLabs voice settings (may be removed later)
+  aacElevenlabsApiKey: text("aac_elevenlabs_api_key"), // Student's own ElevenLabs API key
+  aacElevenlabsAiVoiceId: text("aac_elevenlabs_ai_voice_id"), // ElevenLabs voice ID for AI voice
+  aacElevenlabsStudentVoiceId: text("aac_elevenlabs_student_voice_id"), // ElevenLabs voice ID for student voice
+
   // Biometric recognition fields
   faceEmbedding: jsonb("face_embedding"), // 128-dimensional face embedding vector
   voiceEmbedding: jsonb("voice_embedding"), // Voice embedding vector for speaker recognition

@@ -6,6 +6,7 @@ export interface ElevenLabsTTSOptions {
   modelId?: string; // default: eleven_multilingual_v2
   stability?: number; // 0-1, default 0.5
   similarityBoost?: number; // 0-1, default 0.75
+  apiKeyOverride?: string; // Use this API key instead of the env var
 }
 
 const ELEVENLABS_API_BASE = "https://api.elevenlabs.io/v1";
@@ -27,7 +28,7 @@ export async function synthesize(
   text: string,
   options: ElevenLabsTTSOptions
 ): Promise<Buffer> {
-  const apiKey = getApiKey();
+  const apiKey = options.apiKeyOverride || getApiKey();
   const modelId = options.modelId || DEFAULT_MODEL;
 
   console.log(
@@ -75,7 +76,7 @@ export async function* synthesizeStream(
   text: string,
   options: ElevenLabsTTSOptions
 ): AsyncGenerator<Buffer> {
-  const apiKey = getApiKey();
+  const apiKey = options.apiKeyOverride || getApiKey();
   const modelId = options.modelId || DEFAULT_MODEL;
 
   console.log(
