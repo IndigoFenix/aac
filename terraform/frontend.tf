@@ -112,6 +112,29 @@ locals {
   ) : ""
 }
 
+  # CloudFront Function for AAC SPA fallback
+# Rewrites /aac/... requests (without file extensions) to /aac/index.html
+resource "aws_cloudfront_function" "aac_spa_rewrite" {
+  count   = var.use_lambda && var.lambda_image_exists ? 1 : 0
+  name    = "${local.name_prefix}-aac-spa-rewrite"
+  runtime = "cloudfront-js-2.0"
+  comment = "Rewrite AAC SPA routes to /aac/index.html"
+
+  code = <<-EOF
+    function handler(event) {
+      var request = event.request;
+      var uri = request.uri;
+      // If the URI has a file extension (e.g. .js, .css, .png), pass through to S3
+      if (uri.match(/\.\w+$/)) {
+        return request;
+      }
+      // Otherwise rewrite to /aac/index.html for SPA routing
+      request.uri = '/aac/index.html';
+      return request;
+    }
+  EOF
+}
+
 resource "aws_cloudfront_distribution" "frontend" {
   count = var.use_lambda && var.lambda_image_exists ? 1 : 0
 
@@ -119,7 +142,7 @@ resource "aws_cloudfront_distribution" "frontend" {
   is_ipv6_enabled     = true
   default_root_object = "index.html"
   price_class         = "PriceClass_100"
-  
+
   aliases = var.domain_name != "" ? [var.domain_name, "www.${var.domain_name}"] : []
 
   # S3 Origin for static files
@@ -153,6 +176,58 @@ resource "aws_cloudfront_distribution" "frontend" {
       cookies {
         forward = "none"
       }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 3600
+    max_ttl                = 86400
+    compress               = true
+  }
+
+  # AAC client - serve from S3 with SPA rewrite function
+  ordered_cache_behavior {
+    path_pattern     = "/aac/*"
+    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "S3-frontend"
+
+    forwarded_values {
+      query_string = false
+      cookies {
+        forward = "none"
+      }
+    }
+
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.aac_spa_rewrite[0].arn
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 3600
+    max_ttl                = 86400
+    compress               = true
+  }
+
+  # AAC client root path (without trailing slash)
+  ordered_cache_behavior {
+    path_pattern     = "/aac"
+    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "S3-frontend"
+
+    forwarded_values {
+      query_string = false
+      cookies {
+        forward = "none"
+      }
+    }
+
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.aac_spa_rewrite[0].arn
     }
 
     viewer_protocol_policy = "redirect-to-https"
