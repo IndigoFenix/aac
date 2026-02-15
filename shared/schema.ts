@@ -684,6 +684,31 @@ export const students = pgTable("students", {
   index("idx_students_is_active").on(table.isActive),
 ]);
 
+// Student contacts — people the student knows (classmates, siblings, etc.) with optional biometrics
+export const studentContacts = pgTable("student_contacts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").references(() => students.id).notNull(),
+  name: text("name").notNull(),
+  relationship: text("relationship"), // 'classmate', 'sibling', 'teacher', etc.
+  hairColor: text("hair_color"),
+  estimatedAge: text("estimated_age"), // '8', '30s', 'child', 'adult'
+  estimatedSex: text("estimated_sex"), // 'male', 'female', 'unknown'
+  description: text("description"), // free-form physical/contextual description
+  contextNotes: text("context_notes"), // what AI knows about interactions/relationship
+  faceEmbedding: jsonb("face_embedding"), // 128D float array
+  voiceEmbedding: jsonb("voice_embedding"), // future use
+  faceImageData: text("face_image_data"), // base64-encoded JPEG of cropped face (legacy, unused - face images cached client-side)
+  faceImageQuality: real("face_image_quality"), // quality score (0–1), higher = more frontal + larger
+  lastSeenAt: timestamp("last_seen_at"),
+  timesIdentified: integer("times_identified").default(0).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_student_contacts_student_id").on(table.studentId),
+  index("idx_student_contacts_is_active").on(table.isActive),
+]);
+
 // Junction table for many-to-many relationship between Users and Students
 export const userStudents = pgTable("user_students", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1408,6 +1433,8 @@ export const boards = pgTable("boards", {
   imageUrl: text("image_url"),
   irData: jsonb("ir_data"), // Intermediate representation data for regenerations
   language: text("language").default("en"),
+  automaticSelection: boolean("automatic_selection").default(false).notNull(),
+  automaticSelectionHint: text("automatic_selection_hint"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   loadedAt: timestamp("loaded_at").defaultNow().notNull(),
@@ -1667,6 +1694,8 @@ export const personas = pgTable("personas", {
   prompt: text("prompt").notNull(), // System prompt text for this persona
   manualSelection: boolean("manual_selection").default(true).notNull(), // Whether users can manually select this persona
   active: boolean("active").default(true).notNull(),
+  llmProvider: text("llm_provider"), // Optional per-persona LLM provider override (e.g. "openai", "gemini", "claude")
+  llmModel: text("llm_model"), // Optional per-persona LLM model override (e.g. "gpt-4o", "claude-sonnet")
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
@@ -1832,6 +1861,19 @@ export const insertStudentSchema = createInsertSchema(students).omit({
 });
 
 export const updateStudentSchema = createInsertSchema(students).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial();
+
+// Student contact schemas
+export const insertStudentContactSchema = createInsertSchema(studentContacts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateStudentContactSchema = createInsertSchema(studentContacts).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
@@ -2367,6 +2409,9 @@ export type UpdateLicense = z.infer<typeof updateLicenseSchema>;
 export type Student = typeof students.$inferSelect;
 export type InsertStudent = z.infer<typeof insertStudentSchema>;
 export type UpdateStudent = z.infer<typeof updateStudentSchema>;
+export type StudentContact = typeof studentContacts.$inferSelect;
+export type InsertStudentContact = z.infer<typeof insertStudentContactSchema>;
+export type UpdateStudentContact = z.infer<typeof updateStudentContactSchema>;
 export type UserStudent = typeof userStudents.$inferSelect;
 export type InsertUserStudent = z.infer<typeof insertUserStudentSchema>;
 export type UpdateUserStudent = z.infer<typeof updateUserStudentSchema>;

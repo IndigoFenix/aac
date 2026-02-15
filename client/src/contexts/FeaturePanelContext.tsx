@@ -75,7 +75,7 @@ export const FEATURE_CONFIG: Record<FeatureType, FeatureConfig> = {
     defaultSize: 60,
     minSize: 40,
     maxSize: 80,
-    hasBottomBar: true,
+    hasBottomBar: false,
     isFullScreen: false,
     path: '/boards',
   },

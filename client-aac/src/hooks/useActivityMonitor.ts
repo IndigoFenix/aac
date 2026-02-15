@@ -4,12 +4,17 @@
  * Orchestrator hook: continuously collects camera frames and audio,
  * detects "activity settled" moments (speech ended, motion settled),
  * then triggers detection with a composite frame grid and audio clip.
+ *
+ * Audio capture uses a PCM ring buffer (AudioRingBuffer) instead of
+ * MediaRecorder, so speech-boundary triggers extract the exact speech
+ * segment rather than a fixed-duration chunk.
  */
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { FrameRingBuffer, type BufferedFrame } from "@/lib/frameRingBuffer";
 import { composeFrameGrid, composeDualCameraGrid, type ComposedGrid } from "@/lib/composeFrameGrid";
 import { AudioActivityMonitor, type AudioActivityState } from "@/lib/audioActivityMonitor";
+import { AudioRingBuffer, type PcmChunkCallback } from "@/lib/audioRingBuffer";
 
 export interface ActivityMonitorConfig {
   /** Frames per second to capture (default: 4) */
@@ -26,8 +31,12 @@ export interface ActivityMonitorConfig {
   maxSilenceMs: number;
   /** Minimum time between sends, in ms (default: 3000) */
   minIntervalMs: number;
-  /** Duration of audio clip to send, in ms (default: 5000) */
-  audioRecordDurationMs: number;
+  /** Pre-roll added before speech start boundary, in ms (default: 500) */
+  speechPreRollMs: number;
+  /** Post-roll added after speech end boundary, in ms (default: 200) */
+  speechPostRollMs: number;
+  /** Duration of ambient audio for heartbeat triggers, in ms (default: 3000) */
+  heartbeatAudioMs: number;
 }
 
 const DEFAULT_CONFIG: ActivityMonitorConfig = {
@@ -38,7 +47,9 @@ const DEFAULT_CONFIG: ActivityMonitorConfig = {
   activitySettleMs: 1500,
   maxSilenceMs: 15000,
   minIntervalMs: 3000,
-  audioRecordDurationMs: 5000,
+  speechPreRollMs: 500,
+  speechPostRollMs: 200,
+  heartbeatAudioMs: 3000,
 };
 
 export interface ActivityMonitorResult {
@@ -47,6 +58,14 @@ export interface ActivityMonitorResult {
   energyLevel: number;
   frameCount: number;
   lastSendAt: number | null;
+  /** Which speech detection method is active */
+  speechMethod: 'webSpeechApi' | 'energy' | 'none';
+  /** Last speech boundary (start/end wall-clock ms), null if no speech detected yet */
+  lastSpeechBoundary: { start: number; end: number } | null;
+  /** Last trigger reason that fired */
+  lastTriggerReason: string | null;
+  /** Ring buffer sample count */
+  ringBufferSamples: number;
 }
 
 interface UseActivityMonitorParams {
@@ -59,7 +78,9 @@ interface UseActivityMonitorParams {
   captureFrame: () => Promise<BufferedFrame | null>;
   /** Optional: capture frame from environment camera */
   captureEnvFrame?: () => Promise<BufferedFrame | null>;
-  onTrigger: (grid: ComposedGrid | null, audioClip: Blob | null) => Promise<void> | void;
+  onTrigger: (grid: ComposedGrid | null, audioClip: Blob | null, triggerReason: string) => Promise<void> | void;
+  /** Optional: callback for real-time PCM audio streaming (e.g., to Gemini Live API) */
+  onPcmChunk?: PcmChunkCallback;
   options?: Partial<ActivityMonitorConfig>;
 }
 
@@ -71,6 +92,7 @@ export function useActivityMonitor({
   captureFrame,
   captureEnvFrame,
   onTrigger,
+  onPcmChunk,
   options,
 }: UseActivityMonitorParams): ActivityMonitorResult {
   const config = { ...DEFAULT_CONFIG, ...options };
@@ -80,6 +102,10 @@ export function useActivityMonitor({
     energyLevel: 0,
     frameCount: 0,
     lastSendAt: null,
+    speechMethod: 'none',
+    lastSpeechBoundary: null,
+    lastTriggerReason: null,
+    ringBufferSamples: 0,
   });
 
   // Stable refs to avoid re-running effects
@@ -89,6 +115,8 @@ export function useActivityMonitor({
   captureEnvFrameRef.current = captureEnvFrame;
   const onTriggerRef = useRef(onTrigger);
   onTriggerRef.current = onTrigger;
+  const onPcmChunkRef = useRef(onPcmChunk);
+  onPcmChunkRef.current = onPcmChunk;
   const configRef = useRef(config);
   configRef.current = config;
 
@@ -106,14 +134,14 @@ export function useActivityMonitor({
     hasActiveAudio: false,
   });
 
+  // Audio ring buffer ref (for extracting speech-aligned clips)
+  const audioRingBufferRef = useRef<AudioRingBuffer | null>(null);
+  // Audio activity monitor ref (needed for consumeLastSpeechBoundary)
+  const audioMonitorRef = useRef<AudioActivityMonitor | null>(null);
+
   // Trigger tracking
   const lastSendAtRef = useRef<number>(0);
   const lastSendTimestampRef = useRef<number>(0); // timestamp of last frame buffer read
-
-  // Rolling audio recorder refs
-  const audioRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const lastAudioBlobRef = useRef<Blob | null>(null);
 
   // Motion tracking for "motion settled" trigger (user camera)
   const highMotionDetectedRef = useRef(false);
@@ -127,59 +155,7 @@ export function useActivityMonitor({
   const pendingTriggerRef = useRef<string | null>(null);
 
   /**
-   * Start rolling audio recording - continuously records in chunks.
-   * When a chunk finishes, store it and start a new one.
-   */
-  const startAudioRecording = useCallback((stream: MediaStream) => {
-    const recordDuration = configRef.current.audioRecordDurationMs;
-
-    const startChunk = () => {
-      try {
-        const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-        const chunks: Blob[] = [];
-
-        recorder.ondataavailable = (e) => {
-          if (e.data?.size > 0) chunks.push(e.data);
-        };
-
-        recorder.onstop = () => {
-          if (chunks.length > 0) {
-            lastAudioBlobRef.current = new Blob(chunks, { type: "audio/webm" });
-          }
-          // Start next chunk immediately if we're still active
-          if (audioRecorderRef.current === recorder) {
-            startChunk();
-          }
-        };
-
-        recorder.start();
-        audioRecorderRef.current = recorder;
-
-        // Stop after duration to produce a complete blob
-        setTimeout(() => {
-          if (recorder.state === "recording") {
-            recorder.stop();
-          }
-        }, recordDuration);
-      } catch (err) {
-        console.warn("[ActivityMonitor] Audio recording error:", err);
-      }
-    };
-
-    startChunk();
-  }, []);
-
-  const stopAudioRecording = useCallback(() => {
-    const recorder = audioRecorderRef.current;
-    if (recorder && recorder.state === "recording") {
-      audioRecorderRef.current = null; // prevent restart in onstop
-      try { recorder.stop(); } catch { /* ignore */ }
-    }
-    audioRecorderRef.current = null;
-  }, []);
-
-  /**
-   * Fire a detection trigger: compose grid from buffered frames, grab latest audio.
+   * Fire a detection trigger: compose grid from buffered frames, extract audio from ring buffer.
    * Guarded against concurrent fires — if already in flight, queues one pending trigger.
    */
   const fireTrigger = useCallback(async (reason: string) => {
@@ -232,8 +208,33 @@ export function useActivityMonitor({
       }
     }
 
-    const audioClip = lastAudioBlobRef.current;
-    console.log(`[ActivityMonitor] Trigger: ${reason} (grid: ${grid ? grid.frameCount + ' frames' : 'none'}, audio: ${audioClip ? audioClip.size + 'B' : 'none'})`);
+    // Extract audio clip from the ring buffer based on trigger reason
+    let audioClip: Blob | null = null;
+    const ringBuf = audioRingBufferRef.current;
+    const monitor = audioMonitorRef.current;
+
+    if (ringBuf) {
+      if (reason === "speech ended" && monitor) {
+        // Extract the exact speech segment with pre/post-roll
+        const boundary = monitor.consumeLastSpeechBoundary();
+        if (boundary) {
+          const start = boundary.start - cfg.speechPreRollMs;
+          const end = boundary.end + cfg.speechPostRollMs;
+          audioClip = ringBuf.extractWav(start, end);
+        }
+        // Fallback: if boundary was already consumed or expired, grab recent audio
+        if (!audioClip) {
+          audioClip = ringBuf.extractRecentWav(cfg.heartbeatAudioMs);
+        }
+      } else if (reason === "heartbeat") {
+        // Heartbeat: grab recent ambient audio
+        audioClip = ringBuf.extractRecentWav(cfg.heartbeatAudioMs);
+      }
+      // "motion settled" / "env motion settled": no audio (null)
+    }
+
+    const ringBufStatus = ringBuf ? `samples=${ringBuf.samplesWritten}` : 'no ringBuf';
+    console.log(`[ActivityMonitor] Trigger: ${reason} (grid: ${grid ? grid.frameCount + ' frames' : 'none'}, audio: ${audioClip ? audioClip.size + 'B' : 'none'}, ${ringBufStatus})`);
 
     // Need at least one of grid or audio to send
     if (!grid && !audioClip) {
@@ -247,8 +248,17 @@ export function useActivityMonitor({
       highMotionDetectedRef.current = false;
       highMotionEnvDetectedRef.current = false;
 
-      setResult(prev => ({ ...prev, lastSendAt: Date.now() }));
-      await onTriggerRef.current(grid, audioClip);
+      const monitor = audioMonitorRef.current;
+      const ringBufSamples = audioRingBufferRef.current?.samplesWritten ?? 0;
+      setResult(prev => ({
+        ...prev,
+        lastSendAt: Date.now(),
+        lastTriggerReason: reason,
+        speechMethod: monitor?.getSpeechMethod() ?? 'none',
+        lastSpeechBoundary: monitor?.peekLastSpeechBoundary() ?? prev.lastSpeechBoundary,
+        ringBufferSamples: ringBufSamples,
+      }));
+      await onTriggerRef.current(grid, audioClip, reason);
     } catch (err) {
       console.warn("[ActivityMonitor] Trigger callback failed:", err);
     } finally {
@@ -294,13 +304,30 @@ export function useActivityMonitor({
           ...prev,
           isSpeaking: state.isSpeaking,
           energyLevel: state.energyLevel,
+          speechMethod: audioMonitor.getSpeechMethod(),
+          lastSpeechBoundary: audioMonitor.peekLastSpeechBoundary() ?? prev.lastSpeechBoundary,
         }));
       },
     });
+    audioMonitorRef.current = audioMonitor;
+
+    let audioRingBuf: AudioRingBuffer | null = null;
 
     if (audioEnabled && micStream) {
       audioMonitor.start(micStream);
-      startAudioRecording(micStream);
+
+      // Create audio ring buffer and connect it to the AudioContext
+      const audioCtx = audioMonitor.getAudioContext();
+      const sourceNode = audioMonitor.getSourceNode();
+      if (audioCtx && sourceNode) {
+        audioRingBuf = new AudioRingBuffer(audioCtx.sampleRate);
+        // Set PCM streaming callback if provided (for Gemini Live API)
+        if (onPcmChunkRef.current) {
+          audioRingBuf.setStreamCallback(onPcmChunkRef.current);
+        }
+        audioRingBuf.connect(audioCtx, sourceNode);
+        audioRingBufferRef.current = audioRingBuf;
+      }
     }
 
     // Frame capture interval (only when video capture is enabled)
@@ -401,16 +428,20 @@ export function useActivityMonitor({
       if (envCaptureTimerId) clearInterval(envCaptureTimerId);
       clearInterval(triggerTimerId);
       audioMonitor.stop();
-      stopAudioRecording();
+      audioMonitorRef.current = null;
+      if (audioRingBuf) {
+        audioRingBuf.destroy();
+        audioRingBufferRef.current = null;
+      }
       buffer.clear();
       envBuffer.clear();
       frameBufferRef.current = null;
       envFrameBufferRef.current = null;
       inFlightRef.current = false;
       pendingTriggerRef.current = null;
-      setResult({ isActive: false, isSpeaking: false, energyLevel: 0, frameCount: 0, lastSendAt: null });
+      setResult({ isActive: false, isSpeaking: false, energyLevel: 0, frameCount: 0, lastSendAt: null, speechMethod: 'none', lastSpeechBoundary: null, lastTriggerReason: null, ringBufferSamples: 0 });
     };
-  }, [enabled, videoEnabled, audioEnabled, micStream, fireTrigger, startAudioRecording, stopAudioRecording]);
+  }, [enabled, videoEnabled, audioEnabled, micStream, fireTrigger]);
 
   return result;
 }

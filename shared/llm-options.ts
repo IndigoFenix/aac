@@ -180,6 +180,12 @@ export const MODEL_OPTIONS: ModelOption[] = [
 // DB Setting Keys
 // ──────────────────────────────────────────────────────────────────
 
+export const PROVIDER_LABELS: Record<LLMProviderKey, string> = {
+  openai: "OpenAI",
+  gemini: "Google Gemini",
+  claude: "Anthropic Claude",
+};
+
 export const SETTING_KEYS: Record<UseCaseKey, string> = {
   clinician: "llm_clinician",
   aac_chat: "llm_aac_chat",

@@ -76,6 +76,14 @@ export class ChatStreamController {
         });
       };
 
+      // Navigation callback - sends SSE events for immediate panel navigation
+      const onNavigate = (feature: string) => {
+        sendSSEEvent(res, "navigate", {
+          feature,
+          timestamp: Date.now(),
+        });
+      };
+
       const messagesWithTimestamp =
         messages?.map((msg) => ({
           ...msg,
@@ -95,6 +103,7 @@ export class ChatStreamController {
         images,
         replyType: replyType || "html",
         onThinkingUpdate,
+        onNavigate,
       });
 
       // Send final response

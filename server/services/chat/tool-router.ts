@@ -49,6 +49,7 @@ export interface ToolRegistry {
   spawn: (args: { subAgentId: string }) => Promise<any>;
   despawn: (args: { subAgentId: string }) => Promise<any>;
   pruneMessages: (args: { forget: number[]; summary: string }) => Promise<any>;
+  navigateToFeature: (args: { feature: string }) => Promise<any>;
 }
 
 // ============================================================================
@@ -219,6 +220,7 @@ export interface ToolRegistryDeps {
   onUpdateChatState?: (v: ChatState) => Promise<void>;
   onCreditsUsed?: (v: number) => Promise<void>;
   onThinkingUpdate?: (description: string) => void;
+  onNavigate?: (feature: string) => void;
 
   /**
    * Optional callback for pruneMessages tool.
@@ -271,6 +273,13 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
         deps.onThinkingUpdate(actionDescription);
         return { success: true };
       }
+    },
+    navigateToFeature: async ({ feature }) => {
+      if (deps.onNavigate) {
+        deps.onNavigate(feature);
+        return { success: true, navigatedTo: feature };
+      }
+      return { success: false, reason: 'Navigation not available' };
     },
     apiCall: async (toolCall: GPTFunctionToolCall) => {
       const fnName = toolCall.name;
@@ -817,6 +826,10 @@ export async function makeToolCalls(
                 break;
               case "pruneMessages":
                 response = await registry.pruneMessages(args);
+                insertToolCallResponse(toolCall, response);
+                break;
+              case "navigateToFeature":
+                response = await registry.navigateToFeature(args as { feature: string });
                 insertToolCallResponse(toolCall, response);
                 break;
               default:

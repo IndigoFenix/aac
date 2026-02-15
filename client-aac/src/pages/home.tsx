@@ -18,6 +18,7 @@ import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useMultiCamera } from "@/hooks/useMultiCamera";
 import { useCamera } from "@/hooks/useCamera";
 import { usePersonIdentification } from "@/hooks/usePersonIdentification";
+import { useFaceImageCache } from "@/hooks/useFaceImageCache";
 import UnifiedDebugPanel from "@/components/UnifiedDebugPanel";
 import TwoHandedObjectDetection from "@/components/TwoHandedObjectDetection";
 import { DetectedObject } from "@/hooks/useTwoHandedObjectDetection";
@@ -53,13 +54,16 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for interpret/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, onBoardPatchChange }: {
+function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, onBoardPatchChange, onAiButtonPressChange, onSendMessageReady, onInitializedChange }: {
   onModeChange: (mode: 'interact' | 'silent') => void;
   onInterpretReady: (fn: ((buttons: string[]) => Promise<void>) | null) => void;
   onDetectionChange?: (enabled: boolean) => void;
   onBoardPatchChange?: (patch: import("@/hooks/useDualAgent").BoardPatch | null) => void;
+  onAiButtonPressChange?: (data: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] } | null) => void;
+  onSendMessageReady?: (fn: ((msg: string) => Promise<void>) | null) => void;
+  onInitializedChange?: (initialized: boolean) => void;
 }) {
-  const { interactionMode, interpretButtons, videoCaptureEnabled, voiceEnabled, boardPatch } = useDualAgentContext();
+  const { interactionMode, interpretButtons, videoCaptureEnabled, voiceEnabled, boardPatch, aiButtonPress, sendMessage, isInitialized } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(interactionMode);
@@ -77,6 +81,19 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
   useEffect(() => {
     onBoardPatchChange?.(boardPatch);
   }, [boardPatch, onBoardPatchChange]);
+
+  useEffect(() => {
+    onAiButtonPressChange?.(aiButtonPress);
+  }, [aiButtonPress, onAiButtonPressChange]);
+
+  useEffect(() => {
+    onSendMessageReady?.((msg: string) => sendMessage(msg));
+    return () => onSendMessageReady?.(null);
+  }, [sendMessage, onSendMessageReady]);
+
+  useEffect(() => {
+    onInitializedChange?.(isInitialized);
+  }, [isInitialized, onInitializedChange]);
 
   return null;
 }
@@ -164,6 +181,9 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   // Board patch state — from detection (incremental add/remove)
   const [boardPatchData, setBoardPatchData] = useState<import("@/hooks/useDualAgent").BoardPatch | null>(null);
 
+  // AI button press — AI navigated within a loaded board
+  const [aiButtonPressData, setAiButtonPressData] = useState<{ label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] } | null>(null);
+
   // Recent button presses for Interpret feature (silent mode)
   const [recentButtonPresses, setRecentButtonPresses] = useState<string[]>([]);
 
@@ -185,7 +205,9 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
 
   // Dual-agent mode bridged from context
   const [dualAgentMode, setDualAgentMode] = useState<'interact' | 'silent'>('interact');
+  const [aiSessionActive, setAiSessionActive] = useState(false);
   const interpretFnRef = useRef<((buttons: string[]) => Promise<void>) | null>(null);
+  const sendMessageFnRef = useRef<((msg: string) => Promise<void>) | null>(null);
 
   // Get authenticated user
   const { data: authUser, isLoading: isAuthLoading } = useQuery({
@@ -256,15 +278,21 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     enabled: faceTrackingEnabled,
   });
 
+  // Face image cache (in-memory, session-scoped — no server storage)
+  const faceImageCache = useFaceImageCache();
+
   // Person identification for AAC system (face recognition)
   const {
     isReady: isPersonIdReady,
     currentIdentification,
     identifyFromVideo,
     knownPeopleCount,
+    getUnmatchedDescriptors,
+    lastCapturedFaceImage,
   } = usePersonIdentification({
     studentId,
     enabled: useDualAgent, // Only enable when dual-agent is active
+    cacheFaceImage: faceImageCache.cacheFaceImage,
   });
 
   // Face event accumulation (derives semantic events from blendshapes)
@@ -489,8 +517,10 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     return () => clearInterval(interval);
   }, [isStandbyMode, isMultiCameraActive, globalError, captureFrameFromCamera, getUserCamera, userProfile, DISABLE_PERIODIC_DETECTION]);
 
-  // Show gesture hints briefly
+  // Show gesture hints briefly (touch devices only)
   useEffect(() => {
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    if (!isTouchDevice) return;
     const timer = setTimeout(() => {
       setShowGestureHints(true);
       setTimeout(() => setShowGestureHints(false), 3000);
@@ -584,6 +614,13 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     if (prev) {
       setBoardData(prev);
     }
+  }, []);
+
+  // Handle multi-page board navigation — inform AI of page change
+  const handleBoardNavigate = useCallback((pageId: string, pageName: string, buttons: BoardButton[]) => {
+    const buttonLabels = buttons.map(b => b.label).join(", ");
+    const msg = `User navigated to page "${pageName}". Current buttons: ${buttonLabels}`;
+    sendMessageFnRef.current?.(msg);
   }, []);
 
   // Handle detected objects from two-handed detection
@@ -906,10 +943,14 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             <DynamicBoard
               board={boardData}
               boardPatch={boardPatchData}
+              aiButtonPress={aiButtonPressData}
               onButtonClick={handleBoardButtonClick}
               onBack={boardHistoryRef.current.length > 0 ? handleBoardBack : undefined}
+              onNavigate={handleBoardNavigate}
               language={currentLanguage}
               voiceType={userProfile?.aacStudentVoiceType || 'boy'}
+              getFaceImage={faceImageCache.getFaceImage}
+              suppressLocalSpeech={aiSessionActive}
             />
           ) : (
             <PrebuiltBoardSection
@@ -1030,6 +1071,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
         <DualAgentProvider
           studentId={studentId}
           language={currentLanguage}
+          useLiveApi={true}
           captureFrame={async () => {
             // Try multiCamera first
             const userCamera = getUserCamera();
@@ -1087,12 +1129,17 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           }}
           getIdentifiedPerson={getIdentifiedPerson}
           getGestureContext={getGestureContext}
+          getUnmatchedFaceDescriptors={getUnmatchedDescriptors}
           debugMode={debugMode}
+          getFaceImage={faceImageCache.getFaceImage}
         >
           <DualAgentBridge
             onModeChange={setDualAgentMode}
             onInterpretReady={(fn) => { interpretFnRef.current = fn; }}
             onBoardPatchChange={setBoardPatchData}
+            onAiButtonPressChange={setAiButtonPressData}
+            onSendMessageReady={(fn) => { sendMessageFnRef.current = fn; }}
+            onInitializedChange={setAiSessionActive}
           />
           <AppOverlayBridge />
           <DualAgentConversationBox
@@ -1133,6 +1180,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
               handGestureFps={handGestureFps}
               handGestureReady={handGestureReady}
               handGestureError={handGestureError}
+              lastCapturedFaceImage={lastCapturedFaceImage}
             />
           )}
         </DualAgentProvider>

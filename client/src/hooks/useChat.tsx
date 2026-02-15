@@ -354,8 +354,8 @@ export const ChatProvider = ({
   }, []);
 
   const getPersonaInfo = useCallback((personaId: string | undefined): PersonaInfo | undefined => {
-    if (!personaId) return undefined;
-    return personas.find(p => p.id === personaId);
+    if (!personaId || personaId === 'default') return DEFAULT_PERSONA;
+    return personas.find(p => p.id === personaId) ?? DEFAULT_PERSONA;
   }, [personas]);
 
   // ============================================================================
@@ -772,6 +772,10 @@ export const ChatProvider = ({
         onThinking: (text) => {
           setIsThinking(true);
           setThinkingText(text);
+        },
+        onNavigate: (feature) => {
+          console.log('[useChat] AI navigating to:', feature);
+          setActiveFeature(feature as any);
         },
         onComplete: (data) => {
           setIsThinking(false);

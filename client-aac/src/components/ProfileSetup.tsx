@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ export default function ProfileSetup({ isOpen, onComplete, onSkip }: ProfileSetu
     preferences: "",
   });
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const createStudentMutation = useMutation({
     mutationFn: async (studentData: any) => {
@@ -27,6 +28,7 @@ export default function ProfileSetup({ isOpen, onComplete, onSkip }: ProfileSetu
       return response.json();
     },
     onSuccess: (student) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/students"] });
       toast({
         title: "Profile Created",
         description: "Welcome to Synapse! Your profile has been saved.",

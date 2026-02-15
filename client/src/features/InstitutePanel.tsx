@@ -273,6 +273,22 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
     }
   }, [currentInstitute, activeTab]);
 
+  // Re-fetch sub-entity data when AI updates institute data
+  useEffect(() => {
+    if (!isAiRefreshing || !currentInstitute) return;
+    // Refetch the main institutes list
+    refetchInstitutes();
+    // Refetch whatever sub-entity data the current tab displays
+    if (activeTab === 'members') loadMembers();
+    if (activeTab === 'invites') loadInvites();
+    if (activeTab === 'classrooms') loadClassrooms();
+    if (activeTab === 'students') loadInstituteStudents();
+    if (selectedClassroom) {
+      loadClassroomMembers(selectedClassroom.id);
+      loadClassroomStudents(selectedClassroom.id);
+    }
+  }, [isAiRefreshing]);
+
   // Load classroom details when selected
   useEffect(() => {
     if (selectedClassroom) {

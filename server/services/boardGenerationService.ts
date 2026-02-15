@@ -207,7 +207,7 @@ For each button provide:
 - label (1-3 words max)
 - spokenText (natural phrase to speak, max 8 words)
 - color (hex code)
-- iconRef (FontAwesome class)
+- iconRef (emoji)
 - category (needs/emotions/people/activities/objects)
 - row, col (0-indexed, optional)
 

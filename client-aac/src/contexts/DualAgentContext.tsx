@@ -2,7 +2,8 @@
 // Context for the dual-agent AAC system
 
 import React, { createContext, useContext, useCallback, useEffect, useRef, useState } from "react";
-import { useDualAgent, type DualAgentMessage, type IdentifiedPerson, type BoardPatch, type ActiveAppData } from "@/hooks/useDualAgent";
+import { useDualAgent, type DualAgentMessage, type IdentifiedPerson, type BoardPatch, type ActiveAppData, type CachedAudioClip, type UseDualAgentReturn } from "@/hooks/useDualAgent";
+import { useLiveSession } from "@/hooks/useLiveSession";
 import type { CachedRequest } from "@/hooks/useDebugRequestCache";
 import { useCameraAttentivenessOptional } from "@/contexts/CameraAttentivenessContext";
 import { useActivityMonitor } from "@/hooks/useActivityMonitor";
@@ -66,9 +67,13 @@ interface DualAgentContextType {
   // Board patch (from detection)
   boardPatch: BoardPatch | null;
 
+  // AI button press (AI navigated within a loaded board)
+  aiButtonPress: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] } | null;
+
   // Debug
   debugData: Record<string, any>;
   requestCache: CachedRequest[];
+  audioClipCache: CachedAudioClip[];
 
   // Active app
   activeApp: ActiveAppData | null;
@@ -79,9 +84,34 @@ interface DualAgentContextType {
   emote: "happy" | "sad" | "neutral";
   speakingVolume: number;
 
+  // Face image cache
+  getFaceImage: (contactId: string) => string | null;
+
   // Monitor status
   monitorError: string | null;
   monitorConsecutiveFailures: number;
+
+  // Audio activity state (from activity monitor)
+  audioActivity: {
+    isSpeaking: boolean;
+    energyLevel: number;
+    speechMethod: 'webSpeechApi' | 'energy' | 'none';
+    lastSpeechBoundary: { start: number; end: number } | null;
+    lastTriggerReason: string | null;
+    ringBufferSamples: number;
+  };
+
+  // PCM gating debug (Live API only)
+  pcmDebug: {
+    /** Whether mic PCM is currently blocked (isBusyRef from audio player) */
+    audioBusy: boolean;
+    /** Whether audio is actively playing (React state) */
+    isPlaying: boolean;
+    /** Total PCM chunks sent to Gemini */
+    sentCount: number;
+    /** Total PCM chunks blocked by gate */
+    gatedCount: number;
+  };
 }
 
 const DualAgentContext = createContext<DualAgentContextType | null>(null);
@@ -98,13 +128,32 @@ interface DualAgentProviderProps {
   getIdentifiedPerson?: () => IdentifiedPerson | null;
   /** Function to get serialized gesture/expression context (face + hand events) */
   getGestureContext?: () => string | null;
+  /** Function to get unmatched face descriptors for AI-triggered enrollment */
+  getUnmatchedFaceDescriptors?: () => Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number } }>;
   /** Callback for board patches from detection */
   onBoardPatch?: (patch: BoardPatch) => void;
   /** Enable debug mode — sends debugMode to backend, collects debug SSE events */
   debugMode?: boolean;
+  /** Client-side face image cache lookup */
+  getFaceImage?: (contactId: string) => string | null;
+  /** Use Gemini Live API (WebSocket) instead of HTTP request-response */
+  useLiveApi?: boolean;
 }
 
-export function DualAgentProvider({
+export function DualAgentProvider(props: DualAgentProviderProps) {
+  // Delegate to the correct inner component based on useLiveApi flag.
+  // This avoids conditional hook calls (React rules of hooks).
+  if (props.useLiveApi) {
+    return <LiveApiProviderInner {...props} />;
+  }
+  return <HttpProviderInner {...props} />;
+}
+
+// ---------------------------------------------------------------------------
+// Inner provider: HTTP mode (existing request-response pipeline)
+// ---------------------------------------------------------------------------
+
+function HttpProviderInner({
   children,
   studentId,
   language = "en",
@@ -112,11 +161,14 @@ export function DualAgentProvider({
   captureEnvFrame: captureEnvFrameProp,
   getIdentifiedPerson,
   getGestureContext,
+  getUnmatchedFaceDescriptors,
   onBoardPatch: onBoardPatchProp,
   debugMode,
+  getFaceImage: getFaceImageProp,
 }: DualAgentProviderProps) {
   const [currentBoard, setCurrentBoard] = React.useState<ParsedBoardData | null>(null);
   const [boardPatch, setBoardPatch] = React.useState<BoardPatch | null>(null);
+  const [aiButtonPress, setAiButtonPress] = React.useState<{ label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] } | null>(null);
   const onBoardUpdateRef = useRef<((board: ParsedBoardData) => void) | null>(null);
 
   // Mic stream for activity monitor (created when detection enabled + initialized)
@@ -127,9 +179,7 @@ export function DualAgentProvider({
   const attentiveness = useCameraAttentivenessOptional();
 
   // Create a captureFrame function that prefers the attentiveness context's camera
-  // (which shares the same stream that motion detection uses), falling back to prop
   const captureFrame = useCallback(async (): Promise<Blob | null> => {
-    // Try attentiveness context first (uses the working camera stream)
     if (attentiveness) {
       try {
         const frame = await attentiveness.captureNow('medium');
@@ -140,7 +190,6 @@ export function DualAgentProvider({
         console.warn("[DualAgentContext] Attentiveness capture failed:", err);
       }
     }
-    // Fall back to prop-provided captureFrame
     if (captureFrameProp) {
       return captureFrameProp();
     }
@@ -163,7 +212,6 @@ export function DualAgentProvider({
         // Fall through
       }
     }
-    // Fallback: use prop captureFrame with zero motion
     if (captureFrameProp) {
       try {
         const blob = await captureFrameProp();
@@ -177,19 +225,28 @@ export function DualAgentProvider({
     return null;
   }, [attentiveness, captureFrameProp]);
 
-  // Handle board updates from the agent
   const handleBoardUpdate = useCallback((board: ParsedBoardData) => {
     setCurrentBoard(board);
     onBoardUpdateRef.current?.(board);
   }, []);
 
-  // Handle board patches from detection
   const handleBoardPatch = useCallback((patch: BoardPatch) => {
     setBoardPatch(patch);
     onBoardPatchProp?.(patch);
   }, [onBoardPatchProp]);
 
-  // Handle thinking mode changes
+  const handleSetBoard = useCallback((data: { board: ParsedBoardData; name: string; boardId: string }) => {
+    // When AI selects a pre-built board, update the current board state
+    setCurrentBoard(data.board);
+    onBoardUpdateRef.current?.(data.board);
+    console.log(`[DualAgentContext] SET_BOARD: "${data.name}" loaded`);
+  }, []);
+
+  const handleAiButtonPress = useCallback((data: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] }) => {
+    setAiButtonPress(data);
+    console.log(`[DualAgentContext] AI_BUTTON_PRESS: "${data.label}" → page "${data.targetPageName}"`);
+  }, []);
+
   const handleThinkingModeChange = useCallback((thinking: boolean) => {
     console.log("[DualAgentContext] Thinking mode:", thinking);
   }, []);
@@ -199,6 +256,8 @@ export function DualAgentProvider({
     language,
     onBoardUpdate: handleBoardUpdate,
     onBoardPatch: handleBoardPatch,
+    onSetBoard: handleSetBoard,
+    onAiButtonPress: handleAiButtonPress,
     onThinkingModeChange: handleThinkingModeChange,
     autoPlayAudio: true,
     captureFrame,
@@ -207,50 +266,44 @@ export function DualAgentProvider({
     debugMode,
   });
 
-  // Allow app components to register canvas capture functions
   const registerAppCanvasCapture = useCallback((fn: (() => Promise<Blob | null>) | null) => {
     dualAgent.captureAppCanvasRef.current = fn;
   }, [dualAgent.captureAppCanvasRef]);
 
-  // Stable ref for runDetectionWithGrid (avoids re-creating activity monitor)
   const runDetectionWithGridRef = useRef(dualAgent.runDetectionWithGrid);
   runDetectionWithGridRef.current = dualAgent.runDetectionWithGrid;
 
-  // Activity-driven trigger callback — returns the promise so the monitor can await it
-  const handleActivityTrigger = useCallback(async (grid: any, audioClip: Blob | null) => {
-    await runDetectionWithGridRef.current(grid, audioClip);
+  const getUnmatchedFaceDescriptorsRef = useRef(getUnmatchedFaceDescriptors);
+  getUnmatchedFaceDescriptorsRef.current = getUnmatchedFaceDescriptors;
+
+  const handleActivityTrigger = useCallback(async (grid: any, audioClip: Blob | null, triggerReason: string) => {
+    const unknownDescriptors = getUnmatchedFaceDescriptorsRef.current?.() || undefined;
+    await runDetectionWithGridRef.current(grid, audioClip, unknownDescriptors, triggerReason);
   }, []);
 
-  // Manage mic stream lifecycle: acquire when audio capture (voiceEnabled) + initialized, release on disable
+  // Manage mic stream lifecycle
   useEffect(() => {
     if (!dualAgent.voiceEnabled || !dualAgent.isInitialized || !dualAgent.sessionId) {
-      // Release mic if we have one
       if (micStreamRef.current) {
         micStreamRef.current.getTracks().forEach(t => t.stop());
         micStreamRef.current = null;
         setMicStream(null);
-        console.log("[DualAgentContext] Mic stream released");
       }
       return;
     }
-
-    // Acquire mic
     let cancelled = false;
     (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        if (cancelled) {
-          stream.getTracks().forEach(t => t.stop());
-          return;
-        }
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
+        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
         micStreamRef.current = stream;
         setMicStream(stream);
-        console.log("[DualAgentContext] Mic stream acquired for activity monitor");
       } catch {
-        console.warn("[DualAgentContext] Mic not available, running detection without audio");
+        console.warn("[DualAgentContext] Mic not available");
       }
     })();
-
     return () => {
       cancelled = true;
       if (micStreamRef.current) {
@@ -261,7 +314,6 @@ export function DualAgentProvider({
     };
   }, [dualAgent.voiceEnabled, dualAgent.isInitialized, dualAgent.sessionId]);
 
-  // Activity monitor: drives the detection pipeline (active when either video or audio is on)
   const activityMonitor = useActivityMonitor({
     enabled: (dualAgent.videoCaptureEnabled || dualAgent.voiceEnabled) && dualAgent.isInitialized && !!dualAgent.sessionId,
     videoEnabled: dualAgent.videoCaptureEnabled,
@@ -272,18 +324,25 @@ export function DualAgentProvider({
     onTrigger: handleActivityTrigger,
   });
 
-  // Wrap sendMessage to include current board
+  // Stabilize sendMessage identity — use refs so the callback doesn't change on every render
+  const dualAgentSendRef = useRef(dualAgent.sendMessage);
+  dualAgentSendRef.current = dualAgent.sendMessage;
+  const currentBoardRef = useRef(currentBoard);
+  currentBoardRef.current = currentBoard;
+
   const sendMessage = useCallback(
     async (message: string) => {
-      await dualAgent.sendMessage(message, currentBoard || undefined);
+      await dualAgentSendRef.current(message, currentBoardRef.current || undefined);
     },
-    [dualAgent, currentBoard]
+    []
   );
 
-  // Wrap voice recording to include current board
+  const dualAgentSendVoiceRef = useRef(dualAgent.sendVoice);
+  dualAgentSendVoiceRef.current = dualAgent.sendVoice;
+
   const stopVoiceRecording = useCallback(async () => {
-    await dualAgent.sendVoice(currentBoard || undefined);
-  }, [dualAgent, currentBoard]);
+    await dualAgentSendVoiceRef.current(currentBoardRef.current || undefined);
+  }, []);
 
   const setOnBoardUpdate = useCallback(
     (callback: ((board: ParsedBoardData) => void) | null) => {
@@ -292,79 +351,374 @@ export function DualAgentProvider({
     []
   );
 
-  const value: DualAgentContextType = {
-    // Session state
+  return (
+    <ProviderShell
+      studentId={studentId}
+      agent={dualAgent}
+      currentBoard={currentBoard}
+      setCurrentBoard={setCurrentBoard}
+      boardPatch={boardPatch}
+      aiButtonPress={aiButtonPress}
+      setOnBoardUpdate={setOnBoardUpdate}
+      sendMessage={sendMessage}
+      stopVoiceRecording={stopVoiceRecording}
+      registerAppCanvasCapture={registerAppCanvasCapture}
+      getFaceImage={getFaceImageProp ?? (() => null)}
+      activityMonitor={activityMonitor}
+    >
+      {children}
+    </ProviderShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Inner provider: Live API mode (WebSocket to Gemini)
+// ---------------------------------------------------------------------------
+
+function LiveApiProviderInner({
+  children,
+  studentId,
+  language = "en",
+  captureFrame: captureFrameProp,
+  captureEnvFrame: captureEnvFrameProp,
+  getUnmatchedFaceDescriptors,
+  onBoardPatch: onBoardPatchProp,
+  debugMode,
+  getFaceImage: getFaceImageProp,
+}: DualAgentProviderProps) {
+  const [currentBoard, setCurrentBoard] = React.useState<ParsedBoardData | null>(null);
+  const [boardPatch, setBoardPatch] = React.useState<BoardPatch | null>(null);
+  const [aiButtonPress, setAiButtonPress] = React.useState<{ label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] } | null>(null);
+  const onBoardUpdateRef = useRef<((board: ParsedBoardData) => void) | null>(null);
+
+  // Mic stream for activity monitor
+  const [micStream, setMicStream] = useState<MediaStream | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+
+  const attentiveness = useCameraAttentivenessOptional();
+
+  const captureBufferedFrame = useCallback(async (): Promise<BufferedFrame | null> => {
+    if (attentiveness) {
+      try {
+        const frame = await attentiveness.captureNow('medium');
+        if (frame && frame.blob && frame.blob.size > 0) {
+          return { blob: frame.blob, timestamp: frame.timestamp, motionLevel: frame.motionLevel };
+        }
+      } catch { /* fall through */ }
+    }
+    if (captureFrameProp) {
+      try {
+        const blob = await captureFrameProp();
+        if (blob && blob.size > 0) {
+          return { blob, timestamp: Date.now(), motionLevel: 0 };
+        }
+      } catch { /* fall through */ }
+    }
+    return null;
+  }, [attentiveness, captureFrameProp]);
+
+  const handleBoardUpdate = useCallback((board: ParsedBoardData) => {
+    setCurrentBoard(board);
+    onBoardUpdateRef.current?.(board);
+  }, []);
+
+  const handleBoardPatch = useCallback((patch: BoardPatch) => {
+    setBoardPatch(patch);
+    onBoardPatchProp?.(patch);
+  }, [onBoardPatchProp]);
+
+  const handleSetBoard = useCallback((data: { board: ParsedBoardData; name: string; boardId: string }) => {
+    setCurrentBoard(data.board);
+    onBoardUpdateRef.current?.(data.board);
+    console.log(`[DualAgentContext] SET_BOARD: "${data.name}" loaded`);
+  }, []);
+
+  const handleAiButtonPress = useCallback((data: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] }) => {
+    setAiButtonPress(data);
+    console.log(`[DualAgentContext] AI_BUTTON_PRESS: "${data.label}" → page "${data.targetPageName}"`);
+  }, []);
+
+  const liveAgent = useLiveSession({
     studentId,
-    sessionId: dualAgent.sessionId,
-    isInitialized: dualAgent.isInitialized,
-    isLoading: dualAgent.isLoading,
-    error: dualAgent.error,
-    thinkingMode: dualAgent.thinkingMode,
+    language,
+    onBoardUpdate: handleBoardUpdate,
+    onBoardPatch: handleBoardPatch,
+    onSetBoard: handleSetBoard,
+    onAiButtonPress: handleAiButtonPress,
+    autoPlayAudio: true,
+    debugMode,
+  });
 
-    // Messages
-    currentMessage: dualAgent.currentMessage,
-    transcription: dualAgent.transcription,
-    interpretationText: dualAgent.interpretationText,
-    debugText: dualAgent.debugText,
+  const registerAppCanvasCapture = useCallback((fn: (() => Promise<Blob | null>) | null) => {
+    liveAgent.captureAppCanvasRef.current = fn;
+  }, [liveAgent.captureAppCanvasRef]);
 
-    // Audio state
-    audioEnabled: dualAgent.audioEnabled,
-    isPlaying: dualAgent.isPlaying,
-    voiceEnabled: dualAgent.voiceEnabled,
-    isRecording: dualAgent.isRecording,
-    audioLevel: dualAgent.audioLevel,
-    recordingDuration: dualAgent.recordingDuration,
+  const runDetectionWithGridRef = useRef(liveAgent.runDetectionWithGrid);
+  runDetectionWithGridRef.current = liveAgent.runDetectionWithGrid;
 
-    // Board state
+  const getUnmatchedFaceDescriptorsRef = useRef(getUnmatchedFaceDescriptors);
+  getUnmatchedFaceDescriptorsRef.current = getUnmatchedFaceDescriptors;
+
+  const handleActivityTrigger = useCallback(async (grid: any, audioClip: Blob | null, triggerReason: string) => {
+    const unknownDescriptors = getUnmatchedFaceDescriptorsRef.current?.() || undefined;
+    await runDetectionWithGridRef.current(grid, audioClip, unknownDescriptors, triggerReason);
+  }, []);
+
+  // Mic stream lifecycle
+  useEffect(() => {
+    if (!liveAgent.voiceEnabled || !liveAgent.isInitialized || !liveAgent.sessionId) {
+      if (micStreamRef.current) {
+        micStreamRef.current.getTracks().forEach(t => t.stop());
+        micStreamRef.current = null;
+        setMicStream(null);
+      }
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        // Request echo cancellation + noise suppression to reduce TTS feedback
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
+        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
+        micStreamRef.current = stream;
+        setMicStream(stream);
+      } catch {
+        console.warn("[DualAgentContext] Mic not available");
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (micStreamRef.current) {
+        micStreamRef.current.getTracks().forEach(t => t.stop());
+        micStreamRef.current = null;
+        setMicStream(null);
+      }
+    };
+  }, [liveAgent.voiceEnabled, liveAgent.isInitialized, liveAgent.sessionId]);
+
+  // PCM streaming callback — send raw audio to Gemini Live API via WebSocket.
+  // Gated: mute PCM while TTS is playing to prevent echo/feedback loop.
+  // Uses isBusyRef from the audio player — a synchronous ref that's true from
+  // the moment audio is queued until POST_PLAY_TAIL_MS after the last chunk finishes.
+  // This avoids React state propagation delay and covers post-playback room echo.
+  const sendPcmAudioRef = useRef(liveAgent.sendPcmAudio);
+  sendPcmAudioRef.current = liveAgent.sendPcmAudio;
+
+  // PCM debug counters (refs for perf, polled into state below)
+  const pcmSentCountRef = useRef(0);
+  const pcmGatedCountRef = useRef(0);
+  const [pcmDebug, setPcmDebug] = useState({ audioBusy: false, isPlaying: false, sentCount: 0, gatedCount: 0 });
+
+  const handlePcmChunk = useCallback((int16Base64: string) => {
+    // PCM gating disabled — relying on Gemini echo awareness prompt instead.
+    // Keeping counters for debug visibility.
+    if (liveAgent.isBusyRef?.current) {
+      pcmGatedCountRef.current++;
+    } else {
+      pcmSentCountRef.current++;
+    }
+    // Always send — let Gemini handle echo recognition
+    sendPcmAudioRef.current?.(int16Base64);
+  }, [liveAgent.isBusyRef]);
+
+  // Poll isBusyRef + counters into state every 200ms for the debug panel
+  useEffect(() => {
+    const id = setInterval(() => {
+      setPcmDebug({
+        audioBusy: !!liveAgent.isBusyRef?.current,
+        isPlaying: liveAgent.isPlaying,
+        sentCount: pcmSentCountRef.current,
+        gatedCount: pcmGatedCountRef.current,
+      });
+    }, 200);
+    return () => clearInterval(id);
+  }, [liveAgent.isBusyRef, liveAgent.isPlaying]);
+
+  const activityMonitor = useActivityMonitor({
+    enabled: (liveAgent.videoCaptureEnabled || liveAgent.voiceEnabled) && liveAgent.isInitialized && !!liveAgent.sessionId,
+    videoEnabled: liveAgent.videoCaptureEnabled,
+    audioEnabled: liveAgent.voiceEnabled,
+    micStream,
+    captureFrame: captureBufferedFrame,
+    captureEnvFrame: captureEnvFrameProp,
+    onTrigger: handleActivityTrigger,
+    // Stream raw PCM audio to Gemini Live API (continuous mic → WebSocket → Gemini)
+    onPcmChunk: handlePcmChunk,
+  });
+
+  // Stabilize sendMessage identity — use refs so the callback doesn't change on every render
+  const liveAgentSendRef = useRef(liveAgent.sendMessage);
+  liveAgentSendRef.current = liveAgent.sendMessage;
+  const currentBoardRef = useRef(currentBoard);
+  currentBoardRef.current = currentBoard;
+
+  const sendMessage = useCallback(
+    async (message: string) => {
+      await liveAgentSendRef.current(message, currentBoardRef.current || undefined);
+    },
+    []
+  );
+
+  const liveAgentSendVoiceRef = useRef(liveAgent.sendVoice);
+  liveAgentSendVoiceRef.current = liveAgent.sendVoice;
+
+  const stopVoiceRecording = useCallback(async () => {
+    await liveAgentSendVoiceRef.current(currentBoardRef.current || undefined);
+  }, []);
+
+  const setOnBoardUpdate = useCallback(
+    (callback: ((board: ParsedBoardData) => void) | null) => {
+      onBoardUpdateRef.current = callback;
+    },
+    []
+  );
+
+  return (
+    <ProviderShell
+      studentId={studentId}
+      agent={liveAgent}
+      currentBoard={currentBoard}
+      setCurrentBoard={setCurrentBoard}
+      boardPatch={boardPatch}
+      aiButtonPress={aiButtonPress}
+      setOnBoardUpdate={setOnBoardUpdate}
+      sendMessage={sendMessage}
+      stopVoiceRecording={stopVoiceRecording}
+      registerAppCanvasCapture={registerAppCanvasCapture}
+      getFaceImage={getFaceImageProp ?? (() => null)}
+      activityMonitor={activityMonitor}
+      pcmDebug={pcmDebug}
+    >
+      {children}
+    </ProviderShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Shared provider shell — builds context value from agent + activity monitor
+// ---------------------------------------------------------------------------
+
+interface ProviderShellProps {
+  children: React.ReactNode;
+  studentId: string;
+  agent: UseDualAgentReturn;
+  currentBoard: ParsedBoardData | null;
+  setCurrentBoard: (board: ParsedBoardData | null) => void;
+  boardPatch: BoardPatch | null;
+  aiButtonPress: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] } | null;
+  setOnBoardUpdate: (callback: ((board: ParsedBoardData) => void) | null) => void;
+  sendMessage: (message: string) => Promise<void>;
+  stopVoiceRecording: () => Promise<void>;
+  registerAppCanvasCapture: (fn: (() => Promise<Blob | null>) | null) => void;
+  getFaceImage: (contactId: string) => string | null;
+  activityMonitor: {
+    isSpeaking: boolean;
+    energyLevel: number;
+    speechMethod: 'webSpeechApi' | 'energy' | 'none';
+    lastSpeechBoundary: { start: number; end: number } | null;
+    lastTriggerReason: string | null;
+    ringBufferSamples: number;
+  };
+  pcmDebug?: {
+    audioBusy: boolean;
+    isPlaying: boolean;
+    sentCount: number;
+    gatedCount: number;
+  };
+}
+
+function ProviderShell({
+  children,
+  studentId,
+  agent,
+  currentBoard,
+  setCurrentBoard,
+  boardPatch,
+  aiButtonPress,
+  setOnBoardUpdate,
+  sendMessage,
+  stopVoiceRecording,
+  registerAppCanvasCapture,
+  getFaceImage,
+  activityMonitor,
+  pcmDebug: pcmDebugProp,
+}: ProviderShellProps) {
+  const value: DualAgentContextType = {
+    studentId,
+    sessionId: agent.sessionId,
+    isInitialized: agent.isInitialized,
+    isLoading: agent.isLoading,
+    error: agent.error,
+    thinkingMode: agent.thinkingMode,
+
+    currentMessage: agent.currentMessage,
+    transcription: agent.transcription,
+    interpretationText: agent.interpretationText,
+    debugText: agent.debugText,
+
+    audioEnabled: agent.audioEnabled,
+    isPlaying: agent.isPlaying,
+    voiceEnabled: agent.voiceEnabled,
+    isRecording: agent.isRecording,
+    audioLevel: agent.audioLevel,
+    recordingDuration: agent.recordingDuration,
+
     currentBoard,
 
-    // Interaction mode
-    interactionMode: dualAgent.interactionMode,
-    setInteractionMode: dualAgent.setInteractionMode,
+    interactionMode: agent.interactionMode,
+    setInteractionMode: agent.setInteractionMode,
 
-    // Response mode
-    responseMode: dualAgent.responseMode,
-    setResponseMode: dualAgent.setResponseMode,
+    responseMode: agent.responseMode,
+    setResponseMode: agent.setResponseMode,
 
-    // Detection
-    videoCaptureEnabled: dualAgent.videoCaptureEnabled,
-    setVideoCaptureEnabled: dualAgent.setVideoCaptureEnabled,
+    videoCaptureEnabled: agent.videoCaptureEnabled,
+    setVideoCaptureEnabled: agent.setVideoCaptureEnabled,
 
-    // Actions
-    initialize: dualAgent.initialize,
+    initialize: agent.initialize,
     sendMessage,
-    interpretButtons: dualAgent.interpretButtons,
-    startVoiceRecording: dualAgent.startRecording,
+    interpretButtons: agent.interpretButtons,
+    startVoiceRecording: agent.startRecording,
     stopVoiceRecording,
-    cancelVoiceRecording: dualAgent.cancelRecording,
-    setAudioEnabled: dualAgent.setAudioEnabled,
-    setVoiceEnabled: dualAgent.setVoiceEnabled,
-    stopAudio: dualAgent.stopAudio,
-    clearSession: dualAgent.clearSession,
+    cancelVoiceRecording: agent.cancelRecording,
+    setAudioEnabled: agent.setAudioEnabled,
+    setVoiceEnabled: agent.setVoiceEnabled,
+    stopAudio: agent.stopAudio,
+    clearSession: agent.clearSession,
 
-    // Board management
     setCurrentBoard,
     setOnBoardUpdate,
 
-    // Board patch (from detection)
     boardPatch,
+    aiButtonPress,
 
-    // Debug
-    debugData: dualAgent.debugData,
-    requestCache: dualAgent.requestCache,
+    debugData: agent.debugData,
+    requestCache: agent.requestCache,
+    audioClipCache: agent.audioClipCache,
 
-    // Active app
-    activeApp: dualAgent.activeApp,
-    dismissApp: dualAgent.dismissApp,
+    activeApp: agent.activeApp,
+    dismissApp: agent.dismissApp,
     registerAppCanvasCapture,
 
-    // Avatar
-    emote: dualAgent.emote,
-    speakingVolume: dualAgent.speakingVolume,
+    emote: agent.emote,
+    speakingVolume: agent.speakingVolume,
 
-    // Monitor status
-    monitorError: dualAgent.monitorError,
-    monitorConsecutiveFailures: dualAgent.monitorConsecutiveFailures,
+    getFaceImage,
+
+    monitorError: agent.monitorError,
+    monitorConsecutiveFailures: agent.monitorConsecutiveFailures,
+
+    audioActivity: {
+      isSpeaking: activityMonitor.isSpeaking,
+      energyLevel: activityMonitor.energyLevel,
+      speechMethod: activityMonitor.speechMethod,
+      lastSpeechBoundary: activityMonitor.lastSpeechBoundary,
+      lastTriggerReason: activityMonitor.lastTriggerReason,
+      ringBufferSamples: activityMonitor.ringBufferSamples,
+    },
+
+    pcmDebug: pcmDebugProp ?? { audioBusy: false, isPlaying: false, sentCount: 0, gatedCount: 0 },
   };
 
   return (

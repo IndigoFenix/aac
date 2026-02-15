@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { ParsedBoardData, BoardButton } from "@shared/schema";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { ArrowLeft } from "lucide-react";
 
 export interface BoardPatch {
   add: Array<{ label: string; iconRef: string }>;
@@ -12,19 +13,28 @@ export interface BoardPatch {
 interface DynamicBoardProps {
   board: ParsedBoardData | null;
   boardPatch?: BoardPatch | null;
+  /** AI pressed a navigation button — navigate to target page */
+  aiButtonPress?: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: BoardButton[] } | null;
   onButtonClick: (button: BoardButton, spokenText: string) => void;
   onBack?: () => void;
+  /** Called when user or AI navigates to a different page within a multi-page board */
+  onNavigate?: (pageId: string, pageName: string, buttons: BoardButton[]) => void;
   language?: string;
   voiceType?: string;
+  /** Resolve a contact face image from client-side cache */
+  getFaceImage?: (contactId: string) => string | null;
+  /** When true, skip local speechSynthesis — let the AI handle speech via [INTERPRET] */
+  suppressLocalSpeech?: boolean;
 }
 
-/** Slot state for the fixed 12-slot grid */
+/** Slot state for the grid */
 type SlotState =
   | { type: "occupied"; button: BoardButton; anim: "stable" | "entering" }
   | { type: "fading"; button: BoardButton; replaceWith?: BoardButton }
   | { type: "blank" };
 
-const TOTAL_SLOTS = 12;
+const DEFAULT_ROWS = 3;
+const DEFAULT_COLS = 4;
 const BLANK_SLOT: SlotState = { type: "blank" };
 
 // Check if a string is an emoji (not a FontAwesome class)
@@ -67,7 +77,7 @@ function getButtonColor(color?: string): string {
 }
 
 /** Create a BoardButton from a patch add entry */
-function makeBoardButton(entry: { label: string; iconRef: string }, index: number): BoardButton {
+function makeBoardButton(entry: { label: string; iconRef: string; symbolPath?: string }, index: number): BoardButton {
   return {
     id: `btn-patch-${Date.now()}-${index}`,
     label: entry.label,
@@ -75,6 +85,7 @@ function makeBoardButton(entry: { label: string; iconRef: string }, index: numbe
     row: 0,
     col: 0,
     iconRef: entry.iconRef,
+    symbolPath: entry.symbolPath,
     action: { type: "speak", text: entry.label },
   } as BoardButton;
 }
@@ -82,37 +93,73 @@ function makeBoardButton(entry: { label: string; iconRef: string }, index: numbe
 export default function DynamicBoard({
   board,
   boardPatch,
+  aiButtonPress,
   onButtonClick,
   onBack,
+  onNavigate,
   language = "en",
   voiceType,
+  getFaceImage,
+  suppressLocalSpeech = false,
 }: DynamicBoardProps) {
   const { speak } = useTextToSpeech();
   const { t } = useLanguage();
 
-  const [slots, setSlots] = useState<SlotState[]>(Array(TOTAL_SLOTS).fill(BLANK_SLOT));
+  // Grid dimensions from board data
+  const gridRows = board?.grid?.rows || DEFAULT_ROWS;
+  const gridCols = board?.grid?.cols || DEFAULT_COLS;
+  const totalSlots = gridRows * gridCols;
+
+  // Multi-page navigation state
+  const [currentPageId, setCurrentPageId] = useState<string | null>(null);
+  const [pageHistory, setPageHistory] = useState<string[]>([]);
+  const isMultiPage = (board?.pages?.length || 0) > 1;
+
+  const [slots, setSlots] = useState<SlotState[]>(Array(totalSlots).fill(BLANK_SLOT));
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPatchRef = useRef<BoardPatch | null>(null);
+  const prevBoardRef = useRef<ParsedBoardData | null>(null);
 
-  // Full board update — from board prop (button presses / chat)
+  // Reset page state when board identity changes
+  useEffect(() => {
+    if (board && board !== prevBoardRef.current) {
+      // Different board object — reset navigation
+      const firstPageId = board.pages?.[0]?.id || null;
+      setCurrentPageId(firstPageId);
+      setPageHistory([]);
+      prevBoardRef.current = board;
+    }
+  }, [board]);
+
+  // Get current page based on navigation state
+  const getCurrentPage = useCallback(() => {
+    if (!board?.pages?.length) return null;
+    if (currentPageId) {
+      const found = board.pages.find(p => p.id === currentPageId);
+      if (found) return found;
+    }
+    return board.pages[0];
+  }, [board, currentPageId]);
+
+  // Full board update — from board prop or page navigation
   useEffect(() => {
     if (!board || !board.pages || board.pages.length === 0) {
-      setSlots(Array(TOTAL_SLOTS).fill(BLANK_SLOT));
+      setSlots(Array(totalSlots).fill(BLANK_SLOT));
       return;
     }
 
-    const currentPage = board.pages[0];
-    const buttons: BoardButton[] = currentPage?.buttons || [];
+    const page = getCurrentPage();
+    const buttons: BoardButton[] = page?.buttons || [];
 
     setSlots(
-      Array.from({ length: TOTAL_SLOTS }, (_, i): SlotState => {
+      Array.from({ length: totalSlots }, (_, i): SlotState => {
         if (i < buttons.length) {
           return { type: "occupied", button: buttons[i], anim: "entering" };
         }
         return BLANK_SLOT;
       })
     );
-  }, [board]);
+  }, [board, currentPageId, totalSlots, getCurrentPage]);
 
   // Patch update — from boardPatch prop (detection)
   useEffect(() => {
@@ -190,13 +237,85 @@ export default function DynamicBoard({
     };
   }, []);
 
+  // Navigate to a linked page
+  const navigateToPage = useCallback((targetPageId: string) => {
+    if (!board?.pages) return;
+    const targetPage = board.pages.find(p => p.id === targetPageId);
+    if (!targetPage) return;
+
+    // Push current page to history
+    if (currentPageId) {
+      setPageHistory(prev => [...prev, currentPageId]);
+    }
+    setCurrentPageId(targetPageId);
+
+    // Notify parent about navigation
+    onNavigate?.(targetPageId, targetPage.name || "Page", targetPage.buttons || []);
+  }, [board, currentPageId, onNavigate]);
+
+  // Go back to previous page
+  const navigateBack = useCallback(() => {
+    if (pageHistory.length === 0) return;
+    const prevPageId = pageHistory[pageHistory.length - 1];
+    setPageHistory(prev => prev.slice(0, -1));
+    setCurrentPageId(prevPageId);
+
+    const prevPage = board?.pages?.find(p => p.id === prevPageId);
+    if (prevPage) {
+      onNavigate?.(prevPageId, prevPage.name || "Page", prevPage.buttons || []);
+    }
+  }, [pageHistory, board, onNavigate]);
+
+  // Go to home (first) page
+  const navigateHome = useCallback(() => {
+    const firstPage = board?.pages?.[0];
+    if (!firstPage) return;
+    setPageHistory([]);
+    setCurrentPageId(firstPage.id);
+    onNavigate?.(firstPage.id, firstPage.name || "Home", firstPage.buttons || []);
+  }, [board, onNavigate]);
+
+  // Handle AI button press — navigate to the target page
+  const lastAiPressRef = useRef(aiButtonPress);
+  useEffect(() => {
+    if (!aiButtonPress || aiButtonPress === lastAiPressRef.current) return;
+    lastAiPressRef.current = aiButtonPress;
+
+    if (aiButtonPress.action === "link" && aiButtonPress.targetPageId) {
+      navigateToPage(aiButtonPress.targetPageId);
+    } else if (aiButtonPress.action === "back") {
+      navigateBack();
+    } else if (aiButtonPress.action === "home") {
+      navigateHome();
+    }
+  }, [aiButtonPress, navigateToPage, navigateBack, navigateHome]);
+
   const handleButtonClick = useCallback(
     (button: BoardButton) => {
+      const action = button.action;
+
+      // Handle navigation actions
+      if (action?.type === "link" && action.toPageId) {
+        navigateToPage(action.toPageId);
+        return;
+      }
+      if (action?.type === "back") {
+        navigateBack();
+        return;
+      }
+      if (action?.type === "home") {
+        navigateHome();
+        return;
+      }
+
+      // Default: speak action
       const textToSpeak = button.spokenText || button.label;
-      speak(textToSpeak, language, voiceType as any);
+      if (!suppressLocalSpeech) {
+        speak(textToSpeak, language, voiceType as any);
+      }
       onButtonClick(button, textToSpeak);
     },
-    [speak, language, voiceType, onButtonClick]
+    [speak, language, voiceType, onButtonClick, navigateToPage, navigateBack, navigateHome, suppressLocalSpeech]
   );
 
   // Render nothing if completely empty
@@ -209,6 +328,9 @@ export default function DynamicBoard({
       </div>
     );
   }
+
+  const currentPage = getCurrentPage();
+  const canGoBack = pageHistory.length > 0;
 
   const renderSlot = (slot: SlotState, index: number) => {
     if (slot.type === "blank") {
@@ -242,6 +364,7 @@ export default function DynamicBoard({
     // occupied
     const { button, anim } = slot;
     const isEntering = anim === "entering";
+    const isLinkButton = button.action?.type === "link";
 
     return (
       <motion.button
@@ -251,7 +374,7 @@ export default function DynamicBoard({
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: isEntering ? 0.3 : 0.15 }}
         onClick={() => handleButtonClick(button)}
-        className="flex flex-col items-center justify-center p-2 rounded-xl shadow-sm border border-gray-200 min-h-0 overflow-hidden"
+        className={`flex flex-col items-center justify-center p-2 rounded-xl shadow-sm border min-h-0 overflow-hidden ${isLinkButton ? "border-blue-300 ring-1 ring-blue-200" : "border-gray-200"}`}
         style={{ backgroundColor: getButtonColor(button.color) }}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
@@ -267,6 +390,15 @@ export default function DynamicBoard({
   };
 
   const renderIcon = (button: BoardButton) => {
+    // Resolve __FACE__:contactId to cached face image
+    if (button.symbolPath?.startsWith("__FACE__:")) {
+      const contactId = button.symbolPath.substring(9);
+      const cached = getFaceImage?.(contactId);
+      if (cached) {
+        return <img src={cached} alt={button.label} className="w-[60%] h-[60%] object-contain rounded-full" />;
+      }
+      return <span className="text-[3rem] sm:text-[5rem] md:text-[7rem] leading-none">👤</span>;
+    }
     if (button.symbolPath) {
       return <img src={button.symbolPath} alt={button.label} className="w-[60%] h-[60%] object-contain" />;
     }
@@ -280,14 +412,36 @@ export default function DynamicBoard({
   };
 
   return (
-    <div className="h-full p-2 flex items-center justify-center">
-      <div
-        className="grid gap-2 w-full h-full"
-        style={{ gridTemplateColumns: "repeat(4, 1fr)", gridTemplateRows: "repeat(3, 1fr)" }}
-      >
-        <AnimatePresence mode="popLayout">
-          {slots.map((slot, i) => renderSlot(slot, i))}
-        </AnimatePresence>
+    <div className="h-full p-2 flex flex-col">
+      {/* Navigation header — only shown for multi-page boards */}
+      {isMultiPage && canGoBack && (
+        <div className="flex items-center gap-2 mb-1 px-1 flex-shrink-0">
+          <button
+            onClick={navigateBack}
+            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded-md hover:bg-blue-50"
+          >
+            <ArrowLeft className="w-3 h-3" />
+            Back
+          </button>
+          {currentPage?.name && (
+            <span className="text-xs text-gray-500 truncate">{currentPage.name}</span>
+          )}
+        </div>
+      )}
+
+      {/* Grid */}
+      <div className="flex-1 flex items-center justify-center min-h-0">
+        <div
+          className="grid gap-2 w-full h-full"
+          style={{
+            gridTemplateColumns: `repeat(${gridCols}, 1fr)`,
+            gridTemplateRows: `repeat(${gridRows}, 1fr)`,
+          }}
+        >
+          <AnimatePresence mode="popLayout">
+            {slots.map((slot, i) => renderSlot(slot, i))}
+          </AnimatePresence>
+        </div>
       </div>
     </div>
   );

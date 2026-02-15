@@ -10,20 +10,29 @@ import { fetchWithAuth } from "@/lib/queryClient";
 
 export interface KnownPerson {
   id: string;
-  type: "student" | "user";
+  type: "student" | "user" | "contact";
   name: string;
-  relationship?: string; // 'student', 'parent', 'teacher', 'therapist', etc.
+  relationship?: string; // 'student', 'parent', 'teacher', 'therapist', 'classmate', etc.
   faceEmbedding: number[] | null;
   voiceEmbedding: number[] | null;
+  description?: string;
+  contextNotes?: string;
 }
 
 export interface IdentifiedPerson {
   id: string;
-  type: "student" | "user";
+  type: "student" | "user" | "contact";
   name: string;
   relationship?: string;
   confidence: number;
   method: "face" | "voice" | "both";
+  description?: string;
+  contextNotes?: string;
+}
+
+export interface UnknownFaceDescriptor {
+  descriptor: number[];
+  boundingBox?: { x: number; y: number; w: number; h: number };
 }
 
 export interface IdentificationResult {
@@ -36,6 +45,15 @@ export interface IdentificationResult {
 interface CachedIdentification {
   result: IdentificationResult;
   descriptorHash: string;
+  timestamp: number;
+}
+
+/** Last captured face image for debug display */
+export interface LastCapturedFaceImage {
+  contactId: string;
+  contactName: string;
+  dataUrl: string;
+  quality: number;
   timestamp: number;
 }
 
@@ -131,6 +149,72 @@ const CACHE_DURATION_MS = 5 * 60 * 1000;
 // Known people refresh interval (10 minutes)
 const KNOWN_PEOPLE_REFRESH_MS = 10 * 60 * 1000;
 
+// Crop a face from a media element using detection bounding box
+function cropFaceFromElement(
+  element: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
+  box: { x: number; y: number; width: number; height: number },
+  padding = 0.2
+): string | null {
+  try {
+    const sourceW = element instanceof HTMLVideoElement ? element.videoWidth : element.width;
+    const sourceH = element instanceof HTMLVideoElement ? element.videoHeight : element.height;
+    if (!sourceW || !sourceH) return null;
+
+    const padX = box.width * padding;
+    const padY = box.height * padding;
+    const x = Math.max(0, Math.round(box.x - padX));
+    const y = Math.max(0, Math.round(box.y - padY));
+    const w = Math.min(sourceW - x, Math.round(box.width + padX * 2));
+    const h = Math.min(sourceH - y, Math.round(box.height + padY * 2));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.min(w, 200); // Cap at 200px wide
+    canvas.height = Math.round(h * (canvas.width / w));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    ctx.drawImage(element, x, y, w, h, 0, 0, canvas.width, canvas.height);
+    // Return base64 without the data URL prefix
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+    return dataUrl.replace(/^data:image\/jpeg;base64,/, "");
+  } catch {
+    return null;
+  }
+}
+
+// Assess face quality using landmarks and detection score
+function assessFaceQuality(
+  detection: any, // face-api detection with landmarks
+  elementWidth: number,
+  elementHeight: number
+): number {
+  const box = detection.detection.box;
+  const score = detection.detection.score || 0.5;
+  const landmarks = detection.landmarks;
+
+  // Frontality: symmetry of nose relative to face edges
+  let symmetry = 0.5;
+  if (landmarks) {
+    const positions = landmarks.positions;
+    const noseTip = positions[30]; // nose tip
+    const leftEdge = positions[0]; // left jaw
+    const rightEdge = positions[16]; // right jaw
+    if (noseTip && leftEdge && rightEdge) {
+      const leftDist = Math.abs(noseTip.x - leftEdge.x);
+      const rightDist = Math.abs(rightEdge.x - noseTip.x);
+      const total = leftDist + rightDist;
+      if (total > 0) {
+        symmetry = 1 - Math.abs(leftDist - rightDist) / total;
+      }
+    }
+  }
+
+  // Size: ratio of face area to image area
+  const sizeRatio = (box.width * box.height) / (elementWidth * elementHeight);
+
+  return symmetry * Math.min(1, sizeRatio * 15) * score;
+}
+
 // =============================================================================
 // HOOK
 // =============================================================================
@@ -138,6 +222,8 @@ const KNOWN_PEOPLE_REFRESH_MS = 10 * 60 * 1000;
 export interface UsePersonIdentificationOptions {
   studentId: string;
   enabled?: boolean;
+  /** Client-side face image cache — called when a contact's face is detected */
+  cacheFaceImage?: (contactId: string, dataUrl: string, quality: number) => void;
 }
 
 export interface UsePersonIdentificationReturn {
@@ -156,24 +242,33 @@ export interface UsePersonIdentificationReturn {
   identifyFromCanvas: (canvas: HTMLCanvasElement) => Promise<IdentificationResult | null>;
   refreshKnownPeople: () => Promise<void>;
   clearCache: () => void;
+
+  // Unknown face descriptors (for AI-triggered enrollment)
+  getUnmatchedDescriptors: () => UnknownFaceDescriptor[];
+
+  // Debug: last captured face image
+  lastCapturedFaceImage: LastCapturedFaceImage | null;
 }
 
 export function usePersonIdentification(
   options: UsePersonIdentificationOptions
 ): UsePersonIdentificationReturn {
-  const { studentId, enabled = true } = options;
+  const { studentId, enabled = true, cacheFaceImage } = options;
 
   // State
   const [isReady, setIsReady] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentIdentification, setCurrentIdentification] = useState<IdentificationResult | null>(null);
+  const [lastCapturedFaceImage, setLastCapturedFaceImage] = useState<LastCapturedFaceImage | null>(null);
 
   // Refs for caching (avoid re-renders)
   const knownPeopleRef = useRef<KnownPerson[]>([]);
   const identificationCacheRef = useRef<Map<string, CachedIdentification>>(new Map());
   const lastKnownPeopleFetchRef = useRef<number>(0);
   const pendingIdentificationRef = useRef<boolean>(false);
+  const unmatchedDescriptorsRef = useRef<UnknownFaceDescriptor[]>([]);
+  const faceImageQualityRef = useRef<Map<string, number>>(new Map());
 
   // ==========================================================================
   // FETCH KNOWN PEOPLE
@@ -200,6 +295,13 @@ export function usePersonIdentification(
   const refreshKnownPeople = useCallback(async () => {
     await fetchKnownPeople();
   }, [fetchKnownPeople]);
+
+  // ==========================================================================
+  // FACE IMAGE CACHING (client-side only, no server upload)
+  // ==========================================================================
+
+  const cacheFaceImageRef = useRef(cacheFaceImage);
+  cacheFaceImageRef.current = cacheFaceImage;
 
   // ==========================================================================
   // INITIALIZE
@@ -297,6 +399,8 @@ export function usePersonIdentification(
               relationship: bestMatch.relationship,
               confidence: Math.max(0, 1 - bestDistance / FACE_MATCH_THRESHOLD),
               method: "face",
+              description: bestMatch.description,
+              contextNotes: bestMatch.contextNotes,
             }
           : null,
         isStudent: bestMatch?.type === "student" && bestMatch?.id === studentId,
@@ -355,6 +459,45 @@ export function usePersonIdentification(
 
         const result = matchFaceToKnownPeople(detection.descriptor);
         setCurrentIdentification(result);
+
+        // Track unmatched face descriptors for AI-triggered enrollment
+        if (!result.identified) {
+          const box = detection.detection.box;
+          unmatchedDescriptorsRef.current = [{
+            descriptor: Array.from(detection.descriptor),
+            boundingBox: box ? { x: box.x, y: box.y, w: box.width, h: box.height } : undefined,
+          }];
+        } else {
+          unmatchedDescriptorsRef.current = [];
+
+          // Auto-capture face image for contacts (client-side cache only)
+          if (result.person?.type === "contact") {
+            const contactId = result.person.id;
+            const elementW = element instanceof HTMLVideoElement ? element.videoWidth : element.width;
+            const elementH = element instanceof HTMLVideoElement ? element.videoHeight : element.height;
+            const quality = assessFaceQuality(detection, elementW, elementH);
+            const cachedQuality = faceImageQualityRef.current.get(contactId);
+            const shouldCache = !cachedQuality || quality > cachedQuality;
+
+            if (shouldCache) {
+              const imageData = cropFaceFromElement(element, detection.detection.box);
+              if (imageData) {
+                const dataUrl = `data:image/jpeg;base64,${imageData}`;
+                faceImageQualityRef.current.set(contactId, quality);
+                cacheFaceImageRef.current?.(contactId, dataUrl, quality);
+                setLastCapturedFaceImage({
+                  contactId,
+                  contactName: result.person.name,
+                  dataUrl,
+                  quality,
+                  timestamp: Date.now(),
+                });
+                console.log(`[PersonID] Cached face image for "${result.person.name}" (${contactId}), quality=${quality.toFixed(3)}`);
+              }
+            }
+          }
+        }
+
         return result;
       } catch (err) {
         console.error("[PersonID] Detection error:", err);
@@ -390,6 +533,11 @@ export function usePersonIdentification(
   const clearCache = useCallback(() => {
     identificationCacheRef.current.clear();
     setCurrentIdentification(null);
+    unmatchedDescriptorsRef.current = [];
+  }, []);
+
+  const getUnmatchedDescriptors = useCallback((): UnknownFaceDescriptor[] => {
+    return unmatchedDescriptorsRef.current;
   }, []);
 
   return {
@@ -403,6 +551,8 @@ export function usePersonIdentification(
     identifyFromCanvas,
     refreshKnownPeople,
     clearCache,
+    getUnmatchedDescriptors,
+    lastCapturedFaceImage,
   };
 }
 

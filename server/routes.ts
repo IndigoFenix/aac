@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import multer from "multer";
 import path from "path";
 import { stringify } from "csv-stringify";
+import { setupLiveWebSocket } from "./services/dual-agent/live-relay";
 
 import {
   authController,
@@ -786,6 +787,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     boardController.getBoard(req, res)
   );
 
+  app.patch("/api/boards/:id", requireAuth, (req, res) =>
+    boardController.updateBoard(req, res)
+  );
+
   // Export endpoints
   app.post("/api/export/gridset", requireAuth, (req, res) =>
     boardController.exportGridset(req, res)
@@ -945,6 +950,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Known people for AAC frontend identification (uses optionalAuth for AAC client)
   app.get("/api/aac/students/:studentId/known-people", optionalAuth, requireOnboardingComplete, (req, res) =>
     biometricController.getKnownPeople(req, res)
+  );
+
+  // Student contacts CRUD
+  app.post("/api/biometric/students/:studentId/contacts", requireAuth, (req, res) =>
+    biometricController.createStudentContact(req, res)
+  );
+  app.get("/api/biometric/students/:studentId/contacts", requireAuth, (req, res) =>
+    biometricController.listStudentContacts(req, res)
+  );
+  app.get("/api/biometric/students/:studentId/contacts/:id", requireAuth, (req, res) =>
+    biometricController.getStudentContact(req, res)
+  );
+  app.patch("/api/biometric/students/:studentId/contacts/:id", requireAuth, (req, res) =>
+    biometricController.updateStudentContact(req, res)
+  );
+  app.delete("/api/biometric/students/:studentId/contacts/:id", requireAuth, (req, res) =>
+    biometricController.deleteStudentContact(req, res)
+  );
+  app.post("/api/biometric/students/:studentId/contacts/:id/face", requireAuth, (req, res) =>
+    biometricController.enrollContactFace(req, res)
   );
 
   // ============= ADMIN ROUTES =============
@@ -1212,5 +1237,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const httpServer = createServer(app);
+
+  // Set up WebSocket for Gemini Live API relay
+  setupLiveWebSocket(httpServer);
+
   return httpServer;
 }

@@ -113,6 +113,7 @@ import {
       onUpdateChatState?: (chatState: ChatState, log?: ChatMessage[]) => Promise<void>;
       onCreditsUsed?: (creditsUsed: number) => Promise<void>;
       onThinkingUpdate?: (thinkingText: string) => void;
+      onNavigate?: (feature: string) => void;
       loopDetectionConfig?: LoopDetectionConfig;
       memoryProcessor?: MemoryProcessor;
       toolRegistry: ToolRegistry;
@@ -148,6 +149,7 @@ import {
           onUpdateChatState: (chatState: ChatState, log?: ChatMessage[]) => Promise<void>
           onCreditsUsed: (creditsUsed: number) => Promise<void>,
           onThinkingUpdate?: (thinkingText: string) => void,
+          onNavigate?: (feature: string) => void,
           memoryProcessor?: MemoryProcessor,
           vectorStoreId?: string,
           loopDetectionConfig?: LoopDetectionConfig;
@@ -175,6 +177,7 @@ import {
           this.onCreditsUsed = settings.onCreditsUsed;
           this.memoryProcessor = settings.memoryProcessor;
           this.onThinkingUpdate = settings.onThinkingUpdate;
+          this.onNavigate = settings.onNavigate;
           this.loopDetectionConfig = settings.loopDetectionConfig;
 
           this.toolRegistry = defaultToolRegistry({
@@ -187,6 +190,7 @@ import {
               onCreditsUsed: this.onCreditsUsed,
               memoryProcessor: this.memoryProcessor,
               onThinkingUpdate: this.onThinkingUpdate,
+              onNavigate: this.onNavigate,
               loopDetectionConfig: this.loopDetectionConfig,
               onPruneMessages: (forget, summary) => this.compressHistory(forget, summary),
           });
@@ -621,6 +625,7 @@ import {
               lastFormSchema: params?.lastFormSchema,
               lastFormValues: params?.lastFormValues,
               describeActions: this.onThinkingUpdate !== undefined,
+              navigateEnabled: this.onNavigate !== undefined,
               replyType: params?.replyType || 'text',
           });
       }
@@ -760,29 +765,38 @@ import {
           try {
               parsedResponse = JSON.parse(response);
           } catch (e) {
-              // Model may include text before JSON — try extracting the JSON portion
-              const lastBrace = response.lastIndexOf('{');
-              if (lastBrace >= 0) {
+              // Model may include text before/after JSON — try extracting the JSON portion
+              // Try from each '{' position (first to last) to find the outermost valid JSON
+              let bracePos = -1;
+              while ((bracePos = response.indexOf('{', bracePos + 1)) >= 0) {
                   try {
-                      const jsonPart = response.substring(lastBrace);
+                      const jsonPart = response.substring(bracePos);
                       parsedResponse = JSON.parse(jsonPart);
                       // Preserve the non-JSON prefix as text content so callers
                       // (e.g. monitor-agent) can still parse [CONTEXT] blocks
-                      const prefix = response.substring(0, lastBrace).trim();
+                      const prefix = response.substring(0, bracePos).trim();
                       if (prefix && !parsedResponse.text) {
                           parsedResponse.text = prefix;
                       }
+                      break;
                   } catch {}
               }
               if (!parsedResponse) {
-                  const loggedMessage = isProd ? 'REDACTED' : response;
-                  console.log('Error parsing response:', e, loggedMessage);
-                  return {
-                      role: 'system',
-                      timestamp: new Date().getTime(),
-                      content: { text: 'An error occured while processing the response.' },
-                      error: 'PARSE_ERROR',
-                  };
+                  // Model returned plain text instead of JSON — treat it as a text response
+                  const trimmed = response.trim();
+                  if (trimmed.length > 0) {
+                      console.log('LLM returned non-JSON text, using as plain text response');
+                      parsedResponse = { text: trimmed };
+                  } else {
+                      const loggedMessage = isProd ? 'REDACTED' : response;
+                      console.log('Error parsing response:', e, loggedMessage);
+                      return {
+                          role: 'system',
+                          timestamp: new Date().getTime(),
+                          content: { text: 'An error occured while processing the response.' },
+                          error: 'PARSE_ERROR',
+                      };
+                  }
               }
           }
   

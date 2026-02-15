@@ -22,6 +22,12 @@ type InternalBoard = BoardIR & {
 
   /** True when the board has local changes that are not yet saved */
   isDirty?: boolean;
+
+  /** Whether this board can be auto-selected by the AAC AI agent */
+  automaticSelection?: boolean;
+
+  /** Hint for the AI about when to select this board */
+  automaticSelectionHint?: string;
 };
 
 const createId = () =>
@@ -55,6 +61,8 @@ const stripInternalIrData = (board: InternalBoard): BoardIR => {
     isHome,
     loadedFromServer,
     isDirty,
+    automaticSelection,
+    automaticSelectionHint,
     ...irData
   } = board;
   return irData;
@@ -143,7 +151,7 @@ export interface BoardState {
   applyButtonAction: (buttonId: string) => void;
   /** Hydrate the boards list from the backend /api/boards (no irData included). */
   hydrateBoardsFromServer: (
-    rows: { id: string; name: string }[]
+    rows: { id: string; name: string; automaticSelection?: boolean; automaticSelectionHint?: string }[]
   ) => void;
 
   /** Open a board fetched from /api/board/:id (with irData). */
@@ -151,6 +159,8 @@ export interface BoardState {
     id: string;
     name: string;
     irData: BoardIR;
+    automaticSelection?: boolean;
+    automaticSelectionHint?: string;
   }) => void;
 
   /** Mark a board as saved, clear dirty flag, and store db id. */
@@ -242,6 +252,9 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       internal.dbId = existing.dbId;
       internal.isHome = existing.isHome;
       internal.loadedFromServer = existing.loadedFromServer;
+      internal.automaticSelection = existing.automaticSelection;
+      internal.automaticSelectionHint =
+        (updated as any).automaticSelectionHint ?? existing.automaticSelectionHint;
       internal.isDirty = true;
   
       const boards = state.boards.map((b) =>
@@ -927,19 +940,21 @@ export const useBoardStore = create<BoardState>((set, get) => ({
           .filter((b) => b.dbId)
           .map((b) => [b.dbId as string, b])
       );
-  
+
       // Convert backend rows into InternalBoard stubs (no pages yet)
-      const hydrated: InternalBoard[] = rows.map((row) => {
+      const hydrated: InternalBoard[] = rows.map((row: any) => {
         const existing = existingByDbId.get(row.id);
         if (existing) {
-          // Keep IR and flags, just refresh name
+          // Keep IR and flags, just refresh name + auto-selection fields
           return {
             ...existing,
             name: row.name,
+            automaticSelection: row.automaticSelection ?? existing.automaticSelection,
+            automaticSelectionHint: row.automaticSelectionHint ?? existing.automaticSelectionHint,
           };
         }
-  
-        // New stub board – we’ll fetch full irData when the user opens it
+
+        // New stub board – we'll fetch full irData when the user opens it
         return {
           _id: createId(),
           dbId: row.id,
@@ -954,6 +969,8 @@ export const useBoardStore = create<BoardState>((set, get) => ({
           isHome: false,
           loadedFromServer: false,
           isDirty: false,
+          automaticSelection: row.automaticSelection ?? false,
+          automaticSelectionHint: row.automaticSelectionHint ?? undefined,
         };
       });
   
@@ -967,9 +984,9 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     });
   },
 
-  openBoardFromServer: (row) => {
+  openBoardFromServer: (row: any) => {
     set((state) => {
-      const { id, name, irData } = row;
+      const { id, name, irData, automaticSelection, automaticSelectionHint } = row;
   
       const existing = state.boards.find((b) => b.dbId === id);
   
@@ -996,6 +1013,8 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       internal.dbId = id;
       internal.loadedFromServer = true;
       internal.isDirty = false;
+      internal.automaticSelection = automaticSelection ?? false;
+      internal.automaticSelectionHint = automaticSelectionHint ?? undefined;
   
       const boards = existing
         ? state.boards.map((b) =>
@@ -1017,15 +1036,11 @@ export const useBoardStore = create<BoardState>((set, get) => ({
 
   markBoardSaved: (dbId, name) => {
     set((state) => {
+      let matched = false;
       const boards = state.boards.map((b) => {
-        if (b.dbId === dbId || b._id === dbId) {
-          const updated: InternalBoard = {
-            ...b,
-            dbId,
-            name: name ?? b.name,
-            isDirty: false,
-          };
-          return updated;
+        if (b.dbId === dbId || b._id === dbId || (!matched && b._id === state.activeBoardId)) {
+          matched = true;
+          return { ...b, dbId, name: name ?? b.name, isDirty: false };
         }
         return b;
       });

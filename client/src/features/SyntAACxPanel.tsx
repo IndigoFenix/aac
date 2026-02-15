@@ -10,6 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { BoardCanvas } from '@/components/syntAACx/board-canvas';
 import { ButtonInspector } from '@/components/syntAACx/button-inspector';
+import { BoardSelector } from '@/components/syntAACx/BoardSelector';
 import { useBoardStore } from '@/store/board-store';
 import { useSharedState, useFeaturePanel } from '@/contexts/FeaturePanelContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -269,11 +270,20 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
         </div>
       )}
 
+      {/* Header - Board Selector Bar */}
+      <div className={cn(
+        'border-b px-4 py-2 shrink-0',
+        isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200',
+        isBoardLoading && 'opacity-50 pointer-events-none'
+      )}>
+        <BoardSelector />
+      </div>
+
       {/* Main Content - Board Canvas with optional Button Inspector */}
       <div className="flex-1 min-h-0 overflow-hidden">
         <div className={cn('flex h-full', isRTL && 'flex-row-reverse')}>
           {/* Board Canvas - main content */}
-          <div className="flex-1 min-w-0 overflow-hidden">
+          <div className="flex-1 min-w-0 overflow-hidden flex flex-col">
             <BoardCanvas />
           </div>
 

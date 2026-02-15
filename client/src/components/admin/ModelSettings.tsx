@@ -8,19 +8,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useLLMConfigs, useLLMConfigMutations } from '@/hooks/useAdminData';
 import { Loader2, Save, AlertCircle } from 'lucide-react';
-import type {
-  LLMProviderKey,
-  UseCaseKey,
-  LLMConfigValue,
-  ModelOption,
-  UseCaseInfo,
+import {
+  PROVIDER_LABELS,
+  type LLMProviderKey,
+  type UseCaseKey,
+  type LLMConfigValue,
+  type ModelOption,
+  type UseCaseInfo,
 } from '@shared/llm-options';
-
-const PROVIDER_LABELS: Record<LLMProviderKey, string> = {
-  openai: 'OpenAI',
-  gemini: 'Google Gemini',
-  claude: 'Anthropic Claude',
-};
 
 const TIER_COLORS: Record<string, string> = {
   economy: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',

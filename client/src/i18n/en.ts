@@ -149,6 +149,7 @@ export const en = {
   nav: {
     main: "CliniAACian",
     interpret: "Interpret Communication",
+    aacsettings: "AAC Settings",
     boards: "Generate AAC Boards",
     docuslp: "Create Reports",
     settings: "Settings",

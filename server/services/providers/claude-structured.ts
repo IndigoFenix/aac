@@ -1,11 +1,17 @@
 // server/services/providers/claude-structured.ts
 // Claude implementation of StructuredLLMProvider
-// Claude doesn't have native json_schema — we include the schema in the system prompt and parse.
+// Uses a forced tool-call pattern for structured output since Claude has no
+// native json_schema response format.  A synthetic "_structured_response" tool
+// whose input_schema is the desired output schema is always provided, and
+// tool_choice is set to "any" so the model MUST call a tool on every turn.
 
 import Anthropic from "@anthropic-ai/sdk";
 import { resolveModelId } from "@shared/llm-options";
 import type { StructuredLLMProvider, StructuredRequest } from "./structured-provider";
 import type { GPTResponse, GPTFunctionToolCall, GPTInputItem } from "../chat/gpt";
+
+/** Name of the synthetic tool used to enforce structured output. */
+const STRUCTURED_TOOL_NAME = "_structured_response";
 
 export class ClaudeStructuredProvider implements StructuredLLMProvider {
   private client: Anthropic;
@@ -17,9 +23,8 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
   async structuredComplete(request: StructuredRequest): Promise<GPTResponse> {
     const model = resolveModelId("claude", request.model);
 
-    // Build system prompt — include schema instruction since Claude has no native json_schema
+    // Build system prompt (no schema instructions needed — the tool enforces it)
     let systemPrompt = request.instructions || "";
-    systemPrompt += `\n\nYou MUST respond with valid JSON matching this schema (name: "${request.schemaName}"):\n${JSON.stringify(request.schema, null, 2)}\n\nRespond ONLY with the JSON object, no other text.`;
 
     // Convert input items to Claude messages
     const { system: extraSystem, messages } = this.convertInputItems(request.input);
@@ -27,8 +32,16 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
       systemPrompt = extraSystem + "\n\n" + systemPrompt;
     }
 
-    // Convert tools to Claude format
+    // Convert real tools to Claude format and append the structured output tool
     const tools = this.convertTools(request);
+    tools.push({
+      name: STRUCTURED_TOOL_NAME,
+      description:
+        "Return your final structured response. Call this tool when you are " +
+        "ready to reply to the user (i.e. you have no more tool calls to make). " +
+        "The input MUST conform to the output schema.",
+      input_schema: request.schema,
+    });
 
     const params: any = {
       model,
@@ -36,15 +49,20 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
       messages,
       max_tokens: request.maxTokens || 2048,
       temperature: request.temperature ?? 0.7,
+      tools,
+      // Force the model to call at least one tool on every turn.
+      // It will call real tools when it needs to, and _structured_response
+      // when it is ready to produce its final answer.
+      tool_choice: { type: "any" as const },
     };
-
-    if (tools.length > 0) {
-      params.tools = tools;
-    }
 
     const response = await this.client.messages.create(params);
     return this.parseResponse(response);
   }
+
+  // ---------------------------------------------------------------------------
+  // Input conversion
+  // ---------------------------------------------------------------------------
 
   private convertInputItems(items: GPTInputItem[]): {
     system: string;
@@ -97,14 +115,31 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
           }
         }
       } else if (item.type === "function_call") {
+        // Use Claude's native tool_use content block so the model
+        // recognises prior tool calls and doesn't mimic them as text.
+        let parsedInput: any = {};
+        try { parsedInput = JSON.parse(item.arguments || "{}"); } catch {}
         messages.push({
           role: "assistant",
-          content: `[Tool call: ${item.name}(${item.arguments})]`,
+          content: [
+            {
+              type: "tool_use",
+              id: item.call_id,
+              name: item.name,
+              input: parsedInput,
+            },
+          ],
         });
       } else if (item.type === "function_call_output") {
         messages.push({
           role: "user",
-          content: `[Tool result: ${item.output}]`,
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: item.call_id,
+              content: item.output,
+            },
+          ],
         });
       }
     }
@@ -141,6 +176,10 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
     return { system: systemParts.join("\n\n"), messages: merged };
   }
 
+  // ---------------------------------------------------------------------------
+  // Tool conversion
+  // ---------------------------------------------------------------------------
+
   private convertTools(request: StructuredRequest): any[] {
     if (!request.tools) return [];
     return request.tools
@@ -156,31 +195,49 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
       .filter(Boolean);
   }
 
+  // ---------------------------------------------------------------------------
+  // Response parsing
+  // ---------------------------------------------------------------------------
+
   private parseResponse(response: any): GPTResponse {
     let textContent = "";
+    let structuredContent = "";
     const functionCalls: GPTFunctionToolCall[] = [];
 
     for (const block of response.content || []) {
       if (block.type === "text") {
         textContent += block.text;
       } else if (block.type === "tool_use") {
-        functionCalls.push({
-          type: "function_call",
-          call_id: block.id,
-          name: block.name,
-          arguments: JSON.stringify(block.input || {}),
-        });
+        if (block.name === STRUCTURED_TOOL_NAME) {
+          // This is the structured output — extract as content JSON
+          structuredContent = JSON.stringify(block.input || {});
+        } else {
+          // Real tool call — pass through
+          functionCalls.push({
+            type: "function_call",
+            call_id: block.id,
+            name: block.name,
+            arguments: JSON.stringify(block.input || {}),
+          });
+        }
       }
     }
+
+    // If there are real tool calls, prioritise those (the structured response
+    // will come on a subsequent turn after tool results are provided).
+    // Otherwise, use the structured content as the response.
+    const content = functionCalls.length > 0
+      ? textContent
+      : (structuredContent || textContent);
 
     return {
       promptTokens: response.usage?.input_tokens ?? 0,
       completionTokens: response.usage?.output_tokens ?? 0,
-      cachedTokens: 0,
-      content: textContent,
+      cachedTokens: response.usage?.input_tokens_details?.cache_read_input_tokens ?? 0,
+      content,
       output: response.content,
       toolCalls: functionCalls,
-      refused: response.stop_reason === "end_turn" && !textContent && functionCalls.length === 0,
+      refused: response.stop_reason === "end_turn" && !textContent && !structuredContent && functionCalls.length === 0,
       searchCalls: 0,
     };
   }

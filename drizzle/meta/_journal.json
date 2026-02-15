@@ -106,6 +106,34 @@
       "when": 1770813786325,
       "tag": "0014_overconfident_lilandra",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1770843053640,
+      "tag": "0015_gray_gravity",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1770845959267,
+      "tag": "0016_jazzy_electro",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1770959031620,
+      "tag": "0017_cloudy_hiroim",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1771133599849,
+      "tag": "0018_slow_dakota_north",
+      "breakpoints": true
     }
   ]
 }

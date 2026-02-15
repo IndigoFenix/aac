@@ -22,9 +22,24 @@
       rel="stylesheet" 
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" 
     />
+    <style>
+      body{margin:0;background:#18181b}
+      .splash{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#e5e7eb;font-family:system-ui,-apple-system,sans-serif}
+      .splash-title{font-size:1.75rem;font-weight:600;color:#27272a;margin:0 0 2rem;letter-spacing:-.02em}
+      .splash-spinner{width:36px;height:36px;border:3px solid #27272a;border-top-color:#6366f1;border-radius:50%;animation:splash-spin 0.8s linear infinite;margin-bottom:1rem}
+      .splash-text{font-size:.875rem;color:#6b7280;margin:0;animation:splash-fade 2s ease-in-out infinite}
+      @keyframes splash-spin{to{transform:rotate(360deg)}}
+      @keyframes splash-fade{0%,100%{opacity:.5}50%{opacity:1}}
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="splash">
+        <div class="splash-title">CliniAACian</div>
+        <div class="splash-spinner"></div>
+        <p class="splash-text">Loading...</p>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

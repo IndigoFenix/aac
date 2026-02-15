@@ -53,6 +53,7 @@ const detectSchema = z.object({
   envFrameTimestamps: z.string().optional(), // JSON array of timestamps for environment camera frames
   debugMode: z.string().optional(), // "true" to enable debug SSE events
   responseMode: z.enum(['fast', 'analyze']).optional(), // 'fast' (voice first) or 'analyze' (observe first)
+  unknownFaceDescriptors: z.string().optional(), // JSON array of unknown face descriptors for AI enrollment
 });
 
 const interpretSchema = z.object({
@@ -160,6 +161,12 @@ export class DualAgentController {
             break;
           case "emote":
             sendSSEEvent(res, "emote", { emote: chunk.data });
+            break;
+          case "set_board":
+            sendSSEEvent(res, "set_board", chunk.data);
+            break;
+          case "ai_button_press":
+            sendSSEEvent(res, "ai_button_press", chunk.data);
             break;
           case "complete":
             sendSSEEvent(res, "complete", chunk.data);
@@ -301,6 +308,12 @@ export class DualAgentController {
           case "emote":
             sendSSEEvent(res, "emote", { emote: chunk.data });
             break;
+          case "set_board":
+            sendSSEEvent(res, "set_board", chunk.data);
+            break;
+          case "ai_button_press":
+            sendSSEEvent(res, "ai_button_press", chunk.data);
+            break;
           case "complete":
             sendSSEEvent(res, "complete", chunk.data);
             break;
@@ -429,6 +442,12 @@ export class DualAgentController {
             break;
           case "emote":
             sendSSEEvent(res, "emote", { emote: chunk.data });
+            break;
+          case "set_board":
+            sendSSEEvent(res, "set_board", chunk.data);
+            break;
+          case "ai_button_press":
+            sendSSEEvent(res, "ai_button_press", chunk.data);
             break;
           case "complete":
             sendSSEEvent(res, "complete", chunk.data);
@@ -616,7 +635,7 @@ export class DualAgentController {
         appCanvasData = `data:${appCanvasFile.mimetype};base64,${base64}`;
       }
 
-      const { studentId, sessionId, board, audioContext, gestureContext, interactionMode, frameTimestamps: frameTimestampsRaw, envFrameTimestamps: envFrameTimestampsRaw, debugMode: debugModeRaw, responseMode } = detectSchema.parse(body);
+      const { studentId, sessionId, board, audioContext, gestureContext, interactionMode, frameTimestamps: frameTimestampsRaw, envFrameTimestamps: envFrameTimestampsRaw, debugMode: debugModeRaw, responseMode, unknownFaceDescriptors: unknownFaceDescriptorsRaw } = detectSchema.parse(body);
 
       // Parse frame timestamps if provided (from composite grid)
       let frameTimestamps: number[] | undefined;
@@ -626,6 +645,10 @@ export class DualAgentController {
       let envFrameTimestamps: number[] | undefined;
       if (envFrameTimestampsRaw) {
         try { envFrameTimestamps = JSON.parse(envFrameTimestampsRaw); } catch { /* ignore */ }
+      }
+      let unknownFaceDescriptors: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number } }> | undefined;
+      if (unknownFaceDescriptorsRaw) {
+        try { unknownFaceDescriptors = JSON.parse(unknownFaceDescriptorsRaw); } catch { /* ignore */ }
       }
 
       console.log(
@@ -656,6 +679,7 @@ export class DualAgentController {
         debugMode: debugModeRaw === "true",
         appCanvasData,
         responseMode,
+        unknownFaceDescriptors,
       })) {
         switch (chunk.type) {
           case "text":
@@ -693,6 +717,12 @@ export class DualAgentController {
             break;
           case "emote":
             sendSSEEvent(res, "emote", { emote: chunk.data });
+            break;
+          case "set_board":
+            sendSSEEvent(res, "set_board", chunk.data);
+            break;
+          case "ai_button_press":
+            sendSSEEvent(res, "ai_button_press", chunk.data);
             break;
           case "error":
             sendSSEEvent(res, "error", { error: chunk.data });

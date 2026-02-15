@@ -198,7 +198,7 @@ export function ChatPopup() {
   };
 
   const handlePersonaChange = (newPersona: string) => {
-    setPersona(newPersona);
+    setPersona(newPersona === 'default' ? undefined : newPersona);
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -336,16 +336,24 @@ export function ChatPopup() {
                       <Loader2 className="w-3 h-3 animate-spin" />
                     </SelectItem>
                   ) : (
-                    personas.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
+                    <>
+                      <SelectItem value="default">
                         <div className="flex items-center gap-2">
-                          <span>{p.icon}</span>
-                          <div className="flex flex-col">
-                            <span className="text-sm">{p.title}</span>
-                          </div>
+                          <span>🤖</span>
+                          <span className="text-sm">{t('chat.persona.assistant')}</span>
                         </div>
                       </SelectItem>
-                    ))
+                      {personas.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          <div className="flex items-center gap-2">
+                            <span>{p.icon}</span>
+                            <div className="flex flex-col">
+                              <span className="text-sm">{p.title}</span>
+                            </div>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </>
                   )}
                 </SelectContent>
               </Select>
