@@ -1,0 +1,1 @@
+ALTER TABLE "students" ADD COLUMN "aac_icon_text_ratio" integer DEFAULT 3;

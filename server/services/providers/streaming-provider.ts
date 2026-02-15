@@ -5,8 +5,12 @@
  * A single message in the chat format (matches OpenAI ChatCompletionMessageParam shape).
  */
 export interface ChatMessage {
-  role: "system" | "user" | "assistant";
-  content: string | Array<{ type: string; [key: string]: any }>;
+  role: "system" | "user" | "assistant" | "tool";
+  content: string | null | Array<{ type: string; [key: string]: any }>;
+  /** Tool calls made by the assistant (present on assistant messages) */
+  toolCalls?: Array<{ id: string; name: string; arguments: string }>;
+  /** ID of the tool call this message is responding to (present on tool messages) */
+  toolCallId?: string;
 }
 
 /**
@@ -31,6 +35,8 @@ export interface ChatRequest {
   toolChoice?: "auto" | "required" | "none";
   maxTokens?: number;
   temperature?: number;
+  /** Abort signal — when triggered, the stream should stop as soon as possible */
+  signal?: AbortSignal;
 }
 
 /**

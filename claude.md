@@ -1,0 +1,1 @@
+Don't use drizzle-kit push - we update the database schema using npm run db:generate, followed by db:migrate.

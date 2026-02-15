@@ -949,6 +949,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
               onNavigate={handleBoardNavigate}
               language={currentLanguage}
               voiceType={userProfile?.aacStudentVoiceType || 'boy'}
+              iconTextRatio={userProfile?.aacIconTextRatio ?? 3}
               getFaceImage={faceImageCache.getFaceImage}
               suppressLocalSpeech={aiSessionActive}
             />

@@ -1093,9 +1093,18 @@ export async function processDBOperation(
     }
     
     // No db ops and no appropriate parent operation available
-    // Return error to make it clear the operation wasn't persisted
+    // Check if the root field has any db ops at all — if not, this is a purely
+    // in-memory field (e.g. Context_Board) and mutations should succeed silently
+    const rootFieldId = splitPath(path)[0];
+    const rootField = rootFieldId ? findFieldById(fields, rootFieldId) : undefined;
+    if (!rootField?.db) {
+      // Purely in-memory field — let the memory system handle it, no error
+      return { shouldUpdateMemory: true };
+    }
+
+    // Root field HAS db ops but this specific path doesn't — report error
     if (action === 'delete' || action === 'add' || action === 'set') {
-      return { 
+      return {
         shouldUpdateMemory: true,
         dbSynced: false, // Explicitly false - operation was NOT persisted to DB
         error: `No database operation configured for '${action}' at path '${path}'. Changes are in-memory only.`
@@ -1289,7 +1298,13 @@ export async function processMemoryToolWithDB(
         op,
         baseContext
       );
-      dbResults.set(i, result);
+      // Only track DB results when the field actually has DB ops.
+      // In-memory-only fields (e.g. Context_Board) return just { shouldUpdateMemory: true }
+      // with no dbSynced/error — leaving them out of dbResults lets the memory-system
+      // result drive ok/message (line ~1473: dbResult === undefined path).
+      if (result.dbSynced !== undefined || result.error) {
+        dbResults.set(i, result);
+      }
     }
   }
 

@@ -175,6 +175,7 @@ interface ChatContextType {
 
   // Actions
   sendMessage: (content: string, options?: SendMessageOptions) => Promise<ChatMessage | null>;
+  stopGeneration: () => void;
   startNewSession: (mode?: FeatureType) => Promise<boolean>;
   loadSession: (sessionId: string) => Promise<boolean>;
   clearSession: () => void;
@@ -195,7 +196,7 @@ interface ChatContextType {
 }
 
 interface SendMessageOptions {
-  replyType?: 'text' | 'html';
+  replyType?: 'text' | 'html' | 'md';
   additionalMetadata?: Record<string, any>;
 }
 
@@ -263,8 +264,9 @@ export const ChatProvider = ({
 
 
   // Streaming hook
-  const { sendStreamingMessage } = useChatStream();
-  
+  const { sendStreamingMessage, abort: abortStream } = useChatStream();
+  const stoppedByUserRef = useRef(false);
+
   // Refs
   const currentStudentIdRef = useRef<string | null>(null);
   
@@ -626,8 +628,9 @@ export const ChatProvider = ({
       return null;
     }
 
-    const { replyType = 'html', additionalMetadata } = options;
+    const { replyType = 'md', additionalMetadata } = options;
 
+    stoppedByUserRef.current = false;
     setIsSending(true);
     setIsThinking(false);
     setThinkingText(null);
@@ -760,6 +763,9 @@ export const ChatProvider = ({
     // Ref to track result from streaming (needed for closure)
     let streamingResult: ChatMessage | null = null;
 
+    // Accumulated text for md streaming mode
+    let mdAccumulated = '';
+
     // Include all session images so the AI can reference earlier images
     const imageUrls = attachedFiles.filter(f => f.type === "image" && f.dataUrl).map(f => f.dataUrl!);
     if (imageUrls.length > 0) {
@@ -772,6 +778,34 @@ export const ChatProvider = ({
         onThinking: (text) => {
           setIsThinking(true);
           setThinkingText(text);
+          // Hide streaming placeholder while thinking
+          if (replyType === 'md' && mdAccumulated) {
+            // Keep the accumulated text visible
+          }
+        },
+        onTextDelta: (text) => {
+          if (replyType === 'md') {
+            setIsThinking(false);
+            setThinkingText(null);
+            mdAccumulated += text;
+            // Update streaming placeholder message in history
+            const streamingMessage: ChatMessage = {
+              role: 'assistant',
+              content: { md: mdAccumulated },
+              timestamp: Date.now(),
+              metadata: { isStreaming: true },
+            };
+            setHistory(prev => {
+              // Replace existing streaming message or add new one
+              const lastIdx = prev.length - 1;
+              if (lastIdx >= 0 && (prev[lastIdx].metadata as any)?.isStreaming) {
+                const updated = [...prev];
+                updated[lastIdx] = streamingMessage;
+                return updated;
+              }
+              return [...prev, streamingMessage];
+            });
+          }
         },
         onNavigate: (feature) => {
           console.log('[useChat] AI navigating to:', feature);
@@ -780,6 +814,10 @@ export const ChatProvider = ({
         onComplete: (data) => {
           setIsThinking(false);
           setThinkingText(null);
+          if (replyType === 'md') {
+            // Remove the streaming placeholder before adding the final message
+            setHistory(prev => prev.filter(m => !(m.metadata as any)?.isStreaming));
+          }
           streamingResult = processResponseData(data);
         },
         onError: (errorMsg) => {
@@ -791,6 +829,11 @@ export const ChatProvider = ({
       // If streaming completed successfully, return the result
       if (streamCompleted && streamingResult) {
         return streamingResult;
+      }
+
+      // If user explicitly stopped, don't fall back
+      if (stoppedByUserRef.current) {
+        return null;
       }
 
       // Fallback to non-streaming endpoint if streaming didn't complete
@@ -821,6 +864,20 @@ export const ChatProvider = ({
     }
   }, [session, activeFeature, user, student, history, persistSession, getStorageKey, getFeatureMetadata, handleContextData, persona, sendStreamingMessage, vectorStoreId, attachedFiles]);
   
+  const stopGeneration = useCallback(() => {
+    stoppedByUserRef.current = true;
+    abortStream();
+    setIsSending(false);
+    setIsThinking(false);
+    setThinkingText(null);
+    // Convert any streaming placeholder to a final message
+    setHistory(prev => prev.map(m =>
+      (m.metadata as any)?.isStreaming
+        ? { ...m, metadata: undefined }
+        : m
+    ));
+  }, [abortStream]);
+
   useEffect(() => {
     console.log('[ChatProvider] sendMessage was recreated, activeFeature is:', activeFeature);
   }, [sendMessage]);
@@ -933,6 +990,7 @@ export const ChatProvider = ({
     setPersona,
     getPersonaInfo,
     sendMessage,
+    stopGeneration,
     startNewSession,
     loadSession,
     clearSession,

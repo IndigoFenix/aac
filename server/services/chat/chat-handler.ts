@@ -18,6 +18,9 @@ import {
   import { buildPromptAndTools, formValues, NlpSchema, AgentLike } from "./prompt-kit";
   import { defaultToolRegistry, enrichToolCallMessage, LoopDetectionConfig, makeToolCalls, MemoryProcessor, ToolRegistry } from "./tool-router";
   import { publish } from "./events.service";
+  import { getChatProvider } from "../providers/provider-factory";
+  import type { ChatMessage as ProviderChatMessage, ChatTool, StreamChunk } from "../providers/streaming-provider";
+  import type { LLMProviderKey } from "@shared/llm-options";
 
   const isProd = process.env.NODE_ENV === 'production';
   
@@ -251,7 +254,7 @@ import {
       }
   
       // Generate a response to the conversation in its current state, without adding new messages.
-      async getResponse(responseType: 'text' | 'html', apiValues?: { [key: string]: string }): Promise<MessageResponse> {
+      async getResponse(responseType: 'text' | 'html' | 'md', apiValues?: { [key: string]: string }): Promise<MessageResponse> {
           const reply = await this.updateConversation(0, responseType, apiValues);
           try {
               if (this.onUpdateChatState){
@@ -613,7 +616,7 @@ import {
       buildPromptAndTools( params?: {
           lastFormSchema: NlpSchema | undefined,
           lastFormValues: formValues | undefined,
-          replyType?: 'text' | 'html',
+          replyType?: 'text' | 'html' | 'md',
       }) {
           return buildPromptAndTools({
               agent: this.agent as any,
@@ -631,7 +634,7 @@ import {
       }
   
       // Updates the conversation after confirming that the bot should interact
-      async updateConversation(totalCreditsUsed: number = 0, responseType: 'text' | 'html', apiValues?: { [key: string]: any }): Promise<ChatResponse> {
+      async updateConversation(totalCreditsUsed: number = 0, responseType: 'text' | 'html' | 'md', apiValues?: { [key: string]: any }): Promise<ChatResponse> {
           await this.autoCompress();
           const inputItems = this.getConversationHistoryAsInputItems(this.chatState.history);
           const lastUserMessage = this.getLastUserMessage();
@@ -851,11 +854,337 @@ import {
               credits: creditsUsed,
           }
           await this.addMessage(newMessage);
-  
+
           return reply
       }
+
+      /**
+       * Convert internal ChatMessage[] (schema format) to ProviderChatMessage[]
+       * for use with the streaming ChatProvider.streamChat() interface.
+       */
+      getConversationHistoryAsChatMessages(
+          conversationHistory: ChatMessage[],
+          systemPrompt: string
+      ): ProviderChatMessage[] {
+          const messages: ProviderChatMessage[] = [];
+
+          // System prompt first
+          messages.push({ role: "system", content: systemPrompt });
+
+          for (const message of conversationHistory) {
+              // Tool response messages
+              if (message.role === 'tool' && message.toolCallId) {
+                  messages.push({
+                      role: "tool",
+                      content: typeof message.content === 'string'
+                          ? message.content
+                          : JSON.stringify(message.content),
+                      toolCallId: message.toolCallId,
+                  });
+                  continue;
+              }
+
+              // Messages with tool calls
+              if (message.toolCalls && message.toolCalls.length > 0) {
+                  let textContent: string | null = null;
+                  if (typeof message.content === 'string') {
+                      textContent = message.content;
+                  } else if (typeof message.content === 'object' && message.content) {
+                      textContent = (message.content as ChatMessageContent).html
+                          || (message.content as ChatMessageContent).md
+                          || (message.content as ChatMessageContent).text
+                          || null;
+                  }
+
+                  messages.push({
+                      role: "assistant",
+                      content: textContent,
+                      toolCalls: (message.toolCalls as GPTFunctionToolCall[]).map((tc) => ({
+                          id: tc.call_id,
+                          name: tc.name,
+                          arguments: tc.arguments,
+                      })),
+                  });
+                  continue;
+              }
+
+              // Regular messages
+              let stringifiedContent = '';
+              if (typeof message.content === 'string') {
+                  stringifiedContent = message.content;
+              } else if (typeof message.content === 'object' && message.content) {
+                  const c = message.content as ChatMessageContent;
+                  if (c.setValues) {
+                      stringifiedContent = JSON.stringify(message.content);
+                  } else {
+                      stringifiedContent = c.html || c.md || c.text || '';
+                  }
+              }
+
+              if (stringifiedContent && message.role !== 'tool') {
+                  messages.push({
+                      role: message.role as "user" | "assistant" | "system",
+                      content: stringifiedContent,
+                  });
+              }
+          }
+
+          // Inject image into the last user message if we have one
+          if (this.currentImage) {
+              for (let i = messages.length - 1; i >= 0; i--) {
+                  const msg = messages[i];
+                  if (msg.role === 'user' && typeof msg.content === 'string') {
+                      const base64Image = this.currentImage.data.toString('base64');
+                      const imageUrl = `data:${this.currentImage.mimeType};base64,${base64Image}`;
+                      msg.content = [
+                          { type: 'text', text: msg.content },
+                          { type: 'image_url', image_url: { url: imageUrl } },
+                      ];
+                      break;
+                  }
+              }
+              this.currentImage = undefined;
+          }
+
+          // Inject inline images
+          if (this.images && this.images.length > 0) {
+              for (let i = messages.length - 1; i >= 0; i--) {
+                  const msg = messages[i];
+                  if (msg.role === 'user' && typeof msg.content === 'string') {
+                      msg.content = [
+                          { type: 'text', text: msg.content },
+                          ...this.images.map(url => ({ type: 'image_url', image_url: { url } })),
+                      ];
+                      break;
+                  }
+              }
+              this.images = undefined;
+          }
+
+          // Remove orphaned tool call / tool response pairs
+          const callIds = new Set<string>();
+          const responseIds = new Set<string>();
+          for (const msg of messages) {
+              if (msg.toolCalls) {
+                  for (const tc of msg.toolCalls) callIds.add(tc.id);
+              }
+              if (msg.role === 'tool' && msg.toolCallId) responseIds.add(msg.toolCallId);
+          }
+          return messages.filter((msg) => {
+              if (msg.toolCalls) {
+                  // Keep assistant messages with tool calls only if at least one has a response
+                  return msg.toolCalls.some((tc) => responseIds.has(tc.id));
+              }
+              if (msg.role === 'tool' && msg.toolCallId) {
+                  return callIds.has(msg.toolCallId);
+              }
+              return true;
+          });
+      }
+
+      /**
+       * Stream a markdown response token-by-token using the ChatProvider interface.
+       * Yields MdStreamEvent objects. Handles tool call loops internally.
+       */
+      async *getStreamingMdResponse(signal?: AbortSignal): AsyncGenerator<MdStreamEvent> {
+          await this.autoCompress();
+
+          const providerKey: LLMProviderKey = this.gpt.providerConfig?.provider || "openai";
+          const model = this.gpt.providerConfig?.model || "gpt-4o-mini";
+          const chatProvider = getChatProvider(providerKey);
+
+          // Build prompt
+          const promptBuild = this.buildPromptAndTools({ lastFormSchema: undefined, lastFormValues: undefined, replyType: 'md' });
+          const systemPrompt = promptBuild.instructions + (promptBuild.endInstructions ? ('\n' + promptBuild.endInstructions) : '');
+
+          // Convert GPTTool[] to ChatTool[] (only function tools)
+          const chatTools: ChatTool[] = promptBuild.tools
+              .filter((t): t is import("./gpt").GPTFunctionTool => t.type === 'function')
+              .map((t) => ({
+                  type: "function" as const,
+                  function: {
+                      name: t.function.name,
+                      description: t.function.description,
+                      parameters: t.function.parameters as Record<string, any>,
+                  },
+              }));
+
+          // Build message history
+          let providerMessages = this.getConversationHistoryAsChatMessages(this.chatState.history, systemPrompt);
+
+          let totalCreditsUsed = 0;
+          const MAX_ITERATIONS = 10;
+
+          for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
+              // Check abort before starting a new LLM call
+              if (signal?.aborted) {
+                  console.log('[ChatMessageManager] getStreamingMdResponse: aborted before iteration', iteration);
+                  return;
+              }
+
+              let accumulatedText = '';
+              const toolCallAccumulator: Map<number, { name: string; arguments: string }> = new Map();
+              let usage: { promptTokens: number; completionTokens: number } | undefined;
+
+              const stream = chatProvider.streamChat({
+                  model,
+                  messages: providerMessages,
+                  tools: chatTools.length > 0 ? chatTools : undefined,
+                  maxTokens: 15000,
+                  temperature: 0.7,
+                  signal,
+              });
+
+              for await (const chunk of stream) {
+                  if (chunk.type === 'text_delta') {
+                      accumulatedText += chunk.text;
+                      yield { type: 'text_delta', text: chunk.text };
+                  } else if (chunk.type === 'tool_call_delta') {
+                      const existing = toolCallAccumulator.get(chunk.index);
+                      if (existing) {
+                          if (chunk.arguments) existing.arguments += chunk.arguments;
+                      } else {
+                          toolCallAccumulator.set(chunk.index, {
+                              name: chunk.name || '',
+                              arguments: chunk.arguments || '',
+                          });
+                      }
+                  } else if (chunk.type === 'done') {
+                      usage = chunk.usage;
+                  }
+              }
+
+              // Calculate credits
+              let creditsUsed = 0;
+              if (usage) {
+                  creditsUsed = creditsForModelUsage(providerKey, model, usage.promptTokens, usage.completionTokens, 0);
+                  totalCreditsUsed += creditsUsed;
+              }
+
+              // If there are tool calls, execute them and continue the loop
+              if (toolCallAccumulator.size > 0) {
+                  // Convert accumulated tool calls to GPTFunctionToolCall format
+                  const toolCalls: GPTFunctionToolCall[] = [];
+                  for (const [, tc] of toolCallAccumulator) {
+                      const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                      toolCalls.push({
+                          type: 'function_call',
+                          call_id: callId,
+                          name: tc.name,
+                          arguments: tc.arguments,
+                      });
+                  }
+
+                  // Send thinking update if available
+                  if (this.onThinkingUpdate) {
+                      const toolNames = toolCalls.map(tc => tc.name).join(', ');
+                      this.onThinkingUpdate(`Using tools: ${toolNames}`);
+                  }
+
+                  // Yield thinking event
+                  const toolNames = toolCalls.map(tc => tc.name).join(', ');
+                  yield { type: 'thinking', text: `Using tools: ${toolNames}` };
+
+                  // Execute tool calls
+                  const toolCallMessage: ChatMessage = {
+                      role: 'assistant',
+                      toolCalls,
+                      timestamp: Date.now(),
+                      credits: creditsUsed,
+                  };
+
+                  // Handle navigate tool specially
+                  for (const tc of toolCalls) {
+                      if (tc.name === 'navigateToFeature' && this.onNavigate) {
+                          try {
+                              const args = JSON.parse(tc.arguments);
+                              if (args.feature) {
+                                  this.onNavigate(args.feature);
+                                  yield { type: 'navigate', feature: args.feature };
+                              }
+                          } catch {}
+                      }
+                  }
+
+                  // Let in-flight tool calls finish and save their results
+                  const replyMessages = await makeToolCalls(this.toolRegistry, toolCallMessage);
+
+                  // Add all messages to history
+                  for (const msg of replyMessages) {
+                      await this.addMessage(msg);
+                  }
+
+                  // If aborted, save state and stop — don't call the model again
+                  if (signal?.aborted) {
+                      console.log('[ChatMessageManager] getStreamingMdResponse: aborted after tool calls, saving state');
+                      if (this.onUpdateChatState) {
+                          await this.onUpdateChatState(this.chatState, this.log);
+                      }
+                      if (this.onCreditsUsed && totalCreditsUsed) {
+                          await this.onCreditsUsed(totalCreditsUsed);
+                      }
+                      yield {
+                          type: 'complete',
+                          message: {
+                              role: 'assistant',
+                              timestamp: Date.now(),
+                              content: { md: accumulatedText || '*(Generation stopped)*' },
+                              credits: creditsUsed,
+                          },
+                          creditsUsed: totalCreditsUsed,
+                      };
+                      return;
+                  }
+
+                  // Rebuild provider messages with updated history
+                  providerMessages = this.getConversationHistoryAsChatMessages(this.chatState.history, systemPrompt);
+
+                  // Continue the loop for next iteration
+                  continue;
+              }
+
+              // No tool calls — this is the final text response
+              // Save even partial text if aborted mid-stream
+              if (accumulatedText) {
+                  const newMessage: ChatMessage = {
+                      role: 'assistant',
+                      timestamp: Date.now(),
+                      content: { md: accumulatedText },
+                      credits: creditsUsed,
+                  };
+                  await this.addMessage(newMessage);
+
+                  if (this.onUpdateChatState) {
+                      await this.onUpdateChatState(this.chatState, this.log);
+                  }
+                  if (this.onCreditsUsed && totalCreditsUsed) {
+                      await this.onCreditsUsed(totalCreditsUsed);
+                  }
+
+                  yield {
+                      type: 'complete',
+                      message: newMessage,
+                      creditsUsed: totalCreditsUsed,
+                  };
+              }
+
+              return;
+          }
+
+          // Safety: if we exhausted iterations, save what we have
+          console.warn('[ChatMessageManager] getStreamingMdResponse: exhausted max iterations');
+      }
   }
-  
+
+  /**
+   * Events yielded by the streaming markdown response generator.
+   */
+  export type MdStreamEvent =
+      | { type: "text_delta"; text: string }
+      | { type: "thinking"; text: string }
+      | { type: "navigate"; feature: string }
+      | { type: "complete"; message: ChatMessage; creditsUsed: number };
+
   export { ChatMessageManager }
   
   // Re-export types for convenience

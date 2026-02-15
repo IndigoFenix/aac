@@ -59,7 +59,7 @@ export interface NlpSchema {
     lastFormValues?: formValues;
     describeActions?: boolean;
     navigateEnabled?: boolean;
-    replyType?: 'text' | 'html';
+    replyType?: 'text' | 'html' | 'md';
   }): PromptBuild {
 
     const tools: GPTTool[] = [];
@@ -69,7 +69,7 @@ export interface NlpSchema {
 
     let formSchema: any, formSchemaHash: string = '';
 
-    if (ctx.lastFormSchema){
+    if (ctx.lastFormSchema && ctx.replyType !== 'md'){
         formSchema = nlpSchemaToGPTSchema(ctx.lastFormSchema);
         startPrompt += `=== Section: setValues Instructions ===\n\nThe next section represents elements you are currently able to see on the webpage. You may interact with form elements by setting their values in the "setValues" response.\nYou may click buttons by setting their value to true.\nTo clear a string input, set its value to "".\nTo leave a string value unchanged while interacting, reply with its value as null. If you have no reason to change a value, leave it unchanged.\nIf you are not changing any fields or interacting with buttons, respond with "setValues" set to null.\n\nAll values set in the response will occur before the user sees the reply text, so structure your reply text as if you have already set these values.\nFollow all instructions associated with page elements, unless they contradict your core prompt.\n\n=== Section: Page Elements ===${printSchemaInstructions(ctx.lastFormSchema, 0, ctx.lastFormValues)}\n\n`;
     }
@@ -345,11 +345,16 @@ export interface NlpSchema {
     if (formSchema){
         schemaProperties.setValues = formSchema;
     }
-    schema = {
-        type: 'object',
-        properties: schemaProperties,
-        required: getKeysFromSchema(schemaProperties),
-        additionalProperties: false,
+    // In 'md' mode, no JSON schema — the model outputs plain markdown text
+    if (ctx.replyType === 'md') {
+        schema = undefined;
+    } else {
+        schema = {
+            type: 'object',
+            properties: schemaProperties,
+            required: getKeysFromSchema(schemaProperties),
+            additionalProperties: false,
+        }
     }
 
     if (ctx.describeActions && tools.length > 0){
@@ -358,11 +363,11 @@ export interface NlpSchema {
             type: 'function',
             function: {
                 name: 'describeActions',
-                description: 'Displays a brief status message to the user while you work. IMPORTANT: Call this tool BEFORE each step in a multi-step process to keep the user informed. For example, call it before looking up data, then again before updating records, etc. Each call replaces the previous status message. Always vary the description to reflect what you are currently doing.',
+                description: 'Displays a brief status message to the user while you work. Call this alongside your first tool call in a multi-step task to describe the overall action (e.g. "Creating communication boards"). You may call multiple tools together in the same response — batch related operations whenever possible for efficiency.',
                 parameters: {
                     type: 'object',
                     properties: {
-                        actionDescription: { type: 'string', description: 'A short, specific description of the current step, e.g. "Looking up student information", "Updating treatment goals", "Generating the report". Vary this with each call.' }
+                        actionDescription: { type: 'string', description: 'A short description of what you are doing, e.g. "Looking up student information", "Setting up the board", "Generating the report".' }
                     },
                     required: ['actionDescription'],
                     additionalProperties: false
@@ -395,7 +400,7 @@ export interface NlpSchema {
     }
 
     if (ctx.describeActions && tools.length > 0) {
-        endPrompt += `\n\nIMPORTANT: When performing multi-step tasks, call describeActions before EACH step with a unique, specific message describing what you're currently doing. Do not reuse the same message. This keeps the user informed and prevents the interface from appearing frozen.`;
+        endPrompt += `\n\nTool call efficiency: You can call MULTIPLE tools in a single response. Batch related operations together — for example, call describeActions + manageMemory in the same turn, or make multiple manageMemory calls at once. Only use separate turns when a later call depends on the result of an earlier one. If you call at least one tool in a response, call describeActions once as well to keep the user informed of your activity.`;
     }
 
     if (ctx.history.length > 20) {
@@ -413,7 +418,7 @@ export interface NlpSchema {
   }
 
   
-function printPromptHeader(agent: AgentLike, conversationSummary: string, replyType?: 'text' | 'html'): string {
+function printPromptHeader(agent: AgentLike, conversationSummary: string, replyType?: 'text' | 'html' | 'md'): string {
     let formatGuidelines: string;
     if (replyType === 'html') {
         formatGuidelines = `Use the "html" field to reply.\n`
@@ -426,6 +431,9 @@ function printPromptHeader(agent: AgentLike, conversationSummary: string, replyT
             + `- The page already applies all visual styling. Your HTML must be unstyled semantic markup only.\n`
             + `- For overviews and summaries: use a heading + a plain <ul> or <ol>. Do not create colorful dashboards or styled panels.\n`
             + `- Keep responses concise. Do not pad with decorative structure.\n`;
+    } else if (replyType === 'md') {
+        formatGuidelines = `Reply in Markdown format. Use standard Markdown: headings, bold, italic, lists, code blocks, tables, links.\n`
+            + `Reply content should be in the same language as the user. Keep responses concise and well-structured.\n`;
     } else {
         formatGuidelines = `Use the "text" field to reply.\nReply content should be in the same language as the user. Use plain text.\n`;
     }

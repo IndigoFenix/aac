@@ -22,6 +22,7 @@ import {
   Mic,
   MicOff,
   Send,
+  Square,
   Minimize2,
   Sparkles,
   Paperclip,
@@ -42,6 +43,10 @@ import { useTextToSpeech, htmlToPlainText } from '@/hooks/useTextToSpeech';
 import { ChatMessage, ChatMessageContent } from '@shared/schema';
 import { PersonaIcon, getPersonaColorClasses } from '@/components/chat/PersonaIcon';
 import { cn } from '@/lib/utils';
+import { marked } from 'marked';
+
+// Configure marked for synchronous rendering
+marked.setOptions({ async: false });
 
 export function ChatFeature() {
   const [prompt, setPrompt] = useState('');
@@ -83,6 +88,7 @@ export function ChatFeature() {
     uploadFile,
     removeFile,
     clearFiles,
+    stopGeneration,
   } = useChat();
   
   // Text-to-speech hook
@@ -208,7 +214,7 @@ export function ChatFeature() {
     if (prompt.trim() && !isSending) {
       const messageText = prompt.trim();
       setPrompt('');
-      await sendMessage(messageText, { replyType: 'html' });
+      await sendMessage(messageText);
       inputRef.current?.focus();
     }
   }, [prompt, isSending, sendMessage]);
@@ -293,6 +299,9 @@ export function ChatFeature() {
       return message.content;
     }
     const content = message.content as ChatMessageContent;
+    if (content.md) {
+      return marked.parse(content.md) as string;
+    }
     return content.html || content.text || '';
   };
 
@@ -598,17 +607,30 @@ export function ChatFeature() {
         {/* Voice Controls */}
         {VoiceControls}
 
-        <Button
-          size="icon"
-          variant="default"
-          className="h-8 w-8 rounded-full"
-          onClick={handleSend}
-          disabled={!prompt.trim() || isSending || isListening}
-          data-testid="button-send"
-          aria-label={t('chat.sendMessage')}
-        >
-          <Send className={cn("w-4 h-4", isRTL && "rotate-180")} />
-        </Button>
+        {isSending ? (
+          <Button
+            size="icon"
+            variant="destructive"
+            className="h-8 w-8 rounded-full"
+            onClick={stopGeneration}
+            data-testid="button-stop"
+            aria-label={t('chat.stopGeneration', { defaultValue: 'Stop generation' })}
+          >
+            <Square className="w-3.5 h-3.5 fill-current" />
+          </Button>
+        ) : (
+          <Button
+            size="icon"
+            variant="default"
+            className="h-8 w-8 rounded-full"
+            onClick={handleSend}
+            disabled={!prompt.trim() || isListening}
+            data-testid="button-send"
+            aria-label={t('chat.sendMessage')}
+          >
+            <Send className={cn("w-4 h-4", isRTL && "rotate-180")} />
+          </Button>
+        )}
       </div>
 
       {/* Listening indicator */}
@@ -619,7 +641,7 @@ export function ChatFeature() {
         </div>
       )}
     </div>
-  ), [prompt, isSending, student, isRTL, t, handleKeyDown, handleSend, getPlaceholder, attachedFiles, isUploadingFile, removeFile, handleFileSelect, handleAddFilesClick, VoiceControls, isListening, interimTranscript, sttError]);
+  ), [prompt, isSending, student, isRTL, t, handleKeyDown, handleSend, stopGeneration, getPlaceholder, attachedFiles, isUploadingFile, removeFile, handleFileSelect, handleAddFilesClick, VoiceControls, isListening, interimTranscript, sttError]);
 
   return (
     <div className="flex flex-col h-full relative">
@@ -797,8 +819,8 @@ export function ChatFeature() {
                 </div>
               ))}
               
-              {/* Typing/Thinking indicator */}
-              {isSending && (
+              {/* Typing/Thinking indicator — hidden while text is actively streaming */}
+              {isSending && !(history.length > 0 && (history[history.length - 1].metadata as any)?.isStreaming) && (
                 <div
                   dir={isRTL ? 'rtl' : 'ltr'}
                   className="flex gap-4 justify-start"

@@ -107,6 +107,8 @@ export class GeminiChatProvider implements ChatProvider {
     let totalTextLength = 0;
 
     for await (const chunk of response) {
+      if (request.signal?.aborted) break;
+
       // Text content
       const text = chunk?.text;
       if (text) {
@@ -165,11 +167,52 @@ export class GeminiChatProvider implements ChatProvider {
           ? msg.content
           : (msg.content as any[]).map((p: any) => p.text || "").join("\n");
         systemParts.push(text);
+      } else if (msg.role === "assistant" && msg.toolCalls && msg.toolCalls.length > 0) {
+        // Assistant message with function calls
+        const parts: any[] = [];
+        if (msg.content && typeof msg.content === "string") {
+          parts.push({ text: msg.content });
+        }
+        for (const tc of msg.toolCalls) {
+          let args: any = {};
+          try { args = JSON.parse(tc.arguments); } catch {}
+          parts.push({ functionCall: { name: tc.name, args } });
+        }
+        contents.push({ role: "model", parts });
+      } else if (msg.role === "tool" && msg.toolCallId) {
+        // Tool response — Gemini uses functionResponse with the function name
+        // Look back through messages to find the matching tool call name
+        let functionName = "unknown";
+        for (let j = contents.length - 1; j >= 0; j--) {
+          const prev = contents[j];
+          if (prev.role === "model") {
+            for (const p of prev.parts) {
+              if (p.functionCall?.name) {
+                // Check if this is the matching call by looking at tool call IDs in our messages
+                functionName = p.functionCall.name;
+                break;
+              }
+            }
+            if (functionName !== "unknown") break;
+          }
+        }
+        let responseData: any = {};
+        try {
+          responseData = typeof msg.content === "string" ? JSON.parse(msg.content) : msg.content;
+        } catch {
+          responseData = { result: msg.content };
+        }
+        contents.push({
+          role: "user",
+          parts: [{ functionResponse: { name: functionName, response: responseData } }],
+        });
       } else if (typeof msg.content === "string") {
         contents.push({
           role: msg.role === "assistant" ? "model" : "user",
           parts: [{ text: msg.content }],
         });
+      } else if (msg.content === null) {
+        // Skip null-content messages
       } else {
         // Multi-part content (text + image + audio)
         const parts: any[] = [];

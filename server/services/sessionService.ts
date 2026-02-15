@@ -36,7 +36,7 @@ import {
   type Persona,
 } from "@shared/schema";
 import { personaRepository } from "../repositories/personaRepository";
-import { ChatMessageManager, AgentTemplate, CurrentImage } from "./chat/chat-handler";
+import { ChatMessageManager, AgentTemplate, CurrentImage, MdStreamEvent } from "./chat/chat-handler";
 import { AgentLike } from "./chat/prompt-kit";
 import {
   ParsedBoardData,
@@ -739,7 +739,10 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   let chatState: ChatState;
   let log: ChatMessage[] = [];
 
-  const template = isAACFeature ? AAC_TEMPLATE_BASE : AGENT_TEMPLATE_BASE;
+  const template: LocalAgentTemplate = {
+    ...(isAACFeature ? AAC_TEMPLATE_BASE : AGENT_TEMPLATE_BASE),
+    memoryFields: [...(isAACFeature ? AAC_TEMPLATE_BASE : AGENT_TEMPLATE_BASE).memoryFields],
+  };
   // Select core prompt based on conversation persona (loaded from database)
   let personaResult: PersonaPromptResult = { prompt: '', persona: null };
   if (isAACFeature) {
@@ -1250,7 +1253,7 @@ export interface OnMessageInput {
   /** Persona ID (UUID) from the personas table, or undefined for default */
   persona?: string;
   messages?: ChatMessage[];
-  replyType?: "text" | "html";
+  replyType?: "text" | "html" | "md";
 
   /** Mode-specific context data (boards, documents, etc.) */
   featureContext?: FeatureContext;
@@ -1427,6 +1430,106 @@ export async function onMessageStreaming(input: OnMessageStreamingInput): Promis
         content: error.message || "An unexpected error occurred.",
         timestamp: Date.now(),
       },
+      sessionId: input.sessionId,
+    };
+  }
+}
+
+/**
+ * Input for md streaming message processing
+ */
+export interface OnMessageMdStreamingInput extends OnMessageInput {
+  onThinkingUpdate?: (thinkingText: string) => void;
+  onNavigate?: (feature: string) => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * Events yielded by the md streaming generator, enriched with session data.
+ */
+export type SessionMdStreamEvent =
+  | { type: "text_delta"; text: string }
+  | { type: "thinking"; text: string }
+  | { type: "navigate"; feature: string }
+  | {
+      type: "complete";
+      message: ChatMessage;
+      creditsUsed: number;
+      sessionId?: string;
+      chatState?: ChatState;
+      memoryValues?: any;
+      contextData?: Record<string, any>;
+    };
+
+/**
+ * Process a message with token-by-token markdown streaming.
+ * Uses the ChatProvider.streamChat() interface for real-time text output.
+ */
+export async function* onMessageMdStreaming(
+  input: OnMessageMdStreamingInput
+): AsyncGenerator<SessionMdStreamEvent> {
+  try {
+    const {
+      userId, studentId, sessionId, activeFeature, persona, messages,
+      featureContext, onThinkingUpdate, onNavigate, vectorStoreId, images,
+      currentImage, systemPromptOverride,
+    } = input;
+
+    const { manager: messageManager, memoryValues } = await getMessageManager({
+      userId,
+      studentId,
+      sessionId,
+      feature: activeFeature,
+      persona,
+      featureContext,
+      onThinkingUpdate,
+      onNavigate,
+      vectorStoreId,
+      images,
+      currentImage,
+      systemPromptOverride,
+    });
+
+    // Persist any incoming messages
+    if (messages && messages.length > 0) {
+      await messageManager.persistMessages(
+        messages.map((message) => ({ ...message, timestamp: Date.now() }))
+      );
+    }
+
+    // Stream the response
+    for await (const event of messageManager.getStreamingMdResponse(input.signal)) {
+      if (event.type === 'complete') {
+        // Enrich with session data
+        const mergedMemoryValues = {
+          ...memoryValues,
+          ...(messageManager.memoryValues || {}),
+        };
+        const contextData = extractContextFromMemoryValues(mergedMemoryValues);
+
+        yield {
+          type: 'complete',
+          message: event.message,
+          creditsUsed: event.creditsUsed,
+          sessionId: messageManager.session?.id,
+          chatState: messageManager.toJSON(),
+          memoryValues: mergedMemoryValues,
+          contextData,
+        };
+      } else {
+        yield event;
+      }
+    }
+  } catch (error: any) {
+    console.error("onMessageMdStreaming error:", error);
+    yield {
+      type: 'complete',
+      message: {
+        role: "system",
+        content: error.message || "An unexpected error occurred.",
+        timestamp: Date.now(),
+      },
+      creditsUsed: 0,
       sessionId: input.sessionId,
     };
   }

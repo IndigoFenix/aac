@@ -35,11 +35,43 @@ export class OpenAIChatProvider implements ChatProvider {
     });
   }
 
+  /**
+   * Convert ChatMessage[] to OpenAI ChatCompletions message format,
+   * handling tool call history (assistant+toolCalls → tool_calls, tool → tool response).
+   */
+  private convertMessages(messages: ChatMessage[]): any[] {
+    return messages.map((msg) => {
+      // Assistant message with tool calls
+      if (msg.role === "assistant" && msg.toolCalls && msg.toolCalls.length > 0) {
+        return {
+          role: "assistant",
+          content: msg.content ?? null,
+          tool_calls: msg.toolCalls.map((tc) => ({
+            id: tc.id,
+            type: "function" as const,
+            function: { name: tc.name, arguments: tc.arguments },
+          })),
+        };
+      }
+      // Tool response message
+      if (msg.role === "tool" && msg.toolCallId) {
+        return {
+          role: "tool",
+          tool_call_id: msg.toolCallId,
+          content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
+        };
+      }
+      // Regular message
+      return { role: msg.role, content: msg.content };
+    });
+  }
+
   async completeChat(request: ChatRequest): Promise<ChatCompletionResult> {
-    const messages = this.sanitizeMessages(request.messages);
+    const sanitized = this.sanitizeMessages(request.messages);
+    const messages = this.convertMessages(sanitized);
     const params: any = {
       model: request.model,
-      messages: messages as any,
+      messages,
       max_tokens: request.maxTokens || 500,
       temperature: request.temperature ?? 0.7,
     };
@@ -75,10 +107,11 @@ export class OpenAIChatProvider implements ChatProvider {
   }
 
   async *streamChat(request: ChatRequest): AsyncGenerator<StreamChunk> {
-    const messages = this.sanitizeMessages(request.messages);
+    const sanitized = this.sanitizeMessages(request.messages);
+    const messages = this.convertMessages(sanitized);
     const params: any = {
       model: request.model,
-      messages: messages as any,
+      messages,
       max_tokens: request.maxTokens || 500,
       temperature: request.temperature ?? 0.7,
       stream: true as const,
@@ -94,6 +127,8 @@ export class OpenAIChatProvider implements ChatProvider {
     let finalUsage: { promptTokens: number; completionTokens: number } | undefined;
 
     for await (const chunk of stream) {
+      if (request.signal?.aborted) break;
+
       const delta = chunk.choices[0]?.delta;
 
       if (delta?.content) {

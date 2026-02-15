@@ -664,6 +664,7 @@ export const students = pgTable("students", {
   aacStudentVoiceType: text("aac_student_voice_type"), // Student's voice: 'man', 'woman', 'boy', 'girl'
   aacCustomVoiceId: varchar("aac_custom_voice_id"), // FK to voices table for custom AI voice (ElevenLabs)
   aacCustomStudentVoiceId: varchar("aac_custom_student_voice_id"), // FK to voices table for custom student voice (ElevenLabs)
+  aacIconTextRatio: integer("aac_icon_text_ratio").default(3), // Icon-to-text size ratio 1–5 (1=mostly icon, 5=mostly text)
   aacKnownPeople: jsonb("aac_known_people").default([]), // Array of known people for recognition
 
   // Student-level ElevenLabs voice settings (may be removed later)
@@ -2685,6 +2686,7 @@ export interface GoalWithContext {
 export interface ChatMessageContent {
   text?: string;
   html?: string;
+  md?: string;
   setValues?: { [key: string]: any }[];
   formSchema?: any;
   formValues?: any;

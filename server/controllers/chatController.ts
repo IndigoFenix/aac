@@ -31,7 +31,7 @@ const messageSchema = z.object({
       })
     )
     .optional(),
-  replyType: z.enum(["text", "html"]).optional(),
+  replyType: z.enum(["text", "html", "md"]).optional(),
 });
 
 /*

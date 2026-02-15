@@ -25,7 +25,29 @@ interface DynamicBoardProps {
   getFaceImage?: (contactId: string) => string | null;
   /** When true, skip local speechSynthesis — let the AI handle speech via [INTERPRET] */
   suppressLocalSpeech?: boolean;
+  /** Icon-to-text size ratio 1–5 (1=mostly icon, 5=mostly text). Default 3 (balanced). */
+  iconTextRatio?: number;
 }
+
+/**
+ * Sizing config for each icon-text ratio level.
+ * iconFlex/textFlex control vertical space allocation.
+ * iconClass controls emoji/FA font size, textClass controls label font size.
+ * imgSize controls symbol/face image size as percentage.
+ */
+const RATIO_LEVELS: Record<number, {
+  iconFlex: number;
+  textFlex: number;
+  iconClass: string;
+  textClass: string;
+  imgSize: string;
+}> = {
+  1: { iconFlex: 9, textFlex: 1, iconClass: "text-[4rem] sm:text-[6rem] md:text-[8rem]", textClass: "text-[8px] sm:text-[9px]", imgSize: "70%" },
+  2: { iconFlex: 4, textFlex: 1, iconClass: "text-[3.5rem] sm:text-[5.5rem] md:text-[7.5rem]", textClass: "text-[9px] sm:text-[10px]", imgSize: "65%" },
+  3: { iconFlex: 3, textFlex: 1, iconClass: "text-[3rem] sm:text-[5rem] md:text-[7rem]", textClass: "text-xs", imgSize: "60%" },
+  4: { iconFlex: 2, textFlex: 1, iconClass: "text-[2rem] sm:text-[3.5rem] md:text-[5rem]", textClass: "text-xs sm:text-sm", imgSize: "50%" },
+  5: { iconFlex: 1, textFlex: 2, iconClass: "text-[1.5rem] sm:text-[2.5rem] md:text-[3.5rem]", textClass: "text-sm sm:text-base md:text-lg", imgSize: "40%" },
+};
 
 /** Slot state for the grid */
 type SlotState =
@@ -101,9 +123,13 @@ export default function DynamicBoard({
   voiceType,
   getFaceImage,
   suppressLocalSpeech = false,
+  iconTextRatio = 3,
 }: DynamicBoardProps) {
   const { speak } = useTextToSpeech();
   const { t } = useLanguage();
+
+  // Icon/text sizing based on ratio level
+  const level = RATIO_LEVELS[Math.max(1, Math.min(5, iconTextRatio))] || RATIO_LEVELS[3];
 
   // Grid dimensions from board data
   const gridRows = board?.grid?.rows || DEFAULT_ROWS;
@@ -353,10 +379,14 @@ export default function DynamicBoard({
           className="flex flex-col items-center justify-center p-2 rounded-xl shadow-sm border border-gray-200 pointer-events-none min-h-0"
           style={{ backgroundColor: getButtonColor(button.color) }}
         >
-          {renderIcon(button)}
-          <span className="text-xs font-medium text-center text-gray-800 leading-tight mt-1">
-            {button.label}
-          </span>
+          <div className="flex items-center justify-center min-h-0 w-full" style={{ flex: level.iconFlex }}>
+            {renderIcon(button)}
+          </div>
+          <div className="flex items-center justify-center w-full overflow-hidden" style={{ flex: level.textFlex }}>
+            <span className={`${level.textClass} font-medium text-center text-gray-800 leading-tight`}>
+              {button.label}
+            </span>
+          </div>
         </motion.div>
       );
     }
@@ -379,36 +409,39 @@ export default function DynamicBoard({
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
       >
-        <div className="flex-1 flex items-center justify-center min-h-0">
+        <div className="flex items-center justify-center min-h-0 w-full" style={{ flex: level.iconFlex }}>
           {renderIcon(button)}
         </div>
-        <span className="flex-shrink-0 text-xs font-medium text-center text-gray-800 leading-tight mt-0.5">
-          {button.label}
-        </span>
+        <div className="flex items-center justify-center w-full overflow-hidden" style={{ flex: level.textFlex }}>
+          <span className={`${level.textClass} font-medium text-center text-gray-800 leading-tight line-clamp-2`}>
+            {button.label}
+          </span>
+        </div>
       </motion.button>
     );
   };
 
   const renderIcon = (button: BoardButton) => {
+    const imgStyle = { width: level.imgSize, height: level.imgSize };
     // Resolve __FACE__:contactId to cached face image
     if (button.symbolPath?.startsWith("__FACE__:")) {
       const contactId = button.symbolPath.substring(9);
       const cached = getFaceImage?.(contactId);
       if (cached) {
-        return <img src={cached} alt={button.label} className="w-[60%] h-[60%] object-contain rounded-full" />;
+        return <img src={cached} alt={button.label} className="object-contain rounded-full" style={imgStyle} />;
       }
-      return <span className="text-[3rem] sm:text-[5rem] md:text-[7rem] leading-none">👤</span>;
+      return <span className={`${level.iconClass} leading-none`}>👤</span>;
     }
     if (button.symbolPath) {
-      return <img src={button.symbolPath} alt={button.label} className="w-[60%] h-[60%] object-contain" />;
+      return <img src={button.symbolPath} alt={button.label} className="object-contain" style={imgStyle} />;
     }
     if (button.iconRef && isEmoji(button.iconRef)) {
-      return <span className="text-[3rem] sm:text-[5rem] md:text-[7rem] leading-none">{button.iconRef}</span>;
+      return <span className={`${level.iconClass} leading-none`}>{button.iconRef}</span>;
     }
     if (button.iconRef) {
-      return <i className={`${button.iconRef} text-[3rem] sm:text-[5rem] md:text-[7rem] leading-none`} />;
+      return <i className={`${button.iconRef} ${level.iconClass} leading-none`} />;
     }
-    return <span className="text-[3rem] sm:text-[5rem] md:text-[7rem] leading-none">{getEmojiForLabel(button.label)}</span>;
+    return <span className={`${level.iconClass} leading-none`}>{getEmojiForLabel(button.label)}</span>;
   };
 
   return (

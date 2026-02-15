@@ -82,6 +82,11 @@ manageMemory({ ops: [{ action: "set", path: "/Context_Board/pages/0/buttons/2", 
 - If multiple pages exist, ensure there is a way to navigate back to the main/home page from any other page.
 - All pages should be accessible from the main/home page, either directly or through intermediate pages.
 
+## Efficiency
+- Prefer setting the entire board at once via a single "set" on /Context_Board with all pages and buttons included.
+- You can combine multiple ops in one call: \`manageMemory({ ops: [op1, op2, op3] })\`
+- For new boards, build the complete board object and set it in one operation rather than adding pages one at a time.
+
 When creating/modifying boards, use manageMemory and explain your changes.`;
 
 export function GENERAL_SYSTEM_PROMPT(framework: Framework) {
