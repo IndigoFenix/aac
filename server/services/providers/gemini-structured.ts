@@ -136,9 +136,19 @@ export class GeminiStructuredProvider implements StructuredLLMProvider {
    */
   private cleanSchema(schema: any): any {
     if (!schema || typeof schema !== "object") return schema;
+    // Preserve arrays (required, enum, etc.) — recurse into elements
+    if (Array.isArray(schema)) {
+      return schema.map((item: any) => this.cleanSchema(item));
+    }
     const cleaned: any = {};
     for (const [key, value] of Object.entries(schema)) {
       if (key === "additionalProperties" || key === "$ref") continue;
+      // Gemini expects "type" to be a string, not an array like ["string"]
+      if (key === "type" && Array.isArray(value)) {
+        const filtered = value.filter((t: string) => t !== "null");
+        cleaned[key] = filtered[0] || "string";
+        continue;
+      }
       if (typeof value === "object" && value !== null) {
         cleaned[key] = this.cleanSchema(value);
       } else {

@@ -246,6 +246,12 @@ export class GeminiChatProvider implements ChatProvider {
     const cleaned: any = {};
     for (const [key, value] of Object.entries(schema)) {
       if (key === "additionalProperties" || key === "$ref") continue;
+      // Gemini expects "type" to be a string, not an array like ["string"]
+      if (key === "type" && Array.isArray(value)) {
+        const filtered = value.filter((t: string) => t !== "null");
+        cleaned[key] = filtered[0] || "string";
+        continue;
+      }
       if (typeof value === "object" && value !== null) {
         cleaned[key] = this.cleanSchema(value);
       } else {
