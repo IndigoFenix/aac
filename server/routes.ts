@@ -20,7 +20,8 @@ import {
   programController,
   recordsController,
   instituteController,
-  classroomController
+  classroomController,
+  sessionHistoryController
 } from "./controllers";
 
 import {
@@ -1200,6 +1201,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.patch("/api/admin/api-providers/:id", requireAdmin, (req, res) =>
     adminController.updateApiProvider(req, res)
+  );
+
+  // Session history (admin)
+  app.get("/api/admin/sessions/aac", requireAdmin, (req, res) =>
+    sessionHistoryController.getAACSessions(req, res)
+  );
+  app.get("/api/admin/sessions/aac/:id/log", requireAdmin, (req, res) =>
+    sessionHistoryController.getAACSessionLog(req, res)
+  );
+  app.get("/api/admin/sessions/chat", requireAdmin, (req, res) =>
+    sessionHistoryController.getChatSessions(req, res)
+  );
+  app.get("/api/admin/sessions/chat/:id/log", requireAdmin, (req, res) =>
+    sessionHistoryController.getChatSessionLog(req, res)
   );
 
   // Credit packages (admin)

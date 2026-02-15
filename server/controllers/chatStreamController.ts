@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { onMessageStreaming, FeatureType } from "../services/sessionService";
+import { onMessageStreaming, onMessageMdStreaming, FeatureType } from "../services/sessionService";
 import { ChatPersona } from "@shared/schema";
 
 // Validation schema - same as chatController
@@ -31,7 +31,7 @@ const messageSchema = z.object({
       })
     )
     .optional(),
-  replyType: z.enum(["text", "html"]).optional(),
+  replyType: z.enum(["text", "html", "md"]).optional(),
 });
 
 /**
@@ -90,28 +90,67 @@ export class ChatStreamController {
           timestamp: msg.timestamp || startTime,
         })) || [];
 
-      // Process the message with streaming callback
-      const response = await onMessageStreaming({
-        userId,
-        studentId,
-        sessionId,
-        activeFeature: activeFeature as FeatureType,
-        persona: persona as ChatPersona,
-        messages: messagesWithTimestamp,
-        featureContext,
-        vectorStoreId,
-        images,
-        replyType: replyType || "html",
-        onThinkingUpdate,
-        onNavigate,
-      });
+      if (replyType === "md") {
+        // Markdown streaming mode — token-by-token text_delta events
+        const abortController = new AbortController();
 
-      // Send final response
-      sendSSEEvent(res, "complete", response);
+        // Abort when client disconnects (e.g. user clicks stop, navigates away)
+        const onClose = () => abortController.abort();
+        req.on("close", onClose);
 
-      // Send close event and end connection
-      sendSSEEvent(res, "close", {});
-      res.end();
+        try {
+          const stream = onMessageMdStreaming({
+            userId,
+            studentId,
+            sessionId,
+            activeFeature: activeFeature as FeatureType,
+            persona: persona as ChatPersona,
+            messages: messagesWithTimestamp,
+            featureContext,
+            vectorStoreId,
+            images,
+            replyType: "md",
+            onThinkingUpdate,
+            onNavigate,
+            signal: abortController.signal,
+          });
+
+          for await (const event of stream) {
+            if (res.writableEnded) break;
+            sendSSEEvent(res, event.type, event);
+          }
+
+          if (!res.writableEnded) {
+            sendSSEEvent(res, "close", {});
+            res.end();
+          }
+        } finally {
+          req.off("close", onClose);
+        }
+      } else {
+        // Existing path: structured JSON response with thinking updates
+        const response = await onMessageStreaming({
+          userId,
+          studentId,
+          sessionId,
+          activeFeature: activeFeature as FeatureType,
+          persona: persona as ChatPersona,
+          messages: messagesWithTimestamp,
+          featureContext,
+          vectorStoreId,
+          images,
+          replyType: replyType || "html",
+          onThinkingUpdate,
+          onNavigate,
+        });
+
+        // Send final response
+        sendSSEEvent(res, "complete", response);
+
+        // Send close event and end connection
+        sendSSEEvent(res, "close", {});
+        res.end();
+      }
     } catch (error: any) {
       console.error("ChatStreamController error:", error);
 

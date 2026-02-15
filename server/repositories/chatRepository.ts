@@ -7,13 +7,23 @@
 
 import {
   chatSessions,
+  users,
+  students,
   type ChatSession,
   type InsertChatSession,
   type ChatState,
   type ChatMessage,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, and, isNull, desc, or, sql } from "drizzle-orm";
+import { eq, and, isNull, desc, or, sql, gte, lte, count } from "drizzle-orm";
+
+export interface ChatAdminSessionFilters {
+  userId?: string;
+  startDate?: string;
+  endDate?: string;
+  limit: number;
+  offset: number;
+}
 
 export class ChatRepository {
   // ============================================================================
@@ -164,6 +174,74 @@ export class ChatRepository {
       .where(and(...conditions))
       .orderBy(desc(chatSessions.lastUpdate))
       .limit(limit);
+  }
+  // ============================================================================
+  // ADMIN OPERATIONS
+  // ============================================================================
+
+  async getSessionsAdmin(opts: ChatAdminSessionFilters) {
+    const conditions = [isNull(chatSessions.deletedAt)];
+    if (opts.userId) {
+      conditions.push(eq(chatSessions.userId, opts.userId));
+    }
+    if (opts.startDate) {
+      conditions.push(gte(chatSessions.started, new Date(opts.startDate)));
+    }
+    if (opts.endDate) {
+      const end = new Date(opts.endDate);
+      end.setDate(end.getDate() + 1);
+      conditions.push(lte(chatSessions.started, end));
+    }
+
+    return await db
+      .select({
+        id: chatSessions.id,
+        userId: chatSessions.userId,
+        userName: users.fullName,
+        studentId: chatSessions.studentId,
+        studentName: students.name,
+        chatMode: chatSessions.chatMode,
+        creditsUsed: chatSessions.creditsUsed,
+        status: chatSessions.status,
+        started: chatSessions.started,
+        lastUpdate: chatSessions.lastUpdate,
+      })
+      .from(chatSessions)
+      .leftJoin(users, eq(chatSessions.userId, users.id))
+      .leftJoin(students, eq(chatSessions.studentId, students.id))
+      .where(and(...conditions))
+      .orderBy(desc(chatSessions.started))
+      .limit(opts.limit)
+      .offset(opts.offset);
+  }
+
+  async getSessionsAdminCount(opts: ChatAdminSessionFilters): Promise<number> {
+    const conditions = [isNull(chatSessions.deletedAt)];
+    if (opts.userId) {
+      conditions.push(eq(chatSessions.userId, opts.userId));
+    }
+    if (opts.startDate) {
+      conditions.push(gte(chatSessions.started, new Date(opts.startDate)));
+    }
+    if (opts.endDate) {
+      const end = new Date(opts.endDate);
+      end.setDate(end.getDate() + 1);
+      conditions.push(lte(chatSessions.started, end));
+    }
+
+    const [result] = await db
+      .select({ total: count() })
+      .from(chatSessions)
+      .where(and(...conditions));
+    return result?.total ?? 0;
+  }
+
+  async getSessionLog(id: string): Promise<ChatMessage[] | undefined> {
+    const [result] = await db
+      .select({ log: chatSessions.log })
+      .from(chatSessions)
+      .where(and(eq(chatSessions.id, id), isNull(chatSessions.deletedAt)));
+    return (result?.log as ChatMessage[] | undefined) ?? undefined;
   }
 }
 

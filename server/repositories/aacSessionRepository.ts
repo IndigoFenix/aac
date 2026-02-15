@@ -7,6 +7,8 @@
 
 import {
   aacSessions,
+  students,
+  users,
   type AACSession,
   type InsertAACSession,
   type UpdateAACSession,
@@ -14,7 +16,15 @@ import {
   type AACMessage,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, and, desc, sql, isNull, or, gt } from "drizzle-orm";
+import { eq, and, desc, sql, isNull, or, gt, gte, lte, count } from "drizzle-orm";
+
+export interface AdminSessionFilters {
+  studentId?: string;
+  startDate?: string; // YYYY-MM-DD
+  endDate?: string;   // YYYY-MM-DD
+  limit: number;
+  offset: number;
+}
 
 export class AACSessionRepository {
   // ============================================================================
@@ -207,6 +217,77 @@ export class AACSessionRepository {
           gt(aacSessions.lastActivity, cutoffTime)
         )
       );
+  }
+  // ============================================================================
+  // ADMIN OPERATIONS
+  // ============================================================================
+
+  async getSessionsAdmin(opts: AdminSessionFilters) {
+    const conditions = [];
+    if (opts.studentId) {
+      conditions.push(eq(aacSessions.studentId, opts.studentId));
+    }
+    if (opts.startDate) {
+      conditions.push(gte(aacSessions.started, new Date(opts.startDate)));
+    }
+    if (opts.endDate) {
+      // End of the given day
+      const end = new Date(opts.endDate);
+      end.setDate(end.getDate() + 1);
+      conditions.push(lte(aacSessions.started, end));
+    }
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+    return await db
+      .select({
+        id: aacSessions.id,
+        studentId: aacSessions.studentId,
+        studentName: students.name,
+        userId: aacSessions.userId,
+        userName: users.fullName,
+        creditsUsed: aacSessions.creditsUsed,
+        status: aacSessions.status,
+        started: aacSessions.started,
+        lastActivity: aacSessions.lastActivity,
+        ended: aacSessions.ended,
+      })
+      .from(aacSessions)
+      .leftJoin(students, eq(aacSessions.studentId, students.id))
+      .leftJoin(users, eq(aacSessions.userId, users.id))
+      .where(where)
+      .orderBy(desc(aacSessions.started))
+      .limit(opts.limit)
+      .offset(opts.offset);
+  }
+
+  async getSessionsAdminCount(opts: AdminSessionFilters): Promise<number> {
+    const conditions = [];
+    if (opts.studentId) {
+      conditions.push(eq(aacSessions.studentId, opts.studentId));
+    }
+    if (opts.startDate) {
+      conditions.push(gte(aacSessions.started, new Date(opts.startDate)));
+    }
+    if (opts.endDate) {
+      const end = new Date(opts.endDate);
+      end.setDate(end.getDate() + 1);
+      conditions.push(lte(aacSessions.started, end));
+    }
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [result] = await db
+      .select({ total: count() })
+      .from(aacSessions)
+      .where(where);
+    return result?.total ?? 0;
+  }
+
+  async getSessionConversationHistory(id: string): Promise<AACMessage[] | undefined> {
+    const [result] = await db
+      .select({ conversationHistory: aacSessions.conversationHistory })
+      .from(aacSessions)
+      .where(eq(aacSessions.id, id));
+    return result?.conversationHistory ?? undefined;
   }
 }
 

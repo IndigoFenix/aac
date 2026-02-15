@@ -104,13 +104,20 @@ export function createLoopDetector(config: LoopDetectionConfig = DEFAULT_LOOP_DE
   let repetitionCount = 0;
 
   /**
+   * Recursively sort object keys at ALL nesting levels for deterministic serialization.
+   */
+  function stableStringify(val: any): string {
+    if (val === null || val === undefined) return String(val);
+    if (typeof val !== 'object') return JSON.stringify(val);
+    if (Array.isArray(val)) return '[' + val.map(stableStringify).join(',') + ']';
+    return '{' + Object.keys(val).sort().map(k => JSON.stringify(k) + ':' + stableStringify(val[k])).join(',') + '}';
+  }
+
+  /**
    * Create a deterministic hash of a tool call and response.
    */
   function hashEntry(toolName: string, args: any, response: any): string {
-    // Create a stable string representation
-    const argsStr = JSON.stringify(args, Object.keys(args || {}).sort());
-    const responseStr = JSON.stringify(response, Object.keys(response || {}).sort());
-    return `${toolName}:${argsStr}:${responseStr}`;
+    return `${toolName}:${stableStringify(args)}:${stableStringify(response)}`;
   }
 
   /**

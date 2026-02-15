@@ -89,6 +89,8 @@ export class ClaudeChatProvider implements ChatProvider {
     const toolInputBuffers = new Map<number, { name: string; json: string }>();
 
     for await (const event of stream) {
+      if (request.signal?.aborted) break;
+
       if (event.type === "content_block_start") {
         const block = (event as any).content_block;
         if (block?.type === "tool_use") {
@@ -154,11 +156,32 @@ export class ClaudeChatProvider implements ChatProvider {
           ? msg.content
           : (msg.content as any[]).map((p: any) => p.text || "").join("\n");
         systemParts.push(text);
+      } else if (msg.role === "assistant" && msg.toolCalls && msg.toolCalls.length > 0) {
+        // Assistant message with tool use blocks
+        const blocks: any[] = [];
+        if (msg.content && typeof msg.content === "string") {
+          blocks.push({ type: "text", text: msg.content });
+        }
+        for (const tc of msg.toolCalls) {
+          let input: any = {};
+          try { input = JSON.parse(tc.arguments); } catch {}
+          blocks.push({ type: "tool_use", id: tc.id, name: tc.name, input });
+        }
+        messages.push({ role: "assistant", content: blocks });
+      } else if (msg.role === "tool" && msg.toolCallId) {
+        // Tool result — Claude requires tool_result inside a user message
+        const resultContent = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content);
+        messages.push({
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: msg.toolCallId, content: resultContent }],
+        });
       } else if (typeof msg.content === "string") {
         messages.push({
           role: msg.role as "user" | "assistant",
           content: msg.content,
         });
+      } else if (msg.content === null) {
+        // Skip null-content messages
       } else {
         // Multi-part content (text + images)
         const blocks: any[] = [];

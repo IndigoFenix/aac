@@ -9,9 +9,10 @@ import { TopicList } from '@/components/admin/TopicList';
 import { TopicView } from '@/components/admin/TopicView';
 import { VoiceList } from '@/components/admin/VoiceList';
 import { ModelSettings } from '@/components/admin/ModelSettings';
+import { SessionHistory } from '@/components/admin/SessionHistory';
 import { cn } from '@/lib/utils';
 
-type AdminSection = 'personas' | 'library' | 'voices' | 'models';
+type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions';
 
 export function AdminDashboard() {
   const [location, navigate] = useLocation();
@@ -22,6 +23,7 @@ export function AdminDashboard() {
     if (location.startsWith('/admin/library')) return 'library';
     if (location.startsWith('/admin/voices')) return 'voices';
     if (location.startsWith('/admin/models')) return 'models';
+    if (location.startsWith('/admin/sessions')) return 'sessions';
     if (location.startsWith('/admin/personas')) return 'personas';
     return 'personas'; // default
   };
@@ -43,6 +45,8 @@ export function AdminDashboard() {
       navigate('/admin/voices');
     } else if (section === 'models') {
       navigate('/admin/models');
+    } else if (section === 'sessions') {
+      navigate('/admin/sessions');
     }
   };
 
@@ -67,6 +71,10 @@ export function AdminDashboard() {
 
     if (activeSection === 'models') {
       return <ModelSettings />;
+    }
+
+    if (activeSection === 'sessions') {
+      return <SessionHistory />;
     }
 
     return null;

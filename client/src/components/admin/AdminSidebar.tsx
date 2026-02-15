@@ -10,6 +10,7 @@ import {
   BookOpen,
   Volume2,
   Cpu,
+  History,
   ArrowLeft,
   Moon,
   Sun,
@@ -18,7 +19,7 @@ import logoImage from '@assets/cliniaacian_logo.png';
 import { cn } from '@/lib/utils';
 import { useLocation } from 'wouter';
 
-type AdminSection = 'personas' | 'library' | 'voices' | 'models';
+type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions';
 
 type AdminSidebarProps = {
   activeSection: AdminSection;
@@ -54,6 +55,12 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
       label: 'AI Models',
       section: 'models' as AdminSection,
       testId: 'admin-nav-models',
+    },
+    {
+      icon: History,
+      label: 'Sessions',
+      section: 'sessions' as AdminSection,
+      testId: 'admin-nav-sessions',
     },
   ];
 

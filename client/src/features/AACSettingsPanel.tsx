@@ -25,6 +25,7 @@ import {
   RotateCcw,
   User,
   Loader2,
+  LayoutGrid,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -71,6 +72,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [studentVoiceType, setStudentVoiceType] = useState('boy');
   const [customVoiceId, setCustomVoiceId] = useState<string | null>(null);
   const [customStudentVoiceId, setCustomStudentVoiceId] = useState<string | null>(null);
+  const [iconTextRatio, setIconTextRatio] = useState(3);
   const [hasChanges, setHasChanges] = useState(false);
 
   // Load student data into form
@@ -81,6 +83,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setStudentVoiceType(student.aacStudentVoiceType || 'boy');
       setCustomVoiceId(student.aacCustomVoiceId || null);
       setCustomStudentVoiceId(student.aacCustomStudentVoiceId || null);
+      setIconTextRatio(student.aacIconTextRatio ?? 3);
       setHasChanges(false);
     }
   }, [student]);
@@ -93,15 +96,17 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalStudentVoice = student.aacStudentVoiceType || 'boy';
       const originalCustomVoice = student.aacCustomVoiceId || null;
       const originalCustomStudentVoice = student.aacCustomStudentVoiceId || null;
+      const originalIconTextRatio = student.aacIconTextRatio ?? 3;
       setHasChanges(
         chatAgentPrompt !== originalPrompt ||
         voiceType !== originalVoice ||
         studentVoiceType !== originalStudentVoice ||
         customVoiceId !== originalCustomVoice ||
-        customStudentVoiceId !== originalCustomStudentVoice
+        customStudentVoiceId !== originalCustomStudentVoice ||
+        iconTextRatio !== originalIconTextRatio
       );
     }
-  }, [chatAgentPrompt, voiceType, studentVoiceType, customVoiceId, customStudentVoiceId, student]);
+  }, [chatAgentPrompt, voiceType, studentVoiceType, customVoiceId, customStudentVoiceId, iconTextRatio, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -111,6 +116,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       aacStudentVoiceType: string;
       aacCustomVoiceId: string | null;
       aacCustomStudentVoiceId: string | null;
+      aacIconTextRatio: number;
     }) => {
       const response = await apiRequest('PATCH', `/api/students/${student?.id}`, data);
       return response.json();
@@ -141,6 +147,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       aacStudentVoiceType: studentVoiceType,
       aacCustomVoiceId: customVoiceId,
       aacCustomStudentVoiceId: customStudentVoiceId,
+      aacIconTextRatio: iconTextRatio,
     });
   };
 
@@ -151,6 +158,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setStudentVoiceType(student.aacStudentVoiceType || 'boy');
       setCustomVoiceId(student.aacCustomVoiceId || null);
       setCustomStudentVoiceId(student.aacCustomStudentVoiceId || null);
+      setIconTextRatio(student.aacIconTextRatio ?? 3);
     }
   };
 
@@ -342,6 +350,61 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </Select>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Icon-Text Ratio */}
+          <Card>
+            <CardHeader>
+              <CardTitle className={cn(
+                "flex items-center gap-2",
+                isRTL && "flex-row-reverse"
+              )}>
+                <LayoutGrid className="w-5 h-5" />
+                Button Size
+              </CardTitle>
+              <CardDescription>
+                Adjust the ratio between icon and text on AAC board buttons
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-3 justify-center">
+                {([1, 2, 3, 4, 5] as const).map((lvl) => {
+                  const isActive = iconTextRatio === lvl;
+                  // Preview sizing: icon flex vs text flex
+                  const iconFlex = [9, 4, 3, 2, 1][lvl - 1];
+                  const textFlex = [1, 1, 1, 1, 2][lvl - 1];
+                  const emojiSize = ['text-2xl', 'text-xl', 'text-lg', 'text-base', 'text-sm'][lvl - 1];
+                  const labelSize = ['text-[6px]', 'text-[7px]', 'text-[8px]', 'text-[9px]', 'text-xs'][lvl - 1];
+                  return (
+                    <button
+                      key={lvl}
+                      type="button"
+                      onClick={() => setIconTextRatio(lvl)}
+                      className={cn(
+                        "flex flex-col items-center justify-center w-16 h-20 rounded-lg border-2 transition-all",
+                        isActive
+                          ? "border-primary bg-primary/10 ring-2 ring-primary/30"
+                          : "border-border hover:border-primary/50 bg-card"
+                      )}
+                    >
+                      <div className="flex items-center justify-center w-full" style={{ flex: iconFlex }}>
+                        <span className={`${emojiSize} leading-none`}>😊</span>
+                      </div>
+                      <div className="flex items-center justify-center w-full overflow-hidden" style={{ flex: textFlex }}>
+                        <span className={`${labelSize} font-medium text-center leading-tight text-foreground`}>Hello</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground text-center mt-3">
+                {iconTextRatio === 1 && "Extra large icons, minimal text"}
+                {iconTextRatio === 2 && "Large icons, small text"}
+                {iconTextRatio === 3 && "Balanced (default)"}
+                {iconTextRatio === 4 && "Smaller icons, larger text"}
+                {iconTextRatio === 5 && "Minimal icons, extra large text"}
+              </p>
             </CardContent>
           </Card>
 
