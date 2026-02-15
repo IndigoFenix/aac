@@ -66,7 +66,7 @@ manageMemory({ ops: [{ action: "set", path: "/Context_Board/pages/0/buttons/2", 
 
 **Colors:** Blue #3B82F6 (needs), Amber #F59E0B (emotions), Pink #EC4899 (people), Yellow #EAB308 (activities), Gray #6B7280 (objects), Green #059669 (yes), Red #DC2626 (no)
 
-**Icons:** FontAwesome classes (fas fa-smile, fas fa-home, etc.)
+**Icons:** A single emoji (e.g., "🏠"). Required for every button.
 
 **Actions:** { type: "speak", text: "..." } or { type: "link", toPageId: "page-id" }
 

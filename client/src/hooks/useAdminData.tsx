@@ -15,6 +15,8 @@ export interface Persona {
   prompt: string;
   manualSelection: boolean;
   active: boolean;
+  llmProvider: string | null;
+  llmModel: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -37,6 +39,8 @@ export interface CreatePersonaData {
   prompt: string;
   manualSelection?: boolean;
   active?: boolean;
+  llmProvider?: string | null;
+  llmModel?: string | null;
 }
 
 export interface UpdatePersonaData {
@@ -45,6 +49,8 @@ export interface UpdatePersonaData {
   prompt?: string;
   manualSelection?: boolean;
   active?: boolean;
+  llmProvider?: string | null;
+  llmModel?: string | null;
 }
 
 export interface Voice {

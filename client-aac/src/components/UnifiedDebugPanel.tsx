@@ -2,7 +2,7 @@
 // Single draggable, resizable debug panel with collapsible sections
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { X, ChevronDown, ChevronRight, Copy, Camera, Mic, Image, MessageSquare, Eye, Brain, Clock, Filter, Activity } from "lucide-react";
+import { X, ChevronDown, ChevronRight, Copy, Camera, Mic, Image, MessageSquare, Eye, Brain, Clock, Filter, Activity, Play, Pause, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -10,6 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { useDualAgentContext } from "@/contexts/DualAgentContext";
 import { useDebugSession, type DebugSessionMessage } from "@/hooks/useDebugSession";
+import type { LastCapturedFaceImage } from "@/hooks/usePersonIdentification";
 import { useCameraAttentivenessOptional } from "@/contexts/CameraAttentivenessContext";
 import type { TrackedFace } from "@/lib/faceTrackingTypes";
 import { getEventColorCategory, EVENT_COLOR_MAP } from "@/lib/faceTrackingTypes";
@@ -52,6 +53,8 @@ interface UnifiedDebugPanelProps {
   handGestureFps?: number;
   handGestureReady?: boolean;
   handGestureError?: string | null;
+  // Face image debug (from usePersonIdentification)
+  lastCapturedFaceImage?: LastCapturedFaceImage | null;
 }
 
 const SECTION_STORAGE_KEY = "debug-panel-sections";
@@ -232,6 +235,7 @@ export default function UnifiedDebugPanel({
   handGestureFps,
   handGestureReady,
   handGestureError,
+  lastCapturedFaceImage,
 }: UnifiedDebugPanelProps) {
   // Context data
   const ctx = useDualAgentContext();
@@ -250,6 +254,8 @@ export default function UnifiedDebugPanel({
     const stored = loadSections();
     return {
       cameras: stored.cameras ?? true,
+      audioClips: stored.audioClips ?? true,
+      faceImages: stored.faceImages ?? true,
       requests: stored.requests ?? true,
       interactive: stored.interactive ?? true,
       monitor: stored.monitor ?? true,
@@ -263,6 +269,10 @@ export default function UnifiedDebugPanel({
   // Expanded request/message IDs
   const [expandedRequest, setExpandedRequest] = useState<string | null>(null);
   const [expandedMessage, setExpandedMessage] = useState<number | null>(null);
+
+  // Audio playback state
+  const [playingClipId, setPlayingClipId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Persist position/size
   useEffect(() => {
@@ -328,6 +338,48 @@ export default function UnifiedDebugPanel({
   // Copy to clipboard
   const copyToClipboard = useCallback((text: string) => {
     navigator.clipboard.writeText(text).catch(() => {});
+  }, []);
+
+  // Play/stop audio clip
+  const toggleAudioClip = useCallback((clipId: string, objectUrl: string) => {
+    if (playingClipId === clipId) {
+      // Stop playing
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      setPlayingClipId(null);
+    } else {
+      // Stop any current playback
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      const audio = new Audio(objectUrl);
+      audio.onended = () => {
+        setPlayingClipId(null);
+        audioRef.current = null;
+      };
+      audio.onerror = () => {
+        setPlayingClipId(null);
+        audioRef.current = null;
+      };
+      audio.play().catch(() => {
+        setPlayingClipId(null);
+      });
+      audioRef.current = audio;
+      setPlayingClipId(clipId);
+    }
+  }, [playingClipId]);
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
   }, []);
 
   if (!isOpen) return null;
@@ -451,6 +503,199 @@ export default function UnifiedDebugPanel({
                 {trackedHands && trackedHands.length > 0 && (
                   <div className="space-y-1">
                     {trackedHands.map((hand, i) => <HandCard key={`${hand.handedness}-${i}`} hand={hand} index={i} />)}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ===== Section: Audio Clips ===== */}
+          <div>
+            <SectionHeader
+              title="Audio Capture"
+              icon={<Mic className="w-3.5 h-3.5" />}
+              isOpen={sections.audioClips}
+              onClick={() => toggleSection("audioClips")}
+              badge={
+                <div className="flex gap-1">
+                  {ctx.audioActivity.isSpeaking && <Badge className="bg-red-500 text-white text-[9px] px-1 animate-pulse">Speaking</Badge>}
+                  {ctx.audioClipCache.length > 0 && (
+                    <Badge variant="secondary" className="text-[9px] px-1">{ctx.audioClipCache.length}</Badge>
+                  )}
+                </div>
+              }
+            />
+            {sections.audioClips && (
+              <div className="p-2 space-y-2 text-xs">
+                {/* PCM Gating (Live API mic→Gemini) */}
+                <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded space-y-1.5">
+                  <div className="text-[10px] font-medium text-gray-500">PCM Mic → Gemini</div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* Gate indicator */}
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                      ctx.pcmDebug.audioBusy
+                        ? 'bg-red-200 text-red-800 dark:bg-red-900 dark:text-red-200 animate-pulse'
+                        : 'bg-green-200 text-green-800 dark:bg-green-900 dark:text-green-200'
+                    }`}>
+                      {ctx.pcmDebug.audioBusy ? 'MUTED' : 'OPEN'}
+                    </span>
+                    {/* isPlaying indicator */}
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
+                      ctx.pcmDebug.isPlaying
+                        ? 'bg-blue-200 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                        : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                    }`}>
+                      {ctx.pcmDebug.isPlaying ? 'Playing' : 'Idle'}
+                    </span>
+                    {/* Counters */}
+                    <span className="text-[10px] text-green-600 dark:text-green-400">
+                      Sent: {ctx.pcmDebug.sentCount}
+                    </span>
+                    <span className="text-[10px] text-red-500 dark:text-red-400">
+                      Gated: {ctx.pcmDebug.gatedCount}
+                    </span>
+                    {ctx.pcmDebug.sentCount + ctx.pcmDebug.gatedCount > 0 && (
+                      <span className="text-[10px] text-gray-400">
+                        ({((ctx.pcmDebug.gatedCount / (ctx.pcmDebug.sentCount + ctx.pcmDebug.gatedCount)) * 100).toFixed(0)}% blocked)
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Live audio state */}
+                <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded space-y-1.5">
+                  <div className="text-[10px] font-medium text-gray-500">Live State</div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
+                      ctx.audioActivity.isSpeaking
+                        ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                        : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                    }`}>
+                      {ctx.audioActivity.isSpeaking ? 'Speaking' : 'Silent'}
+                    </span>
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
+                      ctx.audioActivity.speechMethod === 'webSpeechApi'
+                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                        : ctx.audioActivity.speechMethod === 'energy'
+                        ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200'
+                        : 'bg-gray-200 text-gray-600'
+                    }`}>
+                      {ctx.audioActivity.speechMethod === 'webSpeechApi' ? 'WebSpeech' : ctx.audioActivity.speechMethod === 'energy' ? 'Energy' : 'None'}
+                    </span>
+                    <span className="text-[10px] text-gray-500">
+                      Buf: {ctx.audioActivity.ringBufferSamples > 0
+                        ? `${(ctx.audioActivity.ringBufferSamples / 16000).toFixed(1)}s`
+                        : '0'}
+                    </span>
+                    {ctx.audioActivity.lastTriggerReason && (
+                      <span className="text-[10px] text-gray-400">
+                        Last: {ctx.audioActivity.lastTriggerReason}
+                      </span>
+                    )}
+                  </div>
+                  {/* Energy bar */}
+                  <div className="flex items-center gap-1">
+                    <span className="text-[9px] text-gray-400 w-10">Energy</span>
+                    <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-100 ${
+                          ctx.audioActivity.energyLevel > 0.015 ? 'bg-red-500' :
+                          ctx.audioActivity.energyLevel > 0.005 ? 'bg-yellow-500' : 'bg-green-500'
+                        }`}
+                        style={{ width: `${Math.min(100, ctx.audioActivity.energyLevel * 2000)}%` }}
+                      />
+                    </div>
+                    <span className="text-[9px] text-gray-400 w-10 text-right">
+                      {(ctx.audioActivity.energyLevel * 1000).toFixed(1)}
+                    </span>
+                  </div>
+                  {/* Last speech boundary */}
+                  {ctx.audioActivity.lastSpeechBoundary && (
+                    <div className="text-[10px] text-gray-500">
+                      Last boundary: {formatRelativeTime(ctx.audioActivity.lastSpeechBoundary.start)} → {formatRelativeTime(ctx.audioActivity.lastSpeechBoundary.end)}
+                      {' '}({((ctx.audioActivity.lastSpeechBoundary.end - ctx.audioActivity.lastSpeechBoundary.start) / 1000).toFixed(1)}s)
+                    </div>
+                  )}
+                </div>
+
+                {/* Clip list */}
+                <div className="max-h-40 overflow-y-auto space-y-1">
+                  {ctx.audioClipCache.length === 0 ? (
+                    <p className="text-gray-400 text-[11px] text-center py-1">No audio clips captured yet</p>
+                  ) : (
+                    [...ctx.audioClipCache].reverse().map(clip => (
+                      <div
+                        key={clip.id}
+                        className="flex items-center gap-1.5 p-1.5 bg-gray-50 dark:bg-gray-800 rounded"
+                      >
+                        <button
+                          onClick={() => toggleAudioClip(clip.id, clip.objectUrl)}
+                          className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-green-100 dark:bg-green-900 hover:bg-green-200 dark:hover:bg-green-800 transition-colors"
+                          title={playingClipId === clip.id ? "Stop" : "Play"}
+                        >
+                          {playingClipId === clip.id ? (
+                            <Pause className="w-3 h-3 text-green-700 dark:text-green-300" />
+                          ) : (
+                            <Play className="w-3 h-3 text-green-700 dark:text-green-300" />
+                          )}
+                        </button>
+                        <span className="text-[10px] text-gray-400 w-8">{formatRelativeTime(clip.timestamp)}</span>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
+                          clip.triggerReason === 'speech ended'
+                            ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                            : clip.triggerReason === 'heartbeat'
+                            ? 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                            : 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200'
+                        }`}>
+                          {clip.triggerReason}
+                        </span>
+                        <span className="text-[10px] text-gray-500">{(clip.sizeBytes / 1024).toFixed(1)}KB</span>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${
+                          clip.status === 'sent'
+                            ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                            : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                        }`}>
+                          {clip.status}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ===== Section: Face Images ===== */}
+          <div>
+            <SectionHeader
+              title="Face Images"
+              icon={<User className="w-3.5 h-3.5" />}
+              isOpen={sections.faceImages}
+              onClick={() => toggleSection("faceImages")}
+              badge={
+                lastCapturedFaceImage ? (
+                  <Badge className="bg-blue-500 text-white text-[9px] px-1">1</Badge>
+                ) : undefined
+              }
+            />
+            {sections.faceImages && (
+              <div className="p-2 text-xs">
+                {!lastCapturedFaceImage ? (
+                  <p className="text-gray-400 text-[11px] text-center py-2">No face images captured yet</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                      <span>Contact: <strong className="text-gray-700 dark:text-gray-300">{lastCapturedFaceImage.contactName}</strong></span>
+                      <span>Quality: {(lastCapturedFaceImage.quality * 100).toFixed(0)}%</span>
+                      <span>{formatRelativeTime(lastCapturedFaceImage.timestamp)}</span>
+                    </div>
+                    <div className="h-32 flex items-center justify-center bg-gray-100 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 overflow-hidden">
+                      <img
+                        src={lastCapturedFaceImage.dataUrl}
+                        alt={`Face: ${lastCapturedFaceImage.contactName}`}
+                        className="max-h-full max-w-full object-contain"
+                      />
+                    </div>
                   </div>
                 )}
               </div>

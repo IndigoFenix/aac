@@ -143,6 +143,15 @@ export function DualAgentConversationBox({
   const { t } = useLanguage();
   const { theme, toggleTheme } = useTheme();
 
+  // Stable refs — prevents re-send loops when callback identities change across renders
+  const sendMessageRef = useRef(sendMessage);
+  sendMessageRef.current = sendMessage;
+  const onClearSymbolsRef = useRef(onClearSymbols);
+  onClearSymbolsRef.current = onClearSymbols;
+
+  // Guard: track last sent symbol string to prevent duplicate sends
+  const lastSentSymbolsRef = useRef<string | null>(null);
+
   const hasInitializedRef = useRef(false);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -182,16 +191,22 @@ export function DualAgentConversationBox({
     };
   }, [error, isInitialized, isLoading]);
 
-  // Handle symbol selection from parent
+  // Handle symbol selection from parent — send once, guard against re-fires
   useEffect(() => {
     if (selectedSymbols && selectedSymbols.length > 0 && isInitialized) {
       const message = selectedSymbols.join(" ");
-      sendMessage(message);
-      if (onClearSymbols) {
-        setTimeout(() => onClearSymbols(), 1000);
+      // Skip if we already sent this exact message (effect re-fired due to other dep changes)
+      if (lastSentSymbolsRef.current === message) return;
+      lastSentSymbolsRef.current = message;
+      sendMessageRef.current(message);
+      if (onClearSymbolsRef.current) {
+        setTimeout(() => onClearSymbolsRef.current?.(), 1000);
       }
+    } else {
+      // Symbols cleared — reset guard for next button press
+      lastSentSymbolsRef.current = null;
     }
-  }, [selectedSymbols, isInitialized, sendMessage, onClearSymbols]);
+  }, [selectedSymbols, isInitialized]);
 
   const handleClearSession = async () => {
     hasInitializedRef.current = false;

@@ -6,6 +6,8 @@ import { useState, useRef, useCallback, useEffect } from "react";
 export interface AudioChunk {
   chunk: string; // Base64 encoded audio data
   format: "mp3" | "wav" | "ogg" | "webm";
+  /** Optional tag identifying the audio source (e.g. "avatar", "interpret") */
+  tag?: string;
 }
 
 export interface UseStreamingAudioPlayerReturn {
@@ -14,6 +16,16 @@ export interface UseStreamingAudioPlayerReturn {
   error: string | null;
   /** Current speaking volume 0-1, updated via AudioContext analyser while playing */
   speakingVolume: number;
+  /**
+   * Synchronous ref: true from the moment the first chunk is queued
+   * until POST_PLAY_TAIL_MS after the last chunk finishes.
+   * Use this for gating mic input — it covers pre-play startup delay
+   * and post-play room echo tail, unlike the `isPlaying` state which
+   * has React propagation latency and no echo buffer.
+   */
+  isBusyRef: { readonly current: boolean };
+  /** Tag of the currently playing chunk (e.g. "avatar", "interpret"), or null if idle */
+  currentTag: string | null;
   queueChunk: (chunk: AudioChunk) => void;
   play: () => void;
   stop: () => void;
@@ -50,14 +62,24 @@ export function useStreamingAudioPlayer(
 
   // Single audio element for all playback
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  // Queue of blob URLs to play
-  const queueRef = useRef<string[]>([]);
+  // Queue of blob URLs to play, with optional source tag
+  const queueRef = useRef<{ url: string; tag?: string }[]>([]);
+  // Tag of the chunk currently playing
+  const [currentTag, setCurrentTag] = useState<string | null>(null);
   // Track if we're currently playing (to prevent concurrent plays)
   const playingRef = useRef(false);
   // Track if playback has started (for onPlaybackStart callback)
   const playbackStartedRef = useRef(false);
   // Track if we've been stopped (to prevent playing after stop)
   const stoppedRef = useRef(false);
+
+  // Synchronous "busy" ref for mic gating — true from first queued chunk
+  // until POST_PLAY_TAIL_MS after the last chunk finishes playing.
+  // Unlike isPlaying state, this has no React propagation delay and covers
+  // the post-playback echo tail where the mic might pick up residual audio.
+  const POST_PLAY_TAIL_MS = 500;
+  const busyRef = useRef(false);
+  const busyTailTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // AudioContext analyser for volume tracking
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -94,12 +116,14 @@ export function useStreamingAudioPlayer(
         audioRef.current = null;
       }
       if (volumeRafRef.current) cancelAnimationFrame(volumeRafRef.current);
+      if (busyTailTimerRef.current) clearTimeout(busyTailTimerRef.current);
       try { audioContextRef.current?.close(); } catch { /* ignore */ }
       audioContextRef.current = null;
       analyserRef.current = null;
       sourceRef.current = null;
+      busyRef.current = false;
       // Clean up any remaining blob URLs
-      queueRef.current.forEach((url) => URL.revokeObjectURL(url));
+      queueRef.current.forEach((e) => URL.revokeObjectURL(e.url));
       queueRef.current = [];
     };
   }, []);
@@ -175,7 +199,15 @@ export function useStreamingAudioPlayer(
         playingRef.current = false;
         setIsPlaying(false);
         setIsBuffering(false);
+        setCurrentTag(null);
         onPlaybackEnd?.();
+
+        // Keep busyRef true for POST_PLAY_TAIL_MS to cover room echo
+        if (busyTailTimerRef.current) clearTimeout(busyTailTimerRef.current);
+        busyTailTimerRef.current = setTimeout(() => {
+          busyRef.current = false;
+          busyTailTimerRef.current = null;
+        }, POST_PLAY_TAIL_MS);
       }
       return;
     }
@@ -183,8 +215,10 @@ export function useStreamingAudioPlayer(
     // Mark as playing
     playingRef.current = true;
 
-    // Get next URL from queue
-    const url = queueRef.current.shift()!;
+    // Get next entry from queue
+    const entry = queueRef.current.shift()!;
+    const url = entry.url;
+    setCurrentTag(entry.tag ?? null);
 
     // Set up event handlers
     const handleEnded = () => {
@@ -236,8 +270,8 @@ export function useStreamingAudioPlayer(
 
       // NotAllowedError means autoplay was blocked - need user interaction
       if (err.name === "NotAllowedError") {
-        // Put the URL back at the front of the queue
-        queueRef.current.unshift(url);
+        // Put the entry back at the front of the queue
+        queueRef.current.unshift(entry);
         setIsBuffering(true);
         setError("Click to play audio");
       } else if (err.name === "AbortError") {
@@ -260,11 +294,18 @@ export function useStreamingAudioPlayer(
         setError(null);
         stoppedRef.current = false; // Allow playback again
 
+        // Mark busy immediately (synchronous) — gates mic BEFORE async play
+        busyRef.current = true;
+        if (busyTailTimerRef.current) {
+          clearTimeout(busyTailTimerRef.current);
+          busyTailTimerRef.current = null;
+        }
+
         const url = base64ToBlobUrl(chunk.chunk, chunk.format);
-        queueRef.current.push(url);
+        queueRef.current.push({ url, tag: chunk.tag });
 
         console.log(
-          `[StreamingAudioPlayer] Queued chunk, queue size: ${queueRef.current.length}`
+          `[StreamingAudioPlayer] Queued chunk (${chunk.tag || "untagged"}), queue size: ${queueRef.current.length}`
         );
 
         // Auto-play if not already playing
@@ -304,15 +345,23 @@ export function useStreamingAudioPlayer(
       audioRef.current.src = "";
     }
 
+    // Start tail timer for busyRef (cover echo even when manually stopped)
+    if (busyTailTimerRef.current) clearTimeout(busyTailTimerRef.current);
+    busyTailTimerRef.current = setTimeout(() => {
+      busyRef.current = false;
+      busyTailTimerRef.current = null;
+    }, POST_PLAY_TAIL_MS);
+
     setIsPlaying(false);
     setIsBuffering(false);
+    setCurrentTag(null);
   }, []);
 
   // Clear queue and stop
   const clear = useCallback(() => {
     stop();
     // Clean up blob URLs
-    queueRef.current.forEach((url) => URL.revokeObjectURL(url));
+    queueRef.current.forEach((e) => URL.revokeObjectURL(e.url));
     queueRef.current = [];
     console.log("[StreamingAudioPlayer] Queue cleared");
   }, [stop]);
@@ -322,6 +371,8 @@ export function useStreamingAudioPlayer(
     isBuffering,
     error,
     speakingVolume,
+    isBusyRef: busyRef,
+    currentTag,
     queueChunk,
     play,
     stop,

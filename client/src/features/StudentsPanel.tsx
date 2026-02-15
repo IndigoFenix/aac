@@ -88,7 +88,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
       const data = await response.json();
       return data?.success && Array.isArray(data.students) ? data.students : [];
     },
-    enabled: !!user && isOpen,
+    enabled: !!user,
   });
 
   // Use API data or fallback to students with mock progress

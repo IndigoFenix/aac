@@ -164,7 +164,18 @@ export function EyeTrackingDwellProvider({ mode, dwellTimeMs, rawFaces, children
     const elements = document.elementsFromPoint(point.x, point.y);
     let dwellEl: HTMLElement | null = null;
     for (const el of elements) {
-      const found = (el as HTMLElement).closest("[data-dwell]") as HTMLElement | null;
+      const htmlEl = el as HTMLElement;
+      // If we hit an element with data-dwell-trap (e.g. app overlay),
+      // only allow dwell targets that are descendants of the trap
+      const trap = htmlEl.closest("[data-dwell-trap]") as HTMLElement | null;
+      if (trap) {
+        const found = htmlEl.closest("[data-dwell]") as HTMLElement | null;
+        if (found && trap.contains(found)) {
+          dwellEl = found;
+        }
+        break; // stop searching — trap blocks anything behind it
+      }
+      const found = htmlEl.closest("[data-dwell]") as HTMLElement | null;
       if (found) {
         dwellEl = found;
         break;

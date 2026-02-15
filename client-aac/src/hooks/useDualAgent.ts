@@ -9,6 +9,7 @@ import { useStreamingAudioPlayer } from "./useStreamingAudioPlayer";
 import { useAudioRecorder } from "./useAudioRecorder";
 import { prepareFrameForAI } from "@/lib/prepareFrameForAI";
 import type { ComposedGrid, DualComposedGrid } from "@/lib/composeFrameGrid";
+import type { UnknownFaceDescriptor } from "./usePersonIdentification";
 import { useDebugRequestCache, type CachedRequest } from "./useDebugRequestCache";
 
 export interface DualAgentMessage {
@@ -22,11 +23,13 @@ export interface DualAgentMessage {
 /** Identified person from biometric recognition */
 export interface IdentifiedPerson {
   id: string;
-  type: "student" | "user";
+  type: "student" | "user" | "contact";
   name: string;
   relationship?: string;
   confidence: number;
   method: "face" | "voice" | "both";
+  description?: string;
+  contextNotes?: string;
 }
 
 /** Data for an active add-on app */
@@ -36,16 +39,31 @@ export interface ActiveAppData {
 }
 
 export interface BoardPatch {
-  add: Array<{ label: string; iconRef: string }>;
+  add: Array<{ label: string; iconRef: string; symbolPath?: string }>;
   remove: string[];
-  rebuild?: Array<{ label: string; iconRef: string }>; // full board replacement
+  rebuild?: Array<{ label: string; iconRef: string; symbolPath?: string }>; // full board replacement
 }
+
+/** Cached audio clip for debug playback */
+export interface CachedAudioClip {
+  id: string;
+  blob: Blob;
+  objectUrl: string;
+  timestamp: number;
+  status: 'collected' | 'sent';
+  sizeBytes: number;
+  triggerReason: string;
+}
+
+const MAX_AUDIO_CLIP_CACHE = 15;
 
 export interface UseDualAgentOptions {
   studentId: string;
   language?: string;
   onBoardUpdate?: (board: ParsedBoardData) => void;
   onBoardPatch?: (patch: BoardPatch) => void;
+  onSetBoard?: (data: { board: ParsedBoardData; name: string; boardId: string }) => void;
+  onAiButtonPress?: (data: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] }) => void;
   onThinkingModeChange?: (thinking: boolean) => void;
   autoPlayAudio?: boolean;
   /** Function to capture a camera frame - returns Blob */
@@ -91,12 +109,13 @@ export interface UseDualAgentReturn {
   // Detection — video and audio can be toggled independently
   videoCaptureEnabled: boolean;
   setVideoCaptureEnabled: (enabled: boolean) => void;
-  /** Activity-driven detection: send composite grid + audio clip */
-  runDetectionWithGrid: (grid: ComposedGrid | null, audioClip: Blob | null) => Promise<void>;
+  /** Activity-driven detection: send composite grid + audio clip + unknown face descriptors */
+  runDetectionWithGrid: (grid: ComposedGrid | null, audioClip: Blob | null, unknownFaceDescriptors?: UnknownFaceDescriptor[], triggerReason?: string) => Promise<void>;
 
   // Debug
   debugData: Record<string, any>;
   requestCache: CachedRequest[];
+  audioClipCache: CachedAudioClip[];
 
   // Active app
   activeApp: ActiveAppData | null;
@@ -124,14 +143,21 @@ export interface UseDualAgentReturn {
   setVoiceEnabled: (enabled: boolean) => void;
   stopAudio: () => void;
   clearSession: () => void;
+
+  // Live API only — raw PCM audio streaming
+  /** Send a raw PCM audio chunk (base64 Int16 16kHz) to Gemini Live API. Only available in Live mode. */
+  sendPcmAudio?: (int16Base64: string) => void;
+  /** Synchronous ref: true from first queued audio chunk until echo tail ends. Use for mic gating. */
+  isBusyRef?: { readonly current: boolean };
 }
 
 export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
-  const { studentId, language = "en", onBoardUpdate, onBoardPatch, onThinkingModeChange, autoPlayAudio = true, captureFrame, getIdentifiedPerson, getGestureContext, debugMode = false } = options;
+  const { studentId, language = "en", onBoardUpdate, onBoardPatch, onSetBoard, onAiButtonPress, onThinkingModeChange, autoPlayAudio = true, captureFrame, getIdentifiedPerson, getGestureContext, debugMode = false } = options;
   const { user } = useAuth();
 
   // Debug state
   const [debugData, setDebugData] = useState<Record<string, any>>({});
+  const [audioClipCache, setAudioClipCache] = useState<CachedAudioClip[]>([]);
   const requestCache = useDebugRequestCache();
   const debugModeRef = useRef(debugMode);
   debugModeRef.current = debugMode;
@@ -214,6 +240,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
         row: Math.floor(index / grid.cols),
         col: index % grid.cols,
         iconRef: btn.iconRef || undefined,
+        symbolPath: btn.symbolPath || undefined,
         action: { type: "speak" as const, text: btn.label },
       }));
     } else {
@@ -238,6 +265,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
             row: Math.floor(index / grid.cols),
             col: index % grid.cols,
             iconRef: newBtn.iconRef || undefined,
+            symbolPath: newBtn.symbolPath || undefined,
             action: { type: "speak" as const, text: newBtn.label },
           });
         }
@@ -263,6 +291,10 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
   onBoardUpdateRef.current = onBoardUpdate;
   const onBoardPatchRef = useRef(onBoardPatch);
   onBoardPatchRef.current = onBoardPatch;
+  const onSetBoardRef = useRef(onSetBoard);
+  onSetBoardRef.current = onSetBoard;
+  const onAiButtonPressRef = useRef(onAiButtonPress);
+  onAiButtonPressRef.current = onAiButtonPress;
 
   // Stable refs for values used inside runDetection (avoids restarting detection loop)
   const audioEnabledRef = useRef(audioEnabled);
@@ -418,6 +450,21 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
                 // Avatar emotion from [EMOTE] token
                 if (data.emote) {
                   setEmote(data.emote);
+                }
+                break;
+
+              case "set_board":
+                // Pre-built board loaded by AI
+                if (data.board && onSetBoardRef.current) {
+                  currentBoardRef.current = data.board;
+                  onSetBoardRef.current(data);
+                }
+                break;
+
+              case "ai_button_press":
+                // AI pressed a navigation button on the loaded board
+                if (data.targetPageId && onAiButtonPressRef.current) {
+                  onAiButtonPressRef.current(data);
                 }
                 break;
 
@@ -895,7 +942,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
    * Run detection with a composite frame grid and audio clip.
    * Called by useActivityMonitor when activity triggers are detected.
    */
-  const runDetectionWithGrid = useCallback(async (grid: ComposedGrid | null, audioClip: Blob | null) => {
+  const runDetectionWithGrid = useCallback(async (grid: ComposedGrid | null, audioClip: Blob | null, unknownFaceDescriptors?: UnknownFaceDescriptor[], triggerReason?: string) => {
     if (!sessionId) return;
 
     // Skip if a message (or another detection) is in flight — activity monitor will retrigger
@@ -907,6 +954,30 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
     inflightRef.current = "detect";
 
     console.log(`[DualAgent] Detection: grid ${grid ? grid.frameCount + ' frames, ' + grid.blob.size + ' bytes' : 'none'}${audioClip ? `, audio ${audioClip.size} bytes` : ""}`);
+
+    // Cache audio clip for debug playback
+    let clipId: string | null = null;
+    if (audioClip && debugModeRef.current) {
+      clipId = `clip-${Date.now()}`;
+      const objectUrl = URL.createObjectURL(audioClip);
+      const newClip: CachedAudioClip = {
+        id: clipId,
+        blob: audioClip,
+        objectUrl,
+        timestamp: Date.now(),
+        status: 'collected',
+        sizeBytes: audioClip.size,
+        triggerReason: triggerReason || 'unknown',
+      };
+      setAudioClipCache(prev => {
+        const next = [...prev, newClip];
+        while (next.length > MAX_AUDIO_CLIP_CACHE) {
+          const removed = next.shift()!;
+          URL.revokeObjectURL(removed.objectUrl);
+        }
+        return next;
+      });
+    }
 
     const gestureContext = getGestureContextRef.current?.() || undefined;
 
@@ -943,7 +1014,10 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
           formData.append("frameTimestamps", JSON.stringify(grid.timestamps));
         }
       }
-      if (audioClip) formData.append("audio", audioClip, "ambient.webm");
+      if (audioClip) {
+        const isWav = audioClip.type === "audio/wav" || audioClip.type === "audio/wave";
+        formData.append("audio", audioClip, isWav ? "speech.wav" : "ambient.webm");
+      }
 
       // Capture app canvas if drawing app is active
       if (activeApp?.appId === "drawing" && captureAppCanvasRef.current) {
@@ -958,6 +1032,11 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
         }
       }
 
+      // Include unknown face descriptors for AI-triggered enrollment
+      if (unknownFaceDescriptors && unknownFaceDescriptors.length > 0) {
+        formData.append("unknownFaceDescriptors", JSON.stringify(unknownFaceDescriptors));
+      }
+
       const response = await fetchWithAuth("/api/aac/dual/detect", {
         method: "POST",
         body: formData,
@@ -970,6 +1049,11 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
 
       await processSSEStream(response);
       console.log("[DualAgent] Detection stream processed");
+
+      // Mark audio clip as sent
+      if (clipId) {
+        setAudioClipCache(prev => prev.map(c => c.id === clipId ? { ...c, status: 'sent' } : c));
+      }
     } catch (err) {
       console.warn("[DualAgent] Detection error:", err);
     } finally {
@@ -1024,6 +1108,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
     // Debug
     debugData,
     requestCache: requestCache.cache,
+    audioClipCache,
 
     // Active app
     activeApp,

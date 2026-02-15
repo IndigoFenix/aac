@@ -154,16 +154,21 @@ function processPersonaPrompt(prompt: string, framework: string | null): string 
 /**
  * Build the system prompt by combining the general prompt with the persona prompt.
  */
+interface PersonaPromptResult {
+  prompt: string;
+  persona: Awaited<ReturnType<typeof personaRepository.getPersonaById>> | null;
+}
+
 async function buildPersonaSystemPrompt(
   personaId: string | undefined,
   framework: string | null
-): Promise<string> {
+): Promise<PersonaPromptResult> {
   // Get the base general prompt
   const basePrompt = getSystemPrompt('assistant', framework as 'us_iep' | 'tala' | null);
 
   // If no persona ID provided, just return the base prompt
   if (!personaId) {
-    return basePrompt;
+    return { prompt: basePrompt, persona: null };
   }
 
   // Look up persona from database
@@ -172,7 +177,7 @@ async function buildPersonaSystemPrompt(
   // If persona not found or inactive, fall back to base prompt
   if (!persona || !persona.active) {
     console.log(`[buildPersonaSystemPrompt] Persona not found or inactive: ${personaId}, using base prompt`);
-    return basePrompt;
+    return { prompt: basePrompt, persona: null };
   }
 
   // Process jurisdiction placeholders in the persona prompt
@@ -180,10 +185,10 @@ async function buildPersonaSystemPrompt(
 
   // Combine base prompt with persona-specific prompt
   if (processedPersonaPrompt) {
-    return `${basePrompt}\n\n=== Persona: ${persona.title} ===\n${processedPersonaPrompt}`;
+    return { prompt: `${basePrompt}\n\n=== Persona: ${persona.title} ===\n${processedPersonaPrompt}`, persona };
   }
 
-  return basePrompt;
+  return { prompt: basePrompt, persona };
 }
 
 async function buildAACPersonaSystemPrompt(
@@ -355,6 +360,12 @@ const BOARD_MEMORY_FIELD: AgentMemoryField = {
       id: "currentPageId",
       type: "string",
       title: "Current Page ID",
+    },
+    automaticSelectionHint: {
+      id: "automaticSelectionHint",
+      type: "string",
+      title: "Auto-Selection Hint",
+      description: "When the AI should automatically select this board (e.g. 'During mealtimes')",
     },
     pages: {
       id: "pages",
@@ -672,6 +683,7 @@ interface GetMessageManagerInput {
   persona?: string;
   featureContext?: FeatureContext;
   onThinkingUpdate?: (thinkingText: string) => void;
+  onNavigate?: (feature: string) => void;
   vectorStoreId?: string;
   /** Base64 data URLs for inline images */
   images?: string[];
@@ -687,7 +699,7 @@ interface GetMessageManagerResult {
 }
 
 async function getMessageManager(input: GetMessageManagerInput): Promise<GetMessageManagerResult> {
-  const { userId, studentId, sessionId, featureContext, persona, feature = "chat", onThinkingUpdate } = input;
+  const { userId, studentId, sessionId, featureContext, persona, feature = "chat", onThinkingUpdate, onNavigate } = input;
   const isAACFeature = (feature === 'aac');
 
   // Validate input - at least one identifier must be provided
@@ -729,6 +741,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
 
   const template = isAACFeature ? AAC_TEMPLATE_BASE : AGENT_TEMPLATE_BASE;
   // Select core prompt based on conversation persona (loaded from database)
+  let personaResult: PersonaPromptResult = { prompt: '', persona: null };
   if (isAACFeature) {
     if (input.systemPromptOverride) {
       template.corePrompt = input.systemPromptOverride;
@@ -736,7 +749,8 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
       template.corePrompt = await buildAACPersonaSystemPrompt(context.student!, context?.student?.framework || null);
     }
   } else {
-    template.corePrompt = await buildPersonaSystemPrompt(persona, context?.student?.framework || null);
+    personaResult = await buildPersonaSystemPrompt(persona, context?.student?.framework || null);
+    template.corePrompt = personaResult.prompt;
   }
   
   const newChatState: ChatState = {
@@ -1104,7 +1118,15 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
 
   // Fetch LLM provider config from DB for this use case
   const llmUseCase: UseCaseKey = isAACFeature ? 'aac_moderator' : 'clinician';
-  const llmConfig = await settingsRepository.getLLMConfig(llmUseCase);
+  let llmConfig = await settingsRepository.getLLMConfig(llmUseCase);
+
+  // Per-persona LLM override (non-AAC only)
+  if (!isAACFeature && personaResult.persona?.llmProvider && personaResult.persona?.llmModel) {
+    llmConfig = {
+      provider: personaResult.persona.llmProvider as any,
+      model: personaResult.persona.llmModel,
+    };
+  }
 
   const messageManager = new ChatMessageManager({
     agent: agentFromTemplate,
@@ -1117,6 +1139,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     onUpdateChatState,
     onCreditsUsed,
     onThinkingUpdate,
+    onNavigate: !isAACFeature ? onNavigate : undefined,
     memoryProcessor,
     vectorStoreId: input.vectorStoreId,
     images: input.images,
@@ -1251,6 +1274,8 @@ export interface OnMessageInput {
 export interface OnMessageStreamingInput extends OnMessageInput {
   /** Callback for real-time thinking updates during tool calls */
   onThinkingUpdate?: (thinkingText: string) => void;
+  /** Callback for real-time panel navigation during tool calls */
+  onNavigate?: (feature: string) => void;
 }
 
 export async function onMessage(input: OnMessageInput): Promise<MessageResponse> {
@@ -1336,7 +1361,7 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
  */
 export async function onMessageStreaming(input: OnMessageStreamingInput): Promise<MessageResponse> {
   try {
-    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, onThinkingUpdate, vectorStoreId, images, currentImage, systemPromptOverride } = input;
+    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, onThinkingUpdate, onNavigate, vectorStoreId, images, currentImage, systemPromptOverride } = input;
 
     const { manager: messageManager, memoryValues } = await getMessageManager({
       userId,
@@ -1346,6 +1371,7 @@ export async function onMessageStreaming(input: OnMessageStreamingInput): Promis
       persona,
       featureContext,
       onThinkingUpdate, // Pass the callback through to ChatMessageManager
+      onNavigate,
       vectorStoreId,
       images,
       currentImage,

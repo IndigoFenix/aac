@@ -36,6 +36,8 @@ import { voiceRecordRepository } from "../../repositories/voiceRecordRepository"
 import { logDualAgent } from "./dual-agent-logger";
 import { searchYouTube } from "../youtube/youtube-search";
 import { APP_REGISTRY, getAppDefinition, getDefaultEnabledApps } from "./app-registry";
+import { createContact, findSimilarContact, updateContact, getContactsByStudent } from "../biometric";
+import { boardRepository } from "../../repositories/boardRepository";
 
 /**
  * Simple promise-based mutex for per-session concurrency control
@@ -60,6 +62,28 @@ class SessionMutex {
       this.locked = false;
     }
   }
+}
+
+/**
+ * Extract navigation button info from a board page for the prompt.
+ * Returns buttons that have link, back, or home actions.
+ */
+function getPageNavButtons(state: DualAgentSessionState): Array<{ label: string; action: string; targetPageName?: string }> {
+  if (!state.loadedBoardData) return [];
+  const page = state.loadedBoardData.pages?.find(p => p.id === state.currentPageId) || state.loadedBoardData.pages?.[0];
+  if (!page?.buttons) return [];
+  const navButtons: Array<{ label: string; action: string; targetPageName?: string }> = [];
+  for (const btn of page.buttons) {
+    if (btn.action?.type === "link" && btn.action.toPageId) {
+      const targetPage = state.loadedBoardData.pages?.find(p => p.id === btn.action!.toPageId);
+      navButtons.push({ label: btn.label, action: "link", targetPageName: targetPage?.name || btn.action.toPageId });
+    } else if (btn.action?.type === "back") {
+      navButtons.push({ label: btn.label, action: "back" });
+    } else if (btn.action?.type === "home") {
+      navButtons.push({ label: btn.label, action: "home" });
+    }
+  }
+  return navButtons;
 }
 
 /**
@@ -252,7 +276,7 @@ export class DualAgentService {
     imageData?: string,
     gestureContext?: string
   ): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote";
+    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press";
     data: any;
     speaker?: string;
   }> {
@@ -439,14 +463,62 @@ export class DualAgentService {
       userId
     );
 
-    // Initialize session - Monitor searches memory and creates prompt
+    // Initialize session - Monitor searches memory and creates base prompt
     const defaultApps = getDefaultEnabledApps();
     const enabledAppDefs = APP_REGISTRY.filter(a => defaultApps.includes(a.id));
     const initResult = await monitorAgent.initializeSession(interactionMode, enabledAppDefs);
 
-    // Create Interactive agent with the prompt
+    // Fetch contacts for prompt context
+    let cachedContacts: DualAgentSessionState['cachedContacts'] = [];
+    try {
+      const contacts = await getContactsByStudent(studentId);
+      cachedContacts = contacts.map(c => ({
+        id: c.id, name: c.name, relationship: c.relationship || undefined, hasFaceImage: true,
+      }));
+    } catch { /* ignore */ }
+
+    // Load auto-selectable boards
+    let availableBoards: DualAgentSessionState['availableBoards'] = [];
+    if (userId) {
+      try {
+        const boards = await boardRepository.getAutoSelectableBoards(userId, studentId);
+        availableBoards = boards.map(b => {
+          const irData = b.irData as any;
+          const grid = irData?.grid || { rows: 3, cols: 4 };
+          return { id: b.id, key: b.name.toLowerCase().replace(/ /g, '_'), name: b.name, hint: b.automaticSelectionHint || undefined, grid };
+        });
+      } catch { /* ignore */ }
+    }
+
+    // Rebuild the prompt with contacts + boards (monitorAgent.initializeSession
+    // builds the base prompt before these are loaded, so we must rebuild now)
+    let interactivePrompt = initResult.interactivePrompt;
+    if (cachedContacts.length > 0 || availableBoards.length > 0) {
+      const student = monitorAgent.getStudent?.();
+      if (student) {
+        const personaPrompt = student.aacChatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+        interactivePrompt = buildInteractiveSystemPrompt(
+          student.name,
+          personaPrompt,
+          student.primaryLanguage || undefined,
+          initResult.initialContext, // preserve memory context from monitor init
+          interactionMode,
+          undefined,
+          undefined,
+          false,
+          enabledAppDefs,
+          null, // activeApp
+          "happy",
+          'analyze',
+          cachedContacts.length > 0 ? cachedContacts : undefined,
+          availableBoards.length > 0 ? availableBoards : undefined,
+        );
+      }
+    }
+
+    // Create Interactive agent with the complete prompt
     const interactiveAgent = createInteractiveAgent(
-      initResult.interactivePrompt,
+      interactivePrompt,
       this.config,
       chatProvider
     );
@@ -456,7 +528,7 @@ export class DualAgentService {
       sessionId: initResult.sessionId,
       studentId,
       userId,
-      interactivePrompt: initResult.interactivePrompt,
+      interactivePrompt,
       thinkingMode: false,
       monitorBusy: false,
       messages: [],
@@ -467,6 +539,8 @@ export class DualAgentService {
       lastInteractiveActivity: Date.now(),
       lastMonitorActivity: Date.now(),
       monitorConsecutiveFailures: 0,
+      cachedContacts,
+      availableBoards,
     };
 
     // Save to database
@@ -557,6 +631,27 @@ export class DualAgentService {
       if (student) {
         const personaPrompt = student.aacChatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
         const enabledApps = APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id));
+
+        // Fetch and cache contacts for prompt
+        try {
+          const contacts = await getContactsByStudent(state.studentId);
+          state.cachedContacts = contacts.map(c => ({
+            id: c.id, name: c.name, relationship: c.relationship || undefined, hasFaceImage: true,
+          }));
+        } catch { state.cachedContacts = []; }
+
+        // Load auto-selectable boards
+        if (state.userId) {
+          try {
+            const boards = await boardRepository.getAutoSelectableBoards(state.userId, state.studentId);
+            state.availableBoards = boards.map(b => {
+              const irData = b.irData as any;
+              const grid = irData?.grid || { rows: 3, cols: 4 };
+              return { id: b.id, key: b.name.toLowerCase().replace(/ /g, '_'), name: b.name, hint: b.automaticSelectionHint || undefined, grid };
+            });
+          } catch { state.availableBoards = []; }
+        }
+
         state.interactivePrompt = buildInteractiveSystemPrompt(
           student.name,
           personaPrompt,
@@ -569,7 +664,13 @@ export class DualAgentService {
           enabledApps,
           state.appState.activeApp,
           state.currentEmote,
-          'analyze' // default on session resume
+          'analyze', // default on session resume
+          state.cachedContacts,
+          state.availableBoards,
+          state.loadedBoardData?.name || null,
+          null,
+          state.maxBoardItems || 12,
+          getPageNavButtons(state)
         );
       }
 
@@ -660,7 +761,7 @@ export class DualAgentService {
   async *processInput(
     input: DualAgentInput
   ): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote";
+    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press";
     data: any;
     speaker?: string;
   }> {
@@ -703,6 +804,7 @@ export class DualAgentService {
       if (student) {
         const personaPrompt = student.aacChatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
         const enabledApps = APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id));
+        const inputLoadedPage = state.loadedBoardData?.pages?.find(p => p.id === state.currentPageId);
         const newPrompt = buildInteractiveSystemPrompt(
           student.name,
           personaPrompt,
@@ -715,7 +817,13 @@ export class DualAgentService {
           enabledApps,
           state.appState.activeApp,
           state.currentEmote,
-          responseMode
+          responseMode,
+          state.cachedContacts,
+          state.availableBoards,
+          state.loadedBoardData?.name || null,
+          inputLoadedPage?.name || null,
+          state.maxBoardItems || 12,
+          getPageNavButtons(state)
         );
         interactiveAgent.setSystemPrompt(newPrompt);
         state.interactivePrompt = newPrompt;
@@ -761,7 +869,8 @@ export class DualAgentService {
         input.identifiedPerson,
         interactionMode,
         input.gestureContext,
-        input.debugMode
+        input.debugMode,
+        input.unknownFaceDescriptors
       );
     }
 
@@ -800,9 +909,10 @@ export class DualAgentService {
     identifiedPerson?: import("./types").IdentifiedPersonContext,
     interactionMode: AACInteractionMode = 'interact',
     gestureContext?: string,
-    debugMode?: boolean
+    debugMode?: boolean,
+    unknownFaceDescriptors?: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number } }>
   ): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "app_open" | "app_close" | "emote";
+    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press";
     data: any;
     speaker?: string;
   }> {
@@ -813,6 +923,9 @@ export class DualAgentService {
     let callMonitorReason: string | undefined;
     let openAppData: { appId: string; data?: string } | undefined;
     let closeAppTriggered = false;
+    let learnFaceData: { name: string; relationship?: string; description?: string } | undefined;
+    let setBoardName: string | undefined;
+    let pressButtonLabel: string | undefined;
     console.log("[DualAgentService] handleInteractiveMode: thinkingMode:", state.thinkingMode, "interactionMode:", interactionMode, "messages:", state.messages.length, "pending:", state.pendingMessages.length);
     logDualAgent("DualAgentService.handleInteractiveMode", { interactionMode, messageCount: state.messages.length, pendingCount: state.pendingMessages.length });
 
@@ -822,6 +935,15 @@ export class DualAgentService {
       const confidence = Math.round(identifiedPerson.confidence * 100);
       if (identifiedPerson.type === "student") {
         personContext = `[Person identified: This is the student "${identifiedPerson.name}" (${confidence}% confidence)]`;
+      } else if (identifiedPerson.type === "contact") {
+        const parts = [identifiedPerson.name];
+        if (identifiedPerson.relationship) parts.push(identifiedPerson.relationship);
+        parts.push(`${confidence}% confidence`);
+        personContext = `[Person identified: ${parts.join(", ")}]`;
+        if (identifiedPerson.description)
+          personContext += `\n[Contact info: ${identifiedPerson.description}]`;
+        if (identifiedPerson.contextNotes)
+          personContext += `\n[Contact notes: ${identifiedPerson.contextNotes}]`;
       } else {
         personContext = `[Person identified: ${identifiedPerson.name} (${identifiedPerson.relationship || "caregiver"}, ${confidence}% confidence)]`;
       }
@@ -868,6 +990,15 @@ export class DualAgentService {
         // Forward context updates to client
         yield { type: "context", data: chunk.data };
       } else if (chunk.type === "board") {
+        // Full board rebuild exits any loaded custom board
+        if (state.loadedBoardId) {
+          state.loadedBoardId = null;
+          state.loadedBoardData = undefined;
+          state.currentPageId = null;
+          state.pageHistory = [];
+          state.maxBoardItems = 12;
+          console.log("[DualAgentService] REBUILD_BOARD: exited custom board, back to default 4x3 grid");
+        }
         yield { type: "board", data: chunk.data };
       } else if (chunk.type === "board_patch") {
         yield { type: "board_patch", data: chunk.data };
@@ -886,6 +1017,12 @@ export class DualAgentService {
         const emoteValue = chunk.data as "happy" | "sad" | "neutral";
         state.currentEmote = emoteValue;
         yield { type: "emote", data: emoteValue };
+      } else if (chunk.type === "learn_face") {
+        learnFaceData = chunk.data as { name: string; relationship?: string; description?: string };
+      } else if (chunk.type === "set_board") {
+        setBoardName = chunk.data as string;
+      } else if (chunk.type === "press_button") {
+        pressButtonLabel = chunk.data as string;
       }
     }
 
@@ -904,6 +1041,9 @@ export class DualAgentService {
         interpretationLength: fullInterpretation.length,
         hasCallMonitor: !!callMonitorReason,
         hasOpenApp: !!openAppData,
+        hasLearnFace: !!learnFaceData,
+        learnFaceName: learnFaceData?.name,
+        knownContacts: state.cachedContacts?.length || 0,
         timestamp: Date.now(),
       }};
     }
@@ -932,6 +1072,105 @@ export class DualAgentService {
       yield { type: "app_close", data: {} };
     }
 
+    // Handle [SET_BOARD] — load a pre-built board
+    if (setBoardName) {
+      const setBoardKey = setBoardName.toLowerCase().replace(/ /g, '_');
+      const matchedBoard = state.availableBoards?.find(
+        b => b.key === setBoardKey
+      );
+      if (matchedBoard) {
+        try {
+          const fullBoard = await boardRepository.getBoard(matchedBoard.id);
+          if (fullBoard?.irData) {
+            const boardData = fullBoard.irData as ParsedBoardData;
+            state.loadedBoardId = matchedBoard.id;
+            state.loadedBoardData = boardData;
+            state.currentPageId = boardData.pages?.[0]?.id || null;
+            state.pageHistory = [];
+            state.maxBoardItems = matchedBoard.grid.rows * matchedBoard.grid.cols;
+            yield { type: "set_board", data: { board: boardData, name: matchedBoard.name, boardId: matchedBoard.id } };
+            state.pendingMessages.push({
+              role: "assistant",
+              content: `[SYSTEM — Board "${matchedBoard.name}" loaded with ${boardData.pages?.length || 0} pages]`,
+              timestamp: Date.now(),
+            });
+            console.log(`[DualAgentService] SET_BOARD: loaded "${matchedBoard.name}" (${boardData.pages?.length || 0} pages)`);
+          }
+        } catch (err) {
+          console.error("[DualAgentService] SET_BOARD load error:", err);
+        }
+      } else {
+        const availableKeys = state.availableBoards?.map(b => b.key).join(", ") || "none";
+        state.pendingMessages.push({
+          role: "assistant",
+          content: `[SYSTEM — Board "${setBoardName}" not found. Available keys: ${availableKeys}]`,
+          timestamp: Date.now(),
+        });
+        console.warn(`[DualAgentService] SET_BOARD: "${setBoardName}" not found. Available keys: ${availableKeys}`);
+      }
+    }
+
+    // Handle [PRESS_BUTTON] — AI navigates within a loaded board
+    if (pressButtonLabel && state.loadedBoardData) {
+      const currentPage = state.loadedBoardData.pages?.find(p => p.id === state.currentPageId) || state.loadedBoardData.pages?.[0];
+      const matchedButton = currentPage?.buttons?.find(
+        b => b.label.toLowerCase() === pressButtonLabel!.toLowerCase()
+      );
+      if (matchedButton?.action?.type === "link" && matchedButton.action.toPageId) {
+        const targetPageId = matchedButton.action.toPageId;
+        const targetPage = state.loadedBoardData.pages?.find(p => p.id === targetPageId);
+        if (targetPage) {
+          // Push current page to history
+          if (state.currentPageId) {
+            state.pageHistory = [...(state.pageHistory || []), state.currentPageId];
+          }
+          state.currentPageId = targetPageId;
+          yield { type: "ai_button_press", data: { label: pressButtonLabel, action: "navigate", targetPageId, targetPageName: targetPage.name, buttons: targetPage.buttons } };
+          state.pendingMessages.push({
+            role: "assistant",
+            content: `[AI navigated to page "${targetPage.name}" by pressing "${pressButtonLabel}"]`,
+            timestamp: Date.now(),
+          });
+          console.log(`[DualAgentService] PRESS_BUTTON: AI navigated to "${targetPage.name}" via "${pressButtonLabel}"`);
+        }
+      } else if (matchedButton?.action?.type === "back") {
+        const history = state.pageHistory || [];
+        if (history.length > 0) {
+          const prevPageId = history[history.length - 1];
+          state.pageHistory = history.slice(0, -1);
+          state.currentPageId = prevPageId;
+          const prevPage = state.loadedBoardData.pages?.find(p => p.id === prevPageId);
+          yield { type: "ai_button_press", data: { label: pressButtonLabel, action: "back", targetPageId: prevPageId, targetPageName: prevPage?.name || "Previous", buttons: prevPage?.buttons || [] } };
+          state.pendingMessages.push({
+            role: "assistant",
+            content: `[AI navigated back to page "${prevPage?.name || "Previous"}" by pressing "${pressButtonLabel}"]`,
+            timestamp: Date.now(),
+          });
+          console.log(`[DualAgentService] PRESS_BUTTON: AI navigated back to "${prevPage?.name}"`);
+        }
+      } else if (matchedButton?.action?.type === "home") {
+        const homePage = state.loadedBoardData.pages?.[0];
+        if (homePage) {
+          state.pageHistory = [];
+          state.currentPageId = homePage.id;
+          yield { type: "ai_button_press", data: { label: pressButtonLabel, action: "home", targetPageId: homePage.id, targetPageName: homePage.name, buttons: homePage.buttons } };
+          state.pendingMessages.push({
+            role: "assistant",
+            content: `[AI navigated to home page "${homePage.name}" by pressing "${pressButtonLabel}"]`,
+            timestamp: Date.now(),
+          });
+          console.log(`[DualAgentService] PRESS_BUTTON: AI navigated home to "${homePage.name}"`);
+        }
+      } else {
+        console.warn(`[DualAgentService] PRESS_BUTTON: "${pressButtonLabel}" not found or not a navigation button on current page`);
+        state.pendingMessages.push({
+          role: "assistant",
+          content: `[SYSTEM — Button "${pressButtonLabel}" not found or not a navigation button on the current page]`,
+          timestamp: Date.now(),
+        });
+      }
+    }
+
     // Track credits for the interactive response
     if (interactiveUsage) {
       await this.trackInteractiveCredits(state.sessionId, state.studentId, state.userId, interactiveUsage);
@@ -956,6 +1195,40 @@ export class DualAgentService {
         timestamp: Date.now(),
       });
       await this.updatePendingMessages(state.sessionId, state.pendingMessages);
+    }
+
+    // Handle [LEARN_FACE] enrollment if present and we have unknown face descriptors
+    if (learnFaceData && unknownFaceDescriptors?.length) {
+      try {
+        const descriptor = unknownFaceDescriptors[0].descriptor;
+        const existing = await findSimilarContact(state.studentId, descriptor);
+        if (!existing) {
+          await createContact({
+            studentId: state.studentId,
+            name: learnFaceData.name,
+            relationship: learnFaceData.relationship || null,
+            description: learnFaceData.description || null,
+            faceEmbedding: descriptor,
+          });
+          console.log(`[DualAgentService] Enrolled new contact "${learnFaceData.name}" for student ${state.studentId}`);
+        } else {
+          await updateContact(existing.id, {
+            contextNotes: learnFaceData.description || existing.contextNotes,
+            lastSeenAt: new Date(),
+            timesIdentified: (existing.timesIdentified || 0) + 1,
+          });
+          console.log(`[DualAgentService] Updated existing contact "${existing.name}" (matched LEARN_FACE for "${learnFaceData.name}")`);
+        }
+        // Refresh cached contacts after enrollment
+        try {
+          const contacts = await getContactsByStudent(state.studentId);
+          state.cachedContacts = contacts.map(c => ({
+            id: c.id, name: c.name, relationship: c.relationship || undefined, hasFaceImage: true,
+          }));
+        } catch { /* ignore */ }
+      } catch (err) {
+        console.error("[DualAgentService] LEARN_FACE enrollment error:", err);
+      }
     }
 
     // Trigger Monitor processing with proper concurrency control
@@ -1188,6 +1461,9 @@ export class DualAgentService {
           response.contextInjection
         );
         state.messages.push(contextMessage);
+
+        // Live API hook: forward context injection to Gemini session
+        state.onContextInjection?.(response.contextInjection);
       }
 
       console.log("[DualAgentService] doMonitorProcessing: completed successfully");
@@ -1357,6 +1633,7 @@ export class DualAgentService {
       if (student) {
         const personaPrompt = student.aacChatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
         const enabledApps = APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id));
+        const detSwitchPage = state.loadedBoardData?.pages?.find(p => p.id === state.currentPageId);
         const newPrompt = buildInteractiveSystemPrompt(
           student.name,
           personaPrompt,
@@ -1369,7 +1646,13 @@ export class DualAgentService {
           enabledApps,
           state.appState.activeApp,
           state.currentEmote,
-          responseMode
+          responseMode,
+          state.cachedContacts,
+          state.availableBoards,
+          state.loadedBoardData?.name || null,
+          detSwitchPage?.name || null,
+          state.maxBoardItems || 12,
+          getPageNavButtons(state)
         );
         interactiveAgent.setSystemPrompt(newPrompt);
         state.interactivePrompt = newPrompt;
@@ -1385,6 +1668,7 @@ export class DualAgentService {
     const student = monitorAgent.getStudent();
     const personaPrompt = student?.aacChatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
     const enabledApps = APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id));
+    const loadedPage = state.loadedBoardData?.pages?.find(p => p.id === state.currentPageId);
     const detectionSystemPrompt = buildInteractiveSystemPrompt(
       student?.name || "the student",
       personaPrompt,
@@ -1397,7 +1681,13 @@ export class DualAgentService {
       enabledApps,
       state.appState.activeApp,
       state.currentEmote,
-      responseMode
+      responseMode,
+      state.cachedContacts,
+      state.availableBoards,
+      state.loadedBoardData?.name || null,
+      loadedPage?.name || null,
+      state.maxBoardItems || 12,
+      getPageNavButtons(state)
     );
 
     const detStart = Date.now();
@@ -1415,7 +1705,8 @@ export class DualAgentService {
         input.audioBuffer,
         input.frameTimestamps,
         input.appCanvasData,
-        input.envFrameTimestamps
+        input.envFrameTimestamps,
+        input.audioMimeType
       );
 
       console.log("[DualAgentService] Detection processed:", JSON.stringify(result));
@@ -1479,6 +1770,135 @@ export class DualAgentService {
         await this.updatePendingMessages(state.sessionId, state.pendingMessages);
       }
 
+      // Handle [LEARN_FACE] enrollment from detection
+      if (result.learnFace && input.unknownFaceDescriptors?.length) {
+        try {
+          const descriptor = input.unknownFaceDescriptors[0].descriptor;
+          const existing = await findSimilarContact(state.studentId, descriptor);
+          if (!existing) {
+            await createContact({
+              studentId: state.studentId,
+              name: result.learnFace.name,
+              relationship: result.learnFace.relationship || null,
+              description: result.learnFace.description || null,
+              faceEmbedding: descriptor,
+            });
+            console.log(`[DualAgentService] Detection enrolled new contact "${result.learnFace.name}" for student ${state.studentId}`);
+          } else {
+            await updateContact(existing.id, {
+              contextNotes: result.learnFace.description || existing.contextNotes,
+              lastSeenAt: new Date(),
+              timesIdentified: (existing.timesIdentified || 0) + 1,
+            });
+            console.log(`[DualAgentService] Detection updated existing contact "${existing.name}"`);
+          }
+          // Refresh cached contacts after enrollment
+          try {
+            const contacts = await getContactsByStudent(state.studentId);
+            state.cachedContacts = contacts.map(c => ({
+              id: c.id, name: c.name, relationship: c.relationship || undefined, hasFaceImage: true,
+            }));
+          } catch { /* ignore */ }
+        } catch (err) {
+          console.error("[DualAgentService] Detection LEARN_FACE error:", err);
+        }
+      }
+
+      // Handle [SET_BOARD] from detection
+      let setBoardResult: DetectionOutput['setBoard'];
+      if (result.setBoard) {
+        const setBoardKey = result.setBoard.toLowerCase().replace(/ /g, '_');
+        const matchedBoard = state.availableBoards?.find(
+          b => b.key === setBoardKey
+        );
+        if (matchedBoard) {
+          try {
+            const fullBoard = await boardRepository.getBoard(matchedBoard.id);
+            if (fullBoard?.irData) {
+              const boardData = fullBoard.irData as ParsedBoardData;
+              state.loadedBoardId = matchedBoard.id;
+              state.loadedBoardData = boardData;
+              state.currentPageId = boardData.pages?.[0]?.id || null;
+              state.pageHistory = [];
+              state.maxBoardItems = matchedBoard.grid.rows * matchedBoard.grid.cols;
+              setBoardResult = { board: boardData, name: matchedBoard.name, boardId: matchedBoard.id };
+              state.pendingMessages.push({
+                role: "assistant",
+                content: `[SYSTEM — Board "${matchedBoard.name}" loaded with ${boardData.pages?.length || 0} pages]`,
+                timestamp: Date.now(),
+              });
+              console.log(`[DualAgentService] Detection SET_BOARD: loaded "${matchedBoard.name}"`);
+            }
+          } catch (err) {
+            console.error("[DualAgentService] Detection SET_BOARD error:", err);
+          }
+        }
+      }
+
+      // Handle [PRESS_BUTTON] from detection — AI navigates within loaded board
+      let pressButtonResult: DetectionOutput['pressButton'];
+      if (result.pressButton && state.loadedBoardData) {
+        const currentPage = state.loadedBoardData.pages?.find(p => p.id === state.currentPageId) || state.loadedBoardData.pages?.[0];
+        const matchedButton = currentPage?.buttons?.find(
+          b => b.label.toLowerCase() === result.pressButton!.toLowerCase()
+        );
+        if (matchedButton?.action?.type === "link" && matchedButton.action.toPageId) {
+          const targetPageId = matchedButton.action.toPageId;
+          const targetPage = state.loadedBoardData.pages?.find(p => p.id === targetPageId);
+          if (targetPage) {
+            if (state.currentPageId) {
+              state.pageHistory = [...(state.pageHistory || []), state.currentPageId];
+            }
+            state.currentPageId = targetPageId;
+            pressButtonResult = { label: result.pressButton!, action: "navigate", targetPageId, targetPageName: targetPage.name, buttons: targetPage.buttons };
+            state.pendingMessages.push({
+              role: "assistant",
+              content: `[AI navigated to page "${targetPage.name}" by pressing "${result.pressButton}"]`,
+              timestamp: Date.now(),
+            });
+            console.log(`[DualAgentService] Detection PRESS_BUTTON: AI navigated to "${targetPage.name}"`);
+          }
+        } else if (matchedButton?.action?.type === "back") {
+          const history = state.pageHistory || [];
+          if (history.length > 0) {
+            const prevPageId = history[history.length - 1];
+            state.pageHistory = history.slice(0, -1);
+            state.currentPageId = prevPageId;
+            const prevPage = state.loadedBoardData.pages?.find(p => p.id === prevPageId);
+            pressButtonResult = { label: result.pressButton!, action: "back", targetPageId: prevPageId, targetPageName: prevPage?.name || "Previous", buttons: prevPage?.buttons || [] };
+            state.pendingMessages.push({
+              role: "assistant",
+              content: `[AI navigated back to page "${prevPage?.name || "Previous"}" by pressing "${result.pressButton}"]`,
+              timestamp: Date.now(),
+            });
+            console.log(`[DualAgentService] Detection PRESS_BUTTON: AI navigated back to "${prevPage?.name}"`);
+          }
+        } else if (matchedButton?.action?.type === "home") {
+          const homePage = state.loadedBoardData.pages?.[0];
+          if (homePage) {
+            state.pageHistory = [];
+            state.currentPageId = homePage.id;
+            pressButtonResult = { label: result.pressButton!, action: "home", targetPageId: homePage.id, targetPageName: homePage.name, buttons: homePage.buttons };
+            state.pendingMessages.push({
+              role: "assistant",
+              content: `[AI navigated to home page "${homePage.name}" by pressing "${result.pressButton}"]`,
+              timestamp: Date.now(),
+            });
+            console.log(`[DualAgentService] Detection PRESS_BUTTON: AI navigated home to "${homePage.name}"`);
+          }
+        }
+      }
+
+      // Handle REBUILD_BOARD clearing loaded board
+      if (rebuildBoard.length > 0 && state.loadedBoardId) {
+        state.loadedBoardId = null;
+        state.loadedBoardData = undefined;
+        state.currentPageId = null;
+        state.pageHistory = [];
+        state.maxBoardItems = 12;
+        console.log("[DualAgentService] Detection REBUILD_BOARD: exited custom board");
+      }
+
       // Trigger monitor when there was a meaningful change or force-requested
       if (changed || forceMonitor) {
         this.tryTriggerMonitor(cached, state, monitorAgent, interactiveAgent, input.board, forceMonitor);
@@ -1515,6 +1935,8 @@ export class DualAgentService {
         contextUpdate: result.contextUpdate,
         openApp: result.openApp,
         closeApp: result.closeApp,
+        setBoard: setBoardResult,
+        pressButton: pressButtonResult,
       };
     } catch (error: any) {
       const errorMessage = error?.message || String(error);
@@ -1531,7 +1953,7 @@ export class DualAgentService {
    * This provides streaming audio without requiring streaming LLM.
    */
   async *processDetectionStream(input: DetectionInput): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "error" | "complete" | "monitor_status" | "app_open" | "app_close" | "emote";
+    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "error" | "complete" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press";
     data: any;
     speaker?: string;
   }> {
@@ -1545,6 +1967,9 @@ export class DualAgentService {
     if (input.debugMode) {
       // Get current session state for context info
       const debugState = sessionCache.get(result.sessionId)?.state;
+      // Collect face button info for debug
+      const faceButtons = [...(result.addButtons || []), ...(result.rebuildBoard || [])]
+        .filter(b => b.symbolPath?.startsWith("__FACE__:"));
       yield { type: "debug", data: {
         debugType: "detection_result",
         model: this.config.interactiveModel,
@@ -1559,6 +1984,8 @@ export class DualAgentService {
         pendingCount: debugState?.pendingMessages?.length || 0,
         debugDescription: result.debugDescription,
         responseMode,
+        knownContacts: debugState?.cachedContacts?.length || 0,
+        faceButtons: faceButtons.length > 0 ? faceButtons.map(b => `${b.label}|${b.symbolPath}`) : undefined,
         timestamp: Date.now(),
       }};
     }
@@ -1609,6 +2036,16 @@ export class DualAgentService {
       const cached2 = sessionCache.get(result.sessionId);
       if (cached2) cached2.state.currentEmote = result.emote;
       yield { type: "emote", data: result.emote };
+    }
+
+    // Yield set_board if detection loaded one
+    if (result.setBoard) {
+      yield { type: "set_board", data: result.setBoard };
+    }
+
+    // Yield ai_button_press if detection triggered navigation
+    if (result.pressButton) {
+      yield { type: "ai_button_press", data: result.pressButton };
     }
 
     // Handle app open/close from detection
@@ -1698,10 +2135,48 @@ export class DualAgentService {
       })
       .where(eq(chatSessions.id, sessionId));
   }
+
+  // -------------------------------------------------------------------------
+  // Public session cache access (for LiveRelay integration)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Get the cached session entry for a given session ID.
+   * Used by LiveRelay to access session state, agents, and mutex.
+   */
+  getSessionCache(sessionId: string): SessionCache | undefined {
+    const cached = sessionCache.get(sessionId);
+    if (cached) cached.lastAccess = Date.now();
+    return cached;
+  }
+
+  /**
+   * Trigger monitor processing for a session (public wrapper).
+   * Used by LiveRelay to trigger monitor after turn completion.
+   */
+  async triggerMonitor(sessionId: string, force = false, board?: ParsedBoardData): Promise<void> {
+    const cached = sessionCache.get(sessionId);
+    if (!cached) {
+      console.warn("[DualAgentService] triggerMonitor: session not found:", sessionId);
+      return;
+    }
+    cached.lastAccess = Date.now();
+    await this.tryTriggerMonitor(
+      cached,
+      cached.state,
+      cached.monitorAgent,
+      cached.interactiveAgent,
+      board,
+      force,
+    );
+  }
 }
 
 // Singleton instance
 export const dualAgentService = new DualAgentService();
+
+// Re-export SessionCache type for LiveRelay
+export type { SessionCache };
 
 /**
  * Process input through the dual-agent system
@@ -1709,7 +2184,7 @@ export const dualAgentService = new DualAgentService();
 export async function* processInput(
   input: DualAgentInput
 ): AsyncGenerator<{
-  type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote";
+  type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press";
   data: any;
   speaker?: string;
 }> {

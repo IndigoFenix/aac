@@ -307,7 +307,13 @@ export function buildInteractiveSystemPrompt(
   enabledApps: import("../dual-agent/types").AACAppDefinition[] = [],
   activeApp: string | null = null,
   currentEmote: "happy" | "sad" | "neutral" = "happy",
-  responseMode: 'fast' | 'analyze' = 'analyze'
+  responseMode: 'fast' | 'analyze' = 'analyze',
+  knownContacts?: Array<{ id: string; name: string; relationship?: string; hasFaceImage: boolean }>,
+  availableBoards?: Array<{ id: string; key: string; name: string; hint?: string; grid: { rows: number; cols: number } }>,
+  loadedBoardName?: string | null,
+  loadedPageName?: string | null,
+  maxBoardItems: number = 12,
+  loadedPageNavButtons?: Array<{ label: string; action: string; targetPageName?: string }>
 ): string {
   // Header with student context
   const ageStr = studentAge ? `a ${studentAge} year old` : 'a student';
@@ -327,13 +333,20 @@ Your purpose is to assist your user with daily tasks, guide them to complete per
     ? '- Use this to respond to other people when you understand the user\'s intent and want to speak for them.'
     : '- Only use this output when highly confident about intent, otherwise omit it and ask for clarification via [SPEAK].'}`;
   const speakTokenDesc = `[SPEAK] message... — Your spoken reply (AI voice). ${mode === 'silent' ? 'NEVER use this in silent mode.' : (isDetection ? 'HIGH CONFIDENCE ONLY.' : 'Use when responding to the user.')}\n   — [INTERPRET] is always spoken first (student voice), then [SPEAK] (AI voice).`;
+  const setBoardTokenDesc = availableBoards && availableBoards.length > 0
+    ? `[SET_BOARD] board_key — Switch to a pre-built custom board. Only use board keys from the "Available Custom Boards" list below.`
+    : '';
+  const pressButtonTokenDesc = loadedBoardName
+    ? `[PRESS_BUTTON] label — Press a navigation button on the current board to navigate to a sub-page.\n   Use this to navigate within a loaded custom board. Only press buttons that have navigation actions (folder/category buttons).\n   Prefer navigating to relevant sub-pages over generating new buttons from scratch.\n   Example: [PRESS_BUTTON] Snacks`
+    : '';
   const boardTokenDesc = isDetection
-    ? `Board changes:\n   - [ADD_BUTTONS] label|icon, label|icon, ... — add buttons to existing board\n   - [REMOVE_BUTTONS] label, label, ... — remove buttons by label`
-    : `Board changes:\n   - [REBUILD_BOARD] label|icon, label|icon, ... — replace entire board`;
+    ? `Board changes:\n   - [ADD_BUTTONS] label|icon, label|icon, ... — add buttons to existing board\n   - [REMOVE_BUTTONS] label, label, ... — remove buttons by label${setBoardTokenDesc ? `\n   - ${setBoardTokenDesc}` : ''}${pressButtonTokenDesc ? `\n   - ${pressButtonTokenDesc}` : ''}`
+    : `Board changes:\n   - [REBUILD_BOARD] label|icon, label|icon, ... — replace entire board${setBoardTokenDesc ? `\n   - ${setBoardTokenDesc}` : ''}${pressButtonTokenDesc ? `\n   - ${pressButtonTokenDesc}` : ''}`;
   const appTokenDesc = enabledApps.length > 0
     ? `[OPEN_APP] appId — Open an app for the student. Data is optional and app-specific. You may suggest apps based on context, but only open if you have HIGH CONFIDENCE it's what the student wants.\nThe following apps are available for the student:\n${enabledApps.map(app => `- ${app.name} (${app.icon}): ${app.description}\n  Open with: [OPEN_APP] ${app.id}`).join("\n")}\n- Close any open app with: [CLOSE_APP]${activeApp ? `\nThe student currently has the "${activeApp}" app open.` : '\nNo apps are currently open.'}`
     : 'App commands are available but no apps are currently enabled.';
   const emoteTokenDesc = `[EMOTE] happy|sad|neutral — Set your avatar's displayed emotion.\n   Use to reflect the emotional tone of the conversation. Your current emotion: ${currentEmote}.\n   - "happy" — when encouraging or having fun (default)\n   - "sad" — when empathizing with frustration, disappointment, or difficulty\n   - "neutral" — when displaying seriousness or confusion\n   Include this when the emotional tone changes. You don't need to include it every response.`;
+  const learnFaceTokenDesc = `[LEARN_FACE] name | relationship | description — Remember a new person's face.\n   Use when you see an unrecognized person and learn their name through conversation.\n   Only use when you're confident about their identity.\n   Example: [LEARN_FACE] David | classmate | Brown hair, about 8 years old, wears glasses`;
   const monitorTokenDesc = `[CALL_MONITOR] reason — Request a supervisor check-in. MUST include a reason.\n   Use when:\n   - You notice progress or setbacks on student goals/objectives\n   - You need guidance on how to handle a situation\n   - The context has shifted significantly (new person, new activity, location change)\n   Rules:\n   - Always provide a clear reason (e.g., "[CALL_MONITOR] Student combined two buttons to form a phrase — possible goal progress")\n   - Do NOT call monitor repeatedly for the same event. Once called, do not call again until circumstances change.\n   - Do not overuse — only when genuinely helpful.`;
 
   // Order tokens based on responseMode
@@ -342,7 +355,7 @@ Your purpose is to assist your user with daily tasks, guide them to complete per
 
   if (responseMode === 'fast') {
     // Fast mode: voice/board FIRST, then observations
-    orderedTokens = [interpretTokenDesc, speakTokenDesc, boardTokenDesc, appTokenDesc, emoteTokenDesc, transcriptTokenDesc, contextTokenDesc, monitorTokenDesc];
+    orderedTokens = [interpretTokenDesc, speakTokenDesc, boardTokenDesc, appTokenDesc, emoteTokenDesc, transcriptTokenDesc, contextTokenDesc, learnFaceTokenDesc, monitorTokenDesc];
     rulesText = `Rules:
 - Output [INTERPRET] or [SPEAK] FIRST for fastest response (respond first, then record observations.)
 - If using both [INTERPRET] and [SPEAK], output [INTERPRET] BEFORE [SPEAK]
@@ -352,7 +365,7 @@ Your purpose is to assist your user with daily tasks, guide them to complete per
 - All tags are optional. If nothing to report or change, you may output no text at all.`;
   } else {
     // Analyze mode (default): observations FIRST, then voice/board
-    orderedTokens = [transcriptTokenDesc, contextTokenDesc, interpretTokenDesc, speakTokenDesc, boardTokenDesc, appTokenDesc, emoteTokenDesc, monitorTokenDesc];
+    orderedTokens = [transcriptTokenDesc, contextTokenDesc, interpretTokenDesc, speakTokenDesc, boardTokenDesc, appTokenDesc, emoteTokenDesc, learnFaceTokenDesc, monitorTokenDesc];
     rulesText = `Rules:
 - Output [TRANSCRIPT] and [CONTEXT] BEFORE [INTERPRET] or [SPEAK] (observe first, then respond based on observed context.)
 - If using both [INTERPRET] and [SPEAK], output [INTERPRET] BEFORE [SPEAK]
@@ -391,7 +404,7 @@ Example: "[TRANSCRIPT Mom] Are you ready to go outside?"
 
 == AAC Board ==
 
-The AAC Board has up to 12 buttons that your user uses to communicate.
+The AAC Board has up to ${maxBoardItems} buttons that your user uses to communicate.
 Your primary role is to define and update these buttons, giving your user a diverse set of options with which they can communicate their intent.
 
 The board should contain buttons representing things the user might want to communicate. Account for all changes in context.
@@ -409,13 +422,14 @@ Be CONSERVATIVE with board changes — only modify when context meaningfully shi
 - Add buttons for new objects, activities, or communication opportunities
 - Remove buttons that are no longer relevant
 - Omit board tokens if no changes needed
-- If adding a button would cause the total button count to exceed 12, you MUST remove buttons to avoid going over the limit.
+- If adding a button would cause the total button count to exceed ${maxBoardItems}, you MUST remove buttons to avoid going over the limit.
 ` : `
 - [REBUILD_BOARD] label|icon, label|icon - create a fresh set of buttons based on current context.
 
 Example: "[REBUILD_BOARD] Play|🎮, Eat|🍎, Drink|💧, Sleep|😴"
 
 If you see no buttons in the context, you MUST call REBUILD_BOARD to create the starting board.
+Using REBUILD_BOARD will exit any loaded custom board and return to the default AI-generated board.
 `}
 
 Button format: label|icon where icon is an emoji (e.g., "💧")
@@ -426,8 +440,50 @@ Button guidelines:
 - Do not put emojis in labels, only after the | separator
 - Do not duplicate icons on the board
 - Do not include "Yes", "No", "Help", or "More" — these are automatic
-- Aim for about 8 buttons; max 12
+- Aim for about ${Math.min(8, maxBoardItems)} buttons; max ${maxBoardItems}
+`;
 
+  // Known Contacts section (only if there are contacts)
+  if (knownContacts && knownContacts.length > 0) {
+    prompt += `
+== Known Contacts ==
+
+These people have been identified around the student. You can create a button with their face using face:ID as the icon.
+
+${knownContacts.map(c => {
+  const parts = [c.name];
+  if (c.relationship) parts.push(`(${c.relationship})`);
+  parts.push(`ID: ${c.id}`);
+  return `- ${parts.join(', ')}`;
+}).join('\n')}
+
+When creating a button for a contact: [ADD_BUTTONS] ${knownContacts[0].name}|face:${knownContacts[0].id}
+If a contact has no name, use a short descriptive pseudonym (e.g., "Boy with glasses").
+`;
+  }
+
+  // Available Custom Boards section
+  if (availableBoards && availableBoards.length > 0) {
+    prompt += `
+== Available Custom Boards ==
+
+You can switch to a pre-built board using: [SET_BOARD] board_key
+
+${availableBoards.map(b => {
+  const hint = b.hint ? ` — ${b.hint}` : '';
+  return `- ${b.key} ("${b.name}")${hint} (${b.grid.cols}x${b.grid.rows} grid)`;
+}).join('\n')}
+${loadedBoardName
+  ? `\nCurrently loaded: "${loadedBoardName}"${loadedPageName ? ` (page "${loadedPageName}")` : ''}\nDo NOT re-select the already loaded board. You can still use [ADD_BUTTONS] and [REMOVE_BUTTONS] to modify buttons on the current page.${
+    loadedPageNavButtons && loadedPageNavButtons.length > 0
+      ? `\n\nNavigation buttons on current page (use [PRESS_BUTTON] label to navigate):\n${loadedPageNavButtons.map(b => `- "${b.label}" → ${b.targetPageName || b.action}`).join('\n')}\nPrefer pressing navigation buttons to load sub-pages rather than generating entirely new buttons.`
+      : ''
+  }`
+  : '\nNo custom board is currently loaded.'}
+`;
+  }
+
+  prompt += `
 == Interpretations ==
 
 Use [INTERPRET] to speak on behalf of your user (in their voice). Only use when you observe a CLEAR signal:

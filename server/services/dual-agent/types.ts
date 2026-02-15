@@ -122,6 +122,14 @@ export interface DualAgentSessionState {
   // Board state
   currentBoard?: ParsedBoardData;
 
+  // Pre-built board selection
+  availableBoards?: Array<{ id: string; key: string; name: string; hint?: string; grid: { rows: number; cols: number } }>;
+  loadedBoardId?: string | null;
+  loadedBoardData?: ParsedBoardData;
+  currentPageId?: string | null;
+  pageHistory?: string[];
+  maxBoardItems?: number; // grid slot count (default 12)
+
   // Timestamps
   lastInteractiveActivity: number;
   lastMonitorActivity: number;
@@ -136,6 +144,12 @@ export interface DualAgentSessionState {
   monitorError?: string;           // Last error message from monitor processing
   monitorErrorTimestamp?: number;   // When the error occurred
   monitorConsecutiveFailures: number; // Count of consecutive failures (resets on success)
+
+  // Cached contacts for prompt building
+  cachedContacts?: Array<{ id: string; name: string; relationship?: string; hasFaceImage: boolean }>;
+
+  // Live API hook: called when monitor injects context, so relay can forward to Gemini session
+  onContextInjection?: (text: string) => void;
 }
 
 /**
@@ -153,11 +167,11 @@ export interface InteractiveResponse {
   // Token usage from the provider (for credit tracking)
   usage?: { promptTokens: number; completionTokens: number };
   // Detection diff: buttons to add to blank slots
-  addButtons?: Array<{ label: string; iconRef: string }>;
+  addButtons?: Array<{ label: string; iconRef: string; symbolPath?: string }>;
   // Detection diff: labels of buttons to remove
   removeLabels?: string[];
   // Full board rebuild (replaces all buttons)
-  rebuildBoard?: Array<{ label: string; iconRef: string }>;
+  rebuildBoard?: Array<{ label: string; iconRef: string; symbolPath?: string }>;
   // Message inferred from gestures/context to process as user input
   triggeredMessage?: string;
   // Student's interpreted intent (student voice) — can coexist with text (speak)
@@ -178,6 +192,12 @@ export interface InteractiveResponse {
   closeApp?: boolean;
   // Avatar emotion from [EMOTE] token
   emote?: "happy" | "sad" | "neutral";
+  // Learn a new face from [LEARN_FACE] token
+  learnFace?: { name: string; relationship?: string; description?: string };
+  // Select a pre-built board by name
+  setBoard?: string;
+  // AI presses a navigation button on the current board (label)
+  pressButton?: string;
   // Provider finish reason (e.g. "STOP", "MAX_TOKENS", "SAFETY", "RECITATION")
   finishReason?: string;
 }
@@ -203,11 +223,13 @@ export interface MonitorResponse {
  */
 export interface IdentifiedPersonContext {
   id: string;
-  type: "student" | "user";
+  type: "student" | "user" | "contact";
   name: string;
-  relationship?: string; // 'student', 'parent', 'teacher', etc.
+  relationship?: string; // 'student', 'parent', 'teacher', 'classmate', etc.
   confidence: number;
   method: "face" | "voice" | "both";
+  description?: string;   // physical/contextual description (contacts only)
+  contextNotes?: string;  // AI knowledge about interactions (contacts only)
 }
 
 /**
@@ -247,6 +269,9 @@ export interface DualAgentInput {
 
   // Response mode: 'fast' (voice first) or 'analyze' (observe first)
   responseMode?: AACResponseMode;
+
+  // Unknown face descriptors from client for AI-triggered enrollment
+  unknownFaceDescriptors?: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number } }>;
 }
 
 /**
@@ -308,6 +333,7 @@ export interface DetectionInput {
   debugMode?: boolean;        // when true, yield debug SSE events with prompt/usage info
   appCanvasData?: string;     // base64 data URL of active app canvas (e.g. drawing)
   responseMode?: AACResponseMode; // 'fast' (voice first) or 'analyze' (observe first)
+  unknownFaceDescriptors?: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number } }>;
 }
 
 /**
@@ -315,9 +341,9 @@ export interface DetectionInput {
  */
 export interface DetectionOutput {
   sessionId: string;
-  addButtons?: Array<{ label: string; iconRef: string }>;
+  addButtons?: Array<{ label: string; iconRef: string; symbolPath?: string }>;
   removeLabels?: string[];
-  rebuildBoard?: Array<{ label: string; iconRef: string }>; // full board replacement
+  rebuildBoard?: Array<{ label: string; iconRef: string; symbolPath?: string }>; // full board replacement
   changed: boolean;          // whether buttons were updated
   text?: string;             // AI voice (speak field) — only when high confidence
   triggeredMessage?: string; // deprecated: use interpretation instead
@@ -330,6 +356,8 @@ export interface DetectionOutput {
   openApp?: { appId: string; data?: string }; // Open an add-on app
   closeApp?: boolean;              // Close the currently open app
   emote?: "happy" | "sad" | "neutral"; // Avatar emotion from [EMOTE] token
+  setBoard?: { board: ParsedBoardData; name: string; boardId: string }; // Pre-built board loaded
+  pressButton?: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] }; // AI pressed a navigation button
   error?: string;                  // error message if processing failed
 }
 

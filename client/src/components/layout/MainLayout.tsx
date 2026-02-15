@@ -7,8 +7,7 @@ import { ChatPopup } from '@/features/ChatPopup';
 import { SyntAACxPanel } from '@/features/SyntAACxPanel';
 import { CommuniAACtePanel } from '@/features/CommuniAACtePanel';
 import { DocuSLPPanel } from '@/features/DocuSLPPanel';
-import { BoardSelector } from '@/components/syntAACx/BoardSelector';
-import { useFeaturePanel, FEATURE_CONFIG } from '@/contexts/FeaturePanelContext';
+import { useFeaturePanel } from '@/contexts/FeaturePanelContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
 import { OverviewPanel } from '@/features/OverviewPanel';
@@ -21,9 +20,8 @@ import { AACSettingsPanel } from '@/features/AACSettingsPanel';
 
 export function MainLayout() {
   const { 
-    activeFeature, 
-    panels, 
-    getFeatureConfig,
+    activeFeature,
+    panels,
     transitionDuration,
     chatMode,
     chatSize,
@@ -35,9 +33,6 @@ export function MainLayout() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isResizing, setIsResizing] = useState(false);
 
-  // Get current feature config
-  const featureConfig = activeFeature ? getFeatureConfig(activeFeature) : null;
-  
   // Get panel state
   const currentPanel = activeFeature ? panels[activeFeature] : null;
   const isPanelOpen = currentPanel?.isOpen || false;
@@ -136,9 +131,6 @@ export function MainLayout() {
     }
   };
 
-  // Check if we should show a bottom bar below chat
-  const showBottomBar = featureConfig?.hasBottomBar && isPanelOpen && showChatInline;
-
   // Resize handle component
   const ResizeHandle = showChatInline && isPanelOpen && (
     <div
@@ -177,16 +169,6 @@ export function MainLayout() {
       <div className="flex-1 min-h-0 overflow-hidden">
         <ChatFeature />
       </div>
-      
-      {/* Bottom bar (e.g., BoardSelector for SyntAACx) */}
-      {showBottomBar && (
-        <div className={cn(
-          "border-t border-border bg-background px-4 py-3 flex-shrink-0",
-          "transition-all duration-300"
-        )}>
-          {activeFeature === 'boards' && <BoardSelector />}
-        </div>
-      )}
     </div>
   );
 

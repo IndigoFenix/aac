@@ -58,6 +58,7 @@ export interface NlpSchema {
     lastFormSchema?: NlpSchema;
     lastFormValues?: formValues;
     describeActions?: boolean;
+    navigateEnabled?: boolean;
     replyType?: 'text' | 'html';
   }): PromptBuild {
 
@@ -357,17 +358,44 @@ export interface NlpSchema {
             type: 'function',
             function: {
                 name: 'describeActions',
-                description: 'IMPORTANT: You MUST call this tool FIRST before calling any other tools. Displays a brief status message to the user while you work.',
+                description: 'Displays a brief status message to the user while you work. IMPORTANT: Call this tool BEFORE each step in a multi-step process to keep the user informed. For example, call it before looking up data, then again before updating records, etc. Each call replaces the previous status message. Always vary the description to reflect what you are currently doing.',
                 parameters: {
                     type: 'object',
                     properties: {
-                        actionDescription: { type: 'string', description: 'A short description of what you are doing, e.g. "Looking up student information" or "Updating the board"' }
+                        actionDescription: { type: 'string', description: 'A short, specific description of the current step, e.g. "Looking up student information", "Updating treatment goals", "Generating the report". Vary this with each call.' }
                     },
                     required: ['actionDescription'],
                     additionalProperties: false
                 }
             }
         })
+    }
+
+    if (ctx.navigateEnabled) {
+        tools.push({
+            type: 'function',
+            function: {
+                name: 'navigateToFeature',
+                description: 'Navigate the user\'s interface to a specific panel/feature. Call this when the user\'s request directly relates to a specific panel (e.g. they ask about a student\'s progress, or want to manage institutes, or create a board). The navigation happens immediately while you continue processing.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        feature: {
+                            type: 'string',
+                            enum: ['boards', 'students', 'institute', 'progress', 'reports', 'interpret'],
+                            description: 'The panel to navigate to. boards = AAC board editor, students = student list, institute = institute management, progress = student treatment programs, reports = student reports, interpret = communication interpretation'
+                        }
+                    },
+                    required: ['feature'],
+                    additionalProperties: false
+                }
+            }
+        });
+        endPrompt += `\n\nPanel Navigation: When the user's message relates to a specific panel feature (e.g. "show me the student list", "create a board", "update the report"), call navigateToFeature to switch to the relevant panel. Do NOT navigate when the user is just chatting or asking general questions.`;
+    }
+
+    if (ctx.describeActions && tools.length > 0) {
+        endPrompt += `\n\nIMPORTANT: When performing multi-step tasks, call describeActions before EACH step with a unique, specific message describing what you're currently doing. Do not reuse the same message. This keeps the user informed and prevents the interface from appearing frozen.`;
     }
 
     if (ctx.history.length > 20) {
@@ -386,7 +414,22 @@ export interface NlpSchema {
 
   
 function printPromptHeader(agent: AgentLike, conversationSummary: string, replyType?: 'text' | 'html'): string {
-    let instructions = `=== Section: Reply Guidelines ===\n\nUse the "${replyType || 'text'}" field to reply.\nYou can speak any language. Reply content should be in the same language as the user${replyType === 'html' ? ' (use HTML format)' : ''}.\n\n`;
+    let formatGuidelines: string;
+    if (replyType === 'html') {
+        formatGuidelines = `Use the "html" field to reply.\n`
+            + `Reply content should be in the same language as the user.\n`
+            + `Format rules (strict):\n`
+            + `- Use ONLY semantic HTML tags: <p>, <strong>, <em>, <ul>, <ol>, <li>, <h3>, <h4>, <code>, <pre>, <table>, <tr>, <td>, <th>, <a>, <br>.\n`
+            + `- NEVER use inline styles, style attributes, or class attributes.\n`
+            + `- NEVER use background colors, colored text, gradients, borders, shadows, or any visual decoration.\n`
+            + `- NEVER use <div>, <span>, badges, cards, icons, or emoji as decoration.\n`
+            + `- The page already applies all visual styling. Your HTML must be unstyled semantic markup only.\n`
+            + `- For overviews and summaries: use a heading + a plain <ul> or <ol>. Do not create colorful dashboards or styled panels.\n`
+            + `- Keep responses concise. Do not pad with decorative structure.\n`;
+    } else {
+        formatGuidelines = `Use the "text" field to reply.\nReply content should be in the same language as the user. Use plain text.\n`;
+    }
+    let instructions = `=== Section: Reply Guidelines ===\n\n${formatGuidelines}\n`;
     if (conversationSummary){
         instructions += `=== Section: Current Conversation summary ===\n\n${conversationSummary}\n\n`;
     }

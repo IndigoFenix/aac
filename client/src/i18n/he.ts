@@ -149,6 +149,7 @@ export const he = {
   nav: {
     main: "קליניאאקיאן",
     interpret: "פרש תקשורת",
+    aacsettings: 'הגדרות תת"ח',
     boards: 'צור לוחות תת"ח',
     docuslp: "צור דוחות",
     settings: "הגדרות",

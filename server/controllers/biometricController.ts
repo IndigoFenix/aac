@@ -19,9 +19,16 @@ import {
   findMatchingFace,
   findMatchingVoice,
   getKnownPeopleForStudent,
+  createContact,
+  getContact,
+  getContactsByStudent,
+  updateContact,
+  deleteContact,
+  enrollContactFace,
   type FaceEmbedding,
   type VoiceEmbedding,
 } from "../services/biometric";
+import { insertStudentContactSchema, updateStudentContactSchema } from "@shared/schema";
 import { studentService } from "../services";
 
 // Validation schemas
@@ -458,6 +465,184 @@ export class BiometricController {
     } catch (error: any) {
       console.error("[BiometricController] getKnownPeople error:", error);
       res.status(500).json({ success: false, message: "Failed to get known people" });
+    }
+  }
+  // ============================================================================
+  // STUDENT CONTACTS CRUD
+  // ============================================================================
+
+  /**
+   * POST /api/biometric/students/:studentId/contacts
+   * Create a new contact for a student
+   */
+  async createStudentContact(req: Request, res: Response): Promise<void> {
+    try {
+      const { studentId } = req.params;
+      const currentUser = req.user as any;
+
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
+      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+        res.status(403).json({ success: false, message: "Not authorized" });
+        return;
+      }
+
+      const data = insertStudentContactSchema.parse({ ...req.body, studentId });
+      const contact = await createContact(data);
+      res.status(201).json({ success: true, contact });
+    } catch (error: any) {
+      console.error("[BiometricController] createStudentContact error:", error);
+      if (error.name === "ZodError") {
+        res.status(400).json({ success: false, message: "Invalid data", errors: error.errors });
+        return;
+      }
+      res.status(500).json({ success: false, message: "Failed to create contact" });
+    }
+  }
+
+  /**
+   * GET /api/biometric/students/:studentId/contacts
+   * List all active contacts for a student
+   */
+  async listStudentContacts(req: Request, res: Response): Promise<void> {
+    try {
+      const { studentId } = req.params;
+      const currentUser = req.user as any;
+
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
+      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+        res.status(403).json({ success: false, message: "Not authorized" });
+        return;
+      }
+
+      const contacts = await getContactsByStudent(studentId);
+      res.json({ success: true, contacts, count: contacts.length });
+    } catch (error: any) {
+      console.error("[BiometricController] listStudentContacts error:", error);
+      res.status(500).json({ success: false, message: "Failed to list contacts" });
+    }
+  }
+
+  /**
+   * GET /api/biometric/students/:studentId/contacts/:id
+   * Get a specific contact
+   */
+  async getStudentContact(req: Request, res: Response): Promise<void> {
+    try {
+      const { studentId, id } = req.params;
+      const currentUser = req.user as any;
+
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
+      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+        res.status(403).json({ success: false, message: "Not authorized" });
+        return;
+      }
+
+      const contact = await getContact(id);
+      if (!contact || contact.studentId !== studentId) {
+        res.status(404).json({ success: false, message: "Contact not found" });
+        return;
+      }
+      res.json({ success: true, contact });
+    } catch (error: any) {
+      console.error("[BiometricController] getStudentContact error:", error);
+      res.status(500).json({ success: false, message: "Failed to get contact" });
+    }
+  }
+
+  /**
+   * PATCH /api/biometric/students/:studentId/contacts/:id
+   * Update a contact
+   */
+  async updateStudentContact(req: Request, res: Response): Promise<void> {
+    try {
+      const { studentId, id } = req.params;
+      const currentUser = req.user as any;
+
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
+      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+        res.status(403).json({ success: false, message: "Not authorized" });
+        return;
+      }
+
+      const existing = await getContact(id);
+      if (!existing || existing.studentId !== studentId) {
+        res.status(404).json({ success: false, message: "Contact not found" });
+        return;
+      }
+
+      const data = updateStudentContactSchema.parse(req.body);
+      const contact = await updateContact(id, data);
+      res.json({ success: true, contact });
+    } catch (error: any) {
+      console.error("[BiometricController] updateStudentContact error:", error);
+      if (error.name === "ZodError") {
+        res.status(400).json({ success: false, message: "Invalid data", errors: error.errors });
+        return;
+      }
+      res.status(500).json({ success: false, message: "Failed to update contact" });
+    }
+  }
+
+  /**
+   * DELETE /api/biometric/students/:studentId/contacts/:id
+   * Soft-delete a contact
+   */
+  async deleteStudentContact(req: Request, res: Response): Promise<void> {
+    try {
+      const { studentId, id } = req.params;
+      const currentUser = req.user as any;
+
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
+      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+        res.status(403).json({ success: false, message: "Not authorized" });
+        return;
+      }
+
+      const existing = await getContact(id);
+      if (!existing || existing.studentId !== studentId) {
+        res.status(404).json({ success: false, message: "Contact not found" });
+        return;
+      }
+
+      await deleteContact(id);
+      res.json({ success: true, message: "Contact deleted" });
+    } catch (error: any) {
+      console.error("[BiometricController] deleteStudentContact error:", error);
+      res.status(500).json({ success: false, message: "Failed to delete contact" });
+    }
+  }
+
+  /**
+   * POST /api/biometric/students/:studentId/contacts/:id/face
+   * Enroll face embedding for a contact
+   */
+  async enrollContactFace(req: Request, res: Response): Promise<void> {
+    try {
+      const { studentId, id } = req.params;
+      const currentUser = req.user as any;
+
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
+      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+        res.status(403).json({ success: false, message: "Not authorized" });
+        return;
+      }
+
+      const existing = await getContact(id);
+      if (!existing || existing.studentId !== studentId) {
+        res.status(404).json({ success: false, message: "Contact not found" });
+        return;
+      }
+
+      const { embedding } = faceEmbeddingSchema.parse(req.body);
+      await enrollContactFace(id, embedding);
+      res.json({ success: true, message: "Contact face embedding enrolled" });
+    } catch (error: any) {
+      console.error("[BiometricController] enrollContactFace error:", error);
+      if (error.name === "ZodError") {
+        res.status(400).json({ success: false, message: "Invalid embedding format", errors: error.errors });
+        return;
+      }
+      res.status(500).json({ success: false, message: "Failed to enroll contact face" });
     }
   }
 }

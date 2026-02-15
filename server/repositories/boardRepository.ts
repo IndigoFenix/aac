@@ -19,9 +19,13 @@ export class BoardRepository {
     return await db.select({
       id: boards.id,
       userId: boards.userId,
+      studentId: boards.studentId,
       name: boards.name,
-      imageUrl: boards.imageUrl,
       description: boards.description,
+      imageUrl: boards.imageUrl,
+      language: boards.language,
+      automaticSelection: boards.automaticSelection,
+      automaticSelectionHint: boards.automaticSelectionHint,
       createdAt: boards.createdAt,
       updatedAt: boards.updatedAt,
       loadedAt: boards.loadedAt,
@@ -35,6 +39,21 @@ export class BoardRepository {
       .where(
         and(
           eq(boards.userId, userId),
+          or(
+            eq(boards.studentId, studentId),
+            isNull(boards.studentId)
+          )
+        )
+      );
+  }
+
+  async getAutoSelectableBoards(userId: string, studentId: string): Promise<Board[]> {
+    return await db.select()
+      .from(boards)
+      .where(
+        and(
+          eq(boards.userId, userId),
+          eq(boards.automaticSelection, true),
           or(
             eq(boards.studentId, studentId),
             isNull(boards.studentId)

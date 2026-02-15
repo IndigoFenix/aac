@@ -70,6 +70,7 @@ export default function MusicApp({ onClose }: MusicAppProps) {
   return (
     <motion.div
       className="fixed inset-0 z-50 bg-gradient-to-b from-gray-900 to-gray-800 flex flex-col"
+      data-dwell-trap
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}

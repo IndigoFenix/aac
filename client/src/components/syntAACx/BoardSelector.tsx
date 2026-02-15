@@ -20,16 +20,26 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { 
-  FolderOpen, 
-  History, 
-  Sparkles, 
-  Edit, 
-  Eye, 
+import {
+  FolderOpen,
+  History,
+  Sparkles,
+  Edit,
+  Eye,
   Save,
   Loader2,
   AlertTriangle,
+  Zap,
+  HelpCircle,
 } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useBoardStore } from '@/store/board-store';
@@ -151,6 +161,8 @@ export function BoardSelector() {
         id: fullBoard.id,
         name: fullBoard.name,
         irData: fullBoard.irData,
+        automaticSelection: fullBoard.automaticSelection,
+        automaticSelectionHint: fullBoard.automaticSelectionHint,
       });
 
       toast({
@@ -189,11 +201,18 @@ export function BoardSelector() {
         coverImage: board.coverImage,
       };
       
-      const payload = {
+      const payload: Record<string, any> = {
         name: board.name,
         irData,
       };
-      
+      // Include automatic selection fields if set
+      if (board.automaticSelection !== undefined) {
+        payload.automaticSelection = board.automaticSelection;
+      }
+      if (board.automaticSelectionHint !== undefined) {
+        payload.automaticSelectionHint = board.automaticSelectionHint;
+      }
+
       // Use PATCH for existing boards, POST for new ones
       if (board.dbId) {
         const res = await apiRequest('PATCH', `/api/boards/${board.dbId}`, payload);
@@ -362,6 +381,9 @@ export function BoardSelector() {
                     <SelectItem key={b._id} value={b._id}>
                       <div className="flex items-center gap-2">
                         <span>{b.name}</span>
+                        {b.automaticSelection && (
+                          <Zap className="w-3 h-3 text-blue-500" />
+                        )}
                         {b.isDirty && (
                           <span className="text-[9px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-500">
                             •
@@ -415,6 +437,15 @@ export function BoardSelector() {
               )}>
                 {board.name}
               </span>
+              {board.automaticSelection && (
+                <span className={cn(
+                  'text-[9px] px-1.5 py-0.5 rounded flex items-center gap-1',
+                  isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-600'
+                )}>
+                  <Zap className="w-2.5 h-2.5" />
+                  Auto
+                </span>
+              )}
               {board.isDirty && (
                 <span className={cn(
                   'text-[9px] px-1.5 py-0.5 rounded',
@@ -494,6 +525,92 @@ export function BoardSelector() {
           </div>
         </div>
       </div>
+
+      {/* AAC Auto-Selection Settings (shown when a board is loaded) */}
+      {board && (
+        <div className={cn(
+          'flex items-center gap-3 mt-2 px-1',
+          isRTL && 'flex-row-reverse'
+        )}>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="auto-select"
+              checked={board.automaticSelection ?? false}
+              onCheckedChange={(checked) => {
+                const currentBoard = useBoardStore.getState().board;
+                if (currentBoard) {
+                  useBoardStore.setState((state) => {
+                    const updated = { ...currentBoard, automaticSelection: !!checked, isDirty: true } as any;
+                    return {
+                      board: updated,
+                      boards: state.boards.map((b: any) => b._id === updated._id ? updated : b),
+                    };
+                  });
+                }
+              }}
+            />
+            <Label htmlFor="auto-select" className={cn(
+              'text-xs cursor-pointer',
+              isDark ? 'text-slate-400' : 'text-gray-500'
+            )}>
+              AAC Auto-Select
+            </Label>
+          </div>
+          {board.automaticSelection && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    'h-7 text-xs gap-1.5',
+                    isDark
+                      ? 'border-slate-700 hover:bg-slate-800'
+                      : 'border-gray-300 hover:bg-gray-100',
+                    board.automaticSelectionHint && 'border-blue-500/50 bg-blue-500/10'
+                  )}
+                >
+                  <HelpCircle className="w-3 h-3" />
+                  {board.automaticSelectionHint ? 'Hint set' : 'Add hint'}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className={cn(
+                'w-80',
+                isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'
+              )}>
+                <div className="space-y-2">
+                  <p className={cn(
+                    'text-xs',
+                    isDark ? 'text-slate-400' : 'text-gray-500'
+                  )}>
+                    Tell the AI when to automatically select this board.
+                  </p>
+                  <Input
+                    placeholder="e.g. 'During mealtimes'"
+                    value={board.automaticSelectionHint ?? ''}
+                    onChange={(e) => {
+                      const currentBoard = useBoardStore.getState().board;
+                      if (currentBoard) {
+                        useBoardStore.setState((state) => {
+                          const updated = { ...currentBoard, automaticSelectionHint: e.target.value, isDirty: true } as any;
+                          return {
+                            board: updated,
+                            boards: state.boards.map((b: any) => b._id === updated._id ? updated : b),
+                          };
+                        });
+                      }
+                    }}
+                    className={cn(
+                      'h-8 text-xs',
+                      isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-300'
+                    )}
+                  />
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+        </div>
+      )}
 
       {/* Unsaved Changes Dialog */}
       <Dialog open={showUnsavedDialog} onOpenChange={setShowUnsavedDialog}>

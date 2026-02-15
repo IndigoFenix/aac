@@ -19,7 +19,7 @@ function withBase(path: string): string {
 /**
  * SSE event types sent by the server
  */
-export type SSEEventType = 'thinking' | 'complete' | 'error' | 'close';
+export type SSEEventType = 'thinking' | 'navigate' | 'complete' | 'error' | 'close';
 
 /**
  * Thinking event data
@@ -35,6 +35,8 @@ export interface ThinkingEvent {
 export interface StreamCallbacks {
   /** Called when AI sends a thinking update during tool processing */
   onThinking: (text: string) => void;
+  /** Called when AI navigates to a panel feature */
+  onNavigate?: (feature: string) => void;
   /** Called when the final response is ready */
   onComplete: (response: any) => void;
   /** Called when an error occurs */
@@ -156,6 +158,10 @@ export function useChatStream(): UseChatStreamResult {
             switch (event) {
               case 'thinking':
                 callbacks.onThinking(parsed.text);
+                break;
+
+              case 'navigate':
+                callbacks.onNavigate?.(parsed.feature);
                 break;
 
               case 'complete':

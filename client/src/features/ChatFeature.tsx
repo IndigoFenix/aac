@@ -264,7 +264,7 @@ export function ChatFeature() {
   };
 
   const handlePersonaChange = (newPersona: string) => {
-    setPersona(newPersona);
+    setPersona(newPersona === 'default' ? undefined : newPersona);
     setShowPersonaSelector(false);
   };
 
@@ -333,25 +333,39 @@ export function ChatFeature() {
       <div className="flex gap-1 flex-wrap">
         {isPersonasLoading ? (
           <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-        ) : personas.length === 0 ? (
-          <span className="text-xs text-muted-foreground">{t('chat.noPersonas')}</span>
         ) : (
-          personas.map((p) => (
+          <>
+            {/* Default general assistant persona */}
             <Button
-              key={p.id}
               size="sm"
-              variant={persona === p.id ? "default" : "outline"}
+              variant={!persona || persona === 'default' ? "default" : "outline"}
               className={cn(
                 "h-8 gap-1.5 text-xs rounded-full transition-all",
-                persona === p.id && "ring-2 ring-offset-2 ring-primary"
+                (!persona || persona === 'default') && "ring-2 ring-offset-2 ring-primary"
               )}
-              onClick={() => handlePersonaChange(p.id)}
-              title={p.prompt?.substring(0, 100) || p.title}
+              onClick={() => handlePersonaChange('default')}
+              title={t('chat.persona.assistantDesc')}
             >
-              <span>{p.icon}</span>
-              <span>{p.title}</span>
+              <span>🤖</span>
+              <span>{t('chat.persona.assistant')}</span>
             </Button>
-          ))
+            {personas.map((p) => (
+              <Button
+                key={p.id}
+                size="sm"
+                variant={persona === p.id ? "default" : "outline"}
+                className={cn(
+                  "h-8 gap-1.5 text-xs rounded-full transition-all",
+                  persona === p.id && "ring-2 ring-offset-2 ring-primary"
+                )}
+                onClick={() => handlePersonaChange(p.id)}
+                title={p.prompt?.substring(0, 100) || p.title}
+              >
+                <span>{p.icon}</span>
+                <span>{p.title}</span>
+              </Button>
+            ))}
+          </>
         )}
       </div>
     </div>

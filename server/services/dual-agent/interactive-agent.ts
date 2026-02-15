@@ -45,6 +45,12 @@ export interface ParsedStreamOutput {
   closeApp?: boolean;
   /** Avatar emotion */
   emote?: "happy" | "sad" | "neutral";
+  /** Learn a new face: name | relationship | description */
+  learnFace?: { name: string; relationship?: string; description?: string };
+  /** Select a pre-built board by name */
+  setBoard?: string;
+  /** AI presses a button on the current board (by label) */
+  pressButton?: string;
 }
 
 /**
@@ -60,7 +66,7 @@ export interface ParsedStreamOutput {
  *
  * Returns the parsed sections and any unparsed remainder.
  */
-function parseStreamedText(text: string): ParsedStreamOutput {
+export function parseStreamedText(text: string): ParsedStreamOutput {
   const result: ParsedStreamOutput = {};
 
   // Match [TRANSCRIPT speaker] content (speaker can have spaces)
@@ -144,6 +150,37 @@ function parseStreamedText(text: string): ParsedStreamOutput {
     result.emote = emoteMatch[1].toLowerCase() as "happy" | "sad" | "neutral";
   }
 
+  // Match [LEARN_FACE] name | relationship | description
+  const learnFaceMatch = text.match(/\[LEARN_FACE\]\s*([^\[]*)/i);
+  if (learnFaceMatch) {
+    const parts = learnFaceMatch[1].split('|').map(s => s.trim()).filter(s => s);
+    if (parts[0]) {
+      result.learnFace = {
+        name: parts[0],
+        relationship: parts[1] || undefined,
+        description: parts[2] || undefined,
+      };
+    }
+  }
+
+  // Match [SET_BOARD] board name
+  const setBoardMatch = text.match(/\[SET_BOARD\]\s*([^\[]*)/i);
+  if (setBoardMatch) {
+    const name = setBoardMatch[1].trim();
+    if (name) {
+      result.setBoard = name;
+    }
+  }
+
+  // Match [PRESS_BUTTON] button label
+  const pressButtonMatch = text.match(/\[PRESS_BUTTON\]\s*([^\[]*)/i);
+  if (pressButtonMatch) {
+    const label = pressButtonMatch[1].trim();
+    if (label) {
+      result.pressButton = label;
+    }
+  }
+
   return result;
 }
 
@@ -151,8 +188,8 @@ function parseStreamedText(text: string): ParsedStreamOutput {
  * Parse board button format: "label|icon, label|icon, ..."
  * If no icon is provided, defaults to comment icon.
  */
-function parseBoardButtons(content: string): Array<{ label: string; iconRef: string }> {
-  const buttons: Array<{ label: string; iconRef: string }> = [];
+export function parseBoardButtons(content: string): Array<{ label: string; iconRef: string; symbolPath?: string }> {
+  const buttons: Array<{ label: string; iconRef: string; symbolPath?: string }> = [];
   const items = content.split(',');
 
   for (const item of items) {
@@ -163,9 +200,19 @@ function parseBoardButtons(content: string): Array<{ label: string; iconRef: str
     const pipeIndex = trimmed.indexOf('|');
     if (pipeIndex > 0) {
       const label = trimmed.substring(0, pipeIndex).trim();
-      const iconRef = trimmed.substring(pipeIndex + 1).trim();
+      let iconRef = trimmed.substring(pipeIndex + 1).trim();
+      let symbolPath: string | undefined;
+
+      // Handle face:contactId references
+      if (iconRef.startsWith("face:")) {
+        const contactId = iconRef.substring(5).trim();
+        symbolPath = `__FACE__:${contactId}`;
+        iconRef = "👤"; // fallback emoji
+        console.log(`[InteractiveAgent] Parsed face button: "${label}" → face:${contactId}`);
+      }
+
       if (label) {
-        buttons.push({ label, iconRef: iconRef || "fas fa-comment" });
+        buttons.push({ label, iconRef: iconRef || "fas fa-comment", symbolPath });
       }
     } else {
       // Just a label, use default icon
@@ -177,7 +224,7 @@ function parseBoardButtons(content: string): Array<{ label: string; iconRef: str
 }
 
 /** Types that the streaming parser can emit */
-export type StreamingSegmentType = "speak" | "interpret" | "transcript" | "context" | "add_buttons" | "remove_buttons" | "rebuild_board" | "call_monitor" | "open_app" | "close_app" | "emote";
+export type StreamingSegmentType = "speak" | "interpret" | "transcript" | "context" | "add_buttons" | "remove_buttons" | "rebuild_board" | "call_monitor" | "open_app" | "close_app" | "emote" | "learn_face" | "set_board" | "press_button";
 
 export interface StreamingSegment {
   type: StreamingSegmentType;
@@ -191,7 +238,7 @@ export interface StreamingSegment {
  */
 export class StreamingPrefixParser {
   private buffer = "";
-  private currentMode: "none" | "transcript" | "context" | "speak" | "interpret" | "add_buttons" | "remove_buttons" | "rebuild_board" | "call_monitor" | "open_app" | "close_app" | "emote" = "none";
+  private currentMode: "none" | "transcript" | "context" | "speak" | "interpret" | "add_buttons" | "remove_buttons" | "rebuild_board" | "call_monitor" | "open_app" | "close_app" | "emote" | "learn_face" | "set_board" | "press_button" = "none";
   private transcriptSpeaker = "";
 
   /**
@@ -217,6 +264,9 @@ export class StreamingPrefixParser {
         const openAppMatch = this.buffer.match(/^\s*\[OPEN_APP\]\s*/i);
         const closeAppMatch = this.buffer.match(/^\s*\[CLOSE_APP\]\s*/i);
         const emoteMatch = this.buffer.match(/^\s*\[EMOTE\]\s*/i);
+        const learnFaceMatch = this.buffer.match(/^\s*\[LEARN_FACE\]\s*/i);
+        const setBoardMatch = this.buffer.match(/^\s*\[SET_BOARD\]\s*/i);
+        const pressButtonMatch = this.buffer.match(/^\s*\[PRESS_BUTTON\]\s*/i);
 
         if (transcriptMatch) {
           this.currentMode = "transcript";
@@ -252,6 +302,15 @@ export class StreamingPrefixParser {
         } else if (emoteMatch) {
           this.currentMode = "emote";
           this.buffer = this.buffer.slice(emoteMatch[0].length);
+        } else if (learnFaceMatch) {
+          this.currentMode = "learn_face";
+          this.buffer = this.buffer.slice(learnFaceMatch[0].length);
+        } else if (setBoardMatch) {
+          this.currentMode = "set_board";
+          this.buffer = this.buffer.slice(setBoardMatch[0].length);
+        } else if (pressButtonMatch) {
+          this.currentMode = "press_button";
+          this.buffer = this.buffer.slice(pressButtonMatch[0].length);
         } else {
           // No prefix found yet, wait for more data
           // But trim leading whitespace/newlines that aren't part of a token
@@ -260,7 +319,7 @@ export class StreamingPrefixParser {
         }
       } else {
         // We're in a mode, collect content until the next prefix or end
-        const nextPrefixMatch = this.buffer.match(/\[(?:TRANSCRIPT|CONTEXT|SPEAK|INTERPRET|ADD_BUTTONS|REMOVE_BUTTONS|REBUILD_BOARD|CALL_MONITOR|OPEN_APP|CLOSE_APP|EMOTE)[\s\]]/i);
+        const nextPrefixMatch = this.buffer.match(/\[(?:TRANSCRIPT|CONTEXT|SPEAK|INTERPRET|ADD_BUTTONS|REMOVE_BUTTONS|REBUILD_BOARD|CALL_MONITOR|OPEN_APP|CLOSE_APP|EMOTE|LEARN_FACE|SET_BOARD|PRESS_BUTTON)[\s\]]/i);
 
         if (nextPrefixMatch && nextPrefixMatch.index !== undefined && nextPrefixMatch.index > 0) {
           // Found next prefix, emit current content
@@ -613,7 +672,7 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
    */
   private applyBoardDiff(
     currentBoard: ParsedBoardData,
-    addButtons?: Array<{ label: string; iconRef: string }>,
+    addButtons?: Array<{ label: string; iconRef: string; symbolPath?: string }>,
     removeLabels?: string[]
   ): ParsedBoardData {
     const grid = currentBoard.grid || { rows: 4, cols: 4 };
@@ -639,6 +698,7 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
           row: Math.floor(index / grid.cols),
           col: index % grid.cols,
           iconRef: newBtn.iconRef || undefined,
+          symbolPath: newBtn.symbolPath || undefined,
           action: { type: "speak" as const, text: newBtn.label },
         });
       }
@@ -679,7 +739,7 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
     audioContext?: string,
     imageData?: string, // base64 data URL or URL
     personContext?: string // Identified person context from biometrics
-  ): AsyncGenerator<{ type: "speak" | "interpret" | "transcript" | "context" | "board" | "board_patch" | "command" | "usage" | "call_monitor" | "open_app" | "close_app" | "emote"; data: any; speaker?: string }> {
+  ): AsyncGenerator<{ type: "speak" | "interpret" | "transcript" | "context" | "board" | "board_patch" | "command" | "usage" | "call_monitor" | "open_app" | "close_app" | "emote" | "learn_face" | "set_board" | "press_button"; data: any; speaker?: string }> {
     // Build context message if we have visual/audio/person context
     let contextMessage = "";
     if (personContext) {
@@ -770,6 +830,9 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
       let openAppData: { appId: string; data?: string } | undefined;
       let closeAppTriggered = false;
       let emoteValue: string | undefined;
+      let learnFaceData: { name: string; relationship?: string; description?: string } | undefined;
+      let setBoardName: string | undefined;
+      let pressButtonLabel: string | undefined;
 
       for await (const chunk of stream) {
         if (chunk.type === "text_delta") {
@@ -813,6 +876,15 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
               closeAppTriggered = true;
             } else if (seg.type === "emote") {
               emoteValue = seg.data;
+            } else if (seg.type === "learn_face") {
+              const parts = seg.data.split('|').map((s: string) => s.trim()).filter((s: string) => s);
+              if (parts[0]) {
+                learnFaceData = { name: parts[0], relationship: parts[1] || undefined, description: parts[2] || undefined };
+              }
+            } else if (seg.type === "set_board") {
+              setBoardName = seg.data.trim();
+            } else if (seg.type === "press_button") {
+              pressButtonLabel = seg.data.trim();
             }
           }
         } else if (chunk.type === "done" && chunk.usage) {
@@ -850,6 +922,15 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
           closeAppTriggered = true;
         } else if (seg.type === "emote") {
           emoteValue = seg.data;
+        } else if (seg.type === "learn_face") {
+          const parts = seg.data.split('|').map((s: string) => s.trim()).filter((s: string) => s);
+          if (parts[0]) {
+            learnFaceData = { name: parts[0], relationship: parts[1] || undefined, description: parts[2] || undefined };
+          }
+        } else if (seg.type === "set_board") {
+          setBoardName = seg.data.trim();
+        } else if (seg.type === "press_button") {
+          pressButtonLabel = seg.data.trim();
         }
       }
 
@@ -909,6 +990,21 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
       if (emoteValue) {
         yield { type: "emote", data: emoteValue };
       }
+
+      // Yield learn_face if present
+      if (learnFaceData) {
+        yield { type: "learn_face", data: learnFaceData };
+      }
+
+      // Yield set_board if present
+      if (setBoardName) {
+        yield { type: "set_board", data: setBoardName };
+      }
+
+      // Yield press_button if present
+      if (pressButtonLabel) {
+        yield { type: "press_button", data: pressButtonLabel };
+      }
     } catch (error: any) {
       console.error("[InteractiveAgent] processMessageStream error:", error?.message || error);
       if (error?.stack) console.error("[InteractiveAgent] Stack trace:", error.stack);
@@ -933,7 +1029,8 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
     audioBuffer?: Buffer,
     frameTimestamps?: number[],
     appCanvasData?: string,
-    envFrameTimestamps?: number[]
+    envFrameTimestamps?: number[],
+    audioMimeType?: string
   ): Promise<InteractiveResponse> {
     const messageHistory: ProviderChatMessage[] = [
       { role: "system", content: detectionSystemPrompt || this.systemPrompt },
@@ -1071,8 +1168,8 @@ Observe changes across frames to understand motion, gestures, and temporal conte
 
 1. [TRANSCRIPT speaker] text — if you hear voice (omit if none)
 2. [CONTEXT] observations — if there are context changes (omit if none)
-3. [INTERPRET] message — speak on behalf of user (student voice), HIGH CONFIDENCE ONLY (omit if unsure)
-   [SPEAK] message — your spoken reply (AI voice), HIGH CONFIDENCE ONLY (omit if unsure)
+3. [INTERPRET] message — speak on behalf of your non-verbal user (uses TTS student voice), HIGH CONFIDENCE ONLY (omit if unsure).
+   [SPEAK] message — your spoken reply (uses TTS AI voice), HIGH CONFIDENCE ONLY (omit if unsure)
    You may use both — [INTERPRET] is always spoken first, then [SPEAK].
 4. Board changes (choose ONE or omit if no changes):
    - [ADD_BUTTONS] label|icon, label|icon, ... — add buttons to existing board
@@ -1089,7 +1186,7 @@ Update the board only if the context has meaningfully changed. Consider:
 - gestures or facial expressions
 
 Do not add "Yes", "No", "Help", or "More" — these are automatic.
-For icons, use emoji (🍕) or FontAwesome (fas fa-home).
+For icons, use emoji (🍕).
 
 == Speaking / Interpreting (HIGH CONFIDENCE only) ==
 Only use [SPEAK] or [INTERPRET] when you have HIGH CONFIDENCE:
@@ -1108,9 +1205,18 @@ If unsure, add a button instead. You may use both — always output [INTERPRET] 
       contentParts.push({ type: "image_url", image_url: { url: appCanvasData, detail: "low" } });
     }
     if (audioBuffer) {
+      // Derive audio format from mime type (e.g. "audio/wav" → "wav", "audio/webm" → "webm")
+      let audioFormat = "webm";
+      if (audioMimeType) {
+        const sub = audioMimeType.split("/")[1]?.split(";")[0]?.trim();
+        if (sub === "wav" || sub === "wave") audioFormat = "wav";
+        else if (sub === "mp3" || sub === "mpeg") audioFormat = "mp3";
+        else if (sub === "ogg") audioFormat = "ogg";
+        else if (sub) audioFormat = sub;
+      }
       contentParts.push({
         type: "input_audio",
-        input_audio: { data: audioBuffer.toString("base64"), format: "webm" },
+        input_audio: { data: audioBuffer.toString("base64"), format: audioFormat },
       });
     }
 
@@ -1213,7 +1319,7 @@ If unsure, add a button instead. You may use both — always output [INTERPRET] 
         usage: result.usage,
       });
 
-      return { text, isCommand: false, usage: result.usage, addButtons, removeLabels, interpretation, transcript, transcriptSpeaker, contextUpdate, rebuildBoard, callMonitor: parsed.callMonitor, openApp: parsed.openApp, closeApp: parsed.closeApp, emote: parsed.emote, finishReason: result.finishReason };
+      return { text, isCommand: false, usage: result.usage, addButtons, removeLabels, interpretation, transcript, transcriptSpeaker, contextUpdate, rebuildBoard, callMonitor: parsed.callMonitor, openApp: parsed.openApp, closeApp: parsed.closeApp, emote: parsed.emote, learnFace: parsed.learnFace, setBoard: parsed.setBoard, pressButton: parsed.pressButton, finishReason: result.finishReason };
     } catch (error: any) {
       console.error("[InteractiveAgent] processDetection error:", error?.message || error);
       if (error?.stack) console.error("[InteractiveAgent] Stack trace:", error.stack);
@@ -1235,7 +1341,7 @@ If unsure, add a button instead. You may use both — always output [INTERPRET] 
    * ParsedBoardData requires pages[] with buttons inside, not buttons at root
    */
   private createBoardFromButtons(
-    buttons: Array<{ label: string; action?: string; iconRef?: string }>,
+    buttons: Array<{ label: string; action?: string; iconRef?: string; symbolPath?: string }>,
     currentBoard?: ParsedBoardData
   ): ParsedBoardData {
     const grid = currentBoard?.grid || { rows: 4, cols: 4 };
@@ -1249,6 +1355,7 @@ If unsure, add a button instead. You may use both — always output [INTERPRET] 
       row: number;
       col: number;
       iconRef?: string;
+      symbolPath?: string;
       action: { type: "speak" | "link" | "back" | "home"; text?: string };
     }> = buttons.slice(0, totalCells).map((btn, index) => ({
       id: `btn-${Date.now()}-${index}`,
@@ -1257,6 +1364,7 @@ If unsure, add a button instead. You may use both — always output [INTERPRET] 
       row: Math.floor(index / grid.cols),
       col: index % grid.cols,
       iconRef: btn.iconRef || undefined,
+      symbolPath: (btn as any).symbolPath || undefined,
       action: {
         type: "speak" as const,
         text: btn.label,

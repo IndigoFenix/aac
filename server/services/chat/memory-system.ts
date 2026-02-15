@@ -745,20 +745,18 @@ export function renderMemoryVisualization(
   ): string[] {
     const lines: string[] = [];
     const open = isOpen(basePath);
-    const keysAtRuntime = Object.keys(value ?? {});
     lines.push(`• ${basePath || '/'} (object)${inlineDesc(field.description)} ${open ? '' : '— hidden; view to list keys'}`);
     if (!open) return lines;
-  
+
     // Show missing schema props only for standalone objects (not array/map items)
     let showMissingProps = true;
     const resolved = resolveSchemaPath(memoryFields, basePath);
     if (!resolved.error && resolved.leaf) {
       showMissingProps = !(resolved.leaf.kind === 'arrayItem' || resolved.leaf.kind === 'mapValue');
     }
-  
+
     const schemaProps = field.properties ?? {};
-    const schemaKeys = Object.keys(schemaProps);
-    const orderedKeys: string[] = [...schemaKeys, ...keysAtRuntime.filter(k => !schemaProps[k])];
+    const orderedKeys = Object.keys(schemaProps);
     const requiredSet = new Set(field.required ?? []);
     const shown: string[] = [];
   
@@ -816,9 +814,9 @@ export function renderMemoryVisualization(
         continue;
       }
   
-      // Runtime-only key not in schema
+      // Runtime-only key not in schema — skip (internal DB fields like foreign keys)
       if (hasValue && !propSchema) {
-        shown.push(`  - ${k}: (not in schema)`);
+        continue;
       }
     }
   

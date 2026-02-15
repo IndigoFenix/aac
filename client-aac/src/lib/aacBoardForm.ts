@@ -78,7 +78,7 @@ Use clear, simple labels. Consider the user's abilities and preferences.`,
             },
             iconRef: {
               type: 'string',
-              instructions: 'Icon: either a FontAwesome class (e.g., "fas fa-home") or a single emoji (e.g., "🏠"). Required for every button.',
+              instructions: 'Icon: a single emoji (e.g., "🏠"). Required for every button.',
             },
           },
         },

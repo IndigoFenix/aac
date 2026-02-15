@@ -86,6 +86,31 @@ export class BoardController {
   }
 
   /**
+   * PATCH /api/boards/:id
+   * Update a board
+   */
+  async updateBoard(req: Request, res: Response): Promise<void> {
+    try {
+      const board = await boardRepository.getBoard(req.params.id);
+      if (!board || board.userId !== req.user!.id) {
+        res.status(404).json({ error: "Board not found" });
+        return;
+      }
+
+      const updates: Record<string, any> = {};
+      if (req.body.name !== undefined) updates.name = req.body.name;
+      if (req.body.irData !== undefined) updates.irData = req.body.irData;
+      if (req.body.automaticSelection !== undefined) updates.automaticSelection = req.body.automaticSelection;
+      if (req.body.automaticSelectionHint !== undefined) updates.automaticSelectionHint = req.body.automaticSelectionHint;
+
+      const updated = await boardRepository.updateBoard(board.id, updates);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  /**
    * POST /api/export/gridset
    * Export board as gridset format
    */

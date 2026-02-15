@@ -137,6 +137,7 @@ export default function YouTubeApp({ videoId, title, onClose }: YouTubeAppProps)
     <motion.div
       ref={containerRef}
       className="fixed inset-0 z-50 bg-black flex flex-col"
+      data-dwell-trap
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}

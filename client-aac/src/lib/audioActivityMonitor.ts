@@ -33,6 +33,11 @@ const DEFAULT_CONFIG: AudioActivityConfig = {
   silenceDurationMs: 1500,
 };
 
+export interface SpeechBoundary {
+  start: number; // wall-clock ms when speech started
+  end: number;   // wall-clock ms when speech ended
+}
+
 export class AudioActivityMonitor {
   private config: AudioActivityConfig;
   private audioCtx: AudioContext | null = null;
@@ -45,6 +50,9 @@ export class AudioActivityMonitor {
   private speechStartTime = 0;
   private silenceStartTime = 0;
   private consecutiveHighEnergy = 0;
+
+  // Speech boundary tracking for ring buffer extraction
+  private lastSpeechBoundary: SpeechBoundary | null = null;
 
   // Web Speech API (type not always available in TS, use any)
   private speechRecognition: any = null;
@@ -67,10 +75,23 @@ export class AudioActivityMonitor {
     // Set up AudioContext for energy monitoring
     try {
       this.audioCtx = new AudioContext();
+
+      // Chrome suspends AudioContext until user interaction — resume it
+      if (this.audioCtx.state === "suspended") {
+        console.log("[AudioActivityMonitor] AudioContext suspended, resuming...");
+        this.audioCtx.resume().then(() => {
+          console.log("[AudioActivityMonitor] AudioContext resumed:", this.audioCtx?.state);
+        }).catch(err => {
+          console.warn("[AudioActivityMonitor] Failed to resume AudioContext:", err);
+        });
+      }
+
       this.sourceNode = this.audioCtx.createMediaStreamSource(stream);
       this.analyser = this.audioCtx.createAnalyser();
       this.analyser.fftSize = 256;
       this.sourceNode.connect(this.analyser);
+
+      console.log(`[AudioActivityMonitor] Started: sampleRate=${this.audioCtx.sampleRate}, state=${this.audioCtx.state}`);
 
       // Sample energy at 10Hz
       this.energyTimerId = setInterval(() => this.sampleEnergy(), 100);
@@ -116,10 +137,41 @@ export class AudioActivityMonitor {
       energyLevel: 0,
       hasActiveAudio: false,
     };
+    this.lastSpeechBoundary = null;
   }
 
   getState(): AudioActivityState {
     return { ...this.state };
+  }
+
+  /** Expose the AudioContext so the ring buffer can share it. */
+  getAudioContext(): AudioContext | null {
+    return this.audioCtx;
+  }
+
+  /** Expose the source node so the ring buffer can connect to it. */
+  getSourceNode(): MediaStreamAudioSourceNode | null {
+    return this.sourceNode;
+  }
+
+  /**
+   * Consume the last completed speech boundary (start/end timestamps).
+   * Returns once and clears — prevents double-consumption.
+   */
+  consumeLastSpeechBoundary(): SpeechBoundary | null {
+    const boundary = this.lastSpeechBoundary;
+    this.lastSpeechBoundary = null;
+    return boundary;
+  }
+
+  /** Peek at the last speech boundary without consuming it. */
+  peekLastSpeechBoundary(): SpeechBoundary | null {
+    return this.lastSpeechBoundary;
+  }
+
+  /** Whether Web Speech API or energy-based fallback is being used. */
+  getSpeechMethod(): 'webSpeechApi' | 'energy' {
+    return this.usingSpeechAPI ? 'webSpeechApi' : 'energy';
   }
 
   private tryStartSpeechRecognition(): void {
@@ -133,11 +185,17 @@ export class AudioActivityMonitor {
 
       recognition.onspeechstart = () => {
         this.usingSpeechAPI = true;
+        this.silenceStartTime = 0; // Reset so energy safety net starts fresh
         this.updateState({ isSpeaking: true, speechStartedAt: Date.now(), hasActiveAudio: true });
       };
 
       recognition.onspeechend = () => {
-        this.updateState({ isSpeaking: false, lastSpeechEndedAt: Date.now() });
+        const now = Date.now();
+        if (this.state.speechStartedAt) {
+          this.lastSpeechBoundary = { start: this.state.speechStartedAt, end: now };
+        }
+        this.silenceStartTime = 0; // Reset energy safety net
+        this.updateState({ isSpeaking: false, lastSpeechEndedAt: now });
       };
 
       // Restart on end to keep it running continuously
@@ -176,15 +234,34 @@ export class AudioActivityMonitor {
     this.state.energyLevel = rms;
     this.state.hasActiveAudio = hasActiveAudio;
 
-    // If Web Speech API is handling speech boundaries, we just update energy
+    const now = Date.now();
+
     if (this.usingSpeechAPI) {
+      // WebSpeech is active but unreliable — use energy as a safety net.
+      // If WebSpeech says "speaking" but energy is silent, force-end after timeout.
+      if (this.state.isSpeaking) {
+        if (rms < this.config.silenceThreshold) {
+          if (this.silenceStartTime === 0) {
+            this.silenceStartTime = now;
+          } else if (now - this.silenceStartTime >= this.config.silenceDurationMs) {
+            // WebSpeech stuck — force end speech via energy timeout
+            const endTime = this.silenceStartTime; // speech actually ended when silence began
+            if (this.state.speechStartedAt) {
+              this.lastSpeechBoundary = { start: this.state.speechStartedAt, end: endTime };
+            }
+            this.updateState({ isSpeaking: false, lastSpeechEndedAt: endTime });
+            this.silenceStartTime = 0;
+          }
+        } else {
+          // Still hearing energy — reset silence counter
+          this.silenceStartTime = 0;
+        }
+      }
       this.config.onStateChange?.(this.getState());
       return;
     }
 
-    // Energy-based speech detection fallback
-    const now = Date.now();
-
+    // Energy-based speech detection fallback (no WebSpeech)
     if (rms > this.config.speechThreshold) {
       this.consecutiveHighEnergy++;
       this.silenceStartTime = 0;
@@ -201,6 +278,9 @@ export class AudioActivityMonitor {
         if (this.silenceStartTime === 0) {
           this.silenceStartTime = now;
         } else if (now - this.silenceStartTime >= this.config.silenceDurationMs) {
+          if (this.state.speechStartedAt) {
+            this.lastSpeechBoundary = { start: this.state.speechStartedAt, end: now };
+          }
           this.updateState({ isSpeaking: false, lastSpeechEndedAt: now });
           this.silenceStartTime = 0;
         }
