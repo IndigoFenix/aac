@@ -32,6 +32,7 @@ export const PATH_TO_FEATURE: Record<string, FeatureType> = {
   '/institute': 'institute',
   '/settings': 'settings',
   '/aacsettings': 'aacsettings',
+  '/symbols': 'symbols',
 };
 
 // Feature to URL path mapping
@@ -48,6 +49,7 @@ export const FEATURE_TO_PATH: Record<FeatureType, string> = {
   settings: '/settings',
   aacsettings: '/aacsettings',
   aac: '/aac',
+  symbols: '/symbols',
 };
 
 // Feature configurations
@@ -154,6 +156,15 @@ export const FEATURE_CONFIG: Record<FeatureType, FeatureConfig> = {
     hasBottomBar: false,
     isFullScreen: false,
     path: '/aac',
+  },
+  symbols: {
+    id: 'symbols',
+    defaultSize: 60,
+    minSize: 40,
+    maxSize: 80,
+    hasBottomBar: false,
+    isFullScreen: false,
+    path: '/symbols',
   },
 };
 

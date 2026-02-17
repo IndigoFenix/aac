@@ -665,6 +665,10 @@ export const students = pgTable("students", {
   aacCustomVoiceId: varchar("aac_custom_voice_id"), // FK to voices table for custom AI voice (ElevenLabs)
   aacCustomStudentVoiceId: varchar("aac_custom_student_voice_id"), // FK to voices table for custom student voice (ElevenLabs)
   aacIconTextRatio: integer("aac_icon_text_ratio").default(3), // Icon-to-text size ratio 1–5 (1=mostly icon, 5=mostly text)
+  aacInterpretationLevel: integer("aac_interpretation_level").default(2), // 0=none, 1=minimal, 2=conservative, 3=creative, 4=autonomous
+  aacStartupMode: integer("aac_startup_mode").default(0), // 0=fast (no LLM call), 1=thorough (preloads all context + LLM summary)
+  aacEyegazeEnabled: boolean("aac_eyegaze_enabled").default(false), // Enable dwell-based symbol selection via mouse/external eye tracker
+  aacEyegazeTimeout: integer("aac_eyegaze_timeout").default(2000), // Dwell time in ms before selection triggers (1000-10000)
   aacKnownPeople: jsonb("aac_known_people").default([]), // Array of known people for recognition
 
   // Student-level ElevenLabs voice settings (may be removed later)
@@ -1746,6 +1750,77 @@ export const systemSettings = pgTable("system_settings", {
 });
 
 // =============================================================================
+// CUSTOM SYMBOLS TABLES
+// =============================================================================
+
+// Custom symbols — user-uploaded or AI-generated icons for AAC boards
+export const customSymbols = pgTable("custom_symbols", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  s3Key: text("s3_key").notNull(),
+  key: text("key"), // human-readable key, only set for public symbols
+  description: text("description"),
+  isPublic: boolean("is_public").default(false).notNull(),
+  isApproved: boolean("is_approved").default(true).notNull(),
+  createdByUserId: varchar("created_by_user_id").references(() => users.id),
+  width: integer("width"),
+  height: integer("height"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_custom_symbols_is_public").on(table.isPublic),
+  index("idx_custom_symbols_key").on(table.key),
+  index("idx_custom_symbols_created_by").on(table.createdByUserId),
+]);
+
+// User-symbol associations — links symbols to users with optional key/description overrides
+export const userSymbolAssociations = pgTable("user_symbol_associations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  symbolId: varchar("symbol_id").references(() => customSymbols.id, { onDelete: "cascade" }).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  key: text("key"),
+  description: text("description"),
+  isApproved: boolean("is_approved").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_user_symbol_assoc_symbol_id").on(table.symbolId),
+  index("idx_user_symbol_assoc_user_id").on(table.userId),
+  uniqueIndex("idx_user_symbol_assoc_unique").on(table.symbolId, table.userId),
+]);
+
+// Student-symbol associations — links symbols to students with optional key/description overrides
+export const studentSymbolAssociations = pgTable("student_symbol_associations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  symbolId: varchar("symbol_id").references(() => customSymbols.id, { onDelete: "cascade" }).notNull(),
+  studentId: varchar("student_id").references(() => students.id).notNull(),
+  key: text("key"),
+  description: text("description"),
+  isApproved: boolean("is_approved").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_student_symbol_assoc_symbol_id").on(table.symbolId),
+  index("idx_student_symbol_assoc_student_id").on(table.studentId),
+  uniqueIndex("idx_student_symbol_assoc_unique").on(table.symbolId, table.studentId),
+]);
+
+// Institute-symbol associations — links symbols to institutes with optional key/description overrides
+export const instituteSymbolAssociations = pgTable("institute_symbol_associations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  symbolId: varchar("symbol_id").references(() => customSymbols.id, { onDelete: "cascade" }).notNull(),
+  instituteId: varchar("institute_id").references(() => institutes.id).notNull(),
+  key: text("key"),
+  description: text("description"),
+  isApproved: boolean("is_approved").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_institute_symbol_assoc_symbol_id").on(table.symbolId),
+  index("idx_institute_symbol_assoc_institute_id").on(table.instituteId),
+  uniqueIndex("idx_institute_symbol_assoc_unique").on(table.symbolId, table.instituteId),
+]);
+
+// =============================================================================
 // INSERT/UPDATE SCHEMAS
 // =============================================================================
 
@@ -1876,6 +1951,61 @@ export const insertStudentContactSchema = createInsertSchema(studentContacts).om
 
 export const updateStudentContactSchema = createInsertSchema(studentContacts).omit({
   id: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial();
+
+// Custom symbol schemas
+export const insertCustomSymbolSchema = createInsertSchema(customSymbols).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateCustomSymbolSchema = createInsertSchema(customSymbols).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial();
+
+export const insertUserSymbolAssociationSchema = createInsertSchema(userSymbolAssociations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateUserSymbolAssociationSchema = createInsertSchema(userSymbolAssociations).omit({
+  id: true,
+  symbolId: true,
+  userId: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial();
+
+export const insertStudentSymbolAssociationSchema = createInsertSchema(studentSymbolAssociations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateStudentSymbolAssociationSchema = createInsertSchema(studentSymbolAssociations).omit({
+  id: true,
+  symbolId: true,
+  studentId: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial();
+
+export const insertInstituteSymbolAssociationSchema = createInsertSchema(instituteSymbolAssociations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateInstituteSymbolAssociationSchema = createInsertSchema(instituteSymbolAssociations).omit({
+  id: true,
+  symbolId: true,
+  instituteId: true,
   createdAt: true,
   updatedAt: true,
 }).partial();
@@ -2417,6 +2547,20 @@ export type UserStudent = typeof userStudents.$inferSelect;
 export type InsertUserStudent = z.infer<typeof insertUserStudentSchema>;
 export type UpdateUserStudent = z.infer<typeof updateUserStudentSchema>;
 
+// Custom symbol types
+export type CustomSymbol = typeof customSymbols.$inferSelect;
+export type InsertCustomSymbol = z.infer<typeof insertCustomSymbolSchema>;
+export type UpdateCustomSymbol = z.infer<typeof updateCustomSymbolSchema>;
+export type UserSymbolAssociation = typeof userSymbolAssociations.$inferSelect;
+export type InsertUserSymbolAssociation = z.infer<typeof insertUserSymbolAssociationSchema>;
+export type UpdateUserSymbolAssociation = z.infer<typeof updateUserSymbolAssociationSchema>;
+export type StudentSymbolAssociation = typeof studentSymbolAssociations.$inferSelect;
+export type InsertStudentSymbolAssociation = z.infer<typeof insertStudentSymbolAssociationSchema>;
+export type UpdateStudentSymbolAssociation = z.infer<typeof updateStudentSymbolAssociationSchema>;
+export type InstituteSymbolAssociation = typeof instituteSymbolAssociations.$inferSelect;
+export type InsertInstituteSymbolAssociation = z.infer<typeof insertInstituteSymbolAssociationSchema>;
+export type UpdateInstituteSymbolAssociation = z.infer<typeof updateInstituteSymbolAssociationSchema>;
+
 // IEP/TALA Program types
 export type Program = typeof programs.$inferSelect;
 export type InsertProgram = z.infer<typeof insertProgramSchema>;
@@ -2554,7 +2698,7 @@ export type InsertDropboxBackup = z.infer<typeof insertDropboxBackupSchema>;
 // Chat types
 export type ChatSession = typeof chatSessions.$inferSelect;
 export type InsertChatSession = z.infer<typeof insertChatSessionSchema>;
-export type FeatureType = "chat" | "boards" | "interpret" | 'docuslp' | 'overview' | 'students' | 'institute' | 'progress' | 'reports' | 'settings' | 'aacsettings' | 'aac';
+export type FeatureType = "chat" | "boards" | "interpret" | 'docuslp' | 'overview' | 'students' | 'institute' | 'progress' | 'reports' | 'settings' | 'aacsettings' | 'aac' | 'symbols';
 
 // AAC Session types
 export type AACSession = typeof aacSessions.$inferSelect;

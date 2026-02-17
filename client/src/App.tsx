@@ -184,6 +184,7 @@ function Router() {
       <Route path="/interpret" component={ProtectedDashboard} />
       <Route path="/interpret/sessions/:sessionId" component={ProtectedDashboard} />
       <Route path="/docuslp" component={ProtectedDashboard} />
+      <Route path="/symbols" component={ProtectedDashboard} />
       
       {/* Student management features */}
       <Route path="/overview" component={ProtectedDashboard} />

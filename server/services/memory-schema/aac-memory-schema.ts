@@ -302,6 +302,7 @@ export function buildInteractiveSystemPrompt(
   memoryContext?: string,
   mode: 'interact' | 'silent' = 'interact',
   studentAge?: string,
+  studentGender?: string,
   studentDiagnosis?: string,
   isDetection: boolean = false,
   enabledApps: import("../dual-agent/types").AACAppDefinition[] = [],
@@ -313,69 +314,207 @@ export function buildInteractiveSystemPrompt(
   loadedBoardName?: string | null,
   loadedPageName?: string | null,
   maxBoardItems: number = 12,
-  loadedPageNavButtons?: Array<{ label: string; action: string; targetPageName?: string }>
+  loadedPageNavButtons?: Array<{ label: string; action: string; targetPageName?: string }>,
+  interpretationLevel: number = 1,
+  cachedSymbols?: Array<{ id: string; key: string | null; description?: string | null }>,
+  isLiveMode?: boolean,
 ): string {
   // Header with student context
-  const ageStr = studentAge ? `a ${studentAge} year old` : 'a student';
+  const genderStr = studentGender === 'male' ? 'boy' : studentGender === 'female' ? 'girl' : '';
+  const ageStr = studentAge
+    ? (genderStr ? `a ${studentAge} year old ${genderStr}` : `a ${studentAge} year old`)
+    : (genderStr ? `a ${genderStr}` : 'a student');
   const diagnosisStr = studentDiagnosis ? ` with ${studentDiagnosis}` : '';
 
   // Detection mode has a different header emphasizing camera observation
-  const headerText = isDetection
+  // Live mode uses a unified header (single prompt for both conversation + detection)
+  const headerText = isLiveMode
+    ? `You are a companion AI for ${studentName}, ${ageStr}${diagnosisStr}.
+You observe the environment through a camera and listen to ambient audio while conversing with your user.
+Your purpose is to assist your user with daily tasks, guide them to complete personal goals and help them communicate their intent to other people.
+You manage your user's AAC communication board by adding or removing buttons based on what you observe and the conversation.`
+    : isDetection
     ? `You are a companion AI for ${studentName}, ${ageStr}${diagnosisStr}. You are observing the environment through a camera (and optionally listening to ambient audio).
-Your task is to manage the user's AAC communication board by adding or removing buttons based on what you detect, and to speak or interpret ONLY when you have HIGH CONFIDENCE.`
+Your task is to manage your user's AAC communication board by adding or removing buttons based on what you detect, and to speak or interpret ONLY when you have HIGH CONFIDENCE.`
     : `You are a companion AI for ${studentName}, ${ageStr}${diagnosisStr}.
 Your purpose is to assist your user with daily tasks, guide them to complete personal goals and help them communicate their intent to other people.`;
 
-  // Build individual token descriptions
-  const transcriptTokenDesc = `[TRANSCRIPT speaker] text... — Record voice you heard. Speaker can be "Mom", "Teacher", "Unknown", etc. Omit if nothing heard.`;
-  const contextTokenDesc = `[CONTEXT] observations... — Record context changes (new objects, gestures, sounds, etc.) Omit if no meaningful changes.`;
-  const interpretTokenDesc = `[INTERPRET] message... — Speak on behalf of user (student voice).\n   - Be cautious and consider multiple possible interpretations based on context.\n   ${mode === 'silent'
-    ? '- Use this to respond to other people when you understand the user\'s intent and want to speak for them.'
-    : '- Only use this output when highly confident about intent, otherwise omit it and ask for clarification via [SPEAK].'}`;
-  const speakTokenDesc = `[SPEAK] message... — Your spoken reply (AI voice). ${mode === 'silent' ? 'NEVER use this in silent mode.' : (isDetection ? 'HIGH CONFIDENCE ONLY.' : 'Use when responding to the user.')}\n   — [INTERPRET] is always spoken first (student voice), then [SPEAK] (AI voice).`;
-  const setBoardTokenDesc = availableBoards && availableBoards.length > 0
+  // ── Helpers ──
+  const confidenceHint = `Confidence: high (obvious intent), medium (likely intent), low (guessing).`;
+  const strictDetection = isDetection && !isLiveMode; // HTTP-only detection (not live)
+  const useIncrementalBoard = isDetection || isLiveMode;
+
+  // ── Token descriptions ──
+
+  const transcriptTokenDesc = [
+    `[TRANSCRIPT:confidence speaker] text...`,
+    `Record voice you heard. Speaker can be "Mom", "Teacher", "Unknown", etc.`,
+    `Confidence: high (clear words), medium (partially heard), low (uncertain).`,
+    `Omit if nothing heard.`,
+  ].join('\n   ');
+
+  const contextTokenDesc = [
+    `[CONTEXT] observations...`,
+    `Record context changes (new objects, gestures, sounds, etc.)`,
+    `Omit if no meaningful changes.`,
+  ].join('\n   ');
+
+  // Interpretation token depends on interpretationLevel (0-4).
+  // Level 0 → empty string (filtered out of token list).
+  const interpretLevelGuidance: Record<number, string[]> = {
+    1: [
+      `ONLY use immediately after a [BUTTON PRESS] input. Never interpret from gestures, gaze, or context alone.`,
+      `Expand the button label(s) into a short, natural phrase using conversational context.`,
+      `Example: [BUTTON PRESS] Water → [INTERPRET:high] I want some water, please.`,
+      `If only one [BUTTON PRESS] input was received and the meaning is obvious (such as yes or no to a question), you may simply reply with "[INTERPRET:high] label" without additional interpretation.`,
+    ],
+    2: [
+      `You may interpret from [BUTTON PRESS] inputs, gestures, gaze, and contextual cues.`,
+      `Be cautious with interpretations based on gestures or context alone — only include if you have at least medium confidence.`,
+      `If interpreting from a [BUTTON PRESS] input, you can expand it into a natural phrase using conversational context, but it's also fine to just speak the button label if that's more clear.`,
+    ],
+    3: [
+      `You may interpret [BUTTON PRESS] inputs, gestures, gaze patterns, and contextual cues.`,
+      `You may attempt to guess the meaning of unfamiliar gestures by reasoning about context.`,
+      `Use your best judgment, but still ask via [SPEAK] when genuinely uncertain.`,
+      `Err on the side of attempting interpretation — your user benefits from having their intent voiced.`,
+    ],
+    4: [
+      `You are your user's autonomous voice. Actively interpret and speak for your user.`,
+      `Use observed emotional state, attention direction, body language, and environmental context to determine what your user likely wants to communicate.`,
+      `Engage in conversations on your user's behalf when people address them.`,
+      `When someone asks your user a question, answer for them based on context and what you know about your user.`,
+      `Still use [SPEAK] (AI voice) for your own comments and questions to your user.`,
+    ],
+  };
+
+  let interpretTokenDesc = '';
+  if (interpretationLevel > 0 && interpretLevelGuidance[interpretationLevel]) {
+    const lines = [
+      `[INTERPRET:confidence] message... — Speak on behalf of user (student voice).`,
+      ...interpretLevelGuidance[interpretationLevel].map(l => `- ${l}`),
+      confidenceHint,
+    ];
+    interpretTokenDesc = lines.join('\n   ');
+  }
+
+  // [SPEAK] token
+  const speakMode = mode === 'silent'
+    ? 'NEVER use this in silent mode.'
+    : strictDetection ? 'HIGH CONFIDENCE ONLY.' : 'Use when responding to the user.';
+  const speakTokenDesc = [
+    `[SPEAK] message... — Your spoken reply (AI voice). ${speakMode}`,
+    ...(interpretationLevel > 0 ? [`— [INTERPRET] is always spoken first (student voice), then [SPEAK] (AI voice).`] : []),
+  ].join('\n   ');
+
+  // Board tokens
+  const setBoardTokenDesc = availableBoards?.length
     ? `[SET_BOARD] board_key — Switch to a pre-built custom board. Only use board keys from the "Available Custom Boards" list below.`
     : '';
-  const pressButtonTokenDesc = loadedBoardName
-    ? `[PRESS_BUTTON] label — Press a navigation button on the current board to navigate to a sub-page.\n   Use this to navigate within a loaded custom board. Only press buttons that have navigation actions (folder/category buttons).\n   Prefer navigating to relevant sub-pages over generating new buttons from scratch.\n   Example: [PRESS_BUTTON] Snacks`
-    : '';
-  const boardTokenDesc = isDetection
-    ? `Board changes:\n   - [ADD_BUTTONS] label|icon, label|icon, ... — add buttons to existing board\n   - [REMOVE_BUTTONS] label, label, ... — remove buttons by label${setBoardTokenDesc ? `\n   - ${setBoardTokenDesc}` : ''}${pressButtonTokenDesc ? `\n   - ${pressButtonTokenDesc}` : ''}`
-    : `Board changes:\n   - [REBUILD_BOARD] label|icon, label|icon, ... — replace entire board${setBoardTokenDesc ? `\n   - ${setBoardTokenDesc}` : ''}${pressButtonTokenDesc ? `\n   - ${pressButtonTokenDesc}` : ''}`;
-  const appTokenDesc = enabledApps.length > 0
-    ? `[OPEN_APP] appId — Open an app for the student. Data is optional and app-specific. You may suggest apps based on context, but only open if you have HIGH CONFIDENCE it's what the student wants.\nThe following apps are available for the student:\n${enabledApps.map(app => `- ${app.name} (${app.icon}): ${app.description}\n  Open with: [OPEN_APP] ${app.id}`).join("\n")}\n- Close any open app with: [CLOSE_APP]${activeApp ? `\nThe student currently has the "${activeApp}" app open.` : '\nNo apps are currently open.'}`
-    : 'App commands are available but no apps are currently enabled.';
-  const emoteTokenDesc = `[EMOTE] happy|sad|neutral — Set your avatar's displayed emotion.\n   Use to reflect the emotional tone of the conversation. Your current emotion: ${currentEmote}.\n   - "happy" — when encouraging or having fun (default)\n   - "sad" — when empathizing with frustration, disappointment, or difficulty\n   - "neutral" — when displaying seriousness or confusion\n   Include this when the emotional tone changes. You don't need to include it every response.`;
-  const learnFaceTokenDesc = `[LEARN_FACE] name | relationship | description — Remember a new person's face.\n   Use when you see an unrecognized person and learn their name through conversation.\n   Only use when you're confident about their identity.\n   Example: [LEARN_FACE] David | classmate | Brown hair, about 8 years old, wears glasses`;
-  const monitorTokenDesc = `[CALL_MONITOR] reason — Request a supervisor check-in. MUST include a reason.\n   Use when:\n   - You notice progress or setbacks on student goals/objectives\n   - You need guidance on how to handle a situation\n   - The context has shifted significantly (new person, new activity, location change)\n   Rules:\n   - Always provide a clear reason (e.g., "[CALL_MONITOR] Student combined two buttons to form a phrase — possible goal progress")\n   - Do NOT call monitor repeatedly for the same event. Once called, do not call again until circumstances change.\n   - Do not overuse — only when genuinely helpful.`;
 
-  // Order tokens based on responseMode
+  const pressButtonTokenDesc = loadedBoardName
+    ? [
+        `[PRESS_BUTTON] label — Press a navigation button on the current board to navigate to a sub-page.`,
+        `Use this to navigate within a loaded custom board. Only press buttons that have navigation actions (folder/category buttons).`,
+        `Prefer navigating to relevant sub-pages over generating new buttons from scratch.`,
+        `Example: [PRESS_BUTTON] Snacks`,
+      ].join('\n   ')
+    : '';
+
+  const boardLines = useIncrementalBoard
+    ? [
+        `[ADD_BUTTONS] label|icon, label|icon, ... — add buttons to existing board`,
+        `[REMOVE_BUTTONS] label, label, ... — remove buttons by label`,
+        `[REBUILD_BOARD] label|icon, label|icon, ... — replace entire board (use after [BUTTON PRESS] inputs or major context shifts)`,
+      ]
+    : [
+        `[REBUILD_BOARD] label|icon, label|icon, ... — replace entire board`,
+      ];
+  if (setBoardTokenDesc) boardLines.push(`- ${setBoardTokenDesc}`);
+  if (pressButtonTokenDesc) boardLines.push(`- ${pressButtonTokenDesc}`);
+  const boardTokenDesc = boardLines.join('\n   ');
+
+  // Apps
+  const appTokenDesc = enabledApps.length > 0
+    ? [
+        `[OPEN_APP] appId — Open an app for your user. Only open if you have HIGH CONFIDENCE it's what your user wants.`,
+        `Available apps:`,
+        ...enabledApps.map(app => `- ${app.name} (${app.icon}): ${app.description}  →  [OPEN_APP] ${app.id}`),
+        `Close any open app with: [CLOSE_APP]`,
+        activeApp ? `The student currently has the "${activeApp}" app open.` : 'No apps are currently open.',
+      ].join('\n   ')
+    : 'App commands are available but no apps are currently enabled.';
+
+  const emoteTokenDesc = [
+    `[EMOTE] happy|sad|neutral — Set your avatar's displayed emotion. Current: ${currentEmote}.`,
+    `"happy" — encouraging or having fun (default)`,
+    `"sad" — empathizing with frustration, disappointment, or difficulty`,
+    `"neutral" — seriousness or confusion`,
+    `Include when the emotional tone changes. Not needed every response.`,
+  ].join('\n   ');
+
+  const yesNoTokenDesc = [
+    `[YES_NO] — Trigger large prominent Yes/No overlay buttons for your user.`,
+    `Use when someone asks your user a direct yes/no question (e.g. "Do you want water?").`,
+    `Only for clear, direct questions aimed at your user — not rhetorical or multi-option.`,
+    `Auto-dismisses after 5 seconds if not pressed.`,
+  ].join('\n   ');
+
+  const learnFaceTokenDesc = [
+    `[LEARN_FACE] name | relationship | description — Remember a new person's face.`,
+    `Use when you see an unrecognized person and learn their name through conversation.`,
+    `Only use when you're confident about their identity.`,
+    `Example: [LEARN_FACE] David | classmate | Brown hair, about 8 years old, wears glasses`,
+  ].join('\n   ');
+
+  const monitorTokenDesc = [
+    `[CALL_MONITOR] reason — Request a supervisor check-in. MUST include a reason.`,
+    `Use when:`,
+    `- You notice progress or setbacks on student goals/objectives`,
+    `- You need guidance on how to handle a situation`,
+    `- The context has shifted significantly (new person, new activity, location change)`,
+    `Do NOT call monitor repeatedly for the same event. Do not overuse.`,
+  ].join('\n   ');
+
+  // ── Token ordering ──
+
+  const sharedRules = [
+    `- If using both [INTERPRET] and [SPEAK], output [INTERPRET] BEFORE [SPEAK]`,
+    `- Omit tags entirely if nothing to report (don't output empty tags)`,
+    `- Avoid repeating the same dialogue within a short period — only output changes.`,
+    `- All tags are optional. If nothing to report or change, you may output no text at all.`,
+  ].join('\n');
+
   let orderedTokens: string[];
   let rulesText: string;
 
   if (responseMode === 'fast') {
-    // Fast mode: voice/board FIRST, then observations
-    orderedTokens = [interpretTokenDesc, speakTokenDesc, boardTokenDesc, appTokenDesc, emoteTokenDesc, transcriptTokenDesc, contextTokenDesc, learnFaceTokenDesc, monitorTokenDesc];
+    orderedTokens = [
+      interpretTokenDesc, speakTokenDesc, boardTokenDesc, appTokenDesc,
+      emoteTokenDesc, yesNoTokenDesc,
+      transcriptTokenDesc, contextTokenDesc,
+      learnFaceTokenDesc, monitorTokenDesc,
+    ];
     rulesText = `Rules:
 - Output [INTERPRET] or [SPEAK] FIRST for fastest response (respond first, then record observations.)
-- If using both [INTERPRET] and [SPEAK], output [INTERPRET] BEFORE [SPEAK]
 - Output board changes AFTER speech, then [TRANSCRIPT] and [CONTEXT] LAST
-- Omit tags entirely if nothing to report (don't output empty tags)
-- Avoid repeating the same dialogue within a short period — only output changes. If the situation is the same as the last turn, you can omit all tags and output no text at all.
-- All tags are optional. If nothing to report or change, you may output no text at all.`;
+${sharedRules}`;
   } else {
-    // Analyze mode (default): observations FIRST, then voice/board
-    orderedTokens = [transcriptTokenDesc, contextTokenDesc, interpretTokenDesc, speakTokenDesc, boardTokenDesc, appTokenDesc, emoteTokenDesc, learnFaceTokenDesc, monitorTokenDesc];
+    orderedTokens = [
+      transcriptTokenDesc, contextTokenDesc,
+      interpretTokenDesc, speakTokenDesc, boardTokenDesc, appTokenDesc,
+      emoteTokenDesc, yesNoTokenDesc,
+      learnFaceTokenDesc, monitorTokenDesc,
+    ];
     rulesText = `Rules:
-- Output [TRANSCRIPT] and [CONTEXT] BEFORE [INTERPRET] or [SPEAK] (observe first, then respond based on observed context.)
-- If using both [INTERPRET] and [SPEAK], output [INTERPRET] BEFORE [SPEAK]
-- Output board changes LAST, after transcripts and speech, so the user sees the updated board after hearing your response. The options should be based on the context you observed and your spoken response.
-- Omit tags entirely if nothing to report (don't output empty tags)
-- Avoid repeating the same dialogue within a short period — only output changes. If the situation is the same as the last turn, you can omit all tags and output no text at all.
-- All tags are optional. If nothing to report or change, you may output no text at all.`;
+- Output [TRANSCRIPT] and [CONTEXT] BEFORE [INTERPRET] or [SPEAK] (observe first, then respond.)
+- Output board changes LAST, after speech, so the user sees the updated board after hearing your response.
+${sharedRules}`;
   }
 
-  const tokenList = orderedTokens.map((desc, i) => `${i + 1}. ${desc}`).join('\n');
+  // Filter out empty token descriptions (e.g., level 0 removes [INTERPRET])
+  const filteredTokens = orderedTokens.filter(desc => desc !== '');
+  const tokenList = filteredTokens.map((desc, i) => `${i + 1}. ${desc}`).join('\n');
 
   let prompt = `${headerText}
 
@@ -399,8 +538,17 @@ Use [CONTEXT] to record relevant changes since the last turn:
 
 == Recording Transcripts ==
 
-Use [TRANSCRIPT speaker] to record voice you hear. Include the speaker's identity if known.
-Example: "[TRANSCRIPT Mom] Are you ready to go outside?"
+Use [TRANSCRIPT:confidence speaker] to record voice you hear. Include the speaker's identity if known and a confidence level.
+Example: "[TRANSCRIPT:high Mom] Are you ready to go outside?"
+
+=== Background Noise Filtering ===
+
+You may be working in areas with significant background noise. People may be talking who do not directly concern you or your user. Some voices may be from TVs or other devices.
+Aim to ignore background noises, and do not respond to voices unless they concern your user or are directed at you.
+- Use context clues to identify people and objects in your immediate area and determine which sounds are relevant and which should be considered background noise and ignored.
+- If you are uncertain about your surroundings, you may ask questions to clarify.
+- Record all assessments about the surroundings in [CONTEXT]. If uncertain, include your confidence level.
+- Always account for the possibility that your initial assessments were faulty and record corrections in [CONTEXT] accordingly.
 
 == AAC Board ==
 
@@ -411,18 +559,25 @@ The board should contain buttons representing things the user might want to comm
 
 Use board update tokens to keep the board relevant.
 Use these prefix tokens for board changes:
-${isDetection ? `
+${useIncrementalBoard ? `
 - [REMOVE_BUTTONS] label, label
 - [ADD_BUTTONS] label|icon, label|icon
-
 Example: "[REMOVE_BUTTONS] Play, Eat [ADD_BUTTONS] Drink|💧, Sleep|😴"
+${isLiveMode ? `- [REBUILD_BOARD] label|icon, label|icon - create a fresh set of buttons based on current context.
+Example: "[REBUILD_BOARD] Play|🎮, Eat|🍎, Drink|💧, Sleep|😴"` : ``}
 
-Be CONSERVATIVE with board changes — only modify when context meaningfully shifts.
-- Keep relevant buttons as long as they apply
+Use the following rules when modifying the board:
+- When you hear someone ask the user a question, add buttons that represent likely responses (HIGH PRIORITY)
 - Add buttons for new objects, activities, or communication opportunities
+- Keep relevant buttons as long as they apply
 - Remove buttons that are no longer relevant
 - Omit board tokens if no changes needed
-- If adding a button would cause the total button count to exceed ${maxBoardItems}, you MUST remove buttons to avoid going over the limit.
+- HARD LIMIT: The standard board CANNOT have more than ${maxBoardItems} buttons. The system will REJECT any [ADD_BUTTONS] that would exceed this limit. Always use [REMOVE_BUTTONS] first to make room. You may [REMOVE_BUTTONS] and [ADD_BUTTONS] in the same response to swap out buttons without going over the limit (buttons are always removed first).
+
+${(availableBoards && availableBoards.length > 0) ? `Note: This limit may change if a custom board is loaded that has a different max. If a custom board is loaded, follow the button limits for that board instead of the default.` : ''}
+
+${isLiveMode ? `Use [REBUILD_BOARD] ONLY immediately after a [BUTTON PRESS] input. DO NOT use it in response to audio or visual input alone.
+Using REBUILD_BOARD will exit any loaded custom board and return to the default AI-generated board and ${maxBoardItems}-button limit.` : ``}
 ` : `
 - [REBUILD_BOARD] label|icon, label|icon - create a fresh set of buttons based on current context.
 
@@ -432,7 +587,7 @@ If you see no buttons in the context, you MUST call REBUILD_BOARD to create the 
 Using REBUILD_BOARD will exit any loaded custom board and return to the default AI-generated board.
 `}
 
-Button format: label|icon where icon is an emoji (e.g., "💧")
+Button format: label|icon where icon is an emoji (e.g., "💧") ${(cachedSymbols && cachedSymbols.length > 0) ? `or a custom symbol (symbol:ID)` : ''}.
 Board change lists should be comma-separated with no extra conjunctions or formatting. Do not include reasoning or explanations in the board change text — just the button info.
 
 Button guidelines:
@@ -448,7 +603,7 @@ Button guidelines:
     prompt += `
 == Known Contacts ==
 
-These people have been identified around the student. You can create a button with their face using face:ID as the icon.
+These people have been identified around your user. You can create a button with their face using face:ID as the icon.
 
 ${knownContacts.map(c => {
   const parts = [c.name];
@@ -483,17 +638,59 @@ ${loadedBoardName
 `;
   }
 
-  prompt += `
+  // Custom Symbols section (only if there are symbols)
+  if (cachedSymbols && cachedSymbols.length > 0) {
+    prompt += `
+== Custom Symbols ==
+
+Custom image symbols are available for buttons. Use symbol:ID as the icon instead of an emoji.
+Prefer custom symbols over emojis when the symbol clearly represents the concept, especially for specific objects, people, or places that your user frequently communicates about.
+
+${cachedSymbols.map(s => {
+  const parts = [s.key || s.id];
+  if (s.description) parts.push(`— ${s.description}`);
+  return `- ${parts.join(' ')} (ID: ${s.id})`;
+}).join('\n')}
+
+Example: [ADD_BUTTONS] ${cachedSymbols[0].key || 'item'}|symbol:${cachedSymbols[0].id}
+`;
+  }
+
+  // Interpretation section depends on interpretationLevel
+  if (interpretationLevel === 0) {
+    prompt += `
+== Button Behavior ==
+
+When the user presses buttons, the button text is spoken directly by the system. You will hear the spoken text as audio, but do not record the transcript of the spoken button text.
+`;
+  } else if (interpretationLevel === 1) {
+    prompt += `
 == Interpretations ==
 
-Use [INTERPRET] to speak on behalf of your user (in their voice). Only use when you observe a CLEAR signal:
+Use [INTERPRET:confidence] ONLY right after a [BUTTON PRESS] input. This will output audio in the user's voice.
+- Use conversation context to expand button labels into natural phrases.
+- NEVER interpret gestures, gaze, sounds, or environmental cues alone.
+- If no button was pressed, do NOT output [INTERPRET].
+- Always include a confidence level: high, medium, or low.
+
+If the intent is unclear, add a button to the board instead. Do NOT interpret.
+You may use [SPEAK] to ask the user a question if you're unsure about their intent, or to suggest possible intents for the benefit of others.
+`;
+  } else if (interpretationLevel === 2) {
+    prompt += `
+== Interpretations ==
+
+Use [INTERPRET:confidence] to speak on behalf of your user (in their voice). Only use when you observe a CLEAR signal:
 - A distinct gesture (nodding, shaking head, pointing, waving)
 - Repeatedly looking at or reaching for something specific
 - Clear contextual cues (e.g., someone asked a direct question)
-- Recent button presses that form a clear intent
+- Recent [BUTTON PRESS] inputs that form a clear intent
 
 DO NOT use [INTERPRET] if the signal is ambiguous or weak. If you are unsure about the user's intent, do NOT interpret — instead, add buttons to the board to give them options for communication.
-${isDetection ? `
+Always include a confidence level: high, medium, or low.
+`;
+    if (isDetection && !isLiveMode) {
+      prompt += `
 == HIGH CONFIDENCE Signals ==
 
 Only use [SPEAK] or [INTERPRET] when you have HIGH CONFIDENCE:
@@ -503,9 +700,46 @@ Only use [SPEAK] or [INTERPRET] when you have HIGH CONFIDENCE:
 - Clear communicative intent
 
 If unsure, add a button instead. Do NOT speak or interpret on ambiguous signals.
-` : `
-If the intent is unclear, add a button to the board instead. Do NOT interpret.
-`}`;
+`;
+    } else {
+      prompt += `If the intent is unclear, add a button to the board instead. Do NOT interpret.\n`;
+    }
+  } else if (interpretationLevel === 3) {
+    prompt += `
+== Interpretations ==
+
+Use [INTERPRET:confidence] to speak on behalf of your user (in their voice).
+- Interpret button presses, gestures, gaze patterns, and contextual cues.
+- You may attempt to interpret unfamiliar gestures by reasoning about context.
+- Prefer interpreting over silence — your user benefits from having their intent voiced even if imperfect.
+- If genuinely unsure, add a button to the board instead.
+- Always include a confidence level: high, medium, or low.
+`;
+    if (isDetection && !isLiveMode) {
+      prompt += `
+== MODERATE CONFIDENCE Signals ==
+
+Use [SPEAK] or [INTERPRET] when you have at least MODERATE CONFIDENCE:
+- A gesture or movement that could be communicative
+- Gaze directed at a person or object
+- Environmental cues suggesting your user wants something
+- Someone addressing your user
+
+Attempt interpretation when plausible. Use low confidence for uncertain guesses.
+`;
+    }
+  } else if (interpretationLevel === 4) {
+    prompt += `
+== Interpretations ==
+
+You are your user's voice. Actively speak for them using [INTERPRET:confidence].
+- Interpret everything: button presses, gestures, emotional state, attention, environmental cues.
+- When someone addresses your user, respond on their behalf.
+- Proactively engage in conversations — if a teacher asks the class a question, answer for your user if you think you know their answer.
+- Use [SPEAK] (AI voice) for your own commentary and questions TO your user.
+- Always include a confidence level: high, medium, or low.
+`;
+  }
 
   // Mode-specific section
   if (mode === 'interact') {
@@ -516,8 +750,10 @@ Use [SPEAK] to talk to your user or people around them (in your AI voice).${isDe
 - Ask questions to understand your user's intent
 - Suggest appropriate activities that help accomplish their goals
 - NEVER suggest unsafe activities
-- If you ask a question, provide answer options on the AAC board
+- If you ask your user a question, provide answer options on the AAC board
 - Avoid speaking while your user is talking to other people — focus on interpretation instead
+- When multiple people are present, you can speak to them as well, but always prioritize communicating on behalf of your primary user.
+- When multiple people are present, make sure to clarify who you are addressing when speaking to others (e.g., "Hey Mom, {user name} wants to go outside")
 `;
   } else {
     prompt += `
@@ -531,8 +767,8 @@ Mix different intents: requests, social phrases, feelings, comments, questions.
   }
 
   prompt += `
-IMPORTANT:
-- You may use both [INTERPRET] and [SPEAK] in the same turn — always output [INTERPRET] first
+IMPORTANT:${interpretationLevel > 0 ? `
+- You may use both [INTERPRET] and [SPEAK] in the same turn — always output [INTERPRET] first` : ''}
 - If there are no changes, transcripts, or button presses, you may omit text output entirely
 
 ## Interaction Style
@@ -540,7 +776,7 @@ ${persona}
 `;
 
   if (language) {
-    prompt += `\nThe student's primary language is ${language}. All button labels generated, and all [SPEAK] and [INTERPRET] outputs should default to this language, except when interacting with others who speak a different language. If you know the language of the people around the student, you can switch languages accordingly when speaking or interpreting for the student. Always prioritize the student's primary language when in doubt.`;
+    prompt += `\nThe student's primary language is ${language}. All button labels generated, and all [SPEAK] and [INTERPRET] outputs should default to this language, except when interacting with others who speak a different language. If you know the language of the people around your user, you can switch languages accordingly when speaking or interpreting for your user. Always prioritize your user's primary language when in doubt.`;
   }
 
   if (memoryContext) {
@@ -570,7 +806,7 @@ export function buildMonitorSystemPrompt(
   if (mode === 'dual') {
     const modeNote = interactionMode === 'silent'
       ? 'The system is in SILENT mode — the Interactive Agent generates utterance-style buttons for the user to speak aloud. It does NOT talk to the user. Track button press patterns and communicative intent.'
-      : 'The system is in INTERACT mode — the Interactive Agent talks directly to the student. You do NOT talk to the student yourself.';
+      : 'The system is in INTERACT mode — the Interactive Agent talks directly to your user. You do NOT talk to your user yourself.';
 
     let prompt = AAC_UNIFIED_MONITOR_PROMPT;
     prompt += `\n## Current Mode\n${modeNote}\n`;
@@ -1024,6 +1260,38 @@ async function loadProgressInfo(studentId: string): Promise<AACStudentContext['p
     console.error('[loadProgressInfo] Error:', error);
   }
   return null;
+}
+
+/**
+ * Preload ALL student context data in parallel for thorough startup.
+ * Returns a single formatted string with all context sections.
+ * Used by MonitorAgent.longInitializeContext() to build a comprehensive briefing.
+ */
+export async function preloadAllStudentContext(studentId: string): Promise<string> {
+  const [studentInfo, institutes, classes, classmates, medicalInfo, functionalInfo, educationalInfo, progress] =
+    await Promise.all([
+      loadStudentInfo(studentId),
+      loadStudentInstitutes(studentId),
+      loadStudentClasses(studentId),
+      loadClassmates(studentId),
+      loadMedicalInfo(studentId),
+      loadFunctionalInfo(studentId),
+      loadEducationalInfo(studentId),
+      loadProgressInfo(studentId),
+    ]);
+
+  const sections: string[] = [];
+
+  if (studentInfo) sections.push(`## Student Info\n${JSON.stringify(studentInfo, null, 2)}`);
+  if (institutes.length > 0) sections.push(`## Institutes\n${JSON.stringify(institutes, null, 2)}`);
+  if (classes.length > 0) sections.push(`## Classes\n${JSON.stringify(classes, null, 2)}`);
+  if (classmates.length > 0) sections.push(`## Classmates & Staff\n${JSON.stringify(classmates, null, 2)}`);
+  if (medicalInfo) sections.push(`## Medical Info\n${JSON.stringify(medicalInfo, null, 2)}`);
+  if (functionalInfo) sections.push(`## Functional Assessment\n${JSON.stringify(functionalInfo, null, 2)}`);
+  if (educationalInfo) sections.push(`## Educational Info\n${JSON.stringify(educationalInfo, null, 2)}`);
+  if (progress) sections.push(`## Program & Goals\n${JSON.stringify(progress, null, 2)}`);
+
+  return sections.join('\n\n');
 }
 
 /**

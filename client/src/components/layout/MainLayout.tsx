@@ -17,6 +17,7 @@ import { InstitutePanel } from '@/features/InstitutePanel';
 import { ReportsPanel } from '@/features/ReportsPanel';
 import { SettingsPanel } from '@/features/SettingsPanel';
 import { AACSettingsPanel } from '@/features/AACSettingsPanel';
+import { SymbolsPanel } from '@/features/SymbolsPanel';
 
 export function MainLayout() {
   const { 
@@ -126,6 +127,8 @@ export function MainLayout() {
         return <SettingsPanel />;
       case 'aacsettings':
         return <AACSettingsPanel isOpen={isPanelOpen} />;
+      case 'symbols':
+        return <SymbolsPanel isOpen={isPanelOpen} />;
       default:
         return null;
     }

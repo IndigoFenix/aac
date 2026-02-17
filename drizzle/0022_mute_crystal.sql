@@ -1,0 +1,1 @@
+ALTER TABLE "students" ADD COLUMN "aac_startup_mode" integer DEFAULT 0;

@@ -142,6 +142,50 @@ export const en = {
     debugModeDescription: "Show debug windows and developer controls",
     debugModeHint: "When enabled: AudioBETA, Object Detection, and Camera debug windows become available",
 
+    voiceSettings: "Voice Settings",
+    studentVoice: "Student Voice",
+    aiVoice: "AI Voice",
+    studentVoiceHint: "Voice used when speaking the student's words",
+    aiVoiceHint: "Voice used when the AI responds",
+
+    buttonSize: "Button Size",
+    buttonSizeExtraLarge: "Extra large icons, minimal text",
+    buttonSizeLarge: "Large icons, small text",
+    buttonSizeBalanced: "Balanced (default)",
+    buttonSizeSmall: "Smaller icons, larger text",
+    buttonSizeMinimal: "Minimal icons, extra large text",
+
+    interpretationLevel: "Interpretation Level",
+    interpretNone: "None",
+    interpretMinimal: "Minimal",
+    interpretBalanced: "Balanced",
+    interpretCreative: "Creative",
+    interpretAuto: "Auto",
+    interpretDesc0: "AI manages the board and speaks, but never interprets intent.",
+    interpretDesc1: "AI only interprets after button presses.",
+    interpretDesc2: "Interprets buttons and clearly recognized gestures (default).",
+    interpretDesc3: "May guess meanings from unknown gestures and context.",
+    interpretDesc4: "AI speaks for the student proactively in conversations.",
+
+    startupMode: "Startup Mode",
+    startupFast: "Fast",
+    startupThorough: "Thorough",
+    startupFastDesc: "Instant startup. Loads notes and preferences from memory.",
+    startupThoroughDesc: "Thorough startup. Preloads goals, medical info, and compiles a session briefing.",
+
+    enableEyegaze: "Enable Eyegaze",
+    enableEyegazeHint: "Select symbols by hovering for a set duration",
+
+    systemPrompt: "System Prompt",
+
+    restartSession: "Restart Session",
+    restartSessionHint: "End current session and start fresh",
+    confirmRestart: "Settings have changed. Restart session to apply?",
+    restarting: "Restarting...",
+
+    resetDefaults: "Reset to Defaults",
+    confirmResetDefaults: "Reset all settings to their default values?",
+
     saveSettings: "Save Settings",
     saving: "Saving...",
     deleteProfile: "Delete Profile",

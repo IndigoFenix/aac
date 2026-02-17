@@ -2,7 +2,7 @@
 // Main coordinator for the dual-agent AAC system
 
 import { db } from "../../db";
-import { chatSessions, students, users, userStudents } from "@shared/schema";
+import { chatSessions, students, users, userStudents, medicalRecords } from "@shared/schema";
 import { and, eq, sql } from "drizzle-orm";
 import type { ChatMessage, ParsedBoardData } from "@shared/schema";
 import { creditsForModelUsage } from "../chat/cost-helpers";
@@ -38,6 +38,7 @@ import { searchYouTube } from "../youtube/youtube-search";
 import { APP_REGISTRY, getAppDefinition, getDefaultEnabledApps } from "./app-registry";
 import { createContact, findSimilarContact, updateContact, getContactsByStudent } from "../biometric";
 import { boardRepository } from "../../repositories/boardRepository";
+import { customSymbolRepository } from "../../repositories/customSymbolRepository";
 
 /**
  * Simple promise-based mutex for per-session concurrency control
@@ -86,6 +87,18 @@ function getPageNavButtons(state: DualAgentSessionState): Array<{ label: string;
   return navButtons;
 }
 
+/** Compute age string from birthDate (e.g. "5", "12") */
+function computeAge(birthDate: string | Date | null | undefined): string | undefined {
+  if (!birthDate) return undefined;
+  const bd = typeof birthDate === 'string' ? new Date(birthDate) : birthDate;
+  if (isNaN(bd.getTime())) return undefined;
+  const now = new Date();
+  let age = now.getFullYear() - bd.getFullYear();
+  const monthDiff = now.getMonth() - bd.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < bd.getDate())) age--;
+  return age >= 0 ? String(age) : undefined;
+}
+
 /**
  * Cache for active dual-agent sessions
  * Key: sessionId, Value: session state and agents
@@ -96,6 +109,7 @@ interface SessionCache {
   monitorAgent: MonitorAgent;
   lastAccess: number;
   monitorMutex: SessionMutex;
+  monitorRerunRequested?: boolean;
 }
 
 const sessionCache = new Map<string, SessionCache>();
@@ -236,7 +250,8 @@ export class DualAgentService {
     studentId: string,
     userId?: string,
     existingSessionId?: string,
-    interactionMode: AACInteractionMode = 'interact'
+    interactionMode: AACInteractionMode = 'interact',
+    isLiveMode: boolean = false
   ): Promise<DualAgentSessionState> {
     // Check cache first
     if (existingSessionId && sessionCache.has(existingSessionId)) {
@@ -257,7 +272,7 @@ export class DualAgentService {
 
     // Create new session
     console.log("[DualAgentService] Creating new session for student:", studentId);
-    return this.createNewSession(studentId, userId, interactionMode);
+    return this.createNewSession(studentId, userId, interactionMode, isLiveMode);
   }
 
   /**
@@ -276,7 +291,7 @@ export class DualAgentService {
     imageData?: string,
     gestureContext?: string
   ): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press";
+    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no";
     data: any;
     speaker?: string;
   }> {
@@ -448,7 +463,8 @@ export class DualAgentService {
   private async createNewSession(
     studentId: string,
     userId?: string,
-    interactionMode: AACInteractionMode = 'interact'
+    interactionMode: AACInteractionMode = 'interact',
+    isLiveMode: boolean = false
   ): Promise<DualAgentSessionState> {
     // Fetch AAC chat LLM config from DB
     const aacChatConfig = await settingsRepository.getLLMConfig('aac_chat');
@@ -477,6 +493,23 @@ export class DualAgentService {
       }));
     } catch { /* ignore */ }
 
+    // Fetch custom symbols for prompt context
+    let cachedSymbols: DualAgentSessionState['cachedSymbols'] = [];
+    try {
+      const symbols = await customSymbolRepository.getAvailableSymbolsForStudent(studentId);
+      cachedSymbols = symbols.map(s => ({ id: s.id, key: s.key, description: s.description }));
+    } catch { /* ignore */ }
+
+    // Fetch primary diagnosis from medical records
+    let cachedDiagnosis: string | null = null;
+    try {
+      const [record] = await db.select({ primaryDiagnosis: medicalRecords.primaryDiagnosis })
+        .from(medicalRecords)
+        .where(eq(medicalRecords.studentId, studentId))
+        .limit(1);
+      cachedDiagnosis = record?.primaryDiagnosis || null;
+    } catch { /* ignore */ }
+
     // Load auto-selectable boards
     let availableBoards: DualAgentSessionState['availableBoards'] = [];
     if (userId) {
@@ -490,30 +523,36 @@ export class DualAgentService {
       } catch { /* ignore */ }
     }
 
-    // Rebuild the prompt with contacts + boards (monitorAgent.initializeSession
-    // builds the base prompt before these are loaded, so we must rebuild now)
+    // Rebuild the prompt with contacts + boards + symbols + demographics
+    // (monitorAgent.initializeSession builds the base prompt before these are loaded)
     let interactivePrompt = initResult.interactivePrompt;
-    if (cachedContacts.length > 0 || availableBoards.length > 0) {
-      const student = monitorAgent.getStudent?.();
-      if (student) {
-        const personaPrompt = student.aacChatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
-        interactivePrompt = buildInteractiveSystemPrompt(
-          student.name,
-          personaPrompt,
-          student.primaryLanguage || undefined,
-          initResult.initialContext, // preserve memory context from monitor init
-          interactionMode,
-          undefined,
-          undefined,
-          false,
-          enabledAppDefs,
-          null, // activeApp
-          "happy",
-          'analyze',
-          cachedContacts.length > 0 ? cachedContacts : undefined,
-          availableBoards.length > 0 ? availableBoards : undefined,
-        );
-      }
+    const student = monitorAgent.getStudent?.();
+    if (student) {
+      const personaPrompt = student.aacChatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+      interactivePrompt = buildInteractiveSystemPrompt(
+        student.name,
+        personaPrompt,
+        student.primaryLanguage || undefined,
+        initResult.initialContext,
+        interactionMode,
+        computeAge(student.birthDate),
+        student.gender || undefined,
+        cachedDiagnosis || undefined,
+        false,
+        enabledAppDefs,
+        null, // activeApp
+        "happy",
+        'analyze',
+        cachedContacts.length > 0 ? cachedContacts : undefined,
+        availableBoards.length > 0 ? availableBoards : undefined,
+        undefined, // loadedBoardName
+        undefined, // loadedPageName
+        12, // maxBoardItems
+        undefined, // loadedPageNavButtons
+        student.aacInterpretationLevel ?? 2,
+        cachedSymbols.length > 0 ? cachedSymbols : undefined,
+        isLiveMode,
+      );
     }
 
     // Create Interactive agent with the complete prompt
@@ -534,13 +573,18 @@ export class DualAgentService {
       messages: [],
       pendingMessages: [],
       interactionMode,
+      isLiveMode,
+      interpretationLevel: (monitorAgent.getStudent?.()?.aacInterpretationLevel ?? 2) as import("./types").AACInterpretationLevel,
       appState: { enabledApps: getDefaultEnabledApps(), activeApp: null },
       currentEmote: "happy",
+      boardButtonLabels: [],
       lastInteractiveActivity: Date.now(),
       lastMonitorActivity: Date.now(),
       monitorConsecutiveFailures: 0,
       cachedContacts,
+      cachedSymbols,
       availableBoards,
+      cachedDiagnosis,
     };
 
     // Save to database
@@ -602,8 +646,10 @@ export class DualAgentService {
         messages: chatState?.history || [],
         pendingMessages: (session.pendingMessages as PendingMessage[]) || [],
         interactionMode: chatState?.interactionMode || 'interact',
+        interpretationLevel: chatState?.interpretationLevel ?? 2,
         appState: { enabledApps: getDefaultEnabledApps(), activeApp: null },
         currentEmote: "neutral",
+        boardButtonLabels: [],
         lastInteractiveActivity: Date.now(),
         lastMonitorActivity: Date.now(),
         monitorConsecutiveFailures: 0,
@@ -640,6 +686,21 @@ export class DualAgentService {
           }));
         } catch { state.cachedContacts = []; }
 
+        // Fetch and cache custom symbols for prompt
+        try {
+          const symbols = await customSymbolRepository.getAvailableSymbolsForStudent(state.studentId);
+          state.cachedSymbols = symbols.map(s => ({ id: s.id, key: s.key, description: s.description }));
+        } catch { state.cachedSymbols = []; }
+
+        // Fetch primary diagnosis
+        try {
+          const [record] = await db.select({ primaryDiagnosis: medicalRecords.primaryDiagnosis })
+            .from(medicalRecords)
+            .where(eq(medicalRecords.studentId, state.studentId))
+            .limit(1);
+          state.cachedDiagnosis = record?.primaryDiagnosis || null;
+        } catch { state.cachedDiagnosis = null; }
+
         // Load auto-selectable boards
         if (state.userId) {
           try {
@@ -658,8 +719,9 @@ export class DualAgentService {
           student.primaryLanguage || undefined,
           undefined,
           state.interactionMode,
-          undefined,
-          undefined,
+          computeAge(student.birthDate),
+          student.gender || undefined,
+          state.cachedDiagnosis || undefined,
           false,
           enabledApps,
           state.appState.activeApp,
@@ -670,7 +732,10 @@ export class DualAgentService {
           state.loadedBoardData?.name || null,
           null,
           state.maxBoardItems || 12,
-          getPageNavButtons(state)
+          getPageNavButtons(state),
+          state.interpretationLevel,
+          state.cachedSymbols,
+          state.isLiveMode,
         );
       }
 
@@ -723,6 +788,8 @@ export class DualAgentService {
           .update(chatSessions)
           .set({
             state: chatState,
+            log: state.messages,
+            last: state.messages.slice(-2),
             pendingMessages: state.pendingMessages,
             interactivePrompt: state.interactivePrompt,
             thinkingMode: state.thinkingMode,
@@ -761,7 +828,7 @@ export class DualAgentService {
   async *processInput(
     input: DualAgentInput
   ): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press";
+    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no";
     data: any;
     speaker?: string;
   }> {
@@ -811,8 +878,9 @@ export class DualAgentService {
           student.primaryLanguage || undefined,
           undefined,
           interactionMode,
-          undefined,
-          undefined,
+          computeAge(student.birthDate),
+          student.gender || undefined,
+          state.cachedDiagnosis || undefined,
           false,
           enabledApps,
           state.appState.activeApp,
@@ -823,7 +891,10 @@ export class DualAgentService {
           state.loadedBoardData?.name || null,
           inputLoadedPage?.name || null,
           state.maxBoardItems || 12,
-          getPageNavButtons(state)
+          getPageNavButtons(state),
+          state.interpretationLevel,
+          state.cachedSymbols,
+          state.isLiveMode,
         );
         interactiveAgent.setSystemPrompt(newPrompt);
         state.interactivePrompt = newPrompt;
@@ -895,6 +966,42 @@ export class DualAgentService {
   }
 
   /**
+   * Validate a board patch against the button limit.
+   * Returns null if valid (and updates state.boardButtonLabels), or an error message if rejected.
+   */
+  private validateBoardPatch(
+    state: DualAgentSessionState,
+    patchData: { add?: Array<{ label: string }>; remove?: string[]; rebuild?: Array<{ label: string }> }
+  ): string | null {
+    const maxSlots = state.maxBoardItems || 12;
+
+    // Rebuild replaces the entire board — just enforce total count
+    if (patchData.rebuild && patchData.rebuild.length > 0) {
+      const labels = patchData.rebuild.slice(0, maxSlots).map(b => b.label);
+      state.boardButtonLabels = labels;
+      if (patchData.rebuild.length > maxSlots) {
+        console.log(`[DualAgentService] REBUILD_BOARD trimmed from ${patchData.rebuild.length} to ${maxSlots}`);
+      }
+      return null; // Rebuilds always succeed (trimmed)
+    }
+
+    // Incremental add/remove — enforce limit
+    const removeSet = new Set((patchData.remove || []).map(l => l.toLowerCase()));
+    const afterRemove = state.boardButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
+    const addCount = (patchData.add || []).length;
+    const newCount = afterRemove.length + addCount;
+
+    if (newCount > maxSlots) {
+      return `Board change rejected: adding ${addCount} button(s) would result in ${newCount} buttons, exceeding the ${maxSlots}-button limit (currently ${state.boardButtonLabels.length} buttons). You MUST remove buttons first to make room.`;
+    }
+
+    // Valid — update tracking
+    const addLabels = (patchData.add || []).map(b => b.label);
+    state.boardButtonLabels = [...afterRemove, ...addLabels];
+    return null;
+  }
+
+  /**
    * Handle response in interactive mode (fast agent)
    */
   private async *handleInteractiveMode(
@@ -912,7 +1019,7 @@ export class DualAgentService {
     debugMode?: boolean,
     unknownFaceDescriptors?: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number } }>
   ): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press";
+    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no";
     data: any;
     speaker?: string;
   }> {
@@ -926,6 +1033,7 @@ export class DualAgentService {
     let learnFaceData: { name: string; relationship?: string; description?: string } | undefined;
     let setBoardName: string | undefined;
     let pressButtonLabel: string | undefined;
+    let yesNoTriggered = false;
     console.log("[DualAgentService] handleInteractiveMode: thinkingMode:", state.thinkingMode, "interactionMode:", interactionMode, "messages:", state.messages.length, "pending:", state.pendingMessages.length);
     logDualAgent("DualAgentService.handleInteractiveMode", { interactionMode, messageCount: state.messages.length, pendingCount: state.pendingMessages.length });
 
@@ -999,9 +1107,24 @@ export class DualAgentService {
           state.maxBoardItems = 12;
           console.log("[DualAgentService] REBUILD_BOARD: exited custom board, back to default 4x3 grid");
         }
+        // Update server-side board label tracking from the rebuild
+        const rebuildPage = chunk.data?.pages?.[0];
+        const rebuildButtons = rebuildPage?.buttons || [];
+        const maxItems = state.maxBoardItems || 12;
+        state.boardButtonLabels = rebuildButtons
+          .slice(0, maxItems)
+          .map((b: { label?: string }) => b.label || "")
+          .filter((l: string) => l);
         yield { type: "board", data: chunk.data };
       } else if (chunk.type === "board_patch") {
-        yield { type: "board_patch", data: chunk.data };
+        // Enforce button count limit
+        const rejection = this.validateBoardPatch(state, chunk.data);
+        if (rejection) {
+          console.log("[DualAgentService]", rejection);
+          state.pendingMessages.push({ role: "system", content: `[SYSTEM] ${rejection}`, timestamp: Date.now() });
+        } else {
+          yield { type: "board_patch", data: chunk.data };
+        }
       } else if (chunk.type === "command") {
         // Handle command from Interactive
         await this.handleInteractiveCommand(state, chunk.data);
@@ -1023,6 +1146,8 @@ export class DualAgentService {
         setBoardName = chunk.data as string;
       } else if (chunk.type === "press_button") {
         pressButtonLabel = chunk.data as string;
+      } else if (chunk.type === "yes_no") {
+        yesNoTriggered = true;
       }
     }
 
@@ -1046,6 +1171,11 @@ export class DualAgentService {
         knownContacts: state.cachedContacts?.length || 0,
         timestamp: Date.now(),
       }};
+    }
+
+    // Handle yes/no overlay trigger
+    if (yesNoTriggered) {
+      yield { type: "yes_no", data: {} };
     }
 
     // Handle app open/close
@@ -1373,7 +1503,8 @@ export class DualAgentService {
     }
 
     if (state.monitorBusy) {
-      console.log("[DualAgentService] Monitor already busy, skipping trigger");
+      console.log("[DualAgentService] Monitor already busy, setting rerun flag");
+      cached.monitorRerunRequested = true;
       monitorMutex.release();
       return;
     }
@@ -1393,8 +1524,9 @@ export class DualAgentService {
   }
 
   /**
-   * Perform Monitor processing in the background
-   * This happens asynchronously so it doesn't block Interactive responses
+   * Perform Monitor processing in the background.
+   * Uses DB as source of truth with an atomic pending→history move.
+   * This happens asynchronously so it doesn't block Interactive responses.
    */
   private async doMonitorProcessing(
     state: DualAgentSessionState,
@@ -1402,13 +1534,6 @@ export class DualAgentService {
     interactiveAgent: InteractiveAgent,
     board?: ParsedBoardData
   ): Promise<void> {
-    if (state.pendingMessages.length === 0) {
-      state.monitorBusy = false;
-      state.monitorBusySince = undefined;
-      await this.updateMonitorBusy(state.sessionId, false, null);
-      return;
-    }
-
     // Mark the actual processing start time for throttle tracking
     state.lastMonitorActivity = Date.now();
 
@@ -1420,12 +1545,104 @@ export class DualAgentService {
     }, MONITOR_TIMEOUT_MS);
 
     try {
-      console.log("[DualAgentService] doMonitorProcessing: starting with", state.pendingMessages.length, "pending messages");
+      // ------------------------------------------------------------------
+      // 1. Lock pending messages — new messages go to pendingBuffer
+      // ------------------------------------------------------------------
+      state.pendingDbLocked = true;
 
-      // Snapshot pending messages to avoid mutation issues
-      const pendingSnapshot = [...state.pendingMessages];
+      // ------------------------------------------------------------------
+      // 2. Load authoritative state from DB
+      // ------------------------------------------------------------------
+      const dbRow = await db
+        .select({
+          state: chatSessions.state,
+          log: chatSessions.log,
+          pendingMessages: chatSessions.pendingMessages,
+        })
+        .from(chatSessions)
+        .where(eq(chatSessions.id, state.sessionId))
+        .limit(1);
 
-      // Process pending messages (with timeout race)
+      const dbState = dbRow[0]?.state as any;
+      const dbLog = (dbRow[0]?.log || []) as ChatMessage[];
+      const dbPending = (dbRow[0]?.pendingMessages || []) as PendingMessage[];
+
+      // ------------------------------------------------------------------
+      // 3. If DB has no pending messages, unlock and check rerun
+      // ------------------------------------------------------------------
+      if (dbPending.length === 0) {
+        state.pendingDbLocked = false;
+        // Flush any buffer that accumulated during the brief lock
+        if (state.pendingBuffer?.length) {
+          state.pendingMessages.push(...state.pendingBuffer);
+          state.pendingBuffer = [];
+          await this.updatePendingMessages(state.sessionId, state.pendingMessages).catch(console.error);
+        }
+        state.monitorBusy = false;
+        state.monitorBusySince = undefined;
+        await this.updateMonitorBusy(state.sessionId, false, null);
+        return;
+      }
+
+      console.log("[DualAgentService] doMonitorProcessing: starting with", dbPending.length, "pending messages (from DB)");
+
+      // ------------------------------------------------------------------
+      // 4. Append pending messages to history + log (local vars)
+      // ------------------------------------------------------------------
+      const dbHistory = (dbState?.history || []) as ChatMessage[];
+      const pendingSnapshot = [...dbPending];
+
+      for (const pending of pendingSnapshot) {
+        const chatMsg: ChatMessage = {
+          role: pending.role,
+          content: pending.content,
+          timestamp: pending.timestamp,
+        };
+        dbHistory.push(chatMsg);
+        dbLog.push(chatMsg);
+      }
+
+      // Also update in-memory state.messages to match
+      state.messages = dbHistory;
+
+      // ------------------------------------------------------------------
+      // 5. Atomic DB write: save history+log, clear pendingMessages
+      // ------------------------------------------------------------------
+      const updatedChatState = {
+        history: dbHistory,
+        conversationSummary: dbState?.conversationSummary || "",
+        openedTopics: dbState?.openedTopics || [],
+        memoryState: dbState?.memoryState || {},
+        interactionMode: state.interactionMode,
+      };
+
+      await db
+        .update(chatSessions)
+        .set({
+          state: updatedChatState,
+          log: dbLog,
+          last: dbHistory.slice(-2),
+          pendingMessages: [],
+          updatedAt: new Date(),
+        })
+        .where(eq(chatSessions.id, state.sessionId));
+
+      // Clear in-memory pending (only the snapshot — buffer handled below)
+      state.pendingMessages = [];
+
+      // ------------------------------------------------------------------
+      // 6. Unlock + flush buffer
+      // ------------------------------------------------------------------
+      state.pendingDbLocked = false;
+      if (state.pendingBuffer?.length) {
+        state.pendingMessages.push(...state.pendingBuffer);
+        state.pendingBuffer = [];
+        await this.updatePendingMessages(state.sessionId, state.pendingMessages).catch(console.error);
+      }
+
+      // ------------------------------------------------------------------
+      // 7. Run monitor agent with the snapshot
+      // ------------------------------------------------------------------
       const response = await Promise.race([
         monitorAgent.processPendingMessages(pendingSnapshot, board, state.interactionMode),
         new Promise<never>((_, reject) => {
@@ -1435,20 +1652,9 @@ export class DualAgentService {
         }),
       ]);
 
-      // Move pending messages to main log
-      for (const pending of pendingSnapshot) {
-        state.messages.push({
-          role: pending.role,
-          content: pending.content,
-          timestamp: pending.timestamp,
-        });
-      }
-      // Remove only the messages we processed (new ones may have arrived)
-      state.pendingMessages = state.pendingMessages.filter(
-        (pm) => !pendingSnapshot.includes(pm)
-      );
-
-      // Handle Monitor response
+      // ------------------------------------------------------------------
+      // 8. Handle Monitor response
+      // ------------------------------------------------------------------
       if (response.updatedPrompt) {
         interactiveAgent.setSystemPrompt(response.updatedPrompt);
         state.interactivePrompt = response.updatedPrompt;
@@ -1461,6 +1667,7 @@ export class DualAgentService {
           response.contextInjection
         );
         state.messages.push(contextMessage);
+        dbLog.push(contextMessage);
 
         // Live API hook: forward context injection to Gemini session
         state.onContextInjection?.(response.contextInjection);
@@ -1473,7 +1680,9 @@ export class DualAgentService {
       state.monitorErrorTimestamp = undefined;
       state.monitorConsecutiveFailures = 0;
 
-      // Save updated state
+      // ------------------------------------------------------------------
+      // 9. Final save — state (possibly truncated) + log (append-only)
+      // ------------------------------------------------------------------
       await this.saveSessionToDB(state);
     } catch (error: any) {
       const errorMsg = error?.message || String(error);
@@ -1490,9 +1699,28 @@ export class DualAgentService {
       );
     } finally {
       clearTimeout(timeout);
+
+      // Ensure lock is released even on error
+      state.pendingDbLocked = false;
+      if (state.pendingBuffer?.length) {
+        state.pendingMessages.push(...state.pendingBuffer);
+        state.pendingBuffer = [];
+        this.updatePendingMessages(state.sessionId, state.pendingMessages).catch(console.error);
+      }
+
       state.monitorBusy = false;
       state.monitorBusySince = undefined;
       await this.updateMonitorBusy(state.sessionId, false, null);
+
+      // Check rerun flag — another trigger arrived while we were busy
+      const cached = sessionCache.get(state.sessionId);
+      if (cached?.monitorRerunRequested) {
+        cached.monitorRerunRequested = false;
+        console.log("[DualAgentService] Monitor rerun requested — re-triggering");
+        this.triggerMonitor(state.sessionId, true).catch(err => {
+          console.error("[DualAgentService] Monitor rerun failed:", err);
+        });
+      }
     }
   }
 
@@ -1640,8 +1868,9 @@ export class DualAgentService {
           student.primaryLanguage || undefined,
           undefined,
           interactionMode,
-          undefined,
-          undefined,
+          computeAge(student.birthDate),
+          student.gender || undefined,
+          state.cachedDiagnosis || undefined,
           false,
           enabledApps,
           state.appState.activeApp,
@@ -1652,7 +1881,10 @@ export class DualAgentService {
           state.loadedBoardData?.name || null,
           detSwitchPage?.name || null,
           state.maxBoardItems || 12,
-          getPageNavButtons(state)
+          getPageNavButtons(state),
+          state.interpretationLevel,
+          state.cachedSymbols,
+          state.isLiveMode,
         );
         interactiveAgent.setSystemPrompt(newPrompt);
         state.interactivePrompt = newPrompt;
@@ -1673,10 +1905,11 @@ export class DualAgentService {
       student?.name || "the student",
       personaPrompt,
       student?.primaryLanguage || undefined,
-      undefined, // memoryContext - could be added if needed
+      undefined, // memoryContext
       interactionMode,
-      undefined, // studentAge
-      undefined, // studentDiagnosis
+      computeAge(student?.birthDate), // studentAge
+      student?.gender || undefined, // studentGender
+      state.cachedDiagnosis || undefined, // studentDiagnosis
       true, // isDetection - adds conservative guidance and HIGH CONFIDENCE emphasis
       enabledApps,
       state.appState.activeApp,
@@ -1687,7 +1920,9 @@ export class DualAgentService {
       state.loadedBoardData?.name || null,
       loadedPage?.name || null,
       state.maxBoardItems || 12,
-      getPageNavButtons(state)
+      getPageNavButtons(state),
+      state.interpretationLevel,
+      state.cachedSymbols,
     );
 
     const detStart = Date.now();
@@ -1706,7 +1941,8 @@ export class DualAgentService {
         input.frameTimestamps,
         input.appCanvasData,
         input.envFrameTimestamps,
-        input.audioMimeType
+        input.audioMimeType,
+        state.maxBoardItems || 12
       );
 
       console.log("[DualAgentService] Detection processed:", JSON.stringify(result));
@@ -1928,6 +2164,8 @@ export class DualAgentService {
         text: result.text || undefined,
         triggeredMessage, // deprecated alias for interpretation
         interpretation,
+        interpretConfidence: result.interpretConfidence,
+        transcriptConfidence: result.transcriptConfidence,
         interpretationAudio,
         debugDescription,
         transcript: result.transcript,
@@ -1937,6 +2175,7 @@ export class DualAgentService {
         closeApp: result.closeApp,
         setBoard: setBoardResult,
         pressButton: pressButtonResult,
+        yesNo: result.yesNo,
       };
     } catch (error: any) {
       const errorMessage = error?.message || String(error);
@@ -1953,7 +2192,7 @@ export class DualAgentService {
    * This provides streaming audio without requiring streaming LLM.
    */
   async *processDetectionStream(input: DetectionInput): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "error" | "complete" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press";
+    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "error" | "complete" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no";
     data: any;
     speaker?: string;
   }> {
@@ -1995,6 +2234,23 @@ export class DualAgentService {
       yield { type: "error", data: result.error };
     }
 
+    // Validate board patch if changed
+    const detPatchData = result.changed
+      ? { add: result.addButtons || [], remove: result.removeLabels || [], rebuild: result.rebuildBoard }
+      : null;
+    let detBoardRejected = false;
+    if (detPatchData) {
+      const detState = sessionCache.get(result.sessionId)?.state;
+      if (detState) {
+        const rejection = this.validateBoardPatch(detState, detPatchData);
+        if (rejection) {
+          console.log("[DualAgentService] Detection:", rejection);
+          detState.pendingMessages.push({ role: "system", content: `[SYSTEM] ${rejection}`, timestamp: Date.now() });
+          detBoardRejected = true;
+        }
+      }
+    }
+
     if (responseMode === 'fast') {
       // Fast mode: yield voice/board FIRST, then observations
       if (result.interpretation) {
@@ -2003,8 +2259,8 @@ export class DualAgentService {
       if (result.text && !isSilent) {
         yield { type: "text", data: result.text };
       }
-      if (result.changed) {
-        yield { type: "board_patch", data: { add: result.addButtons || [], remove: result.removeLabels || [], rebuild: result.rebuildBoard } };
+      if (detPatchData && !detBoardRejected) {
+        yield { type: "board_patch", data: detPatchData };
       }
       if (result.transcript) {
         yield { type: "transcript", data: result.transcript, speaker: result.transcriptSpeaker };
@@ -2026,8 +2282,8 @@ export class DualAgentService {
       if (result.text && !isSilent) {
         yield { type: "text", data: result.text };
       }
-      if (result.changed) {
-        yield { type: "board_patch", data: { add: result.addButtons || [], remove: result.removeLabels || [], rebuild: result.rebuildBoard } };
+      if (detPatchData && !detBoardRejected) {
+        yield { type: "board_patch", data: detPatchData };
       }
     }
 
@@ -2036,6 +2292,11 @@ export class DualAgentService {
       const cached2 = sessionCache.get(result.sessionId);
       if (cached2) cached2.state.currentEmote = result.emote;
       yield { type: "emote", data: result.emote };
+    }
+
+    // Yield yes_no if detection triggered it
+    if (result.yesNo) {
+      yield { type: "yes_no", data: {} };
     }
 
     // Yield set_board if detection loaded one
@@ -2151,6 +2412,116 @@ export class DualAgentService {
   }
 
   /**
+   * Add a single pending message to a session and persist to DB.
+   * Respects the pendingDbLocked window — buffers in memory if lock is held.
+   */
+  async addPendingMessage(sessionId: string, message: PendingMessage): Promise<void> {
+    const cached = sessionCache.get(sessionId);
+    if (!cached) return;
+    const state = cached.state;
+
+    if (state.pendingDbLocked) {
+      state.pendingBuffer = state.pendingBuffer || [];
+      state.pendingBuffer.push(message);
+      return;
+    }
+
+    state.pendingMessages.push(message);
+    try {
+      await this.updatePendingMessages(sessionId, state.pendingMessages);
+    } catch (err) {
+      console.error("[DualAgentService] addPendingMessage DB write failed:", err);
+      // Message is still in memory — monitor will pick it up
+    }
+  }
+
+  /**
+   * Add multiple pending messages to a session and persist to DB.
+   * Respects the pendingDbLocked window — buffers in memory if lock is held.
+   */
+  async addPendingMessages(sessionId: string, messages: PendingMessage[]): Promise<void> {
+    if (messages.length === 0) return;
+    const cached = sessionCache.get(sessionId);
+    if (!cached) return;
+    const state = cached.state;
+
+    if (state.pendingDbLocked) {
+      state.pendingBuffer = state.pendingBuffer || [];
+      state.pendingBuffer.push(...messages);
+      return;
+    }
+
+    state.pendingMessages.push(...messages);
+    try {
+      await this.updatePendingMessages(sessionId, state.pendingMessages);
+    } catch (err) {
+      console.error("[DualAgentService] addPendingMessages DB write failed:", err);
+    }
+  }
+
+  /**
+   * Save pending messages to DB (public wrapper for LiveRelay compatibility).
+   */
+  async savePendingMessages(sessionId: string, pendingMessages: PendingMessage[]): Promise<void> {
+    await this.updatePendingMessages(sessionId, pendingMessages);
+  }
+
+  /**
+   * Load conversation history from DB for reconnection.
+   * Returns turns in Gemini format (user/model) suitable for sendConversationHistory().
+   * Filters out internal monitor messages, keeps [CONTEXT] injections.
+   */
+  async loadHistoryForReconnect(sessionId: string): Promise<Array<{ role: "user" | "model"; text: string }>> {
+    try {
+      const dbRow = await db
+        .select({
+          state: chatSessions.state,
+          pendingMessages: chatSessions.pendingMessages,
+        })
+        .from(chatSessions)
+        .where(eq(chatSessions.id, sessionId))
+        .limit(1);
+
+      if (!dbRow[0]) return [];
+
+      const dbState = dbRow[0].state as any;
+      const history = (dbState?.history || []) as ChatMessage[];
+      const pending = (dbRow[0].pendingMessages || []) as PendingMessage[];
+
+      const turns: Array<{ role: "user" | "model"; text: string }> = [];
+
+      // Convert history to Gemini turn format
+      for (const msg of history) {
+        // Skip internal system/monitor messages (but keep [CONTEXT] injections)
+        if (msg.role === "system" as any) {
+          if (msg.content?.includes("[CONTEXT]")) {
+            turns.push({ role: "user", text: `[SYSTEM CONTEXT UPDATE]\n${msg.content}` });
+          }
+          continue;
+        }
+        turns.push({
+          role: msg.role === "assistant" ? "model" : "user",
+          text: msg.content,
+        });
+      }
+
+      // Also include pending messages (not yet processed by monitor)
+      for (const pm of pending) {
+        turns.push({
+          role: pm.role === "assistant" ? "model" : "user",
+          text: pm.content,
+        });
+      }
+
+      // Limit to last 50 turns to avoid overwhelming the new session
+      return turns.slice(-50);
+    } catch (err) {
+      console.error("[DualAgentService] loadHistoryForReconnect error:", err);
+      return [];
+    }
+  }
+
+  /**
    * Trigger monitor processing for a session (public wrapper).
    * Used by LiveRelay to trigger monitor after turn completion.
    */
@@ -2184,7 +2555,7 @@ export type { SessionCache };
 export async function* processInput(
   input: DualAgentInput
 ): AsyncGenerator<{
-  type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press";
+  type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no";
   data: any;
   speaker?: string;
 }> {

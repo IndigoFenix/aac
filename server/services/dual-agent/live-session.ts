@@ -34,10 +34,13 @@ export interface LiveSessionCallbacks {
   onReady?: () => void;
   /** Connection error */
   onError: (error: Error) => void;
-  /** Connection closed */
-  onClose?: () => void;
+  /** Connection closed (code + reason from WebSocket close event) */
+  onClose?: (code?: number, reason?: string) => void;
   /** Input transcription (if audio is sent and transcription is enabled) */
   onInputTranscription?: (text: string) => void;
+  /** Called when resumption-handle reconnect fails and a fresh session was created.
+   *  The relay should reload conversation history from DB and send it to the new session. */
+  onReconnectFailed?: () => Promise<void>;
 }
 
 // Safety settings — all OFF, matching gemini-chat.ts
@@ -65,6 +68,9 @@ export class GeminiLiveSession {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private static RECONNECT_INTERVAL_MS = 90_000; // 90s — well before 2-min limit
 
+  // Set by close() so onclose handler knows not to auto-reconnect
+  private closedIntentionally = false;
+
   constructor(callbacks: LiveSessionCallbacks) {
     this.client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
     this.callbacks = callbacks;
@@ -79,6 +85,7 @@ export class GeminiLiveSession {
    * Open a new Gemini Live session with the given system prompt and config.
    */
   async connect(systemPrompt: string, config: LiveSessionConfig): Promise<void> {
+    this.closedIntentionally = false;
     this.systemPrompt = systemPrompt;
     this.config = config;
 
@@ -121,7 +128,14 @@ export class GeminiLiveSession {
             this.connected = false;
             console.log(`[LiveSession] Connection closed: code=${e.code} reason=${e.reason}`);
             this.clearReconnectTimer();
-            this.callbacks.onClose?.();
+            this.callbacks.onClose?.(e.code, e.reason);
+
+            // Auto-reconnect on unexpected closes (not from intentional close())
+            if (!this.closedIntentionally && e.code !== 1000) {
+              const delay = e.code === 1007 ? 2000 : 1000; // longer delay for safety rejections
+              console.log(`[LiveSession] Unexpected close, reconnecting in ${delay}ms...`);
+              this.scheduleReconnect(delay);
+            }
           },
         },
       });
@@ -139,16 +153,10 @@ export class GeminiLiveSession {
   /**
    * Reconnect using the stored resumption handle.
    * Preserves conversation history and context.
+   * If resumption fails, falls back to a fresh connection and calls onReconnectFailed
+   * so the relay can reload history from DB.
    */
   async reconnect(): Promise<void> {
-    if (!this.resumptionHandle) {
-      console.warn("[LiveSession] No resumption handle — full reconnect");
-      await this.connect(this.systemPrompt, this.config);
-      return;
-    }
-
-    console.log("[LiveSession] Reconnecting with resumption handle...");
-
     // Close old session gracefully
     if (this.session) {
       try { this.session.close(); } catch { /* ignore */ }
@@ -157,13 +165,32 @@ export class GeminiLiveSession {
     this.connected = false;
     this.clearReconnectTimer();
 
-    await this.connect(this.systemPrompt, this.config);
+    if (!this.resumptionHandle) {
+      console.warn("[LiveSession] No resumption handle — full reconnect");
+      await this.connect(this.systemPrompt, this.config);
+      await this.callbacks.onReconnectFailed?.();
+      return;
+    }
+
+    console.log("[LiveSession] Reconnecting with resumption handle...");
+
+    try {
+      await this.connect(this.systemPrompt, this.config);
+    } catch (err) {
+      // Resumption handle may be stale — try fresh connection
+      console.warn("[LiveSession] Resumption failed, trying fresh connect:", err);
+      this.resumptionHandle = null;
+      await this.connect(this.systemPrompt, this.config);
+      // Notify relay to reload history from DB
+      await this.callbacks.onReconnectFailed?.();
+    }
   }
 
   /**
    * Close the session and clean up.
    */
   close(): void {
+    this.closedIntentionally = true;
     this.clearReconnectTimer();
     if (this.session) {
       try { this.session.close(); } catch { /* ignore */ }

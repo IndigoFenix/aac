@@ -19,6 +19,21 @@ export type AACInteractionMode = 'interact' | 'silent';
 export type AACResponseMode = 'fast' | 'analyze';
 
 /**
+ * Interpretation aggressiveness level (per-student setting).
+ * 0: No [INTERPRET] output at all
+ * 1: Minimal — only after button presses
+ * 2: Conservative — buttons + known gestures (default)
+ * 3: Creative — may guess unknown gesture meanings
+ * 4: Autonomous — conducts conversations on student's behalf
+ */
+export type AACInterpretationLevel = 0 | 1 | 2 | 3 | 4;
+
+/**
+ * Confidence level for [INTERPRET] and [TRANSCRIPT] outputs.
+ */
+export type AACConfidenceLevel = 'high' | 'medium' | 'low';
+
+/**
  * Definition of an add-on app in the registry
  */
 export interface AACAppDefinition {
@@ -69,7 +84,7 @@ export interface MonitorMessage {
  * Pending message - cached while Monitor is busy
  */
 export interface PendingMessage {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   content: string;
   timestamp: number;
   // Context at time of message
@@ -119,8 +134,16 @@ export interface DualAgentSessionState {
   // Interaction mode
   interactionMode: AACInteractionMode;
 
+  // Live API mode: when true, prompt is built with unified contextual rules
+  // instead of separate isDetection toggle (system prompt sent once, not per-request)
+  isLiveMode?: boolean;
+
+  // Interpretation aggressiveness level (0-4)
+  interpretationLevel: AACInterpretationLevel;
+
   // Board state
   currentBoard?: ParsedBoardData;
+  boardButtonLabels: string[]; // Server-side tracking of current button labels for limit enforcement
 
   // Pre-built board selection
   availableBoards?: Array<{ id: string; key: string; name: string; hint?: string; grid: { rows: number; cols: number } }>;
@@ -148,8 +171,19 @@ export interface DualAgentSessionState {
   // Cached contacts for prompt building
   cachedContacts?: Array<{ id: string; name: string; relationship?: string; hasFaceImage: boolean }>;
 
+  // Cached custom symbols for prompt building
+  cachedSymbols?: Array<{ id: string; key: string | null; description?: string | null }>;
+
+  // Cached diagnosis from medicalRecords table (loaded once per session)
+  cachedDiagnosis?: string | null;
+
   // Live API hook: called when monitor injects context, so relay can forward to Gemini session
   onContextInjection?: (text: string) => void;
+
+  // Pending message DB lock: true while atomic move (pending → history) is in progress
+  pendingDbLocked?: boolean;
+  // Buffer for messages arriving during the pendingDbLocked window
+  pendingBuffer?: PendingMessage[];
 }
 
 /**
@@ -176,6 +210,10 @@ export interface InteractiveResponse {
   triggeredMessage?: string;
   // Student's interpreted intent (student voice) — can coexist with text (speak)
   interpretation?: string;
+  // Confidence level for interpretation
+  interpretConfidence?: AACConfidenceLevel;
+  // Confidence level for transcript
+  transcriptConfidence?: AACConfidenceLevel;
   // What AI saw and why (debug/moderator only)
   debugDescription?: string;
   // Voice transcript from audio input
@@ -198,6 +236,8 @@ export interface InteractiveResponse {
   setBoard?: string;
   // AI presses a navigation button on the current board (label)
   pressButton?: string;
+  // Yes/No question detected — trigger prominent overlay buttons
+  yesNo?: boolean;
   // Provider finish reason (e.g. "STOP", "MAX_TOKENS", "SAFETY", "RECITATION")
   finishReason?: string;
 }
@@ -348,6 +388,8 @@ export interface DetectionOutput {
   text?: string;             // AI voice (speak field) — only when high confidence
   triggeredMessage?: string; // deprecated: use interpretation instead
   interpretation?: string;         // student's interpreted intent (student voice)
+  interpretConfidence?: AACConfidenceLevel;  // confidence of interpretation
+  transcriptConfidence?: AACConfidenceLevel; // confidence of transcript
   interpretationAudio?: string;    // base64 audio (student voice TTS)
   debugDescription?: string;       // what AI saw/decided
   transcript?: string;             // voice transcript from audio input
@@ -358,6 +400,7 @@ export interface DetectionOutput {
   emote?: "happy" | "sad" | "neutral"; // Avatar emotion from [EMOTE] token
   setBoard?: { board: ParsedBoardData; name: string; boardId: string }; // Pre-built board loaded
   pressButton?: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] }; // AI pressed a navigation button
+  yesNo?: boolean;                 // Yes/No question detected — trigger overlay
   error?: string;                  // error message if processing failed
 }
 

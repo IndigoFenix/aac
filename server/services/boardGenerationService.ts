@@ -2,6 +2,7 @@ import { LLMProvider } from "./llmProvider";
 import { OpenAIProvider } from "./providers/openai";
 import { ParsedBoardData, GeneratedBoardUpdate, GeneratedButtonSpec } from "./types";
 import { symbolService } from "./symbolService";
+import { customSymbolRepository } from "../repositories/customSymbolRepository";
 
 /**
  * Board Generation Service - Business Logic Layer
@@ -37,7 +38,8 @@ export class BoardGenerationService {
     context?: {
       boardContext?: ParsedBoardData | null;
       currentPageId?: string | null;
-    }
+    },
+    studentId?: string,
   ): Promise<ParsedBoardData> {
     const existingBoard = context?.boardContext ?? null;
     const existingCurrentPageId = context?.currentPageId ?? null;
@@ -47,13 +49,14 @@ export class BoardGenerationService {
       const updated = await this.updateBoard(
         prompt,
         existingBoard,
-        existingCurrentPageId
+        existingCurrentPageId,
+        studentId,
       );
       return updated;
     }
 
     // CREATION MODE
-    const board = await this.generateBoard(prompt, requestedGridSize);
+    const board = await this.generateBoard(prompt, requestedGridSize, studentId);
     return board;
   }
 
@@ -62,7 +65,8 @@ export class BoardGenerationService {
    */
   private async generateBoard(
     prompt: string,
-    gridSize?: { rows: number; cols: number }
+    gridSize?: { rows: number; cols: number },
+    studentId?: string,
   ): Promise<ParsedBoardData> {
     try {
       const grid = gridSize || { rows: 3, cols: 3 };
@@ -83,7 +87,7 @@ export class BoardGenerationService {
       const aiResponse = JSON.parse(response.content);
       this.sanitizeResponse(aiResponse);
       
-      return await this.processAIResponse(aiResponse, grid);
+      return await this.processAIResponse(aiResponse, grid, studentId);
 
     } catch (error) {
       console.error("Board generation failed:", error);
@@ -97,7 +101,8 @@ export class BoardGenerationService {
   private async updateBoard(
     prompt: string,
     currentBoard: ParsedBoardData,
-    currentPageId: string
+    currentPageId: string,
+    studentId?: string,
   ): Promise<ParsedBoardData> {
     try {
       const context = this.buildMinimalContext(currentBoard, currentPageId);
@@ -188,7 +193,7 @@ export class BoardGenerationService {
       const update: GeneratedBoardUpdate = JSON.parse(response.content);
       this.sanitizeUpdate(update);
 
-      return await this.applyUpdate(currentBoard, currentPageId, update);
+      return await this.applyUpdate(currentBoard, currentPageId, update, studentId);
 
     } catch (error) {
       console.error("Update failed:", error);
@@ -368,10 +373,30 @@ Context: ${JSON.stringify(context)}`;
   // Business Logic - Symbol Enhancement
   // ============================================
 
-  private async batchEnhanceWithSymbols(buttons: any[]): Promise<void> {
+  private async batchEnhanceWithSymbols(buttons: any[], studentId?: string): Promise<void> {
+    // Build a map of custom symbols available to the student (if any)
+    let customSymbolsByKey = new Map<string, { id: string; key: string | null }>();
+    if (studentId) {
+      try {
+        const customSymbols = await customSymbolRepository.getAvailableSymbolsForStudent(studentId);
+        for (const s of customSymbols) {
+          if (s.key) {
+            customSymbolsByKey.set(s.key.toLowerCase(), s);
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
     const symbolMap = new Map<string, any>();
 
     for (const label of buttons.map(b => b.label)) {
+      // Check custom symbols first (higher priority)
+      const customMatch = customSymbolsByKey.get(label.toLowerCase());
+      if (customMatch) {
+        symbolMap.set(label, { customSymbolId: customMatch.id });
+        continue;
+      }
+
       try {
         const symbols = await symbolService.searchSymbols(label, 1);
         if (symbols.length > 0) {
@@ -385,7 +410,11 @@ Context: ${JSON.stringify(context)}`;
     for (const button of buttons) {
       const symbol = symbolMap.get(button.label);
       if (symbol) {
-        button.symbolPath = `/api/symbols/svg/${symbol.filename}`;
+        if (symbol.customSymbolId) {
+          button.symbolPath = `/api/custom-symbols/${symbol.customSymbolId}/image`;
+        } else {
+          button.symbolPath = `/api/symbols/svg/${symbol.filename}`;
+        }
       }
     }
   }
@@ -396,10 +425,11 @@ Context: ${JSON.stringify(context)}`;
 
   private async processAIResponse(
     aiResponse: any,
-    gridSize: { rows: number; cols: number }
+    gridSize: { rows: number; cols: number },
+    studentId?: string,
   ): Promise<ParsedBoardData> {
     const aiButtons = (aiResponse.buttons || []).slice(0, gridSize.rows * gridSize.cols);
-    await this.batchEnhanceWithSymbols(aiButtons);
+    await this.batchEnhanceWithSymbols(aiButtons, studentId);
 
     const buttons = [];
     const occupiedPositions = new Set<string>();
@@ -441,7 +471,8 @@ Context: ${JSON.stringify(context)}`;
   private async applyUpdate(
     currentBoard: ParsedBoardData,
     currentPageId: string,
-    update: GeneratedBoardUpdate
+    update: GeneratedBoardUpdate,
+    studentId?: string,
   ): Promise<ParsedBoardData> {
     let newPages = [...currentBoard.pages];
     
@@ -563,7 +594,7 @@ Context: ${JSON.stringify(context)}`;
       }
       
       // Enhance with symbols
-      await this.batchEnhanceWithSymbols([buttonSpec]);
+      await this.batchEnhanceWithSymbols([buttonSpec], studentId);
       
       // Find position
       const occupiedPositions = new Set(

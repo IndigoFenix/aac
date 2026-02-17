@@ -1,7 +1,9 @@
 // src/components/syntAACx/button-inspector.tsx
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useBoardStore, useSelectedButton } from "@/store/board-store";
+import { apiRequest } from "@/lib/queryClient";
+import { useStudent } from "@/hooks/useStudent";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,6 +47,20 @@ export function ButtonInspector() {
 
   const selectedBtn = useSelectedButton();
   const [isJumpDialogOpen, setIsJumpDialogOpen] = useState(false);
+  const [isSymbolDialogOpen, setIsSymbolDialogOpen] = useState(false);
+  const { student } = useStudent();
+  const [availableSymbols, setAvailableSymbols] = useState<Array<{ id: string; key: string | null; description: string | null }>>([]);
+  const [symbolSearch, setSymbolSearch] = useState('');
+  const [symbolSearchResults, setSymbolSearchResults] = useState<Array<{ id: string; key: string | null; description: string | null }>>([]);
+
+  useEffect(() => {
+    if (isSymbolDialogOpen && student?.id) {
+      apiRequest('GET', `/api/custom-symbols/available/${student.id}`)
+        .then(r => r.json())
+        .then(setAvailableSymbols)
+        .catch(() => {});
+    }
+  }, [isSymbolDialogOpen, student?.id]);
 
   // Don't show in preview mode
   if (!isEditMode) {
@@ -272,10 +288,11 @@ export function ButtonInspector() {
                 size="sm"
                 className={cn(
                   "flex-1 h-7 text-xs",
-                  isDark 
+                  isDark
                     ? "bg-transparent border-slate-700 text-slate-300 hover:bg-slate-800"
                     : "bg-white border-gray-300 text-gray-700 hover:bg-gray-100"
                 )}
+                onClick={() => setIsSymbolDialogOpen(true)}
               >
                 <Image size={12} className={cn("mr-1.5", isRTL && "mr-0 ml-1.5")} />
                 {t("button.chooseIcon")}
@@ -613,6 +630,64 @@ export function ButtonInspector() {
           </div>
         </div>
       </ScrollArea>
+
+      {/* Symbol Selector Dialog */}
+      <Dialog open={isSymbolDialogOpen} onOpenChange={setIsSymbolDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Choose Symbol</DialogTitle>
+            <DialogDescription>Select a custom symbol icon for this button</DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 mb-3">
+            <Input
+              value={symbolSearch}
+              onChange={e => setSymbolSearch(e.target.value)}
+              placeholder="Search symbols..."
+              className="text-sm"
+              onKeyDown={e => {
+                if (e.key === 'Enter' && symbolSearch.trim()) {
+                  apiRequest('GET', `/api/custom-symbols/search?q=${encodeURIComponent(symbolSearch)}`)
+                    .then(r => r.json())
+                    .then(setSymbolSearchResults)
+                    .catch(() => {});
+                }
+              }}
+            />
+          </div>
+          <ScrollArea className="max-h-[300px]">
+            <div className="grid grid-cols-4 gap-2">
+              {(symbolSearch && symbolSearchResults.length > 0 ? symbolSearchResults : availableSymbols).map(s => (
+                <button
+                  key={s.id}
+                  className="border rounded-lg p-2 flex flex-col items-center gap-1 hover:bg-blue-50 transition-colors cursor-pointer"
+                  onClick={() => {
+                    handleUpdate("symbolPath", `/api/custom-symbols/${s.id}/image`);
+                    handleUpdate("iconRef", "🖼️");
+                    setIsSymbolDialogOpen(false);
+                    // Auto-associate with student if not already
+                    if (student?.id) {
+                      apiRequest('POST', `/api/custom-symbols/${s.id}/student-associate`, { studentId: student.id }).catch(() => {});
+                    }
+                  }}
+                >
+                  <img
+                    src={`/api/custom-symbols/${s.id}/image`}
+                    alt={s.key || 'Symbol'}
+                    className="w-10 h-10 object-contain"
+                    loading="lazy"
+                  />
+                  <span className="text-[10px] text-center truncate w-full">{s.key || '...'}</span>
+                </button>
+              ))}
+              {availableSymbols.length === 0 && !symbolSearch && (
+                <div className="col-span-4 text-center text-sm text-gray-500 py-4">
+                  No symbols available. Create some in the Symbols panel.
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

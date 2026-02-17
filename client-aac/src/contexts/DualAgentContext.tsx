@@ -23,6 +23,8 @@ interface DualAgentContextType {
   currentMessage: DualAgentMessage | null;
   transcription: string | null;
   interpretationText: string | null;
+  interpretConfidence: 'high' | 'medium' | 'low' | null;
+  transcriptConfidence: 'high' | 'medium' | 'low' | null;
   debugText: string | null;
 
   // Audio state
@@ -83,6 +85,10 @@ interface DualAgentContextType {
   // Avatar
   emote: "happy" | "sad" | "neutral";
   speakingVolume: number;
+
+  // Yes/No overlay
+  yesNoActive: boolean;
+  dismissYesNo: () => void;
 
   // Face image cache
   getFaceImage: (contactId: string) => string | null;
@@ -656,6 +662,8 @@ function ProviderShell({
     currentMessage: agent.currentMessage,
     transcription: agent.transcription,
     interpretationText: agent.interpretationText,
+    interpretConfidence: agent.interpretConfidence,
+    transcriptConfidence: agent.transcriptConfidence,
     debugText: agent.debugText,
 
     audioEnabled: agent.audioEnabled,
@@ -703,6 +711,9 @@ function ProviderShell({
 
     emote: agent.emote,
     speakingVolume: agent.speakingVolume,
+
+    yesNoActive: agent.yesNoActive,
+    dismissYesNo: agent.dismissYesNo,
 
     getFaceImage,
 

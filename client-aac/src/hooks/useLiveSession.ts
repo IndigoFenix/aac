@@ -81,6 +81,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   const [currentMessage, setCurrentMessage] = useState<DualAgentMessage | null>(null);
   const [transcription, setTranscription] = useState<string | null>(null);
   const [interpretationText, setInterpretationText] = useState<string | null>(null);
+  const [interpretConfidence, setInterpretConfidence] = useState<'high' | 'medium' | 'low' | null>(null);
+  const [transcriptConfidence, setTranscriptConfidence] = useState<'high' | 'medium' | 'low' | null>(null);
   const [debugText, setDebugText] = useState<string | null>(null);
 
   // Audio state
@@ -105,6 +107,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Avatar emote state
   const [emote, setEmote] = useState<"happy" | "sad" | "neutral">("happy");
 
+  // Yes/No overlay state
+  const [yesNoActive, setYesNoActive] = useState(false);
+  const dismissYesNo = useCallback(() => setYesNoActive(false), []);
+
   // Streaming audio player
   const audioPlayer = useStreamingAudioPlayer({ autoPlay: autoPlayAudio });
 
@@ -125,6 +131,12 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
   // Accumulator for streamed text (within a turn)
   const textAccumRef = useRef("");
+
+  // Board patch accumulation — combines rapid sequential patches (e.g. remove then add
+  // from the same model response) into one combined patch before passing to the callback.
+  // This prevents React 18 state batching from losing the first of two rapid patches.
+  const pendingPatchRef = useRef<{ add: Array<{ label: string; iconRef: string }>; remove: string[] } | null>(null);
+  const patchFlushScheduledRef = useRef(false);
 
   // -------------------------------------------------------------------------
   // WebSocket send helper
@@ -153,6 +165,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           break;
 
         case "text":
+          // New speech arriving — stop any playing audio from a previous turn
+          audioPlayer.clear();
           // Accumulate streamed text from [SPEAK]
           textAccumRef.current += msg.data;
           setCurrentMessage({
@@ -164,11 +178,20 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           break;
 
         case "interpret":
+          // New interpretation arriving — stop any playing audio from a previous turn
+          audioPlayer.clear();
           setInterpretationText(prev => (prev || "") + (msg.text || ""));
+          if (msg.confidence) setInterpretConfidence(msg.confidence);
+          break;
+
+        case "audio_interrupt":
+          // Gemini was interrupted by user input — stop audio immediately
+          audioPlayer.clear();
           break;
 
         case "transcript":
           setTranscription(msg.data);
+          if (msg.confidence) setTranscriptConfidence(msg.confidence);
           break;
 
         case "context":
@@ -179,9 +202,28 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           onBoardUpdateRef.current?.(msg.data);
           break;
 
-        case "board_patch":
-          onBoardPatchRef.current?.(msg.data);
+        case "board_patch": {
+          // Accumulate rapid sequential patches (remove + add from same model turn)
+          // into one combined patch. Without this, React 18 batching can lose the
+          // first of two rapid setBoardPatch() calls, silently dropping removes.
+          const prev = pendingPatchRef.current || { add: [], remove: [] };
+          pendingPatchRef.current = {
+            add: [...prev.add, ...(msg.data.add || [])],
+            remove: [...prev.remove, ...(msg.data.remove || [])],
+          };
+          if (!patchFlushScheduledRef.current) {
+            patchFlushScheduledRef.current = true;
+            queueMicrotask(() => {
+              const patch = pendingPatchRef.current;
+              pendingPatchRef.current = null;
+              patchFlushScheduledRef.current = false;
+              if (patch && (patch.add.length > 0 || patch.remove.length > 0)) {
+                onBoardPatchRef.current?.(patch);
+              }
+            });
+          }
           break;
+        }
 
         case "set_board":
           // AI selected a pre-built board — update board and notify parent
@@ -218,6 +260,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
         case "video_play":
           setActiveApp({ appId: "youtube", appData: msg.data });
+          break;
+
+        case "yes_no":
+          setYesNoActive(true);
           break;
 
         case "app_open":
@@ -334,6 +380,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // -------------------------------------------------------------------------
 
   const sendMessage = useCallback(async (message: string, board?: ParsedBoardData) => {
+    // Stop any playing audio — user action takes priority
+    audioPlayer.clear();
     if (board) {
       wsSend({ type: "board_state", data: board });
     }
@@ -364,7 +412,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   }, [wsSend, audioRecorder]);
 
   const interpretButtons = useCallback(async (recentButtons: string[], board?: ParsedBoardData) => {
-    wsSend({ type: "interpret_buttons", buttons: recentButtons, board });
+    wsSend({ type: "button_press", buttons: recentButtons, board });
   }, [wsSend]);
 
   /**
@@ -486,6 +534,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     currentMessage,
     transcription,
     interpretationText,
+    interpretConfidence,
+    transcriptConfidence,
     debugText,
 
     // Audio state
@@ -526,6 +576,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // Monitor status
     monitorError,
     monitorConsecutiveFailures,
+
+    // Yes/No overlay
+    yesNoActive,
+    dismissYesNo,
 
     // Actions
     initialize,

@@ -16,6 +16,7 @@ import {
   AAC_DEFAULT_PERSONA_PROMPT,
   buildInteractiveSystemPrompt,
   buildMonitorSystemPrompt,
+  preloadAllStudentContext,
 } from "../memory-schema/aac-memory-schema";
 
 /**
@@ -30,7 +31,7 @@ export class MonitorAgent {
   private studentId: string;
   private userId?: string;
   private sessionId?: string;
-  private student?: { name: string; aacChatAgentPrompt?: string | null; framework?: string | null; primaryLanguage?: string | null; aacVoiceType?: string | null; aacStudentVoiceType?: string | null; aacCustomVoiceId?: string | null; aacCustomStudentVoiceId?: string | null; aacElevenlabsApiKey?: string | null; aacElevenlabsAiVoiceId?: string | null; aacElevenlabsStudentVoiceId?: string | null };
+  private student?: { name: string; aacChatAgentPrompt?: string | null; framework?: string | null; primaryLanguage?: string | null; aacVoiceType?: string | null; aacStudentVoiceType?: string | null; aacCustomVoiceId?: string | null; aacCustomStudentVoiceId?: string | null; aacElevenlabsApiKey?: string | null; aacElevenlabsAiVoiceId?: string | null; aacElevenlabsStudentVoiceId?: string | null; aacInterpretationLevel?: number | null; aacStartupMode?: number | null; birthDate?: string | null; gender?: string | null; chatMemory?: unknown };
   private framework: string | null = null;
 
   constructor(
@@ -75,22 +76,46 @@ export class MonitorAgent {
 
     const personaPrompt = student.aacChatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
 
-    // Use sessionService to search memory and get additional context
-    const contextResult = await this.searchMemoryForContext(student);
+    // Branch on startup mode: 0=fast (no LLM), 1=thorough (preload + LLM summary)
+    const startupMode = student.aacStartupMode ?? 0;
+    console.log("[MonitorAgent] Startup mode:", startupMode === 0 ? "fast" : "thorough");
+    const contextResult = startupMode === 1
+      ? await this.longInitializeContext(student)
+      : await this.fastInitializeContext(student);
 
     // Build the Interactive Agent's prompt using the helper
+    // Compute age from birthDate
+    const age = student.birthDate ? (() => {
+      const bd = new Date(student.birthDate!);
+      if (isNaN(bd.getTime())) return undefined;
+      const now = new Date();
+      let a = now.getFullYear() - bd.getFullYear();
+      const m = now.getMonth() - bd.getMonth();
+      if (m < 0 || (m === 0 && now.getDate() < bd.getDate())) a--;
+      return a >= 0 ? String(a) : undefined;
+    })() : undefined;
+
     const basePrompt = buildInteractiveSystemPrompt(
       student.name,
       personaPrompt,
       student.primaryLanguage || undefined,
       contextResult.additionalContext,
       interactionMode,
-      undefined,
-      undefined,
+      age,
+      student.gender || undefined,
+      undefined, // diagnosis loaded later in dual-agent-service
       false,
       enabledApps,
       null, // activeApp
-      "happy" // currentEmote - monitor init always starts happy
+      "happy", // currentEmote - monitor init always starts happy
+      'analyze', // responseMode
+      undefined, // knownContacts
+      undefined, // availableBoards
+      undefined, // loadedBoardName
+      undefined, // loadedPageName
+      12, // maxBoardItems
+      undefined, // loadedPageNavButtons
+      student.aacInterpretationLevel ?? 2
     );
 
     // Store the session ID if we created one
@@ -106,23 +131,86 @@ export class MonitorAgent {
   }
 
   /**
-   * Search memory for relevant context about the student
-   * Uses the existing sessionService memory system
+   * Fast startup (mode 0): Read chatMemory fields directly from already-loaded student record.
+   * No LLM call, no extra DB queries — instant startup.
    */
-  private async searchMemoryForContext(student: any): Promise<{
+  private async fastInitializeContext(student: any): Promise<{
     sessionId: string;
     additionalContext?: string;
   }> {
-    // Create a targeted system message — ask only for essential fields to minimize tool calls
-    const systemMessage: ChatMessage = {
-      role: "system",
-      content:
-        "Read /Student_Notes and /Student_CommunicationStyle only. Do not read any other fields. Respond with OK when done.",
-      timestamp: Date.now(),
-    };
+    const sessionId = this.sessionId || `aac-${Date.now()}`;
+    const memory = (student.chatMemory as Record<string, any>) || {};
+    const contextParts: string[] = [];
 
+    const now = new Date();
+    contextParts.push(`Date: ${now.toLocaleDateString()} Time: ${now.toLocaleTimeString()}`);
+
+    if (memory.Student_Notes) {
+      contextParts.push(`Previous notes: ${memory.Student_Notes}`);
+    }
+    if (memory.Student_Interests) {
+      contextParts.push(`Interests: ${memory.Student_Interests}`);
+    }
+    if (memory.Student_CommunicationStyle) {
+      contextParts.push(`Communication style: ${JSON.stringify(memory.Student_CommunicationStyle)}`);
+    }
+    if (memory.Student_Preferences) {
+      contextParts.push(`Preferences: ${JSON.stringify(memory.Student_Preferences)}`);
+    }
+
+    return {
+      sessionId,
+      additionalContext: contextParts.length > 1 ? contextParts.join("\n") : undefined,
+    };
+  }
+
+  /**
+   * Thorough startup (mode 1): Preload all Context_ data in parallel,
+   * then make a single LLM call to compile concise actionable guidance.
+   * Falls back to fast mode on error.
+   */
+  private async longInitializeContext(student: any): Promise<{
+    sessionId: string;
+    additionalContext?: string;
+  }> {
     try {
-      // Use sessionService to create/load session and access memory
+      // Load all context data in parallel
+      const allContext = await preloadAllStudentContext(this.studentId);
+
+      // Also read chatMemory fields
+      const memory = (student.chatMemory as Record<string, any>) || {};
+      const memoryParts: string[] = [];
+      if (memory.Student_Notes) memoryParts.push(`Notes: ${memory.Student_Notes}`);
+      if (memory.Student_Interests) memoryParts.push(`Interests: ${memory.Student_Interests}`);
+      if (memory.Student_CommunicationStyle) memoryParts.push(`Communication style: ${JSON.stringify(memory.Student_CommunicationStyle)}`);
+      if (memory.Student_Preferences) memoryParts.push(`Preferences: ${JSON.stringify(memory.Student_Preferences)}`);
+
+      const now = new Date();
+      const fullContext = [
+        `Date: ${now.toLocaleDateString()} Time: ${now.toLocaleTimeString()}`,
+        allContext,
+        memoryParts.length > 0 ? `## Session Memory\n${memoryParts.join('\n')}` : '',
+      ].filter(Boolean).join('\n\n');
+
+      // Single LLM call: ask monitor to compile actionable guidance
+      const systemMessage: ChatMessage = {
+        role: "system",
+        content: `You are preparing a concise startup briefing for an AAC interactive agent about to begin a session with a student.
+
+Here is everything we know about the student:
+${fullContext}
+
+Compile a concise, actionable briefing (max 500 words) for the interactive agent. Include:
+1. Key medical alerts or safety considerations (if any)
+2. Communication strategies based on the student's profile
+3. Current goals/objectives to support during the session
+4. Conversation starters based on interests
+5. Important people the student may mention
+
+Be direct and practical. Skip sections with no data. Do not use the memory tool — all data is provided above.`,
+        timestamp: Date.now(),
+      };
+
       const result = await onMessage({
         userId: this.userId || "system",
         studentId: this.studentId,
@@ -134,38 +222,16 @@ export class MonitorAgent {
         replyType: "text",
       });
 
-      // Extract any relevant context from memory values
-      const memoryValues = result.memoryValues || {};
-      const contextParts: string[] = [];
-
-      // Check for student notes
-      if (memoryValues.Student_Notes) {
-        contextParts.push(`Previous notes: ${memoryValues.Student_Notes}`);
-      }
-
-      // Check for communication style
-      if (memoryValues.Student_CommunicationStyle) {
-        contextParts.push(
-          `Communication style: ${JSON.stringify(memoryValues.Student_CommunicationStyle)}`
-        );
-      }
-
-      // Check for interests
-      if (memoryValues.Student_Interests) {
-        contextParts.push(`Interests: ${memoryValues.Student_Interests}`);
-      }
+      const briefing = typeof result.message?.content === 'string' ? result.message.content : undefined;
+      const sessionId = result.sessionId || this.sessionId || `aac-${Date.now()}`;
 
       return {
-        sessionId: result.sessionId || `aac-${Date.now()}`,
-        additionalContext:
-          contextParts.length > 0 ? contextParts.join("\n") : undefined,
+        sessionId,
+        additionalContext: briefing || fullContext,
       };
     } catch (error) {
-      console.error("[MonitorAgent] Error searching memory:", error);
-      // Return a new session ID if we couldn't use sessionService
-      return {
-        sessionId: `aac-${Date.now()}`,
-      };
+      console.error("[MonitorAgent] Thorough startup failed, falling back to fast:", error);
+      return this.fastInitializeContext(student);
     }
   }
 

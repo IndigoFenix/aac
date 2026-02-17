@@ -168,6 +168,9 @@ export class DualAgentController {
           case "ai_button_press":
             sendSSEEvent(res, "ai_button_press", chunk.data);
             break;
+          case "yes_no":
+            sendSSEEvent(res, "yes_no", chunk.data);
+            break;
           case "complete":
             sendSSEEvent(res, "complete", chunk.data);
             break;
@@ -314,6 +317,9 @@ export class DualAgentController {
           case "ai_button_press":
             sendSSEEvent(res, "ai_button_press", chunk.data);
             break;
+          case "yes_no":
+            sendSSEEvent(res, "yes_no", chunk.data);
+            break;
           case "complete":
             sendSSEEvent(res, "complete", chunk.data);
             break;
@@ -448,6 +454,9 @@ export class DualAgentController {
             break;
           case "ai_button_press":
             sendSSEEvent(res, "ai_button_press", chunk.data);
+            break;
+          case "yes_no":
+            sendSSEEvent(res, "yes_no", chunk.data);
             break;
           case "complete":
             sendSSEEvent(res, "complete", chunk.data);

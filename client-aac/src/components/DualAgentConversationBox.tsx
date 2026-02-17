@@ -39,6 +39,8 @@ import mouthSadOpen from "@assets/axolotl-mouth-sad-open.png";
 import mouthNeutralOpen from "@assets/axolotl-mouth-neutral-open.png";
 // Sleep image
 import avatarSleep from "@assets/axolotl-sleep.png";
+// Error image
+import avatarError from "@assets/axolotl-error.png";
 import { motion, AnimatePresence } from "framer-motion";
 import type { ParsedBoardData } from "@shared/schema";
 import { useDualAgentContext } from "@/contexts/DualAgentContext";
@@ -137,6 +139,7 @@ export function DualAgentConversationBox({
     monitorConsecutiveFailures,
     emote,
     speakingVolume,
+    interpretConfidence,
     responseMode,
     setResponseMode,
   } = useDualAgentContext();
@@ -255,7 +258,13 @@ export function DualAgentConversationBox({
               title={interactionMode === 'silent' ? "Switch to interact mode (device talks back)" : "Switch to silent mode (buttons only)"}
             >
                 <>
-                  {isAsleep ? (
+                  {error ? (
+                    <img
+                      src={avatarError}
+                      alt="Error"
+                      className="w-full h-full object-contain"
+                    />
+                  ) : isAsleep ? (
                     <img
                       src={avatarSleep}
                       alt="Sleeping"
@@ -268,14 +277,16 @@ export function DualAgentConversationBox({
                       className="w-full h-full object-contain"
                     />
                   )}
-                  <img
-                    src={isMouthOpen
-                      ? (MOUTH_OPEN[emote] || MOUTH_OPEN.happy)
-                      : (MOUTH_CLOSED[emote] || MOUTH_CLOSED.happy)
-                    }
-                    alt=""
-                    className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-                  />
+                  {!error && (
+                    <img
+                      src={isMouthOpen
+                        ? (MOUTH_OPEN[emote] || MOUTH_OPEN.happy)
+                        : (MOUTH_CLOSED[emote] || MOUTH_CLOSED.happy)
+                      }
+                      alt=""
+                      className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+                    />
+                  )}
                 </>
             </button>
 
@@ -439,7 +450,7 @@ export function DualAgentConversationBox({
                     </div>
                   ) : error ? (
                     <div className="flex items-center justify-between w-full">
-                      <p className="text-white/80 text-sm">Connection issue, retrying...</p>
+                      <p className="text-white/80 text-sm">{error.toLowerCase().includes('unsafe') ? `Prompt rejected: ${error}` : 'Connection issue, retrying...'}</p>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -460,6 +471,16 @@ export function DualAgentConversationBox({
                         className="text-sm text-white font-medium leading-relaxed flex-1 mr-3"
                       >
                         {currentMessage.content}
+                        {interpretConfidence && (
+                          <span
+                            className={`inline-block w-2 h-2 rounded-full ml-2 align-middle ${
+                              interpretConfidence === 'high' ? 'bg-green-400' :
+                              interpretConfidence === 'medium' ? 'bg-amber-400' :
+                              'bg-red-400'
+                            }`}
+                            title={`Confidence: ${interpretConfidence}`}
+                          />
+                        )}
                         {audioEnabled && isPlaying && (
                           <Volume2 className="w-3 h-3 inline ml-2 opacity-60 animate-pulse" />
                         )}

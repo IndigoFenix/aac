@@ -32,6 +32,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.72.1",
+    "@aws-sdk/client-s3": "^3.990.0",
     "@aws-sdk/client-secrets-manager": "^3.958.0",
     "@google-cloud/text-to-speech": "^6.4.0",
     "@google-cloud/vertexai": "^1.10.0",
@@ -77,6 +78,7 @@
     "@types/nodemailer": "^6.4.17",
     "@types/passport-google-oauth20": "^2.0.16",
     "@types/react-router-dom": "^5.3.3",
+    "@types/sharp": "^0.31.1",
     "bcryptjs": "^3.0.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -124,6 +126,7 @@
     "react-resizable-panels": "^2.1.7",
     "react-router-dom": "^7.9.6",
     "recharts": "^2.15.2",
+    "sharp": "^0.34.5",
     "stripe": "^18.3.0",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",

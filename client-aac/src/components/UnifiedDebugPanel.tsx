@@ -797,6 +797,30 @@ export default function UnifiedDebugPanel({
                   </div>
                 )}
 
+                {/* Confidence indicators */}
+                {(ctx.interpretConfidence || ctx.transcriptConfidence) && (
+                  <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded flex gap-3">
+                    {ctx.interpretConfidence && (
+                      <div className="flex items-center gap-1 text-[10px]">
+                        <span className={`w-2 h-2 rounded-full ${
+                          ctx.interpretConfidence === 'high' ? 'bg-green-500' :
+                          ctx.interpretConfidence === 'medium' ? 'bg-amber-500' : 'bg-red-500'
+                        }`} />
+                        <span className="text-gray-500">Interpret: {ctx.interpretConfidence}</span>
+                      </div>
+                    )}
+                    {ctx.transcriptConfidence && (
+                      <div className="flex items-center gap-1 text-[10px]">
+                        <span className={`w-2 h-2 rounded-full ${
+                          ctx.transcriptConfidence === 'high' ? 'bg-green-500' :
+                          ctx.transcriptConfidence === 'medium' ? 'bg-amber-500' : 'bg-red-500'
+                        }`} />
+                        <span className="text-gray-500">Transcript: {ctx.transcriptConfidence}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Last transcript / context from detection */}
                 {(lastTranscript || lastContextUpdate) && (
                   <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded space-y-1">

@@ -144,6 +144,50 @@ export const he: Translations = {
     debugModeDescription: "הצג חלונות ניפוי ופקדי מפתח",
     debugModeHint: "כשמופעל: חלונות ניפוי שמע, זיהוי אובייקטים ומצלמה יהיו זמינים",
 
+    voiceSettings: "הגדרות קול",
+    studentVoice: "קול התלמיד",
+    aiVoice: "קול הבינה המלאכותית",
+    studentVoiceHint: "הקול המשמש לדיבור מילות התלמיד",
+    aiVoiceHint: "הקול המשמש כשהבינה המלאכותית מגיבה",
+
+    buttonSize: "גודל כפתורים",
+    buttonSizeExtraLarge: "אייקונים גדולים מאוד, טקסט מינימלי",
+    buttonSizeLarge: "אייקונים גדולים, טקסט קטן",
+    buttonSizeBalanced: "מאוזן (ברירת מחדל)",
+    buttonSizeSmall: "אייקונים קטנים, טקסט גדול",
+    buttonSizeMinimal: "אייקונים מינימליים, טקסט גדול מאוד",
+
+    interpretationLevel: "רמת פרשנות",
+    interpretNone: "ללא",
+    interpretMinimal: "מינימלי",
+    interpretBalanced: "מאוזן",
+    interpretCreative: "יצירתי",
+    interpretAuto: "אוטומטי",
+    interpretDesc0: "הבינה המלאכותית מנהלת את הלוח ומדברת, אך אינה מפרשת כוונות.",
+    interpretDesc1: "הבינה המלאכותית מפרשת רק אחרי לחיצת כפתור.",
+    interpretDesc2: "מפרש כפתורים ומחוות מזוהות בבירור (ברירת מחדל).",
+    interpretDesc3: "עשוי לנחש משמעויות ממחוות לא מוכרות ומהקשר.",
+    interpretDesc4: "הבינה המלאכותית מדברת עבור התלמיד באופן יזום בשיחות.",
+
+    startupMode: "מצב הפעלה",
+    startupFast: "מהיר",
+    startupThorough: "מקיף",
+    startupFastDesc: "הפעלה מיידית. טוען הערות והעדפות מהזיכרון.",
+    startupThoroughDesc: "הפעלה מקיפה. טוען מטרות, מידע רפואי ומכין תקציר מפגש.",
+
+    enableEyegaze: "הפעל מבט עיניים",
+    enableEyegazeHint: "בחר סמלים על ידי ריחוף למשך זמן מוגדר",
+
+    systemPrompt: "הוראות מערכת",
+
+    restartSession: "הפעל מחדש",
+    restartSessionHint: "סיים את המפגש הנוכחי והתחל מחדש",
+    confirmRestart: "ההגדרות השתנו. להפעיל מחדש את המפגש?",
+    restarting: "מפעיל מחדש...",
+
+    resetDefaults: "איפוס לברירת מחדל",
+    confirmResetDefaults: "לאפס את כל ההגדרות לברירת מחדל?",
+
     saveSettings: "שמור הגדרות",
     saving: "שומר...",
     deleteProfile: "מחק פרופיל",
