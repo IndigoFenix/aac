@@ -247,7 +247,7 @@ jobs:
           ECR_URL: ${{ needs.infrastructure.outputs.lambda_ecr_url }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -f Dockerfile.lambda -t $ECR_URL:$IMAGE_TAG .
+          docker build --provenance=false -f Dockerfile.lambda -t $ECR_URL:$IMAGE_TAG .
           docker push $ECR_URL:$IMAGE_TAG
           docker tag $ECR_URL:$IMAGE_TAG $ECR_URL:latest
           docker push $ECR_URL:latest
