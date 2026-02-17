@@ -1,655 +1,173 @@
-=== Memory Debug Log - 2026-02-15T15:10:30.164Z ===
+=== Memory Debug Log - 2026-02-17T10:12:54.199Z ===
 
 
 ────────────────────────────────────────────────────────────
   buildPromptAndTools — AI memory view
 ────────────────────────────────────────────────────────────
-[15:10:30.167] memoryValues.Student_Notes (5 items): [
-  "Living independently",
-  "Working on unpaid project (current AI system)",
-  "Primary need: social interactions",
-  "Strong technical skills in programming",
-  "Currently experiencing AI debugging issues with audio feedback loop and recursive questioning - actively seeking help to resolve technical problems"
+[10:12:54.201] memoryValues.Student_Notes (28 items): [
+  "Gal shared feeling tired today.",
+  "Gal frequently asks for help.",
+  "Gal mentioned wanting to explore or play today.",
+  "Gal is interested in choosing an activity from the board.",
+  "Gal's board options include playing, listening to music, exploring, and problem-solving.",
+  "Checked in on Gal's mood and activity choices.",
+  "Gal showed interest in listening to stories, indicating progress in imaginative play.",
+  "Gal is present and ready to engage - environment scans detected, waiting for activity selection",
+  "Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication",
+  "Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support"
 ]
-[15:10:30.168] memoryValues.Student_People (0 items): []
-[15:10:30.168] memoryValues.Student_Interests (3 items): [
-  "Computer programming",
-  "Technology projects",
-  "Software development"
-]
-[15:10:30.169] memoryValues.Student_CommunicationStyle: {
-  "PrimaryMethod": "verbal",
-  "PreferredModality": "direct communication"
-}
-[15:10:30.170] memoryVisualization — data section (367 lines): "=== Current Memory ===\n• /User_AiPersonalityPreferences (string) — User's preferences for how the AI should communicate (tone, style, etc.) null\n• /User_Language (string) — User's preferred language for communication null\n• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) \n  (may contain items - view \"/Student_People\" to load from database)\n  ↪ To append: action \"add\" at \"/Student_People\" with value.\n• /Student_Interests (array, 3 items) — Things the student enjoys or is interested in \n  - [0]: \"Computer programming\"\n  - [1]: \"Technology projects\"\n  - [2]: \"Software development\"\n  ↪ To append: action \"add\" at \"/Student_Interests\" with value. To update item: action \"set\" at \"/Student_Interests/<index>\".\n• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) \n  - PrimaryMethod: \"verbal\" — verbal, nonverbal, AAC, or mixed\n  - PreferredModality: \"direct communication\" — If AAC, which type (symbols, text, combined)\n  ↪ To expand: view \"/Student_CommunicationStyle/*\". To modify: action \"set\" on \"/Student_CommunicationStyle\" or \"/Student_CommunicationStyle/<property>\".\n• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement \n  - FavoriteActivities: {array} (empty)\n  - RewardPreferences: {array} (empty)\n  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)\n  ↪ To expand: view \"/Student_Preferences/*\". To modify: action \"set\" on \"/Student_Preferences\" or \"/Student_Preferences/<property>\".\n• /Student_Notes (array, 5 items) — General notes about the student (non-sensitive) \n  - [0]: \"Living independently\"\n  - [1]: \"Working on unpaid project (current AI system)\"\n  - [2]: \"Primary need: social interactions\"\n  - [3]: \"Strong technical skills in programming\"\n  - [4]: \"Currently experiencing AI debugging issues with audio feedback loop and recursive questioning - actively seeking help to resolve technical problems\"\n  ↪ To append: action \"add\" at \"/Student_Notes\" with value. To update item: action \"set\" at \"/Student_Notes/<index>\".\n• /Relationship_Notes (array, 0 items) — General notes about sessions with this student (non-sensitive) — hidden; view to list items\n• /Context_Institutes (map, 3 keys) — Organizations (schools or hospitals) that the user is a member of. Keyed by institute ID. \n  - 7ea0069f-0fdc-4c1d-992a-793613e55528: {object}\n      - id: \"7ea0069f-0fdc-4c1d-992a-793613e55528\"\n      - name: \"Mel Elementary\"\n      - type: \"school\" [\"school\" | \"hospital\"] — Type of institute. Classrooms are only available for schools.\n      - description: null\n      - address: null\n      - phone: null\n      - email: null\n      - website: null\n      - isActive: true\n      - membership: {object} — The current user's membership in this institute (hidden)\n      - members: {map} — Users who are members of this institute (keyed by userId) \n          (may contain items - view \"/Context_Institutes/7ea0069f-0fdc-4c1d-992a-793613e55528/members\" to load from database)\n          ↪ Add: action \"add\" at \"/Context_Institutes/7ea0069f-0fdc-4c1d-992a-793613e55528/members\" with key + value.\n      - students: {map} — Students enrolled in this institute. Keys are student UUIDs (from student.id). To add a student, use their UUID as the 'key' parameter. \n          (may contain items - view \"/Context_Institutes/7ea0069f-0fdc-4c1d-992a-793613e55528/students\" to load from database)\n          ↪ Add: action \"add\" at \"/Context_Institutes/7ea0069f-0fdc-4c1d-992a-793613e55528/students\" with key + value.\n      - classrooms: {map} — Classrooms in this institute. Keys are the classroom's 'id' field (UUID). View the map first to see available classroom IDs. \n          (may contain items - view \"/Context_Institutes/7ea0069f-0fdc-4c1d-992a-793613e55528/classrooms\" to load from database)\n          ↪ Add: action \"add\" at \"/Context_Institutes/7ea0069f-0fdc-4c1d-992a-793613e55528/classrooms\" with key + value.\n      - invites: {map} — Pending invitations to join this institute (keyed by inviteId) \n          (may contain items - view \"/Context_Institutes/7ea0069f-0fdc-4c1d-992a-793613e55528/invites\" to load from database)\n          ↪ Add: action \"add\" at \"/Context_Institutes/7ea0069f-0fdc-4c1d-992a-793613e55528/invites\" with key + value.\n      ↪ To expand: view \"/Context_Institutes/7ea0069f-0fdc-4c1d-992a-793613e55528/*\". To modify: action \"set\" on \"/Context_Institutes/7ea0069f-0fdc-4c1d-992a-793613e55528\" or \"/Context_Institutes/7ea0069f-0fdc-4c1d-992a-793613e55528/<property>\".\n  - 8c92909e-0f93-45c0-ab38-26bc39c767d7: {object}\n      - id: \"8c92909e-0f93-45c0-ab38-26bc39c767d7\"\n      - name: \"Test Hospital\"\n      - type: \"hospital\" [\"school\" | \"hospital\"] — Type of institute. Classrooms are only available for schools.\n      - description: \"\"\n      - address: \"\"\n      - phone: \"\"\n      - email: \"\"\n      - website: \"\"\n      - isActive: true\n      - membership: {object} — The current user's membership in this institute (hidden)\n      - members: {map} — Users who are members of this institute (keyed by userId) \n          (may contain items - view \"/Context_Institutes/8c92909e-0f93-45c0-ab38-26bc39c767d7/members\" to load from database)\n          ↪ Add: action \"add\" at \"/Context_Institutes/8c92909e-0f93-45c0-ab38-26bc39c767d7/members\" with key + value.\n      - students: {map} — Students enrolled in this institute. Keys are student UUIDs (from student.id). To add a student, use their UUID as the 'key' parameter. \n          (may contain items - view \"/Context_Institutes/8c92909e-0f93-45c0-ab38-26bc39c767d7/students\" to load from database)\n          ↪ Add: action \"add\" at \"/Context_Institutes/8c92909e-0f93-45c0-ab38-26bc39c767d7/students\" with key + value.\n      - classrooms: {map} — Classrooms in this institute. Keys are the classroom's 'id' field (UUID). View the map first to see available classroom IDs. \n          (may contain items - view \"/Context_Institutes/8c92909e-0f93-45c0-ab38-26bc39c767d7/classrooms\" to load from database)\n          ↪ Add: action \"add\" at \"/Context_Institutes/8c92909e-0f93-45c0-ab38-26bc39c767d7/classrooms\" with key + value.\n      - invites: {map} — Pending invitations to join this institute (keyed by inviteId) \n          (may contain items - view \"/Context_Institutes/8c92909e-0f93-45c0-ab38-26bc39c767d7/invites\" to load from database)\n          ↪ Add: action \"add\" at \"/Context_Institutes/8c92909e-0f93-45c0-ab38-26bc39c767d7/invites\" with key + value.\n      ↪ To expand: view \"/Context_Institutes/8c92909e-0f93-45c0-ab38-26bc39c767d7/*\". To modify: action \"set\" on \"/Context_Institutes/8c92909e-0f93-45c0-ab38-26bc39c767d7\" or \"/Context_Institutes/8c92909e-0f93-45c0-ab38-26bc39c767d7/<property>\".\n  - fb3e0e54-8c2d-489a-8fd5-a167b474f258: {object}\n      - id: \"fb3e0e54-8c2d-489a-8fd5-a167b474f258\"\n      - name: \"Test School\"\n      - type: \"school\" [\"school\" | \"hospital\"] — Type of institute. Classrooms are only available for schools.\n      - description: \"This is a test school\"\n      - address: \"\"\n      - phone: \"\"\n      - email: \"\"\n      - website: \"\"\n      - isActive: true\n      - membership: {object} — The current user's membership in this institute (hidden)\n      - members: {map} — Users who are members of this institute (keyed by userId) \n          (may contain items - view \"/Context_Institutes/fb3e0e54-8c2d-489a-8fd5-a167b474f258/members\" to load from database)\n          ↪ Add: action \"add\" at \"/Context_Institutes/fb3e0e54-8c2d-489a-8fd5-a167b474f258/members\" with key + value.\n      - students: {map} — Students enrolled in this institute. Keys are student UUIDs (from student.id). To add a student, use their UUID as the 'key' parameter. \n          (may contain items - view \"/Context_Institutes/fb3e0e54-8c2d-489a-8fd5-a167b474f258/students\" to load from database)\n          ↪ Add: action \"add\" at \"/Context_Institutes/fb3e0e54-8c2d-489a-8fd5-a167b474f258/students\" with key + value.\n      - classrooms: {map} — Classrooms in this institute. Keys are the classroom's 'id' field (UUID). View the map first to see available classroom IDs. \n          (may contain items - view \"/Context_Institutes/fb3e0e54-8c2d-489a-8fd5-a167b474f258/classrooms\" to load from database)\n          ↪ Add: action \"add\" at \"/Context_Institutes/fb3e0e54-8c2d-489a-8fd5-a167b474f258/classrooms\" with key + value.\n      - invites: {map} — Pending invitations to join this institute (keyed by inviteId) \n          (may contain items - view \"/Context_Institutes/fb3e0e54-8c2d-489a-8fd5-a167b474f258/invites\" to load from database)\n          ↪ Add: action \"add\" at \"/Context_Institutes/fb3e0e54-8c2d-489a-8fd5-a167b474f258/invites\" with key + value.\n      ↪ To expand: view \"/Context_Institutes/fb3e0e54-8c2d-489a-8fd5-a167b474f258/*\". To modify: action \"set\" on \"/Context_Institutes/fb3e0e54-8c2d-489a-8fd5-a167b474f258\" or \"/Context_Institutes/fb3e0e54-8c2d-489a-8fd5-a167b474f258/<property>\".\n  ↪ Add: action \"add\" at \"/Context_Institutes\" with key + value. Rename: action \"rename\" on child path.\n• /Context_Students (map, 6 keys) — Students (AAC users) that the user has access to. Keyed by student ID. \n  - 547976c7-9b1d-49db-9cfb-5c6500806533: {object}\n      - id: \"547976c7-9b1d-49db-9cfb-5c6500806533\"\n      - name: \"Daniel Nadel\"\n      - firstName: \"Daniel\"\n      - lastName: \"Nadel\"\n      - gender: \"Male\" [\"male\" | \"female\" | \"other\"]\n      - birthDate: \"1987-12-02\"\n      - framework: \"tala\" [\"tala\" | \"us_iep\"] — Educational framework: TALA (Israel) or US IEP\n      - country: \"IL\"\n      - primaryLanguage: \"en\"\n      - additionalLanguages: {array} (hidden)\n      - isActive: true\n      - link: {object} — The current user's relationship with this student (hidden)\n      - users: {map} — Users who have access to this student (keyed by userId) \n          (may contain items - view \"/Context_Students/547976c7-9b1d-49db-9cfb-5c6500806533/users\" to load from database)\n          ↪ Add: action \"add\" at \"/Context_Students/547976c7-9b1d-49db-9cfb-5c6500806533/users\" with key + value.\n      - institutes: {array} — Institutes this student belongs to \n          (may contain items - view \"/Context_Students/547976c7-9b1d-49db-9cfb-5c6500806533/institutes\" to load from database)\n          ↪ To append: action \"add\" at \"/Context_Students/547976c7-9b1d-49db-9cfb-5c6500806533/institutes\" with value.\n      - classrooms: {array} — Classrooms this student is enrolled in \n          (may contain items - view \"/Context_Students/547976c7-9b1d-49db-9cfb-5c6500806533/classrooms\" to load from database)\n          ↪ To append: action \"add\" at \"/Context_Students/547976c7-9b1d-49db-9cfb-5c6500806533/classrooms\" with value.\n      ↪ To expand: view \"/Context_Students/547976c7-9b1d-49db-9cfb-5c6500806533/*\". To modify: action \"set\" on \"/Context_Students/547976c7-9b1d-49db-9cfb-5c6500806533\" or \"/Context_Students/547976c7-9b1d-49db-9cfb-5c6500806533/<property>\".\n  - 04f1ea91-3e67-42ec-983e-bc5460ecb5ca: {object}\n      - id: \"04f1ea91-3e67-42ec-983e-bc5460ecb5ca\"\n      - name: \"Hara Zen\"\n      - firstName: \"Hara\"\n      - lastName: \"Zen\"\n      - gender: \"Female\" [\"male\" | \"female\" | \"other\"]\n      - birthDate: \"2022-12-07\"\n      - framework: \"tala\" [\"tala\" | \"us_iep\"] — Educational framework: TALA (Israel) or US IEP\n      - country: \"IL\"\n      - primaryLanguage: \"he\"\n      - additionalLanguages: {array} (hidden)\n      - isActive: true\n      - link: {object} — The current user's relationship with this student (hidden)\n      - users: {map} — Users who have access to this student (keyed by userId) \n          (may contain items - view \"/Context_Students/04f1ea91-3e67-42ec-983e-bc5460ecb5ca/users\" to load from database)\n          ↪ Add: action \"add\" at \"/Context_Students/04f1ea91-3e67-42ec-983e-bc5460ecb5ca/users\" with key + value.\n      - institutes: {array} — Institutes this student belongs to \n          (may contain items - view \"/Context_Students/04f1ea91-3e67-42ec-983e-bc5460ecb5ca/institutes\" to load from database)\n          ↪ To append: action \"add\" at \"/Context_Students/04f1ea91-3e67-42ec-983e-bc5460ecb5ca/institutes\" with value.\n      - classrooms: {array} — Classrooms this student is enrolled in \n          (may contain items - view \"/Context_Students/04f1ea91-3e67-42ec-983e-bc5460ecb5ca/classrooms\" to load from database)\n          ↪ To append: action \"add\" at \"/Context_Students/04f1ea91-3e67-42ec-983e-bc5460ecb5ca/classrooms\" with value.\n      ↪ To expand: view \"/Context_Students/04f1ea91-3e67-42ec-983e-bc5460ecb5ca/*\". To modify: action \"set\" on \"/Context_Students/04f1ea91-3e67-42ec-983e-bc5460ecb5ca\" or \"/Context_Students/04f1ea91-3e67-42ec-983e-bc5460ecb5ca/<property>\".\n  - fa4ae4ca-c1d1-4c9d-85a9-498b19be76e4: {object}\n      - id: \"fa4ae4ca-c1d1-4c9d-85a9-498b19be76e4\"\n      - name: \"Freid Lawn\"\n      - firstName: \"Freid\"\n      - lastName: \"Lawn\"\n      - gender: \"Female\" [\"male\" | \"female\" | \"other\"]\n      - birthDate: \"2023-03-01\"\n      - framework: \"tala\" [\"tala\" | \"us_iep\"] — Educational framework: TALA (Israel) or US IEP\n      - country: \"IL\"\n      - primaryLanguage: \"en\"\n      - additionalLanguages: {array} (hidden)\n      - isActive: true\n      - link: {object} — The current user's relationship with this student (hidden)\n      - users: {map} — Users who have access to this student (keyed by userId) \n          (may contain items - view \"/Context_Students/fa4ae4ca-c1d1-4c9d-85a9-498b19be76e4/users\" to load from database)\n          ↪ Add: action \"add\" at \"/Context_Students/fa4ae4ca-c1d1-4c9d-85a9-498b19be76e4/users\" with key + value.\n      - institutes: {array} — Institutes this student belongs to \n          (may contain items - view \"/Context_Students/fa4ae4ca-c1d1-4c9d-85a9-498b19be76e4/institutes\" to load from database)\n          ↪ To append: action \"add\" at \"/Context_Students/fa4ae4ca-c1d1-4c9d-85a9-498b19be76e4/institutes\" with value.\n      - classrooms: {array} — Classrooms this student is enrolled in \n          (may contain items - view \"/Context_Students/fa4ae4ca-c1d1-4c9d-85a9-498b19be76e4/classrooms\" to load from database)\n          ↪ To append: action \"add\" at \"/Context_Students/fa4ae4ca-c1d1-4c9d-85a9-498b19be76e4/classrooms\" with value.\n      ↪ To expand: view \"/Context_Students/fa4ae4ca-c1d1-4c9d-85a9-498b19be76e4/*\". To modify: action \"set\" on \"/Context_Students/fa4ae4ca-c1d1-4c9d-85a9-498b19be76e4\" or \"/Context_Students/fa4ae4ca-c1d1-4c9d-85a9-498b19be76e4/<property>\".\n  - 02bebb37-498a-4c14-b296-ab8d98dff060: {object}\n      - id: \"02bebb37-498a-4c14-b296-ab8d98dff060\"\n      - name: \"Gal\"\n      - firstName: \"Gal\"\n      - lastName: \"\"\n      - gender: \"Male\" [\"male\" | \"female\" | \"other\"]\n      - birthDate: \"2021-02-07\"\n      - framework: \"tala\" [\"tala\" | \"us_iep\"] — Educational framework: TALA (Israel) or US IEP\n      - country: \"IL\"\n      - primaryLanguage: \"en\"\n      - additionalLanguages: {array} (hidden)\n      - isActive: true\n      - link: {object} — The current user's relationship with this student (hidden)\n      - users: {map} — Users who have access to this student (keyed by userId) \n          (may contain items - view \"/Context_Students/02bebb37-498a-4c14-b296-ab8d98dff060/users\" to load from database)\n          ↪ Add: action \"add\" at \"/Context_Students/02bebb37-498a-4c14-b296-ab8d98dff060/users\" with key + value.\n      - institutes: {array} — Institutes this student belongs to \n          (may contain items - view \"/Context_Students/02bebb37-498a-4c14-b296-ab8d98dff060/institutes\" to load from database)\n          ↪ To append: action \"add\" at \"/Context_Students/02bebb37-498a-4c14-b296-ab8d98dff060/institutes\" with value.\n      - classrooms: {array} — Classrooms this student is enrolled in \n          (may contain items - view \"/Context_Students/02bebb37-498a-4c14-b296-ab8d98dff060/classrooms\" to load from database)\n          ↪ To append: action \"add\" at \"/Context_Students/02bebb37-498a-4c14-b296-ab8d98dff060/classrooms\" with value.\n      ↪ To expand: view \"/Context_Students/02bebb37-498a-4c14-b296-ab8d98dff060/*\". To modify: action \"set\" on \"/Context_Students/02bebb37-498a-4c14-b296-ab8d98dff060\" or \"/Context_Students/02bebb37-498a-4c14-b296-ab8d98dff060/<property>\".\n  - d820e281-b68d-40a1-83c6-e38f036594cb: {object}\n      - id: \"d820e281-b68d-40a1-83c6-e38f036594cb\"\n      - name: \"Tal\"\n      - firstName: \"Tal\"\n      - lastName: null\n      - gender: \"Female\" [\"male\" | \"female\" | \"other\"]\n      - birthDate: \"2019-07-10\"\n      - framework: \"tala\" [\"tala\" | \"us_iep\"] — Educational framework: TALA (Israel) or US IEP\n      - country: \"IL\"\n      - primaryLanguage: \"he\"\n      - additionalLanguages: {array} (hidden)\n      - isActive: true\n      - link: {object} — The current user's relationship with this student (hidden)\n      - users: {map} — Users who have access to this student (keyed by userId) \n          (may contain items - view \"/Context_Students/d820e281-b68d-40a1-83c6-e38f036594cb/users\" to load from database)\n          ↪ Add: action \"add\" at \"/Context_Students/d820e281-b68d-40a1-83c6-e38f036594cb/users\" with key + value.\n      - institutes: {array} — Institutes this student belongs to \n          (may contain items - view \"/Context_Students/d820e281-b68d-40a1-83c6-e38f036594cb/institutes\" to load from database)\n          ↪ To append: action \"add\" at \"/Context_Students/d820e281-b68d-40a1-83c6-e38f036594cb/institutes\" with value.\n      - classrooms: {array} — Classrooms this student is enrolled in \n          (may contain items - view \"/Context_Students/d820e281-b68d-40a1-83c6-e38f036594cb/classrooms\" to load from database)\n          ↪ To append: action \"add\" at \"/Context_Students/d820e281-b68d-40a1-83c6-e38f036594cb/classrooms\" with value.\n      ↪ To expand: view \"/Context_Students/d820e281-b68d-40a1-83c6-e38f036594cb/*\". To modify: action \"set\" on \"/Context_Students/d820e281-b68d-40a1-83c6-e38f036594cb\" or \"/Context_Students/d820e281-b68d-40a1-83c6-e38f036594cb/<property>\".\n  - 26a6117e-e75e-4564-a653-7841d2da05cc: {object}\n      - id: \"26a6117e-e75e-4564-a653-7841d2da05cc\"\n      - name: \"מיקה\"\n      - firstName: \"מיקה\"\n      - lastName: null\n      - gender: \"Female\" [\"male\" | \"female\" | \"other\"]\n      - birthDate: \"2021-01-28\"\n      - framework: \"tala\" [\"tala\" | \"us_iep\"] — Educational framework: TALA (Israel) or US IEP\n      - country: \"IL\"\n      - primaryLanguage: \"he\"\n      - additionalLanguages: {array} (hidden)\n      - isActive: true\n      - link: {object} — The current user's relationship with this student (hidden)\n      - users: {map} — Users who have access to this student (keyed by userId) \n          (may contain items - view \"/Context_Students/26a6117e-e75e-4564-a653-7841d2da05cc/users\" to load from database)\n          ↪ Add: action \"add\" at \"/Context_Students/26a6117e-e75e-4564-a653-7841d2da05cc/users\" with key + value.\n      - institutes: {array} — Institutes this student belongs to \n          (may contain items - view \"/Context_Students/26a6117e-e75e-4564-a653-7841d2da05cc/institutes\" to load from database)\n          ↪ To append: action \"add\" at \"/Context_Students/26a6117e-e75e-4564-a653-7841d2da05cc/institutes\" with value.\n      - classrooms: {array} — Classrooms this student is enrolled in \n          (may contain items - view \"/Context_Students/26a6117e-e75e-4564-a653-7841d2da05cc/classrooms\" to load from database)\n          ↪ To append: action \"add\" at \"/Context_Students/26a6117e-e75e-4564-a653-7841d2da05cc/classrooms\" with value.\n      ↪ To expand: view \"/Context_Students/26a6117e-e75e-4564-a653-7841d2da05cc/*\". To modify: action \"set\" on \"/Context_Students/26a6117e-e75e-4564-a653-7841d2da05cc\" or \"/Context_Students/26a6117e-e75e-4564-a653-7841d2da05cc/<property>\".\n  ↪ Add: action \"add\" at \"/Context_Students\" with key + value. Rename: action \"rename\" on child path.\n• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. \n  - A comprehensive list of articles on Rett Syndrome by Prof. Meir Lotan: {object}\n      - id: \"24ea3fdc-ff95-40ec-8db8-b26e11db6a40\" — Topic UUID (for internal reference)\n      - title: \"A comprehensive list of articles on Rett Syndrome by Prof. Meir Lotan\" — Topic title\n      - content: \"A comprehensive list of articles on Rett Syndrome by Prof. Meir Lotan\\nOverview\\nProf. Meir Lotan, a physiotherapist and senior researcher at Ariel University, is one of the world's leading experts in the field of Rett Syndrome treatment with over 30 years of clinical and research experience. His scientific output includes 38 focused articles on Rett Syndrome with over 1,200 citations in total, indicating his significant influence in this field.\" — Topic content - knowledge base text for AI reference. May be empty if topic is just a category.\n      - subtopics: {map} — Nested subtopics under this topic. View to see available subtopics. \n          (may contain items - view \"/Context_Library/A comprehensive list of articles on Rett Syndrome by Prof. Meir Lotan/subtopics\" to load from database)\n      ↪ To expand: view \"/Context_Library/A comprehensive list of articles on Rett Syndrome by Prof. Meir Lotan/*\". (read-only)\n  - Physiotherapy Goals - Gross Motor Skills: {object}\n      - id: \"f0000000-0000-0000-0000-000000000001\" — Topic UUID (for internal reference)\n      - title: \"Physiotherapy Goals - Gross Motor Skills\" — Topic title\n      - content: \"Individual Physiotherapy Learning Plans (תוכנית לימוד אישית - פיזיותרפיה) for pediatric gross motor development. These structured therapy goal templates are used in Israeli special education (TALA) settings for children with motor development needs. Each goal includes: Long-term objectives, intervention methods, prerequisites/conditions, success criteria, and designated implementers (physiotherapist and/or educational team).\" — Topic content - knowledge base text for AI reference. May be empty if topic is just a category.\n      - subtopics: {map} — Nested subtopics under this topic. View to see available subtopics. \n          (may contain items - view \"/Context_Library/Physiotherapy Goals - Gross Motor Skills/subtopics\" to load from database)\n      ↪ To expand: view \"/Context_Library/Physiotherapy Goals - Gross Motor Skills/*\". (read-only)\n  - Preschool SLP Goals Bank: {object}\n      - id: \"1ab6aeb0-36fd-4875-bda3-1c100f3c6446\" — Topic UUID (for internal reference)\n      - title: \"Preschool SLP Goals Bank\" — Topic title\n      - content: \"Preschool SLP Goals Bank\" — Topic content - knowledge base text for AI reference. May be empty if topic is just a category.\n      - subtopics: {map} — Nested subtopics under this topic. View to see available subtopics. \n          (may contain items - view \"/Context_Library/Preschool SLP Goals Bank/subtopics\" to load from database)\n      ↪ To expand: view \"/Context_Library/Preschool SLP Goals Bank/*\". (read-only)\n• /Context_Program (object) — The current educational program for the student \n  - id: \"5dffd1d5-afcc-42f5-94a4-162337d317cd\"\n  - framework: \"tala\" [\"tala\" | \"us_iep\"] — TALA (Israel) or US IEP framework\n  - title: \"Individual Educational Program for Daniel Nadel\"\n  - status: \"draft\" [\"draft\" | \"active\" | \"archived\"]\n  - startDate: \"2026-02-12\"\n  - endDate: \"2027-02-11\"\n  - dueDate: \"2025-11-15\"\n  - approvalDate: null\n  - leastRestrictiveEnvironment: null\n  - notes: \"Program for adult with Asperger's Syndrome focusing on social skills, communication, and independent living skills\"\n  - profileDomains: {map} — Functional profile / PLAAFP documentation (keyed by domain type). Unless requested, there should only be one domain per type. \n      (empty - no items to display)\n      ↪ Add: action \"add\" at \"/Context_Program/profileDomains\" with key + value.\n  - goals: {map} — Annual goals with objectives. Goals are linked to domains through their objectives (each objective can have a profileDomainId). Goals should be defined using S.M.A.R.T criteria. \n      (empty - no items to display)\n      ↪ Add: action \"add\" at \"/Context_Program/goals\" with key + value.\n  ↪ To expand: view \"/Context_Program/*\". To modify: action \"set\" on \"/Context_Program\" or \"/Context_Program/<property>\".\n• /Context_Reports (object) — Available reports: Medical records (editable), Functional reports (editable), Educational reports (editable). \n  - medicalRecord: {object} — Current medical record for the student. Contains diagnoses, allergies, medications, and medical alerts. (hidden)\n  - archivedMedicalRecords: {array} — Previously finalized medical records (read-only). View these to see historical medical information. (empty)\n  - functionalReport: {object} — Current functional report for the student. Contains mobility, ADL status, sensory profile, and safety risks. (empty)\n  - archivedFunctionalReports: {array} — Previously finalized functional reports (read-only). (empty)\n  - educationalReport: {object} — Current educational report for the student. Contains communication modes, language abilities, technology used, and behavioral strategies. (empty)\n  - archivedEducationalReports: {array} — Previously finalized educational reports (read-only). (empty)\n  ↪ To expand: view \"/Context_Reports/*\". To modify: action \"set\" on \"/Context_Reports\" or \"/Context_Reports/<property>\".\n• /Context_Board (object) — The AAC communication board. View pages to see their buttons. \n  - name: \"Social Situations Board\"\n  - grid: {object} (hidden)\n  - currentPageId: \"page-responses\"\n  - automaticSelectionHint: \"During social interactions and conversations\" — When the AI should automatically select this board (e.g. 'During mealtimes')\n  - pages: {array} \n      - [0]: {object} (view to expand)\n      - [1]: {object}\n          - id: \"page-greetings\"\n          - name: \"Greetings\"\n          - buttons: {array} (hidden)\n          ↪ To expand: view \"/Context_Board/pages/1/*\". To modify: action \"set\" on \"/Context_Board/pages/1\" or \"/Context_Board/pages/1/<property>\".\n      - [2]: {object}\n          - id: \"page-conversation\"\n          - name: \"Conversation\"\n          - buttons: {array} (hidden)\n          ↪ To expand: view \"/Context_Board/pages/2/*\". To modify: action \"set\" on \"/Context_Board/pages/2\" or \"/Context_Board/pages/2/<property>\".\n      ↪ To append: action \"add\" at \"/Context_Board/pages\" with value. To update item: action \"set\" at \"/Context_Board/pages/<index>\".\n  ↪ To expand: view \"/Context_Board/*\". To modify: action \"set\" on \"/Context_Board\" or \"/Context_Board/<property>\".\n\nAllowed roots & types: /User_AiPersonalityPreferences{string}, /User_Language{string}, /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Relationship_Notes{array}, /Context_Institutes{map}, /Context_Students{map}, /Context_Library{map}, /Context_Program{object}, /Context_Reports{object}, /Context_Board{object}\nOperate only on visible paths or their parent container. To reveal children:\n  manageMemory { \"ops\": [ { \"action\": \"view\", \"path\": \"/path/*\" } ] }\nPagination: include { \"page\": { \"offset\": N, \"limit\": M } } in a view op on a container.\n\n=== Schema Hints (add/insert/upsert in current scope) ===\n• /Student_People — ARRAY of object\n  item.required: [Name]\n  item.props: Name:string, Relationship:string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_People\",\"value\": {\"Name\":\"text\"} }] }\n• /Student_Interests — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Interests\",\"value\": \"text\" }] }\n• /Student_Preferences/FavoriteActivities — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/FavoriteActivities\",\"value\": \"text\" }] }\n• /Student_Preferences/RewardPreferences — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/RewardPreferences\",\"value\": \"text\" }] }\n• /Student_Preferences/AvoidTopics — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/AvoidTopics\",\"value\": \"text\" }] }\n• /Student_Notes — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Notes\",\"value\": \"text\" }] }\n• /Context_Institutes — MAP<string, object>\n  value.required: [name, type]\n  value.props: id:string, name:string, type:string [enum: \"school\", \"hospital\"], description:string, address:string, phone:string, email:string, website:string, isActive:boolean, membership:{object}, members:map<string, object>, students:map<string, object> … +2 more\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Institutes\",\"key\":\"<key>\",\"value\": {\"name\":\"text\",\"type\":\"text\"} }] }\n• /Context_Students — MAP<string, object>\n  value.required: [name]\n  value.props: id:string, name:string, firstName:string, lastName:string, gender:string [enum: \"male\", \"female\", \"other\"], birthDate:string [format YYYY-MM-DD], framework:string [enum: \"tala\", \"us_iep\"], country:string, primaryLanguage:string, additionalLanguages:array<string>, isActive:boolean, link:{object} … +3 more\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Students\",\"key\":\"<key>\",\"value\": {\"name\":\"text\"} }] }\n• /Context_Library — MAP<string, object>\n  value.props: id:string, title:string, content:string, subtopics:map<string, object>\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Library\",\"key\":\"<key>\",\"value\": {} }] }\n• /Context_Program/profileDomains — MAP<string, object>\n  value.required: [domainType]\n  value.props: id:string, domainType:string [enum: \"cognitive_academic\", \"communication_language\", \"social_emotional_behavioral\", \"motor_sensory\", \"life_skills_preparation\", \"other\"], customName:string, strengths:string, needs:string, impactStatement:string, adverseEffectStatement:string, sortOrder:integer, baselineMeasurements:array<object>, assessmentSources:array<object>\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Program/profileDomains\",\"key\":\"<key>\",\"value\": {\"domainType\":\"text\"} }] }\n• /Context_Program/goals — MAP<string, object>\n  value.required: [goalStatement]\n  value.props: id:string, goalStatement:string, status:string [enum: \"draft\", \"active\", \"achieved\", \"modified\", \"discontinued\"], progress:integer [min 0; max 100], targetDate:string [format YYYY-MM-DD], achievedDate:string [format YYYY-MM-DD], targetBehavior:string, criteria:string, methods:string, measurementMethod:string, relevance:string, interventionLevel:string [enum: \"activity\", \"function\", \"participation\"] … +3 more\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Program/goals\",\"key\":\"<key>\",\"value\": {\"goalStatement\":\"text\"} }] }\n• /Context_Reports/archivedMedicalRecords — ARRAY of object\n  item.props: id:string, status:string [enum: \"draft\", \"pending_review\", \"final\", \"superseded\"], primaryDiagnosis:string, primaryDiagnosisCode:string, coMorbidities:array<string>, secondaryDiagnoses:array<string>, alertsAllergies:array<string>, alertsSeizures:array<string>, alertsCardiac:array<string>, medications:array<string>, medicalEquipment:array<string>\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Reports/archivedMedicalRecords\",\"value\": {} }] }\n• /Context_Reports/archivedFunctionalReports — ARRAY of object\n  item.props: id:string, status:string [enum: \"draft\", \"pending_review\", \"final\", \"superseded\"], mobilityStatus:array<string>, adlStatus:array<string>, sensoryProfile:array<string>, safetyRisks:array<string>\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Reports/archivedFunctionalReports\",\"value\": {} }] }\n• /Context_Reports/archivedEducationalReports — ARRAY of object\n  item.props: id:string, status:string [enum: \"draft\", \"pending_review\", \"final\", \"superseded\"], communicationMode:array<string>, receptiveLanguage:array<string>, assistiveTechnologyUsed:array<string>, reinforcers:array<string>, preferredActivities:array<string>, behavioralStrategies:array<string>\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Reports/archivedEducationalReports\",\"value\": {} }] }\n• /Context_Board/pages — ARRAY of object\n  item.required: [id, name, buttons]\n  item.props: id:string, name:string, buttons:array<object>\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Board/pages\",\"value\": {\"id\":\"text\",\"name\":\"text\",\"buttons\":[]} }] }\n\nNotes:\n- When item/value is an OBJECT, include all listed \"required\" keys when creating it.\n- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}."
-
-────────────────────────────────────────────────────────────
-  manageMemory called
-────────────────────────────────────────────────────────────
-[15:11:03.972] INPUT: {
-  "ops": [
-    {
-      "action": "set",
-      "path": "/Context_Board",
-      "value": {
-        "name": "Social Situations Board",
-        "grid": {
-          "rows": 4,
-          "cols": 4
-        },
-        "currentPageId": "page-main",
-        "automaticSelectionHint": "During social interactions and conversations",
-        "pages": [
-          {
-            "id": "page-main",
-            "name": "Main",
-            "buttons": [
-              {
-                "id": "btn-greetings-1",
-                "row": 0,
-                "col": 0,
-                "label": "Greetings",
-                "spokenText": "Greetings and introductions",
-                "color": "#EC4899",
-                "iconRef": "👋",
-                "action": {
-                  "type": "link",
-                  "toPageId": "page-greetings"
-                }
-              },
-              {
-                "id": "btn-conversation-1",
-                "row": 0,
-                "col": 1,
-                "label": "Start Talk",
-                "spokenText": "Conversation starters",
-                "color": "#3B82F6",
-                "iconRef": "💬",
-                "action": {
-                  "type": "link",
-                  "toPageId": "page-conversation"
-                }
-              },
-              {
-                "id": "btn-responses-1",
-                "row": 0,
-                "col": 2,
-                "label": "Responses",
-                "spokenText": "Social responses",
-                "color": "#059669",
-                "iconRef": "💭",
-                "action": {
-                  "type": "link",
-                  "toPageId": "page-responses"
-                }
-              },
-              {
-                "id": "btn-managing-1",
-                "row": 0,
-                "col": 3,
-                "label": "Manage",
-                "spokenText": "Managing social situations",
-                "color": "#F59E0B",
-                "iconRef": "⚙️",
-                "action": {
-                  "type": "link",
-                  "toPageId": "page-managing"
-                }
-              },
-              {
-                "id": "btn-ending-1",
-                "row": 1,
-                "col": 0,
-                "label": "End Talk",
-                "spokenText": "Ending conversations",
-                "color": "#EAB308",
-                "iconRef": "👋",
-                "action": {
-                  "type": "link",
-                  "toPageId": "page-ending"
-                }
-              },
-              {
-                "id": "btn-help-1",
-                "row": 1,
-                "col": 1,
-                "label": "Help",
-                "spokenText": "Emergency and support phrases",
-                "color": "#DC2626",
-                "iconRef": "🆘",
-                "action": {
-                  "type": "link",
-                  "toPageId": "page-help"
-                }
-              }
-            ]
-          },
-          {
-            "id": "page-greetings",
-            "name": "Greetings",
-            "buttons": [
-              {
-                "id": "btn-back-1",
-                "row": 0,
-                "col": 0,
-                "label": "Back",
-                "spokenText": "Go back to main",
-                "color": "#6B7280",
-                "iconRef": "⬅️",
-                "action": {
-                  "type": "link",
-                  "toPageId": "page-main"
-                }
-              },
-              {
-                "id": "btn-hello-1",
-                "row": 0,
-                "col": 1,
-                "label": "Hello",
-                "spokenText": "Hello!",
-                "color": "#EC4899",
-                "iconRef": "👋",
-                "action": {
-                  "type": "speak",
-                  "text": "Hello!"
-                }
-              },
-              {
-                "id": "btn-hi-1",
-                "row": 0,
-                "col": 2,
-                "label": "Hi",
-                "spokenText": "Hi there!",
-                "color": "#EC4899",
-                "iconRef": "😊",
-                "action": {
-                  "type": "speak",
-                  "text": "Hi there!"
-                }
-              },
-              {
-                "id": "btn-meet-1",
-                "row": 0,
-                "col": 3,
-                "label": "Nice to meet",
-                "spokenText": "Nice to meet you",
-                "color": "#EC4899",
-                "iconRef": "🤝",
-                "action": {
-                  "type": "speak",
-                  "text": "Nice to meet you"
-                }
-              },
-              {
-                "id": "btn-name-1",
-                "row": 1,
-                "col": 0,
-                "label": "My name",
-                "spokenText": "My name is Daniel",
-                "color": "#EC4899",
-                "iconRef": "👤",
-                "action": {
-                  "type": "speak",
-                  "text": "My name is Daniel"
-                }
-              },
-              {
-                "id": "btn-work-1",
-                "row": 1,
-                "col": 1,
-                "label": "I work in tech",
-                "spokenText": "I work in technology",
-                "color": "#EC4899",
-                "iconRef": "💻",
-                "action": {
-                  "type": "speak",
-                  "text": "I work in technology"
-                }
-              },
-              {
-                "id": "btn-how-1",
-                "row": 1,
-                "col": 2,
-                "label": "How are you",
-                "spokenText": "How are you?",
-                "color": "#EC4899",
-                "iconRef": "❓",
-                "action": {
-                  "type": "speak",
-                  "text": "How are you?"
-                }
-              }
-            ]
-          },
-          {
-            "id": "page-conversation",
-            "name": "Conversation",
-            "buttons": [
-              {
-                "id": "btn-back-2",
-                "row": 0,
-                "col": 0,
-                "label": "Back",
-                "spokenText": "Go back to main",
-                "color": "#6B7280",
-                "iconRef": "⬅️",
-                "action": {
-                  "type": "link",
-                  "toPageId": "page-main"
-                }
-              },
-              {
-                "id": "btn-work-ask",
-                "row": 0,
-                "col": 1,
-                "label": "What do you do",
-                "spokenText": "What do you do for work?",
-                "color": "#3B82F6",
-                "iconRef": "💼",
-                "action": {
-                  "type": "speak",
-                  "text": "What do you do for work?"
-                }
-              },
-              {
-                "id": "btn-programming",
-                "row": 0,
-                "col": 2,
-                "label": "I like coding",
-                "spokenText": "I'm interested in programming",
-                "color": "#3B82F6",
-                "iconRef": "💻",
-                "action": {
-                  "type": "speak",
-                  "text": "I'm interested in programming"
-                }
-              },
-              {
-                "id": "btn-tell-me",
-                "row": 0,
-                "col": 3,
-                "label": "Tell me",
-                "spokenText": "Tell me about yourself",
-                "color": "#3B82F6",
-                "iconRef": "🗣️",
-                "action": {
-                  "type": "speak",
-                  "text": "Tell me about yourself"
-                }
-              },
-              {
-                "id": "btn-hobbies",
-                "row": 1,
-                "col": 0,
-                "label": "Hobbies",
-                "spokenText": "What are your hobbies?",
-                "color": "#3B82F6",
-                "iconRef": "🎯",
-                "action": {
-                  "type": "speak",
-                  "text": "What are your hobbies?"
-                }
-              },
-              {
-                "id": "btn-think",
-                "row": 1,
-                "col": 1,
-                "label": "Need time",
-                "spokenText": "I need some time to think",
-                "color": "#3B82F6",
-                "iconRef": "🤔",
-                "action": {
-                  "type": "speak",
-                  "text": "I need some time to think"
-                }
-              }
-            ]
-          },
-          {
-            "id": "page-responses",
-            "name": "Responses",
-            "buttons": [
-              {
-                "id": "btn-back-3",
-                "row": 0,
-                "col": 0,
-                "label": "Back",
-                "spokenText": "Go back to main",
-                "color": "#6B7280",
-                "iconRef": "⬅️",
-                "action": {
-                  "type": "link",
-                  "toPageId": "page-main"
-                }
-              },
-              {
-                "id": "btn-interesting",
-                "row": 0,
-                "col": 1,
-                "label": "Interesting",
-                "spokenText": "That's interesting",
-                "color": "#059669",
-                "iconRef": "😎",
-                "action": {
-                  "type": "speak",
-                  "text": "That's interesting"
-                }
-              },
-              {
-                "id": "btn-agree",
-                "row": 0,
-                "col": 2,
-                "label": "I agree",
-                "spokenText": "I agree",
-                "color": "#059669",
-                "iconRef": "✅",
-                "action": {
-                  "type": "speak",
-                  "text": "I agree"
-                }
-              },
-              {
-                "id": "btn-disagree",
-                "row": 0,
-                "col": 3,
-                "label": "Respectfully disagree",
-                "spokenText": "I disagree respectfully",
-                "color": "#059669",
-                "iconRef": "🤷",
-                "action": {
-                  "type": "speak",
-                  "text": "I disagree respectfully"
-                }
-              },
-              {
-                "id": "btn-explain",
-                "row": 1,
-                "col": 0,
-                "label": "Explain more",
-                "spokenText": "Can you explain more?",
-                "color": "#059669",
-                "iconRef": "❓",
-                "action": {
-                  "type": "speak",
-                  "text": "Can you explain more?"
-                }
-              },
-              {
-                "id": "btn-understand",
-                "row": 1,
-                "col": 1,
-                "label": "I understand",
-                "spokenText": "I understand",
-                "color": "#059669",
-                "iconRef": "💡",
-                "action": {
-                  "type": "speak",
-                  "text": "I understand"
-                }
-              }
-            ]
-          },
-          {
-            "id": "page-managing",
-            "name": "Managing",
-            "buttons": [
-              {
-                "id": "btn-back-4",
-                "row": 0,
-                "col": 0,
-                "label": "Back",
-                "spokenText": "Go back to main",
-                "color": "#6B7280",
-                "iconRef": "⬅️",
-                "action": {
-                  "type": "link",
-                  "toPageId": "page-main"
-                }
-              },
-              {
-                "id": "btn-break",
-                "row": 0,
-                "col": 1,
-                "label": "Need break",
-                "spokenText": "I need a break",
-                "color": "#F59E0B",
-                "iconRef": "⏸️",
-                "action": {
-                  "type": "speak",
-                  "text": "I need a break"
-                }
-              },
-              {
-                "id": "btn-topic",
-                "row": 0,
-                "col": 2,
-                "label": "Change topic",
-                "spokenText": "Can we talk about something else?",
-                "color": "#F59E0B",
-                "iconRef": "🔄",
-                "action": {
-                  "type": "speak",
-                  "text": "Can we talk about something else?"
-                }
-              },
-              {
-                "id": "btn-overwhelmed",
-                "row": 0,
-                "col": 3,
-                "label": "Overwhelmed",
-                "spokenText": "I'm feeling overwhelmed",
-                "color": "#F59E0B",
-                "iconRef": "😰",
-                "action": {
-                  "type": "speak",
-                  "text": "I'm feeling overwhelmed"
-                }
-              },
-              {
-                "id": "btn-process",
-                "row": 1,
-                "col": 0,
-                "label": "Let me process",
-                "spokenText": "Let me process that",
-                "color": "#F59E0B",
-                "iconRef": "🧠",
-                "action": {
-                  "type": "speak",
-                  "text": "Let me process that"
-                }
-              },
-              {
-                "id": "btn-direct",
-                "row": 1,
-                "col": 1,
-                "label": "Direct communication",
-                "spokenText": "I prefer direct communication",
-                "color": "#F59E0B",
-                "iconRef": "📋",
-                "action": {
-                  "type": "speak",
-                  "text": "I prefer direct communication"
-                }
-              }
-            ]
-          },
-          {
-            "id": "page-ending",
-            "name": "Ending",
-            "buttons": [
-              {
-                "id": "btn-back-5",
-                "row": 0,
-                "col": 0,
-                "label": "Back",
-                "spokenText": "Go back to main",
-                "color": "#6B7280",
-                "iconRef": "⬅️",
-                "action": {
-                  "type": "link",
-                  "toPageId": "page-main"
-                }
-              },
-              {
-                "id": "btn-nice",
-                "row": 0,
-                "col": 1,
-                "label": "Nice talking",
-                "spokenText": "It was nice talking with you",
-                "color": "#EAB308",
-                "iconRef": "😊",
-                "action": {
-                  "type": "speak",
-                  "text": "It was nice talking with you"
-                }
-              },
-              {
-                "id": "btn-go",
-                "row": 0,
-                "col": 2,
-                "label": "Need to go",
-                "spokenText": "I need to go now",
-                "color": "#EAB308",
-                "iconRef": "🚪",
-                "action": {
-                  "type": "speak",
-                  "text": "I need to go now"
-                }
-              },
-              {
-                "id": "btn-later",
-                "row": 0,
-                "col": 3,
-                "label": "Continue later",
-                "spokenText": "Let's continue this later",
-                "color": "#EAB308",
-                "iconRef": "⏰",
-                "action": {
-                  "type": "speak",
-                  "text": "Let's continue this later"
-                }
-              },
-              {
-                "id": "btn-thank",
-                "row": 1,
-                "col": 0,
-                "label": "Thank you",
-                "spokenText": "Thank you for the conversation",
-                "color": "#EAB308",
-                "iconRef": "🙏",
-                "action": {
-                  "type": "speak",
-                  "text": "Thank you for the conversation"
-                }
-              },
-              {
-                "id": "btn-see",
-                "row": 1,
-                "col": 1,
-                "label": "See you later",
-                "spokenText": "See you later",
-                "color": "#EAB308",
-                "iconRef": "👋",
-                "action": {
-                  "type": "speak",
-                  "text": "See you later"
-                }
-              }
-            ]
-          },
-          {
-            "id": "page-help",
-            "name": "Help",
-            "buttons": [
-              {
-                "id": "btn-back-6",
-                "row": 0,
-                "col": 0,
-                "label": "Back",
-                "spokenText": "Go back to main",
-                "color": "#6B7280",
-                "iconRef": "⬅️",
-                "action": {
-                  "type": "link",
-                  "toPageId": "page-main"
-                }
-              },
-              {
-                "id": "btn-need-help",
-                "row": 0,
-                "col": 1,
-                "label": "Need help",
-                "spokenText": "I need help",
-                "color": "#DC2626",
-                "iconRef": "🆘",
-                "action": {
-                  "type": "speak",
-                  "text": "I need help"
-                }
-              },
-              {
-                "id": "btn-not-understand",
-                "row": 0,
-                "col": 2,
-                "label": "Don't understand",
-                "spokenText": "I don't understand",
-                "color": "#DC2626",
-                "iconRef": "❓",
-                "action": {
-                  "type": "speak",
-                  "text": "I don't understand"
-                }
-              },
-              {
-                "id": "btn-repeat",
-                "row": 0,
-                "col": 3,
-                "label": "Repeat please",
-                "spokenText": "Can you repeat that?",
-                "color": "#DC2626",
-                "iconRef": "🔄",
-                "action": {
-                  "type": "speak",
-                  "text": "Can you repeat that?"
-                }
-              },
-              {
-                "id": "btn-difficulty",
-                "row": 1,
-                "col": 0,
-                "label": "Having difficulty",
-                "spokenText": "I'm having difficulty",
-                "color": "#DC2626",
-                "iconRef": "⚠️",
-                "action": {
-                  "type": "speak",
-                  "text": "I'm having difficulty"
-                }
-              },
-              {
-                "id": "btn-patient",
-                "row": 1,
-                "col": 1,
-                "label": "Be patient",
-                "spokenText": "Please be patient with me",
-                "color": "#DC2626",
-                "iconRef": "⏳",
-                "action": {
-                  "type": "speak",
-                  "text": "Please be patient with me"
-                }
-              }
-            ]
-          }
-        ]
-      }
-    }
-  ]
-}
-[15:11:03.996] RESULTS: [
+[10:12:54.202] memoryValues.Student_People (4 items): [
   {
-    "target": "/Context_Board",
-    "action": "set",
-    "ok": true
+    "Name": "Jordan",
+    "Relationship": "Friend"
+  },
+  {
+    "Name": "Prof. Meir Lotan",
+    "Relationship": "physiotherapist/researcher"
+  },
+  {
+    "Name": "Sara",
+    "Relationship": "Mother"
+  },
+  {
+    "Name": "Avraham",
+    "Relationship": "Father"
   }
 ]
+[10:12:54.202] memoryValues.Student_Interests (1 items): [
+  "exploring pictures, drawing, and listening to music"
+]
+[10:12:54.203] memoryValues.Student_Preferences: {
+  "FavoriteActivities": [
+    {
+      "FavoriteActivities": [
+        "Making crafts"
+      ]
+    },
+    "Making crafts with scissors",
+    "Board games",
+    "playing with tools",
+    "drawing",
+    "exploring",
+    "exploring"
+  ]
+}
+[10:12:54.204] memoryValues.Student_CommunicationStyle: {
+  "PrimaryMethod": "nonverbal",
+  "PreferredModality": "symbols"
+}
+[10:12:54.206] memoryVisualization — data section (90 lines): "=== Current Memory ===\n• /Student_People (array, 4 items) — Important people in the student's life (names and relationships only) \n  - [0]: {object} (view to expand)\n  - [1]: {object} (view to expand)\n  - [2]: {object} (view to expand)\n  - [3]: {object} (view to expand)\n  ↪ To append: action \"add\" at \"/Student_People\" with value. To update item: action \"set\" at \"/Student_People/<index>\".\n• /Student_Interests (array, 1 items) — Things the student enjoys or is interested in \n  - [0]: \"exploring pictures, drawing, and listening to music\"\n  ↪ To append: action \"add\" at \"/Student_Interests\" with value. To update item: action \"set\" at \"/Student_Interests/<index>\".\n• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) \n  - PrimaryMethod: \"nonverbal\" — verbal, nonverbal, AAC, or mixed\n  - PreferredModality: \"symbols\" — If AAC, which type (symbols, text, combined)\n  ↪ To expand: view \"/Student_CommunicationStyle/*\". To modify: action \"set\" on \"/Student_CommunicationStyle\" or \"/Student_CommunicationStyle/<property>\".\n• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement \n  - FavoriteActivities: {array} (hidden)\n  - RewardPreferences: {array} (empty)\n  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)\n  ↪ To expand: view \"/Student_Preferences/*\". To modify: action \"set\" on \"/Student_Preferences\" or \"/Student_Preferences/<property>\".\n• /Student_Notes (array, 28 items) — General notes about the student (non-sensitive) \n  - [0]: \"Gal shared feeling tired today.\"\n  - [1]: \"Gal frequently asks for help.\"\n  - [2]: \"Gal mentioned wanting to explore or play today.\"\n  - [3]: \"Gal is interested in choosing an activity from the board.\"\n  - [4]: \"Gal's board options include playing, listening to music, exploring, and problem-solving.\"\n  - [5]: \"Checked in on Gal's mood and activity choices.\"\n  - [6]: \"Gal showed interest in listening to stories, indicating progress in imaginative play.\"\n  - [7]: \"Gal is present and ready to engage - environment scans detected, waiting for activity selection\"\n  - [8]: \"Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication\"\n  - [9]: \"Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support\"\n  - [10]: \"Gal performed an environment detection scan, showing active engagement and readiness for communication\"\n  - [11]: \"Gal is actively engaged with multiple environment detection scans, showing sustained attention and readiness for communication support\"\n  - [12]: \"Gal continues to show sustained engagement and attention through repeated environment scans, indicating he is actively present and ready for interaction\"\n  - [13]: \"Gal is showing very high engagement with multiple consecutive environment detection scans, indicating strong attention and active participation\"\n  - [14]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [15]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [16]: \"Gal is engaging with exploration activities and showing interest in environmental objects like scissors and people around him\"\n  - [17]: \"Gal is engaging with exploration activities and showing interest in environmental objects like wrenches and people around him\"\n  - [18]: \"Gal is present and ready to engage - automatic board update detected with environment interaction buttons showing active participation\"\n  - [19]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [20]: \"Gal expressed interest in cutting a string but did not proceed.\"\n  - [21]: \"Gal regularly expresses interest in using tools like scissors.\"\n  - [22]: \"Performed system update, revising memory management.\"\n  - [23]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [24]: \"Gal showed interest in exploring, which can support imaginative play development.\"\n  - [25]: \"Gal showed progress in creative exploration by drawing with a variety of colors.\"\n  - [26]: \"Gal expressed feeling tired and wanted to explore to relax. He chose drawing as a relaxing activity.\"\n  - [27]: \"Gal expressed feeling tired and wanted a relaxing activity like drawing.\"\n  ↪ To append: action \"add\" at \"/Student_Notes\" with value. To update item: action \"set\" at \"/Student_Notes/<index>\".\n• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. \n  (may contain items - view \"/Context_Library\" to load from database)\n• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) \n  ↪ To expand: view \"/Context_StudentInfo/*\". (read-only)\n• /Context_StudentInstitutes (array, 0 items) — Schools and hospitals the student attends — hidden; view to list items\n• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items\n• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items\n• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys\n• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys\n• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys\n• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \n  ↪ To expand: view \"/Context_Progress/*\". (read-only)\n\nAllowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}\nOperate only on visible paths or their parent container. To reveal children:\n  manageMemory { \"ops\": [ { \"action\": \"view\", \"path\": \"/path/*\" } ] }\nPagination: include { \"page\": { \"offset\": N, \"limit\": M } } in a view op on a container.\n\n=== Schema Hints (add/insert/upsert in current scope) ===\n• /Student_People — ARRAY of object\n  item.required: [Name]\n  item.props: Name:string, Relationship:string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_People\",\"value\": {\"Name\":\"text\"} }] }\n• /Student_Interests — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Interests\",\"value\": \"text\" }] }\n• /Student_Preferences/FavoriteActivities — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/FavoriteActivities\",\"value\": \"text\" }] }\n• /Student_Preferences/RewardPreferences — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/RewardPreferences\",\"value\": \"text\" }] }\n• /Student_Preferences/AvoidTopics — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/AvoidTopics\",\"value\": \"text\" }] }\n• /Student_Notes — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Notes\",\"value\": \"text\" }] }\n• /Context_Library — MAP<string, object>\n  value.props: id:string, title:string, content:string, subtopics:map<string, object>\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Library\",\"key\":\"<key>\",\"value\": {} }] }\n\nNotes:\n- When item/value is an OBJECT, include all listed \"required\" keys when creating it.\n- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}."
+
+────────────────────────────────────────────────────────────
+  buildPromptAndTools — AI memory view
+────────────────────────────────────────────────────────────
+[10:14:59.670] memoryValues.Student_Notes (28 items): [
+  "Gal shared feeling tired today.",
+  "Gal frequently asks for help.",
+  "Gal mentioned wanting to explore or play today.",
+  "Gal is interested in choosing an activity from the board.",
+  "Gal's board options include playing, listening to music, exploring, and problem-solving.",
+  "Checked in on Gal's mood and activity choices.",
+  "Gal showed interest in listening to stories, indicating progress in imaginative play.",
+  "Gal is present and ready to engage - environment scans detected, waiting for activity selection",
+  "Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication",
+  "Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support"
+]
+[10:14:59.670] memoryValues.Student_People (4 items): [
+  {
+    "Name": "Jordan",
+    "Relationship": "Friend"
+  },
+  {
+    "Name": "Prof. Meir Lotan",
+    "Relationship": "physiotherapist/researcher"
+  },
+  {
+    "Name": "Sara",
+    "Relationship": "Mother"
+  },
+  {
+    "Name": "Avraham",
+    "Relationship": "Father"
+  }
+]
+[10:14:59.671] memoryValues.Student_Interests (1 items): [
+  "exploring pictures, drawing, and listening to music"
+]
+[10:14:59.672] memoryValues.Student_Preferences: {
+  "FavoriteActivities": [
+    {
+      "FavoriteActivities": [
+        "Making crafts"
+      ]
+    },
+    "Making crafts with scissors",
+    "Board games",
+    "playing with tools",
+    "drawing",
+    "exploring",
+    "exploring"
+  ]
+}
+[10:14:59.673] memoryValues.Student_CommunicationStyle: {
+  "PrimaryMethod": "nonverbal",
+  "PreferredModality": "symbols"
+}
+[10:14:59.674] memoryVisualization — data section (90 lines): "=== Current Memory ===\n• /Student_People (array, 4 items) — Important people in the student's life (names and relationships only) \n  - [0]: {object} (view to expand)\n  - [1]: {object} (view to expand)\n  - [2]: {object} (view to expand)\n  - [3]: {object} (view to expand)\n  ↪ To append: action \"add\" at \"/Student_People\" with value. To update item: action \"set\" at \"/Student_People/<index>\".\n• /Student_Interests (array, 1 items) — Things the student enjoys or is interested in \n  - [0]: \"exploring pictures, drawing, and listening to music\"\n  ↪ To append: action \"add\" at \"/Student_Interests\" with value. To update item: action \"set\" at \"/Student_Interests/<index>\".\n• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) \n  - PrimaryMethod: \"nonverbal\" — verbal, nonverbal, AAC, or mixed\n  - PreferredModality: \"symbols\" — If AAC, which type (symbols, text, combined)\n  ↪ To expand: view \"/Student_CommunicationStyle/*\". To modify: action \"set\" on \"/Student_CommunicationStyle\" or \"/Student_CommunicationStyle/<property>\".\n• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement \n  - FavoriteActivities: {array} (hidden)\n  - RewardPreferences: {array} (empty)\n  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)\n  ↪ To expand: view \"/Student_Preferences/*\". To modify: action \"set\" on \"/Student_Preferences\" or \"/Student_Preferences/<property>\".\n• /Student_Notes (array, 28 items) — General notes about the student (non-sensitive) \n  - [0]: \"Gal shared feeling tired today.\"\n  - [1]: \"Gal frequently asks for help.\"\n  - [2]: \"Gal mentioned wanting to explore or play today.\"\n  - [3]: \"Gal is interested in choosing an activity from the board.\"\n  - [4]: \"Gal's board options include playing, listening to music, exploring, and problem-solving.\"\n  - [5]: \"Checked in on Gal's mood and activity choices.\"\n  - [6]: \"Gal showed interest in listening to stories, indicating progress in imaginative play.\"\n  - [7]: \"Gal is present and ready to engage - environment scans detected, waiting for activity selection\"\n  - [8]: \"Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication\"\n  - [9]: \"Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support\"\n  - [10]: \"Gal performed an environment detection scan, showing active engagement and readiness for communication\"\n  - [11]: \"Gal is actively engaged with multiple environment detection scans, showing sustained attention and readiness for communication support\"\n  - [12]: \"Gal continues to show sustained engagement and attention through repeated environment scans, indicating he is actively present and ready for interaction\"\n  - [13]: \"Gal is showing very high engagement with multiple consecutive environment detection scans, indicating strong attention and active participation\"\n  - [14]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [15]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [16]: \"Gal is engaging with exploration activities and showing interest in environmental objects like scissors and people around him\"\n  - [17]: \"Gal is engaging with exploration activities and showing interest in environmental objects like wrenches and people around him\"\n  - [18]: \"Gal is present and ready to engage - automatic board update detected with environment interaction buttons showing active participation\"\n  - [19]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [20]: \"Gal expressed interest in cutting a string but did not proceed.\"\n  - [21]: \"Gal regularly expresses interest in using tools like scissors.\"\n  - [22]: \"Performed system update, revising memory management.\"\n  - [23]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [24]: \"Gal showed interest in exploring, which can support imaginative play development.\"\n  - [25]: \"Gal showed progress in creative exploration by drawing with a variety of colors.\"\n  - [26]: \"Gal expressed feeling tired and wanted to explore to relax. He chose drawing as a relaxing activity.\"\n  - [27]: \"Gal expressed feeling tired and wanted a relaxing activity like drawing.\"\n  ↪ To append: action \"add\" at \"/Student_Notes\" with value. To update item: action \"set\" at \"/Student_Notes/<index>\".\n• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. \n  (may contain items - view \"/Context_Library\" to load from database)\n• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) \n  ↪ To expand: view \"/Context_StudentInfo/*\". (read-only)\n• /Context_StudentInstitutes (array, 0 items) — Schools and hospitals the student attends — hidden; view to list items\n• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items\n• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items\n• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys\n• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys\n• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys\n• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \n  ↪ To expand: view \"/Context_Progress/*\". (read-only)\n\nAllowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}\nOperate only on visible paths or their parent container. To reveal children:\n  manageMemory { \"ops\": [ { \"action\": \"view\", \"path\": \"/path/*\" } ] }\nPagination: include { \"page\": { \"offset\": N, \"limit\": M } } in a view op on a container.\n\n=== Schema Hints (add/insert/upsert in current scope) ===\n• /Student_People — ARRAY of object\n  item.required: [Name]\n  item.props: Name:string, Relationship:string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_People\",\"value\": {\"Name\":\"text\"} }] }\n• /Student_Interests — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Interests\",\"value\": \"text\" }] }\n• /Student_Preferences/FavoriteActivities — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/FavoriteActivities\",\"value\": \"text\" }] }\n• /Student_Preferences/RewardPreferences — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/RewardPreferences\",\"value\": \"text\" }] }\n• /Student_Preferences/AvoidTopics — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/AvoidTopics\",\"value\": \"text\" }] }\n• /Student_Notes — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Notes\",\"value\": \"text\" }] }\n• /Context_Library — MAP<string, object>\n  value.props: id:string, title:string, content:string, subtopics:map<string, object>\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Library\",\"key\":\"<key>\",\"value\": {} }] }\n\nNotes:\n- When item/value is an OBJECT, include all listed \"required\" keys when creating it.\n- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}."
+
+────────────────────────────────────────────────────────────
+  buildPromptAndTools — AI memory view
+────────────────────────────────────────────────────────────
+[10:15:29.128] memoryValues.Student_Notes (28 items): [
+  "Gal shared feeling tired today.",
+  "Gal frequently asks for help.",
+  "Gal mentioned wanting to explore or play today.",
+  "Gal is interested in choosing an activity from the board.",
+  "Gal's board options include playing, listening to music, exploring, and problem-solving.",
+  "Checked in on Gal's mood and activity choices.",
+  "Gal showed interest in listening to stories, indicating progress in imaginative play.",
+  "Gal is present and ready to engage - environment scans detected, waiting for activity selection",
+  "Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication",
+  "Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support"
+]
+[10:15:29.128] memoryValues.Student_People (4 items): [
+  {
+    "Name": "Jordan",
+    "Relationship": "Friend"
+  },
+  {
+    "Name": "Prof. Meir Lotan",
+    "Relationship": "physiotherapist/researcher"
+  },
+  {
+    "Name": "Sara",
+    "Relationship": "Mother"
+  },
+  {
+    "Name": "Avraham",
+    "Relationship": "Father"
+  }
+]
+[10:15:29.129] memoryValues.Student_Interests (1 items): [
+  "exploring pictures, drawing, and listening to music"
+]
+[10:15:29.129] memoryValues.Student_Preferences: {
+  "FavoriteActivities": [
+    {
+      "FavoriteActivities": [
+        "Making crafts"
+      ]
+    },
+    "Making crafts with scissors",
+    "Board games",
+    "playing with tools",
+    "drawing",
+    "exploring",
+    "exploring"
+  ]
+}
+[10:15:29.130] memoryValues.Student_CommunicationStyle: {
+  "PrimaryMethod": "nonverbal",
+  "PreferredModality": "symbols"
+}
+[10:15:29.131] memoryVisualization — data section (90 lines): "=== Current Memory ===\n• /Student_People (array, 4 items) — Important people in the student's life (names and relationships only) \n  - [0]: {object} (view to expand)\n  - [1]: {object} (view to expand)\n  - [2]: {object} (view to expand)\n  - [3]: {object} (view to expand)\n  ↪ To append: action \"add\" at \"/Student_People\" with value. To update item: action \"set\" at \"/Student_People/<index>\".\n• /Student_Interests (array, 1 items) — Things the student enjoys or is interested in \n  - [0]: \"exploring pictures, drawing, and listening to music\"\n  ↪ To append: action \"add\" at \"/Student_Interests\" with value. To update item: action \"set\" at \"/Student_Interests/<index>\".\n• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) \n  - PrimaryMethod: \"nonverbal\" — verbal, nonverbal, AAC, or mixed\n  - PreferredModality: \"symbols\" — If AAC, which type (symbols, text, combined)\n  ↪ To expand: view \"/Student_CommunicationStyle/*\". To modify: action \"set\" on \"/Student_CommunicationStyle\" or \"/Student_CommunicationStyle/<property>\".\n• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement \n  - FavoriteActivities: {array} (hidden)\n  - RewardPreferences: {array} (empty)\n  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)\n  ↪ To expand: view \"/Student_Preferences/*\". To modify: action \"set\" on \"/Student_Preferences\" or \"/Student_Preferences/<property>\".\n• /Student_Notes (array, 28 items) — General notes about the student (non-sensitive) \n  - [0]: \"Gal shared feeling tired today.\"\n  - [1]: \"Gal frequently asks for help.\"\n  - [2]: \"Gal mentioned wanting to explore or play today.\"\n  - [3]: \"Gal is interested in choosing an activity from the board.\"\n  - [4]: \"Gal's board options include playing, listening to music, exploring, and problem-solving.\"\n  - [5]: \"Checked in on Gal's mood and activity choices.\"\n  - [6]: \"Gal showed interest in listening to stories, indicating progress in imaginative play.\"\n  - [7]: \"Gal is present and ready to engage - environment scans detected, waiting for activity selection\"\n  - [8]: \"Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication\"\n  - [9]: \"Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support\"\n  - [10]: \"Gal performed an environment detection scan, showing active engagement and readiness for communication\"\n  - [11]: \"Gal is actively engaged with multiple environment detection scans, showing sustained attention and readiness for communication support\"\n  - [12]: \"Gal continues to show sustained engagement and attention through repeated environment scans, indicating he is actively present and ready for interaction\"\n  - [13]: \"Gal is showing very high engagement with multiple consecutive environment detection scans, indicating strong attention and active participation\"\n  - [14]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [15]: \"Gal performed environment detection scan showing active engagement and readiness for communication\"\n  - [16]: \"Gal is engaging with exploration activities and showing interest in environmental objects like scissors and people around him\"\n  - [17]: \"Gal is engaging with exploration activities and showing interest in environmental objects like wrenches and people around him\"\n  - [18]: \"Gal is present and ready to engage - automatic board update detected with environment interaction buttons showing active participation\"\n  - [19]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [20]: \"Gal expressed interest in cutting a string but did not proceed.\"\n  - [21]: \"Gal regularly expresses interest in using tools like scissors.\"\n  - [22]: \"Performed system update, revising memory management.\"\n  - [23]: \"Gal expressed interest in cutting a string but decided not to proceed.\"\n  - [24]: \"Gal showed interest in exploring, which can support imaginative play development.\"\n  - [25]: \"Gal showed progress in creative exploration by drawing with a variety of colors.\"\n  - [26]: \"Gal expressed feeling tired and wanted to explore to relax. He chose drawing as a relaxing activity.\"\n  - [27]: \"Gal expressed feeling tired and wanted a relaxing activity like drawing.\"\n  ↪ To append: action \"add\" at \"/Student_Notes\" with value. To update item: action \"set\" at \"/Student_Notes/<index>\".\n• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. \n  (may contain items - view \"/Context_Library\" to load from database)\n• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) \n  ↪ To expand: view \"/Context_StudentInfo/*\". (read-only)\n• /Context_StudentInstitutes (array, 0 items) — Schools and hospitals the student attends — hidden; view to list items\n• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items\n• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items\n• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys\n• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys\n• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys\n• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \n  ↪ To expand: view \"/Context_Progress/*\". (read-only)\n\nAllowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}\nOperate only on visible paths or their parent container. To reveal children:\n  manageMemory { \"ops\": [ { \"action\": \"view\", \"path\": \"/path/*\" } ] }\nPagination: include { \"page\": { \"offset\": N, \"limit\": M } } in a view op on a container.\n\n=== Schema Hints (add/insert/upsert in current scope) ===\n• /Student_People — ARRAY of object\n  item.required: [Name]\n  item.props: Name:string, Relationship:string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_People\",\"value\": {\"Name\":\"text\"} }] }\n• /Student_Interests — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Interests\",\"value\": \"text\" }] }\n• /Student_Preferences/FavoriteActivities — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/FavoriteActivities\",\"value\": \"text\" }] }\n• /Student_Preferences/RewardPreferences — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/RewardPreferences\",\"value\": \"text\" }] }\n• /Student_Preferences/AvoidTopics — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/AvoidTopics\",\"value\": \"text\" }] }\n• /Student_Notes — ARRAY of string\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Notes\",\"value\": \"text\" }] }\n• /Context_Library — MAP<string, object>\n  value.props: id:string, title:string, content:string, subtopics:map<string, object>\n  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Library\",\"key\":\"<key>\",\"value\": {} }] }\n\nNotes:\n- When item/value is an OBJECT, include all listed \"required\" keys when creating it.\n- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.\n- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}."

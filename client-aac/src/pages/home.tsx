@@ -20,6 +20,7 @@ import { useCamera } from "@/hooks/useCamera";
 import { usePersonIdentification } from "@/hooks/usePersonIdentification";
 import { useFaceImageCache } from "@/hooks/useFaceImageCache";
 import UnifiedDebugPanel from "@/components/UnifiedDebugPanel";
+import YesNoOverlay from "@/components/YesNoOverlay";
 import TwoHandedObjectDetection from "@/components/TwoHandedObjectDetection";
 import { DetectedObject } from "@/hooks/useTwoHandedObjectDetection";
 import { ObjectDetectionDebug } from "@/components/ObjectDetectionDebug";
@@ -54,7 +55,7 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for interpret/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, onBoardPatchChange, onAiButtonPressChange, onSendMessageReady, onInitializedChange }: {
+function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, onBoardPatchChange, onAiButtonPressChange, onSendMessageReady, onInitializedChange, onYesNoChange, onRestartSessionReady }: {
   onModeChange: (mode: 'interact' | 'silent') => void;
   onInterpretReady: (fn: ((buttons: string[]) => Promise<void>) | null) => void;
   onDetectionChange?: (enabled: boolean) => void;
@@ -62,8 +63,10 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
   onAiButtonPressChange?: (data: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] } | null) => void;
   onSendMessageReady?: (fn: ((msg: string) => Promise<void>) | null) => void;
   onInitializedChange?: (initialized: boolean) => void;
+  onYesNoChange?: (active: boolean, dismiss: () => void) => void;
+  onRestartSessionReady?: (fn: (() => void) | null) => void;
 }) {
-  const { interactionMode, interpretButtons, videoCaptureEnabled, voiceEnabled, boardPatch, aiButtonPress, sendMessage, isInitialized } = useDualAgentContext();
+  const { interactionMode, interpretButtons, videoCaptureEnabled, voiceEnabled, boardPatch, aiButtonPress, sendMessage, isInitialized, yesNoActive, dismissYesNo, clearSession, initialize } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(interactionMode);
@@ -94,6 +97,19 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
   useEffect(() => {
     onInitializedChange?.(isInitialized);
   }, [isInitialized, onInitializedChange]);
+
+  useEffect(() => {
+    onYesNoChange?.(yesNoActive, dismissYesNo);
+  }, [yesNoActive, dismissYesNo, onYesNoChange]);
+
+  useEffect(() => {
+    onRestartSessionReady?.(() => {
+      clearSession();
+      // Small delay to let cleanup complete before reinitializing
+      setTimeout(() => initialize(), 500);
+    });
+    return () => onRestartSessionReady?.(null);
+  }, [clearSession, initialize, onRestartSessionReady]);
 
   return null;
 }
@@ -159,18 +175,20 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const [faceTrackingEnabled, setFaceTrackingEnabled] = useState<boolean>(true);
   const [handGestureEnabled, setHandGestureEnabled] = useState<boolean>(true);
 
-  // Eyegaze dwell settings — stored in localStorage (not in DB)
-  const readEyegazeSettings = useCallback(() => {
-    try {
-      const enabled = localStorage.getItem("eyetracking_enabled") === "true";
-      const mode = (localStorage.getItem("eyetracking_mode") as "camera" | "mouse") || "camera";
-      const timeout = parseInt(localStorage.getItem("eyetracking_timeout") || "2000", 10);
-      return { enabled, mode, timeout };
-    } catch {
-      return { enabled: false, mode: "camera" as const, timeout: 2000 };
+  // Eyegaze dwell settings — stored in DB via student profile
+  const [eyegazeSettings, setEyegazeSettings] = useState<{ enabled: boolean; mode: "mouse"; timeout: number }>({
+    enabled: false, mode: "mouse", timeout: 2000
+  });
+  // Sync eyegaze settings from userProfile when it loads
+  useEffect(() => {
+    if (userProfile) {
+      setEyegazeSettings({
+        enabled: userProfile.aacEyegazeEnabled ?? false,
+        mode: "mouse",
+        timeout: userProfile.aacEyegazeTimeout ?? 2000,
+      });
     }
-  }, []);
-  const [eyegazeSettings, setEyegazeSettings] = useState(readEyegazeSettings);
+  }, [userProfile]);
 
   // Environment camera frame collector (for dual-camera detection)
   const envCollectorRef = useRef<CameraFrameCollector | null>(null);
@@ -206,8 +224,13 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   // Dual-agent mode bridged from context
   const [dualAgentMode, setDualAgentMode] = useState<'interact' | 'silent'>('interact');
   const [aiSessionActive, setAiSessionActive] = useState(false);
+
+  // Yes/No overlay state (bridged from DualAgentContext)
+  const [yesNoActive, setYesNoActive] = useState(false);
+  const dismissYesNoRef = useRef<(() => void) | null>(null);
   const interpretFnRef = useRef<((buttons: string[]) => Promise<void>) | null>(null);
   const sendMessageFnRef = useRef<((msg: string) => Promise<void>) | null>(null);
+  const restartSessionFnRef = useRef<(() => void) | null>(null);
 
   // Get authenticated user
   const { data: authUser, isLoading: isAuthLoading } = useQuery({
@@ -545,11 +568,10 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     }, 2000);
   };
 
-  // Flush the button buffer — send accumulated presses as one message
+  // Flush the button buffer — send accumulated presses to AI for interpretation
   const flushButtonBuffer = useCallback(() => {
     if (buttonBufferRef.current.length === 0) return;
-    const message = buttonBufferRef.current.join(" ");
-    setSelectedSymbols([...buttonBufferRef.current]);
+    const buttons = [...buttonBufferRef.current];
     buttonBufferRef.current = [];
     lastButtonRef.current = null;
     if (buttonSendTimerRef.current) {
@@ -557,7 +579,17 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
       buttonSendTimerRef.current = null;
     }
     setTimeout(() => setCurrentSpeech(""), 2000);
-  }, []);
+
+    // Send buffered buttons to AI via button_press WebSocket message.
+    // If the server isn't available, fall back to local TTS.
+    if (interpretFnRef.current) {
+      interpretFnRef.current(buttons);
+      setRecentButtonPresses([]);
+    } else {
+      const text = buttons.join(" ");
+      speak(text, currentLanguage, userProfile?.aacStudentVoiceType || 'boy');
+    }
+  }, [speak, currentLanguage, userProfile?.aacStudentVoiceType]);
 
   // Handle AAC board button click — buffer presses, send after delay or on double-tap
   const handleBoardButtonClick = useCallback((button: BoardButton, spokenText: string) => {
@@ -639,33 +671,25 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     // Conversation will start automatically when person is detected
   };
 
-  // Load user profile from authenticated user or API
+  // Load user profile from API (always fetch student data for AAC settings)
   useEffect(() => {
     const loadUserProfile = async () => {
       try {
-        if (authUser && (authUser as any).id) {
-          console.log('Using authenticated user data as profile:', authUser);
-          setUserProfile(authUser);
-          localStorage.setItem('synapse_user_profile', JSON.stringify(authUser));
+        if (!studentId) return;
+        // Always fetch student profile from API — authUser is the logged-in user,
+        // not necessarily the student, and may lack AAC-specific fields
+        const response = await fetchWithAuth(`/api/students/${studentId}`);
+        if (response.ok) {
+          const result = await response.json();
+          // API returns { success, student } — extract the student object
+          const profile = result.student || result;
+          setUserProfile(profile);
+          localStorage.setItem('synapse_user_profile', JSON.stringify(profile));
 
           // Load debug mode from user profile
-          if ((authUser as any).debugMode === true) {
-            console.log('Enabling debug mode from authenticated user profile');
+          if (profile.debugMode === true) {
+            console.log('Enabling debug mode from user profile');
             setDebugMode(true);
-          }
-        } else if (studentId) {
-          // Fallback to API call if authUser is not available but studentId is set
-          const response = await fetchWithAuth(`/api/students/${studentId}`);
-          if (response.ok) {
-            const profile = await response.json();
-            setUserProfile(profile);
-            localStorage.setItem('synapse_user_profile', JSON.stringify(profile));
-
-            // Load debug mode from user profile
-            if (profile.debugMode === true) {
-              console.log('Enabling debug mode from API user profile');
-              setDebugMode(true);
-            }
           }
         }
       } catch (error) {
@@ -674,7 +698,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     };
 
     loadUserProfile();
-  }, [authUser, studentId]);
+  }, [studentId]);
 
   // Camera-dependent conversation starter with person verification
   useEffect(() => {
@@ -904,7 +928,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   return (
     <CameraAttentivenessWrapper autoStart={true} cameraType="user">
     <EyeTrackingDwellProvider
-      mode={eyegazeSettings.enabled ? eyegazeSettings.mode : "off"}
+      mode={eyegazeSettings.enabled ? "mouse" : "off"}
       dwellTimeMs={eyegazeSettings.timeout}
       rawFaces={rawFaces}
     >
@@ -938,7 +962,19 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
         </motion.div>
 
         {/* Board Area — fills all remaining space */}
-        <div className="flex-1 min-h-0 overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-hidden relative">
+          <YesNoOverlay
+            active={yesNoActive}
+            onSelect={(choice) => {
+              dismissYesNoRef.current?.();
+              setYesNoActive(false);
+              sendMessageFnRef.current?.(choice);
+            }}
+            onDismiss={() => {
+              dismissYesNoRef.current?.();
+              setYesNoActive(false);
+            }}
+          />
           {boardMode === 'ai' ? (
             <DynamicBoard
               board={boardData}
@@ -972,8 +1008,14 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
         {/* Bottom Row: Quick Actions */}
         <QuickActions
           onAction={(action, text) => {
-            // Send quick action to AI
-            setSelectedSymbols([text]);
+            // Send quick action as button press (same as board buttons).
+            // Quick actions bypass the 2s buffer — send immediately.
+            if (interpretFnRef.current) {
+              interpretFnRef.current([text]);
+            } else {
+              // Fallback: speak locally when server is unavailable
+              speak(text, currentLanguage, userProfile?.aacStudentVoiceType || 'boy');
+            }
           }}
           onBack={() => {
             // Call the prebuilt board's back function
@@ -983,7 +1025,6 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             }
           }}
           boardMode={boardMode}
-          voiceType={userProfile?.aacStudentVoiceType || 'boy'}
         />
 
       </main>
@@ -1028,13 +1069,14 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
       {/* User Settings */}
       <UserSettings
         isOpen={showUserSettings}
-        onClose={() => { setShowUserSettings(false); setEyegazeSettings(readEyegazeSettings()); }}
+        onClose={() => setShowUserSettings(false)}
         studentId={studentId}
         userProfile={userProfile}
         onProfileUpdate={setUserProfile}
         debugMode={debugMode}
         onDebugModeChange={setDebugMode}
         onEyegazeChange={setEyegazeSettings}
+        onRestartSession={() => restartSessionFnRef.current?.()}
       />
 
       {/* Conversation Box - Toggle between single-agent and dual-agent */}
@@ -1141,6 +1183,8 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             onAiButtonPressChange={setAiButtonPressData}
             onSendMessageReady={(fn) => { sendMessageFnRef.current = fn; }}
             onInitializedChange={setAiSessionActive}
+            onYesNoChange={(active, dismiss) => { setYesNoActive(active); dismissYesNoRef.current = dismiss; }}
+            onRestartSessionReady={(fn) => { restartSessionFnRef.current = fn; }}
           />
           <AppOverlayBridge />
           <DualAgentConversationBox

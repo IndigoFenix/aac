@@ -1,5 +1,4 @@
 import { motion } from "framer-motion";
-import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 interface QuickActionsProps {
@@ -9,9 +8,8 @@ interface QuickActionsProps {
   voiceType?: string;
 }
 
-export default function QuickActions({ onAction, onBack, boardMode, voiceType }: QuickActionsProps) {
-  const { t, language } = useLanguage();
-  const { speak } = useTextToSpeech();
+export default function QuickActions({ onAction, onBack, boardMode }: QuickActionsProps) {
+  const { t } = useLanguage();
 
   const quickActions = [
     { id: "yes", labelKey: "quickActions.yes", emoji: "✅", color: "#D1FAE5" },
@@ -21,7 +19,6 @@ export default function QuickActions({ onAction, onBack, boardMode, voiceType }:
 
   const handleAction = (action: typeof quickActions[0]) => {
     const label = t(action.labelKey);
-    speak(label, language, voiceType as any);
     onAction(action.id, label);
   };
 

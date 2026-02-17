@@ -239,9 +239,12 @@ export default function DynamicBoard({
       return next;
     });
 
-    // After fade completes: replace with queued button or go blank
-    if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
+    // After fade animation completes: replace fading slots with queued buttons or blank.
+    // Only reset timer when this patch includes removes (which creates new fading slots).
+    // Add-only patches must NOT clear an existing timer — otherwise fading slots from a
+    // previous remove would never complete their transition (stuck invisible forever).
     if (remove.length > 0) {
+      if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
       fadeTimerRef.current = setTimeout(() => {
         setSlots((prev) =>
           prev.map((s): SlotState => {
@@ -431,6 +434,11 @@ export default function DynamicBoard({
         return <img src={cached} alt={button.label} className="object-contain rounded-full" style={imgStyle} />;
       }
       return <span className={`${level.iconClass} leading-none`}>👤</span>;
+    }
+    // Resolve __SYMBOL__:symbolId to custom symbol image
+    if (button.symbolPath?.startsWith("__SYMBOL__:")) {
+      const symbolId = button.symbolPath.substring(11);
+      return <img src={`/api/custom-symbols/${symbolId}/image`} alt={button.label} className="object-contain" style={imgStyle} loading="lazy" />;
     }
     if (button.symbolPath) {
       return <img src={button.symbolPath} alt={button.label} className="object-contain" style={imgStyle} />;

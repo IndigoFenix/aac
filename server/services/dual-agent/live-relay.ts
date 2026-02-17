@@ -19,7 +19,6 @@ import type {
 import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
 import { searchYouTube } from "../youtube/youtube-search";
 import { createContact, findSimilarContact, updateContact, getContactsByStudent } from "../biometric";
-import { whisperService } from "../voice/whisper-service";
 import { logDualAgent } from "./dual-agent-logger";
 
 // Re-use the existing dual-agent service for session management (monitor, voices, state)
@@ -34,11 +33,11 @@ import { boardRepository } from "../../repositories/boardRepository";
 export type ClientMessage =
   | { type: "initialize"; studentId: string; userId?: string; sessionId?: string; interactionMode?: AACInteractionMode; responseMode?: AACResponseMode; debugMode?: boolean }
   | { type: "frame_grid"; data: string; timestamps?: number[] }    // base64 JPEG
-  | { type: "audio_clip"; data: string; mimeType?: string }        // base64 audio (encoded, needs Whisper)
+  | { type: "audio_clip"; data: string; mimeType?: string }        // base64 audio (ignored in live mode — Gemini hears PCM directly)
   | { type: "pcm_audio"; data: string }                            // base64 raw PCM Int16 16kHz — streamed directly to Gemini
   | { type: "user_message"; text: string }
-  | { type: "voice_audio"; data: string; mimeType?: string }       // base64 webm for whisper transcription
-  | { type: "interpret_buttons"; buttons: string[]; board?: any }
+  | { type: "voice_audio"; data: string; mimeType?: string }       // base64 webm (ignored in live mode — Gemini hears PCM directly)
+  | { type: "button_press"; buttons: string[]; board?: any }
   | { type: "gesture_context"; data: string }
   | { type: "person_context"; data: any }
   | { type: "board_state"; data: any }
@@ -52,10 +51,10 @@ export type ServerMessage =
   | { type: "initialized"; sessionId: string }
   | { type: "text"; data: string }
   | { type: "speak"; text: string; audio?: string }
-  | { type: "interpret"; text: string; audio?: string }
+  | { type: "interpret"; text: string; audio?: string; confidence?: string }
   | { type: "board_patch"; data: any }
   | { type: "board"; data: any }
-  | { type: "transcript"; data: string; speaker?: string }
+  | { type: "transcript"; data: string; speaker?: string; confidence?: string }
   | { type: "context"; data: string }
   | { type: "emote"; data: string }
   | { type: "video_play"; data: any }
@@ -69,6 +68,8 @@ export type ServerMessage =
   | { type: "avatar_audio"; data: string }              // base64 audio chunk (AI voice TTS — avatar mouth animates)
   | { type: "interpretation_audio"; data: string }     // base64 audio chunk (student voice TTS)
   | { type: "monitor_status"; data: any }
+  | { type: "audio_interrupt" }                          // Stop client audio playback (model interrupted by user)
+  | { type: "yes_no"; data: any }                        // Yes/No question detected — trigger overlay
   | { type: "complete"; data?: any };
 
 // ---------------------------------------------------------------------------
@@ -94,6 +95,11 @@ export class LiveRelay {
 
   // For contact enrollment
   private unknownFaceDescriptors: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number } }> = [];
+
+  // Board state reminder: periodically remind Gemini of current board state
+  private boardReminderTimer: ReturnType<typeof setInterval> | null = null;
+  private lastBoardUpdateTime = 0;
+  private static readonly BOARD_REMINDER_INTERVAL_MS = 45_000; // 45s
 
   // Dedup guard: track last user message to prevent rapid duplicates
   private lastUserMessage: { text: string; timestamp: number } | null = null;
@@ -133,12 +139,31 @@ export class LiveRelay {
         console.error("[LiveRelay] Gemini error:", error.message);
         this.send({ type: "error", data: error.message });
       },
-      onClose: () => {
-        console.log("[LiveRelay] Gemini session closed");
+      onClose: (code, reason) => {
+        console.log(`[LiveRelay] Gemini session closed: code=${code} reason=${reason}`);
+        // Forward non-normal closes to client so they see specific error feedback
+        if (code && code !== 1000) {
+          const msg = reason || `Connection closed (code ${code})`;
+          this.send({ type: "error", data: msg });
+        }
       },
       onInputTranscription: (text) => {
         // Forward Gemini's built-in transcription to client
         this.send({ type: "transcript", data: text, speaker: "unknown" });
+      },
+      onReconnectFailed: async () => {
+        // Resumption handle was stale — reload history from DB and prime the fresh session
+        if (!this.sessionId) return;
+        console.log("[LiveRelay] Reconnect failed — reloading history from DB");
+        try {
+          const turns = await dualAgentService.loadHistoryForReconnect(this.sessionId);
+          if (turns.length > 0) {
+            this.gemini.sendConversationHistory(turns);
+            console.log(`[LiveRelay] Sent ${turns.length} history turns to fresh Gemini session`);
+          }
+        } catch (err) {
+          console.error("[LiveRelay] History reload failed:", err);
+        }
       },
     });
 
@@ -184,7 +209,7 @@ export class LiveRelay {
           // Send frame grid as image with detection prompt — triggers model response
           this.gemini.sendFrameWithPrompt(
             msg.data,
-            `[VISUAL CHECK] Composite frame grid (${msg.timestamps?.length ?? '?'} frames). Observe the scene and respond with prefix tokens only if something noteworthy changed. Stay silent if nothing important happened.`,
+            `[VISUAL CHECK] Composite frame grid (${msg.timestamps?.length ?? '?'} frames). Observe the scene. Use [CONTEXT] to record any changes in the environment. Use [ADD_BUTTONS]/[REMOVE_BUTTONS] to keep the board relevant. Speak or interpret only with HIGH CONFIDENCE. Stay silent if nothing important changed.`,
           );
           break;
         }
@@ -195,9 +220,7 @@ export class LiveRelay {
           break;
 
         case "audio_clip":
-          // Encoded audio clips (webm/ogg) from activity monitor — transcribe via Whisper.
-          // In Live mode with PCM streaming, these are less common (Gemini already hears audio).
-          await this.handleAudioClip(msg);
+          // No-op: Gemini already hears audio via continuous PCM streaming
           break;
 
         case "user_message": {
@@ -218,13 +241,13 @@ export class LiveRelay {
           this.lastUserMessage = { text: msg.text, timestamp: now };
           this.userMessageSentAt = now;
 
-          // Record user message in session state for monitor context
-          if (this.sessionCache?.state) {
-            this.sessionCache.state.pendingMessages.push({
+          // Record user message in session state for monitor context + persist to DB
+          if (this.sessionId) {
+            dualAgentService.addPendingMessage(this.sessionId, {
               role: "user",
               content: msg.text,
               timestamp: now,
-            });
+            }).catch(err => console.error("[LiveRelay] Failed to persist user message:", err));
           }
           this.gemini.sendMessage(msg.text, "user");
           logDualAgent("LiveRelay.userMessage", {
@@ -236,12 +259,10 @@ export class LiveRelay {
         }
 
         case "voice_audio":
-          // Transcribe via Whisper, then send text to Gemini
-          this.userMessageSentAt = Date.now();
-          await this.handleVoiceAudio(msg);
+          // No-op: Gemini already hears audio via continuous PCM streaming
           break;
 
-        case "interpret_buttons":
+        case "button_press":
           this.userMessageSentAt = Date.now();
           this.handleInterpretButtons(msg.buttons, msg.board);
           break;
@@ -255,9 +276,20 @@ export class LiveRelay {
           this.gemini.sendContextInjection(`[PERSON IDENTIFIED]\n${JSON.stringify(msg.data)}`);
           break;
 
-        case "board_state":
+        case "board_state": {
+          // Update server-side board label tracking from client-reported state
+          const bsState = this.sessionCache?.state;
+          if (bsState && msg.data?.pages?.[0]?.buttons) {
+            const maxSlots = bsState.maxBoardItems || 12;
+            bsState.boardButtonLabels = msg.data.pages[0].buttons
+              .slice(0, maxSlots)
+              .map((b: { label?: string }) => b.label || "")
+              .filter((l: string) => l);
+          }
+          this.lastBoardUpdateTime = Date.now();
           this.gemini.sendContextInjection(`[CURRENT BOARD STATE]\n${JSON.stringify(msg.data)}`);
           break;
+        }
 
         case "set_mode":
           this.interactionMode = msg.mode;
@@ -306,6 +338,7 @@ export class LiveRelay {
         msg.userId,
         msg.sessionId,
         this.interactionMode,
+        true, // isLiveMode — unified prompt with contextual rules for different input types
       );
       this.sessionId = state.sessionId;
 
@@ -337,6 +370,7 @@ You MUST:
 - Recognize BOTH of these echoes as YOUR OWN output, not new user speech
 - NEVER transcribe your own echoed speech as [TRANSCRIPT]
 - NEVER respond to or build upon your own echoed speech
+- Do not treat your own echoed speech as interruptions
 - Only treat audio input as genuine user speech if it clearly does NOT match something you recently said via [SPEAK] or [INTERPRET]
 
 If you hear speech that resembles text you recently produced, it is your echo. Ignore it completely and produce no output.`;
@@ -362,6 +396,9 @@ If you hear speech that resembles text you recently produced, it is your echo. I
       };
 
       await this.gemini.connect(systemPrompt, config);
+
+      // Start periodic board state reminders
+      this.startBoardReminder();
 
       // Send initialization confirmation to client
       this.send({ type: "initialized", sessionId: state.sessionId });
@@ -394,63 +431,16 @@ If you hear speech that resembles text you recently produced, it is your echo. I
   }
 
   // -------------------------------------------------------------------------
-  // Voice audio handling (transcribe via Whisper → send text to Gemini)
-  // -------------------------------------------------------------------------
-
-  private async handleVoiceAudio(msg: Extract<ClientMessage, { type: "voice_audio" }>): Promise<void> {
-    try {
-      const audioBuffer = Buffer.from(msg.data, "base64");
-      const result = await whisperService.transcribe(audioBuffer, msg.mimeType || "audio/webm");
-      const transcript = result?.text?.trim();
-
-      if (transcript) {
-        // Record in session state for monitor
-        if (this.sessionCache?.state) {
-          this.sessionCache.state.pendingMessages.push({
-            role: "user",
-            content: transcript,
-            timestamp: Date.now(),
-          });
-        }
-        // Send transcript to client for display
-        this.send({ type: "transcript", data: transcript, speaker: "user" });
-        // Send to Gemini as user message
-        this.gemini.sendMessage(transcript, "user");
-        logDualAgent("LiveRelay.voiceTranscript", { sessionId: this.sessionId, transcript });
-      }
-    } catch (err) {
-      console.error("[LiveRelay] Voice transcription failed:", err);
-    }
-  }
-
-  // -------------------------------------------------------------------------
-  // Audio clip handling (from activity monitor — transcribe then send text)
-  // -------------------------------------------------------------------------
-
-  private async handleAudioClip(msg: Extract<ClientMessage, { type: "audio_clip" }>): Promise<void> {
-    try {
-      const audioBuffer = Buffer.from(msg.data, "base64");
-      const result = await whisperService.transcribe(audioBuffer, msg.mimeType || "audio/webm");
-      const transcript = result?.text?.trim();
-
-      if (transcript) {
-        // Inject as ambient audio context so Gemini knows what was heard
-        this.gemini.sendContextInjection(`[AMBIENT AUDIO TRANSCRIPT]\n${transcript}`);
-      }
-    } catch (err) {
-      console.error("[LiveRelay] Audio clip transcription failed:", err);
-    }
-  }
-
-  // -------------------------------------------------------------------------
   // Button interpretation (send interpretation prompt to Gemini)
   // -------------------------------------------------------------------------
 
   private handleInterpretButtons(buttons: string[], board?: any): void {
     const buttonList = buttons.join(", ");
-    const boardContext = board ? `\nCurrent board: ${JSON.stringify(board)}` : "";
-    const prompt = `The student pressed these buttons in sequence: [${buttonList}]${boardContext}\n\nInterpret what the student wants to communicate based on these buttons. Use [INTERPRET] for the interpreted message and update the board if needed.`;
-    this.gemini.sendMessage(prompt, "user");
+    console.log(`[LiveRelay] Interpreting buttons: ${buttonList}`);
+    this.gemini.sendMessage(`[BUTTON PRESS] ${buttonList}
+    The user pressed the above button(s). Interpret this as a user message and respond accordingly.
+    Call [REBUILD_BOARD] to update the board with new buttons or content.
+    `, "user");
   }
 
   // -------------------------------------------------------------------------
@@ -499,6 +489,9 @@ If you hear speech that resembles text you recently produced, it is your echo. I
    * Handle interruption (model was cut off by new input).
    */
   private handleGeminiInterrupted(): void {
+    // Tell client to stop playing audio immediately
+    this.send({ type: "audio_interrupt" });
+
     // Flush parser
     const remaining = this.parser.flush();
     for (const seg of remaining) {
@@ -525,11 +518,11 @@ If you hear speech that resembles text you recently produced, it is your echo. I
         break;
 
       case "interpret":
-        this.send({ type: "interpret", text: seg.data });
+        this.send({ type: "interpret", text: seg.data, confidence: seg.confidence });
         break;
 
       case "transcript":
-        this.send({ type: "transcript", data: seg.data, speaker: seg.speaker });
+        this.send({ type: "transcript", data: seg.data, speaker: seg.speaker, confidence: seg.confidence });
         break;
 
       case "context":
@@ -540,21 +533,55 @@ If you hear speech that resembles text you recently produced, it is your echo. I
       case "remove_buttons":
       case "rebuild_board": {
         const parsed = parseStreamedText(`[${seg.type.toUpperCase()}] ${seg.data}`);
+        const state = this.sessionCache?.state;
+        const maxSlots = state?.maxBoardItems || 12;
+
         if (seg.type === "add_buttons" && parsed.addButtons) {
+          // Enforce button limit — reject and ask Gemini to retry
+          if (state) {
+            const newCount = state.boardButtonLabels.length + parsed.addButtons.length;
+            if (newCount > maxSlots) {
+              const available = maxSlots - state.boardButtonLabels.length;
+              const msg = `[BOARD REJECTED] Cannot add ${parsed.addButtons.length} button(s) — would exceed the ${maxSlots}-button limit. Currently ${state.boardButtonLabels.length} buttons, ${available} slot(s) available. Current buttons: ${state.boardButtonLabels.join(", ")}. Please use [REMOVE_BUTTONS] first to free slots, then retry with [ADD_BUTTONS] (You may respond with both tokens in a single response.)`;
+              logDualAgent("LiveRelay.boardPatchRejected", { sessionId: this.sessionId, attempted: parsed.addButtons.length, current: state.boardButtonLabels.length, max: maxSlots });
+              this.gemini.sendContextInjection(msg);
+              break;
+            }
+            state.boardButtonLabels = [...state.boardButtonLabels, ...parsed.addButtons.map(b => b.label)];
+          }
+          this.lastBoardUpdateTime = Date.now();
           this.send({ type: "board_patch", data: { add: parsed.addButtons, remove: [] } });
+          if (state) {
+            const available = maxSlots - state.boardButtonLabels.length;
+            this.gemini.sendContextInjection(`[BOARD STATE UPDATE] Current buttons (${state.boardButtonLabels.length}/${maxSlots}, ${available} slots available): ${state.boardButtonLabels.join(", ")}`);
+          }
         } else if (seg.type === "remove_buttons" && parsed.removeButtons) {
+          if (state) {
+            const removeSet = new Set(parsed.removeButtons.map(l => l.toLowerCase()));
+            state.boardButtonLabels = state.boardButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
+          }
+          this.lastBoardUpdateTime = Date.now();
           this.send({ type: "board_patch", data: { add: [], remove: parsed.removeButtons } });
+          if (state) {
+            const available = maxSlots - state.boardButtonLabels.length;
+            this.gemini.sendContextInjection(`[BOARD STATE UPDATE] Current buttons (${state.boardButtonLabels.length}/${maxSlots}, ${available} slots available): ${state.boardButtonLabels.join(", ") || "none"}`);
+          }
         } else if (seg.type === "rebuild_board" && parsed.rebuildBoard) {
           // Clear loaded custom board — REBUILD returns to default AI-generated board
-          const state = this.sessionCache?.state;
           if (state) {
             state.loadedBoardId = null;
             state.loadedBoardData = undefined;
             state.currentPageId = null;
             state.pageHistory = [];
             state.maxBoardItems = 12;
+            state.boardButtonLabels = parsed.rebuildBoard.slice(0, 12).map(b => b.label);
           }
+          this.lastBoardUpdateTime = Date.now();
           this.send({ type: "board", data: this.buildBoardFromButtons(parsed.rebuildBoard) });
+          if (state) {
+            const available = (state.maxBoardItems || 12) - state.boardButtonLabels.length;
+            this.gemini.sendContextInjection(`[BOARD STATE UPDATE] Board rebuilt. Current buttons (${state.boardButtonLabels.length}/${state.maxBoardItems || 12}, ${available} slots available): ${state.boardButtonLabels.join(", ")}`);
+          }
         }
         break;
       }
@@ -565,6 +592,10 @@ If you hear speech that resembles text you recently produced, it is your echo. I
 
       case "set_board":
         // Handled during turn completion (needs async board loading)
+        break;
+
+      case "yes_no":
+        this.send({ type: "yes_no", data: {} });
         break;
 
       case "press_button":
@@ -723,28 +754,38 @@ If you hear speech that resembles text you recently produced, it is your echo. I
     // If speech is a repeat, skip state recording + TTS for speak/interpret/transcript
     // (context + board changes still go through — those can legitimately repeat)
     if (speechSuppressed) {
+      // Collect messages to persist in a single batch
+      const suppressedMsgs: import("./types").PendingMessage[] = [];
+
       // Still record context if new
-      if (state && fullContextText) {
-        state.pendingMessages.push({
+      if (fullContextText) {
+        suppressedMsgs.push({
           role: "assistant",
           content: `[CONTEXT] ${fullContextText}`,
           timestamp: nowDedup,
         });
       }
       // Still record board changes
-      if (state && hasBoardChange) {
+      if (hasBoardChange) {
         const boardSuffix = boardRebuilt
           ? `Board rebuilt: ${boardAddLabels.join(", ")}`
           : [
               boardAddCount > 0 ? `Added: ${boardAddLabels.join(", ")}` : "",
               boardRemoveCount > 0 ? `Removed: ${boardRemoveLabels.join(", ")}` : "",
             ].filter(Boolean).join(". ");
-        state.pendingMessages.push({
+        suppressedMsgs.push({
           role: "assistant",
           content: `[SYSTEM — Board changes: ${boardSuffix}]`,
           timestamp: nowDedup,
         });
       }
+
+      // Persist batch to DB
+      if (this.sessionId && suppressedMsgs.length > 0) {
+        dualAgentService.addPendingMessages(this.sessionId, suppressedMsgs)
+          .catch(err => console.error("[LiveRelay] Failed to persist suppressed messages:", err));
+      }
+
       // Skip to monitor triggering (no TTS, no duplicate state entries)
       // Signal turn complete to client
       this.send({ type: "complete", data: {} });
@@ -761,15 +802,18 @@ If you hear speech that resembles text you recently produced, it is your echo. I
     }
 
     // -----------------------------------------------------------------------
-    // Record AI response in session state (so monitor has context)
+    // Record AI response in session state (so monitor has context) — batch persist
     // -----------------------------------------------------------------------
     if (state) {
       const now = Date.now();
       state.lastInteractiveActivity = now;
 
+      // Collect all turn messages into a batch for single DB write
+      const turnMessages: import("./types").PendingMessage[] = [];
+
       // Record AI speech as pending message for monitor
       if (fullSpeakText) {
-        state.pendingMessages.push({
+        turnMessages.push({
           role: "assistant",
           content: fullSpeakText,
           timestamp: now,
@@ -778,7 +822,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
 
       // Record AI interpretation as pending message
       if (fullInterpretText) {
-        state.pendingMessages.push({
+        turnMessages.push({
           role: "assistant",
           content: `[INTERPRET] ${fullInterpretText}`,
           timestamp: now,
@@ -787,7 +831,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
 
       // Record context observations
       if (fullContextText) {
-        state.pendingMessages.push({
+        turnMessages.push({
           role: "assistant",
           content: `[CONTEXT] ${fullContextText}`,
           timestamp: now,
@@ -796,7 +840,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
 
       // Record transcripts as user messages
       if (fullTranscriptText) {
-        state.pendingMessages.push({
+        turnMessages.push({
           role: "user",
           content: `[TRANSCRIPT] ${fullTranscriptText}`,
           timestamp: now,
@@ -805,7 +849,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
 
       // Record [CALL_MONITOR] reason so monitor sees why it was called
       if (callMonitorReason) {
-        state.pendingMessages.push({
+        turnMessages.push({
           role: "assistant",
           content: `[CALL_MONITOR] ${callMonitorReason}`,
           timestamp: now,
@@ -820,11 +864,17 @@ If you hear speech that resembles text you recently produced, it is your echo. I
               boardAddCount > 0 ? `Added: ${boardAddLabels.join(", ")}` : "",
               boardRemoveCount > 0 ? `Removed: ${boardRemoveLabels.join(", ")}` : "",
             ].filter(Boolean).join(". ");
-        state.pendingMessages.push({
+        turnMessages.push({
           role: "assistant",
           content: `[SYSTEM — Board changes: ${boardSuffix}]`,
           timestamp: now,
         });
+      }
+
+      // Persist entire batch to DB in one call
+      if (this.sessionId && turnMessages.length > 0) {
+        dualAgentService.addPendingMessages(this.sessionId, turnMessages)
+          .catch(err => console.error("[LiveRelay] Failed to persist turn messages:", err));
       }
     }
 
@@ -919,11 +969,13 @@ If you hear speech that resembles text you recently produced, it is your echo. I
               this.gemini.sendContextInjection(
                 `[AI navigated to page "${targetPage.name || targetPage.id}". Current buttons: ${buttonLabels}]`
               );
-              state.pendingMessages.push({
-                role: "assistant",
-                content: `[AI navigated to page "${targetPage.name || targetPage.id}"]`,
-                timestamp: Date.now(),
-              });
+              if (this.sessionId) {
+                dualAgentService.addPendingMessage(this.sessionId, {
+                  role: "assistant",
+                  content: `[AI navigated to page "${targetPage.name || targetPage.id}"]`,
+                  timestamp: Date.now(),
+                }).catch(err => console.error("[LiveRelay] Failed to persist nav message:", err));
+              }
 
               logDualAgent("LiveRelay.pressButton", {
                 sessionId: this.sessionId,
@@ -1106,13 +1158,82 @@ If you hear speech that resembles text you recently produced, it is your echo. I
     };
   }
 
+  // -------------------------------------------------------------------------
+  // Periodic board state reminders
+  // -------------------------------------------------------------------------
+
+  private startBoardReminder(): void {
+    this.stopBoardReminder();
+    this.lastBoardUpdateTime = Date.now();
+    this.boardReminderTimer = setInterval(() => {
+      this.sendBoardStateReminder();
+    }, LiveRelay.BOARD_REMINDER_INTERVAL_MS);
+  }
+
+  private stopBoardReminder(): void {
+    if (this.boardReminderTimer) {
+      clearInterval(this.boardReminderTimer);
+      this.boardReminderTimer = null;
+    }
+  }
+
+  /**
+   * Send a periodic board state context injection so Gemini stays aware
+   * of current buttons and available slots. Only fires if the board
+   * hasn't been updated recently (otherwise the per-change injections suffice).
+   * These are NOT added to pendingMessages (per design).
+   */
+  private sendBoardStateReminder(): void {
+    const state = this.sessionCache?.state;
+    if (!state) return;
+
+    const timeSinceUpdate = Date.now() - this.lastBoardUpdateTime;
+    if (timeSinceUpdate < LiveRelay.BOARD_REMINDER_INTERVAL_MS) return; // recent update already informed Gemini
+
+    const maxSlots = state.maxBoardItems || 12;
+    const labels = state.boardButtonLabels;
+    const available = maxSlots - labels.length;
+
+    this.gemini.sendContextInjection(
+      `[BOARD STATE REMINDER] Current buttons (${labels.length}/${maxSlots}, ${available} slots available): ${labels.join(", ") || "none"}`,
+    );
+  }
+
   private cleanup(): void {
+    // Stop board state reminder timer
+    this.stopBoardReminder();
+
     // Remove context injection callback to prevent leaks
     if (this.sessionCache?.state) {
       this.sessionCache.state.onContextInjection = undefined;
     }
+
+    // Trigger final monitor run (fire-and-forget)
+    if (this.sessionId) {
+      this.handleSessionClose().catch(err => {
+        console.error("[LiveRelay] Session close handler failed:", err);
+      });
+    }
+
     this.gemini.close();
     logDualAgent("LiveRelay.cleanup", { sessionId: this.sessionId });
+  }
+
+  /**
+   * Handle session close: add a close marker and force-trigger the monitor
+   * for a final summary of the session.
+   */
+  private async handleSessionClose(): Promise<void> {
+    if (!this.sessionId) return;
+
+    await dualAgentService.addPendingMessage(this.sessionId, {
+      role: "user",
+      content: "[SESSION_CLOSED] The AAC session has ended. Perform a final summary of the session.",
+      timestamp: Date.now(),
+    });
+
+    // Force trigger (bypass throttle). If monitor is busy, rerun flag handles it.
+    await dualAgentService.triggerMonitor(this.sessionId, true);
   }
 }
 

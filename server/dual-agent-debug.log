@@ -4242,3 +4242,5578 @@
 {
   "sessionId": "4271ead8-3916-4c6e-93a4-4d5786adcb78"
 }
+
+============================================================
+[2026-02-15T17:09:48.455Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "a2b00be4-747a-4879-b70e-ee5a426ff2db",
+  "studentId": "547976c7-9b1d-49db-9cfb-5c6500806533",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-15T17:09:49.432Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "a2b00be4-747a-4879-b70e-ee5a426ff2db",
+  "elapsed": "115ms",
+  "segmentCount": 2,
+  "segments": "speak, rebuild_board",
+  "speak": "Hi Daniel, it's good to see you! How are you doing this evening?",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Good, Bad, Project, Socialize, Eat, Relax, Help",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T17:09:55.224Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "a2b00be4-747a-4879-b70e-ee5a426ff2db",
+  "elapsed": "5907ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T17:09:59.802Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "a2b00be4-747a-4879-b70e-ee5a426ff2db",
+  "text": "Project",
+  "textLength": 7
+}
+
+============================================================
+[2026-02-15T17:10:00.268Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "a2b00be4-747a-4879-b70e-ee5a426ff2db",
+  "elapsed": "10950ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T17:10:17.101Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "a2b00be4-747a-4879-b70e-ee5a426ff2db",
+  "elapsed": "27784ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T17:10:19.874Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "a2b00be4-747a-4879-b70e-ee5a426ff2db",
+  "text": "Help",
+  "textLength": 4
+}
+
+============================================================
+[2026-02-15T17:10:20.401Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "a2b00be4-747a-4879-b70e-ee5a426ff2db",
+  "elapsed": "61ms",
+  "segmentCount": 4,
+  "segments": "transcript, interpret, speak, rebuild_board",
+  "speak": "Okay, I can help. What do you need help with?",
+  "interpret": "I need help.",
+  "transcript": "[Daniel] Help",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Coding, Audio, System, Now, Later",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T17:10:31.556Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "a2b00be4-747a-4879-b70e-ee5a426ff2db",
+  "text": "Coding",
+  "textLength": 6
+}
+
+============================================================
+[2026-02-15T17:10:32.257Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "a2b00be4-747a-4879-b70e-ee5a426ff2db",
+  "elapsed": "191ms",
+  "segmentCount": 4,
+  "segments": "transcript, interpret, speak, rebuild_board",
+  "speak": "Okay, let's focus on coding. What part of the coding are you having trouble with? Is it the AI system, or something else?",
+  "interpret": "I need help with coding.",
+  "transcript": "[Daniel] Coding",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "AI System, Debugging, Audio Feedback, Recursive Questioning, New Feature",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T17:10:39.793Z] LiveRelay.cleanup
+----------------------------------------
+{
+  "sessionId": "a2b00be4-747a-4879-b70e-ee5a426ff2db"
+}
+
+============================================================
+[2026-02-15T19:35:20.136Z] LiveRelay.cleanup
+----------------------------------------
+{
+  "sessionId": null
+}
+
+============================================================
+[2026-02-15T19:35:24.532Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "65cf46c5-5ad5-4aec-90ba-39937a83331d",
+  "studentId": "547976c7-9b1d-49db-9cfb-5c6500806533",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-15T19:35:25.166Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "65cf46c5-5ad5-4aec-90ba-39937a83331d",
+  "elapsed": "31ms",
+  "segmentCount": 2,
+  "segments": "speak, rebuild_board",
+  "speak": "Hi Daniel, it's good to see you! How are you doing this evening?",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Good, Tired, Project, Talk, Music, Drawing",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T19:35:47.169Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "0af54276-a331-41bd-898f-62a995917ed6",
+  "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-15T19:35:48.088Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "0af54276-a331-41bd-898f-62a995917ed6",
+  "elapsed": "331ms",
+  "segmentCount": 2,
+  "segments": "speak, rebuild_board",
+  "speak": "Hi Gal! It's great to see you. How are you feeling today?",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Good, Tired, Happy, Play, Draw, Music, Explore, Eat, Drink",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T19:35:55.904Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "0af54276-a331-41bd-898f-62a995917ed6",
+  "elapsed": "8147ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T19:36:06.379Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "0af54276-a331-41bd-898f-62a995917ed6",
+  "elapsed": "18622ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T19:36:12.453Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "0af54276-a331-41bd-898f-62a995917ed6",
+  "elapsed": "129ms",
+  "segmentCount": 2,
+  "segments": "context, rebuild_board",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "New glasses detected.",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Good, Tired, Happy, Play, Draw, Music, Explore, Eat, Drink, Glasses",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T19:36:20.275Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "0af54276-a331-41bd-898f-62a995917ed6",
+  "elapsed": "7949ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T19:36:23.517Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "0af54276-a331-41bd-898f-62a995917ed6",
+  "elapsed": "43ms",
+  "segmentCount": 4,
+  "segments": "transcript, interpret, speak, rebuild_board",
+  "speak": "Do you want to eat something? What would you like?",
+  "interpret": "Eat|🍎",
+  "transcript": "[Unknown] Do you want to eat something?",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Yes, No, Pizza, Apple, Banana, Sandwich",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T19:36:28.491Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "0af54276-a331-41bd-898f-62a995917ed6",
+  "elapsed": "5016ms",
+  "segmentCount": 8,
+  "segments": "transcript, interpret, speak, rebuild_board, transcript, interpret, speak, rebuild_board",
+  "speak": "Do you want to eat something? What would you like? Okay, a banana sounds good!",
+  "interpret": "Eat|🍎 Banana|🍌",
+  "transcript": "[Unknown] Do you want to eat something? [Unknown] Banana.",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Yes, No, Pizza, Apple, Banana, Sandwich, Good, More, All done",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T19:36:33.198Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "0af54276-a331-41bd-898f-62a995917ed6",
+  "elapsed": "22ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Visual feed interrupted.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T19:36:38.141Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "0af54276-a331-41bd-898f-62a995917ed6",
+  "elapsed": "4965ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T19:36:48.632Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "0af54276-a331-41bd-898f-62a995917ed6",
+  "elapsed": "94ms",
+  "segmentCount": 4,
+  "segments": "transcript, interpret, speak, rebuild_board",
+  "speak": "Do you want to eat something else?",
+  "interpret": "Eat|🍎",
+  "transcript": "[Unknown] Do you want to eat something?",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Yes, No, Pizza, Apple, Banana, Sandwich",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T19:36:55.485Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "0af54276-a331-41bd-898f-62a995917ed6",
+  "elapsed": "60ms",
+  "segmentCount": 4,
+  "segments": "transcript, interpret, speak, rebuild_board",
+  "speak": "Another banana?",
+  "interpret": "Banana|🍌",
+  "transcript": "[Unknown] Banana.",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Yes, No, More, All done",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T19:44:37.230Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "a4ba5833-8e47-4aaf-bc22-4fcd8158d229",
+  "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+  "interactionMode": "interact",
+  "responseMode": "analyze"
+}
+
+============================================================
+[2026-02-15T19:44:37.967Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "a4ba5833-8e47-4aaf-bc22-4fcd8158d229",
+  "elapsed": "80ms",
+  "segmentCount": 2,
+  "segments": "speak, rebuild_board",
+  "speak": "Hi Gal! It's great to see you. How are you feeling today?",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Good, Tired, Happy, Play, Music, Draw, Explore",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T19:44:44.677Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "a4ba5833-8e47-4aaf-bc22-4fcd8158d229",
+  "elapsed": "6790ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T19:44:56.066Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "a4ba5833-8e47-4aaf-bc22-4fcd8158d229",
+  "elapsed": "19ms",
+  "segmentCount": 2,
+  "segments": "transcript, rebuild_board",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "[Unknown] Do you want to eat something?",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Yes, No, Eat, Drink, Play, Tired",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T19:45:00.404Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "a4ba5833-8e47-4aaf-bc22-4fcd8158d229",
+  "elapsed": "29ms",
+  "segmentCount": 4,
+  "segments": "transcript, interpret, speak, rebuild_board",
+  "speak": "Okay! What would you like to eat?",
+  "interpret": "Yes|👍",
+  "transcript": "[Unknown] Thank you.",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Apple, Banana, Sandwich, Water",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T19:45:14.389Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "a4ba5833-8e47-4aaf-bc22-4fcd8158d229",
+  "elapsed": "56ms",
+  "segmentCount": 4,
+  "segments": "transcript, interpret, speak, rebuild_board",
+  "speak": "Okay, an apple sounds good!",
+  "interpret": "Apple|🍎",
+  "transcript": "[Unknown] you",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "More, All done",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-15T19:45:30.099Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "a4ba5833-8e47-4aaf-bc22-4fcd8158d229",
+  "elapsed": "133ms",
+  "segmentCount": 3,
+  "segments": "interpret, speak, rebuild_board",
+  "speak": "Great! Enjoy your apple. Would you like to do something else now?",
+  "interpret": "All done|✅",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Play, Music, Draw, Explore, Tired",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-16T18:49:32.263Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "aac-1771267765278",
+  "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-16T18:49:33.081Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771267765278",
+  "elapsed": "147ms",
+  "segmentCount": 3,
+  "segments": "speak, rebuild_board, emote",
+  "speak": "Hi Gal! It's great to see you. How are you feeling tonight?",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "I'm good, I'm tired, I want to explore, I want to draw, I want music, I want to play",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-16T18:50:01.633Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771267765278",
+  "elapsed": "35ms",
+  "segmentCount": 2,
+  "segments": "context, add_buttons",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Person detected.",
+  "board": {
+    "rebuilt": false,
+    "added": 2,
+    "removed": 0,
+    "addLabels": "Hello, Who is that?",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-16T18:50:19.376Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771267765278",
+  "text": "I want to explore",
+  "textLength": 17
+}
+
+============================================================
+[2026-02-16T18:50:20.210Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771267765278",
+  "elapsed": "150ms",
+  "segmentCount": 3,
+  "segments": "interpret, speak, add_buttons",
+  "speak": "Okay, Gal! What would you like to explore?",
+  "interpret": "I want to explore.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": false,
+    "added": 3,
+    "removed": 0,
+    "addLabels": "Pictures, Outside, Tools",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-16T18:50:27.712Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771267765278",
+  "elapsed": "93ms",
+  "segmentCount": 2,
+  "segments": "context, add_buttons",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Person is looking at the camera.",
+  "board": {
+    "rebuilt": false,
+    "added": 1,
+    "removed": 0,
+    "addLabels": "Look",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-16T18:50:34.091Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771267765278",
+  "elapsed": "39ms",
+  "segmentCount": 2,
+  "segments": "context, add_buttons",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Water bottle visible.",
+  "board": {
+    "rebuilt": false,
+    "added": 1,
+    "removed": 0,
+    "addLabels": "Drink",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-16T18:50:37.757Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771267765278",
+  "elapsed": "34ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Person is present.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-16T18:50:43.282Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771267765278",
+  "elapsed": "62ms",
+  "segmentCount": 2,
+  "segments": "context, add_buttons",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Person is holding a water bottle.",
+  "board": {
+    "rebuilt": false,
+    "added": 1,
+    "removed": 0,
+    "addLabels": "I want a drink",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-16T18:50:49.826Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771267765278",
+  "elapsed": "143ms",
+  "segmentCount": 2,
+  "segments": "context, remove_buttons",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "The person is drinking from the water bottle.",
+  "board": {
+    "rebuilt": false,
+    "added": 0,
+    "removed": 2,
+    "addLabels": "",
+    "removeLabels": "I want a drink, Drink"
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-16T18:50:52.810Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771267765278",
+  "elapsed": "78ms",
+  "segmentCount": 2,
+  "segments": "transcript, add_buttons",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "[Unknown] Do you want water? — Confidence: high",
+  "context": "(none)",
+  "board": {
+    "rebuilt": false,
+    "added": 2,
+    "removed": 0,
+    "addLabels": "Yes, No",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-16T18:51:00.320Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771267765278",
+  "elapsed": "34ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Water bottle is still visible.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-16T18:51:16.065Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771267765278",
+  "elapsed": "54ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Water bottle is still visible.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-16T18:51:19.293Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771267765278",
+  "elapsed": "52ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Person is present.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-16T18:51:35.780Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771267765278",
+  "elapsed": "32ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Person is present.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-16T18:51:50.559Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771267765278",
+  "elapsed": "45ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Person is present.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-16T18:51:59.477Z] LiveRelay.cleanup
+----------------------------------------
+{
+  "sessionId": "aac-1771267765278"
+}
+
+============================================================
+[2026-02-17T06:17:19.630Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "aac-1771309037506",
+  "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-17T06:17:20.457Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771309037506",
+  "elapsed": "231ms",
+  "segmentCount": 2,
+  "segments": "speak, rebuild_board",
+  "speak": "Good morning, Gal! I'm ready to help you with anything you need today.",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Play, Draw, Music, Explore, Tired, Help, Eat, Drink",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T06:17:21.801Z] LiveRelay.cleanup
+----------------------------------------
+{
+  "sessionId": "aac-1771309037506"
+}
+
+============================================================
+[2026-02-17T06:17:30.175Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "aac-1771309048471",
+  "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-17T06:17:30.771Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771309048471",
+  "elapsed": "57ms",
+  "segmentCount": 2,
+  "segments": "speak, rebuild_board",
+  "speak": "Good morning, Gal! I'm ready to help you with your day.\n\nBoard changes:",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Play, Draw, Music, Explore, Tired, Help",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T06:17:47.453Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771309048471",
+  "text": "Help",
+  "textLength": 4
+}
+
+============================================================
+[2026-02-17T07:07:20.108Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-17T07:07:21.062Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "133ms",
+  "segmentCount": 3,
+  "segments": "speak, rebuild_board, emote",
+  "speak": "Hi Gal, good morning! I'm ready to help you with whatever you'd like to do today.",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Play, Draw, Music, Explore, Tired, Help, Yes, No",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:07:26.826Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "1ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "No significant changes detected.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:07:32.646Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "39ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "No significant changes detected.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:07:36.270Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "text": "Explore",
+  "textLength": 7
+}
+
+============================================================
+[2026-02-17T07:07:37.422Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "23ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "No significant changes detected.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:07:37.825Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "27ms",
+  "segmentCount": 3,
+  "segments": "interpret, speak, add_buttons",
+  "speak": "Okay, Gal. What would you like to explore?",
+  "interpret": "I want to explore.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": false,
+    "added": 4,
+    "removed": 0,
+    "addLabels": "Outside, Inside, Books, Tools",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:07:45.443Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "18ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "No significant changes detected.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:07:49.598Z] LiveRelay.boardPatchRejected
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "attempted": 1,
+  "current": 12,
+  "max": 12
+}
+
+============================================================
+[2026-02-17T07:07:49.601Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "47ms",
+  "segmentCount": 2,
+  "segments": "context, add_buttons",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is holding a blue marker.",
+  "board": {
+    "rebuilt": false,
+    "added": 1,
+    "removed": 0,
+    "addLabels": "Marker",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:07:53.897Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "21ms",
+  "segmentCount": 3,
+  "segments": "context, remove_buttons, add_buttons",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is still holding the blue marker.",
+  "board": {
+    "rebuilt": false,
+    "added": 2,
+    "removed": 2,
+    "addLabels": "Marker, Crafts",
+    "removeLabels": "Play, Explore"
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:08:02.303Z] LiveRelay.boardPatchRejected
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "attempted": 1,
+  "current": 12,
+  "max": 12
+}
+
+============================================================
+[2026-02-17T07:08:02.306Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "36ms",
+  "segmentCount": 3,
+  "segments": "context, add_buttons, remove_buttons",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is now holding a water bottle.",
+  "board": {
+    "rebuilt": false,
+    "added": 1,
+    "removed": 2,
+    "addLabels": "Drink",
+    "removeLabels": "Tools, Crafts"
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:08:08.547Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "34ms",
+  "segmentCount": 2,
+  "segments": "context, add_buttons",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "The water bottle is still visible.",
+  "board": {
+    "rebuilt": false,
+    "added": 1,
+    "removed": 0,
+    "addLabels": "Drink",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:08:21.680Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "78ms",
+  "segmentCount": 2,
+  "segments": "context, remove_buttons",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is no longer holding the marker. The water bottle is still visible.",
+  "board": {
+    "rebuilt": false,
+    "added": 0,
+    "removed": 1,
+    "addLabels": "",
+    "removeLabels": "Marker"
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:08:32.752Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "text": "Drink",
+  "textLength": 5
+}
+
+============================================================
+[2026-02-17T07:08:33.360Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "32ms",
+  "segmentCount": 2,
+  "segments": "interpret, speak",
+  "speak": "Okay! Here's your water.",
+  "interpret": "I want a drink.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:08:40.509Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "28ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "The water bottle is still visible.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:08:48.720Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "9ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "No significant changes detected.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:08:49.381Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "text": "Help",
+  "textLength": 4
+}
+
+============================================================
+[2026-02-17T07:08:49.963Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "53ms",
+  "segmentCount": 2,
+  "segments": "interpret, speak",
+  "speak": "What do you need help with, Gal?",
+  "interpret": "I need help.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:09:01.290Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "text": "Drink",
+  "textLength": 5
+}
+
+============================================================
+[2026-02-17T07:09:02.047Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "64ms",
+  "segmentCount": 3,
+  "segments": "interpret, speak, yes_no",
+  "speak": "You want more water?",
+  "interpret": "I want a drink.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:09:10.703Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "text": "Yes",
+  "textLength": 3
+}
+
+============================================================
+[2026-02-17T07:09:11.548Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "78ms",
+  "segmentCount": 2,
+  "segments": "interpret, speak",
+  "speak": "Here you go!",
+  "interpret": "Yes, I want more water.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:09:18.293Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "20ms",
+  "segmentCount": 2,
+  "segments": "context, add_buttons",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is pointing to his eye.",
+  "board": {
+    "rebuilt": false,
+    "added": 1,
+    "removed": 0,
+    "addLabels": "Video",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:09:26.334Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "53ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is pointing to his eye again.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:09:33.604Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "7324ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:09:35.676Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "30ms",
+  "segmentCount": 4,
+  "segments": "transcript, context, add_buttons, yes_no",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "[Unknown] Hey girl, you want chocolate?",
+  "context": "Unknown person is speaking and asking if Gal wants chocolate.",
+  "board": {
+    "rebuilt": false,
+    "added": 1,
+    "removed": 0,
+    "addLabels": "Chocolate",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:09:40.125Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "text": "No",
+  "textLength": 2
+}
+
+============================================================
+[2026-02-17T07:09:41.469Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "61ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "No significant changes detected.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:09:41.790Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "80ms",
+  "segmentCount": 3,
+  "segments": "interpret, speak, remove_buttons",
+  "speak": "Okay, no chocolate for Gal.",
+  "interpret": "No, I don't want chocolate.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": false,
+    "added": 0,
+    "removed": 1,
+    "addLabels": "",
+    "removeLabels": "Chocolate"
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:09:44.378Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "2667ms",
+  "segmentCount": 4,
+  "segments": "interpret, speak, remove_buttons, context",
+  "speak": "Okay, no chocolate for Gal.",
+  "interpret": "No, I don't want chocolate.",
+  "transcript": "(none)",
+  "context": "No significant changes detected.",
+  "board": {
+    "rebuilt": false,
+    "added": 0,
+    "removed": 1,
+    "addLabels": "",
+    "removeLabels": "Chocolate"
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": true
+}
+
+============================================================
+[2026-02-17T07:09:59.755Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "21ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "No significant changes detected.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:10:06.166Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "elapsed": "20ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "No significant changes detected.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:10:12.950Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "text": "Help",
+  "textLength": 4
+}
+
+============================================================
+[2026-02-17T07:10:32.442Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771312038424",
+  "text": "Outside",
+  "textLength": 7
+}
+
+============================================================
+[2026-02-17T07:42:03.539Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "aac-1771314121821",
+  "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-17T07:42:04.284Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771314121821",
+  "elapsed": "35ms",
+  "segmentCount": 2,
+  "segments": "speak, rebuild_board",
+  "speak": "Hi Gal, good morning! I'm here to help you have a great day.",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Play, Music, Explore, Draw, Tired, Eat",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:42:08.636Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771314121821",
+  "elapsed": "4387ms",
+  "segmentCount": 3,
+  "segments": "speak, rebuild_board, context",
+  "speak": "Hi Gal, good morning! I'm here to help you have a great day.",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "No significant changes detected.",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Play, Music, Explore, Draw, Tired, Eat",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": true
+}
+
+============================================================
+[2026-02-17T07:42:10.143Z] LiveRelay.cleanup
+----------------------------------------
+{
+  "sessionId": "aac-1771314121821"
+}
+
+============================================================
+[2026-02-17T07:42:19.799Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "aac-1771314138156",
+  "studentId": "547976c7-9b1d-49db-9cfb-5c6500806533",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-17T07:42:20.523Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771314138156",
+  "elapsed": "181ms",
+  "segmentCount": 2,
+  "segments": "speak, rebuild_board",
+  "speak": "Good morning, Daniel! I'm here to help you with your day.",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Programming, Debugging, Socialize, Coffee, Project, Music, Walk",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:42:30.162Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771314138156",
+  "elapsed": "27ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Daniel is looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:42:32.705Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771314138156",
+  "text": "Project",
+  "textLength": 7
+}
+
+============================================================
+[2026-02-17T07:42:33.255Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771314138156",
+  "elapsed": "163ms",
+  "segmentCount": 3,
+  "segments": "interpret, speak, add_buttons",
+  "speak": "Okay, let's talk about your project. Do you want to work on the AI system today?",
+  "interpret": "Project.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": false,
+    "added": 2,
+    "removed": 0,
+    "addLabels": "Yes, No",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:42:36.840Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771314138156",
+  "elapsed": "3750ms",
+  "segmentCount": 4,
+  "segments": "interpret, speak, add_buttons, context",
+  "speak": "Okay, let's talk about your project. Do you want to work on the AI system today?",
+  "interpret": "Project.",
+  "transcript": "(none)",
+  "context": "Daniel is still looking at the screen.",
+  "board": {
+    "rebuilt": false,
+    "added": 2,
+    "removed": 0,
+    "addLabels": "Yes, No",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": true
+}
+
+============================================================
+[2026-02-17T07:42:41.297Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771314138156",
+  "elapsed": "217ms",
+  "segmentCount": 4,
+  "segments": "transcript, interpret, speak, add_buttons",
+  "speak": "Great! Are you still having trouble with the audio feedback loop and recursive questioning?",
+  "interpret": "Yes, I want to work on the AI system.",
+  "transcript": "[Daniel] Yes.",
+  "context": "(none)",
+  "board": {
+    "rebuilt": false,
+    "added": 2,
+    "removed": 0,
+    "addLabels": "Yes, No",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:42:57.178Z] LiveRelay.boardPatchRejected
+----------------------------------------
+{
+  "sessionId": "aac-1771314138156",
+  "attempted": 2,
+  "current": 11,
+  "max": 12
+}
+
+============================================================
+[2026-02-17T07:42:57.180Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771314138156",
+  "elapsed": "403ms",
+  "segmentCount": 4,
+  "segments": "transcript, interpret, speak, add_buttons",
+  "speak": "Okay. Let's focus on debugging then. Do you want to switch to the programming activities board? It has some helpful options.",
+  "interpret": "Yes, I am still having trouble with that.",
+  "transcript": "[Daniel] Yes.",
+  "context": "(none)",
+  "board": {
+    "rebuilt": false,
+    "added": 2,
+    "removed": 0,
+    "addLabels": "Switch Board, Stay Here",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:43:02.521Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771314138156",
+  "elapsed": "5743ms",
+  "segmentCount": 6,
+  "segments": "transcript, interpret, speak, add_buttons, remove_buttons, add_buttons",
+  "speak": "Okay. Let's focus on debugging then. Do you want to switch to the programming activities board? It has some helpful options.",
+  "interpret": "Yes, I am still having trouble with that.",
+  "transcript": "[Daniel] Yes.",
+  "context": "(none)",
+  "board": {
+    "rebuilt": false,
+    "added": 4,
+    "removed": 4,
+    "addLabels": "Switch Board, Stay Here, Switch Board, Stay Here",
+    "removeLabels": "Yes, No, Yes, No"
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:43:07.887Z] LiveRelay.cleanup
+----------------------------------------
+{
+  "sessionId": "aac-1771314138156"
+}
+
+============================================================
+[2026-02-17T07:59:25.064Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331",
+  "studentId": "547976c7-9b1d-49db-9cfb-5c6500806533",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-17T07:59:25.936Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331",
+  "elapsed": "333ms",
+  "segmentCount": 2,
+  "segments": "speak, rebuild_board",
+  "speak": "Good morning, Daniel! I'm here to help you with your day.",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Hello, I need help, Programming, Socialize, AI Project, Debug, Music, Drawing",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:59:28.092Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331",
+  "text": "Music",
+  "textLength": 5
+}
+
+============================================================
+[2026-02-17T07:59:28.599Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331",
+  "elapsed": "2996ms",
+  "segmentCount": 2,
+  "segments": "speak, rebuild_board",
+  "speak": "Good morning, Daniel! I'm here to help you with your day.",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Hello, I need help, Programming, Socialize, AI Project, Debug, Music, Drawing",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": true
+}
+
+============================================================
+[2026-02-17T07:59:33.489Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331",
+  "elapsed": "24ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "User is looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T07:59:45.893Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331",
+  "text": "Socialize",
+  "textLength": 9
+}
+
+============================================================
+[2026-02-17T07:59:46.570Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331",
+  "elapsed": "129ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:00:02.103Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331",
+  "elapsed": "42ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "User is looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:00:12.101Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331",
+  "elapsed": "38ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "User is looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:00:12.510Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331",
+  "text": "Socialize",
+  "textLength": 9
+}
+
+============================================================
+[2026-02-17T08:00:13.235Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331",
+  "elapsed": "64ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:00:16.635Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331",
+  "elapsed": "39ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "User is looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:00:32.391Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331",
+  "elapsed": "5ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "User is looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:00:35.607Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331",
+  "elapsed": "13ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "User is looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:00:46.350Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331",
+  "elapsed": "15ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "User is looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:00:52.703Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331",
+  "elapsed": "40ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "User is looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:01:01.448Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331",
+  "elapsed": "102ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "User is looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:01:10.205Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331",
+  "elapsed": "24ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "User is looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:01:14.854Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331",
+  "elapsed": "43ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "User is looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:01:23.842Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331",
+  "text": "Programming",
+  "textLength": 11
+}
+
+============================================================
+[2026-02-17T08:01:24.397Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331",
+  "elapsed": "192ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:01:32.561Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331",
+  "elapsed": "9ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "User is looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:01:37.178Z] LiveRelay.cleanup
+----------------------------------------
+{
+  "sessionId": "aac-1771315163331"
+}
+
+============================================================
+[2026-02-17T08:01:44.365Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "aac-1771315302846",
+  "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-17T08:01:45.094Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315302846",
+  "elapsed": "132ms",
+  "segmentCount": 2,
+  "segments": "speak, rebuild_board",
+  "speak": "Hi Gal, it's great to see you! Are you ready to start the day with some fun activities?",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Yes, No, Drawing, Music, Explore, Tired, Help",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:01:49.349Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315302846",
+  "elapsed": "4386ms",
+  "segmentCount": 3,
+  "segments": "speak, rebuild_board, context",
+  "speak": "Hi Gal, it's great to see you! Are you ready to start the day with some fun activities?",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the board.",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Yes, No, Drawing, Music, Explore, Tired, Help",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": true
+}
+
+============================================================
+[2026-02-17T08:01:52.662Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771315302846",
+  "text": "Explore",
+  "textLength": 7
+}
+
+============================================================
+[2026-02-17T08:01:53.536Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315302846",
+  "elapsed": "8573ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:02:01.463Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771315302846",
+  "text": "Explore",
+  "textLength": 7
+}
+
+============================================================
+[2026-02-17T08:02:01.863Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315302846",
+  "elapsed": "170ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:05:51.699Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "aac-1771315550015",
+  "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-17T08:05:52.369Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315550015",
+  "elapsed": "64ms",
+  "segmentCount": 2,
+  "segments": "speak, rebuild_board",
+  "speak": "Hi Gal, it's great to see you! I'm ready to help you with whatever you want to do today.",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Play, Explore, Draw, Music, Eat, Tired, Help",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:06:02.252Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771315550015",
+  "text": "Explore",
+  "textLength": 7
+}
+
+============================================================
+[2026-02-17T08:06:02.884Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315550015",
+  "elapsed": "323ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:06:10.519Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315550015",
+  "elapsed": "28ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "New person visible.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:06:13.550Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315550015",
+  "elapsed": "217ms",
+  "segmentCount": 4,
+  "segments": "transcript, context, learn_face, add_buttons",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "[Unknown] Hi Gal.",
+  "context": "Person is now speaking to Gal.",
+  "board": {
+    "rebuilt": false,
+    "added": 1,
+    "removed": 0,
+    "addLabels": "Hello",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": "Unknown Person",
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:06:16.780Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315550015",
+  "elapsed": "3446ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:06:22.698Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315550015",
+  "elapsed": "9364ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:06:32.250Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315550015",
+  "elapsed": "38ms",
+  "segmentCount": 2,
+  "segments": "transcript, yes_no",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "[Unknown] Do you want to say hello?",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:06:38.217Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771315550015",
+  "text": "No",
+  "textLength": 2
+}
+
+============================================================
+[2026-02-17T08:06:38.702Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315550015",
+  "elapsed": "86ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:06:56.827Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771315550015",
+  "elapsed": "103ms",
+  "segmentCount": 2,
+  "segments": "transcript, add_buttons",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "[Unknown] What do you want to explore?",
+  "context": "(none)",
+  "board": {
+    "rebuilt": false,
+    "added": 1,
+    "removed": 0,
+    "addLabels": "What?",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:50:14.581Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "aac-1771318212885",
+  "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-17T08:50:15.797Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318212885",
+  "elapsed": "72ms",
+  "segmentCount": 2,
+  "segments": "speak, rebuild_board",
+  "speak": "Hi Gal, it's great to see you! Are you ready to have some fun today?",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Play, Explore, Draw, Music, Tired, Eat, Help, All done",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:50:28.143Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771318212885",
+  "text": "Yes",
+  "textLength": 3
+}
+
+============================================================
+[2026-02-17T08:50:28.489Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318212885",
+  "elapsed": "12764ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:50:36.788Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318212885",
+  "elapsed": "21063ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:50:43.546Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318212885",
+  "elapsed": "74ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "I see a person in front of the camera.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:50:46.993Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318212885",
+  "elapsed": "29ms",
+  "segmentCount": 2,
+  "segments": "transcript, yes_no",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "[Unknown] ...ready?",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:50:50.778Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771318212885",
+  "text": "No",
+  "textLength": 2
+}
+
+============================================================
+[2026-02-17T08:50:51.404Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318212885",
+  "elapsed": "32ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:51:03.840Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318212885",
+  "elapsed": "226ms",
+  "segmentCount": 3,
+  "segments": "transcript, context, add_buttons",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "[Unknown] ...what do you want...",
+  "context": "I heard someone asking a question, but I couldn't make out the full sentence.",
+  "board": {
+    "rebuilt": false,
+    "added": 2,
+    "removed": 0,
+    "addLabels": "Yes, No",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:51:20.667Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318212885",
+  "elapsed": "17052ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T08:51:25.782Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318212885",
+  "elapsed": "196ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:00:02.093Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-17T09:00:03.215Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "82ms",
+  "segmentCount": 2,
+  "segments": "speak, rebuild_board",
+  "speak": "Hi Gal, it's great to see you! Are you ready to start our day with some fun activities?",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Play, Explore, Draw, Music, Eat, Tired, Help",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:00:15.048Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "122ms",
+  "segmentCount": 3,
+  "segments": "interpret, speak, add_buttons",
+  "speak": "Okay, Gal! What would you like to play?",
+  "interpret": "I want to play.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": false,
+    "added": 3,
+    "removed": 0,
+    "addLabels": "Games, Outside, Blocks",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:00:26.803Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "20ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the buttons on the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:00:30.815Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "52ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is still looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:00:36.690Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "43ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is still looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:00:38.264Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "163ms",
+  "segmentCount": 4,
+  "segments": "interpret, speak, remove_buttons, add_buttons",
+  "speak": "Great choice, Gal! What kind of things do you want to build with the blocks?",
+  "interpret": "I want to play with blocks.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": false,
+    "added": 3,
+    "removed": 3,
+    "addLabels": "Tower, House, Car",
+    "removeLabels": "Games, Outside, Blocks"
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:00:46.553Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "42ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the buttons on the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:00:54.571Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "56ms",
+  "segmentCount": 4,
+  "segments": "interpret, speak, remove_buttons, add_buttons",
+  "speak": "Alright, let's build a tower! Do you want to build a tall tower or a wide tower?",
+  "interpret": "I want to build a tower.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": false,
+    "added": 2,
+    "removed": 3,
+    "addLabels": "Tall, Wide",
+    "removeLabels": "Tower, House, Car"
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:01:01.979Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "20ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the buttons on the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:01:10.072Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "20ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is still looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:01:13.623Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "10ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is still looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:01:20.622Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "58ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is still looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:01:25.606Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "9ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is still looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:01:41.304Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "24ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is still looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:01:43.777Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "37ms",
+  "segmentCount": 4,
+  "segments": "interpret, speak, remove_buttons, add_buttons",
+  "speak": "What kind of help do you need, Gal?",
+  "interpret": "I need help.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": false,
+    "added": 3,
+    "removed": 2,
+    "addLabels": "More blocks, Can't reach, Stuck",
+    "removeLabels": "Tall, Wide"
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:01:47.975Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "50ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the buttons on the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:02:03.363Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "15ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the buttons on the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:02:07.548Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "47ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is still looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:02:22.601Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "29ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the buttons on the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:02:38.471Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "42ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is still looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:02:53.561Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "32ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the buttons on the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:03:10.398Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "7ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is still looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:03:20.609Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "37ms",
+  "segmentCount": 2,
+  "segments": "context, learn_face",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "A new person has entered the room.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": "Unknown",
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:03:26.591Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771318800378",
+  "elapsed": "21ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "The new person is now very close to the camera.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:26:36.965Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-17T09:26:37.778Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "elapsed": "120ms",
+  "segmentCount": 2,
+  "segments": "speak, rebuild_board",
+  "speak": "Hi Gal, it's great to see you! Are you ready to start the day with some fun activities?",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Yes, No, Play, Explore, Draw, Music, Tired, Help",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:26:46.040Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "elapsed": "15ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:26:47.581Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "text": "Yes",
+  "textLength": 3
+}
+
+============================================================
+[2026-02-17T09:26:47.998Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "elapsed": "1974ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:27:00.242Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "elapsed": "88ms",
+  "segmentCount": 2,
+  "segments": "transcript, context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "[Unknown] Let's get started.",
+  "context": "Teacher is present.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:27:00.681Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "elapsed": "29ms",
+  "segmentCount": 2,
+  "segments": "interpret, speak",
+  "speak": "Great! What would you like to do first?",
+  "interpret": "Yes.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:27:13.937Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "elapsed": "63ms",
+  "segmentCount": 3,
+  "segments": "interpret, speak, add_buttons",
+  "speak": "Okay! What would you like to play?",
+  "interpret": "I want to play.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": false,
+    "added": 4,
+    "removed": 0,
+    "addLabels": "Board games, Tools, Outside, Blocks",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:27:22.861Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "elapsed": "119ms",
+  "segmentCount": 4,
+  "segments": "interpret, speak, remove_buttons, add_buttons",
+  "speak": "Okay! Let's play with tools.",
+  "interpret": "I want to play with tools.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": false,
+    "added": 3,
+    "removed": 11,
+    "addLabels": "Scissors, Wrenches, Hammer",
+    "removeLabels": "Yes, No, Play, Explore, Draw, Music, Tired, Help, Board games, Outside, Blocks"
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:27:28.827Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "elapsed": "36ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the screen.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:27:34.803Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "elapsed": "37ms",
+  "segmentCount": 2,
+  "segments": "interpret, speak",
+  "speak": "Okay, let's get the hammer.",
+  "interpret": "I want the hammer.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:27:43.966Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "elapsed": "90ms",
+  "segmentCount": 3,
+  "segments": "transcript, context, add_buttons",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "[Unknown] Here is the hammer.",
+  "context": "The teacher gave Gal a hammer.",
+  "board": {
+    "rebuilt": false,
+    "added": 1,
+    "removed": 0,
+    "addLabels": "Done",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:27:57.026Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "elapsed": "37ms",
+  "segmentCount": 3,
+  "segments": "context, transcript, yes_no",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "[Teacher] Do you want some water, Gal?",
+  "context": "Teacher is holding a water bottle.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:28:04.769Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "text": "Yes",
+  "textLength": 3
+}
+
+============================================================
+[2026-02-17T09:28:06.080Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "elapsed": "151ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:28:12.379Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "elapsed": "77ms",
+  "segmentCount": 2,
+  "segments": "interpret, speak",
+  "speak": "Great! Here's some water for you.",
+  "interpret": "Yes.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:28:19.460Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "elapsed": "31ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "The teacher gave Gal the water bottle.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:28:35.001Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "elapsed": "41ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:28:41.702Z] LiveRelay.boardPatchRejected
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "attempted": 5,
+  "current": 8,
+  "max": 12
+}
+
+============================================================
+[2026-02-17T09:28:41.704Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "elapsed": "139ms",
+  "segmentCount": 4,
+  "segments": "interpret, speak, remove_buttons, add_buttons",
+  "speak": "Okay, all done with water. What next?",
+  "interpret": "I am done.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": false,
+    "added": 5,
+    "removed": 5,
+    "addLabels": "Play, Explore, Draw, Music, Tired",
+    "removeLabels": "Tools, Scissors, Wrenches, Hammer, Done"
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:28:50.541Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "elapsed": "141ms",
+  "segmentCount": 2,
+  "segments": "remove_buttons, add_buttons",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": false,
+    "added": 5,
+    "removed": 3,
+    "addLabels": "Play, Explore, Draw, Music, Tired",
+    "removeLabels": "Yes, No, Help"
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:29:05.064Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "elapsed": "111ms",
+  "segmentCount": 2,
+  "segments": "remove_buttons, add_buttons",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": false,
+    "added": 3,
+    "removed": 5,
+    "addLabels": "Blocks, Stories, Outside",
+    "removeLabels": "Play, Explore, Draw, Music, Tired"
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:29:19.902Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "elapsed": "104ms",
+  "segmentCount": 1,
+  "segments": "rebuild_board",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Blocks, Stories, Outside, Draw, Music, Tired",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:29:35.835Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771320395292",
+  "elapsed": "53ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:37:48.351Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "aac-1771321066646",
+  "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-17T09:37:49.131Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771321066646",
+  "elapsed": "72ms",
+  "segmentCount": 2,
+  "segments": "speak, rebuild_board",
+  "speak": "Hi Gal, it's great to see you! Are you ready to have some fun today?",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Play, Explore, Draw, Music, Eat, Tired, Help, All done",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:37:56.972Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771321066646",
+  "elapsed": "14ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the board.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:38:12.026Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771321066646",
+  "elapsed": "28ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the board.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:38:28.404Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771321066646",
+  "elapsed": "91ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the board.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:38:34.977Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771321066646",
+  "elapsed": "26ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the board.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:38:49.695Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771321066646",
+  "elapsed": "28ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the board.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:38:59.334Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771321066646",
+  "elapsed": "9ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the board.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:39:14.896Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771321066646",
+  "elapsed": "9ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the board.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:39:23.605Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771321066646",
+  "elapsed": "36ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the board.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:39:38.499Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771321066646",
+  "elapsed": "61ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the board.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:39:39.363Z] LiveRelay.cleanup
+----------------------------------------
+{
+  "sessionId": "aac-1771321066646"
+}
+
+============================================================
+[2026-02-17T09:39:45.406Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "aac-1771321183778",
+  "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-17T09:39:46.105Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771321183778",
+  "elapsed": "129ms",
+  "segmentCount": 2,
+  "segments": "speak, rebuild_board",
+  "speak": "Hi Gal, it's great to see you! Are you ready to have some fun today?",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Yes, No, Music, Draw, Explore, Tired, Help",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:39:55.610Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771321183778",
+  "elapsed": "14ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the board.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:40:02.793Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771321183778",
+  "elapsed": "59ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the board.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:40:09.961Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771321183778",
+  "elapsed": "21ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the board.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:40:25.383Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771321183778",
+  "elapsed": "29ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "Gal is looking at the board.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:40:40.705Z] LiveRelay.cleanup
+----------------------------------------
+{
+  "sessionId": "aac-1771321183778"
+}
+
+============================================================
+[2026-02-17T09:40:46.564Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "aac-1771321244945",
+  "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-17T09:40:47.222Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771321244945",
+  "elapsed": "202ms",
+  "segmentCount": 2,
+  "segments": "speak, rebuild_board",
+  "speak": "Hi Gal! It's great to see you today. I'm ready to help you with anything you want to do.",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Play, Explore, Draw, Music, Tired, Help",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T09:40:52.200Z] LiveRelay.cleanup
+----------------------------------------
+{
+  "sessionId": "aac-1771321244945"
+}
+
+============================================================
+[2026-02-17T10:10:50.324Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-17T10:10:50.958Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "147ms",
+  "segmentCount": 2,
+  "segments": "speak, rebuild_board",
+  "speak": "Hi Gal, it's great to see you! I'm ready to help you with whatever you want to do today.",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Play, Explore, Draw, Music, Tired, Help, Scissors, More",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:10:58.864Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "71ms",
+  "segmentCount": 1,
+  "segments": "context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "I see a man with glasses. I don't recognize him.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:11:02.637Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "204ms",
+  "segmentCount": 4,
+  "segments": "transcript, context, add_buttons, yes_no",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "[Unknown] Hi Gal.",
+  "context": "The man is talking to Gal.",
+  "board": {
+    "rebuilt": false,
+    "added": 2,
+    "removed": 0,
+    "addLabels": "Hi, No",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:11:16.618Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "140ms",
+  "segmentCount": 3,
+  "segments": "transcript, context, yes_no",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "[Unknown] Are you ready to start your math lesson?",
+  "context": "The man is asking Gal a question.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:11:31.996Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "142ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:11:47.533Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "126ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:11:49.196Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "text": "Yes",
+  "textLength": 3
+}
+
+============================================================
+[2026-02-17T10:11:50.076Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "218ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:12:02.676Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "27ms",
+  "segmentCount": 2,
+  "segments": "transcript, context",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "[Unknown] What are you drawing, Gal?",
+  "context": "The man is asking Gal a question about her drawing.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:12:04.341Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "66ms",
+  "segmentCount": 3,
+  "segments": "interpret, speak, rebuild_board",
+  "speak": "Okay, Gal. Where would you like to explore?",
+  "interpret": "I want to explore.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Outside, Books, Pictures, Music, Blocks, Toys, Help, More",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:12:18.684Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "283ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:12:22.059Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "263ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:12:29.031Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "171ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:12:35.239Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "238ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:12:51.243Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "66ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:13:06.030Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "67ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:13:21.480Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "37ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:13:33.481Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "48ms",
+  "segmentCount": 3,
+  "segments": "interpret, speak, rebuild_board",
+  "speak": "Okay, Gal! What toys do you want to play with?",
+  "interpret": "I want to play with toys.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Blocks, Cars, Dolls, Animals, Puzzles, Books, Help, More",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:13:37.090Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "3656ms",
+  "segmentCount": 3,
+  "segments": "interpret, speak, rebuild_board",
+  "speak": "Okay, Gal! What toys do you want to play with?",
+  "interpret": "I want to play with toys.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Blocks, Cars, Dolls, Animals, Puzzles, Books, Help, More",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": true
+}
+
+============================================================
+[2026-02-17T10:13:40.645Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "98ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:13:50.203Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "254ms",
+  "segmentCount": 3,
+  "segments": "interpret, speak, rebuild_board",
+  "speak": "Okay, Gal, let's see... what other kinds of help might you need?",
+  "interpret": "I need even more help options.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Find, Listen, Wait, Explain, Feeling, Computer, Break, Quiet",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:13:56.299Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "243ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:14:02.464Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "158ms",
+  "segmentCount": 3,
+  "segments": "interpret, speak, rebuild_board",
+  "speak": "What do you need help with on the computer, Gal?",
+  "interpret": "I need help with the computer.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Games, Videos, Music, Typing, Mouse, Website, Help, More",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:14:11.606Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "117ms",
+  "segmentCount": 3,
+  "segments": "transcript, context, yes_no",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "[Unknown] Is that better, Gal?",
+  "context": "The man is asking Gal a question.",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:14:15.567Z] LiveRelay.userMessage
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "text": "Yes",
+  "textLength": 3
+}
+
+============================================================
+[2026-02-17T10:14:16.616Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "344ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:14:26.948Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "115ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:14:29.739Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "156ms",
+  "segmentCount": 3,
+  "segments": "interpret, speak, rebuild_board",
+  "speak": "Okay, Gal. What would you like to do now?",
+  "interpret": "Yes.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Play, Explore, Draw, Music, Tired, Help, Scissors, More",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:14:38.026Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "295ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:14:49.668Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "202ms",
+  "segmentCount": 3,
+  "segments": "interpret, speak, rebuild_board",
+  "speak": "Okay, here are more options for what you can do with the scissors.",
+  "interpret": "I want more options for using the scissors.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Cut, Paper, String, Fabric, Help, Draw, Tired, Explore",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:14:53.504Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "93ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:14:59.397Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "235ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:15:07.818Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "232ms",
+  "segmentCount": 4,
+  "segments": "interpret, speak, rebuild_board, emote",
+  "speak": "You don't want to take a break? What do you want to do instead since you're feeling tired?",
+  "interpret": "No.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Music, Book, Draw, Play, Quiet, Explore, Help, More",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:15:16.011Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604",
+  "elapsed": "201ms",
+  "segmentCount": 0,
+  "segments": "",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": "(no changes)",
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-17T10:15:21.710Z] LiveRelay.cleanup
+----------------------------------------
+{
+  "sessionId": "aac-1771323048604"
+}

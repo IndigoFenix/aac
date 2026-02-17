@@ -88,6 +88,8 @@ export interface UseDualAgentReturn {
   currentMessage: DualAgentMessage | null;
   transcription: string | null;
   interpretationText: string | null;
+  interpretConfidence: 'high' | 'medium' | 'low' | null;
+  transcriptConfidence: 'high' | 'medium' | 'low' | null;
   debugText: string | null;
 
   // Audio state
@@ -144,6 +146,10 @@ export interface UseDualAgentReturn {
   stopAudio: () => void;
   clearSession: () => void;
 
+  // Yes/No overlay
+  yesNoActive: boolean;
+  dismissYesNo: () => void;
+
   // Live API only — raw PCM audio streaming
   /** Send a raw PCM audio chunk (base64 Int16 16kHz) to Gemini Live API. Only available in Live mode. */
   sendPcmAudio?: (int16Base64: string) => void;
@@ -177,6 +183,8 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
   const [currentMessage, setCurrentMessage] = useState<DualAgentMessage | null>(null);
   const [transcription, setTranscription] = useState<string | null>(null);
   const [interpretationText, setInterpretationText] = useState<string | null>(null);
+  const [interpretConfidence, setInterpretConfidence] = useState<'high' | 'medium' | 'low' | null>(null);
+  const [transcriptConfidence, setTranscriptConfidence] = useState<'high' | 'medium' | 'low' | null>(null);
   const [debugText, setDebugText] = useState<string | null>(null);
 
   // Audio state
@@ -200,6 +208,10 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
 
   // Avatar emote state
   const [emote, setEmote] = useState<"happy" | "sad" | "neutral">("happy");
+
+  // Yes/No overlay state
+  const [yesNoActive, setYesNoActive] = useState(false);
+  const dismissYesNo = useCallback(() => setYesNoActive(false), []);
 
   // Track whether current audio is AI voice (not interpretation)
   const isAiVoiceRef = useRef(true);
@@ -468,6 +480,11 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
                 }
                 break;
 
+              case "yes_no":
+                // Yes/No question detected — show overlay
+                setYesNoActive(true);
+                break;
+
               case "board_patch":
                 // Board patch from detection (add/remove/rebuild)
                 if (data.add?.length > 0 || data.remove?.length > 0 || data.rebuild?.length > 0) {
@@ -646,6 +663,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
       if (inflightRef.current === "message") return;
 
       inflightRef.current = "message";
+      streamingPlayer.clear(); // Stop any playing audio — user action takes priority
       setIsLoading(true);
       setError(null);
       setTranscription(null);
@@ -1082,6 +1100,8 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
     currentMessage,
     transcription,
     interpretationText,
+    interpretConfidence,
+    transcriptConfidence,
     debugText,
 
     // Audio state
@@ -1122,6 +1142,10 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
     // Monitor status
     monitorError,
     monitorConsecutiveFailures,
+
+    // Yes/No overlay
+    yesNoActive,
+    dismissYesNo,
 
     // Actions
     initialize,

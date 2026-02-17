@@ -27,6 +27,7 @@ import {
   ChevronRight,
   Building2,
   MessageSquare,
+  Image,
 } from 'lucide-react';
 import logoImage from '@assets/cliniaacian_logo.png';
 import { useAuth } from '@/hooks/useAuth';
@@ -73,13 +74,6 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
   // Student management items
   const studentManagementItems = [
     {
-      icon: MessageSquarePlus,
-      labelKey: 'nav.interpret',
-      feature: 'interpret' as FeatureType,
-      testId: 'nav-interpret',
-      disabled: !student, // Only enabled when a student is selected
-    },
-    {
       icon: LayoutGrid,
       labelKey: 'nav.boards',
       feature: 'boards' as FeatureType,
@@ -106,6 +100,12 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
       feature: 'reports' as FeatureType,
       testId: 'nav-reports',
       disabled: !student, // Only enabled when a student is selected
+    },
+    {
+      icon: Image,
+      labelKey: 'nav.symbols',
+      feature: 'symbols' as FeatureType,
+      testId: 'nav-symbols',
     }
   ];
 

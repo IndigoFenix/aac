@@ -141,6 +141,34 @@
       "when": 1771157013473,
       "tag": "0019_common_gamora",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1771222762827,
+      "tag": "0020_nosy_giant_girl",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1771235154683,
+      "tag": "0021_broad_thundra",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1771261183392,
+      "tag": "0022_mute_crystal",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1771261926327,
+      "tag": "0023_optimal_fenris",
+      "breakpoints": true
     }
   ]
 }

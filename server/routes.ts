@@ -46,6 +46,7 @@ import { voiceController } from "./controllers/voiceController";
 import { voiceRecordController } from "./controllers/voiceRecordController";
 import { dualAgentController } from "./controllers/dualAgentController";
 import { biometricController } from "./controllers/biometricController";
+import { customSymbolController } from "./controllers/customSymbolController";
 
 // Configure multer for image uploads
 const upload = multer({
@@ -893,6 +894,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get session state
   app.get("/api/aac/dual/session/:sessionId", optionalAuth, requireOnboardingComplete, (req, res) =>
     dualAgentController.getSession(req, res)
+  );
+
+  // ============= CUSTOM SYMBOL ROUTES =============
+  // Named routes first (before parameterized /:id routes)
+  app.post("/api/custom-symbols/generate", requireAuth, (req, res) =>
+    customSymbolController.generateSymbol(req, res)
+  );
+  app.get("/api/custom-symbols/search", requireAuth, (req, res) =>
+    customSymbolController.searchSymbols(req, res)
+  );
+  app.get("/api/custom-symbols/my", requireAuth, (req, res) =>
+    customSymbolController.getMySymbols(req, res)
+  );
+  app.get("/api/custom-symbols/student/:studentId", requireAuth, (req, res) =>
+    customSymbolController.getStudentSymbols(req, res)
+  );
+  app.get("/api/custom-symbols/institute/:instituteId", requireAuth, (req, res) =>
+    customSymbolController.getInstituteSymbols(req, res)
+  );
+  app.get("/api/custom-symbols/public", requireAuth, (req, res) =>
+    customSymbolController.getPublicSymbols(req, res)
+  );
+  app.get("/api/custom-symbols/available/:studentId", requireAuth, (req, res) =>
+    customSymbolController.getAvailableSymbols(req, res)
+  );
+
+  // Symbol CRUD (parameterized routes last)
+  app.post("/api/custom-symbols", requireAuth, upload.single("image"), (req, res) =>
+    customSymbolController.createSymbol(req, res)
+  );
+  app.get("/api/custom-symbols/:id", requireAuth, (req, res) =>
+    customSymbolController.getSymbol(req, res)
+  );
+  app.get("/api/custom-symbols/:id/image", requireAuth, (req, res) =>
+    customSymbolController.getSymbolImage(req, res)
+  );
+  app.patch("/api/custom-symbols/:id", requireAuth, (req, res) =>
+    customSymbolController.updateSymbol(req, res)
+  );
+  app.delete("/api/custom-symbols/:id", requireAuth, (req, res) =>
+    customSymbolController.deleteSymbol(req, res)
+  );
+
+  // Association create
+  app.post("/api/custom-symbols/:id/user-associate", requireAuth, (req, res) =>
+    customSymbolController.createUserAssociation(req, res)
+  );
+  app.post("/api/custom-symbols/:id/student-associate", requireAuth, (req, res) =>
+    customSymbolController.createStudentAssociation(req, res)
+  );
+  app.post("/api/custom-symbols/:id/institute-associate", requireAuth, (req, res) =>
+    customSymbolController.createInstituteAssociation(req, res)
+  );
+
+  // Association update/delete
+  app.patch("/api/custom-symbols/user-associations/:assocId", requireAuth, (req, res) =>
+    customSymbolController.updateUserAssociation(req, res)
+  );
+  app.patch("/api/custom-symbols/student-associations/:assocId", requireAuth, (req, res) =>
+    customSymbolController.updateStudentAssociation(req, res)
+  );
+  app.patch("/api/custom-symbols/institute-associations/:assocId", requireAuth, (req, res) =>
+    customSymbolController.updateInstituteAssociation(req, res)
+  );
+  app.delete("/api/custom-symbols/user-associations/:assocId", requireAuth, (req, res) =>
+    customSymbolController.deleteUserAssociation(req, res)
+  );
+  app.delete("/api/custom-symbols/student-associations/:assocId", requireAuth, (req, res) =>
+    customSymbolController.deleteStudentAssociation(req, res)
+  );
+  app.delete("/api/custom-symbols/institute-associations/:assocId", requireAuth, (req, res) =>
+    customSymbolController.deleteInstituteAssociation(req, res)
   );
 
   // ============= BIOMETRIC ENROLLMENT ROUTES =============

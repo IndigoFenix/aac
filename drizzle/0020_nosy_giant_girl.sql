@@ -1,0 +1,1 @@
+ALTER TABLE "students" ADD COLUMN "aac_interpretation_level" integer DEFAULT 1;

@@ -1,0 +1,75 @@
+// client-aac/src/components/YesNoOverlay.tsx
+// Large prominent Yes/No overlay triggered when someone asks the student a yes/no question.
+// Animates up from bottom (QuickActions area), auto-dismisses after 5 seconds.
+
+import { useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useLanguage } from "@/contexts/LanguageContext";
+
+interface YesNoOverlayProps {
+  active: boolean;
+  onSelect: (choice: "Yes" | "No") => void;
+  onDismiss: () => void;
+}
+
+export default function YesNoOverlay({ active, onSelect, onDismiss }: YesNoOverlayProps) {
+  const { t } = useLanguage();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-dismiss after 5 seconds (reset on re-trigger)
+  useEffect(() => {
+    if (active) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => {
+        onDismiss();
+      }, 5000);
+    }
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [active, onDismiss]);
+
+  return (
+    <AnimatePresence>
+      {active && (
+        <motion.div
+          className="absolute inset-0 z-40 flex items-center justify-center gap-6 bg-black/20"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+        >
+          {/* Yes button */}
+          <motion.button
+            data-dwell="yes"
+            className="flex flex-col items-center justify-center rounded-3xl shadow-2xl border-4 border-green-400 bg-green-100 text-green-800 font-bold select-none"
+            style={{ width: "min(40vw, 220px)", height: "min(40vw, 220px)", fontSize: "clamp(1.5rem, 5vw, 2.5rem)" }}
+            initial={{ scale: 0.3, y: 120, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.3, y: 120, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 400, damping: 25 }}
+            onClick={() => onSelect("Yes")}
+          >
+            <span className="text-5xl mb-2">✅</span>
+            {t("quickActions.yes")}
+          </motion.button>
+
+          {/* No button */}
+          <motion.button
+            data-dwell="no"
+            className="flex flex-col items-center justify-center rounded-3xl shadow-2xl border-4 border-red-400 bg-red-100 text-red-800 font-bold select-none"
+            style={{ width: "min(40vw, 220px)", height: "min(40vw, 220px)", fontSize: "clamp(1.5rem, 5vw, 2.5rem)" }}
+            initial={{ scale: 0.3, y: 120, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.3, y: 120, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 400, damping: 25, delay: 0.05 }}
+            onClick={() => onSelect("No")}
+          >
+            <span className="text-5xl mb-2">❌</span>
+            {t("quickActions.no")}
+          </motion.button>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
