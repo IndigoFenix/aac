@@ -77,7 +77,7 @@ export class InviteCodeController {
         res.json({
           success: true,
           message: "Invite code redeemed successfully",
-          aacUser: result.aacUser,
+          student: result.student,
         });
       } else {
         res.status(400).json({

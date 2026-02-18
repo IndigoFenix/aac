@@ -56,8 +56,8 @@ export class InviteCodeRepository {
       }
 
       if (
-        inviteCode.redemptionLimit &&
-        inviteCode.timesRedeemed >= inviteCode.redemptionLimit
+        inviteCode.maxRedemptions &&
+        inviteCode.timesRedeemed >= inviteCode.maxRedemptions
       ) {
         return { success: false, error: "This invite code has reached its redemption limit" };
       }
@@ -92,7 +92,6 @@ export class InviteCodeRepository {
         await tx.insert(inviteCodeRedemptions).values({
           inviteCodeId: inviteCode.id,
           redeemedByUserId: userId,
-          redeemedAt: new Date(),
           studentId: student.id,
         });
 
@@ -114,7 +113,7 @@ export class InviteCodeRepository {
       .select()
       .from(inviteCodeRedemptions)
       .where(eq(inviteCodeRedemptions.redeemedByUserId, userId))
-      .orderBy(desc(inviteCodeRedemptions.redeemedAt));
+      .orderBy(desc(inviteCodeRedemptions.createdAt));
   }
 
   async deactivateInviteCode(id: string): Promise<boolean> {

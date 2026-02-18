@@ -338,7 +338,6 @@ export class ApiTracker {
   
         userId: userId ?? null,
         sessionId: sessionId ?? null,
-        promptId: promptId ?? null,
       };
   
       await storage.createApiCall(apiCallData);

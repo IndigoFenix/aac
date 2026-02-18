@@ -14,9 +14,11 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { LanguageSelector } from "@/components/LanguageSelector";
 
+import type { EyeGazeProviderType } from "@/lib/eyegaze/types";
+
 export interface EyegazeSettings {
   enabled: boolean;
-  mode: "mouse";
+  provider: EyeGazeProviderType | "auto";
   timeout: number;
 }
 
@@ -69,9 +71,10 @@ export default function UserSettings({
   const [chatAgentPrompt, setChatAgentPrompt] = useState("");
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
 
-  // Eyegaze (mouse-only, stored in DB)
+  // Eyegaze (stored in DB)
   const [eyegazeEnabled, setEyegazeEnabled] = useState(false);
   const [eyegazeTimeout, setEyegazeTimeout] = useState(2000);
+  const [eyegazeProvider, setEyegazeProvider] = useState<EyeGazeProviderType | "auto">("auto");
 
   // Track whether restart-required settings have changed since last save
   const [needsRestart, setNeedsRestart] = useState(false);
@@ -80,17 +83,19 @@ export default function UserSettings({
   // Show restart confirmation dialog
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
 
-  // Load from student profile
+  // Load from student profile (AAC settings are nested under aacSettings)
   useEffect(() => {
     if (userProfile) {
-      const vt = userProfile.aacVoiceType || "auto";
-      const svt = userProfile.aacStudentVoiceType || "boy";
-      const itr = userProfile.aacIconTextRatio ?? 3;
-      const il = userProfile.aacInterpretationLevel ?? 2;
-      const sm = userProfile.aacStartupMode ?? 0;
-      const cap = userProfile.aacChatAgentPrompt || DEFAULT_AAC_PROMPT;
-      const ee = userProfile.aacEyegazeEnabled ?? false;
-      const et = userProfile.aacEyegazeTimeout ?? 2000;
+      const aac = userProfile.aacSettings;
+      const vt = aac?.voiceType || "auto";
+      const svt = aac?.studentVoiceType || "boy";
+      const itr = aac?.iconTextRatio ?? 3;
+      const il = aac?.interpretationLevel ?? 2;
+      const sm = aac?.startupMode ?? 0;
+      const cap = aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT;
+      const ee = aac?.eyegazeEnabled ?? false;
+      const et = aac?.eyegazeTimeout ?? 2000;
+      const ep = aac?.eyegazeProvider ?? "auto";
 
       setVoiceType(vt);
       setStudentVoiceType(svt);
@@ -100,6 +105,7 @@ export default function UserSettings({
       setChatAgentPrompt(cap);
       setEyegazeEnabled(ee);
       setEyegazeTimeout(et);
+      setEyegazeProvider(ep);
 
       // Store saved values for dirty detection
       savedValuesRef.current = { vt, svt, il, sm, cap };
@@ -109,8 +115,8 @@ export default function UserSettings({
 
   // Push eyegaze changes live to parent (no save required)
   useEffect(() => {
-    onEyegazeChange?.({ enabled: eyegazeEnabled, mode: "mouse", timeout: eyegazeTimeout });
-  }, [eyegazeEnabled, eyegazeTimeout, onEyegazeChange]);
+    onEyegazeChange?.({ enabled: eyegazeEnabled, provider: eyegazeProvider, timeout: eyegazeTimeout });
+  }, [eyegazeEnabled, eyegazeTimeout, eyegazeProvider, onEyegazeChange]);
 
   // Check if restart-required settings changed
   const checkRestartNeeded = () => {
@@ -189,14 +195,15 @@ export default function UserSettings({
 
   const handleSave = () => {
     updateMutation.mutate({
-      aacVoiceType: voiceType,
-      aacStudentVoiceType: studentVoiceType,
-      aacIconTextRatio: iconTextRatio,
-      aacInterpretationLevel: interpretationLevel,
-      aacStartupMode: startupMode,
-      aacChatAgentPrompt: chatAgentPrompt.trim() || undefined,
-      aacEyegazeEnabled: eyegazeEnabled,
-      aacEyegazeTimeout: eyegazeTimeout,
+      voiceType,
+      studentVoiceType,
+      iconTextRatio,
+      interpretationLevel,
+      startupMode,
+      chatAgentPrompt: chatAgentPrompt.trim() || undefined,
+      eyegazeEnabled,
+      eyegazeTimeout,
+      eyegazeProvider,
     });
   };
 
@@ -210,6 +217,7 @@ export default function UserSettings({
     setChatAgentPrompt(DEFAULT_AAC_PROMPT);
     setEyegazeEnabled(false);
     setEyegazeTimeout(2000);
+    setEyegazeProvider("auto");
   };
 
   const handleRestartConfirm = () => {
@@ -509,7 +517,27 @@ export default function UserSettings({
                 </div>
 
                 {eyegazeEnabled && (
-                  <div className="space-y-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                  <div className="space-y-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                    {/* Provider selection */}
+                    <div className="space-y-1">
+                      <Label className="text-sm font-medium">Input Source</Label>
+                      <Select value={eyegazeProvider} onValueChange={(v) => setEyegazeProvider(v as EyeGazeProviderType | "auto")}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">Auto-detect</SelectItem>
+                          <SelectItem value="camera">Camera (Webcam)</SelectItem>
+                          <SelectItem value="tobii">Tobii Eye Tracker</SelectItem>
+                          <SelectItem value="eyetech">EyeTech</SelectItem>
+                          <SelectItem value="lctech">LC Technologies</SelectItem>
+                          <SelectItem value="webhid">WebHID Device</SelectItem>
+                          <SelectItem value="mouse">Mouse (Testing)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Dwell timeout */}
                     <div className="flex justify-between items-center">
                       <Label className="text-sm font-medium">
                         {t("settings.selectionTimeout")}

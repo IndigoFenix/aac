@@ -22,27 +22,19 @@ import {
     async getByStudentId(
       studentId: string,
       ctx: SecurityContext,
-      options?: { limit?: number; offset?: number; reportType?: string; academicYear?: string }
+      options?: { limit?: number; offset?: number }
     ): Promise<EducationalReport[]> {
       const conditions = [eq(educationalReports.studentId, studentId)];
-      
+
       if (ctx.instituteId) {
         conditions.push(eq(educationalReports.instituteId, ctx.instituteId));
       }
-      
-      if (options?.reportType) {
-        conditions.push(eq(educationalReports.reportType, options.reportType));
-      }
-      
-      if (options?.academicYear) {
-        conditions.push(eq(educationalReports.academicYear, options.academicYear));
-      }
-  
+
       let query = db
         .select()
         .from(educationalReports)
         .where(and(...conditions))
-        .orderBy(desc(educationalReports.reportDate));
+        .orderBy(desc(educationalReports.createdAt));
   
       if (options?.limit) {
         query = query.limit(options.limit) as typeof query;
@@ -77,7 +69,7 @@ import {
         .select()
         .from(educationalReports)
         .where(and(...conditions))
-        .orderBy(desc(educationalReports.reportDate));
+        .orderBy(desc(educationalReports.createdAt));
     }
   
     /**
@@ -161,35 +153,8 @@ import {
     /**
      * Share report with guardians
      */
-    async shareWithGuardians(
-      id: string,
-      ctx: SecurityContext
-    ): Promise<EducationalReport | undefined> {
-      return this.update(
-        id,
-        {
-          sharedWithGuardians: true,
-          sharedAt: new Date(),
-        },
-        ctx
-      );
-    }
-  
-    /**
-     * Record guardian acknowledgment
-     */
-    async recordGuardianAcknowledgment(
-      id: string,
-      ctx: SecurityContext
-    ): Promise<EducationalReport | undefined> {
-      return this.update(
-        id,
-        {
-          guardianAcknowledgedAt: new Date(),
-        },
-        ctx
-      );
-    }
+    // shareWithGuardians and recordGuardianAcknowledgment removed
+    // — columns not yet in schema
   
     /**
      * Finalize a report

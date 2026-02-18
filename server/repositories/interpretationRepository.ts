@@ -62,15 +62,13 @@ export class InterpretationRepository {
         analysis: interpretations.analysis,
         confidence: interpretations.confidence,
         suggestedResponse: interpretations.suggestedResponse,
+        updatedAt: interpretations.updatedAt,
         inputType: interpretations.inputType,
         language: interpretations.language,
         context: interpretations.context,
         studentId: interpretations.studentId,
         studentName: interpretations.studentName,
         imageData: interpretations.imageData,
-        caregiverFeedback: interpretations.caregiverFeedback,
-        studentWPM: interpretations.studentWPM,
-        scheduleActivity: interpretations.scheduleActivity,
         createdAt: interpretations.createdAt,
         user: {
           id: users.id,
@@ -179,34 +177,22 @@ export class InterpretationRepository {
 
     const totalInterpretations = data.length;
 
-    const wpmValues = data
-      .filter((d) => d.studentWPM !== null)
-      .map((d) => d.studentWPM as number);
-    const averageWPM =
-      wpmValues.length > 0
-        ? wpmValues.reduce((a, b) => a + b, 0) / wpmValues.length
-        : null;
+    const averageWPM = null; // studentWPM column not in schema
 
     const averageConfidence =
       data.length > 0
         ? data.reduce((sum, d) => sum + d.confidence, 0) / data.length
         : null;
 
+    // caregiverFeedback column not in schema
     const feedbackCounts = {
-      confirmed: data.filter((d) => d.caregiverFeedback === "confirmed").length,
-      corrected: data.filter((d) => d.caregiverFeedback === "corrected").length,
-      rejected: data.filter((d) => d.caregiverFeedback === "rejected").length,
-      noFeedback: data.filter((d) => !d.caregiverFeedback).length,
+      confirmed: 0,
+      corrected: 0,
+      rejected: 0,
+      noFeedback: data.length,
     };
 
-    const totalWithFeedback =
-      feedbackCounts.confirmed +
-      feedbackCounts.corrected +
-      feedbackCounts.rejected;
-    const acceptanceRate =
-      totalWithFeedback > 0
-        ? (feedbackCounts.confirmed / totalWithFeedback) * 100
-        : null;
+    const acceptanceRate = null;
 
     return {
       totalInterpretations,

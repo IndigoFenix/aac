@@ -11,6 +11,7 @@ import type {
 } from "./types";
 import { MONITOR_COMMANDS } from "./types";
 import { studentRepository } from "../../repositories";
+import type { StudentWithAacSettings } from "@shared/schema";
 import type { AACInteractionMode, AACAppDefinition } from "./types";
 import {
   AAC_DEFAULT_PERSONA_PROMPT,
@@ -31,7 +32,7 @@ export class MonitorAgent {
   private studentId: string;
   private userId?: string;
   private sessionId?: string;
-  private student?: { name: string; aacChatAgentPrompt?: string | null; framework?: string | null; primaryLanguage?: string | null; aacVoiceType?: string | null; aacStudentVoiceType?: string | null; aacCustomVoiceId?: string | null; aacCustomStudentVoiceId?: string | null; aacElevenlabsApiKey?: string | null; aacElevenlabsAiVoiceId?: string | null; aacElevenlabsStudentVoiceId?: string | null; aacInterpretationLevel?: number | null; aacStartupMode?: number | null; birthDate?: string | null; gender?: string | null; chatMemory?: unknown };
+  private student?: StudentWithAacSettings;
   private framework: string | null = null;
 
   constructor(
@@ -64,8 +65,8 @@ export class MonitorAgent {
   }> {
     console.log("[MonitorAgent] Initializing session for student:", this.studentId);
 
-    // Load student data
-    const student = await studentRepository.getStudentById(this.studentId);
+    // Load student data with AAC settings
+    const student = await studentRepository.getStudentWithAacSettings(this.studentId);
     if (!student) {
       throw new Error(`Student not found: ${this.studentId}`);
     }
@@ -74,10 +75,11 @@ export class MonitorAgent {
     this.student = student;
     this.framework = student.framework || null;
 
-    const personaPrompt = student.aacChatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+    const aac = student.aacSettings;
+    const personaPrompt = aac?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
 
     // Branch on startup mode: 0=fast (no LLM), 1=thorough (preload + LLM summary)
-    const startupMode = student.aacStartupMode ?? 0;
+    const startupMode = aac?.startupMode ?? 0;
     console.log("[MonitorAgent] Startup mode:", startupMode === 0 ? "fast" : "thorough");
     const contextResult = startupMode === 1
       ? await this.longInitializeContext(student)
@@ -115,7 +117,7 @@ export class MonitorAgent {
       undefined, // loadedPageName
       12, // maxBoardItems
       undefined, // loadedPageNavButtons
-      student.aacInterpretationLevel ?? 2
+      aac?.interpretationLevel ?? 2
     );
 
     // Store the session ID if we created one
@@ -436,7 +438,7 @@ Be direct and practical. Skip sections with no data. Do not use the memory tool 
   async ensureStudentLoaded(): Promise<void> {
     if (this.student) return;
     console.log("[MonitorAgent] Loading student data for resumed session:", this.studentId);
-    const student = await studentRepository.getStudentById(this.studentId);
+    const student = await studentRepository.getStudentWithAacSettings(this.studentId);
     if (student) {
       this.student = student;
       this.framework = student.framework || null;

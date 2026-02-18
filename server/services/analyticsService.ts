@@ -1,21 +1,8 @@
-import { storage } from "../storage";
-import { InsertPromptEvent } from "@shared/schema";
-
 export class AnalyticsService {
-  // Track prompt events
+  // Track prompt events - TODO: implement once promptEvents table is added to schema
   async trackEvent(eventType: string, userId: string, promptId: string, eventData?: any) {
-    try {
-      const event: InsertPromptEvent = {
-        promptId,
-        userId,
-        eventType,
-        eventData: eventData || {}
-      };
-      
-      await storage.createPromptEvent(event);
-    } catch (error) {
-      console.error('Failed to track analytics event:', error);
-    }
+    // No-op: promptEvents table not yet in schema
+    console.debug('Analytics trackEvent (no-op):', eventType, userId, promptId);
   }
 
   // Auto-detect topic from prompt text

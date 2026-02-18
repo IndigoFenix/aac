@@ -732,7 +732,12 @@ export const ChatProvider = ({
             userStudentId: null,
             deletedAt: null,
             priority: 0,
-            useResponsesAPI: null
+            useResponsesAPI: null,
+            pendingMessages: [],
+            interactivePrompt: null,
+            monitorBusy: null,
+            monitorBusySince: null,
+            thinkingMode: null,
           };
 
           setSession(newSession);

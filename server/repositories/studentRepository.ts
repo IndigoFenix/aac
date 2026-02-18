@@ -1,9 +1,11 @@
 import {
   students,
+  aacSettings,
   userStudents,
   type Student,
   type InsertStudent,
   type UpdateStudent,
+  type StudentWithAacSettings,
   type UserStudent,
   type InsertUserStudent,
   type UpdateUserStudent,
@@ -64,6 +66,42 @@ export class StudentRepository {
       .from(students)
       .where(eq(students.id, id));
     return student || undefined;
+  }
+
+  /**
+   * Get an AAC user with their AAC settings (LEFT JOIN)
+   */
+  async getStudentWithAacSettings(id: string): Promise<StudentWithAacSettings | undefined> {
+    const rows = await db
+      .select({ student: students, aac: aacSettings })
+      .from(students)
+      .leftJoin(aacSettings, eq(students.id, aacSettings.studentId))
+      .where(eq(students.id, id));
+    if (!rows.length) return undefined;
+    const { student, aac } = rows[0];
+    return { ...student, aacSettings: aac };
+  }
+
+  /**
+   * Get all AAC users linked to a specific user, with AAC settings
+   */
+  async getStudentsWithAacSettingsByUserId(
+    userId: string
+  ): Promise<StudentWithAacSettings[]> {
+    const results = await db
+      .select({ student: students, aac: aacSettings })
+      .from(userStudents)
+      .innerJoin(students, eq(userStudents.studentId, students.id))
+      .leftJoin(aacSettings, eq(students.id, aacSettings.studentId))
+      .where(
+        and(
+          eq(userStudents.userId, userId),
+          eq(userStudents.isActive, true),
+          eq(students.isActive, true)
+        )
+      )
+      .orderBy(desc(students.createdAt));
+    return results.map((r) => ({ ...r.student, aacSettings: r.aac }));
   }
 
   /**

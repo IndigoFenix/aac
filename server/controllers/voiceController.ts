@@ -355,19 +355,20 @@ export class VoiceController {
     let elevenlabsVoiceId: string | undefined;
 
     if (studentId) {
-      const student = await studentRepository.getStudentById(studentId);
+      const student = await studentRepository.getStudentWithAacSettings(studentId);
       if (student) {
+        const aac = student.aacSettings;
         finalLanguage = language || student.primaryLanguage || "en";
-        finalVoiceType = (voiceType || student.aacVoiceType || "woman") as VoiceType;
+        finalVoiceType = (voiceType || aac?.voiceType || "woman") as VoiceType;
 
         // Student-level ElevenLabs settings take priority
-        if (student.aacElevenlabsApiKey && student.aacElevenlabsAiVoiceId) {
-          elevenlabsApiKey = student.aacElevenlabsApiKey;
-          elevenlabsVoiceId = student.aacElevenlabsAiVoiceId;
+        if (aac?.elevenlabsApiKey && aac?.elevenlabsAiVoiceId) {
+          elevenlabsApiKey = aac.elevenlabsApiKey;
+          elevenlabsVoiceId = aac.elevenlabsAiVoiceId;
         }
 
-        if (student.aacCustomVoiceId) {
-          const voice = await voiceRecordRepository.getVoiceById(student.aacCustomVoiceId);
+        if (aac?.customVoiceId) {
+          const voice = await voiceRecordRepository.getVoiceById(aac.customVoiceId);
           customVoice = voice || null;
         }
       }

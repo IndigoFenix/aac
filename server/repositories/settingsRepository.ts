@@ -107,14 +107,14 @@ export class SettingsRepository {
     const [resetToken] = await db
       .select()
       .from(passwordResetTokens)
-      .where(eq(passwordResetTokens.token, token));
+      .where(eq(passwordResetTokens.tokenHash, token));
     return resetToken || undefined;
   }
 
   async markTokenAsUsed(tokenId: string): Promise<void> {
     await db
       .update(passwordResetTokens)
-      .set({ isUsed: true })
+      .set({ usedAt: new Date() })
       .where(eq(passwordResetTokens.id, tokenId));
   }
 

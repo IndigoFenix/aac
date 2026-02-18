@@ -21,6 +21,8 @@ import {
   chatSessions,
   type User,
   type Student,
+  type StudentWithAacSettings,
+  aacSettings,
   type UserStudent,
   type ChatSession,
   type InsertChatSession,
@@ -192,14 +194,15 @@ async function buildPersonaSystemPrompt(
 }
 
 async function buildAACPersonaSystemPrompt(
-  student: Student,
+  student: Student | StudentWithAacSettings,
   framework: string | null
 ): Promise<string> {
   // Get the base general prompt for AAC
   let prompt = AAC_SYSTEM_PROMPT;
   prompt += `=== Guidelines for interacting with ${student.name} ===\n`;
-  if (student.aacChatAgentPrompt && student.aacChatAgentPrompt.trim().length > 0) {
-    prompt += processPersonaPrompt(student.aacChatAgentPrompt, framework);
+  const chatAgentPrompt = (student as StudentWithAacSettings).aacSettings?.chatAgentPrompt;
+  if (chatAgentPrompt && chatAgentPrompt.trim().length > 0) {
+    prompt += processPersonaPrompt(chatAgentPrompt, framework);
   } else {
     prompt += AAC_DEFAULT_PERSONA_PROMPT;
   }
@@ -450,7 +453,7 @@ const AAC_TEMPLATE_BASE: LocalAgentTemplate = {
 
 interface MemoryContext {
   user?: User;
-  student?: Student;
+  student?: StudentWithAacSettings;
   userStudent?: UserStudent;
   institute?: Institute;
 }
@@ -574,9 +577,15 @@ async function getUser(userId: string): Promise<User | undefined> {
   return user || undefined;
 }
 
-async function getStudent(studentId: string): Promise<Student | undefined> {
-  const [student] = await db.select().from(students).where(eq(students.id, studentId));
-  return student || undefined;
+async function getStudent(studentId: string): Promise<StudentWithAacSettings | undefined> {
+  const rows = await db
+    .select({ student: students, aac: aacSettings })
+    .from(students)
+    .leftJoin(aacSettings, eq(students.id, aacSettings.studentId))
+    .where(eq(students.id, studentId));
+  if (!rows.length) return undefined;
+  const { student, aac } = rows[0];
+  return { ...student, aacSettings: aac };
 }
 
 async function getUserStudent(userId: string, studentId: string): Promise<UserStudent | undefined> {

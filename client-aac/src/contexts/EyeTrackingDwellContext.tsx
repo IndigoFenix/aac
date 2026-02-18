@@ -1,13 +1,13 @@
 // client-aac/src/contexts/EyeTrackingDwellContext.tsx
-// Global provider for dwell selection via camera-based eye tracking OR mouse position.
+// Global provider for dwell selection via eye gaze (any source) or mouse position.
 // Hit-tests [data-dwell] elements at the gaze/mouse point and triggers click after dwell timeout.
 
 import { createContext, useContext, useEffect, useRef, useState, useCallback, type ReactNode } from "react";
-import type { RawTrackedFace } from "@/lib/faceTrackingTypes";
-import { createGazeEstimator, type GazePoint, type GazeEstimator, type CalibrationSample, CALIBRATION_TARGETS } from "@/lib/gazeEstimator";
+import { CALIBRATION_TARGETS, type CalibrationSample } from "@/lib/gazeEstimator";
+import type { GazePoint } from "@/lib/eyegaze/types";
 
 // ─── Types ───────────────────────────────────────────────────────
-export type DwellMode = "off" | "camera" | "mouse";
+export type DwellMode = "off" | "eyegaze" | "mouse";
 
 export interface DwellTarget {
   element: HTMLElement;
@@ -53,20 +53,36 @@ export function useEyeTrackingDwell() {
 interface Props {
   mode: DwellMode;
   dwellTimeMs: number;
-  rawFaces: RawTrackedFace[];
+  /** Unified gaze point from useEyeGaze hook (used in "eyegaze" mode) */
+  gazePoint: GazePoint | null;
+  /** Calibration props from useEyeGaze (camera provider) */
+  isCalibrated: boolean;
+  supportsCalibration: boolean;
+  getRawGaze: () => GazePoint | null;
+  applyCalibration: (samples: CalibrationSample[]) => void;
+  clearCalibrationData: () => void;
   children: ReactNode;
 }
 
 const TICK_MS = 50;
 
-export function EyeTrackingDwellProvider({ mode, dwellTimeMs, rawFaces, children }: Props) {
+export function EyeTrackingDwellProvider({
+  mode,
+  dwellTimeMs,
+  gazePoint: externalGazePoint,
+  isCalibrated: externalIsCalibrated,
+  supportsCalibration,
+  getRawGaze,
+  applyCalibration: externalApplyCalibration,
+  clearCalibrationData,
+  children,
+}: Props) {
   const enabled = mode !== "off";
-  const estimatorRef = useRef<GazeEstimator | null>(null);
   const [gazePosition, setGazePosition] = useState<GazePoint | null>(null);
   const [dwellTarget, setDwellTarget] = useState<DwellTarget | null>(null);
-  const [isCalibrated, setIsCalibrated] = useState(false);
+  const [isCalibrated, setIsCalibrated] = useState(externalIsCalibrated);
 
-  // Calibration state (camera mode only)
+  // Calibration state (eyegaze mode only, when provider supports it)
   const [isCalibrating, setIsCalibrating] = useState(false);
   const [calibrationStep, setCalibrationStep] = useState(0);
   const calibrationSamplesRef = useRef<CalibrationSample[]>([]);
@@ -76,19 +92,14 @@ export function EyeTrackingDwellProvider({ mode, dwellTimeMs, rawFaces, children
   const currentElementRef = useRef<HTMLElement | null>(null);
   const dwellStartRef = useRef<number>(0);
   const cooldownElementRef = useRef<HTMLElement | null>(null);
-  const facesRef = useRef<RawTrackedFace[]>(rawFaces);
 
   // Mouse position ref (updated by mousemove listener, read by dwell interval)
   const mousePosRef = useRef<GazePoint | null>(null);
 
-  useEffect(() => { facesRef.current = rawFaces; }, [rawFaces]);
-
-  // Create estimator once
+  // Sync calibrated state from external source
   useEffect(() => {
-    const est = createGazeEstimator();
-    estimatorRef.current = est;
-    setIsCalibrated(est.isCalibrated());
-  }, []);
+    setIsCalibrated(externalIsCalibrated);
+  }, [externalIsCalibrated]);
 
   // ── Mouse tracking (mouse mode) ──
   useEffect(() => {
@@ -105,14 +116,14 @@ export function EyeTrackingDwellProvider({ mode, dwellTimeMs, rawFaces, children
     return () => window.removeEventListener("mousemove", handleMove);
   }, [mode]);
 
-  // ── Calibration (camera mode only) ──
+  // ── Calibration (eyegaze mode + camera provider only) ──
   const startCalibration = useCallback(() => {
-    if (mode !== "camera") return;
+    if (mode !== "eyegaze" || !supportsCalibration) return;
     calibrationSamplesRef.current = [];
     rawGazeSamplesRef.current = [];
     setCalibrationStep(0);
     setIsCalibrating(true);
-  }, [mode]);
+  }, [mode, supportsCalibration]);
 
   const cancelCalibration = useCallback(() => {
     calibrationSamplesRef.current = [];
@@ -122,13 +133,12 @@ export function EyeTrackingDwellProvider({ mode, dwellTimeMs, rawFaces, children
   }, []);
 
   const clearCalibration = useCallback(() => {
-    estimatorRef.current?.clearCalibration();
+    clearCalibrationData();
     setIsCalibrated(false);
-  }, []);
+  }, [clearCalibrationData]);
 
   const recordCalibrationSample = useCallback(() => {
-    const est = estimatorRef.current;
-    if (!est || !isCalibrating) return;
+    if (!isCalibrating) return;
 
     const rawSamples = rawGazeSamplesRef.current;
     const target = CALIBRATION_TARGETS[calibrationStep];
@@ -149,7 +159,7 @@ export function EyeTrackingDwellProvider({ mode, dwellTimeMs, rawFaces, children
     const nextStep = calibrationStep + 1;
     if (nextStep >= CALIBRATION_TARGETS.length) {
       if (calibrationSamplesRef.current.length >= 2) {
-        est.applyCalibration(calibrationSamplesRef.current);
+        externalApplyCalibration(calibrationSamplesRef.current);
         setIsCalibrated(true);
       }
       setIsCalibrating(false);
@@ -157,7 +167,7 @@ export function EyeTrackingDwellProvider({ mode, dwellTimeMs, rawFaces, children
     } else {
       setCalibrationStep(nextStep);
     }
-  }, [isCalibrating, calibrationStep]);
+  }, [isCalibrating, calibrationStep, externalApplyCalibration]);
 
   // ── Shared dwell hit-test logic ──
   const runDwellHitTest = useCallback((point: GazePoint) => {
@@ -165,15 +175,13 @@ export function EyeTrackingDwellProvider({ mode, dwellTimeMs, rawFaces, children
     let dwellEl: HTMLElement | null = null;
     for (const el of elements) {
       const htmlEl = el as HTMLElement;
-      // If we hit an element with data-dwell-trap (e.g. app overlay),
-      // only allow dwell targets that are descendants of the trap
       const trap = htmlEl.closest("[data-dwell-trap]") as HTMLElement | null;
       if (trap) {
         const found = htmlEl.closest("[data-dwell]") as HTMLElement | null;
         if (found && trap.contains(found)) {
           dwellEl = found;
         }
-        break; // stop searching — trap blocks anything behind it
+        break;
       }
       const found = htmlEl.closest("[data-dwell]") as HTMLElement | null;
       if (found) {
@@ -239,44 +247,31 @@ export function EyeTrackingDwellProvider({ mode, dwellTimeMs, rawFaces, children
         return;
       }
 
-      // ── Camera mode: use face tracking + gaze estimator ──
-      const faces = facesRef.current;
-      const est = estimatorRef.current;
-      if (!est || faces.length === 0) {
+      // ── Eyegaze mode: use external gazePoint from useEyeGaze ──
+      if (!externalGazePoint) {
         setGazePosition(null);
         setDwellTarget(null);
         currentElementRef.current = null;
         return;
       }
-
-      const face = faces[0];
 
       // During calibration, collect raw samples but don't do dwell
       if (isCalibrating) {
-        const raw = est.getRaw(face);
+        const raw = getRawGaze();
         if (raw) {
           rawGazeSamplesRef.current.push(raw);
-          const smoothed = est.update(face);
-          setGazePosition(smoothed);
         }
+        setGazePosition(externalGazePoint);
         setDwellTarget(null);
         return;
       }
 
-      const point = est.update(face);
-      if (!point) {
-        setGazePosition(null);
-        setDwellTarget(null);
-        currentElementRef.current = null;
-        return;
-      }
-
-      setGazePosition(point);
-      runDwellHitTest(point);
+      setGazePosition(externalGazePoint);
+      runDwellHitTest(externalGazePoint);
     }, TICK_MS);
 
     return () => clearInterval(interval);
-  }, [enabled, mode, dwellTimeMs, isCalibrating, runDwellHitTest]);
+  }, [enabled, mode, externalGazePoint, isCalibrating, runDwellHitTest, getRawGaze]);
 
   return (
     <EyeTrackingDwellContext.Provider

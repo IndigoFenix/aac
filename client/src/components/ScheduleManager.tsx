@@ -21,7 +21,18 @@ import { useToast } from "@/hooks/use-toast";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { Calendar, Clock, Plus, Edit2, Trash2, Save, X } from "lucide-react";
 import { queryClient } from "@/lib/queryClient";
-import type { StudentSchedule } from "@shared/schema";
+// StudentSchedule type - table not yet in schema, defined locally
+interface StudentSchedule {
+  id: string;
+  studentId: string;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  activityName: string;
+  topicTags: string[];
+  isRepeatingWeekly: boolean;
+  dateOverride?: string | null;
+}
 
 interface ScheduleManagerProps {
   studentId: string;
@@ -56,7 +67,7 @@ export function ScheduleManager({
     : ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
   // Fetch schedules for this AAC user
-  const { data: schedulesData, isLoading } = useQuery({
+  const { data: schedulesData, isLoading } = useQuery<{ schedules: StudentSchedule[] }>({
     queryKey: ["/api/schedules", studentId],
     queryFn: async () => {
       const res = await fetch(`/api/schedules/${studentId}`, {

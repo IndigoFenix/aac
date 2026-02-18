@@ -39,6 +39,8 @@ import { serializeGestureContext } from "@/lib/gestureContextSerializer";
 import { EyeTrackingDwellProvider } from "@/contexts/EyeTrackingDwellContext";
 import DwellOverlay from "@/components/DwellOverlay";
 import GazeCalibrationOverlay from "@/components/GazeCalibrationOverlay";
+import { useEyeGaze } from "@/hooks/useEyeGaze";
+import type { EyeGazeProviderType } from "@/lib/eyegaze/types";
 
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAppInitialization } from "@/contexts/AppInitializationContext";
@@ -176,16 +178,17 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const [handGestureEnabled, setHandGestureEnabled] = useState<boolean>(true);
 
   // Eyegaze dwell settings — stored in DB via student profile
-  const [eyegazeSettings, setEyegazeSettings] = useState<{ enabled: boolean; mode: "mouse"; timeout: number }>({
-    enabled: false, mode: "mouse", timeout: 2000
+  const [eyegazeSettings, setEyegazeSettings] = useState<{ enabled: boolean; provider: EyeGazeProviderType | "auto"; timeout: number }>({
+    enabled: false, provider: "auto", timeout: 2000
   });
   // Sync eyegaze settings from userProfile when it loads
   useEffect(() => {
     if (userProfile) {
+      const aac = userProfile.aacSettings;
       setEyegazeSettings({
-        enabled: userProfile.aacEyegazeEnabled ?? false,
-        mode: "mouse",
-        timeout: userProfile.aacEyegazeTimeout ?? 2000,
+        enabled: aac?.eyegazeEnabled ?? false,
+        provider: aac?.eyegazeProvider ?? "auto",
+        timeout: aac?.eyegazeTimeout ?? 2000,
       });
     }
   }, [userProfile]);
@@ -299,6 +302,13 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   } = useFaceTracking({
     videoStream: faceTrackingEnabled ? faceTrackingStream : null,
     enabled: faceTrackingEnabled,
+  });
+
+  // Unified eye gaze service — auto-detects camera / hardware / mouse provider
+  const eyeGaze = useEyeGaze({
+    enabled: eyegazeSettings.enabled,
+    rawFaces,
+    preferredProvider: eyegazeSettings.provider,
   });
 
   // Face image cache (in-memory, session-scoped — no server storage)
@@ -558,7 +568,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     // Create interpretation and speak it using student voice
     const interpretation = newSymbols.join(" ");
     setCurrentSpeech(interpretation);
-    const studentVoice = userProfile?.aacStudentVoiceType || 'boy';
+    const studentVoice = userProfile?.aacSettings?.studentVoiceType || 'boy';
     await speak(interpretation, currentLanguage, studentVoice);
 
     // Clear symbols after speech
@@ -587,9 +597,9 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
       setRecentButtonPresses([]);
     } else {
       const text = buttons.join(" ");
-      speak(text, currentLanguage, userProfile?.aacStudentVoiceType || 'boy');
+      speak(text, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
     }
-  }, [speak, currentLanguage, userProfile?.aacStudentVoiceType]);
+  }, [speak, currentLanguage, userProfile?.aacSettings?.studentVoiceType]);
 
   // Handle AAC board button click — buffer presses, send after delay or on double-tap
   const handleBoardButtonClick = useCallback((button: BoardButton, spokenText: string) => {
@@ -786,7 +796,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
       }
 
       // If we have camera functionality, use it for presence detection
-      if (captureFrameFromCamera && getUserCamera) {
+      if (isMultiCameraActive && getUserCamera()) {
         // Initial check after delay
         const timer = setTimeout(checkCameraAndStartConversation, 3000);
 
@@ -928,9 +938,14 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   return (
     <CameraAttentivenessWrapper autoStart={true} cameraType="user">
     <EyeTrackingDwellProvider
-      mode={eyegazeSettings.enabled ? "mouse" : "off"}
+      mode={eyegazeSettings.enabled ? "eyegaze" : "off"}
       dwellTimeMs={eyegazeSettings.timeout}
-      rawFaces={rawFaces}
+      gazePoint={eyeGaze.gazePoint}
+      isCalibrated={eyeGaze.isCalibrated}
+      supportsCalibration={eyeGaze.supportsCalibration}
+      getRawGaze={eyeGaze.getRawGaze}
+      applyCalibration={eyeGaze.applyCalibration}
+      clearCalibrationData={eyeGaze.clearCalibration}
     >
     <div className="h-screen flex flex-col relative overflow-hidden bg-bg-soft">
       {/* Main 3-Section Board Layout */}
@@ -984,8 +999,8 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
               onBack={boardHistoryRef.current.length > 0 ? handleBoardBack : undefined}
               onNavigate={handleBoardNavigate}
               language={currentLanguage}
-              voiceType={userProfile?.aacStudentVoiceType || 'boy'}
-              iconTextRatio={userProfile?.aacIconTextRatio ?? 3}
+              voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
+              iconTextRatio={userProfile?.aacSettings?.iconTextRatio ?? 3}
               getFaceImage={faceImageCache.getFaceImage}
               suppressLocalSpeech={aiSessionActive}
             />
@@ -997,7 +1012,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
                 setSelectedSymbols([text]);
               }}
               language={currentLanguage}
-              voiceType={userProfile?.aacStudentVoiceType || 'boy'}
+              voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
               onBack={() => {
                 // Handle back at root level - could show board selector
               }}
@@ -1014,7 +1029,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
               interpretFnRef.current([text]);
             } else {
               // Fallback: speak locally when server is unavailable
-              speak(text, currentLanguage, userProfile?.aacStudentVoiceType || 'boy');
+              speak(text, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
             }
           }}
           onBack={() => {

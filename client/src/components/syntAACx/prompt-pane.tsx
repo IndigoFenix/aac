@@ -492,7 +492,7 @@ export function PromptPane() {
                         : isDark ? "bg-slate-800 text-slate-300 mr-4" : "bg-gray-100 text-gray-700 mr-4"
                   )}
                 >
-                  {msg.content}
+                  {typeof msg.content === 'string' ? msg.content : (msg.content as any)?.text || ''}
                 </div>
               ))}
               <div ref={chatEndRef} />

@@ -12,7 +12,7 @@ interface ChatLogProps {
 
 export default function ChatLog({ isOpen, onClose, studentId }: ChatLogProps) {
   // Get chat history
-  const { data: chatHistory = [] } = useQuery({
+  const { data: chatHistory = [] } = useQuery<any[]>({
     queryKey: ["/api/aac/conversation/history", studentId],
     enabled: !!studentId && isOpen,
   });

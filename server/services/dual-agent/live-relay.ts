@@ -413,7 +413,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
       // Send greeting prompt to Gemini — include persona hint (matching HTTP mode)
       const isSilent = this.interactionMode === "silent";
       const student = cached.monitorAgent.getStudent?.();
-      const personaHint = student?.aacChatAgentPrompt?.trim()
+      const personaHint = student?.aacSettings?.chatAgentPrompt?.trim()
         ? `\nThe student is ${student.name}. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs.`
         : "";
       const greetingPrompt = isSilent
