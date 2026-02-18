@@ -59,6 +59,7 @@ export interface NlpSchema {
     lastFormValues?: formValues;
     describeActions?: boolean;
     navigateEnabled?: boolean;
+    selectStudentEnabled?: boolean;
     replyType?: 'text' | 'html' | 'md';
   }): PromptBuild {
 
@@ -397,6 +398,27 @@ export interface NlpSchema {
             }
         });
         endPrompt += `\n\nPanel Navigation: When the user's message relates to a specific panel feature (e.g. "show me the student list", "create a board", "update the report"), call navigateToFeature to switch to the relevant panel. Do NOT navigate when the user is just chatting or asking general questions.`;
+    }
+
+    if (ctx.selectStudentEnabled) {
+        tools.push({
+            type: 'function',
+            function: {
+                name: 'selectStudent',
+                description: 'Switch the currently selected student in the user\'s interface. Use this when the user asks to switch to a different student, or when their request clearly relates to a different student than the one currently selected. The student list is available in Context_Students.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        studentId: {
+                            type: 'string',
+                            description: 'The ID of the student to select (from Context_Students)'
+                        }
+                    },
+                    required: ['studentId'],
+                    additionalProperties: false
+                }
+            }
+        });
     }
 
     if (ctx.describeActions && tools.length > 0) {

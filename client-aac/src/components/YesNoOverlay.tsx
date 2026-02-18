@@ -15,25 +15,30 @@ interface YesNoOverlayProps {
 export default function YesNoOverlay({ active, onSelect, onDismiss }: YesNoOverlayProps) {
   const { t } = useLanguage();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Use a ref for onDismiss so the timer effect only depends on [active]
+  // (prevents timer reset from parent re-renders due to face tracking / gaze updates)
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
 
   // Auto-dismiss after 5 seconds (reset on re-trigger)
   useEffect(() => {
     if (active) {
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
-        onDismiss();
+        onDismissRef.current();
       }, 5000);
     }
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [active, onDismiss]);
+  }, [active]);
 
   return (
     <AnimatePresence>
       {active && (
         <motion.div
-          className="absolute inset-0 z-40 flex items-center justify-center gap-6 bg-black/20"
+          data-dwell-trap
+          className="absolute inset-0 z-40 flex items-center justify-center gap-6 bg-black/40 backdrop-blur-md"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -43,14 +48,14 @@ export default function YesNoOverlay({ active, onSelect, onDismiss }: YesNoOverl
           <motion.button
             data-dwell="yes"
             className="flex flex-col items-center justify-center rounded-3xl shadow-2xl border-4 border-green-400 bg-green-100 text-green-800 font-bold select-none"
-            style={{ width: "min(40vw, 220px)", height: "min(40vw, 220px)", fontSize: "clamp(1.5rem, 5vw, 2.5rem)" }}
+            style={{ width: "min(45vw, 300px)", height: "min(45vw, 300px)", fontSize: "clamp(1.5rem, 5vw, 2.5rem)" }}
             initial={{ scale: 0.3, y: 120, opacity: 0 }}
             animate={{ scale: 1, y: 0, opacity: 1 }}
             exit={{ scale: 0.3, y: 120, opacity: 0 }}
             transition={{ type: "spring", stiffness: 400, damping: 25 }}
             onClick={() => onSelect("Yes")}
           >
-            <span className="text-5xl mb-2">✅</span>
+            <span className="text-7xl mb-2">✅</span>
             {t("quickActions.yes")}
           </motion.button>
 
@@ -58,14 +63,14 @@ export default function YesNoOverlay({ active, onSelect, onDismiss }: YesNoOverl
           <motion.button
             data-dwell="no"
             className="flex flex-col items-center justify-center rounded-3xl shadow-2xl border-4 border-red-400 bg-red-100 text-red-800 font-bold select-none"
-            style={{ width: "min(40vw, 220px)", height: "min(40vw, 220px)", fontSize: "clamp(1.5rem, 5vw, 2.5rem)" }}
+            style={{ width: "min(45vw, 300px)", height: "min(45vw, 300px)", fontSize: "clamp(1.5rem, 5vw, 2.5rem)" }}
             initial={{ scale: 0.3, y: 120, opacity: 0 }}
             animate={{ scale: 1, y: 0, opacity: 1 }}
             exit={{ scale: 0.3, y: 120, opacity: 0 }}
             transition={{ type: "spring", stiffness: 400, damping: 25, delay: 0.05 }}
             onClick={() => onSelect("No")}
           >
-            <span className="text-5xl mb-2">❌</span>
+            <span className="text-7xl mb-2">❌</span>
             {t("quickActions.no")}
           </motion.button>
         </motion.div>

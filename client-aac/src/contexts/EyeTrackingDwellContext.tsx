@@ -92,6 +92,8 @@ export function EyeTrackingDwellProvider({
   const currentElementRef = useRef<HTMLElement | null>(null);
   const dwellStartRef = useRef<number>(0);
   const cooldownElementRef = useRef<HTMLElement | null>(null);
+  // Position-based cooldown: prevents reselection when board patches replace buttons at same position
+  const cooldownPositionRef = useRef<{ x: number; y: number } | null>(null);
 
   // Mouse position ref (updated by mousemove listener, read by dwell interval)
   const mousePosRef = useRef<GazePoint | null>(null);
@@ -136,6 +138,26 @@ export function EyeTrackingDwellProvider({
     clearCalibrationData();
     setIsCalibrated(false);
   }, [clearCalibrationData]);
+
+  // ── Auto-trigger calibration on first eyegaze use ──
+  const autoCalibTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (mode === "eyegaze" && supportsCalibration && !isCalibrated && !isCalibrating && !autoCalibTriggeredRef.current) {
+      autoCalibTriggeredRef.current = true;
+      // Small delay so UI renders first
+      const timer = setTimeout(() => {
+        startCalibration();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [mode, supportsCalibration, isCalibrated, isCalibrating, startCalibration]);
+
+  // Reset auto-trigger flag when mode changes away from eyegaze
+  useEffect(() => {
+    if (mode !== "eyegaze") {
+      autoCalibTriggeredRef.current = false;
+    }
+  }, [mode]);
 
   const recordCalibrationSample = useCallback(() => {
     if (!isCalibrating) return;
@@ -193,8 +215,27 @@ export function EyeTrackingDwellProvider({
     if (!dwellEl) {
       currentElementRef.current = null;
       cooldownElementRef.current = null;
+      cooldownPositionRef.current = null;
       setDwellTarget(null);
       return;
+    }
+
+    // Position-based cooldown: reject targets near the cooldown position
+    // (handles board patch replacing buttons at the same position)
+    if (cooldownPositionRef.current) {
+      const elRect = dwellEl.getBoundingClientRect();
+      const elCenter = { x: elRect.left + elRect.width / 2, y: elRect.top + elRect.height / 2 };
+      const dx = elCenter.x - cooldownPositionRef.current.x;
+      const dy = elCenter.y - cooldownPositionRef.current.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 100) {
+        // Still near the cooldown position — reject
+        setDwellTarget(null);
+        return;
+      }
+      // Gaze moved away from cooldown position — clear it
+      cooldownPositionRef.current = null;
+      cooldownElementRef.current = null;
     }
 
     if (dwellEl === cooldownElementRef.current) {
@@ -216,6 +257,12 @@ export function EyeTrackingDwellProvider({
 
     if (progress >= 1) {
       dwellEl.click();
+      // Store cooldown position (center of clicked element) for position-based cooldown
+      const clickedRect = dwellEl.getBoundingClientRect();
+      cooldownPositionRef.current = {
+        x: clickedRect.left + clickedRect.width / 2,
+        y: clickedRect.top + clickedRect.height / 2,
+      };
       cooldownElementRef.current = dwellEl;
       currentElementRef.current = null;
       setDwellTarget(null);

@@ -70,6 +70,9 @@ export type ServerMessage =
   | { type: "monitor_status"; data: any }
   | { type: "audio_interrupt" }                          // Stop client audio playback (model interrupted by user)
   | { type: "yes_no"; data: any }                        // Yes/No question detected — trigger overlay
+  | { type: "reconnecting"; data: string }               // Server is reconnecting to Gemini
+  | { type: "reconnected" }                              // Reconnection successful
+  | { type: "session_reset"; sessionId: string }         // New session created after repeated failures
   | { type: "complete"; data?: any };
 
 // ---------------------------------------------------------------------------
@@ -114,6 +117,10 @@ export class LiveRelay {
   private userMessageSentAt = 0;
   private static readonly USER_MSG_PRIORITY_MS = 3000;
 
+  // Reconnection tracking
+  private reconnectAttempts = 0;
+  private static readonly MAX_RECONNECT_BEFORE_RESET = 2;
+
   // Accumulation for turn processing
   private turnTextBuffer = "";
   private turnSegments: StreamingSegment[] = [];
@@ -134,6 +141,22 @@ export class LiveRelay {
       },
       onReady: () => {
         console.log("[LiveRelay] Gemini session ready");
+        // Reset reconnect counter on successful connection
+        this.reconnectAttempts = 0;
+        this.send({ type: "reconnected" });
+      },
+      onReconnecting: () => {
+        this.reconnectAttempts++;
+        console.log(`[LiveRelay] Reconnecting (attempt ${this.reconnectAttempts})...`);
+        this.send({ type: "reconnecting", data: "Reconnecting..." });
+
+        // If too many reconnect attempts (e.g. repeated safety errors), force new session
+        if (this.reconnectAttempts >= LiveRelay.MAX_RECONNECT_BEFORE_RESET && this.sessionId) {
+          console.log("[LiveRelay] Too many reconnect attempts — creating new session");
+          this.forceNewSession().catch(err => {
+            console.error("[LiveRelay] Force new session failed:", err);
+          });
+        }
       },
       onError: (error) => {
         console.error("[LiveRelay] Gemini error:", error.message);
@@ -454,6 +477,8 @@ If you hear speech that resembles text you recently produced, it is your echo. I
   private handleGeminiText(text: string): void {
     if (this.turnTextBuffer === "") {
       this.turnStartTime = Date.now();
+      // Reset reconnect counter on first text of a new turn — connection is healthy
+      this.reconnectAttempts = 0;
     }
     this.turnTextBuffer += text;
 
@@ -1197,6 +1222,36 @@ If you hear speech that resembles text you recently produced, it is your echo. I
     this.gemini.sendContextInjection(
       `[BOARD STATE REMINDER] Current buttons (${labels.length}/${maxSlots}, ${available} slots available): ${labels.join(", ") || "none"}`,
     );
+  }
+
+  /**
+   * Force a completely new session when reconnection keeps failing
+   * (e.g. repeated safety/unsafe prompt errors).
+   */
+  private async forceNewSession(): Promise<void> {
+    if (!this.studentId || !this.sessionId) return;
+
+    // Close the current Gemini session (prevents auto-reconnect)
+    this.gemini.close();
+
+    // Re-initialize from scratch
+    try {
+      await this.handleInitialize({
+        type: "initialize",
+        studentId: this.studentId,
+        interactionMode: this.interactionMode,
+        responseMode: this.responseMode,
+        debugMode: this.debugMode,
+      });
+      // Notify client of the new session
+      if (this.sessionId) {
+        this.send({ type: "session_reset", sessionId: this.sessionId });
+      }
+      this.reconnectAttempts = 0;
+    } catch (err) {
+      console.error("[LiveRelay] Force new session failed:", err);
+      this.send({ type: "error", data: "Failed to create new session after repeated errors" });
+    }
   }
 
   private cleanup(): void {

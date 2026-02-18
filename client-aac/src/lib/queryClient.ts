@@ -3,8 +3,8 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 // Read and sanitize the base URL from Vite env
 const API_BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, "") ?? "";
 
-// Helper to join base + path safely
-function withBase(path: string): string {
+// Helper to join base + path safely — exported as apiUrl for img src etc.
+export function apiUrl(path: string): string {
   const cleanPath = path.replace(/^\/+/, ""); // strip leading slashes
   // If API_BASE_URL is empty, this just returns "/path"
   return API_BASE_URL ? `${API_BASE_URL}/${cleanPath}` : `/${cleanPath}`;
@@ -26,7 +26,7 @@ export async function apiRequest(
   path: string,
   data?: unknown,
 ): Promise<Response> {
-  const url = withBase(path);
+  const url = apiUrl(path);
 
   // Check if data is FormData (for file uploads)
   const isFormData = data instanceof FormData;
@@ -74,7 +74,7 @@ export async function fetchWithAuth(
   path: string,
   options: RequestInit = {}
 ): Promise<Response> {
-  const url = withBase(path);
+  const url = apiUrl(path);
   return fetch(url, {
     ...options,
     credentials: "include",
@@ -92,7 +92,7 @@ export function getQueryFn<T>(options: {
     const path =
       Array.isArray(queryKey) ? queryKey.join("/") : String(queryKey);
 
-    const url = withBase(path);
+    const url = apiUrl(path);
 
     const res = await fetch(url, {
       credentials: "include",

@@ -76,6 +76,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [thinkingMode, setThinkingMode] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
 
   // Message state
   const [currentMessage, setCurrentMessage] = useState<DualAgentMessage | null>(null);
@@ -286,6 +287,22 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
             setMonitorError(null);
             setMonitorConsecutiveFailures(0);
           }
+          break;
+
+        case "reconnecting":
+          setReconnecting(true);
+          setError(null);
+          break;
+
+        case "reconnected":
+          setReconnecting(false);
+          setError(null);
+          break;
+
+        case "session_reset":
+          setSessionId(msg.sessionId);
+          setReconnecting(false);
+          setError(null);
           break;
 
         case "error":
@@ -597,5 +614,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // Live API only
     sendPcmAudio,
     isBusyRef: audioPlayer.isBusyRef,
+
+    // Reconnection state
+    reconnecting,
   };
 }

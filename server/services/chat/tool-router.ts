@@ -50,6 +50,7 @@ export interface ToolRegistry {
   despawn: (args: { subAgentId: string }) => Promise<any>;
   pruneMessages: (args: { forget: number[]; summary: string }) => Promise<any>;
   navigateToFeature: (args: { feature: string }) => Promise<any>;
+  selectStudent: (args: { studentId: string }) => Promise<any>;
 }
 
 // ============================================================================
@@ -228,6 +229,7 @@ export interface ToolRegistryDeps {
   onCreditsUsed?: (v: number) => Promise<void>;
   onThinkingUpdate?: (description: string) => void;
   onNavigate?: (feature: string) => void;
+  onSelectStudent?: (studentId: string) => void;
 
   /**
    * Optional callback for pruneMessages tool.
@@ -287,6 +289,13 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
         return { success: true, navigatedTo: feature };
       }
       return { success: false, reason: 'Navigation not available' };
+    },
+    selectStudent: async ({ studentId }) => {
+      if (deps.onSelectStudent) {
+        deps.onSelectStudent(studentId);
+        return { success: true, selectedStudentId: studentId };
+      }
+      return { success: false, reason: 'Student selection not available' };
     },
     apiCall: async (toolCall: GPTFunctionToolCall) => {
       const fnName = toolCall.name;
@@ -837,6 +846,10 @@ export async function makeToolCalls(
                 break;
               case "navigateToFeature":
                 response = await registry.navigateToFeature(args as { feature: string });
+                insertToolCallResponse(toolCall, response);
+                break;
+              case "selectStudent":
+                response = await registry.selectStudent(args as { studentId: string });
                 insertToolCallResponse(toolCall, response);
                 break;
               default:

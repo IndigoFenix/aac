@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, apiUrl } from '@/lib/queryClient';
 import { useStudent } from '@/hooks/useStudent';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -13,6 +13,25 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Search, Trash2, Edit, Wand2, Upload, Loader2, Image as ImageIcon } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { useTheme } from '@/contexts/ThemeContext';
+import { cn } from '@/lib/utils';
+
+/** Extract message from apiRequest errors (format: "STATUS: JSON_BODY") */
+function extractErrorMessage(err: any, fallback: string): string {
+  const raw = err?.message || '';
+  // apiRequest throws "STATUS: body" — try to parse JSON body
+  const colonIdx = raw.indexOf(': ');
+  if (colonIdx > 0) {
+    const body = raw.substring(colonIdx + 2);
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed.message) return parsed.message;
+    } catch { /* not JSON, use raw body */ }
+    return body || fallback;
+  }
+  return raw || fallback;
+}
 
 interface SymbolData {
   id: string;
@@ -33,19 +52,24 @@ function SymbolCard({ symbol, onEdit, onDelete }: {
   onDelete?: () => void;
 }) {
   const { t } = useLanguage();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   return (
-    <div className="border rounded-lg p-3 flex flex-col items-center gap-2 bg-white hover:shadow-md transition-shadow">
+    <div className={cn(
+      "border rounded-lg p-3 flex flex-col items-center gap-2 hover:shadow-md transition-shadow",
+      isDark ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"
+    )}>
       <img
-        src={`/api/custom-symbols/${symbol.id}/image`}
+        src={apiUrl(`/api/custom-symbols/${symbol.id}/image`)}
         alt={symbol.assocKey || symbol.key || t('symbols.title')}
-        className="w-16 h-16 object-contain"
+        className={cn("w-16 h-16 object-contain rounded", isDark ? "bg-slate-700" : "bg-gray-50")}
         loading="lazy"
       />
-      <span className="text-sm font-medium text-center truncate w-full">
+      <span className={cn("text-sm font-medium text-center truncate w-full", isDark ? "text-slate-200" : "text-gray-900")}>
         {symbol.assocKey || symbol.key || t('symbols.unnamed')}
       </span>
       {(symbol.assocDescription || symbol.description) && (
-        <span className="text-xs text-gray-500 text-center truncate w-full">
+        <span className={cn("text-xs text-center truncate w-full", isDark ? "text-slate-400" : "text-gray-500")}>
           {symbol.assocDescription || symbol.description}
         </span>
       )}
@@ -69,27 +93,29 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
   const { student } = useStudent();
   const { user } = useAuth();
   const { t } = useLanguage();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('my');
   const [showCreate, setShowCreate] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [editAssoc, setEditAssoc] = useState<{ assocId: string; type: string; key: string; description: string } | null>(null);
 
-  // Queries
+  // Queries — keys use ['custom-symbols', ...] so invalidateQueries(['custom-symbols']) matches all
   const { data: mySymbols = [] } = useQuery<SymbolData[]>({
-    queryKey: ['/api/custom-symbols/my'],
+    queryKey: ['custom-symbols', 'my'],
     queryFn: () => apiRequest('GET', '/api/custom-symbols/my').then(r => r.json()),
     enabled: isOpen,
   });
 
   const { data: studentSymbols = [] } = useQuery<SymbolData[]>({
-    queryKey: ['/api/custom-symbols/student', student?.id],
+    queryKey: ['custom-symbols', 'student', student?.id],
     queryFn: () => apiRequest('GET', `/api/custom-symbols/student/${student!.id}`).then(r => r.json()),
     enabled: isOpen && !!student,
   });
 
   const { data: publicSymbols = [] } = useQuery<SymbolData[]>({
-    queryKey: ['/api/custom-symbols/public'],
+    queryKey: ['custom-symbols', 'public'],
     queryFn: () => apiRequest('GET', '/api/custom-symbols/public').then(r => r.json()),
     enabled: isOpen && activeTab === 'public',
   });
@@ -98,7 +124,7 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
   const deleteSymbolMutation = useMutation({
     mutationFn: (id: string) => apiRequest('DELETE', `/api/custom-symbols/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/custom-symbols'] });
+      queryClient.invalidateQueries({ queryKey: ['custom-symbols'] });
     },
   });
 
@@ -106,7 +132,7 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
     mutationFn: ({ assocId, type }: { assocId: string; type: string }) =>
       apiRequest('DELETE', `/api/custom-symbols/${type}-associations/${assocId}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/custom-symbols'] });
+      queryClient.invalidateQueries({ queryKey: ['custom-symbols'] });
     },
   });
 
@@ -114,7 +140,7 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
     mutationFn: ({ assocId, type, data }: { assocId: string; type: string; data: any }) =>
       apiRequest('PATCH', `/api/custom-symbols/${type}-associations/${assocId}`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/custom-symbols'] });
+      queryClient.invalidateQueries({ queryKey: ['custom-symbols'] });
       setEditAssoc(null);
     },
   });
@@ -148,7 +174,7 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
         <ScrollArea className="flex-1">
           <TabsContent value="my" className="p-4">
             {mySymbols.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-8">{t('symbols.noSymbols')}</p>
+              <p className={cn("text-sm text-center py-8", isDark ? "text-slate-400" : "text-gray-500")}>{t('symbols.noSymbols')}</p>
             ) : (
               <div className="grid grid-cols-3 gap-3">
                 {mySymbols.map(s => (
@@ -165,7 +191,7 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
 
           <TabsContent value="student" className="p-4">
             {studentSymbols.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-8">{t('symbols.noStudentSymbols').replace('{name}', student?.name || '')}</p>
+              <p className={cn("text-sm text-center py-8", isDark ? "text-slate-400" : "text-gray-500")}>{t('symbols.noStudentSymbols').replace('{name}', student?.name || '')}</p>
             ) : (
               <div className="grid grid-cols-3 gap-3">
                 {studentSymbols.map(s => (
@@ -182,7 +208,7 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
 
           <TabsContent value="public" className="p-4">
             {publicSymbols.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-8">{t('symbols.noPublicSymbols')}</p>
+              <p className={cn("text-sm text-center py-8", isDark ? "text-slate-400" : "text-gray-500")}>{t('symbols.noPublicSymbols')}</p>
             ) : (
               <div className="grid grid-cols-3 gap-3">
                 {publicSymbols.map(s => (
@@ -200,7 +226,7 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
         onClose={() => setShowCreate(false)}
         studentId={student?.id}
         onCreated={() => {
-          queryClient.invalidateQueries({ queryKey: ['/api/custom-symbols'] });
+          queryClient.invalidateQueries({ queryKey: ['custom-symbols'] });
           setShowCreate(false);
         }}
       />
@@ -210,8 +236,10 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
         open={showSearch}
         onClose={() => setShowSearch(false)}
         studentId={student?.id}
+        existingMyIds={new Set(mySymbols.map(s => s.id))}
+        existingStudentIds={new Set(studentSymbols.map(s => s.id))}
         onAdded={() => {
-          queryClient.invalidateQueries({ queryKey: ['/api/custom-symbols'] });
+          queryClient.invalidateQueries({ queryKey: ['custom-symbols'] });
         }}
       />
 
@@ -262,6 +290,9 @@ function CreateSymbolDialog({ open, onClose, studentId, onCreated }: {
   onCreated: () => void;
 }) {
   const { t } = useLanguage();
+  const { toast } = useToast();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const [mode, setMode] = useState<'upload' | 'generate'>('upload');
   const [key, setKey] = useState('');
   const [description, setDescription] = useState('');
@@ -295,8 +326,8 @@ function CreateSymbolDialog({ open, onClose, studentId, onCreated }: {
       const res = await apiRequest('POST', '/api/custom-symbols/generate', { description });
       const data = await res.json();
       setGeneratedImage(data.image);
-    } catch (err) {
-      console.error('Generate error:', err);
+    } catch (err: any) {
+      toast({ title: 'Generation failed', description: extractErrorMessage(err, 'Failed to generate symbol'), variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -333,8 +364,8 @@ function CreateSymbolDialog({ open, onClose, studentId, onCreated }: {
 
       reset();
       onCreated();
-    } catch (err) {
-      console.error('Save error:', err);
+    } catch (err: any) {
+      toast({ title: 'Upload failed', description: extractErrorMessage(err, 'Failed to save symbol'), variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -371,7 +402,7 @@ function CreateSymbolDialog({ open, onClose, studentId, onCreated }: {
             <div>
               <Label>{t('symbols.image')}</Label>
               <Input type="file" accept="image/*" onChange={handleFileChange} />
-              {preview && <img src={preview} alt="preview" className="w-24 h-24 object-contain mt-2 border rounded" />}
+              {preview && <img src={preview} alt="preview" className={cn("w-24 h-24 object-contain mt-2 border rounded", isDark ? "border-slate-600 bg-slate-700" : "border-gray-200 bg-gray-50")} />}
             </div>
           ) : (
             <div>
@@ -380,7 +411,7 @@ function CreateSymbolDialog({ open, onClose, studentId, onCreated }: {
                 {t('symbols.generatePreview')}
               </Button>
               {generatedImage && (
-                <img src={generatedImage} alt="generated" className="w-24 h-24 object-contain mt-2 border rounded mx-auto" />
+                <img src={generatedImage} alt="generated" className={cn("w-24 h-24 object-contain mt-2 border rounded mx-auto", isDark ? "border-slate-600 bg-slate-700" : "border-gray-200 bg-gray-50")} />
               )}
             </div>
           )}
@@ -401,13 +432,18 @@ function CreateSymbolDialog({ open, onClose, studentId, onCreated }: {
   );
 }
 
-function SearchSymbolDialog({ open, onClose, studentId, onAdded }: {
+function SearchSymbolDialog({ open, onClose, studentId, existingMyIds, existingStudentIds, onAdded }: {
   open: boolean;
   onClose: () => void;
   studentId?: string;
+  existingMyIds: Set<string>;
+  existingStudentIds: Set<string>;
   onAdded: () => void;
 }) {
   const { t } = useLanguage();
+  const { toast } = useToast();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SymbolData[]>([]);
   const [loading, setLoading] = useState(false);
@@ -418,8 +454,8 @@ function SearchSymbolDialog({ open, onClose, studentId, onAdded }: {
     try {
       const res = await apiRequest('GET', `/api/custom-symbols/search?q=${encodeURIComponent(query)}`);
       setResults(await res.json());
-    } catch (err) {
-      console.error('Search error:', err);
+    } catch (err: any) {
+      toast({ title: 'Search failed', description: extractErrorMessage(err, 'Search failed'), variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -435,9 +471,9 @@ function SearchSymbolDialog({ open, onClose, studentId, onAdded }: {
       onAdded();
     } catch (err: any) {
       if (err?.status === 409) {
-        // Already associated, ignore
+        toast({ title: 'Already added', description: 'This symbol is already associated.' });
       } else {
-        console.error('Add error:', err);
+        toast({ title: 'Error', description: extractErrorMessage(err, 'Failed to add symbol'), variant: 'destructive' });
       }
     }
   };
@@ -461,28 +497,36 @@ function SearchSymbolDialog({ open, onClose, studentId, onAdded }: {
         </div>
         <ScrollArea className="max-h-[400px]">
           {results.length === 0 ? (
-            <p className="text-sm text-gray-500 text-center py-4">
+            <p className={cn("text-sm text-center py-4", isDark ? "text-slate-400" : "text-gray-500")}>
               {query ? t('symbols.noResults') : t('symbols.searchPrompt')}
             </p>
           ) : (
             <div className="grid grid-cols-3 gap-3 p-2">
               {results.map(s => (
-                <div key={s.id} className="border rounded-lg p-3 flex flex-col items-center gap-2">
+                <div key={s.id} className={cn(
+                  "border rounded-lg p-3 flex flex-col items-center gap-2",
+                  isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-white"
+                )}>
                   <img
-                    src={`/api/custom-symbols/${s.id}/image`}
+                    src={apiUrl(`/api/custom-symbols/${s.id}/image`)}
                     alt={s.key || t('symbols.title')}
-                    className="w-12 h-12 object-contain"
+                    className={cn("w-12 h-12 object-contain rounded", isDark ? "bg-slate-700" : "bg-gray-50")}
                     loading="lazy"
                   />
-                  <span className="text-xs font-medium text-center">{s.key || t('symbols.unnamed')}</span>
+                  <span className={cn("text-xs font-medium text-center", isDark ? "text-slate-200" : "text-gray-900")}>{s.key || t('symbols.unnamed')}</span>
                   <div className="flex gap-1">
-                    <Button size="sm" variant="outline" onClick={() => handleAdd(s.id, 'user')}>
-                      {t('symbols.addMy')}
-                    </Button>
-                    {studentId && (
+                    {!existingMyIds.has(s.id) && (
+                      <Button size="sm" variant="outline" onClick={() => handleAdd(s.id, 'user')}>
+                        {t('symbols.addMy')}
+                      </Button>
+                    )}
+                    {studentId && !existingStudentIds.has(s.id) && (
                       <Button size="sm" variant="outline" onClick={() => handleAdd(s.id, 'student')}>
                         {t('symbols.addStudent')}
                       </Button>
+                    )}
+                    {existingMyIds.has(s.id) && (!studentId || existingStudentIds.has(s.id)) && (
+                      <span className={cn("text-xs", isDark ? "text-slate-500" : "text-gray-400")}>{t('symbols.alreadyAdded')}</span>
                     )}
                   </div>
                 </div>

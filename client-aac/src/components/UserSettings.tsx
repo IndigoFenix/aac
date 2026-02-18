@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, User, Save, Volume2, MessageSquare, LogOut, Sun, Moon, Crosshair, LayoutGrid, Brain, Zap, Search, RotateCcw, RefreshCw } from "lucide-react";
+import { X, User, Save, Volume2, MessageSquare, LogOut, Sun, Moon, Crosshair, LayoutGrid, Brain, Zap, Search, RotateCcw, RefreshCw, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,6 +15,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { LanguageSelector } from "@/components/LanguageSelector";
 
 import type { EyeGazeProviderType } from "@/lib/eyegaze/types";
+import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
 
 export interface EyegazeSettings {
   enabled: boolean;
@@ -56,6 +57,7 @@ export default function UserSettings({
   const { t, isRTL, direction } = useLanguage();
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
+  const { startCalibration, isCalibrated, isCalibrating } = useEyeTrackingDwell();
   const queryClient = useQueryClient();
 
   // Voice settings
@@ -561,6 +563,21 @@ export default function UserSettings({
                     <p className="text-xs text-blue-600 dark:text-blue-400">
                       {t("settings.eyegazeTip", { seconds: String(eyegazeTimeout / 1000) })}
                     </p>
+
+                    {/* Recalibrate button */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        onClose();
+                        setTimeout(() => startCalibration(), 300);
+                      }}
+                      disabled={isCalibrating}
+                      className="w-full flex items-center gap-2"
+                    >
+                      <Target className="w-4 h-4" />
+                      {isCalibrating ? "Calibrating..." : isCalibrated ? "Recalibrate Eye Tracking" : "Calibrate Eye Tracking"}
+                    </Button>
                   </div>
                 )}
               </div>

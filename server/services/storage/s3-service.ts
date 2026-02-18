@@ -3,7 +3,7 @@ import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, Head
 const bucket = process.env.S3_UPLOADS_BUCKET;
 
 const s3 = new S3Client({
-  region: process.env.AWS_REGION || "us-east-1",
+  region: process.env.AWS_REGION || process.env.AWS_SECRETS_REGION || "us-east-1",
 });
 
 function requireBucket(): string {

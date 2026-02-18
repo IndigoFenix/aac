@@ -47,6 +47,32 @@ export class BoardRepository {
       );
   }
 
+  async getStudentBoardsMetadata(userId: string, studentId: string): Promise<BoardWithOptionalIrData[]> {
+    // Like getStudentBoards but without irData (for dropdown lists)
+    return await db.select({
+      id: boards.id,
+      userId: boards.userId,
+      studentId: boards.studentId,
+      name: boards.name,
+      description: boards.description,
+      imageUrl: boards.imageUrl,
+      language: boards.language,
+      automaticSelection: boards.automaticSelection,
+      automaticSelectionHint: boards.automaticSelectionHint,
+      createdAt: boards.createdAt,
+      updatedAt: boards.updatedAt,
+      loadedAt: boards.loadedAt,
+    }).from(boards).where(
+      and(
+        eq(boards.userId, userId),
+        or(
+          eq(boards.studentId, studentId),
+          isNull(boards.studentId)
+        )
+      )
+    );
+  }
+
   async getAutoSelectableBoards(userId: string, studentId: string): Promise<Board[]> {
     return await db.select()
       .from(boards)

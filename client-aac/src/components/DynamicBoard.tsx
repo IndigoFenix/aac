@@ -4,6 +4,7 @@ import type { ParsedBoardData, BoardButton } from "@shared/schema";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { ArrowLeft } from "lucide-react";
+import { apiUrl } from "@/lib/queryClient";
 
 export interface BoardPatch {
   add: Array<{ label: string; iconRef: string }>;
@@ -438,7 +439,7 @@ export default function DynamicBoard({
     // Resolve __SYMBOL__:symbolId to custom symbol image
     if (button.symbolPath?.startsWith("__SYMBOL__:")) {
       const symbolId = button.symbolPath.substring(11);
-      return <img src={`/api/custom-symbols/${symbolId}/image`} alt={button.label} className="object-contain" style={imgStyle} loading="lazy" />;
+      return <img src={apiUrl(`/api/custom-symbols/${symbolId}/image`)} alt={button.label} className="object-contain" style={imgStyle} loading="lazy" />;
     }
     if (button.symbolPath) {
       return <img src={button.symbolPath} alt={button.label} className="object-contain" style={imgStyle} />;

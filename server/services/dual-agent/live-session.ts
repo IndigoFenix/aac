@@ -41,6 +41,8 @@ export interface LiveSessionCallbacks {
   /** Called when resumption-handle reconnect fails and a fresh session was created.
    *  The relay should reload conversation history from DB and send it to the new session. */
   onReconnectFailed?: () => Promise<void>;
+  /** Called when reconnection is starting (before connect) */
+  onReconnecting?: () => void;
 }
 
 // Safety settings — all OFF, matching gemini-chat.ts
@@ -63,6 +65,9 @@ export class GeminiLiveSession {
   private callbacks: LiveSessionCallbacks;
   private systemPrompt: string = "";
   private connected = false;
+
+  /** Last WebSocket close code — readable by relay for reconnection decisions */
+  lastCloseCode: number | null = null;
 
   // Proactive reconnection timer (reconnect before the 2-min video limit)
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -126,6 +131,7 @@ export class GeminiLiveSession {
           },
           onclose: (e: CloseEvent) => {
             this.connected = false;
+            this.lastCloseCode = e.code;
             console.log(`[LiveSession] Connection closed: code=${e.code} reason=${e.reason}`);
             this.clearReconnectTimer();
             this.callbacks.onClose?.(e.code, e.reason);
@@ -134,6 +140,7 @@ export class GeminiLiveSession {
             if (!this.closedIntentionally && e.code !== 1000) {
               const delay = e.code === 1007 ? 2000 : 1000; // longer delay for safety rejections
               console.log(`[LiveSession] Unexpected close, reconnecting in ${delay}ms...`);
+              this.callbacks.onReconnecting?.();
               this.scheduleReconnect(delay);
             }
           },
@@ -157,6 +164,8 @@ export class GeminiLiveSession {
    * so the relay can reload history from DB.
    */
   async reconnect(): Promise<void> {
+    this.callbacks.onReconnecting?.();
+
     // Close old session gracefully
     if (this.session) {
       try { this.session.close(); } catch { /* ignore */ }
