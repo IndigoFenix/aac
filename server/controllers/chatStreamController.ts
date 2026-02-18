@@ -84,6 +84,14 @@ export class ChatStreamController {
         });
       };
 
+      // Student selection callback - sends SSE events for immediate student switching
+      const onSelectStudent = (studentId: string) => {
+        sendSSEEvent(res, "select_student", {
+          studentId,
+          timestamp: Date.now(),
+        });
+      };
+
       const messagesWithTimestamp =
         messages?.map((msg) => ({
           ...msg,
@@ -112,6 +120,7 @@ export class ChatStreamController {
             replyType: "md",
             onThinkingUpdate,
             onNavigate,
+            onSelectStudent,
             signal: abortController.signal,
           });
 
@@ -142,6 +151,7 @@ export class ChatStreamController {
           replyType: replyType || "html",
           onThinkingUpdate,
           onNavigate,
+          onSelectStudent,
         });
 
         // Send final response

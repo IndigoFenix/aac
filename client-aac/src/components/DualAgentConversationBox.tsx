@@ -142,6 +142,7 @@ export function DualAgentConversationBox({
     interpretConfidence,
     responseMode,
     setResponseMode,
+    reconnecting,
   } = useDualAgentContext();
   const { t } = useLanguage();
   const { theme, toggleTheme } = useTheme();
@@ -447,6 +448,11 @@ export function DualAgentConversationBox({
                       <span className="ml-2 text-sm">
                         {thinkingMode ? "Thinking carefully..." : "Processing..."}
                       </span>
+                    </div>
+                  ) : reconnecting ? (
+                    <div className="flex items-center gap-2 text-white/80">
+                      <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse" />
+                      <span className="text-sm">Reconnecting...</span>
                     </div>
                   ) : error ? (
                     <div className="flex items-center justify-between w-full">

@@ -11113,3 +11113,76 @@
   "closeApp": false,
   "speechSuppressed": false
 }
+
+============================================================
+[2026-02-18T09:24:25.532Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "aac-1771406663690",
+  "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-18T09:24:26.243Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771406663690",
+  "elapsed": "207ms",
+  "segmentCount": 2,
+  "segments": "speak, rebuild_board",
+  "speak": "Hi Gal, it's great to see you! Are you ready to start the day with some fun activities?",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Explore, Draw, Music, Craft, Play, Tired, Help",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-18T09:24:48.239Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771406663690",
+  "elapsed": "73ms",
+  "segmentCount": 2,
+  "segments": "context, add_buttons",
+  "speak": "(none)",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "I see a man in the frame.",
+  "board": {
+    "rebuilt": false,
+    "added": 1,
+    "removed": 0,
+    "addLabels": "Hello",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-18T09:24:53.046Z] LiveRelay.cleanup
+----------------------------------------
+{
+  "sessionId": "aac-1771406663690"
+}

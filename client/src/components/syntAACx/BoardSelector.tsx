@@ -44,6 +44,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useBoardStore } from '@/store/board-store';
 import { useSharedState } from '@/contexts/FeaturePanelContext';
+import { useStudent } from '@/hooks/useStudent';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
@@ -62,6 +63,7 @@ export function BoardSelector() {
   const isDark = theme === 'dark';
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { student } = useStudent();
   
   const { 
     board, 
@@ -84,9 +86,12 @@ export function BoardSelector() {
   // ============================================================================
   
   useQuery({
-    queryKey: ['/api/boards'],
+    queryKey: ['/api/boards', student?.id],
     queryFn: async () => {
-      const res = await apiRequest('GET', '/api/boards');
+      const endpoint = student?.id
+        ? `/api/boards/student/${student.id}`
+        : '/api/boards';
+      const res = await apiRequest('GET', endpoint);
       if (!res.ok) {
         throw new Error('Failed to load boards');
       }
@@ -221,6 +226,10 @@ export function BoardSelector() {
         }
         return res.json() as Promise<{ id: string; name: string }>;
       } else {
+        // Associate new boards with the currently selected student
+        if (student?.id) {
+          payload.studentId = student.id;
+        }
         const res = await apiRequest('POST', '/api/boards', payload);
         if (!res.ok) {
           throw new Error('Failed to save board');
@@ -231,6 +240,7 @@ export function BoardSelector() {
     onSuccess: (saved) => {
       markBoardSaved(saved.id, saved.name);
       queryClient.invalidateQueries({ queryKey: ['/api/boards'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/boards', student?.id] });
       toast({
         title: t('board.saved'),
         description: t('board.savedDesc'),

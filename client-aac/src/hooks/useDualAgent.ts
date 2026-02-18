@@ -155,6 +155,10 @@ export interface UseDualAgentReturn {
   sendPcmAudio?: (int16Base64: string) => void;
   /** Synchronous ref: true from first queued audio chunk until echo tail ends. Use for mic gating. */
   isBusyRef?: { readonly current: boolean };
+
+  // Reconnection state (Live API only)
+  /** Whether the server is currently reconnecting to Gemini */
+  reconnecting?: boolean;
 }
 
 export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {

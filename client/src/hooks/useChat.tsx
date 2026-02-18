@@ -816,6 +816,10 @@ export const ChatProvider = ({
           console.log('[useChat] AI navigating to:', feature);
           setActiveFeature(feature as any);
         },
+        onSelectStudent: (studentId) => {
+          console.log('[useChat] AI selecting student:', studentId);
+          selectStudent(studentId);
+        },
         onComplete: (data) => {
           setIsThinking(false);
           setThinkingText(null);

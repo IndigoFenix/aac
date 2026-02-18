@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useBoardStore, useSelectedButton } from "@/store/board-store";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, apiUrl } from "@/lib/queryClient";
 import { useStudent } from "@/hooks/useStudent";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -661,7 +661,7 @@ export function ButtonInspector() {
                   key={s.id}
                   className="border rounded-lg p-2 flex flex-col items-center gap-1 hover:bg-blue-50 transition-colors cursor-pointer"
                   onClick={() => {
-                    handleUpdate("symbolPath", `/api/custom-symbols/${s.id}/image`);
+                    handleUpdate("symbolPath", apiUrl(`/api/custom-symbols/${s.id}/image`));
                     handleUpdate("iconRef", "🖼️");
                     setIsSymbolDialogOpen(false);
                     // Auto-associate with student if not already
@@ -671,7 +671,7 @@ export function ButtonInspector() {
                   }}
                 >
                   <img
-                    src={`/api/custom-symbols/${s.id}/image`}
+                    src={apiUrl(`/api/custom-symbols/${s.id}/image`)}
                     alt={s.key || 'Symbol'}
                     className="w-10 h-10 object-contain"
                     loading="lazy"

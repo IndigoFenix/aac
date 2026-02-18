@@ -107,6 +107,9 @@ interface DualAgentContextType {
     ringBufferSamples: number;
   };
 
+  // Reconnection state (Live API only)
+  reconnecting: boolean;
+
   // PCM gating debug (Live API only)
   pcmDebug: {
     /** Whether mic PCM is currently blocked (isBusyRef from audio player) */
@@ -728,6 +731,8 @@ function ProviderShell({
       lastTriggerReason: activityMonitor.lastTriggerReason,
       ringBufferSamples: activityMonitor.ringBufferSamples,
     },
+
+    reconnecting: agent.reconnecting ?? false,
 
     pcmDebug: pcmDebugProp ?? { audioBusy: false, isPlaying: false, sentCount: 0, gatedCount: 0 },
   };

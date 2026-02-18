@@ -26,7 +26,7 @@ class CustomSymbolController {
       res.status(201).json(symbol);
     } catch (error: any) {
       console.error("[CustomSymbolController] createSymbol error:", error);
-      res.status(500).json({ message: "Failed to create symbol" });
+      res.status(500).json({ message: error.message || "Failed to create symbol" });
     }
   }
 
@@ -45,7 +45,7 @@ class CustomSymbolController {
       res.json({ image: `data:image/png;base64,${base64}`, description });
     } catch (error: any) {
       console.error("[CustomSymbolController] generateSymbol error:", error);
-      res.status(500).json({ message: "Failed to generate symbol" });
+      res.status(500).json({ message: error.message || "Failed to generate symbol" });
     }
   }
 

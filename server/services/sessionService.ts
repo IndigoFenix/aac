@@ -693,6 +693,7 @@ interface GetMessageManagerInput {
   featureContext?: FeatureContext;
   onThinkingUpdate?: (thinkingText: string) => void;
   onNavigate?: (feature: string) => void;
+  onSelectStudent?: (studentId: string) => void;
   vectorStoreId?: string;
   /** Base64 data URLs for inline images */
   images?: string[];
@@ -708,7 +709,7 @@ interface GetMessageManagerResult {
 }
 
 async function getMessageManager(input: GetMessageManagerInput): Promise<GetMessageManagerResult> {
-  const { userId, studentId, sessionId, featureContext, persona, feature = "chat", onThinkingUpdate, onNavigate } = input;
+  const { userId, studentId, sessionId, featureContext, persona, feature = "chat", onThinkingUpdate, onNavigate, onSelectStudent } = input;
   const isAACFeature = (feature === 'aac');
 
   // Validate input - at least one identifier must be provided
@@ -1152,6 +1153,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     onCreditsUsed,
     onThinkingUpdate,
     onNavigate: !isAACFeature ? onNavigate : undefined,
+    onSelectStudent: !isAACFeature ? onSelectStudent : undefined,
     memoryProcessor,
     vectorStoreId: input.vectorStoreId,
     images: input.images,
@@ -1288,6 +1290,8 @@ export interface OnMessageStreamingInput extends OnMessageInput {
   onThinkingUpdate?: (thinkingText: string) => void;
   /** Callback for real-time panel navigation during tool calls */
   onNavigate?: (feature: string) => void;
+  /** Callback for real-time student selection during tool calls */
+  onSelectStudent?: (studentId: string) => void;
 }
 
 export async function onMessage(input: OnMessageInput): Promise<MessageResponse> {
@@ -1373,7 +1377,7 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
  */
 export async function onMessageStreaming(input: OnMessageStreamingInput): Promise<MessageResponse> {
   try {
-    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, onThinkingUpdate, onNavigate, vectorStoreId, images, currentImage, systemPromptOverride } = input;
+    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, onThinkingUpdate, onNavigate, onSelectStudent, vectorStoreId, images, currentImage, systemPromptOverride } = input;
 
     const { manager: messageManager, memoryValues } = await getMessageManager({
       userId,
@@ -1384,6 +1388,7 @@ export async function onMessageStreaming(input: OnMessageStreamingInput): Promis
       featureContext,
       onThinkingUpdate, // Pass the callback through to ChatMessageManager
       onNavigate,
+      onSelectStudent,
       vectorStoreId,
       images,
       currentImage,
@@ -1450,6 +1455,7 @@ export async function onMessageStreaming(input: OnMessageStreamingInput): Promis
 export interface OnMessageMdStreamingInput extends OnMessageInput {
   onThinkingUpdate?: (thinkingText: string) => void;
   onNavigate?: (feature: string) => void;
+  onSelectStudent?: (studentId: string) => void;
   signal?: AbortSignal;
 }
 
@@ -1460,6 +1466,7 @@ export type SessionMdStreamEvent =
   | { type: "text_delta"; text: string }
   | { type: "thinking"; text: string }
   | { type: "navigate"; feature: string }
+  | { type: "select_student"; studentId: string }
   | {
       type: "complete";
       message: ChatMessage;
@@ -1480,7 +1487,7 @@ export async function* onMessageMdStreaming(
   try {
     const {
       userId, studentId, sessionId, activeFeature, persona, messages,
-      featureContext, onThinkingUpdate, onNavigate, vectorStoreId, images,
+      featureContext, onThinkingUpdate, onNavigate, onSelectStudent, vectorStoreId, images,
       currentImage, systemPromptOverride,
     } = input;
 
@@ -1493,6 +1500,7 @@ export async function* onMessageMdStreaming(
       featureContext,
       onThinkingUpdate,
       onNavigate,
+      onSelectStudent,
       vectorStoreId,
       images,
       currentImage,

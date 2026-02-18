@@ -1534,9 +1534,10 @@ export const en = {
     searchPlaceholder: "Search by key or description...",
     noResults: "No results found.",
     searchPrompt: "Enter a search term to find symbols.",
-    addMy: "+ My",
-    addStudent: "+ Student",
+    addMy: "Save",
+    addStudent: "Add to Student",
     unnamed: "(unnamed)",
+    alreadyAdded: "Already added",
   },
 
   // ============================================================================

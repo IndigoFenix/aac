@@ -6,6 +6,7 @@ import { analyticsService } from "../services/analyticsService";
 const saveBoardSchema = z.object({
   name: z.string().min(1),
   irData: z.any(),
+  studentId: z.string().optional(),
 });
 
 export class BoardController {
@@ -16,12 +17,13 @@ export class BoardController {
    */
   async saveBoard(req: Request, res: Response): Promise<void> {
     try {
-      const { name, irData } = saveBoardSchema.parse(req.body);
+      const { name, irData, studentId } = saveBoardSchema.parse(req.body);
 
       const board = await boardRepository.createBoard({
         userId: req.user!.id,
         name,
         irData,
+        ...(studentId ? { studentId } : {}),
       });
 
       res.status(201).json(board);
@@ -60,8 +62,9 @@ export class BoardController {
   async getStudentBoards(req: Request, res: Response): Promise<void> {
     try {
       const { studentId } = req.params;
-      const boards = await boardRepository.getStudentBoards(req.user!.id, studentId);
-      res.json(boards);
+      const boards = await boardRepository.getStudentBoardsMetadata(req.user!.id, studentId);
+      const sortedBoards = boards.sort((a, b) => b.loadedAt.getTime() - a.loadedAt.getTime());
+      res.json(sortedBoards);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

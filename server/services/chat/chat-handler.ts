@@ -117,6 +117,7 @@ import {
       onCreditsUsed?: (creditsUsed: number) => Promise<void>;
       onThinkingUpdate?: (thinkingText: string) => void;
       onNavigate?: (feature: string) => void;
+      onSelectStudent?: (studentId: string) => void;
       loopDetectionConfig?: LoopDetectionConfig;
       memoryProcessor?: MemoryProcessor;
       toolRegistry: ToolRegistry;
@@ -153,6 +154,7 @@ import {
           onCreditsUsed: (creditsUsed: number) => Promise<void>,
           onThinkingUpdate?: (thinkingText: string) => void,
           onNavigate?: (feature: string) => void,
+          onSelectStudent?: (studentId: string) => void,
           memoryProcessor?: MemoryProcessor,
           vectorStoreId?: string,
           loopDetectionConfig?: LoopDetectionConfig;
@@ -181,6 +183,7 @@ import {
           this.memoryProcessor = settings.memoryProcessor;
           this.onThinkingUpdate = settings.onThinkingUpdate;
           this.onNavigate = settings.onNavigate;
+          this.onSelectStudent = settings.onSelectStudent;
           this.loopDetectionConfig = settings.loopDetectionConfig;
 
           this.toolRegistry = defaultToolRegistry({
@@ -194,6 +197,7 @@ import {
               memoryProcessor: this.memoryProcessor,
               onThinkingUpdate: this.onThinkingUpdate,
               onNavigate: this.onNavigate,
+              onSelectStudent: this.onSelectStudent,
               loopDetectionConfig: this.loopDetectionConfig,
               onPruneMessages: (forget, summary) => this.compressHistory(forget, summary),
           });
@@ -629,6 +633,7 @@ import {
               lastFormValues: params?.lastFormValues,
               describeActions: this.onThinkingUpdate !== undefined,
               navigateEnabled: this.onNavigate !== undefined,
+              selectStudentEnabled: this.onSelectStudent !== undefined,
               replyType: params?.replyType || 'text',
           });
       }
@@ -1093,7 +1098,7 @@ import {
                       credits: creditsUsed,
                   };
 
-                  // Handle navigate tool specially
+                  // Handle immediate-action tools specially
                   for (const tc of toolCalls) {
                       if (tc.name === 'navigateToFeature' && this.onNavigate) {
                           try {
@@ -1101,6 +1106,15 @@ import {
                               if (args.feature) {
                                   this.onNavigate(args.feature);
                                   yield { type: 'navigate', feature: args.feature };
+                              }
+                          } catch {}
+                      }
+                      if (tc.name === 'selectStudent' && this.onSelectStudent) {
+                          try {
+                              const args = JSON.parse(tc.arguments);
+                              if (args.studentId) {
+                                  this.onSelectStudent(args.studentId);
+                                  yield { type: 'select_student', studentId: args.studentId };
                               }
                           } catch {}
                       }
@@ -1183,6 +1197,7 @@ import {
       | { type: "text_delta"; text: string }
       | { type: "thinking"; text: string }
       | { type: "navigate"; feature: string }
+      | { type: "select_student"; studentId: string }
       | { type: "complete"; message: ChatMessage; creditsUsed: number };
 
   export { ChatMessageManager }
