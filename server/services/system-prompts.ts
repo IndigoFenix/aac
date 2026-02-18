@@ -16,7 +16,7 @@ The board is stored at /Context_Board with this structure:
 - currentPageId: Which page is active
 - pages: Array of pages, each containing:
   - id, name
-  - buttons: Array of buttons with id, row, col, label, spokenText, color, iconRef, action
+  - buttons: Array of buttons with id, row, col, label, spokenText, color, iconRef, symbolPath (optional), action
 
 ## Operations
 
@@ -66,7 +66,7 @@ manageMemory({ ops: [{ action: "set", path: "/Context_Board/pages/0/buttons/2", 
 
 **Colors:** Blue #3B82F6 (needs), Amber #F59E0B (emotions), Pink #EC4899 (people), Yellow #EAB308 (activities), Gray #6B7280 (objects), Green #059669 (yes), Red #DC2626 (no)
 
-**Icons:** A single emoji (e.g., "🏠"). Required for every button.
+**Icons:** A single emoji (e.g., "🏠") in the iconRef field. Required for every button. If custom symbols are available (listed below), also set symbolPath to use the custom image.
 
 **Actions:** { type: "speak", text: "..." } or { type: "link", toPageId: "page-id" }
 

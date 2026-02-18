@@ -217,6 +217,9 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
   const [yesNoActive, setYesNoActive] = useState(false);
   const dismissYesNo = useCallback(() => setYesNoActive(false), []);
 
+  // Deferred ask_yes_no: show overlay after TTS playback completes
+  const pendingAskYesNoRef = useRef(false);
+
   // Track whether current audio is AI voice (not interpretation)
   const isAiVoiceRef = useRef(true);
 
@@ -325,7 +328,14 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
   const streamingPlayer = useStreamingAudioPlayer({
     autoPlay: autoPlayAudio && audioEnabled,
     onPlaybackStart: () => console.log("[DualAgent] Audio playback started"),
-    onPlaybackEnd: () => console.log("[DualAgent] Audio playback ended"),
+    onPlaybackEnd: () => {
+      console.log("[DualAgent] Audio playback ended");
+      // Show deferred yes/no overlay after TTS finishes
+      if (pendingAskYesNoRef.current) {
+        pendingAskYesNoRef.current = false;
+        setYesNoActive(true);
+      }
+    },
     onError: (err) => console.error("[DualAgent] Audio error:", err),
   });
   streamingPlayerRef.current = streamingPlayer;
@@ -485,8 +495,13 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
                 break;
 
               case "yes_no":
-                // Yes/No question detected — show overlay
+                // Yes/No question detected — show overlay immediately
                 setYesNoActive(true);
+                break;
+
+              case "ask_yes_no":
+                // Deferred yes/no — show overlay after TTS playback completes
+                pendingAskYesNoRef.current = true;
                 break;
 
               case "board_patch":
@@ -520,6 +535,12 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
                     timestamp: new Date().toISOString(),
                     isThinking: thinkingMode,
                   });
+                }
+                // Fallback: if deferred ask_yes_no is pending but no TTS is playing
+                // (e.g. silent mode), show overlay immediately
+                if (pendingAskYesNoRef.current && !streamingPlayerRef.current.isPlaying) {
+                  pendingAskYesNoRef.current = false;
+                  setYesNoActive(true);
                 }
                 break;
 

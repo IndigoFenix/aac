@@ -56,6 +56,7 @@ import {
   BOARD_SYSTEM_PROMPT,
   getSystemPrompt,
 } from "./system-prompts";
+import { customSymbolRepository } from "../repositories/customSymbolRepository";
 
 import {
   createMemoryLoadState,
@@ -120,6 +121,41 @@ export const CLINIAACIAN_LOOP_DETECTION_CONFIG: LoopDetectionConfig = {
    */
   enabled: true,
 };
+
+// ============================================================================
+// SERVER-SIDE BOARD CACHE
+// ============================================================================
+// Context_Board is in-memory-only (no DB persistence). It relies on the client
+// sending board data back in featureContext.board.data on each request. This
+// breaks when the user switches panels — the client may not have the board data
+// ready (BoardSelector not mounted, or React render timing). This cache stores
+// the last-known board per session so the server can restore it.
+
+const boardCache = new Map<string, { board: any; timestamp: number }>();
+
+/** Cache the board for a session. Skips empty/default boards. */
+function cacheBoardForSession(sessionId: string | undefined, board: any): void {
+  if (!sessionId || !board) return;
+  // Only cache boards that have real content (not just "New Board" with empty pages)
+  const hasContent = board.name !== "New Board" ||
+    (board.pages?.length > 0 && board.pages.some((p: any) => p.buttons?.length > 0));
+  if (hasContent) {
+    boardCache.set(sessionId, { board, timestamp: Date.now() });
+  }
+}
+
+/** Retrieve cached board for a session. Returns null if not found or expired (1hr). */
+function getCachedBoard(sessionId: string | undefined): any | null {
+  if (!sessionId) return null;
+  const entry = boardCache.get(sessionId);
+  if (!entry) return null;
+  // Expire after 1 hour
+  if (Date.now() - entry.timestamp > 3600_000) {
+    boardCache.delete(sessionId);
+    return null;
+  }
+  return entry.board;
+}
 
 // ============================================================================
 // PERSONA HELPERS
@@ -874,7 +910,37 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     // === Board Mode Setup ===
     if (feature === 'boards') {
       if (featureContext?.board) {
-        const boardPrompt = BOARD_SYSTEM_PROMPT;
+        let boardPrompt = BOARD_SYSTEM_PROMPT;
+
+        // Load custom symbols for the student and include in prompt
+        if (studentId) {
+          try {
+            const symbols = await customSymbolRepository.getAvailableSymbolsForStudent(studentId);
+            if (symbols.length > 0) {
+              const symbolList = symbols.map(s => {
+                const parts = [s.key || s.id];
+                if (s.description) parts.push(`— ${s.description}`);
+                return `- ${parts.join(' ')} (ID: ${s.id})`;
+              }).join('\n');
+              boardPrompt += `\n\n## Custom Symbols
+
+Custom image symbols are available for this student's buttons. Set the \`symbolPath\` field to \`/api/custom-symbols/SYMBOL_ID/image\` to use a custom symbol instead of an emoji.
+Prefer custom symbols over emojis when the symbol clearly represents the concept.
+
+Available symbols:
+${symbolList}
+
+Example button with custom symbol:
+\`\`\`
+{ id: "btn-1", row: 0, col: 0, label: "Water", spokenText: "I want water", color: "#3B82F6", iconRef: "💧", symbolPath: "/api/custom-symbols/${symbols[0].id}/image", action: { type: "speak", text: "I want water" } }
+\`\`\``;
+              console.log(`[getMessageManager] Board mode — loaded ${symbols.length} custom symbols for student ${studentId}`);
+            }
+          } catch (err) {
+            console.warn('[getMessageManager] Failed to load custom symbols:', err);
+          }
+        }
+
         template.corePrompt = `${template.corePrompt}\n${boardPrompt}`;
       }
 
@@ -946,7 +1012,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   console.log('[getMessageManager] Initial memory values:', memoryValues);
 
   // Inject mode-specific context into memory values
-  injectModeContext(memoryValues, feature, featureContext);
+  injectModeContext(memoryValues, feature, featureContext, sessionId);
 
   // Create callbacks
   const onUpdateMemoryValues = async (newMemoryValues: FlatMemoryValues) => {
@@ -1179,7 +1245,8 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
 function injectModeContext(
   memoryValues: FlatMemoryValues,
   feature: FeatureType,
-  featureContext?: FeatureContext
+  featureContext?: FeatureContext,
+  sessionId?: string
 ): void {
   console.log('[injectModeContext] Called with mode:', feature, 'featureContext:', !!featureContext);
 
@@ -1195,15 +1262,25 @@ function injectModeContext(
         ...data,
         currentPageId: currentPageId || data.currentPageId || data.pages?.[0]?.id,
       };
-      console.log('[injectModeContext] Set Context_Board from data, pages:', data.pages?.length);
-    } else if (requestedGridSize) {
-      // Create empty board with requested grid size
-      memoryValues["Context_Board"] = createEmptyBoard("New Board", requestedGridSize);
-      console.log('[injectModeContext] Set Context_Board from createEmptyBoard');
+      console.log('[injectModeContext] Set Context_Board from client data, pages:', data.pages?.length);
     } else {
-      // Create default fallback board
-      memoryValues["Context_Board"] = createFallbackBoard();
-      console.log('[injectModeContext] Set Context_Board from createFallbackBoard');
+      // Client didn't send board data — check server-side cache first
+      const cached = getCachedBoard(sessionId);
+      if (cached) {
+        memoryValues["Context_Board"] = {
+          ...cached,
+          currentPageId: currentPageId || cached.currentPageId || cached.pages?.[0]?.id,
+        };
+        console.log('[injectModeContext] Set Context_Board from SERVER CACHE, name:', cached.name, 'pages:', cached.pages?.length);
+      } else if (requestedGridSize) {
+        // Create empty board with requested grid size
+        memoryValues["Context_Board"] = createEmptyBoard("New Board", requestedGridSize);
+        console.log('[injectModeContext] Set Context_Board from createEmptyBoard');
+      } else {
+        // Create default fallback board
+        memoryValues["Context_Board"] = createFallbackBoard();
+        console.log('[injectModeContext] Set Context_Board from createFallbackBoard');
+      }
     }
 
     console.log('[injectModeContext] Context_Board now set:', !!memoryValues["Context_Board"]);
@@ -1330,18 +1407,23 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
       
       // Merge: our injected values + any updates from LLM
       // This ensures Context_Board is included even if memory system doesn't return it
+      console.log('[onMessage] MERGE — injected Context_Board name:', memoryValues?.Context_Board?.name ?? '(none)', 'pages:', memoryValues?.Context_Board?.pages?.length ?? 0);
+      console.log('[onMessage] MERGE — response Context_Board name:', response.memoryValues?.Context_Board?.name ?? '(none)', 'pages:', response.memoryValues?.Context_Board?.pages?.length ?? 0);
       const mergedMemoryValues = {
         ...memoryValues,
         ...(response.memoryValues || {}),
       };
-      
-      console.log('[onMessage] Complete mergedMemoryValues:', JSON.stringify(mergedMemoryValues));
-      
+
+      console.log('[onMessage] MERGED Context_Board name:', mergedMemoryValues?.Context_Board?.name ?? '(none)', 'pages:', mergedMemoryValues?.Context_Board?.pages?.length ?? 0);
+
+      // Cache the board for future requests (survives panel navigation)
+      cacheBoardForSession(messageManager.session?.id, mergedMemoryValues?.Context_Board);
+
       // Extract context data (boards, documents, etc.) from memory values
       const contextData = extractContextFromMemoryValues(mergedMemoryValues);
-      
+
       console.log('[onMessage] Extracted contextData keys:', Object.keys(contextData));
-      
+
       return {
         ...response,
         memoryValues: mergedMemoryValues,
@@ -1410,13 +1492,18 @@ export async function onMessageStreaming(input: OnMessageStreamingInput): Promis
       const response = await messageManager.getResponse(replyType);
 
       // Debug: Log what's in response.memoryValues
-      console.log('[onMessageStreaming] After getResponse, response.memoryValues keys:', Object.keys(response.memoryValues || {}));
+      console.log('[onMessageStreaming] MERGE — injected Context_Board name:', memoryValues?.Context_Board?.name ?? '(none)', 'pages:', memoryValues?.Context_Board?.pages?.length ?? 0);
+      console.log('[onMessageStreaming] MERGE — response Context_Board name:', response.memoryValues?.Context_Board?.name ?? '(none)', 'pages:', response.memoryValues?.Context_Board?.pages?.length ?? 0);
 
       // Merge: our injected values + any updates from LLM
       const mergedMemoryValues = {
         ...memoryValues,
         ...(response.memoryValues || {}),
       };
+      console.log('[onMessageStreaming] MERGED Context_Board name:', mergedMemoryValues?.Context_Board?.name ?? '(none)', 'pages:', mergedMemoryValues?.Context_Board?.pages?.length ?? 0);
+
+      // Cache the board for future requests (survives panel navigation)
+      cacheBoardForSession(messageManager.session?.id, mergedMemoryValues?.Context_Board);
 
       // Extract context data (boards, documents, etc.) from memory values
       const contextData = extractContextFromMemoryValues(mergedMemoryValues);
@@ -1523,6 +1610,9 @@ export async function* onMessageMdStreaming(
           ...(messageManager.memoryValues || {}),
         };
         const contextData = extractContextFromMemoryValues(mergedMemoryValues);
+
+        // Cache the board for future requests (survives panel navigation)
+        cacheBoardForSession(messageManager.session?.id, mergedMemoryValues?.Context_Board);
 
         yield {
           type: 'complete',

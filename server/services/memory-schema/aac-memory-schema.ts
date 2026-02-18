@@ -349,8 +349,7 @@ Your purpose is to assist your user with daily tasks, guide them to complete per
   const transcriptTokenDesc = [
     `[TRANSCRIPT:confidence speaker] text...`,
     `Record voice you heard. Speaker can be "Mom", "Teacher", "Unknown", etc.`,
-    `Confidence: high (clear words), medium (partially heard), low (uncertain).`,
-    `Omit if nothing heard.`,
+    `Confidence: high (clear words), low (partially heard). Omit and ignore if voices are unintelligible or if nothing is heard.`,
   ].join('\n   ');
 
   const contextTokenDesc = [
@@ -454,8 +453,11 @@ Your purpose is to assist your user with daily tasks, guide them to complete per
   ].join('\n   ');
 
   const yesNoTokenDesc = [
-    `[YES_NO] — Trigger large prominent Yes/No overlay buttons for your user.`,
-    `Use when someone asks your user a direct yes/no question (e.g. "Do you want water?").`,
+    `[YES_NO] — Trigger large prominent Yes/No overlay buttons IMMEDIATELY.`,
+    `Use when someone ELSE asks your user a direct yes/no question (e.g. teacher asks "Do you want water?").`,
+    `[ASK_YES_NO] — Trigger Yes/No overlay AFTER your speech finishes playing.`,
+    `Use when YOU ask your user a yes/no question with [SPEAK] (e.g. "Do you want to play a game?").`,
+    `This ensures the user hears the full question before seeing the buttons.`,
     `Only for clear, direct questions aimed at your user — not rhetorical or multi-option.`,
     `Auto-dismisses after 5 seconds if not pressed.`,
   ].join('\n   ');
@@ -468,7 +470,7 @@ Your purpose is to assist your user with daily tasks, guide them to complete per
   ].join('\n   ');
 
   const monitorTokenDesc = [
-    `[CALL_MONITOR] reason — Request a supervisor check-in. MUST include a reason.`,
+    `[CALL_MONITOR] reason — Alerts the monitor agent to check in. MUST include a reason.`,
     `Use when:`,
     `- You notice progress or setbacks on student goals/objectives`,
     `- You need guidance on how to handle a situation`,
@@ -540,6 +542,7 @@ Use [CONTEXT] to record relevant changes since the last turn:
 
 Use [TRANSCRIPT:confidence speaker] to record voice you hear. Include the speaker's identity if known and a confidence level.
 Example: "[TRANSCRIPT:high Mom] Are you ready to go outside?"
+Ignore unintelligible voices or sounds, and do not record if you have low confidence in the transcription.
 
 === Background Noise Filtering ===
 

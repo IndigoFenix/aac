@@ -292,7 +292,7 @@ export class DualAgentService {
     imageData?: string,
     gestureContext?: string
   ): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no";
+    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no" | "ask_yes_no";
     data: any;
     speaker?: string;
   }> {
@@ -829,7 +829,7 @@ export class DualAgentService {
   async *processInput(
     input: DualAgentInput
   ): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no";
+    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no" | "ask_yes_no";
     data: any;
     speaker?: string;
   }> {
@@ -1020,7 +1020,7 @@ export class DualAgentService {
     debugMode?: boolean,
     unknownFaceDescriptors?: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number } }>
   ): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no";
+    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no" | "ask_yes_no";
     data: any;
     speaker?: string;
   }> {
@@ -1035,6 +1035,7 @@ export class DualAgentService {
     let setBoardName: string | undefined;
     let pressButtonLabel: string | undefined;
     let yesNoTriggered = false;
+    let askYesNoTriggered = false;
     console.log("[DualAgentService] handleInteractiveMode: thinkingMode:", state.thinkingMode, "interactionMode:", interactionMode, "messages:", state.messages.length, "pending:", state.pendingMessages.length);
     logDualAgent("DualAgentService.handleInteractiveMode", { interactionMode, messageCount: state.messages.length, pendingCount: state.pendingMessages.length });
 
@@ -1149,6 +1150,8 @@ export class DualAgentService {
         pressButtonLabel = chunk.data as string;
       } else if (chunk.type === "yes_no") {
         yesNoTriggered = true;
+      } else if (chunk.type === "ask_yes_no") {
+        askYesNoTriggered = true;
       }
     }
 
@@ -1177,6 +1180,11 @@ export class DualAgentService {
     // Handle yes/no overlay trigger
     if (yesNoTriggered) {
       yield { type: "yes_no", data: {} };
+    }
+
+    // Handle deferred yes/no overlay (shown after TTS playback)
+    if (askYesNoTriggered) {
+      yield { type: "ask_yes_no", data: {} };
     }
 
     // Handle app open/close
@@ -2177,6 +2185,7 @@ export class DualAgentService {
         setBoard: setBoardResult,
         pressButton: pressButtonResult,
         yesNo: result.yesNo,
+        askYesNo: result.askYesNo,
       };
     } catch (error: any) {
       const errorMessage = error?.message || String(error);
@@ -2193,7 +2202,7 @@ export class DualAgentService {
    * This provides streaming audio without requiring streaming LLM.
    */
   async *processDetectionStream(input: DetectionInput): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "error" | "complete" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no";
+    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "error" | "complete" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no" | "ask_yes_no";
     data: any;
     speaker?: string;
   }> {
@@ -2298,6 +2307,11 @@ export class DualAgentService {
     // Yield yes_no if detection triggered it
     if (result.yesNo) {
       yield { type: "yes_no", data: {} };
+    }
+
+    // Yield ask_yes_no if detection triggered it (deferred — client shows after TTS)
+    if (result.askYesNo) {
+      yield { type: "ask_yes_no", data: {} };
     }
 
     // Yield set_board if detection loaded one
@@ -2558,7 +2572,7 @@ export type { SessionCache };
 export async function* processInput(
   input: DualAgentInput
 ): AsyncGenerator<{
-  type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no";
+  type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no" | "ask_yes_no";
   data: any;
   speaker?: string;
 }> {

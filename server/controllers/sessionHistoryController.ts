@@ -12,14 +12,46 @@ class SessionHistoryController {
       const endDate = req.query.endDate as string | undefined;
 
       const opts = { studentId, startDate, endDate, limit, offset };
-      const [data, total] = await Promise.all([
+      const chatOpts = { startDate, endDate, limit, offset };
+
+      // Query both sources in parallel
+      const [dualAgentData, dualAgentTotal, chatAacData, chatAacTotal] = await Promise.all([
         aacSessionRepository.getSessionsAdmin(opts),
         aacSessionRepository.getSessionsAdminCount(opts),
+        chatRepository.getAACSessionsAdmin(chatOpts),
+        chatRepository.getAACSessionsAdminCount(chatOpts),
       ]);
+
+      // Normalize chat AAC sessions to match dual-agent shape
+      const normalizedChatAac = chatAacData.map((s) => ({
+        id: s.id,
+        studentId: s.studentId,
+        studentName: s.studentName,
+        userId: s.userId,
+        userName: s.userName,
+        creditsUsed: s.creditsUsed,
+        status: s.status === "open" ? "active" : s.status === "closed" ? "ended" : s.status,
+        started: s.started,
+        lastActivity: s.lastUpdate,
+        ended: s.status === "closed" ? s.lastUpdate : null,
+        source: "chat" as const,
+      }));
+
+      const normalizedDualAgent = dualAgentData.map((s) => ({
+        ...s,
+        source: "dual-agent" as const,
+      }));
+
+      // Merge and sort by started descending
+      const merged = [...normalizedDualAgent, ...normalizedChatAac]
+        .sort((a, b) => new Date(b.started).getTime() - new Date(a.started).getTime())
+        .slice(0, limit);
+
+      const total = dualAgentTotal + chatAacTotal;
 
       res.json({
         success: true,
-        data,
+        data: merged,
         pagination: { total, limit, offset, hasMore: offset + limit < total },
       });
     } catch (error: any) {
@@ -31,7 +63,9 @@ class SessionHistoryController {
   async getAACSessionLog(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const log = await aacSessionRepository.getSessionConversationHistory(id);
+      // Try dual-agent sessions first, fall back to chat sessions
+      const log = await aacSessionRepository.getSessionConversationHistory(id)
+        ?? await chatRepository.getSessionLog(id);
       if (!log) {
         res.status(404).json({ success: false, message: "Session not found" });
         return;

@@ -169,6 +169,7 @@ import {
           this.gpt = new GPT(settings.providerConfig);
           this.onUpdateMemoryValues = async (memoryValues: any) => {
               memoryValues = JSON.parse(JSON.stringify(memoryValues));
+              console.log('[ChatMsgMgr] onUpdateMemoryValues — Context_Board name:', memoryValues?.Context_Board?.name ?? '(none)', 'pages:', memoryValues?.Context_Board?.pages?.length ?? 0);
               this.memoryValues = memoryValues;
               if (settings.onUpdateMemoryValues){
                   await settings.onUpdateMemoryValues(memoryValues);
@@ -622,6 +623,7 @@ import {
           lastFormValues: formValues | undefined,
           replyType?: 'text' | 'html' | 'md',
       }) {
+          console.log('[ChatMsgMgr] buildPromptAndTools — Context_Board name:', this.memoryValues?.Context_Board?.name ?? '(none)', 'pages:', this.memoryValues?.Context_Board?.pages?.length ?? 0);
           return buildPromptAndTools({
               agent: this.agent as any,
               history: this.chatState.history,
@@ -708,8 +710,9 @@ import {
                   let replyMessages = await makeToolCalls(this.toolRegistry, toolCallMessage);
                   for (let replyMessage of replyMessages){
                       totalCreditsUsed += replyMessage.credits || 0;
-                      this.addMessage(replyMessage);
+                      await this.addMessage(replyMessage);
                   }
+                  console.log('[ChatMsgMgr] After tool calls — Context_Board name:', this.memoryValues?.Context_Board?.name ?? '(none)', 'pages:', this.memoryValues?.Context_Board?.pages?.length ?? 0);
                   return await this.updateConversation(totalCreditsUsed, responseType, apiValues);
               } else if (gptResponse.content){
                   let reply = await this.uponGPTResponse(gptResponse.content, creditsUsed);

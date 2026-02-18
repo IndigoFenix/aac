@@ -17,7 +17,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -223,7 +222,7 @@ function SessionLogDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>Session Log</DialogTitle>
         </DialogHeader>
@@ -234,11 +233,11 @@ function SessionLogDialog({
         ) : messages.length === 0 ? (
           <p className="text-sm text-muted-foreground py-8 text-center">No messages in this session.</p>
         ) : (
-          <ScrollArea className="flex-1 pr-4" style={{ maxHeight: "60vh" }}>
+          <div className="flex-1 min-h-0 overflow-y-auto pr-4">
             {messages.map((msg: any, i: number) => (
               <LogMessage key={i} msg={msg} />
             ))}
-          </ScrollArea>
+          </div>
         )}
       </DialogContent>
     </Dialog>

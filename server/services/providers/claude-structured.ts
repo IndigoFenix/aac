@@ -45,7 +45,9 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
 
     const params: any = {
       model,
-      system: systemPrompt,
+      system: systemPrompt
+        ? [{ type: "text" as const, text: systemPrompt, cache_control: { type: "ephemeral" as const } }]
+        : undefined,
       messages,
       max_tokens: request.maxTokens || 2048,
       temperature: request.temperature ?? 0.7,

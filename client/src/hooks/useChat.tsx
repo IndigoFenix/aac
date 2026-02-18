@@ -6,6 +6,7 @@ import { useStudent } from './useStudent';
 import { useInstitute } from './useInstitute';
 import { useAuth } from './useAuth';
 import { useFeaturePanel, useSharedState } from '@/contexts/FeaturePanelContext';
+import { useBoardStore } from '@/store/board-store';
 import { ChatMessage, FeatureType, ChatSession } from '@shared/schema';
 import { useChatStream } from './useChatStream';
 import { toast } from '@/hooks/use-toast';
@@ -495,13 +496,21 @@ export const ChatProvider = ({
       selectInstitute(contextData.selectInstituteId);
     }
 
-    // Handle board data from boards mode
+    // Handle board data from response — update board store directly
+    // (BoardSelector may not be mounted if user is on a different panel)
     if (contextData.board) {
       console.log('[ChatProvider] Received board data from response:', contextData.board);
-      setSharedState({ 
-        boardGeneratorData: { 
-          board: contextData.board 
-        } 
+      const { activeBoardId, board: currentBoard } = useBoardStore.getState();
+      if (activeBoardId && currentBoard) {
+        useBoardStore.getState().updateBoard(contextData.board);
+      } else {
+        useBoardStore.getState().setBoard(contextData.board);
+      }
+      // Also set sharedState for BoardSelector (legacy path / display updates)
+      setSharedState({
+        boardGeneratorData: {
+          board: contextData.board
+        }
       });
     }
 

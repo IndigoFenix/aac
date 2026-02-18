@@ -48,7 +48,7 @@ export const requireAdmin: RequestHandler = (
   }
 
   const user = req.user as any;
-  if (!user.isAdmin && user.userType !== "admin") {
+  if (!user.isAdmin && !user.isSystemAdmin && user.userType !== "admin") {
     res.status(403).json({
       success: false,
       message: "Admin privileges required",

@@ -1,0 +1,105 @@
+=== Current Memory ===
+• /User_AiPersonalityPreferences (string) — User's preferences for how the AI should communicate (tone, style, etc.) null
+• /User_Language (string) — User's preferred language for communication null
+• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
+  (may contain items - view \"/Student_People\" to load from database)
+  ↪ To append: action \"add\" at \"/Student_People\" with value.
+• /Student_Interests (array, 0 items) — Things the student enjoys or is interested in 
+  (may contain items - view \"/Student_Interests\" to load from database)
+  ↪ To append: action \"add\" at \"/Student_Interests\" with value.
+• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
+  - PrimaryMethod: <string> — verbal, nonverbal, AAC, or mixed (empty)
+  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
+  ↪ To expand: view \"/Student_CommunicationStyle/*\". To modify: action \"set\" on \"/Student_CommunicationStyle\" or \"/Student_CommunicationStyle/<property>\".
+• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
+  - FavoriteActivities: {array} (empty)
+  - RewardPreferences: {array} (empty)
+  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
+  ↪ To expand: view \"/Student_Preferences/*\". To modify: action \"set\" on \"/Student_Preferences\" or \"/Student_Preferences/<property>\".
+• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive) 
+  (may contain items - view \"/Student_Notes\" to load from database)
+  ↪ To append: action \"add\" at \"/Student_Notes\" with value.
+• /Relationship_Notes (array, 0 items) — General notes about sessions with this student (non-sensitive) — hidden; view to list items
+• /Context_Institutes (map, 3 keys) — Organizations (schools or hospitals) that the user is a member of. Target entries by name. 
+  - Mel Elementary: {object} (view to expand)
+  - Test Hospital: {object} (view to expand)
+  - Test School: {object} (view to expand)
+  ↪ Add: action \"add\" at \"/Context_Institutes\" with key + value. Rename: action \"rename\" on child path.
+• /Context_Students (map, 6 keys) — Students (AAC users) that the user has access to. Target entries by first name. 
+  - Daniel: {object} (view to expand)
+  - Hara: {object} (view to expand)
+  - Freid: {object} (view to expand)
+  - Gal: {object}
+      - id: \"02bebb37-498a-4c14-b296-ab8d98dff060\"
+      - name: \"Gal\"
+      - firstName: \"Gal\"
+      - lastName: \"\"
+      - gender: \"Male\" [\"male\" | \"female\" | \"other\"]
+      - birthDate: \"2021-02-07\"
+      - framework: \"tala\" [\"tala\" | \"us_iep\"] — Educational framework: TALA (Israel) or US IEP
+      - country: \"IL\"
+      - primaryLanguage: \"en\"
+      - additionalLanguages: {array} 
+          (empty - no items to display)
+          ↪ To append: action \"add\" at \"/Context_Students/02bebb37-498a-4c14-b296-ab8d98dff060/additionalLanguages\" with value.
+      - isActive: true
+      - link: {object} — The current user's relationship with this student 
+          - role: \"owner\"
+          - hasEducationalRights: true
+          - hasMedicalRights: true
+          - isActive: true
+          ↪ To expand: view \"/Context_Students/02bebb37-498a-4c14-b296-ab8d98dff060/link/*\". To modify: action \"set\" on \"/Context_Students/02bebb37-498a-4c14-b296-ab8d98dff060/link\" or \"/Context_Students/02bebb37-498a-4c14-b296-ab8d98dff060/link/<property>\".
+      - users: {map} — Users who have access to this student (keyed by userId) 
+          (empty - no items to display)
+          ↪ Add: action \"add\" at \"/Context_Students/02bebb37-498a-4c14-b296-ab8d98dff060/users\" with key + value.
+      - institutes: {array} — Institutes this student belongs to 
+          (empty - no items to display)
+          ↪ To append: action \"add\" at \"/Context_Students/02bebb37-498a-4c14-b296-ab8d98dff060/institutes\" with value.
+      - classrooms: {array} — Classrooms this student is enrolled in 
+          (empty - no items to display)
+          ↪ To append: action \"add\" at \"/Context_Students/02bebb37-498a-4c14-b296-ab8d98dff060/classrooms\" with value.
+      ↪ To expand: view \"/Context_Students/02bebb37-498a-4c14-b296-ab8d98dff060/*\". To modify: action \"set\" on \"/Context_Students/02bebb37-498a-4c14-b296-ab8d98dff060\" or \"/Context_Students/02bebb37-498a-4c14-b296-ab8d98dff060/<property>\".
+  - Tal: {object} (view to expand)
+  - מיקה: {object} (view to expand)
+  ↪ Add: action \"add\" at \"/Context_Students\" with key + value. Rename: action \"rename\" on child path.
+• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
+  - Articles on Rett Syndrome: {object} (view to expand)
+  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
+  - Preschool SLP Goals Bank: {object} (view to expand)
+
+Allowed roots & types: /User_AiPersonalityPreferences{string}, /User_Language{string}, /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Relationship_Notes{array}, /Context_Institutes{map}, /Context_Students{map}, /Context_Library{map}
+Operate only on visible paths or their parent container. To reveal children:
+  manageMemory { \"ops\": [ { \"action\": \"view\", \"path\": \"/path/*\" } ] }
+Pagination: include { \"page\": { \"offset\": N, \"limit\": M } } in a view op on a container.
+
+=== Schema Hints (add/insert/upsert in current scope) ===
+• /Student_People — ARRAY of object
+  item.required: [Name]
+  item.props: Name:string, Relationship:string
+  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_People\",\"value\": {\"Name\":\"text\"} }] }
+• /Student_Interests — ARRAY of string
+  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Interests\",\"value\": \"text\" }] }
+• /Student_Preferences/FavoriteActivities — ARRAY of string
+  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/FavoriteActivities\",\"value\": \"text\" }] }
+• /Student_Preferences/RewardPreferences — ARRAY of string
+  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/RewardPreferences\",\"value\": \"text\" }] }
+• /Student_Preferences/AvoidTopics — ARRAY of string
+  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Preferences/AvoidTopics\",\"value\": \"text\" }] }
+• /Student_Notes — ARRAY of string
+  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Student_Notes\",\"value\": \"text\" }] }
+• /Context_Institutes — MAP<string, object>
+  value.required: [name, type]
+  value.props: id:string, name:string, type:string [enum: \"school\", \"hospital\"], description:string, address:string, phone:string, email:string, website:string, isActive:boolean, membership:{object}, members:map<string, object>, students:map<string, object> … +2 more
+  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Institutes\",\"key\":\"<key>\",\"value\": {\"name\":\"text\",\"type\":\"text\"} }] }
+• /Context_Students — MAP<string, object>
+  value.required: [name]
+  value.props: id:string, name:string, firstName:string, lastName:string, gender:string [enum: \"male\", \"female\", \"other\"], birthDate:string [format YYYY-MM-DD], framework:string [enum: \"tala\", \"us_iep\"], country:string, primaryLanguage:string, additionalLanguages:array<string>, isActive:boolean, link:{object} … +3 more
+  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Students\",\"key\":\"<key>\",\"value\": {\"name\":\"text\"} }] }
+• /Context_Library — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, object>
+  e.g. add → manageMemory { \"ops\":[{ \"action\":\"add\",\"path\":\"/Context_Library\",\"key\":\"<key>\",\"value\": {} }] }
+
+Notes:
+- When item/value is an OBJECT, include all listed \"required\" keys when creating it.
+- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
+- For topics, \"value\" may be a string (description) or a full node {description?, subtopics?}.

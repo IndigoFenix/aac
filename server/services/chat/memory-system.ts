@@ -352,6 +352,74 @@ function renameKeyAtPath(obj: any, containerPath: string, oldKey: string, newKey
 }
 
 /* ------------------------------
+ * Display key resolution
+ * ------------------------------ */
+
+/**
+ * Resolves display-key aliases in a path to actual map keys.
+ * For maps with `displayKey` set, allows the AI to use human-readable names
+ * (e.g., "My School") instead of raw keys (UUIDs) in paths.
+ * Idempotent: already-resolved paths pass through unchanged.
+ */
+export function resolveDisplayKeyPath(
+  memoryFields: AgentMemoryField[],
+  values: any,
+  path: string
+): string {
+  const tokens = splitPath(path);
+  if (tokens.length < 2) return normalizePath(path);
+
+  const rootField = topFieldById(memoryFields, tokens[0]);
+  if (!rootField) return normalizePath(path);
+
+  let schema: AgentMemoryField = rootField;
+  let currentValue = values?.[tokens[0]];
+  const resolved: string[] = [tokens[0]];
+
+  for (let i = 1; i < tokens.length; i++) {
+    const seg = tokens[i];
+
+    if (schema.type === 'map') {
+      const mapSchema = schema as AgentMemoryFieldMap;
+      const dk = mapSchema.displayKey;
+
+      // If displayKey is set and segment doesn't match an actual key, try lookup
+      if (dk && currentValue && typeof currentValue === 'object' && !Array.isArray(currentValue) && !(seg in currentValue)) {
+        const match = Object.keys(currentValue).find(
+          k => currentValue[k]?.[dk] != null &&
+               String(currentValue[k][dk]).toLowerCase() === seg.toLowerCase()
+        );
+        if (match) {
+          resolved.push(match);
+          currentValue = currentValue[match];
+          schema = mapSchema.values;
+          continue;
+        }
+      }
+
+      resolved.push(seg);
+      currentValue = currentValue?.[seg];
+      schema = mapSchema.values;
+    } else if (schema.type === 'object') {
+      resolved.push(seg);
+      const obj = schema as AgentMemoryFieldObject;
+      schema = obj.properties?.[seg] ?? schema;
+      currentValue = currentValue?.[seg];
+    } else if (schema.type === 'array') {
+      resolved.push(seg);
+      const arr = schema as AgentMemoryFieldArray;
+      schema = arr.items;
+      currentValue = Array.isArray(currentValue) ? currentValue[parseInt(seg, 10)] : undefined;
+    } else {
+      // Primitives or unknown — pass through
+      resolved.push(seg);
+    }
+  }
+
+  return joinPath(resolved);
+}
+
+/* ------------------------------
  * Visibility & pagination
  * ------------------------------ */
 
@@ -379,11 +447,21 @@ function openPath(state: MemoryState, path: string) {
   if (!state.visible.includes(p)) state.visible.push(p);
 }
 
-function openChildren(state: MemoryState, values: any, path: string) {
+function openChildren(state: MemoryState, values: any, path: string, schema?: AgentMemoryField) {
   const v = getAtPath(values, path);
   if (v && typeof v === 'object') {
     if (Array.isArray(v)) {
       for (let i = 0; i < v.length; i++) openPath(state, joinPath([...splitPath(path), String(i)]));
+    } else if (schema?.type === 'object') {
+      // For objects, skip container-type properties (map/array/topic) and
+      // DB-backed objects — those should stay collapsed until explicitly viewed.
+      const props = (schema as AgentMemoryFieldObject).properties ?? {};
+      for (const k of Object.keys(v)) {
+        const propSchema = props[k];
+        if (propSchema && (propSchema.type === 'map' || propSchema.type === 'array' || propSchema.type === 'topic')) continue;
+        if (propSchema?.type === 'object' && (propSchema as any).db) continue;
+        openPath(state, joinPath([...splitPath(path), k]));
+      }
     } else {
       for (const k of Object.keys(v)) openPath(state, joinPath([...splitPath(path), k]));
     }
@@ -863,32 +941,36 @@ export function renderMemoryVisualization(
   function renderOpenedFieldsSummary(
     schema: AgentMemoryFieldObject,
     value: any,
-    maxFields: number = 5
+    maxFields: number = 5,
+    skipField?: string
   ): string[] {
     if (!value || typeof value !== 'object') return [];
-    
+
     const props = schema.properties ?? {};
     const lines: string[] = [];
-    
+
     for (const [key, propSchema] of Object.entries(props)) {
       if (lines.length >= maxFields) {
         lines.push(`… +more`);
         break;
       }
-      
+
+      // Skip the displayKey field — it's already shown as the entry label
+      if (skipField && key === skipField) continue;
+
       // Only show fields that have opened: true
       if (!(propSchema as AgentMemoryFieldBase).opened) continue;
-      
+
       const v = value[key];
       if (v === undefined || v === null) continue;
-      
+
       // For primitive types, show inline
       if (propSchema.type !== 'object' && propSchema.type !== 'array' && propSchema.type !== 'map' && propSchema.type !== 'topic') {
         lines.push(`- ${key}: ${summarizeValue(propSchema, v)}`);
       }
       // Skip complex types in summary - they'd need their own expansion
     }
-    
+
     return lines;
   }
 
@@ -992,16 +1074,20 @@ export function renderMemoryVisualization(
     const start = Math.min(page.offset, Math.max(0, allKeys.length));
     const end = Math.min(allKeys.length, start + page.limit);
   
+    // When displayKey is set, show its value as the entry label instead of the raw key
+    const dk = field.displayKey;
+
     for (let i = start; i < end; i++) {
       const k = allKeys[i];
       const entryPath = joinPath([...splitPath(basePath), k]);
       const s = field.values;
       const v = value?.[k];
-  
+      const label = (dk && v?.[dk] != null) ? String(v[dk]) : k;
+
       if (s.type === 'object' || s.type === 'map' || s.type === 'array' || s.type === 'topic') {
         const vis = isOpen(entryPath);
         if (vis) {
-          lines.push(`  - ${k}: {${s.type}}`);
+          lines.push(`  - ${label}: {${s.type}}`);
           if (s.type === 'object') {
             const child = renderObject(s as AgentMemoryFieldObject, v, entryPath);
             lines.push(...indent(child.slice(1)));
@@ -1018,20 +1104,20 @@ export function renderMemoryVisualization(
         } else {
           // Not explicitly opened - show summary of opened fields if it's an object
           if (s.type === 'object') {
-            const summary = renderOpenedFieldsSummary(s as AgentMemoryFieldObject, v);
+            const summary = renderOpenedFieldsSummary(s as AgentMemoryFieldObject, v, maxScalars, dk);
             if (summary.length > 0) {
-              lines.push(`  - ${k}: {${s.type}}`);
+              lines.push(`  - ${label}: {${s.type}}`);
               lines.push(...indent(summary));
               lines.push(`      … +more (view to expand)`);
             } else {
-              lines.push(`  - ${k}: {${s.type}} (view to expand)`);
+              lines.push(`  - ${label}: {${s.type}} (view to expand)`);
             }
           } else {
-            lines.push(`  - ${k}: {${s.type}} (view to expand)`);
+            lines.push(`  - ${label}: {${s.type}} (view to expand)`);
           }
         }
       } else {
-        lines.push(`  - ${k}: ${summarizeValue(s, v)}`);
+        lines.push(`  - ${label}: ${summarizeValue(s, v)}`);
       }
     }
   
@@ -1472,6 +1558,12 @@ export function processMemoryToolResponse(
   // This prevents index shifting from causing incorrect deletions
   batch = reorderArrayDeletes(batch);
 
+  // Resolve display-key aliases (e.g., "My School" → actual UUID) in all paths
+  for (const op of batch) {
+    if (op.path) op.path = resolveDisplayKeyPath(memoryFields, values, op.path);
+    if (op.paths) op.paths = op.paths.map((p: string) => resolveDisplayKeyPath(memoryFields, values, p));
+  }
+
   // Helpers that do not depend on a single op
   const isMutating = (a: MemoryAction) =>
     a === 'set' || a === 'upsert' || a === 'add' || a === 'insert' || a === 'delete' || a === 'clear' || a === 'rename';
@@ -1557,20 +1649,21 @@ export function processMemoryToolResponse(
         
             // Default: open immediate children when the viewed target is a CONTAINER node (object/array/map/topic).
             let openKids = op.openChildren;
+            let nodeSchema: AgentMemoryField | undefined;
             if (openKids == null) {
               let nodeType: MemoryType | 'topic-description' | 'topic-subtopics' | undefined;
               switch (leaf?.kind) {
-                case 'field':           nodeType = (leaf.schema as AgentMemoryField).type; break;
-                case 'objectProp':      nodeType = (leaf.propSchema as AgentMemoryField).type; break;
-                case 'arrayItem':       nodeType = (leaf.itemSchema as AgentMemoryField).type; break;
-                case 'mapValue':        nodeType = (leaf.valueSchema as AgentMemoryField).type; break;
+                case 'field':           nodeType = (leaf.schema as AgentMemoryField).type; nodeSchema = leaf.schema as AgentMemoryField; break;
+                case 'objectProp':      nodeType = (leaf.propSchema as AgentMemoryField).type; nodeSchema = leaf.propSchema as AgentMemoryField; break;
+                case 'arrayItem':       nodeType = (leaf.itemSchema as AgentMemoryField).type; nodeSchema = leaf.itemSchema as AgentMemoryField; break;
+                case 'mapValue':        nodeType = (leaf.valueSchema as AgentMemoryField).type; nodeSchema = leaf.valueSchema as AgentMemoryField; break;
                 case 'topic':           nodeType = 'topic'; break;
                 case 'topicSubtopics':  nodeType = 'topic'; break;
                 case 'topicDescription':nodeType = 'topic-description'; break;
               }
               openKids = (nodeType === 'object' || nodeType === 'array' || nodeType === 'map' || nodeType === 'topic');
             }
-            if (openKids) openChildren(state, values, p);
+            if (openKids) openChildren(state, values, p, nodeSchema);
         
             if (op.page) setPagination(state, p, op.page.offset, op.page.limit);
             mutated.push(p);
