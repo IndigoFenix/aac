@@ -70,6 +70,7 @@ export type ServerMessage =
   | { type: "monitor_status"; data: any }
   | { type: "audio_interrupt" }                          // Stop client audio playback (model interrupted by user)
   | { type: "yes_no"; data: any }                        // Yes/No question detected — trigger overlay
+  | { type: "ask_yes_no"; data: any }                    // Deferred Yes/No — show after TTS playback
   | { type: "reconnecting"; data: string }               // Server is reconnecting to Gemini
   | { type: "reconnected" }                              // Reconnection successful
   | { type: "session_reset"; sessionId: string }         // New session created after repeated failures
@@ -621,6 +622,10 @@ If you hear speech that resembles text you recently produced, it is your echo. I
 
       case "yes_no":
         this.send({ type: "yes_no", data: {} });
+        break;
+
+      case "ask_yes_no":
+        this.send({ type: "ask_yes_no", data: {} });
         break;
 
       case "press_button":

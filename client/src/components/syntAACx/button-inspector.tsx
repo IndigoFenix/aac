@@ -177,6 +177,8 @@ export function ButtonInspector() {
                   alt={selectedBtn.label}
                   className="w-8 h-8 object-contain mb-1"
                 />
+              ) : selectedBtn.iconRef && /[\u{1F000}-\u{1FFFF}]|[\u{2600}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F900}-\u{1F9FF}]/u.test(selectedBtn.iconRef) ? (
+                <span className="text-2xl mb-1 leading-none">{selectedBtn.iconRef}</span>
               ) : (
                 <i
                   className={`${selectedBtn.iconRef || "fas fa-square"} text-xl mb-1 text-white`}
@@ -271,46 +273,64 @@ export function ButtonInspector() {
             )}>
               {t("button.icon")}
             </Label>
-            <Input
-              value={selectedBtn.iconRef || ""}
-              onChange={(e) => handleUpdate("iconRef", e.target.value)}
-              placeholder={t("button.iconPlaceholder")}
-              className={cn(
-                "h-8 text-xs font-mono",
-                isDark 
-                  ? "bg-slate-800 border-slate-700 text-slate-200"
-                  : "bg-white border-gray-300 text-gray-800"
-              )}
-            />
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
+            {selectedBtn.symbolPath ? (
+              /* Custom symbol is active — show preview + remove */
+              <div className={cn(
+                "flex items-center gap-2 rounded-md border p-1.5",
+                isDark ? "border-slate-700 bg-slate-800" : "border-gray-300 bg-gray-50"
+              )}>
+                <img
+                  src={selectedBtn.symbolPath}
+                  alt="Custom symbol"
+                  className="w-8 h-8 object-contain rounded"
+                />
+                <span className={cn(
+                  "flex-1 text-xs truncate",
+                  isDark ? "text-slate-300" : "text-gray-700"
+                )}>
+                  Custom symbol
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 shrink-0"
+                  onClick={() => {
+                    handleUpdate("symbolPath", null);
+                    handleUpdate("iconRef", "🔲");
+                  }}
+                  title="Remove custom symbol"
+                >
+                  <X size={14} />
+                </Button>
+              </div>
+            ) : (
+              /* No custom symbol — show emoji input */
+              <Input
+                value={selectedBtn.iconRef || ""}
+                onChange={(e) => handleUpdate("iconRef", e.target.value)}
+                placeholder={t("button.iconPlaceholder")}
                 className={cn(
-                  "flex-1 h-7 text-xs",
+                  "h-8 text-xs font-mono",
                   isDark
-                    ? "bg-transparent border-slate-700 text-slate-300 hover:bg-slate-800"
-                    : "bg-white border-gray-300 text-gray-700 hover:bg-gray-100"
+                    ? "bg-slate-800 border-slate-700 text-slate-200"
+                    : "bg-white border-gray-300 text-gray-800"
                 )}
-                onClick={() => setIsSymbolDialogOpen(true)}
-              >
-                <Image size={12} className={cn("mr-1.5", isRTL && "mr-0 ml-1.5")} />
-                {t("button.chooseIcon")}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className={cn(
-                  "flex-1 h-7 text-xs",
-                  isDark 
-                    ? "bg-transparent border-slate-700 text-slate-300 hover:bg-slate-800"
-                    : "bg-white border-gray-300 text-gray-700 hover:bg-gray-100"
-                )}
-              >
-                <Upload size={12} className={cn("mr-1.5", isRTL && "mr-0 ml-1.5")} />
-                {t("button.upload")}
-              </Button>
-            </div>
+              />
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "w-full h-7 text-xs",
+                isDark
+                  ? "bg-transparent border-slate-700 text-slate-300 hover:bg-slate-800"
+                  : "bg-white border-gray-300 text-gray-700 hover:bg-gray-100"
+              )}
+              onClick={() => setIsSymbolDialogOpen(true)}
+            >
+              <Image size={12} className={cn("mr-1.5", isRTL && "mr-0 ml-1.5")} />
+              {selectedBtn.symbolPath ? t("button.changeSymbol") : t("button.chooseIcon")}
+            </Button>
           </div>
 
           {/* Action */}

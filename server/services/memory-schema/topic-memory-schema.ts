@@ -139,7 +139,6 @@ const topicsOps: MemoryDBOperations<any> = {
 const topicSchema: AgentMemoryFieldObjectWithDB = {
   id: "topic",
   type: "object",
-  opened: true,
   properties: {
     id: {
       id: "id",
@@ -149,7 +148,6 @@ const topicSchema: AgentMemoryFieldObjectWithDB = {
     title: {
       id: "title",
       type: "string",
-      opened: true,
       description: "Topic title",
     },
     content: {
@@ -169,10 +167,9 @@ const topicSchema: AgentMemoryFieldObjectWithDB = {
       values: {
         id: "subtopic",
         type: "object",
-        opened: true,
         properties: {
           id: { id: "id", type: "string" },
-          title: { id: "title", type: "string", opened: true },
+          title: { id: "title", type: "string" },
           content: { id: "content", type: "string" },
           subtopics: {
             id: "subtopics",

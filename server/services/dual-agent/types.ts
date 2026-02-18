@@ -238,6 +238,8 @@ export interface InteractiveResponse {
   pressButton?: string;
   // Yes/No question detected — trigger prominent overlay buttons
   yesNo?: boolean;
+  // Deferred Yes/No — show overlay after TTS playback completes
+  askYesNo?: boolean;
   // Provider finish reason (e.g. "STOP", "MAX_TOKENS", "SAFETY", "RECITATION")
   finishReason?: string;
 }
@@ -401,6 +403,7 @@ export interface DetectionOutput {
   setBoard?: { board: ParsedBoardData; name: string; boardId: string }; // Pre-built board loaded
   pressButton?: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] }; // AI pressed a navigation button
   yesNo?: boolean;                 // Yes/No question detected — trigger overlay
+  askYesNo?: boolean;              // Deferred Yes/No — show overlay after TTS playback
   error?: string;                  // error message if processing failed
 }
 

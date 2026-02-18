@@ -10,10 +10,11 @@ export interface AACSessionSummary {
   userId: string | null;
   userName: string | null;
   creditsUsed: number;
-  status: "active" | "paused" | "ended";
+  status: string;
   started: string;
   lastActivity: string;
   ended: string | null;
+  source?: "dual-agent" | "chat";
 }
 
 export interface ChatSessionSummary {

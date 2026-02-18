@@ -44,6 +44,7 @@ import {
   import { instituteService } from "../instituteService";
   import { classroomService } from "../classroomService";
   import { studentService } from "../studentService";
+  import { aacSettingsRepository } from "../../repositories/aacSettingsRepository";
   
   // ============================================================================
   // HELPER FUNCTIONS
@@ -847,6 +848,7 @@ import {
   
     fromDB: (record) => ({
       ...toMemoryValue(record),
+      aacSettings: {},
       users: {},
       institutes: [],
       classrooms: [],
@@ -1348,10 +1350,9 @@ import {
   const classroomSchema: AgentMemoryFieldObjectWithDB = {
     id: "classroom",
     type: "object",
-    opened: true,
     properties: {
       id: { id: "id", type: "string" },
-      name: { id: "name", type: "string", opened: true },
+      name: { id: "name", type: "string" },
       grade: {
         id: "grade",
         type: "string",
@@ -1367,7 +1368,6 @@ import {
         type: "map",
         title: "Classroom Members",
         description: "Users assigned to this classroom. Keys are user UUIDs. To add a user, use their UUID as the 'key' parameter.",
-        opened: true,
         values: classroomMemberSchema,
         db: classroomMembersOps,
       } as AgentMemoryFieldMapWithDB,
@@ -1376,7 +1376,6 @@ import {
         type: "map",
         title: "Classroom Students",
         description: "Students enrolled in this classroom. Keys are student UUIDs. To add a student, use their UUID as the 'key' parameter.",
-        opened: true,
         values: classroomStudentSchema,
         db: classroomStudentsOps,
       } as AgentMemoryFieldMapWithDB,
@@ -1390,10 +1389,9 @@ import {
   const instituteSchema: AgentMemoryFieldObjectWithDB = {
     id: "institute",
     type: "object",
-    opened: true,
     properties: {
       id: { id: "id", type: "string" },
-      name: { id: "name", type: "string", opened: true },
+      name: { id: "name", type: "string" },
       type: {
         id: "type",
         type: "string",
@@ -1421,7 +1419,6 @@ import {
         type: "map",
         title: "Institute Members",
         description: "Users who are members of this institute (keyed by userId)",
-        opened: true,
         values: instituteMemberSchema,
         db: instituteMembersOps,
       } as AgentMemoryFieldMapWithDB,
@@ -1430,7 +1427,6 @@ import {
         type: "map",
         title: "Institute Students",
         description: "Students enrolled in this institute. Keys are student UUIDs (from student.id). To add a student, use their UUID as the 'key' parameter.",
-        opened: true,
         values: instituteStudentSchema,
         db: instituteStudentsOps,
       } as AgentMemoryFieldMapWithDB,
@@ -1438,8 +1434,8 @@ import {
         id: "classrooms",
         type: "map",
         title: "Classrooms",
-        description: "Classrooms in this institute. Keys are the classroom's 'id' field (UUID). View the map first to see available classroom IDs.",
-        opened: true,
+        description: "Classrooms in this institute. View to see available classrooms.",
+        displayKey: "name",
         values: classroomSchema,
         db: classroomsOps,
       } as AgentMemoryFieldMapWithDB,
@@ -1448,7 +1444,6 @@ import {
         type: "map",
         title: "Pending Invites",
         description: "Pending invitations to join this institute (keyed by inviteId)",
-        opened: true,
         values: instituteInviteSchema,
         db: instituteInvitesOps,
       } as AgentMemoryFieldMapWithDB,
@@ -1536,17 +1531,107 @@ import {
     },
   };
   
+  // ============================================================================
+  // AAC SETTINGS SCHEMA & DB OPS
+  // ============================================================================
+
+  const aacSettingsSchema: AgentMemoryFieldObjectWithDB = {
+    id: "aacSettings",
+    type: "object",
+    description: "AAC system settings for this student. View to see current settings.",
+    properties: {
+      enabled: { id: "enabled", type: "boolean", description: "Whether AAC mode is enabled" },
+      demoMode: { id: "demoMode", type: "boolean", description: "Demo scenario enabled" },
+      demoScenario: { id: "demoScenario", type: "string", description: "Which demo scenario to use" },
+      chatAgentPrompt: { id: "chatAgentPrompt", type: "string", description: "Custom prompt override for AAC agent" },
+      modelOverride: { id: "modelOverride", type: "string", description: "AI model override" },
+      interpretationLevel: {
+        id: "interpretationLevel",
+        type: "integer",
+        description: "0=none, 1=minimal, 2=conservative, 3=creative, 4=autonomous",
+        minimum: 0,
+        maximum: 4,
+      },
+      startupMode: {
+        id: "startupMode",
+        type: "integer",
+        description: "0=fast (no LLM call), 1=thorough (preloads context + LLM summary)",
+        minimum: 0,
+        maximum: 1,
+      },
+      voiceType: { id: "voiceType", type: "string", enum: ["auto", "man", "woman", "boy", "girl"], description: "AI voice type" },
+      studentVoiceType: { id: "studentVoiceType", type: "string", enum: ["man", "woman", "boy", "girl"], description: "Student's voice type" },
+      customVoiceId: { id: "customVoiceId", type: "string", description: "Custom AI voice ID (ElevenLabs)" },
+      customStudentVoiceId: { id: "customStudentVoiceId", type: "string", description: "Custom student voice ID (ElevenLabs)" },
+      iconTextRatio: {
+        id: "iconTextRatio",
+        type: "integer",
+        description: "Icon-to-text size ratio (1=mostly icon, 5=mostly text)",
+        minimum: 1,
+        maximum: 5,
+      },
+      usePcsSymbols: { id: "usePcsSymbols", type: "boolean", description: "Use PCS symbols instead of emoji" },
+      signLanguageReading: { id: "signLanguageReading", type: "boolean", description: "Sign language detection enabled" },
+      multiCameraMode: { id: "multiCameraMode", type: "boolean", description: "Multi-camera support" },
+      eyegazeEnabled: { id: "eyegazeEnabled", type: "boolean", description: "Dwell-based symbol selection enabled" },
+      eyegazeTimeout: {
+        id: "eyegazeTimeout",
+        type: "integer",
+        description: "Dwell time in ms",
+        minimum: 1000,
+        maximum: 10000,
+      },
+      eyegazeProvider: {
+        id: "eyegazeProvider",
+        type: "string",
+        enum: ["auto", "camera", "tobii", "eyetech", "lctech", "webhid", "mouse"],
+        description: "Eyegaze tracking provider",
+      },
+    },
+  };
+
+  const aacSettingsExclude = ["id", "studentId", "createdAt", "updatedAt", "knownPeople"];
+
+  const aacSettingsOps: MemoryDBOperations<any> = {
+    read: async (ctx) => {
+      const studentId = ctx.all.studentId;
+      if (!studentId) throw new Error("studentId required");
+      const settings = await aacSettingsRepository.getByStudentId(studentId);
+      return settings ? toMemoryValue(settings, aacSettingsExclude) : undefined;
+    },
+
+    write: async (ctx, value) => {
+      const studentId = ctx.all.studentId;
+      if (!studentId) throw new Error("studentId required");
+      const updated = await aacSettingsRepository.upsert(studentId, value);
+      return toMemoryValue(updated, aacSettingsExclude);
+    },
+
+    update: async (ctx, _key, value) => {
+      const studentId = ctx.all.studentId;
+      if (!studentId) throw new Error("studentId required");
+      const updated = await aacSettingsRepository.upsert(studentId, value);
+      return toMemoryValue(updated, aacSettingsExclude);
+    },
+  };
+
+  // Attach DB ops to the schema
+  (aacSettingsSchema as any).db = aacSettingsOps;
+
+  // ============================================================================
+  // STUDENT SCHEMA
+  // ============================================================================
+
   /**
    * Student schema (map value)
    */
   const studentSchema: AgentMemoryFieldObjectWithDB = {
     id: "student",
     type: "object",
-    opened: true,
     properties: {
       id: { id: "id", type: "string" },
       name: { id: "name", type: "string" },
-      firstName: { id: "firstName", type: "string", opened: true },
+      firstName: { id: "firstName", type: "string" },
       lastName: { id: "lastName", type: "string" },
       gender: { id: "gender", type: "string", enum: ["male", "female", "other"] },
       birthDate: { id: "birthDate", type: "string", format: "YYYY-MM-DD" },
@@ -1575,12 +1660,12 @@ import {
           isActive: { id: "isActive", type: "boolean" },
         },
       },
+      aacSettings: aacSettingsSchema as AgentMemoryFieldObjectWithDB,
       users: {
         id: "users",
         type: "map",
         title: "Linked Users",
         description: "Users who have access to this student (keyed by userId)",
-        opened: true,
         values: userStudentLinkSchema,
         db: studentUsersOps,
       } as AgentMemoryFieldMapWithDB,
@@ -1589,7 +1674,6 @@ import {
         type: "array",
         title: "Institutes",
         description: "Institutes this student belongs to",
-        opened: true,
         items: studentInstituteSchema,
         db: studentInstitutesOps,
       } as AgentMemoryFieldArrayWithDB,
@@ -1598,7 +1682,6 @@ import {
         type: "array",
         title: "Classrooms",
         description: "Classrooms this student is enrolled in",
-        opened: true,
         items: studentClassroomSchema,
         db: studentClassroomsOps,
       } as AgentMemoryFieldArrayWithDB,
@@ -1617,12 +1700,13 @@ import {
     id: "Context_Institutes",
     type: "map",
     title: "Institutes",
-    description: "Organizations (schools or hospitals) that the user is a member of. Keyed by institute ID.",
+    description: "Organizations (schools or hospitals) that the user is a member of. Target entries by name.",
     opened: true,
+    displayKey: "name",
     values: instituteSchema,
     db: institutesOps,
   };
-  
+
   /**
    * Students map - students the user has access to
    */
@@ -1630,8 +1714,9 @@ import {
     id: "Context_Students",
     type: "map",
     title: "Students",
-    description: "Students (AAC users) that the user has access to. Keyed by student ID.",
+    description: "Students (AAC users) that the user has access to. Target entries by first name.",
     opened: true,
+    displayKey: "firstName",
     values: studentSchema,
     db: studentsOps,
   };

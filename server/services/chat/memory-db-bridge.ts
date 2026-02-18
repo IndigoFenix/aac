@@ -71,6 +71,7 @@ import {
   parseArrayIndex,
 } from './path-utils';
 
+import { resolveDisplayKeyPath } from './memory-system';
 
 const isProduction = process.env.NODE_ENV === 'production';
 const hideLogs = isProduction; // Set to true to hide logs in production
@@ -1283,6 +1284,12 @@ export async function processMemoryToolWithDB(
     : 'operations' in input
       ? input.operations
       : [input as MemoryToolInput];
+
+  // Resolve display-key aliases (e.g., "My School" → actual UUID) before DB ops
+  for (const op of ops) {
+    if (op.path) op.path = resolveDisplayKeyPath(fields as AgentMemoryField[], memoryValues, op.path);
+    if (op.paths) op.paths = op.paths.map((p: string) => resolveDisplayKeyPath(fields as AgentMemoryField[], memoryValues, p));
+  }
 
   const dbResults: Map<number, DbOperationResult> = new Map();
 

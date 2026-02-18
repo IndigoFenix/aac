@@ -112,8 +112,20 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   const [yesNoActive, setYesNoActive] = useState(false);
   const dismissYesNo = useCallback(() => setYesNoActive(false), []);
 
+  // Deferred ask_yes_no: show overlay after TTS playback completes
+  const pendingAskYesNoRef = useRef(false);
+
   // Streaming audio player
-  const audioPlayer = useStreamingAudioPlayer({ autoPlay: autoPlayAudio });
+  const audioPlayer = useStreamingAudioPlayer({
+    autoPlay: autoPlayAudio,
+    onPlaybackEnd: () => {
+      // Show deferred yes/no overlay after TTS finishes
+      if (pendingAskYesNoRef.current) {
+        pendingAskYesNoRef.current = false;
+        setYesNoActive(true);
+      }
+    },
+  });
 
   // Audio recorder
   const audioRecorder = useAudioRecorder();
@@ -267,6 +279,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           setYesNoActive(true);
           break;
 
+        case "ask_yes_no":
+          // Deferred yes/no — show overlay after TTS playback completes
+          pendingAskYesNoRef.current = true;
+          break;
+
         case "app_open":
           setActiveApp(msg.data);
           break;
@@ -313,7 +330,12 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         case "complete":
           // Turn complete — reset accumulator, finalize audio
           textAccumRef.current = "";
-          // Turn complete — audio finalized by the player naturally
+          // Fallback: if deferred ask_yes_no is pending but no TTS is playing
+          // (e.g. silent mode), show overlay immediately
+          if (pendingAskYesNoRef.current && !audioPlayer.isPlaying) {
+            pendingAskYesNoRef.current = false;
+            setYesNoActive(true);
+          }
           break;
       }
     } catch (err) {

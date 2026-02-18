@@ -55,6 +55,8 @@ export interface ParsedStreamOutput {
   pressButton?: string;
   /** Yes/No question detected — trigger prominent overlay buttons */
   yesNo?: boolean;
+  /** Deferred Yes/No — show overlay after TTS playback completes */
+  askYesNo?: boolean;
 }
 
 /**
@@ -197,6 +199,12 @@ export function parseStreamedText(text: string): ParsedStreamOutput {
     result.yesNo = true;
   }
 
+  // Match [ASK_YES_NO]
+  const askYesNoMatch = text.match(/\[ASK_YES_NO\]/i);
+  if (askYesNoMatch) {
+    result.askYesNo = true;
+  }
+
   return result;
 }
 
@@ -248,7 +256,7 @@ export function parseBoardButtons(content: string): Array<{ label: string; iconR
 }
 
 /** Types that the streaming parser can emit */
-export type StreamingSegmentType = "speak" | "interpret" | "transcript" | "context" | "add_buttons" | "remove_buttons" | "rebuild_board" | "call_monitor" | "open_app" | "close_app" | "emote" | "learn_face" | "set_board" | "press_button" | "yes_no";
+export type StreamingSegmentType = "speak" | "interpret" | "transcript" | "context" | "add_buttons" | "remove_buttons" | "rebuild_board" | "call_monitor" | "open_app" | "close_app" | "emote" | "learn_face" | "set_board" | "press_button" | "yes_no" | "ask_yes_no";
 
 export interface StreamingSegment {
   type: StreamingSegmentType;
@@ -263,7 +271,7 @@ export interface StreamingSegment {
  */
 export class StreamingPrefixParser {
   private buffer = "";
-  private currentMode: "none" | "transcript" | "context" | "speak" | "interpret" | "add_buttons" | "remove_buttons" | "rebuild_board" | "call_monitor" | "open_app" | "close_app" | "emote" | "learn_face" | "set_board" | "press_button" | "yes_no" = "none";
+  private currentMode: "none" | "transcript" | "context" | "speak" | "interpret" | "add_buttons" | "remove_buttons" | "rebuild_board" | "call_monitor" | "open_app" | "close_app" | "emote" | "learn_face" | "set_board" | "press_button" | "yes_no" | "ask_yes_no" = "none";
   private transcriptSpeaker = "";
   private currentConfidence?: 'high' | 'medium' | 'low';
 
@@ -294,6 +302,7 @@ export class StreamingPrefixParser {
         const setBoardMatch = this.buffer.match(/^\s*\[SET_BOARD\]\s*/i);
         const pressButtonMatch = this.buffer.match(/^\s*\[PRESS_BUTTON\]\s*/i);
         const yesNoMatch = this.buffer.match(/^\s*\[YES_NO\]\s*/i);
+        const askYesNoMatch = this.buffer.match(/^\s*\[ASK_YES_NO\]\s*/i);
 
         if (transcriptMatch) {
           this.currentMode = "transcript";
@@ -344,6 +353,10 @@ export class StreamingPrefixParser {
           // [YES_NO] is a standalone token with no content — emit immediately
           this.buffer = this.buffer.slice(yesNoMatch[0].length);
           results.push({ type: "yes_no", data: "true" });
+        } else if (askYesNoMatch) {
+          // [ASK_YES_NO] is a standalone token — deferred overlay after TTS
+          this.buffer = this.buffer.slice(askYesNoMatch[0].length);
+          results.push({ type: "ask_yes_no", data: "true" });
         } else {
           // No prefix found yet, wait for more data
           // But trim leading whitespace/newlines that aren't part of a token
@@ -352,7 +365,7 @@ export class StreamingPrefixParser {
         }
       } else {
         // We're in a mode, collect content until the next prefix or end
-        const nextPrefixMatch = this.buffer.match(/\[(?:TRANSCRIPT(?::\w+)?|CONTEXT|SPEAK|INTERPRET(?::\w+)?|ADD_BUTTONS|REMOVE_BUTTONS|REBUILD_BOARD|CALL_MONITOR|OPEN_APP|CLOSE_APP|EMOTE|LEARN_FACE|SET_BOARD|PRESS_BUTTON|YES_NO)[\s\]]/i);
+        const nextPrefixMatch = this.buffer.match(/\[(?:TRANSCRIPT(?::\w+)?|CONTEXT|SPEAK|INTERPRET(?::\w+)?|ADD_BUTTONS|REMOVE_BUTTONS|REBUILD_BOARD|CALL_MONITOR|OPEN_APP|CLOSE_APP|EMOTE|LEARN_FACE|SET_BOARD|PRESS_BUTTON|YES_NO|ASK_YES_NO)[\s\]]/i);
 
         if (nextPrefixMatch && nextPrefixMatch.index !== undefined && nextPrefixMatch.index > 0) {
           // Found next prefix, emit current content
@@ -780,7 +793,7 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
     audioContext?: string,
     imageData?: string, // base64 data URL or URL
     personContext?: string // Identified person context from biometrics
-  ): AsyncGenerator<{ type: "speak" | "interpret" | "transcript" | "context" | "board" | "board_patch" | "command" | "usage" | "call_monitor" | "open_app" | "close_app" | "emote" | "learn_face" | "set_board" | "press_button" | "yes_no"; data: any; speaker?: string }> {
+  ): AsyncGenerator<{ type: "speak" | "interpret" | "transcript" | "context" | "board" | "board_patch" | "command" | "usage" | "call_monitor" | "open_app" | "close_app" | "emote" | "learn_face" | "set_board" | "press_button" | "yes_no" | "ask_yes_no"; data: any; speaker?: string }> {
     // Build context message if we have visual/audio/person context
     let contextMessage = "";
     if (personContext) {
@@ -877,6 +890,7 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
       let setBoardName: string | undefined;
       let pressButtonLabel: string | undefined;
       let yesNoTriggered = false;
+      let askYesNoTriggered = false;
 
       for await (const chunk of stream) {
         if (chunk.type === "text_delta") {
@@ -931,6 +945,8 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
               pressButtonLabel = seg.data.trim();
             } else if (seg.type === "yes_no") {
               yesNoTriggered = true;
+            } else if (seg.type === "ask_yes_no") {
+              askYesNoTriggered = true;
             }
           }
         } else if (chunk.type === "done" && chunk.usage) {
@@ -979,6 +995,8 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
           pressButtonLabel = seg.data.trim();
         } else if (seg.type === "yes_no") {
           yesNoTriggered = true;
+        } else if (seg.type === "ask_yes_no") {
+          askYesNoTriggered = true;
         }
       }
 
@@ -1057,6 +1075,11 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
       // Yield yes_no if triggered
       if (yesNoTriggered) {
         yield { type: "yes_no", data: true };
+      }
+
+      // Yield ask_yes_no if triggered (deferred — client shows after TTS)
+      if (askYesNoTriggered) {
+        yield { type: "ask_yes_no", data: true };
       }
     } catch (error: any) {
       console.error("[InteractiveAgent] processMessageStream error:", error?.message || error);
@@ -1343,7 +1366,7 @@ Observe changes across frames to understand motion, gestures, and temporal conte
         usage: result.usage,
       });
 
-      return { text, isCommand: false, usage: result.usage, addButtons, removeLabels, interpretation, interpretConfidence: parsed.interpretConfidence, transcriptConfidence: parsed.transcriptConfidence, transcript, transcriptSpeaker, contextUpdate, rebuildBoard, callMonitor: parsed.callMonitor, openApp: parsed.openApp, closeApp: parsed.closeApp, emote: parsed.emote, learnFace: parsed.learnFace, setBoard: parsed.setBoard, pressButton: parsed.pressButton, yesNo: parsed.yesNo, finishReason: result.finishReason };
+      return { text, isCommand: false, usage: result.usage, addButtons, removeLabels, interpretation, interpretConfidence: parsed.interpretConfidence, transcriptConfidence: parsed.transcriptConfidence, transcript, transcriptSpeaker, contextUpdate, rebuildBoard, callMonitor: parsed.callMonitor, openApp: parsed.openApp, closeApp: parsed.closeApp, emote: parsed.emote, learnFace: parsed.learnFace, setBoard: parsed.setBoard, pressButton: parsed.pressButton, yesNo: parsed.yesNo, askYesNo: parsed.askYesNo, finishReason: result.finishReason };
     } catch (error: any) {
       console.error("[InteractiveAgent] processDetection error:", error?.message || error);
       if (error?.stack) console.error("[InteractiveAgent] Stack trace:", error.stack);

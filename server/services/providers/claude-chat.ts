@@ -23,7 +23,9 @@ export class ClaudeChatProvider implements ChatProvider {
 
     const params: any = {
       model,
-      system,
+      system: system
+        ? [{ type: "text" as const, text: system, cache_control: { type: "ephemeral" as const } }]
+        : undefined,
       messages,
       max_tokens: request.maxTokens || 500,
       temperature: request.temperature ?? 0.7,
@@ -36,7 +38,8 @@ export class ClaudeChatProvider implements ChatProvider {
 
     const response = await this.client.messages.create(params);
 
-    console.log(`[ClaudeChat] Response: stop_reason=${response.stop_reason}, blocks=${response.content?.length || 0}, output_tokens=${response.usage?.output_tokens}`);
+    const cached = (response.usage as any)?.cache_read_input_tokens ?? 0;
+    console.log(`[ClaudeChat] Response: stop_reason=${response.stop_reason}, blocks=${response.content?.length || 0}, output_tokens=${response.usage?.output_tokens}, cached_input=${cached}`);
 
     let content = "";
     const toolCalls: Array<{ name: string; arguments: string }> = [];
@@ -70,7 +73,9 @@ export class ClaudeChatProvider implements ChatProvider {
 
     const params: any = {
       model,
-      system,
+      system: system
+        ? [{ type: "text" as const, text: system, cache_control: { type: "ephemeral" as const } }]
+        : undefined,
       messages,
       max_tokens: request.maxTokens || 500,
       temperature: request.temperature ?? 0.7,

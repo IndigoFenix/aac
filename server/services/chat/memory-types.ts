@@ -71,6 +71,10 @@ export interface AgentMemoryFieldArray extends AgentMemoryFieldBase {
 export interface AgentMemoryFieldMap extends AgentMemoryFieldBase {
   type: 'map';
   values: AgentMemoryField;
+  /** Property name of the value object to use as display label and path alias.
+   *  When set, map entries are rendered with this field's value instead of the raw key,
+   *  and the AI can target entries by this value in paths. */
+  displayKey?: string;
   keyPattern?: string;
   minProperties?: number;
   maxProperties?: number;
@@ -382,6 +386,10 @@ export interface AgentMemoryFieldArrayWithDB extends AgentMemoryFieldBaseWithDB 
 export interface AgentMemoryFieldMapWithDB extends AgentMemoryFieldBaseWithDB {
   type: 'map';
   values: AgentMemoryFieldWithDB;
+  /** Property name of the value object to use as display label and path alias.
+   *  When set, map entries are rendered with this field's value instead of the raw key,
+   *  and the AI can target entries by this value in paths. */
+  displayKey?: string;
   keyPattern?: string;
   minProperties?: number;
   maxProperties?: number;

@@ -40,7 +40,9 @@ export const creditsForModelUsage = (
     const creditsPerOutput = ChargeToCredits(outputPer1M / MILLION);
 
     const fullPromptCharge   = (promptTokens - cachedTokens) * creditsPerInput;
-    const cachedPromptCharge = cachedTokens * (creditsPerInput / 2);
+    // Anthropic charges cached reads at 10% of base; OpenAI at 50%
+    const cacheDiscount = provider === "claude" ? 0.1 : 0.5;
+    const cachedPromptCharge = cachedTokens * (creditsPerInput * cacheDiscount);
     const completionCharge   = completionTokens * creditsPerOutput;
 
     return fullPromptCharge + cachedPromptCharge + completionCharge;
