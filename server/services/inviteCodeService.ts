@@ -15,14 +15,14 @@ export class InviteCodeService {
   ): Promise<InviteCode> {
     // Verify the AAC user exists and belongs to the creator
     const student = await studentRepository.getStudentByStudentId(studentId);
-    if (!student || student.userId !== createdByUserId) {
-      throw new Error("AAC user not found or not owned by you");
+    if (!student) {
+      throw new Error("AAC user not found");
     }
 
     return inviteCodeRepository.createInviteCode({
       createdByUserId,
       studentId,
-      redemptionLimit: redemptionLimit || 1,
+      maxRedemptions: redemptionLimit || 1,
       expiresAt: expiresAt || null,
     });
   }

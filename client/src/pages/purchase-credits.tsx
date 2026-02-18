@@ -1,6 +1,12 @@
 import { useState, useEffect } from 'react';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/use-toast';
+import { apiRequest } from '@/lib/queryClient';
 
 // Initialize Stripe
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY!);
@@ -75,7 +81,7 @@ const CheckoutForm = ({ selectedPackage, onSuccess }: { selectedPackage: CreditP
       }
     } catch (error) {
       console.error('Payment error:', error);
-      alert(`שגיאה בתשלום: ${error.message || 'אירעה שגיאה בעת עיבוד התשלום'}`);
+      alert(`שגיאה בתשלום: ${error instanceof Error ? error.message : 'אירעה שגיאה בעת עיבוד התשלום'}`);
     } finally {
       setIsProcessing(false);
     }
@@ -141,7 +147,8 @@ export default function PurchaseCredits() {
   const fetchCreditPackages = async () => {
     try {
       const response = await apiRequest('GET', '/api/credit-packages');
-      setPackages(response.packages || []);
+      const data = await response.json();
+      setPackages(data.packages || []);
     } catch (error) {
       console.error('Error fetching credit packages:', error);
       toast({

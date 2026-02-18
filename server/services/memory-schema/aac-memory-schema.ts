@@ -797,11 +797,11 @@ ${persona}
  */
 export function buildMonitorSystemPrompt(
   mode: 'dual' | 'thinking',
-  student: { name: string; aacChatAgentPrompt?: string | null; framework?: string | null },
+  student: { name: string; aacSettings?: { chatAgentPrompt?: string | null } | null; framework?: string | null },
   framework: string | null,
   interactionMode: 'interact' | 'silent' = 'interact'
 ): string {
-  const personaPrompt = student.aacChatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+  const personaPrompt = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
 
   if (mode === 'dual') {
     const modeNote = interactionMode === 'silent'

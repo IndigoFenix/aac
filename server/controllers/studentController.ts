@@ -10,10 +10,10 @@ export class StudentController {
     try {
       const currentUser = req.user as any;
       console.log("Getting students for user ID:", currentUser.id);
-      
+
       // Get students with their link information
       const studentsWithLinks = await studentService.getStudentsWithLinksByUserId(currentUser.id);
-      
+
       // Transform to include calculated age and role
       const students = studentsWithLinks.map(({ student, link }) => ({
         ...student,
@@ -21,7 +21,7 @@ export class StudentController {
         role: link.role,
         linkId: link.id,
       }));
-      
+
       res.json({ success: true, students });
     } catch (error: any) {
       console.error("Error fetching students:", error);
@@ -102,7 +102,7 @@ export class StudentController {
 
   /**
    * PATCH /api/students/:id
-   * Update an student
+   * Update a student (handles both student fields and AAC settings)
    */
   async updateStudent(req: Request, res: Response): Promise<void> {
     try {
@@ -117,7 +117,7 @@ export class StudentController {
       }
 
       const updatedStudent = await studentService.updateStudent(studentId, req.body);
-      
+
       if (updatedStudent) {
         res.json({
           success: true,
@@ -146,7 +146,7 @@ export class StudentController {
     try {
       const currentUser = req.user as any;
       const studentId = req.params.id;
-      
+
       // Verify access (only owners should be able to delete)
       const { hasAccess, link } = await studentService.verifyStudentAccess(studentId, currentUser.id);
       if (!hasAccess) {
@@ -160,7 +160,7 @@ export class StudentController {
       }
 
       const deleted = await studentService.deleteStudent(studentId);
-      
+
       if (deleted) {
         res.json({ success: true, message: "student deleted successfully" });
       } else {

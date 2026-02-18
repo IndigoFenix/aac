@@ -4,7 +4,7 @@
  * This file is run before each test file to set up the test environment.
  */
 
-import { jest } from '@jest/globals';
+import { jest, beforeAll, afterAll } from '@jest/globals';
 
 // Set test environment variables
 process.env.NODE_ENV = 'test';

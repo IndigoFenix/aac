@@ -22,23 +22,19 @@ import {
     async getByStudentId(
       studentId: string,
       ctx: SecurityContext,
-      options?: { limit?: number; offset?: number; reportType?: string }
+      options?: { limit?: number; offset?: number }
     ): Promise<FunctionalReport[]> {
       const conditions = [eq(functionalReports.studentId, studentId)];
-      
+
       if (ctx.instituteId) {
         conditions.push(eq(functionalReports.instituteId, ctx.instituteId));
       }
-      
-      if (options?.reportType) {
-        conditions.push(eq(functionalReports.reportType, options.reportType));
-      }
-  
+
       let query = db
         .select()
         .from(functionalReports)
         .where(and(...conditions))
-        .orderBy(desc(functionalReports.reportDate));
+        .orderBy(desc(functionalReports.createdAt));
   
       if (options?.limit) {
         query = query.limit(options.limit) as typeof query;
@@ -74,7 +70,7 @@ import {
         .select()
         .from(functionalReports)
         .where(and(...conditions))
-        .orderBy(desc(functionalReports.reportDate));
+        .orderBy(desc(functionalReports.createdAt));
   
       return reports;
     }
@@ -168,7 +164,6 @@ import {
         id,
         {
           status: "pending_review",
-          submittedAt: new Date(),
         },
         ctx
       );
@@ -186,7 +181,6 @@ import {
         {
           status: "final",
           finalizedAt: new Date(),
-          finalizedBy: ctx.userId,
         },
         ctx
       );

@@ -1004,13 +1004,12 @@ export class ProgramController {
         recordedAt: new Date(),
       });
 
-      const { dataPoint, goal: updatedGoal } = await programService.recordDataPointWithProgressUpdate(validatedData);
+      const dataPoint = await programService.createDataPoint(validatedData);
 
       res.json({
         success: true,
         message: "Data point recorded successfully",
         dataPoint,
-        goal: updatedGoal,
       });
     } catch (error: any) {
       console.error("Error creating data point:", error);
@@ -1093,17 +1092,16 @@ export class ProgramController {
         return;
       }
 
-      const { report, entries } = await programService.createProgressReportWithEntries(
+      const report = await programService.createProgressReport({
         programId,
         reportDate,
-        reportingPeriod || ""
-      );
+        reportingPeriod: reportingPeriod || "",
+      } as any);
 
       res.json({
         success: true,
         message: "Progress report created successfully",
         report,
-        entries,
       });
     } catch (error: any) {
       console.error("Error creating progress report:", error);

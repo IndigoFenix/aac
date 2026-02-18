@@ -639,42 +639,17 @@ export const students = pgTable("students", {
   name: text("name").notNull(), // Human-readable name
   gender: text("gender"), // 'male', 'female', 'other'
   birthDate: date("birth_date"), // Date of birth
-  
+
   // Educational framework
   framework: programFrameworkEnum("framework").default("tala"), // 'tala' | 'us_iep'
   country: text("country").default("IL"), // 'IL', 'US', etc.
   primaryLanguage: text("primary_language").default("he"), // Primary language code
   additionalLanguages: text("additional_languages").array(), // Additional language codes
-  
+
   // Chat system fields
   chatMemory: jsonb("chat_memory").default({}), // Student-specific memory values for chat
   chatCreditsUsed: real("chat_credits_used").notNull().default(0),
   chatCreditsUpdated: timestamp("chat_credits_updated").defaultNow(),
-
-  // AAC-specific fields
-  aacEnabled: boolean("aac_enabled").default(false), // Whether AAC mode is enabled
-  aacChatAgentPrompt: text("aac_chat_agent_prompt"), // Custom prompt override for AAC agent
-  aacDemoMode: boolean("aac_demo_mode").default(false), // Demo scenario enabled
-  aacDemoScenario: text("aac_demo_scenario"), // Which demo scenario to use
-  aacUsePcsSymbols: boolean("aac_use_pcs_symbols").default(false), // PCS vs emoji preference
-  aacSignLanguageReading: boolean("aac_sign_language_reading").default(false), // Sign language detection enabled
-  aacMultiCameraMode: boolean("aac_multi_camera_mode").default(false), // Multi-camera support
-  aacModelOverride: text("aac_model_override"), // AI model override (e.g., 'chatgpt5')
-  aacVoiceType: text("aac_voice_type"), // AI voice: 'auto', 'man', 'woman', 'boy', 'girl'
-  aacStudentVoiceType: text("aac_student_voice_type"), // Student's voice: 'man', 'woman', 'boy', 'girl'
-  aacCustomVoiceId: varchar("aac_custom_voice_id"), // FK to voices table for custom AI voice (ElevenLabs)
-  aacCustomStudentVoiceId: varchar("aac_custom_student_voice_id"), // FK to voices table for custom student voice (ElevenLabs)
-  aacIconTextRatio: integer("aac_icon_text_ratio").default(3), // Icon-to-text size ratio 1–5 (1=mostly icon, 5=mostly text)
-  aacInterpretationLevel: integer("aac_interpretation_level").default(2), // 0=none, 1=minimal, 2=conservative, 3=creative, 4=autonomous
-  aacStartupMode: integer("aac_startup_mode").default(0), // 0=fast (no LLM call), 1=thorough (preloads all context + LLM summary)
-  aacEyegazeEnabled: boolean("aac_eyegaze_enabled").default(false), // Enable dwell-based symbol selection via mouse/external eye tracker
-  aacEyegazeTimeout: integer("aac_eyegaze_timeout").default(2000), // Dwell time in ms before selection triggers (1000-10000)
-  aacKnownPeople: jsonb("aac_known_people").default([]), // Array of known people for recognition
-
-  // Student-level ElevenLabs voice settings (may be removed later)
-  aacElevenlabsApiKey: text("aac_elevenlabs_api_key"), // Student's own ElevenLabs API key
-  aacElevenlabsAiVoiceId: text("aac_elevenlabs_ai_voice_id"), // ElevenLabs voice ID for AI voice
-  aacElevenlabsStudentVoiceId: text("aac_elevenlabs_student_voice_id"), // ElevenLabs voice ID for student voice
 
   // Biometric recognition fields
   faceEmbedding: jsonb("face_embedding"), // 128-dimensional face embedding vector
@@ -687,6 +662,56 @@ export const students = pgTable("students", {
 }, (table) => [
   index("idx_students_framework").on(table.framework),
   index("idx_students_is_active").on(table.isActive),
+]);
+
+// AAC settings — one-to-one with students, contains all AAC-specific configuration
+export const aacSettings = pgTable("aac_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").references(() => students.id).notNull().unique(),
+
+  // Core AAC flags
+  enabled: boolean("enabled").default(false), // Whether AAC mode is enabled
+  demoMode: boolean("demo_mode").default(false), // Demo scenario enabled
+  demoScenario: text("demo_scenario"), // Which demo scenario to use
+
+  // AI chat behavior
+  chatAgentPrompt: text("chat_agent_prompt"), // Custom prompt override for AAC agent
+  modelOverride: text("model_override"), // AI model override (e.g., 'chatgpt5')
+  interpretationLevel: integer("interpretation_level").default(2), // 0=none, 1=minimal, 2=conservative, 3=creative, 4=autonomous
+  startupMode: integer("startup_mode").default(0), // 0=fast (no LLM call), 1=thorough (preloads all context + LLM summary)
+
+  // Voice settings
+  voiceType: text("voice_type"), // AI voice: 'auto', 'man', 'woman', 'boy', 'girl'
+  studentVoiceType: text("student_voice_type"), // Student's voice: 'man', 'woman', 'boy', 'girl'
+  customVoiceId: varchar("custom_voice_id"), // FK to voices table for custom AI voice (ElevenLabs)
+  customStudentVoiceId: varchar("custom_student_voice_id"), // FK to voices table for custom student voice (ElevenLabs)
+
+  // ElevenLabs voice settings (may be removed later)
+  elevenlabsApiKey: text("elevenlabs_api_key"), // Student's own ElevenLabs API key
+  elevenlabsAiVoiceId: text("elevenlabs_ai_voice_id"), // ElevenLabs voice ID for AI voice
+  elevenlabsStudentVoiceId: text("elevenlabs_student_voice_id"), // ElevenLabs voice ID for student voice
+
+  // Display settings
+  iconTextRatio: integer("icon_text_ratio").default(3), // Icon-to-text size ratio 1–5 (1=mostly icon, 5=mostly text)
+  usePcsSymbols: boolean("use_pcs_symbols").default(false), // PCS vs emoji preference
+
+  // Input settings
+  signLanguageReading: boolean("sign_language_reading").default(false), // Sign language detection enabled
+  multiCameraMode: boolean("multi_camera_mode").default(false), // Multi-camera support
+
+  // Eyegaze / dwell settings
+  eyegazeEnabled: boolean("eyegaze_enabled").default(false), // Enable dwell-based symbol selection
+  eyegazeTimeout: integer("eyegaze_timeout").default(2000), // Dwell time in ms (1000-10000)
+  eyegazeProvider: text("eyegaze_provider"), // 'auto', 'camera', 'tobii', 'eyetech', 'lctech', 'webhid', 'mouse'
+
+  // Recognition
+  knownPeople: jsonb("known_people").default([]), // Array of known people for recognition
+
+  // Metadata
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_aac_settings_student_id").on(table.studentId),
 ]);
 
 // Student contacts — people the student knows (classmates, siblings, etc.) with optional biometrics
@@ -1942,6 +1967,20 @@ export const updateStudentSchema = createInsertSchema(students).omit({
   updatedAt: true,
 }).partial();
 
+// AAC settings schemas
+export const insertAacSettingsSchema = createInsertSchema(aacSettings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateAacSettingsSchema = createInsertSchema(aacSettings).omit({
+  id: true,
+  studentId: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial();
+
 // Student contact schemas
 export const insertStudentContactSchema = createInsertSchema(studentContacts).omit({
   id: true,
@@ -2540,6 +2579,15 @@ export type UpdateLicense = z.infer<typeof updateLicenseSchema>;
 export type Student = typeof students.$inferSelect;
 export type InsertStudent = z.infer<typeof insertStudentSchema>;
 export type UpdateStudent = z.infer<typeof updateStudentSchema>;
+
+// AAC settings types
+export type AacSettings = typeof aacSettings.$inferSelect;
+export type InsertAacSettings = z.infer<typeof insertAacSettingsSchema>;
+export type UpdateAacSettings = z.infer<typeof updateAacSettingsSchema>;
+
+/** Student with its one-to-one AAC settings loaded */
+export type StudentWithAacSettings = Student & { aacSettings: AacSettings | null };
+
 export type StudentContact = typeof studentContacts.$inferSelect;
 export type InsertStudentContact = z.infer<typeof insertStudentContactSchema>;
 export type UpdateStudentContact = z.infer<typeof updateStudentContactSchema>;

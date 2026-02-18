@@ -3,12 +3,14 @@
 export type ActionIR =
   | { type: "speak"; text: string }
   | ActionLinkIR
+  | ActionNavigateIR
   | { type: "back"; }
   | { type: "bookmark"; }
   | { type: "home"; }
   | { type: "youtube"; videoId: string; title: string };
 
-export type ActionLinkIR = { type: "link"; toPageId: string; };
+export type ActionLinkIR = { type: "link"; toPageId: string; toBoardId?: string; };
+export type ActionNavigateIR = { type: "navigate"; toPageId: string; };
 
 export interface ButtonIR {
   id: string;

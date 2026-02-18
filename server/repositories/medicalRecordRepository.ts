@@ -39,22 +39,12 @@ import {
         .limit(1);
   
       if (record) {
-        // Update access tracking
-        await db
-          .update(medicalRecords)
-          .set({
-            lastAccessedBy: ctx.userId,
-            lastAccessedAt: new Date(),
-          })
-          .where(eq(medicalRecords.id, record.id));
-  
-        // Log access
         await this.logAccess(ctx, "read", record.id);
       }
-  
+
       return record || undefined;
     }
-  
+
     /**
      * Get medical record by ID
      */
@@ -63,25 +53,17 @@ import {
       ctx: SecurityContext
     ): Promise<MedicalRecord | undefined> {
       const conditions = [eq(medicalRecords.id, id)];
-      
+
       if (ctx.instituteId) {
         conditions.push(eq(medicalRecords.instituteId, ctx.instituteId));
       }
-  
+
       const [record] = await db
         .select()
         .from(medicalRecords)
         .where(and(...conditions));
-  
+
       if (record) {
-        await db
-          .update(medicalRecords)
-          .set({
-            lastAccessedBy: ctx.userId,
-            lastAccessedAt: new Date(),
-          })
-          .where(eq(medicalRecords.id, record.id));
-  
         await this.logAccess(ctx, "read", record.id);
       }
   
@@ -100,7 +82,7 @@ import {
         .values({
           ...data,
           instituteId: ctx.instituteId || data.instituteId,
-          createdBy: ctx.userId,
+          userId: ctx.userId,
           isSensitive: true,
           sensitivityCategory: "medical",
         })
@@ -184,22 +166,19 @@ import {
           id: record.id,
           studentId: record.studentId,
           primaryDiagnosis: record.primaryDiagnosis,
-          ideaClassification: record.ideaClassification,
-          allergies: record.allergies,
+          alertsAllergies: record.alertsAllergies,
+          alertsSeizures: record.alertsSeizures,
           medications: record.medications,
           medicalEquipment: record.medicalEquipment,
-          dietaryRestrictions: record.dietaryRestrictions,
-          emergencyPlan: record.emergencyPlan,
-          seizureProtocol: record.seizureProtocol,
         };
       }
-  
+
       // Default - minimal info
       return {
         id: record.id,
         studentId: record.studentId,
-        allergies: record.allergies,
-        emergencyPlan: record.emergencyPlan,
+        alertsAllergies: record.alertsAllergies,
+        alertsSeizures: record.alertsSeizures,
       };
     }
   

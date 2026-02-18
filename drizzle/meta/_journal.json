@@ -169,6 +169,13 @@
       "when": 1771261926327,
       "tag": "0023_optimal_fenris",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1771394213992,
+      "tag": "0024_yellow_silk_fever",
+      "breakpoints": true
     }
   ]
 }

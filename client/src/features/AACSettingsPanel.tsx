@@ -86,19 +86,20 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [eyegazeTimeout, setEyegazeTimeout] = useState(2000);
   const [hasChanges, setHasChanges] = useState(false);
 
-  // Load student data into form
+  // Load student data into form (AAC settings are nested under aacSettings)
   useEffect(() => {
     if (student) {
-      setChatAgentPrompt(student.aacChatAgentPrompt || DEFAULT_AAC_PROMPT);
-      setVoiceType(student.aacVoiceType || 'auto');
-      setStudentVoiceType(student.aacStudentVoiceType || 'boy');
-      setCustomVoiceId(student.aacCustomVoiceId || null);
-      setCustomStudentVoiceId(student.aacCustomStudentVoiceId || null);
-      setIconTextRatio(student.aacIconTextRatio ?? 3);
-      setInterpretationLevel(student.aacInterpretationLevel ?? 2);
-      setStartupMode(student.aacStartupMode ?? 0);
-      setEyegazeEnabled(student.aacEyegazeEnabled ?? false);
-      setEyegazeTimeout(student.aacEyegazeTimeout ?? 2000);
+      const aac = (student as any).aacSettings;
+      setChatAgentPrompt(aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT);
+      setVoiceType(aac?.voiceType || 'auto');
+      setStudentVoiceType(aac?.studentVoiceType || 'boy');
+      setCustomVoiceId(aac?.customVoiceId || null);
+      setCustomStudentVoiceId(aac?.customStudentVoiceId || null);
+      setIconTextRatio(aac?.iconTextRatio ?? 3);
+      setInterpretationLevel(aac?.interpretationLevel ?? 2);
+      setStartupMode(aac?.startupMode ?? 0);
+      setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
+      setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
       setHasChanges(false);
     }
   }, [student]);
@@ -106,16 +107,17 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   // Track changes
   useEffect(() => {
     if (student) {
-      const originalPrompt = student.aacChatAgentPrompt || DEFAULT_AAC_PROMPT;
-      const originalVoice = student.aacVoiceType || 'auto';
-      const originalStudentVoice = student.aacStudentVoiceType || 'boy';
-      const originalCustomVoice = student.aacCustomVoiceId || null;
-      const originalCustomStudentVoice = student.aacCustomStudentVoiceId || null;
-      const originalIconTextRatio = student.aacIconTextRatio ?? 3;
-      const originalInterpretationLevel = student.aacInterpretationLevel ?? 2;
-      const originalStartupMode = student.aacStartupMode ?? 0;
-      const originalEyegazeEnabled = student.aacEyegazeEnabled ?? false;
-      const originalEyegazeTimeout = student.aacEyegazeTimeout ?? 2000;
+      const aac = (student as any).aacSettings;
+      const originalPrompt = aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT;
+      const originalVoice = aac?.voiceType || 'auto';
+      const originalStudentVoice = aac?.studentVoiceType || 'boy';
+      const originalCustomVoice = aac?.customVoiceId || null;
+      const originalCustomStudentVoice = aac?.customStudentVoiceId || null;
+      const originalIconTextRatio = aac?.iconTextRatio ?? 3;
+      const originalInterpretationLevel = aac?.interpretationLevel ?? 2;
+      const originalStartupMode = aac?.startupMode ?? 0;
+      const originalEyegazeEnabled = aac?.eyegazeEnabled ?? false;
+      const originalEyegazeTimeout = aac?.eyegazeTimeout ?? 2000;
       setHasChanges(
         chatAgentPrompt !== originalPrompt ||
         voiceType !== originalVoice ||
@@ -134,16 +136,16 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: async (data: {
-      aacChatAgentPrompt: string;
-      aacVoiceType: string;
-      aacStudentVoiceType: string;
-      aacCustomVoiceId: string | null;
-      aacCustomStudentVoiceId: string | null;
-      aacIconTextRatio: number;
-      aacInterpretationLevel: number;
-      aacStartupMode: number;
-      aacEyegazeEnabled: boolean;
-      aacEyegazeTimeout: number;
+      chatAgentPrompt: string;
+      voiceType: string;
+      studentVoiceType: string;
+      customVoiceId: string | null;
+      customStudentVoiceId: string | null;
+      iconTextRatio: number;
+      interpretationLevel: number;
+      startupMode: number;
+      eyegazeEnabled: boolean;
+      eyegazeTimeout: number;
     }) => {
       const response = await apiRequest('PATCH', `/api/students/${student?.id}`, data);
       return response.json();
@@ -169,31 +171,32 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const handleSave = () => {
     if (!student) return;
     updateMutation.mutate({
-      aacChatAgentPrompt: chatAgentPrompt,
-      aacVoiceType: voiceType,
-      aacStudentVoiceType: studentVoiceType,
-      aacCustomVoiceId: customVoiceId,
-      aacCustomStudentVoiceId: customStudentVoiceId,
-      aacIconTextRatio: iconTextRatio,
-      aacInterpretationLevel: interpretationLevel,
-      aacStartupMode: startupMode,
-      aacEyegazeEnabled: eyegazeEnabled,
-      aacEyegazeTimeout: eyegazeTimeout,
+      chatAgentPrompt,
+      voiceType,
+      studentVoiceType,
+      customVoiceId,
+      customStudentVoiceId,
+      iconTextRatio,
+      interpretationLevel,
+      startupMode,
+      eyegazeEnabled,
+      eyegazeTimeout,
     });
   };
 
   const handleReset = () => {
     if (student) {
-      setChatAgentPrompt(student.aacChatAgentPrompt || DEFAULT_AAC_PROMPT);
-      setVoiceType(student.aacVoiceType || 'auto');
-      setStudentVoiceType(student.aacStudentVoiceType || 'boy');
-      setCustomVoiceId(student.aacCustomVoiceId || null);
-      setCustomStudentVoiceId(student.aacCustomStudentVoiceId || null);
-      setIconTextRatio(student.aacIconTextRatio ?? 3);
-      setInterpretationLevel(student.aacInterpretationLevel ?? 2);
-      setStartupMode(student.aacStartupMode ?? 0);
-      setEyegazeEnabled(student.aacEyegazeEnabled ?? false);
-      setEyegazeTimeout(student.aacEyegazeTimeout ?? 2000);
+      const aac = (student as any).aacSettings;
+      setChatAgentPrompt(aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT);
+      setVoiceType(aac?.voiceType || 'auto');
+      setStudentVoiceType(aac?.studentVoiceType || 'boy');
+      setCustomVoiceId(aac?.customVoiceId || null);
+      setCustomStudentVoiceId(aac?.customStudentVoiceId || null);
+      setIconTextRatio(aac?.iconTextRatio ?? 3);
+      setInterpretationLevel(aac?.interpretationLevel ?? 2);
+      setStartupMode(aac?.startupMode ?? 0);
+      setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
+      setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
     }
   };
 

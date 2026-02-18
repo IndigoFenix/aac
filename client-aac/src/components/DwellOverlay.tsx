@@ -17,8 +17,8 @@ export default function DwellOverlay() {
     <div
       style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 9999 }}
     >
-      {/* Gaze cursor dot — only in camera mode (mouse mode uses OS cursor) */}
-      {mode === "camera" && gazePosition && (
+      {/* Gaze cursor dot — only in eyegaze mode (mouse mode uses OS cursor) */}
+      {mode === "eyegaze" && gazePosition && (
         <div
           style={{
             position: "absolute",

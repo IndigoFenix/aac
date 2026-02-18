@@ -217,28 +217,29 @@ export class DualAgentService {
     studentVoice: ResolvedVoice;
   }> {
     const student = cached.monitorAgent.getStudent();
+    const aac = student?.aacSettings;
     const [aiCustom, studentCustom] = await Promise.all([
-      student?.aacCustomVoiceId
-        ? voiceRecordRepository.getVoiceById(student.aacCustomVoiceId)
+      aac?.customVoiceId
+        ? voiceRecordRepository.getVoiceById(aac.customVoiceId)
         : Promise.resolve(undefined),
-      student?.aacCustomStudentVoiceId
-        ? voiceRecordRepository.getVoiceById(student.aacCustomStudentVoiceId)
+      aac?.customStudentVoiceId
+        ? voiceRecordRepository.getVoiceById(aac.customStudentVoiceId)
         : Promise.resolve(undefined),
     ]);
     return {
       aiVoice: {
-        fallbackType: (student?.aacVoiceType as any) || "woman",
+        fallbackType: (aac?.voiceType as any) || "woman",
         customVoice: aiCustom || null,
         language: student?.primaryLanguage || "en",
-        elevenlabsApiKey: student?.aacElevenlabsApiKey || undefined,
-        elevenlabsVoiceId: student?.aacElevenlabsAiVoiceId || undefined,
+        elevenlabsApiKey: aac?.elevenlabsApiKey || undefined,
+        elevenlabsVoiceId: aac?.elevenlabsAiVoiceId || undefined,
       },
       studentVoice: {
-        fallbackType: (student?.aacStudentVoiceType as any) || "boy",
+        fallbackType: (aac?.studentVoiceType as any) || "boy",
         customVoice: studentCustom || null,
         language: student?.primaryLanguage || "en",
-        elevenlabsApiKey: student?.aacElevenlabsApiKey || undefined,
-        elevenlabsVoiceId: student?.aacElevenlabsStudentVoiceId || undefined,
+        elevenlabsApiKey: aac?.elevenlabsApiKey || undefined,
+        elevenlabsVoiceId: aac?.elevenlabsStudentVoiceId || undefined,
       },
     };
   }
@@ -324,7 +325,7 @@ export class DualAgentService {
 
     // Build a context-aware greeting message using student persona
     const student = monitorAgent.getStudent();
-    const personaHint = student?.aacChatAgentPrompt?.trim()
+    const personaHint = student?.aacSettings?.chatAgentPrompt?.trim()
       ? `\nThe student is ${student.name}. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs.`
       : "";
 
@@ -528,7 +529,7 @@ export class DualAgentService {
     let interactivePrompt = initResult.interactivePrompt;
     const student = monitorAgent.getStudent?.();
     if (student) {
-      const personaPrompt = student.aacChatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+      const personaPrompt = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
       interactivePrompt = buildInteractiveSystemPrompt(
         student.name,
         personaPrompt,
@@ -549,7 +550,7 @@ export class DualAgentService {
         undefined, // loadedPageName
         12, // maxBoardItems
         undefined, // loadedPageNavButtons
-        student.aacInterpretationLevel ?? 2,
+        student.aacSettings?.interpretationLevel ?? 2,
         cachedSymbols.length > 0 ? cachedSymbols : undefined,
         isLiveMode,
       );
@@ -574,7 +575,7 @@ export class DualAgentService {
       pendingMessages: [],
       interactionMode,
       isLiveMode,
-      interpretationLevel: (monitorAgent.getStudent?.()?.aacInterpretationLevel ?? 2) as import("./types").AACInterpretationLevel,
+      interpretationLevel: (monitorAgent.getStudent?.()?.aacSettings?.interpretationLevel ?? 2) as import("./types").AACInterpretationLevel,
       appState: { enabledApps: getDefaultEnabledApps(), activeApp: null },
       currentEmote: "happy",
       boardButtonLabels: [],
@@ -675,7 +676,7 @@ export class DualAgentService {
       // Rebuild prompt with correct enabledApps (the stored prompt may have stale app info)
       const student = monitorAgent.getStudent();
       if (student) {
-        const personaPrompt = student.aacChatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+        const personaPrompt = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
         const enabledApps = APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id));
 
         // Fetch and cache contacts for prompt
@@ -869,7 +870,7 @@ export class DualAgentService {
       // Rebuild interactive prompt for new mode
       const student = monitorAgent.getStudent();
       if (student) {
-        const personaPrompt = student.aacChatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+        const personaPrompt = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
         const enabledApps = APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id));
         const inputLoadedPage = state.loadedBoardData?.pages?.find(p => p.id === state.currentPageId);
         const newPrompt = buildInteractiveSystemPrompt(
@@ -1859,7 +1860,7 @@ export class DualAgentService {
 
       const student = monitorAgent.getStudent();
       if (student) {
-        const personaPrompt = student.aacChatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+        const personaPrompt = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
         const enabledApps = APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id));
         const detSwitchPage = state.loadedBoardData?.pages?.find(p => p.id === state.currentPageId);
         const newPrompt = buildInteractiveSystemPrompt(
@@ -1898,7 +1899,7 @@ export class DualAgentService {
     // Build detection system prompt using the unified builder with isDetection=true
     // This ensures detection has full student context, memory, language, etc.
     const student = monitorAgent.getStudent();
-    const personaPrompt = student?.aacChatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+    const personaPrompt = student?.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
     const enabledApps = APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id));
     const loadedPage = state.loadedBoardData?.pages?.find(p => p.id === state.currentPageId);
     const detectionSystemPrompt = buildInteractiveSystemPrompt(
@@ -2494,14 +2495,16 @@ export class DualAgentService {
       for (const msg of history) {
         // Skip internal system/monitor messages (but keep [CONTEXT] injections)
         if (msg.role === "system" as any) {
-          if (msg.content?.includes("[CONTEXT]")) {
-            turns.push({ role: "user", text: `[SYSTEM CONTEXT UPDATE]\n${msg.content}` });
+          const contentStr = typeof msg.content === "string" ? msg.content : (msg.content as any)?.text || "";
+          if (contentStr.includes("[CONTEXT]")) {
+            turns.push({ role: "user", text: `[SYSTEM CONTEXT UPDATE]\n${contentStr}` });
           }
           continue;
         }
+        const textContent = typeof msg.content === "string" ? msg.content : (msg.content as any)?.text || "";
         turns.push({
           role: msg.role === "assistant" ? "model" : "user",
-          text: msg.content,
+          text: textContent,
         });
       }
 

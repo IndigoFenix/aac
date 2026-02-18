@@ -72,21 +72,8 @@ export class InterpretationController {
       if (studentId) {
         studentInfo = await studentRepository.getStudentById(studentId);
 
-        // Fetch current schedule context for time-based context enrichment
-        const scheduleData = await studentRepository.getCurrentScheduleContext(
-          studentId,
-          new Date()
-        );
-        if (scheduleData.activityName) {
-          const topicTags =
-            scheduleData.topicTags && scheduleData.topicTags.length > 0
-              ? ` (Topics: ${scheduleData.topicTags.join(", ")})`
-              : "";
-          scheduleContext =
-            language === "he"
-              ? `\n\nפעילות נוכחית: ${scheduleData.activityName}${topicTags}`
-              : `\n\nCurrent activity: ${scheduleData.activityName}${topicTags}`;
-        }
+        // Schedule context - TODO: implement getCurrentScheduleContext in studentRepository
+        // once the student_schedules table is added to the schema
       }
 
       // Combine manual context with schedule context

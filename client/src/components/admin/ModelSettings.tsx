@@ -33,7 +33,7 @@ export function ModelSettings() {
 
   useEffect(() => {
     if (data?.configs) {
-      setLocalConfigs(data.configs);
+      setLocalConfigs(data.configs as Record<string, LLMConfigValue>);
       setHasChanges(false);
     }
   }, [data]);
@@ -58,12 +58,12 @@ export function ModelSettings() {
   const { useCases, modelOptions } = data;
 
   const getModelsForProvider = (provider: LLMProviderKey): ModelOption[] => {
-    return (modelOptions || []).filter((m: ModelOption) => m.provider === provider);
+    return ((modelOptions || []) as ModelOption[]).filter((m) => m.provider === provider);
   };
 
   const getModelInfo = (provider: LLMProviderKey, modelId: string): ModelOption | undefined => {
-    return (modelOptions || []).find(
-      (m: ModelOption) => m.provider === provider && m.modelId === modelId
+    return ((modelOptions || []) as ModelOption[]).find(
+      (m) => m.provider === provider && m.modelId === modelId
     );
   };
 

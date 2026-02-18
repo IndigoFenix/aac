@@ -160,7 +160,7 @@ export class OnboardingController {
         success: true,
         message: "Invite code redeemed successfully. Onboarding complete!",
         student: studentWithAge,
-        link: result.link,
+        link: result.student ? `/aac/${result.student.id}` : undefined,
         onboardingStep: 3,
       });
     } catch (error: any) {

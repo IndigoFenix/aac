@@ -1,4 +1,4 @@
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth } from "@/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import { Redirect, Route } from "wouter";
 
@@ -59,7 +59,7 @@ export function AdminRoute({
     );
   }
 
-  if (user.role !== 'admin') {
+  if (!user.isAdmin) {
     return (
       <Route path={path}>
         <div className="flex items-center justify-center min-h-screen">

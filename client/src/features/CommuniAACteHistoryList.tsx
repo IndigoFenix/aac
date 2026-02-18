@@ -111,10 +111,10 @@ export function CommuniAACteHistoryList({ t, isRTL, language }: Props) {
                           )}`;
                         })()}
                       </Badge>
-                      {interpretation.studentAlias && (
+                      {interpretation.studentName && (
                         <Badge variant="outline" className="text-xs">
                           {language === "he" ? "עבור" : "For"}:{" "}
-                          {interpretation.studentAlias}
+                          {interpretation.studentName}
                         </Badge>
                       )}
                     </div>

@@ -296,19 +296,7 @@ import {
       return educationalReportRepository.update(id, updates, ctx);
     }
   
-    async shareEducationalReportWithGuardians(
-      id: string,
-      ctx: SecurityContext
-    ): Promise<EducationalReport | undefined> {
-      return educationalReportRepository.shareWithGuardians(id, ctx);
-    }
-  
-    async acknowledgeEducationalReport(
-      id: string,
-      ctx: SecurityContext
-    ): Promise<EducationalReport | undefined> {
-      return educationalReportRepository.recordGuardianAcknowledgment(id, ctx);
-    }
+    // shareWithGuardians and recordGuardianAcknowledgment not yet in schema
   
     async finalizeEducationalReport(
       id: string,

@@ -1,32 +1,81 @@
-import { studentRepository } from "../repositories";
+import { studentRepository, aacSettingsRepository } from "../repositories";
 import {
   type Student,
   type InsertStudent,
   type UpdateStudent,
+  type StudentWithAacSettings,
+  type UpdateAacSettings,
   type UserStudent,
   type InsertUserStudent,
   type UpdateUserStudent,
 } from "@shared/schema";
 
+/** Fields that belong to the aac_settings table (sent without the 'aac' prefix from clients) */
+const AAC_SETTINGS_FIELDS = new Set([
+  "enabled", "demoMode", "demoScenario", "chatAgentPrompt", "modelOverride",
+  "interpretationLevel", "startupMode", "voiceType", "studentVoiceType",
+  "customVoiceId", "customStudentVoiceId", "elevenlabsApiKey",
+  "elevenlabsAiVoiceId", "elevenlabsStudentVoiceId", "iconTextRatio",
+  "usePcsSymbols", "signLanguageReading", "multiCameraMode",
+  "eyegazeEnabled", "eyegazeTimeout", "eyegazeProvider", "knownPeople",
+]);
+
+/**
+ * Split a mixed update body into student fields and AAC settings fields.
+ * Accepts both new-style (no prefix) and old-style (aac* prefix) field names.
+ */
+function splitUpdateBody(body: Record<string, any>): {
+  studentUpdates: Record<string, any>;
+  aacUpdates: Record<string, any>;
+} {
+  const studentUpdates: Record<string, any> = {};
+  const aacUpdates: Record<string, any> = {};
+
+  for (const [key, value] of Object.entries(body)) {
+    // New-style: field matches aac_settings column name directly
+    if (AAC_SETTINGS_FIELDS.has(key)) {
+      aacUpdates[key] = value;
+      continue;
+    }
+
+    // Old-style: strip "aac" prefix and camelCase adjust
+    // e.g. "aacVoiceType" → "voiceType", "aacChatAgentPrompt" → "chatAgentPrompt"
+    if (key.startsWith("aac") && key.length > 3) {
+      const stripped = key[3].toLowerCase() + key.slice(4);
+      if (AAC_SETTINGS_FIELDS.has(stripped)) {
+        aacUpdates[stripped] = value;
+        continue;
+      }
+    }
+
+    // Everything else goes to student updates
+    studentUpdates[key] = value;
+  }
+
+  return { studentUpdates, aacUpdates };
+}
+
 export class StudentService {
   // ==================== AAC User Operations ====================
 
   /**
-   * Create a new AAC user and link it to the creating user
-   * This is the primary method for creating AAC users through the app
+   * Create a new AAC user and link it to the creating user.
+   * Also creates default AAC settings for the student.
    */
   async createStudent(
     insert: InsertStudent,
     userId: string,
     role: string = "owner"
-  ): Promise<Student> {
+  ): Promise<StudentWithAacSettings> {
     insert = { ...this.parseStudentNames(insert), ...insert };
     const { student } = await studentRepository.createStudentWithLink(
       insert,
       userId,
       role
     );
-    return student;
+    // Create default AAC settings row
+    const aacSettingsRow = await aacSettingsRepository.createDefaults(student.id);
+    return { ...student, aacSettings: aacSettingsRow };
   }
 
   /**
@@ -36,20 +85,25 @@ export class StudentService {
     insert: InsertStudent,
     userId: string,
     role: string = "owner"
-  ): Promise<{ student: Student; link: UserStudent }> {
+  ): Promise<{ student: StudentWithAacSettings; link: UserStudent }> {
     insert = { ...this.parseStudentNames(insert), ...insert };
-    return await studentRepository.createStudentWithLink(
+    const result = await studentRepository.createStudentWithLink(
       insert,
       userId,
       role
     );
+    const aacSettingsRow = await aacSettingsRepository.createDefaults(result.student.id);
+    return {
+      student: { ...result.student, aacSettings: aacSettingsRow },
+      link: result.link,
+    };
   }
 
   /**
-   * Get all AAC users linked to a specific user
+   * Get all AAC users linked to a specific user (with AAC settings)
    */
-  async getStudentsByUserId(userId: string): Promise<Student[]> {
-    return studentRepository.getStudentsByUserId(userId);
+  async getStudentsByUserId(userId: string): Promise<StudentWithAacSettings[]> {
+    return studentRepository.getStudentsWithAacSettingsByUserId(userId);
   }
 
   /**
@@ -57,33 +111,74 @@ export class StudentService {
    */
   async getStudentsWithLinksByUserId(
     userId: string
-  ): Promise<{ student: Student; link: UserStudent }[]> {
-    return studentRepository.getStudentsWithLinksByUserId(userId);
+  ): Promise<{ student: StudentWithAacSettings; link: UserStudent }[]> {
+    const results = await studentRepository.getStudentsWithLinksByUserId(userId);
+    // Enrich each student with their AAC settings
+    const enriched = await Promise.all(
+      results.map(async ({ student, link }) => {
+        const withSettings = await studentRepository.getStudentWithAacSettings(student.id);
+        return { student: withSettings || { ...student, aacSettings: null }, link };
+      })
+    );
+    return enriched;
   }
 
   /**
-   * Get an AAC user by their ID
+   * Get an AAC user by their ID (with AAC settings)
    */
-  async getStudentById(studentId: string): Promise<Student | undefined> {
+  async getStudentById(studentId: string): Promise<StudentWithAacSettings | undefined> {
+    return studentRepository.getStudentWithAacSettings(studentId);
+  }
+
+  /**
+   * Get a raw student (without AAC settings) — for cases that don't need them
+   */
+  async getStudentRaw(studentId: string): Promise<Student | undefined> {
     return studentRepository.getStudentById(studentId);
   }
 
   /**
    * @deprecated Use getStudentById instead
    */
-  async getStudentByStudentId(studentId: string): Promise<Student | undefined> {
-    return studentRepository.getStudentById(studentId);
+  async getStudentByStudentId(studentId: string): Promise<StudentWithAacSettings | undefined> {
+    return studentRepository.getStudentWithAacSettings(studentId);
   }
 
   /**
-   * Update an AAC user
+   * Update a student. Accepts a mixed body with both student and AAC settings fields.
+   * Splits them and routes to the correct tables.
    */
   async updateStudent(
     studentId: string,
-    updates: UpdateStudent
-  ): Promise<Student | undefined> {
-    updates = { ...this.parseStudentNames(updates), ...updates };
-    return studentRepository.updateStudent(studentId, updates);
+    updates: Record<string, any>
+  ): Promise<StudentWithAacSettings | undefined> {
+    const parsedNames = this.parseStudentNames(updates);
+    const merged = { ...parsedNames, ...updates };
+    const { studentUpdates, aacUpdates } = splitUpdateBody(merged);
+
+    // Update student fields if any
+    if (Object.keys(studentUpdates).length > 0) {
+      await studentRepository.updateStudent(studentId, studentUpdates as UpdateStudent);
+    }
+
+    // Update AAC settings if any
+    if (Object.keys(aacUpdates).length > 0) {
+      await aacSettingsRepository.upsert(studentId, aacUpdates as UpdateAacSettings);
+    }
+
+    // Return the full updated student with settings
+    return studentRepository.getStudentWithAacSettings(studentId);
+  }
+
+  /**
+   * Update only AAC settings for a student
+   */
+  async updateAacSettings(
+    studentId: string,
+    updates: UpdateAacSettings
+  ): Promise<StudentWithAacSettings | undefined> {
+    await aacSettingsRepository.upsert(studentId, updates);
+    return studentRepository.getStudentWithAacSettings(studentId);
   }
 
   /**
@@ -99,8 +194,8 @@ export class StudentService {
   async verifyStudentAccess(
     studentId: string,
     userId: string
-  ): Promise<{ hasAccess: boolean; student?: Student; link?: UserStudent; hasMedicalRights: boolean; hasEducationalRights: boolean; }> {
-    const student = await studentRepository.getStudentById(studentId);
+  ): Promise<{ hasAccess: boolean; student?: StudentWithAacSettings; link?: UserStudent; hasMedicalRights: boolean; hasEducationalRights: boolean; }> {
+    const student = await studentRepository.getStudentWithAacSettings(studentId);
     if (!student) {
       return { hasAccess: false, hasMedicalRights: false, hasEducationalRights: false };
     }
@@ -115,9 +210,6 @@ export class StudentService {
 
   // ==================== User-AAC User Link Operations ====================
 
-  /**
-   * Link a user to an existing AAC user
-   */
   async linkUserToStudent(
     userId: string,
     studentId: string,
@@ -131,9 +223,6 @@ export class StudentService {
     });
   }
 
-  /**
-   * Get the link between a user and an AAC user
-   */
   async getUserStudentLink(
     userId: string,
     studentId: string
@@ -141,16 +230,10 @@ export class StudentService {
     return studentRepository.getUserStudentLink(userId, studentId);
   }
 
-  /**
-   * Get all users linked to an AAC user
-   */
   async getUsersLinkedToStudent(studentId: string): Promise<UserStudent[]> {
     return studentRepository.getUsersByStudentId(studentId);
   }
 
-  /**
-   * Update the link between a user and an AAC user
-   */
   async updateUserStudentLink(
     linkId: string,
     updates: UpdateUserStudent
@@ -158,9 +241,6 @@ export class StudentService {
     return studentRepository.updateUserStudentLink(linkId, updates);
   }
 
-  /**
-   * Remove a user's access to an AAC user (deactivates the link)
-   */
   async unlinkUserFromStudent(
     userId: string,
     studentId: string
@@ -170,31 +250,25 @@ export class StudentService {
 
   // ==================== Utility Methods ====================
 
-  /**
-   * Calculate age from birth date
-   */
   calculateAge(birthDate: string | null): number | null {
     if (!birthDate) return null;
-    
+
     const birth = new Date(birthDate);
     const today = new Date();
     let age = today.getFullYear() - birth.getFullYear();
     const monthDiff = today.getMonth() - birth.getMonth();
-    
+
     if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
       age--;
     }
-    
+
     return age;
   }
 
-  /**
-   * Get AAC user with calculated age
-   */
-  async getStudentWithAge(studentId: string): Promise<(Student & { age: number | null }) | undefined> {
+  async getStudentWithAge(studentId: string): Promise<(StudentWithAacSettings & { age: number | null }) | undefined> {
     const student = await this.getStudentById(studentId);
     if (!student) return undefined;
-    
+
     return {
       ...student,
       age: this.calculateAge(student.birthDate),

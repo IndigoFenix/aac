@@ -631,78 +631,24 @@ export class RecordsController {
 
   /**
    * POST /api/educational-reports/:id/share
+   * Not yet implemented — schema columns not present
    */
-  async shareEducationalReport(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { id } = req.params;
-
-      const ctx = recordsService.buildSecurityContext(
-        currentUser.id,
-        currentUser.role,
-        currentUser.instituteId
-      );
-
-      const report = await recordsService.shareEducationalReportWithGuardians(id, ctx);
-
-      if (!report) {
-        res.status(404).json({
-          success: false,
-          message: "Educational report not found",
-        });
-        return;
-      }
-
-      res.json({
-        success: true,
-        message: "Educational report shared with guardians",
-        report,
-      });
-    } catch (error: any) {
-      console.error("Error sharing educational report:", error);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to share educational report",
-      });
-    }
+  async shareEducationalReport(_req: Request, res: Response): Promise<void> {
+    res.status(501).json({
+      success: false,
+      message: "Sharing with guardians is not yet implemented",
+    });
   }
 
   /**
    * POST /api/educational-reports/:id/acknowledge
+   * Not yet implemented — schema columns not present
    */
-  async acknowledgeEducationalReport(req: Request, res: Response): Promise<void> {
-    try {
-      const currentUser = req.user as any;
-      const { id } = req.params;
-
-      const ctx = recordsService.buildSecurityContext(
-        currentUser.id,
-        currentUser.role,
-        currentUser.instituteId
-      );
-
-      const report = await recordsService.acknowledgeEducationalReport(id, ctx);
-
-      if (!report) {
-        res.status(404).json({
-          success: false,
-          message: "Educational report not found",
-        });
-        return;
-      }
-
-      res.json({
-        success: true,
-        message: "Educational report acknowledged",
-        report,
-      });
-    } catch (error: any) {
-      console.error("Error acknowledging educational report:", error);
-      res.status(500).json({
-        success: false,
-        message: error.message || "Failed to acknowledge educational report",
-      });
-    }
+  async acknowledgeEducationalReport(_req: Request, res: Response): Promise<void> {
+    res.status(501).json({
+      success: false,
+      message: "Guardian acknowledgment is not yet implemented",
+    });
   }
 
   /**
