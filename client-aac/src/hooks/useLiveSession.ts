@@ -370,7 +370,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         case "rate_limited":
           rateLimitedRef.current = true;
           setReconnecting(false);
-          setError(msg.data || "API rate limit reached. Please wait a few minutes before retrying.");
+          setError(msg.data || "error:RATE_LIMITED");
           setIsLoading(false);
           break;
 
@@ -479,12 +479,12 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
       ws.onerror = (event) => {
         console.error("[useLiveSession] WebSocket error:", event);
-        setError("WebSocket connection failed");
+        setError("error:CONNECTION_ERROR");
         setIsLoading(false);
       };
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
-      setError(error.message);
+      setError("error:CONNECTION_ERROR");
       setIsLoading(false);
     }
   }, [studentId, interactionMode, responseMode, debugMode, isInitialized, wsSend, handleServerMessage]);

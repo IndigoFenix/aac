@@ -10,8 +10,7 @@ import { LanguageSelector } from "@/components/LanguageSelector";
 
 interface Student {
   id: string;
-  firstName: string;
-  lastName?: string;
+  name: string;
   age?: number;
 }
 
@@ -85,7 +84,7 @@ export default function StudentSelector({ user, onStudentSelect, onLogout }: Stu
               <SelectContent>
                 {students.map((student) => (
                   <SelectItem key={student.id} value={student.id}>
-                    {student.firstName} {student.lastName || ""}
+                    {student.name}
                     {student.age ? ` (${student.age} ${t("auth.years")})` : ""}
                   </SelectItem>
                 ))}

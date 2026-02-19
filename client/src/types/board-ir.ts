@@ -21,6 +21,7 @@ export interface ButtonIR {
   color?: string;
   iconRef?: string;
   symbolPath?: string; // Path to Mulberry symbol SVG
+  rebusKey?: string;   // Widgit Rebus concept name for Grid3 export (e.g. "happy", "mum", "ice cream")
 
   /**
    * When true, this button will automatically "jump back"

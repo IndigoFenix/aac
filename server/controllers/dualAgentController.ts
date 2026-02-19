@@ -190,12 +190,12 @@ export class DualAgentController {
 
       if (res.headersSent) {
         sendSSEEvent(res, "error", {
-          error: error.message || "Failed to initialize session",
+          error: "error:INIT_FAILED",
         });
         res.end();
       } else {
         res.status(500).json({
-          error: "Failed to initialize session",
+          error: "error:INIT_FAILED",
           details: error.message || String(error),
         });
       }
@@ -243,7 +243,7 @@ export class DualAgentController {
       } = messageSchema.parse(body);
 
       if (!message?.trim()) {
-        res.status(400).json({ error: "Message is required" });
+        res.status(400).json({ error: "error:MESSAGE_REQUIRED" });
         return;
       }
 
@@ -345,12 +345,12 @@ export class DualAgentController {
 
       if (res.headersSent) {
         sendSSEEvent(res, "error", {
-          error: error.message || "Failed to process message",
+          error: "error:MESSAGE_FAILED",
         });
         res.end();
       } else {
         res.status(500).json({
-          error: "Failed to process message",
+          error: "error:MESSAGE_FAILED",
           details: error.message || String(error),
         });
       }
@@ -367,7 +367,7 @@ export class DualAgentController {
       const audioFile = (req as any).file as Express.Multer.File | undefined;
 
       if (!audioFile) {
-        res.status(400).json({ error: "No audio file provided" });
+        res.status(400).json({ error: "error:NO_AUDIO" });
         return;
       }
 
@@ -489,12 +489,12 @@ export class DualAgentController {
 
       if (res.headersSent) {
         sendSSEEvent(res, "error", {
-          error: error.message || "Failed to process voice input",
+          error: "error:VOICE_FAILED",
         });
         res.end();
       } else {
         res.status(500).json({
-          error: "Failed to process voice input",
+          error: "error:VOICE_FAILED",
           details: error.message || String(error),
         });
       }
@@ -511,7 +511,7 @@ export class DualAgentController {
       const { studentId, debugMode } = req.query;
 
       if (!studentId || typeof studentId !== "string") {
-        res.status(400).json({ error: "studentId is required" });
+        res.status(400).json({ error: "error:STUDENT_ID_REQUIRED" });
         return;
       }
 
@@ -555,7 +555,7 @@ export class DualAgentController {
       console.error("[DualAgentController] GetSession error:", error?.message || error);
       if (error?.stack) console.error("[DualAgentController] Stack trace:", error.stack);
       res.status(500).json({
-        error: "Failed to get session",
+        error: "error:SESSION_FAILED",
         details: error.message || String(error),
       });
     }
@@ -611,12 +611,12 @@ export class DualAgentController {
 
       if (res.headersSent) {
         sendSSEEvent(res, "error", {
-          error: error?.message || "Failed to interpret buttons",
+          error: "error:INTERPRET_FAILED",
         });
         res.end();
       } else {
         res.status(500).json({
-          error: "Failed to interpret buttons",
+          error: "error:INTERPRET_FAILED",
           details: error.message || String(error),
         });
       }
@@ -779,12 +779,12 @@ export class DualAgentController {
 
       if (res.headersSent) {
         sendSSEEvent(res, "error", {
-          error: error.message || "Failed to process detection",
+          error: "error:DETECTION_FAILED",
         });
         res.end();
       } else {
         res.status(500).json({
-          error: "Failed to process detection",
+          error: "error:DETECTION_FAILED",
           details: error.message || String(error),
         });
       }

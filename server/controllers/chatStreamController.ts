@@ -167,12 +167,12 @@ export class ChatStreamController {
       // If headers already sent, send error as SSE event
       if (res.headersSent) {
         sendSSEEvent(res, "error", {
-          error: error.message || "Failed to process message.",
+          error: "error:MESSAGE_FAILED",
         });
         res.end();
       } else {
         res.status(500).json({
-          error: "Failed to process message.",
+          error: "error:MESSAGE_FAILED",
           details: error.message || String(error),
         });
       }

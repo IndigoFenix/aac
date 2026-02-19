@@ -581,7 +581,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
                 break;
 
               case "error":
-                setError(data.error || "Unknown error");
+                setError(data.error || "error:UNEXPECTED_ERROR");
                 break;
             }
           } catch {
@@ -691,7 +691,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
       }
 
       if (!response.ok) {
-        throw new Error(`Failed to initialize: ${response.status}`);
+        throw new Error("error:INIT_FAILED");
       }
 
       // Process SSE stream for initial greeting
@@ -701,7 +701,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
       console.log("[DualAgent] Session initialized with greeting");
     } catch (err: any) {
       console.error("[DualAgent] Initialize error:", err);
-      setError(err.message || "Failed to initialize session");
+      setError(err.message || "error:INIT_FAILED");
     } finally {
       setIsLoading(false);
     }
@@ -817,7 +817,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
         await processSSEStream(response);
       } catch (err: any) {
         console.error("[DualAgent] Message error:", err);
-        setError(err.message || "Failed to send message");
+        setError(err.message || "error:MESSAGE_FAILED");
       } finally {
         inflightRef.current = null;
         setIsLoading(false);
@@ -918,7 +918,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
         await processSSEStream(response);
       } catch (err: any) {
         console.error("[DualAgent] Voice error:", err);
-        setError(err.message || "Failed to process voice");
+        setError(err.message || "error:VOICE_FAILED");
       } finally {
         setIsLoading(false);
       }
@@ -955,7 +955,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
         await processSSEStream(response);
       } catch (err: any) {
         console.error("[DualAgent] Interpret error:", err);
-        setError(err.message || "Failed to interpret buttons");
+        setError(err.message || "error:INTERPRET_FAILED");
       } finally {
         setIsLoading(false);
       }

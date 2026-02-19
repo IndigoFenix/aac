@@ -641,7 +641,21 @@ import {
       }
   
       // Updates the conversation after confirming that the bot should interact
-      async updateConversation(totalCreditsUsed: number = 0, responseType: 'text' | 'html' | 'md', apiValues?: { [key: string]: any }): Promise<ChatResponse> {
+      // toolRound tracks recursive depth — safety limit to prevent runaway tool loops
+      private static readonly MAX_TOOL_ROUNDS = 20;
+      async updateConversation(totalCreditsUsed: number = 0, responseType: 'text' | 'html' | 'md', apiValues?: { [key: string]: any }, toolRound: number = 0): Promise<ChatResponse> {
+          if (toolRound >= ChatMessageManager.MAX_TOOL_ROUNDS) {
+              console.warn(`[ChatMsgMgr] updateConversation hit max tool rounds (${ChatMessageManager.MAX_TOOL_ROUNDS}) — requesting text response`);
+              // Instead of forcing a fake response, add a system message nudging the LLM to wrap up,
+              // then do ONE final call with no tools available
+              await this.addMessage({
+                  role: 'system',
+                  content: 'You have used the maximum number of tool calls for this turn. Please provide your final text response now without any further tool calls.',
+                  timestamp: Date.now(),
+              });
+              // Fall through to the normal LLM call below — it will naturally produce text
+              // since we've added the system nudge and it shouldn't loop further
+          }
           await this.autoCompress();
           const inputItems = this.getConversationHistoryAsInputItems(this.chatState.history);
           const lastUserMessage = this.getLastUserMessage();
@@ -713,7 +727,7 @@ import {
                       await this.addMessage(replyMessage);
                   }
                   console.log('[ChatMsgMgr] After tool calls — Context_Board name:', this.memoryValues?.Context_Board?.name ?? '(none)', 'pages:', this.memoryValues?.Context_Board?.pages?.length ?? 0);
-                  return await this.updateConversation(totalCreditsUsed, responseType, apiValues);
+                  return await this.updateConversation(totalCreditsUsed, responseType, apiValues, toolRound + 1);
               } else if (gptResponse.content){
                   let reply = await this.uponGPTResponse(gptResponse.content, creditsUsed);
                   totalCreditsUsed += creditsUsed;
@@ -725,7 +739,7 @@ import {
                   return {
                       message: {
                           role: 'system',
-                          content: { text: 'This response was refused due to policy violation.' },
+                          content: { text: 'error:POLICY_VIOLATION' },
                           timestamp: Date.now(),
                       },
                       creditsUsed: totalCreditsUsed,
@@ -735,7 +749,7 @@ import {
                   return {
                       message: {
                           role: 'system',
-                          content: { text: 'An error occured while processing the response.' },
+                          content: { text: 'error:NO_RESPONSE' },
                           timestamp: Date.now(),
                       },
                       creditsUsed: totalCreditsUsed,
@@ -747,7 +761,7 @@ import {
               return {
                   message: {
                       role: 'system',
-                      content: { text: 'An error occured while calling the LLM.' },
+                      content: { text: 'error:LLM_ERROR' },
                       timestamp: Date.now(),
                   },
                   creditsUsed: totalCreditsUsed,
@@ -804,7 +818,7 @@ import {
                       return {
                           role: 'system',
                           timestamp: new Date().getTime(),
-                          content: { text: 'An error occured while processing the response.' },
+                          content: { text: 'error:PARSE_ERROR' },
                           error: 'PARSE_ERROR',
                       };
                   }

@@ -132,6 +132,7 @@ export class BoardGenerationService {
                 spokenText: { type: "string", maxLength: 100 },
                 color: { type: "string" },
                 iconRef: { type: "string" },
+                rebusKey: { type: "string" },
                 row: { type: "integer" },
                 col: { type: "integer" },
                 pageId: { type: "string" },
@@ -159,6 +160,7 @@ export class BoardGenerationService {
                 spokenText: { type: "string", maxLength: 100 },
                 color: { type: "string" },
                 iconRef: { type: "string" },
+                rebusKey: { type: "string" },
                 row: { type: "integer" },
                 col: { type: "integer" },
                 pageId: { type: "string" },
@@ -213,8 +215,19 @@ For each button provide:
 - spokenText (natural phrase to speak, max 8 words)
 - color (hex code)
 - iconRef (emoji)
+- rebusKey (Widgit Rebus symbol name — see rules below)
 - category (needs/emotions/people/activities/objects)
 - row, col (0-indexed, optional)
+
+REBUS KEY RULES:
+The rebusKey is used to look up Widgit Rebus symbols for Grid3 AAC software export.
+- Use a single lowercase English concept word or short phrase that best matches the button meaning
+- Use BRITISH English spelling: "colour" not "color", "favourite" not "favorite", "mum" not "mom", "aeroplane" not "airplane", "behaviour" not "behavior"
+- Multi-word concepts use spaces: "ice cream", "thank you", "get dressed", "brush teeth"
+- For common words with multiple Widgit symbols, prefer the base form: "more 1" (not "more"), "group" (not "groups")
+- Use the most specific single concept: "hungry" not "I am hungry", "toilet" not "bathroom"
+- For abstract actions, use the verb form: "eat", "drink", "play", "sleep", "listen"
+- For navigation/utility buttons (Back, Home, etc.), rebusKey can be omitted
 
 Color guide: needs=#3B82F6, emotions=#F59E0B, people=#EC4899, activities=#EAB308, objects=#6B7280, yes/no=#059669/#DC2626
 
@@ -229,6 +242,14 @@ RULES:
 - ONLY delete or edit if explicitly requested by the user
 - Keep spokenText SHORT (max 8 words)
 - Label must be 1-3 words
+- Include rebusKey for each new/edited button (Widgit Rebus symbol name)
+
+REBUS KEY RULES:
+- Lowercase British English concept word: "colour", "mum", "aeroplane"
+- Multi-word with spaces: "ice cream", "thank you", "brush teeth"
+- Use base verb form: "eat", "drink", "play", "listen"
+- Prefer "more 1" over "more" for the general concept
+- Omit for navigation buttons (Back, Home)
 
 RESPONSE FORMAT:
 {
@@ -240,6 +261,7 @@ RESPONSE FORMAT:
     {
       "label": "Happy",
       "spokenText": "I am happy",
+      "rebusKey": "happy",
       "pageId": "current-page-id",
       "selfClosing": true
     }
@@ -250,7 +272,8 @@ RESPONSE FORMAT:
     {
       "id": "btn-id",
       "label": "New Label",
-      "spokenText": "New text"
+      "spokenText": "New text",
+      "rebusKey": "new label"
     }
   ]
 }
@@ -452,6 +475,7 @@ Context: ${JSON.stringify(context)}`;
         color: aiButton.color || "#6B7280",
         iconRef: aiButton.iconRef || "fas fa-comment",
         symbolPath: aiButton.symbolPath,
+        rebusKey: aiButton.rebusKey,
         action: { type: "speak", text: aiButton.spokenText || aiButton.label }
       });
     }
@@ -510,6 +534,7 @@ Context: ${JSON.stringify(context)}`;
                 if (edit.spokenText !== undefined) updatedButton.spokenText = edit.spokenText;
                 if (edit.color !== undefined) updatedButton.color = edit.color;
                 if (edit.iconRef !== undefined) updatedButton.iconRef = edit.iconRef;
+                if (edit.rebusKey !== undefined) updatedButton.rebusKey = edit.rebusKey;
                 if (edit.selfClosing !== undefined) updatedButton.selfClosing = edit.selfClosing;
                 
                 // Handle position
@@ -538,6 +563,7 @@ Context: ${JSON.stringify(context)}`;
               if (edit.spokenText !== undefined) button.spokenText = edit.spokenText;
               if (edit.color !== undefined) button.color = edit.color;
               if (edit.iconRef !== undefined) button.iconRef = edit.iconRef;
+              if (edit.rebusKey !== undefined) button.rebusKey = edit.rebusKey;
               if (edit.selfClosing !== undefined) button.selfClosing = edit.selfClosing;
               
               // Update position if specified
@@ -623,6 +649,7 @@ Context: ${JSON.stringify(context)}`;
         color: buttonSpec.color || "#6B7280",
         iconRef: buttonSpec.iconRef || "fas fa-comment",
         symbolPath: (buttonSpec as any).symbolPath,
+        rebusKey: buttonSpec.rebusKey,
         selfClosing: buttonSpec.selfClosing,
         action
       });

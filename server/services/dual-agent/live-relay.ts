@@ -168,7 +168,7 @@ export class LiveRelay {
       onReconnecting: () => {
         this.reconnectAttempts++;
         console.log(`[LiveRelay] Reconnecting (attempt ${this.reconnectAttempts})...`);
-        this.send({ type: "reconnecting", data: "Reconnecting..." });
+        this.send({ type: "reconnecting", data: "error:RECONNECTING" });
 
         // If too many reconnect attempts (e.g. repeated safety errors), force new session
         if (this.reconnectAttempts >= LiveRelay.MAX_RECONNECT_BEFORE_RESET && this.sessionId) {
@@ -182,23 +182,21 @@ export class LiveRelay {
         console.error("[LiveRelay] Gemini error:", error.message);
         // Check if this is a rate-limit error
         if (this.gemini.lastCloseWasRateLimit || /resource.exhausted|rate.limit|quota|too many requests|overloaded/i.test(error.message)) {
-          this.send({ type: "rate_limited", data: error.message });
+          this.send({ type: "rate_limited", data: "error:RATE_LIMITED" });
         } else {
-          this.send({ type: "error", data: error.message });
+          this.send({ type: "error", data: "error:CONNECTION_ERROR" });
         }
       },
       onClose: (code, reason) => {
         console.log(`[LiveRelay] Gemini session closed: code=${code} reason=${reason}`);
         // Check if rate-limited — send specific message so client doesn't auto-reconnect
         if (this.gemini.lastCloseWasRateLimit) {
-          const msg = reason || "API rate limit reached. Please wait a few minutes before retrying.";
-          this.send({ type: "rate_limited", data: msg });
+          this.send({ type: "rate_limited", data: "error:RATE_LIMITED" });
           return;
         }
         // Forward non-normal closes to client so they see specific error feedback
         if (code && code !== 1000) {
-          const msg = reason || `Connection closed (code ${code})`;
-          this.send({ type: "error", data: msg });
+          this.send({ type: "error", data: "error:CONNECTION_CLOSED" });
         }
       },
       // onInputTranscription intentionally omitted — the model's own [TRANSCRIPT]
@@ -387,7 +385,7 @@ export class LiveRelay {
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       console.error(`[LiveRelay] Error handling ${msg.type}:`, error.message);
-      this.send({ type: "error", data: error.message });
+      this.send({ type: "error", data: "error:UNEXPECTED_ERROR" });
     }
   }
 
@@ -499,7 +497,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       console.error("[LiveRelay] Initialize failed:", error.message);
-      this.send({ type: "error", data: `Initialize failed: ${error.message}` });
+      this.send({ type: "error", data: "error:INIT_FAILED" });
     }
   }
 
@@ -580,7 +578,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
     } catch (err) {
       console.error("[LiveRelay] handleGeminiTurnComplete error:", (err as Error).message);
       // Send error to client so they know something went wrong
-      this.send({ type: "error", data: `Turn processing error: ${(err as Error).message}` });
+      this.send({ type: "error", data: "error:TURN_FAILED" });
     } finally {
       // Always reset state so the relay can process the next turn
       this.turnTextBuffer = "";
@@ -1477,7 +1475,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
       this.reconnectAttempts = 0;
     } catch (err) {
       console.error("[LiveRelay] Force new session failed:", err);
-      this.send({ type: "error", data: "Failed to create new session after repeated errors" });
+      this.send({ type: "error", data: "error:SESSION_RESET_FAILED" });
     }
   }
 

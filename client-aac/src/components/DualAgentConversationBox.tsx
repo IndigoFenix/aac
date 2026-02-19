@@ -452,16 +452,14 @@ export function DualAgentConversationBox({
                   ) : reconnecting ? (
                     <div className="flex items-center gap-2 text-white/80">
                       <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse" />
-                      <span className="text-sm">Reconnecting...</span>
+                      <span className="text-sm">{t('errors.RECONNECTING')}</span>
                     </div>
                   ) : error ? (
                     <div className="flex items-center justify-between w-full">
                       <p className="text-white/80 text-sm">
-                        {error.toLowerCase().includes('unsafe')
-                          ? `Prompt rejected: ${error}`
-                          : /rate.limit|resource.exhausted|quota|overloaded/i.test(error)
-                          ? 'Rate limit reached — please wait a few minutes'
-                          : 'Connection issue, retrying...'}
+                        {error.startsWith('error:')
+                          ? t(`errors.${error.slice(6)}`)
+                          : error}
                       </p>
                       <Button
                         variant="ghost"
@@ -471,7 +469,7 @@ export function DualAgentConversationBox({
                         }}
                         className="text-white hover:text-gray-200 hover:bg-white/10 text-xs px-2 py-1"
                       >
-                        Retry
+                        {t('common.reset')}
                       </Button>
                     </div>
                   ) : currentMessage ? (
