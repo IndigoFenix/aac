@@ -555,6 +555,9 @@ function LiveApiProviderInner({
     onTrigger: handleActivityTrigger,
     // Stream raw PCM audio to Gemini Live API (continuous mic → WebSocket → Gemini)
     onPcmChunk: handlePcmChunk,
+    // In Live mode, audio goes via continuous PCM — frame grids are decoupled
+    // from speech activity. Only motion settle + heartbeat trigger frame sends.
+    options: { speechTriggerEnabled: false },
   });
 
   // Stabilize sendMessage identity — use refs so the callback doesn't change on every render

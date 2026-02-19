@@ -349,9 +349,12 @@ Your purpose is to assist your user with daily tasks, guide them to complete per
   // ── Token descriptions ──
 
   const transcriptTokenDesc = [
-    `[TRANSCRIPT:confidence speaker] text...`,
-    `Record voice you heard. Speaker can be "Mom", "Teacher", "Unknown", etc.`,
-    `Confidence: high (clear words), low (partially heard). Omit and ignore if voices are unintelligible or if nothing is heard.`,
+    `[TRANSCRIPT speaker] text...`,
+    `Record clear speech you heard. Speaker can be "Mom", "Teacher", "Unknown", etc.`,
+    `Only transcribe speech you can clearly make out. Omit entirely if nothing intelligible is heard.`,
+    ...(isLiveMode ? [
+      `You receive continuous microphone audio — do NOT transcribe silence, ambient noise, or your own echoed TTS output.`,
+    ] : []),
   ].join('\n   ');
 
   const contextTokenDesc = [
@@ -542,9 +545,13 @@ Use [CONTEXT] to record relevant changes since the last turn:
 
 == Recording Transcripts ==
 
-Use [TRANSCRIPT:confidence speaker] to record voice you hear. Include the speaker's identity if known and a confidence level.
-Example: "[TRANSCRIPT:high Mom] Are you ready to go outside?"
-Ignore unintelligible voices or sounds, and do not record if you have low confidence in the transcription.
+Use [TRANSCRIPT speaker] to record clear speech you hear. Include the speaker's identity if known.
+Example: "[TRANSCRIPT Mom] Are you ready to go outside?"
+Only transcribe speech you can clearly and confidently make out. If you are not sure what was said, omit the transcript entirely.
+${isLiveMode ? `
+You receive a continuous microphone feed. Much of what you hear is NOT real speech — it is silence, ambient noise, or your own TTS output echoed back through speakers.
+If you recently produced [SPEAK] or [INTERPRET] text and then hear similar audio, that is your echo — ignore it.
+When in doubt, do NOT transcribe.` : ``}
 
 === Background Noise Filtering ===
 
