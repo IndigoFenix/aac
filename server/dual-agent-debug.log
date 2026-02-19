@@ -17139,3 +17139,57 @@
 {
   "sessionId": "aac-1771492852787"
 }
+
+============================================================
+[2026-02-19T09:36:05.061Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "aac-1771493763070",
+  "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-19T09:36:05.554Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "aac-1771493763070",
+  "boardButtons": 0,
+  "recentMessages": 0
+}
+
+============================================================
+[2026-02-19T09:36:05.886Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "aac-1771493763070",
+  "elapsed": "102ms",
+  "segmentCount": 3,
+  "segments": "speak, rebuild_board, emote",
+  "speak": "Hi Gal, it's great to see you! Are you ready to start the day with some fun activities?",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Play, Explore, Draw, Music, Tired, Help, Yes, No",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-19T09:36:23.542Z] LiveRelay.cleanup
+----------------------------------------
+{
+  "sessionId": "aac-1771493763070"
+}

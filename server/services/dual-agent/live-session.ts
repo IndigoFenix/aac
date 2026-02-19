@@ -394,14 +394,19 @@ export class GeminiLiveSession {
         this.callbacks.onInputTranscription?.(content.inputTranscription.text);
       }
 
-      // Turn complete
+      // Turn complete — callback is async, catch errors to prevent silent failures
       if (content.turnComplete) {
-        this.callbacks.onTurnComplete();
+        Promise.resolve(this.callbacks.onTurnComplete()).catch(err => {
+          console.error("[LiveSession] onTurnComplete callback error:", (err as Error).message);
+          this.callbacks.onError?.(err instanceof Error ? err : new Error(String(err)));
+        });
       }
 
-      // Interrupted
+      // Interrupted — callback may be async, catch errors
       if (content.interrupted) {
-        this.callbacks.onInterrupted();
+        Promise.resolve(this.callbacks.onInterrupted()).catch(err => {
+          console.error("[LiveSession] onInterrupted callback error:", (err as Error).message);
+        });
       }
     }
   }

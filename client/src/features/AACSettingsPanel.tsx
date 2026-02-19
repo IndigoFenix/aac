@@ -81,6 +81,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [studentVoiceType, setStudentVoiceType] = useState('boy');
   const [customVoiceId, setCustomVoiceId] = useState<string | null>(null);
   const [customStudentVoiceId, setCustomStudentVoiceId] = useState<string | null>(null);
+  const [elevenlabsApiKey, setElevenlabsApiKey] = useState('');
+  const [elevenlabsAiVoiceId, setElevenlabsAiVoiceId] = useState('');
+  const [elevenlabsStudentVoiceId, setElevenlabsStudentVoiceId] = useState('');
   const [iconTextRatio, setIconTextRatio] = useState(3);
   const [interpretationLevel, setInterpretationLevel] = useState(2);
   const [startupMode, setStartupMode] = useState(0);
@@ -98,6 +101,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setStudentVoiceType(aac?.studentVoiceType || 'boy');
       setCustomVoiceId(aac?.customVoiceId || null);
       setCustomStudentVoiceId(aac?.customStudentVoiceId || null);
+      setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
+      setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || '');
+      setElevenlabsStudentVoiceId(aac?.elevenlabsStudentVoiceId || '');
       setIconTextRatio(aac?.iconTextRatio ?? 3);
       setInterpretationLevel(aac?.interpretationLevel ?? 2);
       setStartupMode(aac?.startupMode ?? 0);
@@ -117,6 +123,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalStudentVoice = aac?.studentVoiceType || 'boy';
       const originalCustomVoice = aac?.customVoiceId || null;
       const originalCustomStudentVoice = aac?.customStudentVoiceId || null;
+      const originalElevenlabsApiKey = aac?.elevenlabsApiKey || '';
+      const originalElevenlabsAiVoiceId = aac?.elevenlabsAiVoiceId || '';
+      const originalElevenlabsStudentVoiceId = aac?.elevenlabsStudentVoiceId || '';
       const originalIconTextRatio = aac?.iconTextRatio ?? 3;
       const originalInterpretationLevel = aac?.interpretationLevel ?? 2;
       const originalStartupMode = aac?.startupMode ?? 0;
@@ -129,6 +138,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         studentVoiceType !== originalStudentVoice ||
         customVoiceId !== originalCustomVoice ||
         customStudentVoiceId !== originalCustomStudentVoice ||
+        elevenlabsApiKey !== originalElevenlabsApiKey ||
+        elevenlabsAiVoiceId !== originalElevenlabsAiVoiceId ||
+        elevenlabsStudentVoiceId !== originalElevenlabsStudentVoiceId ||
         iconTextRatio !== originalIconTextRatio ||
         interpretationLevel !== originalInterpretationLevel ||
         startupMode !== originalStartupMode ||
@@ -136,7 +148,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         eyegazeTimeout !== originalEyegazeTimeout
       );
     }
-  }, [aiName, chatAgentPrompt, voiceType, studentVoiceType, customVoiceId, customStudentVoiceId, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, student]);
+  }, [aiName, chatAgentPrompt, voiceType, studentVoiceType, customVoiceId, customStudentVoiceId, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -147,6 +159,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       studentVoiceType: string;
       customVoiceId: string | null;
       customStudentVoiceId: string | null;
+      elevenlabsApiKey?: string;
+      elevenlabsAiVoiceId?: string;
+      elevenlabsStudentVoiceId?: string;
       iconTextRatio: number;
       interpretationLevel: number;
       startupMode: number;
@@ -183,6 +198,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       studentVoiceType,
       customVoiceId,
       customStudentVoiceId,
+      elevenlabsApiKey: elevenlabsApiKey.trim() || undefined,
+      elevenlabsAiVoiceId: elevenlabsAiVoiceId.trim() || undefined,
+      elevenlabsStudentVoiceId: elevenlabsStudentVoiceId.trim() || undefined,
       iconTextRatio,
       interpretationLevel,
       startupMode,
@@ -200,6 +218,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setStudentVoiceType(aac?.studentVoiceType || 'boy');
       setCustomVoiceId(aac?.customVoiceId || null);
       setCustomStudentVoiceId(aac?.customStudentVoiceId || null);
+      setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
+      setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || '');
+      setElevenlabsStudentVoiceId(aac?.elevenlabsStudentVoiceId || '');
       setIconTextRatio(aac?.iconTextRatio ?? 3);
       setInterpretationLevel(aac?.interpretationLevel ?? 2);
       setStartupMode(aac?.startupMode ?? 0);
@@ -420,6 +441,72 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </Select>
                 </div>
               )}
+
+              {/* ElevenLabs Direct Voice Settings */}
+              <div className="pt-4 border-t space-y-4">
+                <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                  <Label className="text-base font-medium">
+                    {t('aacSettings.elevenlabsTitle')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.elevenlabsDesc')}
+                  </p>
+                </div>
+
+                <div className={cn(
+                  "flex items-center justify-between",
+                  isRTL && "flex-row-reverse"
+                )}>
+                  <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                    <Label className="text-sm text-muted-foreground">
+                      {t('aacSettings.elevenlabsApiKey')}
+                    </Label>
+                  </div>
+                  <Input
+                    type="password"
+                    value={elevenlabsApiKey}
+                    onChange={(e) => setElevenlabsApiKey(e.target.value)}
+                    placeholder={t('aacSettings.elevenlabsApiKeyPlaceholder')}
+                    className="w-[280px]"
+                  />
+                </div>
+
+                <div className={cn(
+                  "flex items-center justify-between",
+                  isRTL && "flex-row-reverse"
+                )}>
+                  <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                    <Label className="text-sm text-muted-foreground">
+                      {t('aacSettings.elevenlabsStudentVoiceId')}
+                    </Label>
+                  </div>
+                  <Input
+                    type="text"
+                    value={elevenlabsStudentVoiceId}
+                    onChange={(e) => setElevenlabsStudentVoiceId(e.target.value)}
+                    placeholder={t('aacSettings.elevenlabsVoiceIdPlaceholder')}
+                    className="w-[280px] font-mono"
+                  />
+                </div>
+
+                <div className={cn(
+                  "flex items-center justify-between",
+                  isRTL && "flex-row-reverse"
+                )}>
+                  <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                    <Label className="text-sm text-muted-foreground">
+                      {t('aacSettings.elevenlabsAiVoiceId')}
+                    </Label>
+                  </div>
+                  <Input
+                    type="text"
+                    value={elevenlabsAiVoiceId}
+                    onChange={(e) => setElevenlabsAiVoiceId(e.target.value)}
+                    placeholder={t('aacSettings.elevenlabsVoiceIdPlaceholder')}
+                    className="w-[280px] font-mono"
+                  />
+                </div>
+              </div>
             </CardContent>
           </Card>
 

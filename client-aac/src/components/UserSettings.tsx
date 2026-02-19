@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { LanguageSelector } from "@/components/LanguageSelector";
@@ -66,6 +66,21 @@ export default function UserSettings({
   // Voice settings
   const [voiceType, setVoiceType] = useState("auto");
   const [studentVoiceType, setStudentVoiceType] = useState("boy");
+  const [customVoiceId, setCustomVoiceId] = useState<string | null>(null);
+  const [customStudentVoiceId, setCustomStudentVoiceId] = useState<string | null>(null);
+  const [elevenlabsApiKey, setElevenlabsApiKey] = useState("");
+  const [elevenlabsAiVoiceId, setElevenlabsAiVoiceId] = useState("");
+  const [elevenlabsStudentVoiceId, setElevenlabsStudentVoiceId] = useState("");
+
+  // Fetch active ElevenLabs voices
+  const { data: activeVoices } = useQuery({
+    queryKey: ['/api/voices/active'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', '/api/voices/active');
+      const data = await res.json();
+      return data.voices as Array<{ id: string; name: string; externalId: string; source: string }>;
+    },
+  });
 
   // Board settings
   const [iconTextRatio, setIconTextRatio] = useState(3);
@@ -95,6 +110,11 @@ export default function UserSettings({
       setAiName(aac?.aiName || "");
       const vt = aac?.voiceType || "auto";
       const svt = aac?.studentVoiceType || "boy";
+      setCustomVoiceId(aac?.customVoiceId || null);
+      setCustomStudentVoiceId(aac?.customStudentVoiceId || null);
+      setElevenlabsApiKey(aac?.elevenlabsApiKey || "");
+      setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || "");
+      setElevenlabsStudentVoiceId(aac?.elevenlabsStudentVoiceId || "");
       const itr = aac?.iconTextRatio ?? 3;
       const il = aac?.interpretationLevel ?? 2;
       const sm = aac?.startupMode ?? 0;
@@ -204,6 +224,11 @@ export default function UserSettings({
       aiName: aiName.trim() || undefined,
       voiceType,
       studentVoiceType,
+      customVoiceId,
+      customStudentVoiceId,
+      elevenlabsApiKey: elevenlabsApiKey.trim() || undefined,
+      elevenlabsAiVoiceId: elevenlabsAiVoiceId.trim() || undefined,
+      elevenlabsStudentVoiceId: elevenlabsStudentVoiceId.trim() || undefined,
       iconTextRatio,
       interpretationLevel,
       startupMode,
@@ -219,6 +244,11 @@ export default function UserSettings({
     setAiName("");
     setVoiceType("auto");
     setStudentVoiceType("boy");
+    setCustomVoiceId(null);
+    setCustomStudentVoiceId(null);
+    setElevenlabsApiKey("");
+    setElevenlabsAiVoiceId("");
+    setElevenlabsStudentVoiceId("");
     setIconTextRatio(3);
     setInterpretationLevel(2);
     setStartupMode(0);
@@ -394,6 +424,27 @@ export default function UserSettings({
                   <p className="text-xs text-gray-500">{t("settings.studentVoiceHint")}</p>
                 </div>
 
+                {activeVoices && activeVoices.length > 0 && (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-gray-500">{t("settings.customStudentVoice")}</Label>
+                    <Select
+                      value={customStudentVoiceId || "_none"}
+                      onValueChange={(v) => setCustomStudentVoiceId(v === "_none" ? null : v)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_none">{t("settings.noneFallback")}</SelectItem>
+                        {activeVoices.map((v) => (
+                          <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-gray-500">{t("settings.customStudentVoiceHint")}</p>
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <Label className="text-sm font-medium">{t("settings.aiVoice")}</Label>
                   <Select value={voiceType} onValueChange={setVoiceType}>
@@ -407,6 +458,66 @@ export default function UserSettings({
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-gray-500">{t("settings.aiVoiceHint")}</p>
+                </div>
+
+                {activeVoices && activeVoices.length > 0 && (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-gray-500">{t("settings.customAiVoice")}</Label>
+                    <Select
+                      value={customVoiceId || "_none"}
+                      onValueChange={(v) => setCustomVoiceId(v === "_none" ? null : v)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_none">{t("settings.noneFallback")}</SelectItem>
+                        {activeVoices.map((v) => (
+                          <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-gray-500">{t("settings.customAiVoiceHint")}</p>
+                  </div>
+                )}
+
+                {/* ElevenLabs Direct Voice Settings */}
+                <div className="space-y-3 mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+                  <Label className="text-sm font-semibold">{t("settings.elevenlabsTitle")}</Label>
+                  <p className="text-xs text-gray-500">{t("settings.elevenlabsDesc")}</p>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium text-gray-500">{t("settings.elevenlabsApiKey")}</Label>
+                    <input
+                      type="password"
+                      value={elevenlabsApiKey}
+                      onChange={(e) => setElevenlabsApiKey(e.target.value)}
+                      placeholder={t("settings.elevenlabsApiKeyPlaceholder")}
+                      className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium text-gray-500">{t("settings.elevenlabsStudentVoiceId")}</Label>
+                    <input
+                      type="text"
+                      value={elevenlabsStudentVoiceId}
+                      onChange={(e) => setElevenlabsStudentVoiceId(e.target.value)}
+                      placeholder={t("settings.elevenlabsVoiceIdPlaceholder")}
+                      className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium text-gray-500">{t("settings.elevenlabsAiVoiceId")}</Label>
+                    <input
+                      type="text"
+                      value={elevenlabsAiVoiceId}
+                      onChange={(e) => setElevenlabsAiVoiceId(e.target.value)}
+                      placeholder={t("settings.elevenlabsVoiceIdPlaceholder")}
+                      className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-mono"
+                    />
+                  </div>
                 </div>
               </div>
 
