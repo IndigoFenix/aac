@@ -968,7 +968,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
       applyCalibration={eyeGaze.applyCalibration}
       clearCalibrationData={eyeGaze.clearCalibration}
     >
-    <div className="h-screen flex flex-col relative overflow-hidden bg-bg-soft">
+    <div className="h-dvh flex flex-col relative overflow-hidden bg-bg-soft pb-safe">
       {/* Eyegaze Provider Detection Notification */}
       <AnimatePresence>
         {eyegazeNotification && (

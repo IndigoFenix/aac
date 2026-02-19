@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Full viewport height that accounts for mobile browser chrome (address bar, bottom nav).
+   100dvh = dynamic viewport height (shrinks when browser chrome appears).
+   Falls back to 100vh for older browsers that don't support dvh. */
+.h-dvh {
+  height: 100vh;
+  height: 100dvh;
+}
+
+/* Safe area padding for devices with notches / home indicators */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 :root {
   --background: 0 0% 98%;
   --foreground: 20 14.3% 4.1%;
