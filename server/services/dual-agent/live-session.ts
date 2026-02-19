@@ -68,6 +68,8 @@ export class GeminiLiveSession {
 
   /** Last WebSocket close code — readable by relay for reconnection decisions */
   lastCloseCode: number | null = null;
+  /** Whether the last close was due to a rate limit */
+  lastCloseWasRateLimit = false;
 
   // Proactive reconnection timer (reconnect before the 2-min video limit)
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -126,15 +128,31 @@ export class GeminiLiveSession {
           },
           onmessage: (msg: LiveServerMessage) => this.handleServerMessage(msg),
           onerror: (e: ErrorEvent) => {
-            console.error("[LiveSession] WebSocket error:", e.message);
-            this.callbacks.onError(new Error(e.message || "WebSocket error"));
+            const msg = e.message || "WebSocket error";
+            console.error("[LiveSession] WebSocket error:", msg);
+            // Flag rate-limit errors so the relay can distinguish them
+            if (/resource.exhausted|rate.limit|quota|too many requests|overloaded/i.test(msg)) {
+              this.lastCloseWasRateLimit = true;
+            }
+            this.callbacks.onError(new Error(msg));
           },
           onclose: (e: CloseEvent) => {
             this.connected = false;
             this.lastCloseCode = e.code;
-            console.log(`[LiveSession] Connection closed: code=${e.code} reason=${e.reason}`);
+            const reason = e.reason || "";
+            console.log(`[LiveSession] Connection closed: code=${e.code} reason=${reason}`);
             this.clearReconnectTimer();
-            this.callbacks.onClose?.(e.code, e.reason);
+
+            // Detect rate limit / quota errors — do NOT auto-reconnect
+            const isRateLimit = /resource.exhausted|rate.limit|quota|too many requests|overloaded/i.test(reason);
+            this.lastCloseWasRateLimit = isRateLimit;
+
+            this.callbacks.onClose?.(e.code, reason);
+
+            if (isRateLimit) {
+              console.warn(`[LiveSession] Rate limited — NOT auto-reconnecting. Reason: ${reason}`);
+              return; // Do not reconnect
+            }
 
             // Auto-reconnect on unexpected closes (not from intentional close())
             if (!this.closedIntentionally && e.code !== 1000) {

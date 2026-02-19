@@ -76,6 +76,7 @@ export type ServerMessage =
   | { type: "client_tts"; data: { text: string; voiceId: string; apiKey: string; language: string; voiceRole: "ai" | "student" } }
   | { type: "reconnected" }                              // Reconnection successful
   | { type: "session_reset"; sessionId: string }         // New session created after repeated failures
+  | { type: "rate_limited"; data: string }               // Rate limited — client should NOT auto-reconnect
   | { type: "complete"; data?: any };
 
 // ---------------------------------------------------------------------------
@@ -179,10 +180,21 @@ export class LiveRelay {
       },
       onError: (error) => {
         console.error("[LiveRelay] Gemini error:", error.message);
-        this.send({ type: "error", data: error.message });
+        // Check if this is a rate-limit error
+        if (this.gemini.lastCloseWasRateLimit || /resource.exhausted|rate.limit|quota|too many requests|overloaded/i.test(error.message)) {
+          this.send({ type: "rate_limited", data: error.message });
+        } else {
+          this.send({ type: "error", data: error.message });
+        }
       },
       onClose: (code, reason) => {
         console.log(`[LiveRelay] Gemini session closed: code=${code} reason=${reason}`);
+        // Check if rate-limited — send specific message so client doesn't auto-reconnect
+        if (this.gemini.lastCloseWasRateLimit) {
+          const msg = reason || "API rate limit reached. Please wait a few minutes before retrying.";
+          this.send({ type: "rate_limited", data: msg });
+          return;
+        }
         // Forward non-normal closes to client so they see specific error feedback
         if (code && code !== 1000) {
           const msg = reason || `Connection closed (code ${code})`;
@@ -510,7 +522,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
 
     this.gemini.sendMessage(`[BUTTON PRESS] ${buttonList}
     The user pressed the above button(s). Interpret this as a user message and respond accordingly.
-    Call [REBUILD_BOARD] to update the board with new buttons or content.
+    IMPORTANT: Call [REBUILD_BOARD] NOW to update the board with new buttons or content.
     `, "user");
   }
 
@@ -907,21 +919,21 @@ If you hear speech that resembles text you recently produced, it is your echo. I
       // Collect all turn messages into a batch for single DB write
       const turnMessages: import("./types").PendingMessage[] = [];
 
-      // Record AI speech as pending message for monitor
-      if (fullSpeakText) {
-        turnMessages.push({
-          role: "assistant",
-          content: fullSpeakText,
-          timestamp: now,
-        });
-      }
-
-      // Record AI interpretation as pending message
+      // Record AI interpretation FIRST (button press → interpretation → response)
       if (fullInterpretText) {
         turnMessages.push({
           role: "assistant",
           content: `[INTERPRET] ${fullInterpretText}`,
           timestamp: now,
+        });
+      }
+
+      // Record AI speech as pending message for monitor
+      if (fullSpeakText) {
+        turnMessages.push({
+          role: "assistant",
+          content: fullSpeakText,
+          timestamp: now + 1, // +1ms to ensure correct ordering after interpret
         });
       }
 
