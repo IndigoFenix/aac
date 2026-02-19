@@ -52,10 +52,12 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     autoPlayAudio = true,
     debugMode = false,
   } = options;
-  const { user } = useAuth();
+  const { user, isLoading: isAuthLoading } = useAuth();
   // Stable ref so ws.onopen always reads the latest user
   const userRef = useRef(user);
   userRef.current = user;
+  const authLoadingRef = useRef(isAuthLoading);
+  authLoadingRef.current = isAuthLoading;
 
   // WebSocket ref
   const wsRef = useRef<WebSocket | null>(null);
@@ -378,14 +380,36 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         // Send initialize message (include userId for session/memory access)
         // useAuth().user is the full API response: { success, user: { id, ... } }
         // Read from ref in case auth loaded after callback was created
-        wsSend({
-          type: "initialize",
-          studentId,
-          userId: userRef.current?.user?.id,
-          interactionMode,
-          responseMode,
-          debugMode,
-        });
+        const sendInit = () => {
+          wsSend({
+            type: "initialize",
+            studentId,
+            userId: userRef.current?.user?.id,
+            interactionMode,
+            responseMode,
+            debugMode,
+          });
+        };
+
+        // If auth already loaded, send immediately
+        if (!authLoadingRef.current) {
+          sendInit();
+          return;
+        }
+
+        // Auth still loading — poll until resolved (max 5s)
+        console.log("[useLiveSession] Waiting for auth to resolve before sending initialize...");
+        let attempts = 0;
+        const pollTimer = setInterval(() => {
+          attempts++;
+          if (!authLoadingRef.current || attempts >= 50) {
+            clearInterval(pollTimer);
+            if (authLoadingRef.current) {
+              console.warn("[useLiveSession] Auth did not resolve after 5s — sending initialize without userId");
+            }
+            sendInit();
+          }
+        }, 100);
       };
 
       ws.onmessage = handleServerMessage;
