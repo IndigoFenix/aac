@@ -1554,6 +1554,10 @@ export const en = {
     genderFemale: "Female",
     genderNotSpecified: "Not specified",
     yearsOld: "{age} years old",
+    // AI Name
+    aiName: "AI Name",
+    aiNameDesc: "Give the AI assistant a name the student can use",
+    aiNamePlaceholder: "e.g. Buddy, Sam, Alex",
     // Voice
     voiceSettings: "Voice Settings",
     voiceSettingsDesc: "Configure separate voices for the student and the AI assistant",

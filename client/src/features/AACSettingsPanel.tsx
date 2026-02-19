@@ -8,6 +8,7 @@ import { useActiveVoices } from '@/hooks/useAdminData';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
@@ -74,6 +75,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const { data: activeVoices } = useActiveVoices();
 
   // Form state
+  const [aiName, setAiName] = useState('');
   const [chatAgentPrompt, setChatAgentPrompt] = useState('');
   const [voiceType, setVoiceType] = useState('auto');
   const [studentVoiceType, setStudentVoiceType] = useState('boy');
@@ -90,6 +92,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   useEffect(() => {
     if (student) {
       const aac = (student as any).aacSettings;
+      setAiName(aac?.aiName || '');
       setChatAgentPrompt(aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT);
       setVoiceType(aac?.voiceType || 'auto');
       setStudentVoiceType(aac?.studentVoiceType || 'boy');
@@ -108,6 +111,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   useEffect(() => {
     if (student) {
       const aac = (student as any).aacSettings;
+      const originalAiName = aac?.aiName || '';
       const originalPrompt = aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT;
       const originalVoice = aac?.voiceType || 'auto';
       const originalStudentVoice = aac?.studentVoiceType || 'boy';
@@ -119,6 +123,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalEyegazeEnabled = aac?.eyegazeEnabled ?? false;
       const originalEyegazeTimeout = aac?.eyegazeTimeout ?? 2000;
       setHasChanges(
+        aiName !== originalAiName ||
         chatAgentPrompt !== originalPrompt ||
         voiceType !== originalVoice ||
         studentVoiceType !== originalStudentVoice ||
@@ -131,11 +136,12 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         eyegazeTimeout !== originalEyegazeTimeout
       );
     }
-  }, [chatAgentPrompt, voiceType, studentVoiceType, customVoiceId, customStudentVoiceId, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, student]);
+  }, [aiName, chatAgentPrompt, voiceType, studentVoiceType, customVoiceId, customStudentVoiceId, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, student]);
 
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: async (data: {
+      aiName?: string;
       chatAgentPrompt: string;
       voiceType: string;
       studentVoiceType: string;
@@ -171,6 +177,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const handleSave = () => {
     if (!student) return;
     updateMutation.mutate({
+      aiName: aiName.trim() || undefined,
       chatAgentPrompt,
       voiceType,
       studentVoiceType,
@@ -187,6 +194,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const handleReset = () => {
     if (student) {
       const aac = (student as any).aacSettings;
+      setAiName(aac?.aiName || '');
       setChatAgentPrompt(aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT);
       setVoiceType(aac?.voiceType || 'auto');
       setStudentVoiceType(aac?.studentVoiceType || 'boy');
@@ -262,6 +270,30 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </p>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* AI Name */}
+          <Card>
+            <CardHeader>
+              <CardTitle className={cn(
+                "flex items-center gap-2",
+                isRTL && "flex-row-reverse"
+              )}>
+                <User className="w-5 h-5" />
+                {t('aacSettings.aiName')}
+              </CardTitle>
+              <CardDescription>
+                {t('aacSettings.aiNameDesc')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Input
+                value={aiName}
+                onChange={(e) => setAiName(e.target.value)}
+                placeholder={t('aacSettings.aiNamePlaceholder')}
+                className="max-w-sm"
+              />
             </CardContent>
           </Card>
 

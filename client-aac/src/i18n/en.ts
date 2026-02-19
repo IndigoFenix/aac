@@ -257,6 +257,12 @@ export const en = {
     new: "NEW",
     accessibility: "ACCESSIBILITY",
   },
+
+  aacSettings: {
+    aiName: "AI Name",
+    aiNameDesc: "Give the AI assistant a name the student can use",
+    aiNamePlaceholder: "e.g. Buddy, Sam, Alex",
+  },
 };
 
 export type Translations = typeof en;

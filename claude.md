@@ -25,3 +25,8 @@ In server/services, files in the chat and providers folders should be treated as
 We have 2 separate AWS systems which are served from github actions. Currently we are using the Lambda system to save costs. Later we will begin using the ecs system. Updates made to the Lambda system should be made to the ecs system as well, apart from using Lambda vs ECS.
 
 There are 2 different deployment paths in Terraform. The lightweight one we are using now is to save costs. There is also a path with higher security (HIPAA compliance) that we will enable once we are ready to move to production. Keep both in mind when handling AWS systems.
+
+## Translations
+The client (both of them) uses i18n translations with a t() function for English and Hebrew.
+If you add any strings to the client, add their translations.
+If you see any missing translations on the client while working, add them.

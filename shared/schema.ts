@@ -704,6 +704,9 @@ export const aacSettings = pgTable("aac_settings", {
   eyegazeTimeout: integer("eyegaze_timeout").default(2000), // Dwell time in ms (1000-10000)
   eyegazeProvider: text("eyegaze_provider"), // 'auto', 'camera', 'tobii', 'eyetech', 'lctech', 'webhid', 'mouse'
 
+  // AI identity
+  aiName: text("ai_name"), // Custom AI name (e.g. "Buddy", "Sam")
+
   // Recognition
   knownPeople: jsonb("known_people").default([]), // Array of known people for recognition
 

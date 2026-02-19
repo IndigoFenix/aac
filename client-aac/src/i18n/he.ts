@@ -259,4 +259,10 @@ export const he: Translations = {
     new: "חדש",
     accessibility: "נגישות",
   },
+
+  aacSettings: {
+    aiName: "שם הבינה המלאכותית",
+    aiNameDesc: "תן לעוזר ה-AI שם שהתלמיד יוכל להשתמש בו",
+    aiNamePlaceholder: "לדוגמה: באדי, סם, אלכס",
+  },
 };
