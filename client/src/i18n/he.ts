@@ -159,7 +159,7 @@ export const he = {
     institute: 'מוסד',
     students: "תלמידים",
     progress: "התקדמות תלמידים",
-    reports: "תיק תלמידים",
+    reports: "תיק תלמיד",
     symbols: "ספריית סמלים",
     aacSettings: 'הגדרות תת"ח',
     currentStudent: "תלמיד נוכחי",
@@ -1747,6 +1747,10 @@ export const he = {
     genderFemale: "נקבה",
     genderNotSpecified: "לא צוין",
     yearsOld: "בן/בת {age}",
+    // AI Name
+    aiName: "שם הבינה המלאכותית",
+    aiNameDesc: "תן לעוזר ה-AI שם שהתלמיד יוכל להשתמש בו",
+    aiNamePlaceholder: "לדוגמה: באדי, סם, אלכס",
     // Voice
     voiceSettings: "הגדרות קול",
     voiceSettingsDesc: "הגדר קולות נפרדים לתלמיד ולעוזר הבינה המלאכותית",

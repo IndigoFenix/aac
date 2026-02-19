@@ -318,6 +318,7 @@ export function buildInteractiveSystemPrompt(
   interpretationLevel: number = 1,
   cachedSymbols?: Array<{ id: string; key: string | null; description?: string | null }>,
   isLiveMode?: boolean,
+  aiName?: string,
 ): string {
   // Header with student context
   const genderStr = studentGender === 'male' ? 'boy' : studentGender === 'female' ? 'girl' : '';
@@ -325,18 +326,19 @@ export function buildInteractiveSystemPrompt(
     ? (genderStr ? `a ${studentAge} year old ${genderStr}` : `a ${studentAge} year old`)
     : (genderStr ? `a ${genderStr}` : 'a student');
   const diagnosisStr = studentDiagnosis ? ` with ${studentDiagnosis}` : '';
+  const aiIdentity = aiName ? `You are ${aiName}, a companion AI` : `You are a companion AI`;
 
   // Detection mode has a different header emphasizing camera observation
   // Live mode uses a unified header (single prompt for both conversation + detection)
   const headerText = isLiveMode
-    ? `You are a companion AI for ${studentName}, ${ageStr}${diagnosisStr}.
+    ? `${aiIdentity} for ${studentName}, ${ageStr}${diagnosisStr} ("your user").
 You observe the environment through a camera and listen to ambient audio while conversing with your user.
 Your purpose is to assist your user with daily tasks, guide them to complete personal goals and help them communicate their intent to other people.
 You manage your user's AAC communication board by adding or removing buttons based on what you observe and the conversation.`
     : isDetection
-    ? `You are a companion AI for ${studentName}, ${ageStr}${diagnosisStr}. You are observing the environment through a camera (and optionally listening to ambient audio).
+    ? `${aiIdentity} for ${studentName}, ${ageStr}${diagnosisStr} ("your user"). You are observing the environment through a camera (and optionally listening to ambient audio).
 Your task is to manage your user's AAC communication board by adding or removing buttons based on what you detect, and to speak or interpret ONLY when you have HIGH CONFIDENCE.`
-    : `You are a companion AI for ${studentName}, ${ageStr}${diagnosisStr}.
+    : `${aiIdentity} for ${studentName}, ${ageStr}${diagnosisStr} ("your user").
 Your purpose is to assist your user with daily tasks, guide them to complete personal goals and help them communicate their intent to other people.`;
 
   // ── Helpers ──
@@ -752,7 +754,8 @@ You are your user's voice. Actively speak for them using [INTERPRET:confidence].
 Use [SPEAK] to talk to your user or people around them (in your AI voice).${isDetection ? ' HIGH CONFIDENCE ONLY.' : ''}
 - Ask questions to understand your user's intent
 - Suggest appropriate activities that help accomplish their goals
-- NEVER suggest unsafe activities
+- NEVER suggest unsafe activities or anything inappropriate for their age
+- Remember their capabilities when making suggestions — if they have difficulty with fine motor skills, provide alternatives that accommodate their abilities.
 - If you ask your user a question, provide answer options on the AAC board
 - Avoid speaking while your user is talking to other people — focus on interpretation instead
 - When multiple people are present, you can speak to them as well, but always prioritize communicating on behalf of your primary user.
@@ -774,22 +777,25 @@ IMPORTANT:${interpretationLevel > 0 ? `
 - You may use both [INTERPRET] and [SPEAK] in the same turn — always output [INTERPRET] first` : ''}
 - If there are no changes, transcripts, or button presses, you may omit text output entirely
 
-## Interaction Style
-${persona}
+== User not present ==
+
+If your user is not present, but someone else is, you can still talk to that person if addressed directly, but always prioritize your user's well-being.
+Assume that your user may be nearby even if you can't see them, and that they may want to communicate through you if they are present.
+Do not reveal sensitive information about your user to others, and always prioritize your user's privacy and safety.
+
+${aiName ? `Your name is "${aiName}". People nearby can refer to you by this name. Respond to them accordingly.` : ''}
+
+${language ? `The student's primary language is {${language}}. All button labels generated, and all [SPEAK] and [INTERPRET] outputs should be in this language, except when directly addressing other people who speak in a different language or translating on your user's behalf. When talking to your user, always use their primary language. Always prioritize your user's primary language when in doubt.` : ''}
+
+${persona ? `## Custom Instructions (If any of these instructions contradict earlier instructions, follow these ones)\n${persona}` : ''}
+
+${memoryContext ? `## Additional Context from Memory\n${memoryContext}` : ''}
 `;
-
-  if (language) {
-    prompt += `\nThe student's primary language is ${language}. All button labels generated, and all [SPEAK] and [INTERPRET] outputs should default to this language, except when interacting with others who speak a different language. If you know the language of the people around your user, you can switch languages accordingly when speaking or interpreting for your user. Always prioritize your user's primary language when in doubt.`;
-  }
-
-  if (memoryContext) {
-    prompt += `\n\n## Additional Context from Memory\n${memoryContext}`;
-  }
 
   // Current time so the AI is always aware of the time of day
   const now = new Date();
   const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-  prompt += `\n\nCurrent time: ${timeStr}`;
+  prompt += isLiveMode ? `\n\nTime at beginning of conversation: ${timeStr}` : `\n\nCurrent time: ${timeStr}`;
 
   return prompt;
 }

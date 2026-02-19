@@ -60,6 +60,9 @@ export default function UserSettings({
   const { startCalibration, isCalibrated, isCalibrating } = useEyeTrackingDwell();
   const queryClient = useQueryClient();
 
+  // AI identity
+  const [aiName, setAiName] = useState("");
+
   // Voice settings
   const [voiceType, setVoiceType] = useState("auto");
   const [studentVoiceType, setStudentVoiceType] = useState("boy");
@@ -89,6 +92,7 @@ export default function UserSettings({
   useEffect(() => {
     if (userProfile) {
       const aac = userProfile.aacSettings;
+      setAiName(aac?.aiName || "");
       const vt = aac?.voiceType || "auto";
       const svt = aac?.studentVoiceType || "boy";
       const itr = aac?.iconTextRatio ?? 3;
@@ -197,6 +201,7 @@ export default function UserSettings({
 
   const handleSave = () => {
     updateMutation.mutate({
+      aiName: aiName.trim() || undefined,
       voiceType,
       studentVoiceType,
       iconTextRatio,
@@ -211,6 +216,7 @@ export default function UserSettings({
 
   const handleResetDefaults = () => {
     if (!window.confirm(t("settings.confirmResetDefaults"))) return;
+    setAiName("");
     setVoiceType("auto");
     setStudentVoiceType("boy");
     setIconTextRatio(3);
@@ -351,6 +357,19 @@ export default function UserSettings({
                     </Button>
                   </div>
                 </div>
+              </div>
+
+              {/* AI Name */}
+              <div className="space-y-2 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <Label className="text-sm font-medium">{t("aacSettings.aiName")}</Label>
+                <input
+                  type="text"
+                  value={aiName}
+                  onChange={(e) => setAiName(e.target.value)}
+                  placeholder={t("aacSettings.aiNamePlaceholder")}
+                  className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm"
+                />
+                <p className="text-xs text-gray-500">{t("aacSettings.aiNameDesc")}</p>
               </div>
 
               {/* Voice Settings */}

@@ -553,6 +553,7 @@ export class DualAgentService {
         student.aacSettings?.interpretationLevel ?? 2,
         cachedSymbols.length > 0 ? cachedSymbols : undefined,
         isLiveMode,
+        student.aacSettings?.aiName || undefined,
       );
     }
 
@@ -737,6 +738,7 @@ export class DualAgentService {
           state.interpretationLevel,
           state.cachedSymbols,
           state.isLiveMode,
+          student.aacSettings?.aiName || undefined,
         );
       }
 
@@ -896,6 +898,7 @@ export class DualAgentService {
           state.interpretationLevel,
           state.cachedSymbols,
           state.isLiveMode,
+          student.aacSettings?.aiName || undefined,
         );
         interactiveAgent.setSystemPrompt(newPrompt);
         state.interactivePrompt = newPrompt;
@@ -1894,6 +1897,7 @@ export class DualAgentService {
           state.interpretationLevel,
           state.cachedSymbols,
           state.isLiveMode,
+          student.aacSettings?.aiName || undefined,
         );
         interactiveAgent.setSystemPrompt(newPrompt);
         state.interactivePrompt = newPrompt;
@@ -1932,6 +1936,8 @@ export class DualAgentService {
       getPageNavButtons(state),
       state.interpretationLevel,
       state.cachedSymbols,
+      undefined, // isLiveMode (HTTP detection)
+      student?.aacSettings?.aiName || undefined,
     );
 
     const detStart = Date.now();
