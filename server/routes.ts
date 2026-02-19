@@ -281,6 +281,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // User routes (any authenticated user - active voices for settings panel)
   app.get('/api/voices/active', requireAuth, voiceRecordController.getActiveVoices.bind(voiceRecordController));
+  app.post('/api/voices/elevenlabs-list', requireAuth, voiceRecordController.listElevenlabsVoices.bind(voiceRecordController));
+  app.post('/api/voices/preview', requireAuth, voiceRecordController.previewVoice.bind(voiceRecordController));
 
   // ============= TOPIC/LIBRARY ROUTES =============
   // Admin routes (system admin only)

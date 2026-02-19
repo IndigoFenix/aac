@@ -259,6 +259,46 @@ export class DualAgentService {
   }
 
   /**
+   * Check whether a resolved voice should be synthesised client-side.
+   * True when the student has configured their own ElevenLabs API key AND
+   * a voice ID for this role — the client will call ElevenLabs directly
+   * for stutter-free, lower-latency playback.
+   */
+  private isClientTts(voice: ResolvedVoice): boolean {
+    return !!(voice.elevenlabsApiKey && voice.elevenlabsVoiceId);
+  }
+
+  /**
+   * Yield TTS output for a piece of text.
+   * If the voice is client-side ElevenLabs, yield a lightweight `client_tts`
+   * event so the browser can call ElevenLabs directly.
+   * Otherwise, synthesise server-side and yield audio chunks.
+   */
+  private async *yieldTts<T extends "audio" | "interpretation_audio">(
+    text: string,
+    voice: ResolvedVoice,
+    eventType: T,
+    voiceRole: "ai" | "student",
+  ): AsyncGenerator<{ type: T | "client_tts"; data: any; voiceRole?: string; text?: string }> {
+    if (this.isClientTts(voice)) {
+      yield {
+        type: "client_tts" as const,
+        data: {
+          text,
+          voiceId: voice.elevenlabsVoiceId,
+          apiKey: voice.elevenlabsApiKey,
+          language: voice.language || "en",
+          voiceRole,
+        },
+      };
+    } else {
+      for await (const chunk of ttsFacade.synthesizeStream(text, voice)) {
+        yield { type: eventType, data: chunk.toString("base64") };
+      }
+    }
+  }
+
+  /**
    * Initialize or resume a dual-agent session
    */
   async initializeSession(
@@ -306,7 +346,7 @@ export class DualAgentService {
     imageData?: string,
     gestureContext?: string
   ): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no" | "ask_yes_no";
+    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no" | "ask_yes_no" | "client_tts";
     data: any;
     speaker?: string;
   }> {
@@ -417,9 +457,7 @@ export class DualAgentService {
     if (this.config.enableTTS && fullText && !isSilent) {
       try {
         const voices = await this.resolveVoices(cached);
-        for await (const audioChunk of ttsFacade.synthesizeStream(fullText, voices.aiVoice)) {
-          yield { type: "audio", data: audioChunk.toString("base64") };
-        }
+        yield* this.yieldTts(fullText, voices.aiVoice, "audio", "ai");
       } catch (err) {
         console.error("[DualAgentService] TTS error:", err);
       }
@@ -845,7 +883,7 @@ export class DualAgentService {
   async *processInput(
     input: DualAgentInput
   ): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no" | "ask_yes_no";
+    type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no" | "ask_yes_no" | "client_tts";
     data: any;
     speaker?: string;
   }> {
@@ -1037,7 +1075,7 @@ export class DualAgentService {
     debugMode?: boolean,
     unknownFaceDescriptors?: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number } }>
   ): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no" | "ask_yes_no";
+    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no" | "ask_yes_no" | "client_tts";
     data: any;
     speaker?: string;
   }> {
@@ -1395,9 +1433,7 @@ export class DualAgentService {
     if (this.config.enableTTS && fullInterpretation) {
       try {
         const voices = await this.resolveVoices(cached);
-        for await (const audioChunk of ttsFacade.synthesizeStream(fullInterpretation, voices.studentVoice)) {
-          yield { type: "interpretation_audio", data: audioChunk.toString("base64") };
-        }
+        yield* this.yieldTts(fullInterpretation, voices.studentVoice, "interpretation_audio", "student");
       } catch (err) {
         console.error("[DualAgentService] Interpretation TTS error:", err);
       }
@@ -1406,9 +1442,7 @@ export class DualAgentService {
     // Generate AI voice audio second (skip in silent mode)
     if (this.config.enableTTS && fullText && !isSilent) {
       const voices = await this.resolveVoices(cached);
-      for await (const audioChunk of ttsFacade.synthesizeStream(fullText, voices.aiVoice)) {
-        yield { type: "audio", data: audioChunk.toString("base64") };
-      }
+      yield* this.yieldTts(fullText, voices.aiVoice, "audio", "ai");
     }
   }
 
@@ -1421,7 +1455,7 @@ export class DualAgentService {
     userMessage: string,
     board?: ParsedBoardData
   ): AsyncGenerator<{
-    type: "text" | "board" | "audio";
+    type: "text" | "board" | "audio" | "client_tts";
     data: any;
   }> {
     let fullText = "";
@@ -1473,9 +1507,7 @@ export class DualAgentService {
       const cached = sessionCache.get(state.sessionId);
       if (cached) {
         const voices = await this.resolveVoices(cached);
-        for await (const audioChunk of ttsFacade.synthesizeStream(fullText, voices.aiVoice)) {
-          yield { type: "audio", data: audioChunk.toString("base64") };
-        }
+        yield* this.yieldTts(fullText, voices.aiVoice, "audio", "ai");
       }
     }
   }
@@ -1808,7 +1840,7 @@ export class DualAgentService {
     recentButtons: string[],
     board?: ParsedBoardData
   ): AsyncGenerator<{
-    type: "text" | "audio" | "complete";
+    type: "text" | "audio" | "complete" | "client_tts";
     data: any;
   }> {
     if (recentButtons.length === 0) {
@@ -1857,9 +1889,7 @@ export class DualAgentService {
     if (this.config.enableTTS && fullText) {
       try {
         const voices = await this.resolveVoices(cached);
-        for await (const audioChunk of ttsFacade.synthesizeStream(fullText, voices.studentVoice)) {
-          yield { type: "audio", data: audioChunk.toString("base64") };
-        }
+        yield* this.yieldTts(fullText, voices.studentVoice, "audio", "student");
       } catch (err) {
         console.error("[DualAgentService] Interpret TTS error:", err);
       }
@@ -2184,12 +2214,15 @@ export class DualAgentService {
       }
 
       // Generate interpretation audio (student voice TTS) inline for JSON response
+      // Skip when client-side TTS is enabled (streaming path handles it via client_tts event)
       let interpretationAudio: string | undefined;
       if (this.config.enableTTS && interpretation) {
         try {
           const voices = await this.resolveVoices(cached);
-          const audioBuffer = await ttsFacade.synthesize(interpretation, voices.studentVoice);
-          interpretationAudio = audioBuffer.toString("base64");
+          if (!this.isClientTts(voices.studentVoice)) {
+            const audioBuffer = await ttsFacade.synthesize(interpretation, voices.studentVoice);
+            interpretationAudio = audioBuffer.toString("base64");
+          }
         } catch (err) {
           console.error("[DualAgentService] Detection interpretation TTS error:", err);
         }
@@ -2236,7 +2269,7 @@ export class DualAgentService {
    * This provides streaming audio without requiring streaming LLM.
    */
   async *processDetectionStream(input: DetectionInput): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "error" | "complete" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no" | "ask_yes_no";
+    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "error" | "complete" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no" | "ask_yes_no" | "client_tts";
     data: any;
     speaker?: string;
   }> {
@@ -2392,9 +2425,7 @@ export class DualAgentService {
       // Interpretation audio first (student voice, both modes)
       if (result.interpretation) {
         try {
-          for await (const audioChunk of ttsFacade.synthesizeStream(result.interpretation, voices.studentVoice)) {
-            yield { type: "interpretation_audio", data: audioChunk.toString("base64") };
-          }
+          yield* this.yieldTts(result.interpretation, voices.studentVoice, "interpretation_audio", "student");
         } catch (err) {
           console.error("[DualAgentService] Detection stream interpretation TTS error:", err);
         }
@@ -2403,9 +2434,7 @@ export class DualAgentService {
       // AI voice audio second (only in interact mode)
       if (result.text && !isSilent) {
         try {
-          for await (const audioChunk of ttsFacade.synthesizeStream(result.text, voices.aiVoice)) {
-            yield { type: "audio", data: audioChunk.toString("base64") };
-          }
+          yield* this.yieldTts(result.text, voices.aiVoice, "audio", "ai");
         } catch (err) {
           console.error("[DualAgentService] Detection stream TTS error:", err);
         }
@@ -2606,7 +2635,7 @@ export type { SessionCache };
 export async function* processInput(
   input: DualAgentInput
 ): AsyncGenerator<{
-  type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no" | "ask_yes_no";
+  type: "text" | "board" | "board_patch" | "audio" | "transcription" | "complete" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no" | "ask_yes_no" | "client_tts";
   data: any;
   speaker?: string;
 }> {

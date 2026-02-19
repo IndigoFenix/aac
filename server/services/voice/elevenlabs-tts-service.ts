@@ -80,66 +80,18 @@ export async function synthesize(
 }
 
 /**
- * Synthesize text to speech as a stream using ElevenLabs streaming API
- * Returns chunks of MP3 audio as they arrive (true streaming, not per-sentence)
+ * Synthesize text to speech as a stream using ElevenLabs API.
+ *
+ * Buffers the full response before yielding to avoid stuttering caused by
+ * the client playing many tiny network chunks as separate audio sources.
+ * For typical AAC utterances (1-3 sentences) the buffering delay is ~1-2s.
  */
 export async function* synthesizeStream(
   text: string,
   options: ElevenLabsTTSOptions
 ): AsyncGenerator<Buffer> {
-  const apiKey = options.apiKeyOverride || getApiKey();
-  const modelId = resolveModel(options);
-
-  console.log(
-    `[ElevenLabsTTS] Streaming: "${text.substring(0, 50)}..." (voice: ${options.voiceId}, model: ${modelId})`
-  );
-
-  const response = await fetch(
-    `${ELEVENLABS_API_BASE}/text-to-speech/${options.voiceId}/stream`,
-    {
-      method: "POST",
-      headers: {
-        "xi-api-key": apiKey,
-        "Content-Type": "application/json",
-        Accept: "audio/mpeg",
-      },
-      body: JSON.stringify({
-        text,
-        model_id: modelId,
-        voice_settings: {
-          stability: options.stability ?? 0.5,
-          similarity_boost: options.similarityBoost ?? 0.75,
-        },
-      }),
-    }
-  );
-
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => "Unknown error");
-    throw new Error(`ElevenLabs streaming API error ${response.status}: ${errorText}`);
-  }
-
-  if (!response.body) {
-    throw new Error("ElevenLabs streaming response has no body");
-  }
-
-  const reader = response.body.getReader();
-  let totalBytes = 0;
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      const chunk = Buffer.from(value);
-      totalBytes += chunk.length;
-      yield chunk;
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  console.log(`[ElevenLabsTTS] Streamed ${totalBytes} bytes total`);
+  const buffer = await synthesize(text, options);
+  yield buffer;
 }
 
 export const elevenlabsTtsService = {

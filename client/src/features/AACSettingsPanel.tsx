@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useStudent } from '@/hooks/useStudent';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -33,6 +33,7 @@ import {
   Zap,
   Search,
   Crosshair,
+  Play,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -90,6 +91,60 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [eyegazeEnabled, setEyegazeEnabled] = useState(false);
   const [eyegazeTimeout, setEyegazeTimeout] = useState(2000);
   const [hasChanges, setHasChanges] = useState(false);
+
+  // Fetch ElevenLabs voices when API key is present
+  const [debouncedApiKey, setDebouncedApiKey] = useState('');
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => {
+    clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => setDebouncedApiKey(elevenlabsApiKey.trim()), 600);
+    return () => clearTimeout(debounceTimerRef.current);
+  }, [elevenlabsApiKey]);
+
+  const { data: elevenlabsVoices, isLoading: elevenlabsLoading, isError: elevenlabsError } = useQuery({
+    queryKey: ['/api/voices/elevenlabs-list', debouncedApiKey],
+    queryFn: async () => {
+      const res = await apiRequest('POST', '/api/voices/elevenlabs-list', { apiKey: debouncedApiKey });
+      const data = await res.json();
+      return data.voices as Array<{ voice_id: string; name: string; category: string; labels: Record<string, string> }>;
+    },
+    enabled: debouncedApiKey.length > 0,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Voice preview state
+  const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const previewVoice = useCallback(async (voiceId: string) => {
+    if (!voiceId || previewingVoice) return;
+    setPreviewingVoice(voiceId);
+    try {
+      const res = await apiRequest('POST', '/api/voices/preview', {
+        voiceId,
+        text: t('aacSettings.elevenlabsTestPhrase'),
+        apiKey: elevenlabsApiKey.trim() || undefined,
+      });
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      previewAudioRef.current = audio;
+      audio.onended = () => {
+        setPreviewingVoice(null);
+        URL.revokeObjectURL(url);
+        previewAudioRef.current = null;
+      };
+      audio.onerror = () => {
+        setPreviewingVoice(null);
+        URL.revokeObjectURL(url);
+        previewAudioRef.current = null;
+      };
+      await audio.play();
+    } catch {
+      setPreviewingVoice(null);
+    }
+  }, [previewingVoice, elevenlabsApiKey, t]);
 
   // Load student data into form (AAC settings are nested under aacSettings)
   useEffect(() => {
@@ -471,41 +526,155 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   />
                 </div>
 
-                <div className={cn(
-                  "flex items-center justify-between",
-                  isRTL && "flex-row-reverse"
-                )}>
-                  <div className={cn("space-y-0.5", isRTL && "text-right")}>
-                    <Label className="text-sm text-muted-foreground">
-                      {t('aacSettings.elevenlabsStudentVoiceId')}
-                    </Label>
-                  </div>
-                  <Input
-                    type="text"
-                    value={elevenlabsStudentVoiceId}
-                    onChange={(e) => setElevenlabsStudentVoiceId(e.target.value)}
-                    placeholder={t('aacSettings.elevenlabsVoiceIdPlaceholder')}
-                    className="w-[280px] font-mono"
-                  />
-                </div>
+                {elevenlabsError && debouncedApiKey && (
+                  <p className="text-sm text-destructive">{t('aacSettings.elevenlabsInvalidKey')}</p>
+                )}
 
-                <div className={cn(
-                  "flex items-center justify-between",
-                  isRTL && "flex-row-reverse"
-                )}>
-                  <div className={cn("space-y-0.5", isRTL && "text-right")}>
-                    <Label className="text-sm text-muted-foreground">
-                      {t('aacSettings.elevenlabsAiVoiceId')}
-                    </Label>
-                  </div>
-                  <Input
-                    type="text"
-                    value={elevenlabsAiVoiceId}
-                    onChange={(e) => setElevenlabsAiVoiceId(e.target.value)}
-                    placeholder={t('aacSettings.elevenlabsVoiceIdPlaceholder')}
-                    className="w-[280px] font-mono"
-                  />
-                </div>
+                {debouncedApiKey && !elevenlabsError && (
+                  <>
+                    <div className={cn(
+                      "flex items-center justify-between",
+                      isRTL && "flex-row-reverse"
+                    )}>
+                      <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                        <Label className="text-sm text-muted-foreground">
+                          {t('aacSettings.elevenlabsStudentVoiceId')}
+                        </Label>
+                      </div>
+                      {elevenlabsLoading ? (
+                        <p className="text-sm text-muted-foreground w-[280px]">{t('aacSettings.elevenlabsLoadingVoices')}</p>
+                      ) : elevenlabsVoices && elevenlabsVoices.length > 0 ? (
+                        <div className="flex gap-2 items-center">
+                          <Select
+                            value={elevenlabsStudentVoiceId || '_none'}
+                            onValueChange={(v) => setElevenlabsStudentVoiceId(v === '_none' ? '' : v)}
+                          >
+                            <SelectTrigger className="w-[280px]">
+                              <SelectValue placeholder={t('aacSettings.elevenlabsSelectVoice')} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="_none">{t('aacSettings.elevenlabsSelectVoice')}</SelectItem>
+                              {elevenlabsVoices.map((v) => (
+                                <SelectItem key={v.voice_id} value={v.voice_id}>
+                                  {v.name} {v.category ? `(${v.category})` : ''}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {elevenlabsStudentVoiceId && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => previewVoice(elevenlabsStudentVoiceId)}
+                              disabled={!!previewingVoice}
+                              title={t('aacSettings.elevenlabsTestVoice')}
+                              className="shrink-0 h-8 w-8 p-0"
+                            >
+                              {previewingVoice === elevenlabsStudentVoiceId ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Play className="w-4 h-4" />
+                              )}
+                            </Button>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground w-[280px]">{t('aacSettings.elevenlabsNoVoices')}</p>
+                      )}
+                    </div>
+
+                    <div className={cn(
+                      "flex items-center justify-between",
+                      isRTL && "flex-row-reverse"
+                    )}>
+                      <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                        <Label className="text-sm text-muted-foreground">
+                          {t('aacSettings.elevenlabsAiVoiceId')}
+                        </Label>
+                      </div>
+                      {elevenlabsLoading ? (
+                        <p className="text-sm text-muted-foreground w-[280px]">{t('aacSettings.elevenlabsLoadingVoices')}</p>
+                      ) : elevenlabsVoices && elevenlabsVoices.length > 0 ? (
+                        <div className="flex gap-2 items-center">
+                          <Select
+                            value={elevenlabsAiVoiceId || '_none'}
+                            onValueChange={(v) => setElevenlabsAiVoiceId(v === '_none' ? '' : v)}
+                          >
+                            <SelectTrigger className="w-[280px]">
+                              <SelectValue placeholder={t('aacSettings.elevenlabsSelectVoice')} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="_none">{t('aacSettings.elevenlabsSelectVoice')}</SelectItem>
+                              {elevenlabsVoices.map((v) => (
+                                <SelectItem key={v.voice_id} value={v.voice_id}>
+                                  {v.name} {v.category ? `(${v.category})` : ''}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {elevenlabsAiVoiceId && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => previewVoice(elevenlabsAiVoiceId)}
+                              disabled={!!previewingVoice}
+                              title={t('aacSettings.elevenlabsTestVoice')}
+                              className="shrink-0 h-8 w-8 p-0"
+                            >
+                              {previewingVoice === elevenlabsAiVoiceId ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Play className="w-4 h-4" />
+                              )}
+                            </Button>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground w-[280px]">{t('aacSettings.elevenlabsNoVoices')}</p>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {!debouncedApiKey && (
+                  <>
+                    <div className={cn(
+                      "flex items-center justify-between",
+                      isRTL && "flex-row-reverse"
+                    )}>
+                      <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                        <Label className="text-sm text-muted-foreground">
+                          {t('aacSettings.elevenlabsStudentVoiceId')}
+                        </Label>
+                      </div>
+                      <Input
+                        type="text"
+                        value={elevenlabsStudentVoiceId}
+                        onChange={(e) => setElevenlabsStudentVoiceId(e.target.value)}
+                        placeholder={t('aacSettings.elevenlabsVoiceIdPlaceholder')}
+                        className="w-[280px] font-mono"
+                      />
+                    </div>
+
+                    <div className={cn(
+                      "flex items-center justify-between",
+                      isRTL && "flex-row-reverse"
+                    )}>
+                      <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                        <Label className="text-sm text-muted-foreground">
+                          {t('aacSettings.elevenlabsAiVoiceId')}
+                        </Label>
+                      </div>
+                      <Input
+                        type="text"
+                        value={elevenlabsAiVoiceId}
+                        onChange={(e) => setElevenlabsAiVoiceId(e.target.value)}
+                        placeholder={t('aacSettings.elevenlabsVoiceIdPlaceholder')}
+                        className="w-[280px] font-mono"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
             </CardContent>
           </Card>

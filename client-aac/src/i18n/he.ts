@@ -161,6 +161,12 @@ export const he: Translations = {
     elevenlabsStudentVoiceId: "מזהה קול התלמיד",
     elevenlabsAiVoiceId: "מזהה קול הבינה המלאכותית",
     elevenlabsVoiceIdPlaceholder: "לדוגמה 21m00Tcm4TlvDq8ikWAM",
+    elevenlabsLoadingVoices: "טוען קולות...",
+    elevenlabsNoVoices: "לא נמצאו קולות",
+    elevenlabsInvalidKey: "מפתח API לא תקין",
+    elevenlabsSelectVoice: "בחר קול",
+    elevenlabsTestVoice: "בדוק קול",
+    elevenlabsTestPhrase: "שלום, אני עוזר הקול שלך",
 
     buttonSize: "גודל כפתורים",
     buttonSizeExtraLarge: "אייקונים גדולים מאוד, טקסט מינימלי",

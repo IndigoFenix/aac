@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { voiceRecordService } from "../services/voiceRecordService";
 import { insertVoiceSchema, updateVoiceSchema } from "@shared/schema";
+import { elevenlabsTtsService } from "../services/voice/elevenlabs-tts-service";
 
 export class VoiceRecordController {
   async getVoices(req: Request, res: Response): Promise<void> {
@@ -106,6 +107,69 @@ export class VoiceRecordController {
     } catch (error: any) {
       console.error("Error updating voice:", error);
       res.status(500).json({ success: false, message: "Failed to update voice" });
+    }
+  }
+
+  async listElevenlabsVoices(req: Request, res: Response): Promise<void> {
+    try {
+      const { apiKey } = req.body;
+      if (!apiKey || typeof apiKey !== "string") {
+        res.status(400).json({ success: false, message: "apiKey is required" });
+        return;
+      }
+
+      const response = await fetch("https://api.elevenlabs.io/v1/voices", {
+        headers: { "xi-api-key": apiKey },
+      });
+
+      if (!response.ok) {
+        const status = response.status;
+        res.status(status === 401 ? 401 : 502).json({
+          success: false,
+          message: status === 401 ? "Invalid ElevenLabs API key" : "Failed to fetch voices from ElevenLabs",
+        });
+        return;
+      }
+
+      const data = await response.json();
+      const voices = (data.voices || []).map((v: any) => ({
+        voice_id: v.voice_id,
+        name: v.name,
+        category: v.category,
+        labels: v.labels || {},
+      }));
+
+      res.json({ success: true, voices });
+    } catch (error: any) {
+      console.error("Error fetching ElevenLabs voices:", error);
+      res.status(500).json({ success: false, message: "Failed to fetch ElevenLabs voices" });
+    }
+  }
+
+  async previewVoice(req: Request, res: Response): Promise<void> {
+    try {
+      const { voiceId, text, apiKey } = req.body;
+      if (!voiceId || typeof voiceId !== "string") {
+        res.status(400).json({ success: false, message: "voiceId is required" });
+        return;
+      }
+      if (!text || typeof text !== "string") {
+        res.status(400).json({ success: false, message: "text is required" });
+        return;
+      }
+
+      const audioBuffer = await elevenlabsTtsService.synthesize(text, {
+        voiceId,
+        apiKeyOverride: apiKey || undefined,
+      });
+
+      res.setHeader("Content-Type", "audio/mpeg");
+      res.setHeader("Content-Length", audioBuffer.length);
+      res.send(audioBuffer);
+    } catch (error: any) {
+      console.error("Error previewing voice:", error);
+      const status = error.message?.includes("401") ? 401 : 500;
+      res.status(status).json({ success: false, message: error.message || "Failed to preview voice" });
     }
   }
 

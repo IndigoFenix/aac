@@ -223,6 +223,9 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
   // Track whether current audio is AI voice (not interpretation)
   const isAiVoiceRef = useRef(true);
 
+  // Promise chain for client-side TTS — preserves ordering between consecutive calls
+  const clientTtsChainRef = useRef(Promise.resolve());
+
   // Mutex: prevent concurrent message + detection API calls
   // "message" | "detect" | null — tracks what's currently in flight
   const inflightRef = useRef<"message" | "detect" | null>(null);
@@ -417,6 +420,39 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
                   });
                 }
                 break;
+
+              case "client_tts": {
+                // Server requests client-side ElevenLabs TTS synthesis
+                if (!audioEnabled) break;
+                const { text: ttsText, voiceId, apiKey, language: ttsLang } = data;
+                const isStudentVoice = data.voiceRole === "student";
+                isAiVoiceRef.current = !isStudentVoice;
+                // Chain to preserve ordering between consecutive client_tts events
+                clientTtsChainRef.current = clientTtsChainRef.current.then(async () => {
+                  try {
+                    const V3_LANGS = new Set(["he", "ar"]);
+                    const modelId = ttsLang && V3_LANGS.has(ttsLang) ? "eleven_v3" : "eleven_multilingual_v2";
+                    const resp = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+                      method: "POST",
+                      headers: { "xi-api-key": apiKey, "Content-Type": "application/json", Accept: "audio/mpeg" },
+                      body: JSON.stringify({ text: ttsText, model_id: modelId, voice_settings: { stability: 0.5, similarity_boost: 0.75 } }),
+                    });
+                    if (!resp.ok) {
+                      console.error("[DualAgent] Client TTS error:", resp.status);
+                      return;
+                    }
+                    const arrayBuf = await resp.arrayBuffer();
+                    const bytes = new Uint8Array(arrayBuf);
+                    let binary = "";
+                    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+                    const base64 = btoa(binary);
+                    streamingPlayer.queueChunk({ chunk: base64, format: "mp3" });
+                  } catch (err) {
+                    console.error("[DualAgent] Client TTS failed:", err);
+                  }
+                });
+                break;
+              }
 
               case "debug":
                 // Merge debug data from SSE events (structured debug info)

@@ -1252,10 +1252,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             onInterpret={handleInterpret}
             onSettings={() => setShowUserSettings(true)}
             onExitStudent={onExitStudent}
-            onLogout={async () => {
-              try { await apiRequest("POST", "/auth/logout", {}); } catch (e) {}
-              onLogout();
-            }}
+            onLogout={() => onLogout()}
             onFullScreen={handleFullScreen}
             debugMode={debugMode}
             showDebugPanel={showDebugPanel}
