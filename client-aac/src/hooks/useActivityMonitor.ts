@@ -37,6 +37,10 @@ export interface ActivityMonitorConfig {
   speechPostRollMs: number;
   /** Duration of ambient audio for heartbeat triggers, in ms (default: 3000) */
   heartbeatAudioMs: number;
+  /** Whether speech-end events trigger detection (default: true).
+   *  Set to false in Live API mode where audio goes via PCM and frame grids
+   *  should be decoupled from speech activity. */
+  speechTriggerEnabled: boolean;
 }
 
 const DEFAULT_CONFIG: ActivityMonitorConfig = {
@@ -50,6 +54,7 @@ const DEFAULT_CONFIG: ActivityMonitorConfig = {
   speechPreRollMs: 500,
   speechPostRollMs: 200,
   heartbeatAudioMs: 3000,
+  speechTriggerEnabled: true,
 };
 
 export interface ActivityMonitorResult {
@@ -382,8 +387,11 @@ export function useActivityMonitor({
       // Guard: don't trigger too frequently
       if (timeSinceLastSend < cfg.minIntervalMs) return;
 
-      // Trigger 1: Speech ended → wait for settle (only if audio enabled)
+      // Trigger 1: Speech ended → wait for settle (only if audio enabled AND speech triggers are on)
+      // In Live API mode, speechTriggerEnabled is false — audio goes via PCM directly
+      // and frame grids are decoupled from speech activity.
       if (
+        cfg.speechTriggerEnabled &&
         audioEnabled &&
         !audio.isSpeaking &&
         audio.lastSpeechEndedAt &&

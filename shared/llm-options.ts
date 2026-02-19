@@ -217,7 +217,7 @@ export function resolveModelId(provider: LLMProviderKey, modelId: string): strin
   if (provider === "claude") {
     const CLAUDE_MODEL_MAP: Record<string, string> = {
       "claude-haiku": "claude-haiku-4-5-20251001",
-      "claude-sonnet": "claude-sonnet-4-5-20250514",
+      "claude-sonnet": "claude-sonnet-4-20250514",
       "claude-opus": "claude-opus-4-20250514",
     };
     return CLAUDE_MODEL_MAP[modelId] || modelId;

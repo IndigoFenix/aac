@@ -519,8 +519,13 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   }, [wsSend]);
 
   const dismissApp = useCallback(() => {
+    const closedApp = activeApp;
     setActiveApp(null);
-  }, []);
+    // Notify server so Gemini knows the app was closed
+    if (closedApp) {
+      wsSend({ type: "app_dismissed", appId: closedApp.appId });
+    }
+  }, [activeApp, wsSend]);
 
   const clearSession = useCallback(() => {
     if (wsRef.current) {

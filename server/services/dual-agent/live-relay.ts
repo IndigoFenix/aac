@@ -44,7 +44,8 @@ export type ClientMessage =
   | { type: "set_mode"; mode: AACInteractionMode }
   | { type: "set_response_mode"; mode: AACResponseMode }
   | { type: "unknown_face_descriptors"; data: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number } }> }
-  | { type: "page_navigate"; pageId: string; pageName: string; buttons: string[] };
+  | { type: "page_navigate"; pageId: string; pageName: string; buttons: string[] }
+  | { type: "app_dismissed"; appId: string };
 
 /** Messages from server → client */
 export type ServerMessage =
@@ -171,10 +172,10 @@ export class LiveRelay {
           this.send({ type: "error", data: msg });
         }
       },
-      onInputTranscription: (text) => {
-        // Forward Gemini's built-in transcription to client
-        this.send({ type: "transcript", data: text, speaker: "unknown" });
-      },
+      // onInputTranscription intentionally omitted — the model's own [TRANSCRIPT]
+      // tokens are the canonical transcript source (with speaker labels).
+      // Gemini's built-in inputTranscription fires for ALL audio including echoed
+      // TTS, which caused duplicate/noisy transcripts in the session log.
       onReconnectFailed: async () => {
         // Resumption handle was stale — reload history from DB and prime the fresh session
         if (!this.sessionId) return;
@@ -336,6 +337,13 @@ export class LiveRelay {
           if (this.sessionCache?.state) {
             this.sessionCache.state.currentPageId = msg.pageId;
           }
+          break;
+
+        case "app_dismissed":
+          this.gemini.sendContextInjection(
+            `[APP CLOSED] The user closed the "${msg.appId}" app and returned to the AAC board.`,
+          );
+          logDualAgent("LiveRelay.appDismissed", { sessionId: this.sessionId, appId: msg.appId });
           break;
       }
     } catch (err) {
