@@ -15,7 +15,8 @@ interface ProfileSetupProps {
 
 export default function ProfileSetup({ isOpen, onComplete, onSkip }: ProfileSetupProps) {
   const [formData, setFormData] = useState({
-    name: "",
+    firstName: "",
+    lastName: "",
     age: "",
     preferences: "",
   });
@@ -48,7 +49,8 @@ export default function ProfileSetup({ isOpen, onComplete, onSkip }: ProfileSetu
     e.preventDefault();
 
     const studentData: any = {
-      name: formData.name,
+      firstName: formData.firstName,
+      lastName: formData.lastName || undefined,
       preferences: formData.preferences,
     };
 
@@ -92,18 +94,32 @@ export default function ProfileSetup({ isOpen, onComplete, onSkip }: ProfileSetu
             </div>
             
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-text-primary mb-2">
-                  Name *
-                </label>
-                <Input
-                  type="text"
-                  placeholder="Enter your name"
-                  value={formData.name}
-                  onChange={(e) => handleInputChange("name", e.target.value)}
-                  required
-                  className="text-lg"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-text-primary mb-2">
+                    First Name *
+                  </label>
+                  <Input
+                    type="text"
+                    placeholder="First name"
+                    value={formData.firstName}
+                    onChange={(e) => handleInputChange("firstName", e.target.value)}
+                    required
+                    className="text-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-text-primary mb-2">
+                    Last Name
+                  </label>
+                  <Input
+                    type="text"
+                    placeholder="Last name"
+                    value={formData.lastName}
+                    onChange={(e) => handleInputChange("lastName", e.target.value)}
+                    className="text-lg"
+                  />
+                </div>
               </div>
               
               <div>
@@ -147,7 +163,7 @@ export default function ProfileSetup({ isOpen, onComplete, onSkip }: ProfileSetu
                 <Button
                   type="submit"
                   className="flex-1"
-                  disabled={createStudentMutation.isPending || !formData.name.trim()}
+                  disabled={createStudentMutation.isPending || !formData.firstName.trim()}
                 >
                   {createStudentMutation.isPending ? (
                     <div className="flex items-center space-x-2">

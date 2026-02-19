@@ -383,6 +383,9 @@ export const en = {
     row: "Row",
     column: "Column",
     duplicate: "Duplicate",
+    rebusKey: "Rebus Symbol",
+    rebusKeyPlaceholder: "e.g. happy, mum, ice cream",
+    rebusKeyHint: "Widgit Rebus concept name for Grid3 export",
   },
 
   // ============================================================================
@@ -1642,6 +1645,34 @@ export const en = {
   // ============================================================================
   // CONSENT
   // ============================================================================
+  errors: {
+    POLICY_VIOLATION: "This response was blocked due to a policy violation.",
+    NO_RESPONSE: "An error occurred while processing the response.",
+    LLM_ERROR: "An error occurred while calling the AI model.",
+    PARSE_ERROR: "An error occurred while processing the response.",
+    UNEXPECTED_ERROR: "An unexpected error occurred.",
+    INIT_FAILED: "Failed to initialize session.",
+    MESSAGE_REQUIRED: "Message is required.",
+    MESSAGE_FAILED: "Failed to process message.",
+    NO_AUDIO: "No audio file provided.",
+    VOICE_FAILED: "Failed to process voice input.",
+    STUDENT_ID_REQUIRED: "Student ID is required.",
+    SESSION_FAILED: "Failed to get session.",
+    INTERPRET_FAILED: "Failed to interpret buttons.",
+    DETECTION_FAILED: "Failed to process detection.",
+    RECONNECTING: "Reconnecting...",
+    RATE_LIMITED: "Rate limit reached. Please wait a few minutes.",
+    CONNECTION_CLOSED: "Connection closed. Reconnecting...",
+    CONNECTION_ERROR: "Connection error.",
+    TURN_FAILED: "Turn processing error.",
+    SESSION_RESET_FAILED: "Failed to create new session.",
+    BOARD_NOT_FOUND: "Board not found.",
+    TRANSCRIBE_FAILED: "Failed to transcribe audio.",
+    TTS_FAILED: "Failed to synthesize speech.",
+    NO_SPEECH: "No speech detected.",
+    VOICE_CHAT_FAILED: "Failed to process voice chat.",
+  },
+
   consent: {
     title: "Consent Forms",
     description: "Required consent documentation",

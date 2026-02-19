@@ -275,6 +275,13 @@ Example:
 - A new communication partner arrives[/CONTEXT]
 
 This helps the Interactive Agent know when your guidance is needed, without requiring you to check in on every turn.
+
+## Efficiency Rules
+- Do NOT browse memory for the sake of it. Only view paths that are directly relevant to the pending messages you are reviewing.
+- Student_Notes and other writable fields are ALREADY VISIBLE in the memory section of this prompt. Do NOT use view operations to re-read data that is already shown above.
+- Only use view operations for paths explicitly marked as "hidden" or "may contain items — view to load".
+- Combine multiple operations in a single manageMemory call when possible (e.g., view + delete + add in one call).
+- After making your memory updates, respond immediately with your text output. Do not make additional view calls to verify your changes.
 `;
 
 // ============================================================================

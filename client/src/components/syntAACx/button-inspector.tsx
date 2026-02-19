@@ -333,6 +333,34 @@ export function ButtonInspector() {
             </Button>
           </div>
 
+          {/* Rebus Key (Grid3 export) */}
+          <div className="space-y-1.5">
+            <Label htmlFor="rebusKey" className={cn(
+              "text-xs",
+              isDark ? "text-slate-400" : "text-gray-600"
+            )}>
+              {t("button.rebusKey")}
+            </Label>
+            <Input
+              id="rebusKey"
+              value={(selectedBtn as any).rebusKey || ""}
+              onChange={(e) => handleUpdate("rebusKey", e.target.value || undefined)}
+              placeholder={t("button.rebusKeyPlaceholder")}
+              className={cn(
+                "h-8 text-xs font-mono",
+                isDark
+                  ? "bg-slate-800 border-slate-700 text-slate-200"
+                  : "bg-white border-gray-300 text-gray-800"
+              )}
+            />
+            <p className={cn(
+              "text-[10px]",
+              isDark ? "text-slate-500" : "text-gray-500"
+            )}>
+              {t("button.rebusKeyHint")}
+            </p>
+          </div>
+
           {/* Action */}
           <div className="space-y-1.5">
             <Label className={cn(

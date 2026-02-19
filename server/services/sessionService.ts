@@ -1444,7 +1444,7 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
     return {
       message: {
         role: "system",
-        content: error.message || "An unexpected error occurred.",
+        content: "error:UNEXPECTED_ERROR",
         timestamp: Date.now(),
       },
       sessionId: input.sessionId,
@@ -1528,7 +1528,7 @@ export async function onMessageStreaming(input: OnMessageStreamingInput): Promis
     return {
       message: {
         role: "system",
-        content: error.message || "An unexpected error occurred.",
+        content: "error:UNEXPECTED_ERROR",
         timestamp: Date.now(),
       },
       sessionId: input.sessionId,
@@ -1633,7 +1633,7 @@ export async function* onMessageMdStreaming(
       type: 'complete',
       message: {
         role: "system",
-        content: error.message || "An unexpected error occurred.",
+        content: "error:UNEXPECTED_ERROR",
         timestamp: Date.now(),
       },
       creditsUsed: 0,

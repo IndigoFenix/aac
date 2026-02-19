@@ -71,7 +71,7 @@ export class StudentController {
     try {
       const currentUser = req.user as any;
 
-      if (!req.body.firstName) {
+      if (!req.body.firstName && !req.body.name) {
         res
           .status(400)
           .json({ success: false, message: "First name is required" });

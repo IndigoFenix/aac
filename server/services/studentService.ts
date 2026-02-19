@@ -67,7 +67,7 @@ export class StudentService {
     userId: string,
     role: string = "owner"
   ): Promise<StudentWithAacSettings> {
-    insert = { ...this.parseStudentNames(insert), ...insert };
+    insert = { ...insert, ...this.parseStudentNames(insert) };
     const { student } = await studentRepository.createStudentWithLink(
       insert,
       userId,
@@ -86,7 +86,7 @@ export class StudentService {
     userId: string,
     role: string = "owner"
   ): Promise<{ student: StudentWithAacSettings; link: UserStudent }> {
-    insert = { ...this.parseStudentNames(insert), ...insert };
+    insert = { ...insert, ...this.parseStudentNames(insert) };
     const result = await studentRepository.createStudentWithLink(
       insert,
       userId,
@@ -278,14 +278,16 @@ export class StudentService {
   parseStudentNames(student: {name?: string | null, firstName?: string | null, lastName?: string | null}): { name?: string, firstName?: string; lastName?: string } {
     let { name, firstName, lastName } = student;
 
-    if (name && (!firstName || !lastName)) {
+    if ((firstName || lastName)) {
+      // firstName/lastName are the source of truth — always derive name from them
+      name = `${firstName || ""} ${lastName || ""}`.trim();
+      return { name, firstName: firstName || undefined, lastName: lastName || undefined };
+    } else if (name) {
+      // Only name provided — split into firstName/lastName
       const nameParts = name.trim().split(" ");
       firstName = nameParts.shift() || "";
       lastName = nameParts.join(" ") || "";
       return { name, firstName, lastName };
-    } else if ((firstName || lastName) && !name) {
-      name = `${firstName || ""} ${lastName || ""}`.trim();
-      return { name, firstName: firstName || undefined, lastName: lastName || undefined };
     }
 
     return { };

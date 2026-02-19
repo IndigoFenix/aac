@@ -78,7 +78,7 @@ export class BoardController {
     try {
       const board = await boardRepository.getBoard(req.params.id);
       if (!board || board.userId !== req.user!.id) {
-        res.status(404).json({ error: "Board not found" });
+        res.status(404).json({ error: "error:BOARD_NOT_FOUND" });
         return;
       }
       boardRepository.updateBoard(board.id, { loadedAt: new Date() });
@@ -96,7 +96,7 @@ export class BoardController {
     try {
       const board = await boardRepository.getBoard(req.params.id);
       if (!board || board.userId !== req.user!.id) {
-        res.status(404).json({ error: "Board not found" });
+        res.status(404).json({ error: "error:BOARD_NOT_FOUND" });
         return;
       }
 

@@ -60,7 +60,7 @@ export class VoiceController {
     try {
       const audioFile = (req as any).file as Express.Multer.File | undefined;
       if (!audioFile) {
-        res.status(400).json({ error: "No audio file provided" });
+        res.status(400).json({ error: "error:NO_AUDIO" });
         return;
       }
 
@@ -85,7 +85,7 @@ export class VoiceController {
     } catch (error: any) {
       console.error("[VoiceController] Transcription error:", error);
       res.status(500).json({
-        error: "Failed to transcribe audio",
+        error: "error:TRANSCRIBE_FAILED",
         details: error.message || String(error),
       });
     }
@@ -118,7 +118,7 @@ export class VoiceController {
     } catch (error: any) {
       console.error("[VoiceController] TTS error:", error);
       res.status(500).json({
-        error: "Failed to synthesize speech",
+        error: "error:TTS_FAILED",
         details: error.message || String(error),
       });
     }
@@ -164,12 +164,12 @@ export class VoiceController {
 
       if (res.headersSent) {
         sendSSEEvent(res, "error", {
-          error: error.message || "Failed to synthesize speech",
+          error: "error:TTS_FAILED",
         });
         res.end();
       } else {
         res.status(500).json({
-          error: "Failed to synthesize speech",
+          error: "error:TTS_FAILED",
           details: error.message || String(error),
         });
       }
@@ -191,7 +191,7 @@ export class VoiceController {
       const audioFile = (req as any).file as Express.Multer.File | undefined;
 
       if (!audioFile) {
-        res.status(400).json({ error: "No audio file provided" });
+        res.status(400).json({ error: "error:NO_AUDIO" });
         return;
       }
 
@@ -234,7 +234,7 @@ export class VoiceController {
       });
 
       if (!transcription.text.trim()) {
-        sendSSEEvent(res, "error", { error: "No speech detected" });
+        sendSSEEvent(res, "error", { error: "error:NO_SPEECH" });
         sendSSEEvent(res, "complete", { sessionId: null });
         res.end();
         return;
@@ -308,7 +308,7 @@ export class VoiceController {
         } catch (ttsError: any) {
           console.error("[VoiceController] TTS error (non-fatal):", ttsError.message);
           sendSSEEvent(res, "ttsError", {
-            error: ttsError.message || "Text-to-speech failed",
+            error: "error:TTS_FAILED",
           });
           // Continue - we still want to send complete with the text
         }
@@ -326,14 +326,14 @@ export class VoiceController {
 
       if (res.headersSent) {
         sendSSEEvent(res, "error", {
-          error: error.message || "Failed to process voice chat",
+          error: "error:VOICE_CHAT_FAILED",
         });
         // Still try to send complete so frontend can show what we have
         sendSSEEvent(res, "complete", { sessionId: null, fullText: "" });
         res.end();
       } else {
         res.status(500).json({
-          error: "Failed to process voice chat",
+          error: "error:VOICE_CHAT_FAILED",
           details: error.message || String(error),
         });
       }

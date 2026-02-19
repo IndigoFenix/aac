@@ -111,7 +111,7 @@ export class ChatController {
     } catch (error: any) {
       console.error("[ChatController] Error:", error);
       res.status(500).json({
-        error: "Failed to process message.",
+        error: "error:MESSAGE_FAILED",
         details: error.message || String(error),
       });
     }

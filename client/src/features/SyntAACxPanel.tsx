@@ -132,18 +132,6 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
     }
   };
 
-  const handleExportSnappkg = async () => {
-    if (!board) return;
-    const { SnappkgPackager, downloadFile } = await import('@/lib/packagers');
-    try {
-      const blob = await SnappkgPackager.package(board);
-      const filename = `${board.name.replace(/[<>:"/\\|?*]/g, '_')}.snappkg`;
-      downloadFile(blob, filename);
-    } catch (error) {
-      console.error('Export failed:', error);
-    }
-  };
-
   const handleExportOBZ = async () => {
     if (!board) return;
     const { OBZPackager, downloadFile } = await import('@/lib/packagers');
@@ -200,19 +188,6 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
       const fileData = await blobToBase64(blob);
       const fileName = `${board.name.replace(/[<>:"/\\|?*]/g, '_')}.gridset`;
       uploadToDropbox.mutate({ fileType: 'gridset', fileData, fileName });
-    } catch (error) {
-      console.error('Upload failed:', error);
-    }
-  };
-
-  const handleUploadSnappkg = async () => {
-    if (!board || !dropboxConnection?.connected) return;
-    try {
-      const { SnappkgPackager } = await import('@/lib/packagers');
-      const blob = await SnappkgPackager.package(board);
-      const fileData = await blobToBase64(blob);
-      const fileName = `${board.name.replace(/[<>:"/\\|?*]/g, '_')}.snappkg`;
-      uploadToDropbox.mutate({ fileType: 'snappkg', fileData, fileName });
     } catch (error) {
       console.error('Upload failed:', error);
     }
@@ -355,34 +330,6 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
             {dropboxConnection?.connected && (
               <Button
                 onClick={handleUploadGridset}
-                disabled={!board || !validation.isValid || uploadToDropbox.isPending || isBoardLoading}
-                size="icon"
-                variant="outline"
-                className={cn(
-                  'h-7 w-7',
-                  isDark 
-                    ? 'border-slate-700 text-slate-400 hover:bg-slate-800'
-                    : 'border-gray-300 text-gray-500 hover:bg-gray-100'
-                )}
-              >
-                <Cloud size={12} />
-              </Button>
-            )}
-          </div>
-
-          {/* TD Snap */}
-          <div className={cn('flex items-center gap-0.5', isRTL && 'flex-row-reverse')}>
-            <Button
-              onClick={handleExportSnappkg}
-              disabled={!board || !validation.isValid || isBoardLoading}
-              size="sm"
-              className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700"
-            >
-              .snappkg
-            </Button>
-            {dropboxConnection?.connected && (
-              <Button
-                onClick={handleUploadSnappkg}
                 disabled={!board || !validation.isValid || uploadToDropbox.isPending || isBoardLoading}
                 size="icon"
                 variant="outline"
