@@ -36,6 +36,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
       return response.json();
     },
     onSuccess: (data) => {
+      localStorage.removeItem('aac_signed_out');
       toast({
         title: "Welcome back!",
         description: "You have successfully logged in.",
@@ -59,6 +60,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
       return response.json();
     },
     onSuccess: (data) => {
+      localStorage.removeItem('aac_signed_out');
       toast({
         title: "Welcome to Xahaph!",
         description: "Your account has been created successfully.",

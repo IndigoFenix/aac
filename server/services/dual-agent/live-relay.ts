@@ -73,6 +73,7 @@ export type ServerMessage =
   | { type: "yes_no"; data: any }                        // Yes/No question detected — trigger overlay
   | { type: "ask_yes_no"; data: any }                    // Deferred Yes/No — show after TTS playback
   | { type: "reconnecting"; data: string }               // Server is reconnecting to Gemini
+  | { type: "client_tts"; data: { text: string; voiceId: string; apiKey: string; language: string; voiceRole: "ai" | "student" } }
   | { type: "reconnected" }                              // Reconnection successful
   | { type: "session_reset"; sessionId: string }         // New session created after repeated failures
   | { type: "complete"; data?: any };
@@ -1238,9 +1239,16 @@ If you hear speech that resembles text you recently produced, it is your echo. I
     }
   }
 
+  /** Check if a voice should use client-side ElevenLabs TTS */
+  private isClientTts(voice: ResolvedVoice): boolean {
+    return !!(voice.elevenlabsApiKey && voice.elevenlabsVoiceId);
+  }
+
   /**
    * Stream TTS with a timeout guard. Prevents infinite hangs if the TTS
    * service stalls (e.g. network issue, API timeout).
+   * If the voice is client-side ElevenLabs, sends a lightweight client_tts
+   * message so the browser can call ElevenLabs directly.
    */
   private async streamTtsWithTimeout(
     text: string,
@@ -1249,6 +1257,22 @@ If you hear speech that resembles text you recently produced, it is your echo. I
     label: string,
     timeoutMs = 15_000,
   ): Promise<void> {
+    // Client-side TTS: send config to browser instead of synthesizing server-side
+    if (this.isClientTts(voice)) {
+      const voiceRole = msgType === "avatar_audio" ? "ai" as const : "student" as const;
+      this.send({
+        type: "client_tts",
+        data: {
+          text,
+          voiceId: voice.elevenlabsVoiceId!,
+          apiKey: voice.elevenlabsApiKey!,
+          language: voice.language || "en",
+          voiceRole,
+        },
+      });
+      return;
+    }
+
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new Error(`${label} TTS timed out after ${timeoutMs}ms`)), timeoutMs);

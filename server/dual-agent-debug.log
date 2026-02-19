@@ -18332,3 +18332,183 @@
   "closeApp": false,
   "speechSuppressed": false
 }
+
+============================================================
+[2026-02-19T11:22:15.176Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "148df7b9-4392-4083-be93-c96662a07ef4",
+  "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-19T11:22:15.405Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "148df7b9-4392-4083-be93-c96662a07ef4",
+  "boardButtons": 0,
+  "recentMessages": 0
+}
+
+============================================================
+[2026-02-19T11:22:15.914Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "148df7b9-4392-4083-be93-c96662a07ef4",
+  "elapsed": "100ms",
+  "segmentCount": 2,
+  "segments": "speak, rebuild_board",
+  "speak": "Hi Gal, it's great to see you! Are you ready to have some fun today?",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Play, Explore, Draw, Music, Tired, Help",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-19T11:22:16.268Z] LiveRelay.cleanup
+----------------------------------------
+{
+  "sessionId": "148df7b9-4392-4083-be93-c96662a07ef4"
+}
+
+============================================================
+[2026-02-19T12:23:01.609Z] LiveRelay.cleanup
+----------------------------------------
+{
+  "sessionId": null
+}
+
+============================================================
+[2026-02-19T12:26:00.363Z] LiveRelay.initialize
+----------------------------------------
+{
+  "sessionId": "092afc44-4d0c-4095-8d7a-40c04a36a089",
+  "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
+  "interactionMode": "interact",
+  "responseMode": "fast"
+}
+
+============================================================
+[2026-02-19T12:26:00.632Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "092afc44-4d0c-4095-8d7a-40c04a36a089",
+  "boardButtons": 0,
+  "recentMessages": 0
+}
+
+============================================================
+[2026-02-19T12:26:01.134Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "092afc44-4d0c-4095-8d7a-40c04a36a089",
+  "elapsed": "56ms",
+  "segmentCount": 2,
+  "segments": "speak, rebuild_board",
+  "speak": "Hi Gal, it's great to see you! Are you ready to have some fun today?",
+  "interpret": "(none)",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Yes, No, Play, Explore, Draw, Music, Tired, Help",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-19T12:26:19.077Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "092afc44-4d0c-4095-8d7a-40c04a36a089",
+  "elapsed": "75ms",
+  "segmentCount": 3,
+  "segments": "interpret, speak, add_buttons",
+  "speak": "Okay, Gal! What would you like to play?",
+  "interpret": "I want to play.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": false,
+    "added": 4,
+    "removed": 0,
+    "addLabels": "Blocks, Cars, Games, Outside",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-19T12:26:34.117Z] LiveRelay.turnComplete
+----------------------------------------
+{
+  "sessionId": "092afc44-4d0c-4095-8d7a-40c04a36a089",
+  "elapsed": "83ms",
+  "segmentCount": 3,
+  "segments": "interpret, speak, rebuild_board",
+  "speak": "Alright! Where do you want to explore?",
+  "interpret": "I want to explore.",
+  "transcript": "(none)",
+  "context": "(none)",
+  "board": {
+    "rebuilt": true,
+    "added": 0,
+    "removed": 0,
+    "addLabels": "Yes, No, Draw, Music, Tired, Blocks, Cars, Games, Outside, Room, Garden, Books",
+    "removeLabels": ""
+  },
+  "callMonitor": false,
+  "learnFace": false,
+  "setBoard": false,
+  "pressButton": false,
+  "openApp": false,
+  "closeApp": false,
+  "speechSuppressed": false
+}
+
+============================================================
+[2026-02-19T12:26:46.269Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "092afc44-4d0c-4095-8d7a-40c04a36a089",
+  "boardButtons": 12,
+  "recentMessages": 10
+}
+
+============================================================
+[2026-02-19T12:26:49.681Z] LiveRelay.cleanup
+----------------------------------------
+{
+  "sessionId": "092afc44-4d0c-4095-8d7a-40c04a36a089"
+}

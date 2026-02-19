@@ -117,6 +117,9 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Deferred ask_yes_no: show overlay after TTS playback completes
   const pendingAskYesNoRef = useRef(false);
 
+  // Promise chain for client-side TTS — preserves ordering between consecutive calls
+  const clientTtsChainRef = useRef(Promise.resolve());
+
   // Streaming audio player
   const audioPlayer = useStreamingAudioPlayer({
     autoPlay: autoPlayAudio,
@@ -268,6 +271,40 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
             audioPlayer.queueChunk({ chunk: msg.data, format: "mp3", tag: "interpret" });
           }
           break;
+
+        case "client_tts": {
+          // Server requests client-side ElevenLabs TTS synthesis
+          if (!audioEnabled) break;
+          const { text: ttsText, voiceId, apiKey, language: ttsLang, voiceRole } = msg.data as {
+            text: string; voiceId: string; apiKey: string; language: string; voiceRole: "ai" | "student";
+          };
+          const tag = voiceRole === "ai" ? "avatar" : "interpret";
+          // Chain to preserve ordering between consecutive client_tts events
+          clientTtsChainRef.current = clientTtsChainRef.current.then(async () => {
+            try {
+              const V3_LANGS = new Set(["he", "ar"]);
+              const modelId = ttsLang && V3_LANGS.has(ttsLang) ? "eleven_v3" : "eleven_multilingual_v2";
+              const resp = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+                method: "POST",
+                headers: { "xi-api-key": apiKey, "Content-Type": "application/json", Accept: "audio/mpeg" },
+                body: JSON.stringify({ text: ttsText, model_id: modelId, voice_settings: { stability: 0.5, similarity_boost: 0.75 } }),
+              });
+              if (!resp.ok) {
+                console.error("[LiveSession] Client TTS error:", resp.status);
+                return;
+              }
+              const arrayBuf = await resp.arrayBuffer();
+              const bytes = new Uint8Array(arrayBuf);
+              let binary = "";
+              for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+              const base64 = btoa(binary);
+              audioPlayer.queueChunk({ chunk: base64, format: "mp3", tag });
+            } catch (err) {
+              console.error("[LiveSession] Client TTS failed:", err);
+            }
+          });
+          break;
+        }
 
         case "emote":
           setEmote(msg.data as "happy" | "sad" | "neutral");

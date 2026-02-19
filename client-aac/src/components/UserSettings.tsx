@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, User, Save, Volume2, MessageSquare, LogOut, Sun, Moon, Crosshair, LayoutGrid, Brain, Zap, Search, RotateCcw, RefreshCw, Target } from "lucide-react";
+import { X, User, Save, Volume2, MessageSquare, LogOut, Sun, Moon, Crosshair, LayoutGrid, Brain, Zap, Search, RotateCcw, RefreshCw, Target, Play, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -82,6 +82,27 @@ export default function UserSettings({
     },
   });
 
+  // Fetch ElevenLabs voices when API key is present
+  const [debouncedApiKey, setDebouncedApiKey] = useState("");
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => {
+    clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => setDebouncedApiKey(elevenlabsApiKey.trim()), 600);
+    return () => clearTimeout(debounceTimerRef.current);
+  }, [elevenlabsApiKey]);
+
+  const { data: elevenlabsVoices, isLoading: elevenlabsLoading, isError: elevenlabsError } = useQuery({
+    queryKey: ['/api/voices/elevenlabs-list', debouncedApiKey],
+    queryFn: async () => {
+      const res = await apiRequest('POST', '/api/voices/elevenlabs-list', { apiKey: debouncedApiKey });
+      const data = await res.json();
+      return data.voices as Array<{ voice_id: string; name: string; category: string; labels: Record<string, string> }>;
+    },
+    enabled: debouncedApiKey.length > 0,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+
   // Board settings
   const [iconTextRatio, setIconTextRatio] = useState(3);
   const [interpretationLevel, setInterpretationLevel] = useState(2);
@@ -102,6 +123,49 @@ export default function UserSettings({
 
   // Show restart confirmation dialog
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
+
+  // Voice preview state
+  const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const previewVoice = useCallback(async (voiceId: string) => {
+    if (!voiceId || !debouncedApiKey) return;
+    if (previewingVoice) return;
+    setPreviewingVoice(voiceId);
+    try {
+      const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+        method: "POST",
+        headers: {
+          "xi-api-key": debouncedApiKey,
+          "Content-Type": "application/json",
+          Accept: "audio/mpeg",
+        },
+        body: JSON.stringify({
+          text: t("settings.elevenlabsTestPhrase"),
+          model_id: "eleven_multilingual_v2",
+          voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+        }),
+      });
+      if (!res.ok) throw new Error(`ElevenLabs error ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      previewAudioRef.current = audio;
+      audio.onended = () => {
+        setPreviewingVoice(null);
+        URL.revokeObjectURL(url);
+        previewAudioRef.current = null;
+      };
+      audio.onerror = () => {
+        setPreviewingVoice(null);
+        URL.revokeObjectURL(url);
+        previewAudioRef.current = null;
+      };
+      await audio.play();
+    } catch {
+      setPreviewingVoice(null);
+    }
+  }, [debouncedApiKey, previewingVoice, t]);
 
   // Load from student profile (AAC settings are nested under aacSettings)
   useEffect(() => {
@@ -198,26 +262,15 @@ export default function UserSettings({
     },
   });
 
-  // Logout mutation
-  const logoutMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiRequest("POST", "/auth/logout");
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.clear();
-      localStorage.removeItem('synapse_user_profile');
-      localStorage.removeItem('synapse_user_id');
-      window.location.reload();
-    },
-    onError: (error: any) => {
-      toast({
-        title: t("common.error"),
-        description: error.message || t("settings.logoutError"),
-        variant: "destructive",
-      });
-    },
-  });
+  // Logout — client-side only (does NOT destroy the server session,
+  // so the admin client stays logged in)
+  const handleLogout = () => {
+    queryClient.clear();
+    localStorage.removeItem('synapse_user_profile');
+    localStorage.removeItem('synapse_user_id');
+    localStorage.setItem('aac_signed_out', 'true');
+    window.location.reload();
+  };
 
   const handleSave = () => {
     updateMutation.mutate({
@@ -497,27 +550,127 @@ export default function UserSettings({
                     />
                   </div>
 
-                  <div className="space-y-2">
-                    <Label className="text-xs font-medium text-gray-500">{t("settings.elevenlabsStudentVoiceId")}</Label>
-                    <input
-                      type="text"
-                      value={elevenlabsStudentVoiceId}
-                      onChange={(e) => setElevenlabsStudentVoiceId(e.target.value)}
-                      placeholder={t("settings.elevenlabsVoiceIdPlaceholder")}
-                      className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-mono"
-                    />
-                  </div>
+                  {elevenlabsError && debouncedApiKey && (
+                    <p className="text-xs text-red-500">{t("settings.elevenlabsInvalidKey")}</p>
+                  )}
 
-                  <div className="space-y-2">
-                    <Label className="text-xs font-medium text-gray-500">{t("settings.elevenlabsAiVoiceId")}</Label>
-                    <input
-                      type="text"
-                      value={elevenlabsAiVoiceId}
-                      onChange={(e) => setElevenlabsAiVoiceId(e.target.value)}
-                      placeholder={t("settings.elevenlabsVoiceIdPlaceholder")}
-                      className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-mono"
-                    />
-                  </div>
+                  {debouncedApiKey && !elevenlabsError && (
+                    <>
+                      <div className="space-y-2">
+                        <Label className="text-xs font-medium text-gray-500">{t("settings.elevenlabsStudentVoiceId")}</Label>
+                        {elevenlabsLoading ? (
+                          <p className="text-xs text-gray-400">{t("settings.elevenlabsLoadingVoices")}</p>
+                        ) : elevenlabsVoices && elevenlabsVoices.length > 0 ? (
+                          <div className="flex gap-2 items-center">
+                            <Select
+                              value={elevenlabsStudentVoiceId || "_none"}
+                              onValueChange={(v) => setElevenlabsStudentVoiceId(v === "_none" ? "" : v)}
+                            >
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder={t("settings.elevenlabsSelectVoice")} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="_none">{t("settings.elevenlabsSelectVoice")}</SelectItem>
+                                {elevenlabsVoices.map((v) => (
+                                  <SelectItem key={v.voice_id} value={v.voice_id}>
+                                    {v.name} {v.category ? `(${v.category})` : ""}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {elevenlabsStudentVoiceId && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => previewVoice(elevenlabsStudentVoiceId)}
+                                disabled={!!previewingVoice}
+                                title={t("settings.elevenlabsTestVoice")}
+                                className="shrink-0 h-8 w-8 p-0"
+                              >
+                                {previewingVoice === elevenlabsStudentVoiceId ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Play className="w-4 h-4" />
+                                )}
+                              </Button>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-gray-400">{t("settings.elevenlabsNoVoices")}</p>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-xs font-medium text-gray-500">{t("settings.elevenlabsAiVoiceId")}</Label>
+                        {elevenlabsLoading ? (
+                          <p className="text-xs text-gray-400">{t("settings.elevenlabsLoadingVoices")}</p>
+                        ) : elevenlabsVoices && elevenlabsVoices.length > 0 ? (
+                          <div className="flex gap-2 items-center">
+                            <Select
+                              value={elevenlabsAiVoiceId || "_none"}
+                              onValueChange={(v) => setElevenlabsAiVoiceId(v === "_none" ? "" : v)}
+                            >
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder={t("settings.elevenlabsSelectVoice")} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="_none">{t("settings.elevenlabsSelectVoice")}</SelectItem>
+                                {elevenlabsVoices.map((v) => (
+                                  <SelectItem key={v.voice_id} value={v.voice_id}>
+                                    {v.name} {v.category ? `(${v.category})` : ""}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {elevenlabsAiVoiceId && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => previewVoice(elevenlabsAiVoiceId)}
+                                disabled={!!previewingVoice}
+                                title={t("settings.elevenlabsTestVoice")}
+                                className="shrink-0 h-8 w-8 p-0"
+                              >
+                                {previewingVoice === elevenlabsAiVoiceId ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Play className="w-4 h-4" />
+                                )}
+                              </Button>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-gray-400">{t("settings.elevenlabsNoVoices")}</p>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  {!debouncedApiKey && (
+                    <>
+                      <div className="space-y-2">
+                        <Label className="text-xs font-medium text-gray-500">{t("settings.elevenlabsStudentVoiceId")}</Label>
+                        <input
+                          type="text"
+                          value={elevenlabsStudentVoiceId}
+                          onChange={(e) => setElevenlabsStudentVoiceId(e.target.value)}
+                          placeholder={t("settings.elevenlabsVoiceIdPlaceholder")}
+                          className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-mono"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-xs font-medium text-gray-500">{t("settings.elevenlabsAiVoiceId")}</Label>
+                        <input
+                          type="text"
+                          value={elevenlabsAiVoiceId}
+                          onChange={(e) => setElevenlabsAiVoiceId(e.target.value)}
+                          placeholder={t("settings.elevenlabsVoiceIdPlaceholder")}
+                          className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm font-mono"
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -813,14 +966,13 @@ export default function UserSettings({
                   variant="secondary"
                   onClick={() => {
                     if (window.confirm(t("settings.confirmLogout"))) {
-                      logoutMutation.mutate();
+                      handleLogout();
                     }
                   }}
-                  disabled={logoutMutation.isPending}
                   className="w-full flex items-center gap-2"
                 >
                   <LogOut className="w-4 h-4" />
-                  {logoutMutation.isPending ? t("auth.loggingOut") : t("common.logout")}
+                  {t("common.logout")}
                 </Button>
               </div>
 

@@ -45,7 +45,9 @@ function MainApp() {
     setSelectedStudentId(null);
     localStorage.removeItem('synapse_student_id');
     localStorage.removeItem('synapse_user_profile');
-    // Set user to null to immediately trigger login screen, then refetch to confirm
+    // Mark as signed out locally — do NOT call server /auth/logout
+    // so the admin client's session stays alive
+    localStorage.setItem('aac_signed_out', 'true');
     queryClient.setQueryData(["/auth/user"], null);
   };
 
@@ -71,10 +73,10 @@ function MainApp() {
     );
   }
 
-  // Step 1: Not authenticated - show login
-  // Note: /auth/user returns { success: boolean, user: object|null }
-  // So we need to check authData?.user, not just authData
-  if (error || !authData?.user) {
+  // Step 1: Not authenticated or signed out locally - show login
+  // The aac_signed_out flag allows AAC logout without destroying the shared server session
+  const aacSignedOut = localStorage.getItem('aac_signed_out') === 'true';
+  if (error || !authData?.user || aacSignedOut) {
     return (
       <LoginModal
         isOpen={true}

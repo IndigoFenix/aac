@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LogOut, User } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
+
 import { useLanguage } from "@/contexts/LanguageContext";
 import { LanguageSelector } from "@/components/LanguageSelector";
 
@@ -41,14 +41,8 @@ export default function StudentSelector({ user, onStudentSelect, onLogout }: Stu
     }
   }, [error, onLogout]);
 
-  const handleLogout = async () => {
-    try {
-      await apiRequest("POST", "/auth/logout", {});
-      onLogout();
-    } catch (err) {
-      console.error("Logout failed:", err);
-      onLogout();
-    }
+  const handleLogout = () => {
+    onLogout();
   };
 
   return (

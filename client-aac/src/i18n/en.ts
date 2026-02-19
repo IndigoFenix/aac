@@ -159,6 +159,12 @@ export const en = {
     elevenlabsStudentVoiceId: "Student Voice ID",
     elevenlabsAiVoiceId: "AI Voice ID",
     elevenlabsVoiceIdPlaceholder: "e.g. 21m00Tcm4TlvDq8ikWAM",
+    elevenlabsLoadingVoices: "Loading voices...",
+    elevenlabsNoVoices: "No voices found",
+    elevenlabsInvalidKey: "Invalid API key",
+    elevenlabsSelectVoice: "Select a voice",
+    elevenlabsTestVoice: "Test voice",
+    elevenlabsTestPhrase: "Hello, I am your voice assistant",
 
     buttonSize: "Button Size",
     buttonSizeExtraLarge: "Extra large icons, minimal text",

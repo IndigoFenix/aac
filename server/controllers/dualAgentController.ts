@@ -141,6 +141,9 @@ export class DualAgentController {
           case "interpretation_audio":
             sendSSEEvent(res, "interpretation_audio", { chunk: chunk.data, format: "mp3" });
             break;
+          case "client_tts":
+            sendSSEEvent(res, "client_tts", chunk.data);
+            break;
           case "debug":
             sendSSEEvent(res, "debug", chunk.data);
             break;
@@ -293,6 +296,9 @@ export class DualAgentController {
           case "interpretation_audio":
             sendSSEEvent(res, "interpretation_audio", { chunk: chunk.data, format: "mp3" });
             break;
+          case "client_tts":
+            sendSSEEvent(res, "client_tts", chunk.data);
+            break;
           case "debug":
             sendSSEEvent(res, "debug", chunk.data);
             break;
@@ -433,6 +439,9 @@ export class DualAgentController {
             break;
           case "interpretation_audio":
             sendSSEEvent(res, "interpretation_audio", { chunk: chunk.data, format: "mp3" });
+            break;
+          case "client_tts":
+            sendSSEEvent(res, "client_tts", chunk.data);
             break;
           case "debug":
             sendSSEEvent(res, "debug", chunk.data);
@@ -586,6 +595,9 @@ export class DualAgentController {
           case "audio":
             sendSSEEvent(res, "audio", { chunk: chunk.data, format: "mp3" });
             break;
+          case "client_tts":
+            sendSSEEvent(res, "client_tts", chunk.data);
+            break;
           case "complete":
             sendSSEEvent(res, "complete", chunk.data);
             break;
@@ -714,6 +726,9 @@ export class DualAgentController {
             break;
           case "interpretation_audio":
             sendSSEEvent(res, "interpretation_audio", { chunk: chunk.data, format: "mp3" });
+            break;
+          case "client_tts":
+            sendSSEEvent(res, "client_tts", chunk.data);
             break;
           case "debug":
             sendSSEEvent(res, "debug", chunk.data);
