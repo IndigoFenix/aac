@@ -469,6 +469,16 @@ If you hear speech that resembles text you recently produced, it is your echo. I
   private handleInterpretButtons(buttons: string[], board?: any): void {
     const buttonList = buttons.join(", ");
     console.log(`[LiveRelay] Interpreting buttons: ${buttonList}`);
+
+    // Record button press as a user message in session log
+    if (this.sessionId) {
+      dualAgentService.addPendingMessage(this.sessionId, {
+        role: "user",
+        content: `[BUTTON PRESS] ${buttonList}`,
+        timestamp: Date.now(),
+      }).catch(err => console.error("[LiveRelay] Failed to persist button press:", err));
+    }
+
     this.gemini.sendMessage(`[BUTTON PRESS] ${buttonList}
     The user pressed the above button(s). Interpret this as a user message and respond accordingly.
     Call [REBUILD_BOARD] to update the board with new buttons or content.

@@ -1020,7 +1020,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             onSelect={(choice) => {
               dismissYesNoRef.current?.();
               setYesNoActive(false);
-              sendMessageFnRef.current?.(choice);
+              interpretFnRef.current?.([choice]);
             }}
             onDismiss={() => {
               dismissYesNoRef.current?.();
