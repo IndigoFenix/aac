@@ -41,24 +41,38 @@ import { boardRepository } from "../../repositories/boardRepository";
 import { customSymbolRepository } from "../../repositories/customSymbolRepository";
 
 /**
- * Simple promise-based mutex for per-session concurrency control
+ * Simple promise-based mutex for per-session concurrency control.
+ * Includes a timeout to prevent deadlocks if a holder never releases.
  */
 class SessionMutex {
   private locked = false;
-  private queue: Array<() => void> = [];
+  private queue: Array<{ resolve: () => void; timer: ReturnType<typeof setTimeout> }> = [];
+  private static readonly ACQUIRE_TIMEOUT_MS = 30_000; // 30s max wait
 
   async acquire(): Promise<void> {
     if (!this.locked) {
       this.locked = true;
       return;
     }
-    return new Promise(resolve => this.queue.push(resolve));
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        // Remove from queue and force-release
+        const idx = this.queue.findIndex(e => e.timer === timer);
+        if (idx >= 0) this.queue.splice(idx, 1);
+        console.error("[SessionMutex] acquire() timed out after 30s — force-releasing");
+        // Force unlock to prevent permanent deadlock
+        this.locked = false;
+        resolve(); // Let the caller proceed (with a logged warning)
+      }, SessionMutex.ACQUIRE_TIMEOUT_MS);
+      this.queue.push({ resolve, timer });
+    });
   }
 
   release(): void {
     if (this.queue.length > 0) {
       const next = this.queue.shift()!;
-      next();
+      clearTimeout(next.timer);
+      next.resolve();
     } else {
       this.locked = false;
     }
@@ -1531,8 +1545,14 @@ export class DualAgentService {
     // Update DB (fire-and-forget for the flag, main work below)
     this.updateMonitorBusy(state.sessionId, true, state.monitorBusySince).catch(console.error);
 
-    // Do the actual processing (preserves fire-and-forget pattern)
-    this.doMonitorProcessing(state, monitorAgent, interactiveAgent, board);
+    // Do the actual processing (fire-and-forget with error catch)
+    this.doMonitorProcessing(state, monitorAgent, interactiveAgent, board).catch(err => {
+      console.error("[DualAgentService] Uncaught doMonitorProcessing error:", (err as Error).message);
+      // Ensure state is cleaned up even if doMonitorProcessing throws before its own catch/finally
+      state.monitorBusy = false;
+      state.monitorBusySince = undefined;
+      state.pendingDbLocked = false;
+    });
   }
 
   /**
@@ -1722,7 +1742,15 @@ export class DualAgentService {
 
       state.monitorBusy = false;
       state.monitorBusySince = undefined;
-      await this.updateMonitorBusy(state.sessionId, false, null);
+      // Use timeout on DB write in finally block to prevent deadlock
+      try {
+        await Promise.race([
+          this.updateMonitorBusy(state.sessionId, false, null),
+          new Promise<void>((_, reject) => setTimeout(() => reject(new Error("updateMonitorBusy timed out")), 10_000)),
+        ]);
+      } catch (err) {
+        console.error("[DualAgentService] Failed to clear monitorBusy in DB:", (err as Error).message);
+      }
 
       // Check rerun flag — another trigger arrived while we were busy
       const cached = sessionCache.get(state.sessionId);

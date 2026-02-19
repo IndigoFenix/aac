@@ -125,10 +125,18 @@ export class LiveRelay {
   private static readonly MAX_RECONNECT_BEFORE_RESET = 2;
   private initialConnectionDone = false;
 
+  // Client WebSocket health check (ping/pong)
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private pongReceived = true;
+  private static readonly PING_INTERVAL_MS = 30_000; // 30s
+
   // Accumulation for turn processing
   private turnTextBuffer = "";
   private turnSegments: StreamingSegment[] = [];
   private turnStartTime = 0;
+
+  // Turn processing guard: prevents concurrent processTurnEnd() calls
+  private turnProcessingBusy = false;
 
   constructor(ws: WebSocket) {
     this.ws = ws;
@@ -220,6 +228,14 @@ export class LiveRelay {
       console.error("[LiveRelay] WebSocket error:", err);
       this.cleanup();
     });
+
+    // Respond to pong frames (for health check)
+    ws.on("pong", () => {
+      this.pongReceived = true;
+    });
+
+    // Start client WebSocket health check
+    this.startPingTimer();
   }
 
   // -------------------------------------------------------------------------
@@ -524,21 +540,40 @@ If you hear speech that resembles text you recently produced, it is your echo. I
   /**
    * Handle turn completion from Gemini.
    * Flush the parser and do post-turn processing (TTS, contact enrollment, monitor).
+   * Wrapped in try-catch-finally to prevent errors from killing the relay.
    */
   private async handleGeminiTurnComplete(): Promise<void> {
-    // Flush remaining content from parser
-    const remaining = this.parser.flush();
-    for (const seg of remaining) {
-      this.turnSegments.push(seg);
-      this.processSegment(seg);
+    // Guard against concurrent turn processing (shouldn't happen but safety first)
+    if (this.turnProcessingBusy) {
+      console.warn("[LiveRelay] handleGeminiTurnComplete called while already processing — skipping");
+      return;
     }
+    this.turnProcessingBusy = true;
 
-    // Post-turn processing
-    await this.processTurnEnd();
+    try {
+      // Flush remaining content from parser
+      const remaining = this.parser.flush();
+      for (const seg of remaining) {
+        this.turnSegments.push(seg);
+        this.processSegment(seg);
+      }
 
-    // Reset for next turn
-    this.turnTextBuffer = "";
-    this.turnSegments = [];
+      // Post-turn processing with timeout (60s max)
+      const turnEndPromise = this.processTurnEnd();
+      const timeoutPromise = new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error("processTurnEnd timed out after 60s")), 60_000)
+      );
+      await Promise.race([turnEndPromise, timeoutPromise]);
+    } catch (err) {
+      console.error("[LiveRelay] handleGeminiTurnComplete error:", (err as Error).message);
+      // Send error to client so they know something went wrong
+      this.send({ type: "error", data: `Turn processing error: ${(err as Error).message}` });
+    } finally {
+      // Always reset state so the relay can process the next turn
+      this.turnTextBuffer = "";
+      this.turnSegments = [];
+      this.turnProcessingBusy = false;
+    }
   }
 
   /**
@@ -1130,24 +1165,31 @@ If you hear speech that resembles text you recently produced, it is your echo. I
 
     // -----------------------------------------------------------------------
     // TTS: student voice first (interpretation), then AI voice
+    // Each TTS stream has a 15s timeout to prevent infinite hangs.
     // -----------------------------------------------------------------------
     if (fullInterpretText && this.studentVoice) {
       try {
-        for await (const chunk of ttsFacade.synthesizeStream(fullInterpretText, this.studentVoice)) {
-          this.send({ type: "interpretation_audio", data: chunk.toString("base64") });
-        }
+        await this.streamTtsWithTimeout(
+          fullInterpretText,
+          this.studentVoice,
+          "interpretation_audio",
+          "Student",
+        );
       } catch (err) {
-        console.error("[LiveRelay] Student TTS error:", err);
+        console.error("[LiveRelay] Student TTS error:", (err as Error).message);
       }
     }
 
     if (fullSpeakText && !isSilent && this.aiVoice) {
       try {
-        for await (const chunk of ttsFacade.synthesizeStream(fullSpeakText, this.aiVoice)) {
-          this.send({ type: "avatar_audio", data: chunk.toString("base64") });
-        }
+        await this.streamTtsWithTimeout(
+          fullSpeakText,
+          this.aiVoice,
+          "avatar_audio",
+          "AI",
+        );
       } catch (err) {
-        console.error("[LiveRelay] AI TTS error:", err);
+        console.error("[LiveRelay] AI TTS error:", (err as Error).message);
       }
     }
 
@@ -1187,8 +1229,40 @@ If you hear speech that resembles text you recently produced, it is your echo. I
   // -------------------------------------------------------------------------
 
   private send(msg: ServerMessage): void {
-    if (this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(msg));
+    try {
+      if (this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify(msg));
+      }
+    } catch (err) {
+      console.error("[LiveRelay] send() failed:", (err as Error).message, "msgType:", msg.type);
+    }
+  }
+
+  /**
+   * Stream TTS with a timeout guard. Prevents infinite hangs if the TTS
+   * service stalls (e.g. network issue, API timeout).
+   */
+  private async streamTtsWithTimeout(
+    text: string,
+    voice: ResolvedVoice,
+    msgType: "avatar_audio" | "interpretation_audio",
+    label: string,
+    timeoutMs = 15_000,
+  ): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} TTS timed out after ${timeoutMs}ms`)), timeoutMs);
+    });
+
+    try {
+      const streamPromise = (async () => {
+        for await (const chunk of ttsFacade.synthesizeStream(text, voice)) {
+          this.send({ type: msgType, data: chunk.toString("base64") } as any);
+        }
+      })();
+      await Promise.race([streamPromise, timeoutPromise]);
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
@@ -1221,6 +1295,35 @@ If you hear speech that resembles text you recently produced, it is your echo. I
   // -------------------------------------------------------------------------
   // Periodic board state reminders
   // -------------------------------------------------------------------------
+
+  /**
+   * Start ping/pong health check for the client WebSocket.
+   * If pong is not received within one interval, the connection is dead — terminate.
+   */
+  private startPingTimer(): void {
+    this.stopPingTimer();
+    this.pongReceived = true;
+    this.pingTimer = setInterval(() => {
+      if (!this.pongReceived) {
+        console.warn("[LiveRelay] Client WebSocket failed health check (no pong) — terminating");
+        this.ws.terminate();
+        return;
+      }
+      this.pongReceived = false;
+      try {
+        this.ws.ping();
+      } catch {
+        // ws already closed
+      }
+    }, LiveRelay.PING_INTERVAL_MS);
+  }
+
+  private stopPingTimer(): void {
+    if (this.pingTimer) {
+      clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
+  }
 
   private startBoardReminder(): void {
     this.stopBoardReminder();
@@ -1343,7 +1446,8 @@ If you hear speech that resembles text you recently produced, it is your echo. I
   }
 
   private cleanup(): void {
-    // Stop board state reminder timer
+    // Stop timers
+    this.stopPingTimer();
     this.stopBoardReminder();
 
     // Remove context injection callback to prevent leaks
