@@ -26,6 +26,7 @@ export async function synthesize(
       return await elevenlabsTtsService.synthesize(text, {
         voiceId: voice.elevenlabsVoiceId,
         apiKeyOverride: voice.elevenlabsApiKey,
+        language: voice.language,
       });
     } catch (error: any) {
       console.error(
@@ -41,6 +42,7 @@ export async function synthesize(
     try {
       return await elevenlabsTtsService.synthesize(text, {
         voiceId: voice.customVoice.externalId,
+        language: voice.language,
       });
     } catch (error: any) {
       console.error(
@@ -69,6 +71,7 @@ export async function* synthesizeStream(
       yield* elevenlabsTtsService.synthesizeStream(text, {
         voiceId: voice.elevenlabsVoiceId,
         apiKeyOverride: voice.elevenlabsApiKey,
+        language: voice.language,
       });
       return;
     } catch (error: any) {
@@ -85,6 +88,7 @@ export async function* synthesizeStream(
     try {
       yield* elevenlabsTtsService.synthesizeStream(text, {
         voiceId: voice.customVoice.externalId,
+        language: voice.language,
       });
       return;
     } catch (error: any) {

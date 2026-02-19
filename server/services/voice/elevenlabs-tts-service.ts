@@ -3,7 +3,8 @@
 
 export interface ElevenLabsTTSOptions {
   voiceId: string;
-  modelId?: string; // default: eleven_multilingual_v2
+  modelId?: string; // explicit override; otherwise auto-selected by language
+  language?: string; // ISO 639-1 code: 'en', 'he', etc. — used to pick the right model
   stability?: number; // 0-1, default 0.5
   similarityBoost?: number; // 0-1, default 0.75
   apiKeyOverride?: string; // Use this API key instead of the env var
@@ -11,6 +12,16 @@ export interface ElevenLabsTTSOptions {
 
 const ELEVENLABS_API_BASE = "https://api.elevenlabs.io/v1";
 const DEFAULT_MODEL = "eleven_multilingual_v2";
+
+// Languages that require eleven_v3 (multilingual_v2 doesn't support them well)
+const V3_LANGUAGES = new Set(["he", "ar"]);
+
+/** Pick the best ElevenLabs model for the given language */
+function resolveModel(options: ElevenLabsTTSOptions): string {
+  if (options.modelId) return options.modelId;
+  if (options.language && V3_LANGUAGES.has(options.language)) return "eleven_v3";
+  return DEFAULT_MODEL;
+}
 
 function getApiKey(): string {
   const key = process.env.ELEVENLABS_API_KEY;
@@ -29,7 +40,7 @@ export async function synthesize(
   options: ElevenLabsTTSOptions
 ): Promise<Buffer> {
   const apiKey = options.apiKeyOverride || getApiKey();
-  const modelId = options.modelId || DEFAULT_MODEL;
+  const modelId = resolveModel(options);
 
   console.log(
     `[ElevenLabsTTS] Synthesizing: "${text.substring(0, 50)}..." (voice: ${options.voiceId}, model: ${modelId})`
@@ -77,7 +88,7 @@ export async function* synthesizeStream(
   options: ElevenLabsTTSOptions
 ): AsyncGenerator<Buffer> {
   const apiKey = options.apiKeyOverride || getApiKey();
-  const modelId = options.modelId || DEFAULT_MODEL;
+  const modelId = resolveModel(options);
 
   console.log(
     `[ElevenLabsTTS] Streaming: "${text.substring(0, 50)}..." (voice: ${options.voiceId}, model: ${modelId})`
