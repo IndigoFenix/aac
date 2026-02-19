@@ -214,7 +214,7 @@ Be direct and practical. Skip sections with no data. Do not use the memory tool 
       };
 
       const result = await onMessage({
-        userId: this.userId || "system",
+        userId: this.userId,
         studentId: this.studentId,
         sessionId: this.sessionId,
         activeFeature: "aac",
@@ -283,7 +283,7 @@ Be direct and practical. Skip sections with no data. Do not use the memory tool 
 
       // Process through sessionService for memory updates
       const result = await onMessage({
-        userId: this.userId || "system",
+        userId: this.userId,
         studentId: this.studentId,
         sessionId: this.sessionId,
         activeFeature: "aac",
@@ -374,7 +374,7 @@ Be direct and practical. Skip sections with no data. Do not use the memory tool 
 
       // Use streaming session service
       const streamResult = await onMessageStreaming({
-        userId: this.userId || "system",
+        userId: this.userId,
         studentId: this.studentId,
         sessionId: this.sessionId || undefined,
         activeFeature: "aac",

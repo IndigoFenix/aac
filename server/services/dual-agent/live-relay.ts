@@ -88,6 +88,7 @@ export class LiveRelay {
 
   // Session state
   private studentId: string | null = null;
+  private userId: string | undefined = undefined;
   private sessionId: string | null = null;
   private sessionCache: SessionCache | null = null;
   private interactionMode: AACInteractionMode = "interact";
@@ -122,6 +123,7 @@ export class LiveRelay {
   // Reconnection tracking
   private reconnectAttempts = 0;
   private static readonly MAX_RECONNECT_BEFORE_RESET = 2;
+  private initialConnectionDone = false;
 
   // Accumulation for turn processing
   private turnTextBuffer = "";
@@ -145,7 +147,13 @@ export class LiveRelay {
         console.log("[LiveRelay] Gemini session ready");
         // Reset reconnect counter on successful connection
         this.reconnectAttempts = 0;
-        this.send({ type: "reconnected" });
+
+        if (this.initialConnectionDone) {
+          // This is a reconnection — restore context so the model doesn't start over
+          this.send({ type: "reconnected" });
+          this.injectReconnectionContext();
+        }
+        // Initial connection is handled by handleInitialize after greeting prompt
       },
       onReconnecting: () => {
         this.reconnectAttempts++;
@@ -186,6 +194,7 @@ export class LiveRelay {
             this.gemini.sendConversationHistory(turns);
             console.log(`[LiveRelay] Sent ${turns.length} history turns to fresh Gemini session`);
           }
+          // Context injection is also handled by onReady → injectReconnectionContext()
         } catch (err) {
           console.error("[LiveRelay] History reload failed:", err);
         }
@@ -359,6 +368,8 @@ export class LiveRelay {
 
   private async handleInitialize(msg: Extract<ClientMessage, { type: "initialize" }>): Promise<void> {
     this.studentId = msg.studentId;
+    // Preserve userId from initial init (may be absent on server-side forceNewSession)
+    if (msg.userId) this.userId = msg.userId;
     this.interactionMode = msg.interactionMode || "interact";
     this.responseMode = msg.responseMode || "fast";
     this.debugMode = msg.debugMode || false;
@@ -453,6 +464,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
         : `Greet the user with a short, friendly greeting (1-2 sentences) and provide 4-12 initial communication buttons that reflect the student's interests, needs, and communication level from the system prompt. The buttons should be appropriate responses to your greeting. Use [SPEAK] for your greeting and [REBUILD_BOARD] for the buttons.${personaHint}`;
 
       this.gemini.sendMessage(greetingPrompt, "user");
+      this.initialConnectionDone = true;
 
       console.log(`[LiveRelay] Initialized session ${state.sessionId} for student ${msg.studentId}`);
     } catch (err) {
@@ -1226,6 +1238,58 @@ If you hear speech that resembles text you recently produced, it is your echo. I
   }
 
   /**
+   * Inject session context after a reconnection so the model doesn't start over.
+   * Sends current board state, recent conversation, and a continuation instruction.
+   * Uses turnComplete=false (via sendContextInjection) so it doesn't trigger a response.
+   */
+  private injectReconnectionContext(): void {
+    const state = this.sessionCache?.state;
+    if (!state) return;
+
+    const parts: string[] = [];
+
+    // Current board state
+    const maxSlots = state.maxBoardItems || 12;
+    const labels = state.boardButtonLabels;
+    if (labels.length > 0) {
+      parts.push(`Current AAC board buttons (${labels.length}/${maxSlots}): ${labels.join(", ")}`);
+    }
+
+    // Current interaction mode
+    parts.push(`Interaction mode: ${this.interactionMode}`);
+
+    // Current emote
+    if (state.currentEmote) {
+      parts.push(`Current emotion: ${state.currentEmote}`);
+    }
+
+    // Recent conversation from pending messages (last 20)
+    const recent = (state.pendingMessages || []).slice(-20);
+    if (recent.length > 0) {
+      const summary = recent.map(m => {
+        const role = m.role === "assistant" ? "AI" : "User";
+        const content = m.content.length > 150 ? m.content.substring(0, 150) + "..." : m.content;
+        return `  ${role}: ${content}`;
+      }).join("\n");
+      parts.push(`Recent conversation:\n${summary}`);
+    }
+
+    const contextText = [
+      `[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.`,
+      ...parts,
+      `IMPORTANT: Continue the conversation naturally from where you left off.`,
+      `Do NOT greet the user again. Do NOT rebuild or reset the board — it is already displayed correctly on the client.`,
+    ].join("\n");
+
+    this.gemini.sendContextInjection(contextText);
+    logDualAgent("LiveRelay.reconnectionContext", {
+      sessionId: this.sessionId,
+      boardButtons: labels.length,
+      recentMessages: recent.length,
+    });
+  }
+
+  /**
    * Send a periodic board state context injection so Gemini stays aware
    * of current buttons and available slots. Only fires if the board
    * hasn't been updated recently (otherwise the per-change injections suffice).
@@ -1262,6 +1326,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
       await this.handleInitialize({
         type: "initialize",
         studentId: this.studentId,
+        userId: this.userId,
         interactionMode: this.interactionMode,
         responseMode: this.responseMode,
         debugMode: this.debugMode,
