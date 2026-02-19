@@ -79,6 +79,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   const [error, setError] = useState<string | null>(null);
   const [thinkingMode, setThinkingMode] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
+  const rateLimitedRef = useRef(false);
 
   // Message state
   const [currentMessage, setCurrentMessage] = useState<DualAgentMessage | null>(null);
@@ -366,6 +367,13 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           setIsLoading(false);
           break;
 
+        case "rate_limited":
+          rateLimitedRef.current = true;
+          setReconnecting(false);
+          setError(msg.data || "API rate limit reached. Please wait a few minutes before retrying.");
+          setIsLoading(false);
+          break;
+
         case "complete":
           // Turn complete — reset accumulator, finalize audio
           textAccumRef.current = "";
@@ -394,6 +402,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
     setIsLoading(true);
     setError(null);
+    rateLimitedRef.current = false; // Reset on manual/retry initialization
 
     try {
       // Build WebSocket URL from VITE_API_URL (same base as HTTP requests)
@@ -454,6 +463,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       ws.onclose = (event) => {
         console.log(`[useLiveSession] WebSocket closed: ${event.code} ${event.reason}`);
         wsRef.current = null;
+        if (rateLimitedRef.current) {
+          // Rate limited — do NOT auto-reconnect, user must retry manually
+          console.warn("[useLiveSession] Rate limited — skipping auto-reconnect");
+          return;
+        }
         if (isInitialized) {
           // Auto-reconnect after unexpected close
           reconnectTimerRef.current = setTimeout(() => {

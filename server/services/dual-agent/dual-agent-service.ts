@@ -131,8 +131,9 @@ const sessionCache = new Map<string, SessionCache>();
 // Cache TTL: 30 minutes
 const CACHE_TTL = 30 * 60 * 1000;
 
-// Monitor staleness timeout: 30 seconds
-const MONITOR_TIMEOUT_MS = 30_000;
+// Monitor staleness timeout: 60 seconds (needs headroom for 2-round-trip LLM flow:
+// first call returns tool calls for memory updates, second call generates text response)
+const MONITOR_TIMEOUT_MS = 60_000;
 
 // Monitor throttle: minimum interval between monitor calls (unless forced by [CALL_MONITOR])
 const MONITOR_THROTTLE_MS = 120_000; // 2 minutes
@@ -1601,10 +1602,10 @@ export class DualAgentService {
     // Mark the actual processing start time for throttle tracking
     state.lastMonitorActivity = Date.now();
 
-    // Timeout guard: abort if monitor takes too long (30 seconds)
+    // Timeout guard: abort if monitor takes too long
     const timeoutController = new AbortController();
     const timeout = setTimeout(() => {
-      console.warn("[DualAgentService] Monitor processing timed out after 30s");
+      console.warn(`[DualAgentService] Monitor processing timed out after ${MONITOR_TIMEOUT_MS / 1000}s`);
       timeoutController.abort();
     }, MONITOR_TIMEOUT_MS);
 

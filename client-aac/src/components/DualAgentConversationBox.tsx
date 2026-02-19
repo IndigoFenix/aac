@@ -456,7 +456,13 @@ export function DualAgentConversationBox({
                     </div>
                   ) : error ? (
                     <div className="flex items-center justify-between w-full">
-                      <p className="text-white/80 text-sm">{error.toLowerCase().includes('unsafe') ? `Prompt rejected: ${error}` : 'Connection issue, retrying...'}</p>
+                      <p className="text-white/80 text-sm">
+                        {error.toLowerCase().includes('unsafe')
+                          ? `Prompt rejected: ${error}`
+                          : /rate.limit|resource.exhausted|quota|overloaded/i.test(error)
+                          ? 'Rate limit reached — please wait a few minutes'
+                          : 'Connection issue, retrying...'}
+                      </p>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -465,7 +471,7 @@ export function DualAgentConversationBox({
                         }}
                         className="text-white hover:text-gray-200 hover:bg-white/10 text-xs px-2 py-1"
                       >
-                        Retry Now
+                        Retry
                       </Button>
                     </div>
                   ) : currentMessage ? (
