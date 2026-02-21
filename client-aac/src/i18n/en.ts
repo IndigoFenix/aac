@@ -194,6 +194,16 @@ export const en = {
     enableEyegaze: "Enable Eyegaze",
     enableEyegazeHint: "Select symbols by hovering for a set duration",
 
+    inputSource: "Input Source",
+    inputSourceAuto: "Auto-detect",
+    inputSourceCursor: "Cursor Control (External Device)",
+    inputSourceCamera: "Camera (Webcam)",
+    inputSourceTobii: "Tobii Eye Tracker",
+    inputSourceEyetech: "EyeTech",
+    inputSourceLctech: "LC Technologies",
+    inputSourceWebhid: "WebHID Device",
+    inputSourceCursorHint: "Use with Tobii, other eye trackers that control the cursor, or head-tracking devices. No calibration needed.",
+
     systemPrompt: "System Prompt",
 
     restartSession: "Restart Session",
@@ -289,6 +299,9 @@ export const en = {
     complete: "Calibration complete!",
     failed: "Calibration could not complete. Try improving lighting and try again.",
     retrying: "Retrying calibration...",
+    calibrating: "Calibrating...",
+    calibrate: "Calibrate Eye Tracking",
+    recalibrate: "Recalibrate Eye Tracking",
   },
 
   errors: {

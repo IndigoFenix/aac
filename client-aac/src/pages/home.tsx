@@ -304,9 +304,10 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     enabled: faceTrackingEnabled,
   });
 
-  // Unified eye gaze service — auto-detects camera / hardware / mouse provider
+  // Unified eye gaze service — skip entirely for cursor control mode (mouse provider)
+  const isCursorControlMode = eyegazeSettings.provider === "mouse";
   const eyeGaze = useEyeGaze({
-    enabled: eyegazeSettings.enabled,
+    enabled: eyegazeSettings.enabled && !isCursorControlMode,
     rawFaces,
     preferredProvider: eyegazeSettings.provider,
   });
@@ -320,7 +321,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     lctech: "LC Technologies",
     webhid: "WebHID Device",
     camera: "Camera Eye Tracking",
-    mouse: "Mouse (Testing)",
+    mouse: "Cursor Control (External Device)",
   };
   useEffect(() => {
     if (eyeGaze.activeProvider && !prevProviderRef.current) {
@@ -959,7 +960,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   return (
     <CameraAttentivenessWrapper autoStart={true} cameraType="user">
     <EyeTrackingDwellProvider
-      mode={eyegazeSettings.enabled ? "eyegaze" : "off"}
+      mode={!eyegazeSettings.enabled ? "off" : isCursorControlMode ? "mouse" : "eyegaze"}
       dwellTimeMs={eyegazeSettings.timeout}
       gazePoint={eyeGaze.gazePoint}
       isCalibrated={eyeGaze.isCalibrated}
