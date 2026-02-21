@@ -1,44 +1,24 @@
 import JSZip from 'jszip';
-import { BoardIR, PageIR, ActionIR } from '@/types/board-ir';
+import { BoardIR, ButtonIR, VideoPlayerIR, PageIR, ActionIR } from '@/types/board-ir';
 import { resolveGrid3Path } from './rebus-cleanup';
 import { emojiToConcept } from './emoji-to-grid3';
 
 export class GridsetPackager {
   static async package(board: BoardIR): Promise<Blob> {
     const zip = new JSZip();
-    const gridName = board.name;
-    const gridGuid = this.generateGuid();
-    
-    // Collect all unique symbols used in the board
-    const usedSymbols = new Set<string>();
-    board.pages.forEach(page => {
-      page.buttons.forEach(button => {
-        if (button.symbolPath) {
-          const symbolFilename = button.symbolPath.split('/').pop()?.replace('.svg', '');
-          if (symbolFilename) {
-            usedSymbols.add(symbolFilename);
-          }
-        }
-      });
-    });
 
-    // Create a mapping for symbols but don't embed them
-    // Instead, we'll use a more compatible approach for Grid3
-    const symbolMap = new Map<string, string>();
-    for (const symbolFilename of Array.from(usedSymbols)) {
-      // Map Mulberry symbols to actual Grid3 Widgit symbol IDs
-      const mappedId = this.mapMulberryToWidgit(symbolFilename);
-      symbolMap.set(symbolFilename, mappedId);
+    // Build page ID → name map for Jump.To navigation
+    const pageNameMap = new Map<string, string>();
+    for (const page of board.pages) {
+      pageNameMap.set(page.id, page.name);
     }
-    
-    // Handle cover image - embed SyntAACx logo by default and when selected
-    const coverBackground = board.coverImage?.backgroundColor || "#FFFFFFFF"; // White background by default
-    let hasThumbnailImage = false;
-    
-    // Set thumbnail reference based on whether we have the image
-    const coverImage = hasThumbnailImage ? ".png" : "[widgit]widgit rebus\\c\\communicate.emf";
-    
-    const settingsXml = `<GridSetSettings xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+    const firstPageName = board.pages[0].name;
+    const coverBackground = board.coverImage?.backgroundColor || "#FFFFFFFF";
+    const coverImage = board.coverImage?.symbolPath || "[widgit]widgit rebus\\c\\communicate.emf";
+
+    // --- Settings0/settings.xml ---
+    zip.file("Settings0/settings.xml", `<GridSetSettings xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <PictureSearch>
     <PictureSearchKeys>
       <PictureSearchKey>widgit</PictureSearchKey>
@@ -50,17 +30,15 @@ export class GridsetPackager {
   <Appearance>
     <Theme>Kids</Theme>
   </Appearance>
-  <StartGrid>${gridName}</StartGrid>
+  <StartGrid>${this.escapeXml(firstPageName)}</StartGrid>
   <Language>en-US</Language>
   <ThumbnailBackground>${coverBackground}</ThumbnailBackground>
   <Thumbnail>${coverImage}</Thumbnail>
   <GridSetFileFormatVersion>1</GridSetFileFormatVersion>
-</GridSetSettings>`;
-    
-    zip.file("Settings0/settings.xml", settingsXml);
-    
-    // Create Settings0/Styles/styles.xml
-    const stylesXml = `<StyleData xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+</GridSetSettings>`);
+
+    // --- Settings0/Styles/styles.xml ---
+    zip.file("Settings0/Styles/styles.xml", `<StyleData xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <Styles>
     <Style Key="Default" />
     <Style Key="Vocab cell">
@@ -68,81 +46,99 @@ export class GridsetPackager {
       <BorderColour>#646464FF</BorderColour>
       <FontColour>#000000FF</FontColour>
     </Style>
+    <Style Key="Navigation cell">
+      <BackColour>#2C82C9FF</BackColour>
+      <BorderColour>#2C82C9FF</BorderColour>
+      <FontColour>#FFFFFFFF</FontColour>
+    </Style>
   </Styles>
-</StyleData>`;
-    
-    zip.file("Settings0/Styles/styles.xml", stylesXml);
-    
-    // Create the main grid XML for the first page
-    const mainPage = board.pages[0];
-    const gridXml = this.generateGridXml(gridName, gridGuid, board.grid, mainPage, symbolMap);
-    zip.file(`Grids/${gridName}/grid.xml`, gridXml);
-    
-    // Create FileMap.xml - include thumbnail if we have one
-    let dynamicFiles = '';
-    if (hasThumbnailImage) {
-      dynamicFiles = `
-        <File>Settings0\\thumbnail.png</File>`;
+</StyleData>`);
+
+    // --- Grids/{pageName}/grid.xml per page ---
+    const fileMapEntries: string[] = [];
+    for (const page of board.pages) {
+      const layout = page.layout || board.grid;
+      const gridXml = this.generateGridXml(layout, page, pageNameMap);
+      zip.file(`Grids/${page.name}/grid.xml`, gridXml);
+      fileMapEntries.push(
+        `    <Entry StaticFile="Grids\\${page.name}\\grid.xml">\n      <DynamicFiles />\n    </Entry>`
+      );
     }
-    
-    const fileMapXml = `<FileMap xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+    // Settings entry in FileMap
+    fileMapEntries.push(
+      `    <Entry StaticFile="Settings0\\settings.xml">\n      <DynamicFiles />\n    </Entry>`
+    );
+
+    // --- FileMap.xml ---
+    zip.file("FileMap.xml", `<FileMap xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <Entries>
-    <Entry StaticFile="Settings0\\settings.xml">
-      <DynamicFiles>${dynamicFiles}
-      </DynamicFiles>
-    </Entry>
+${fileMapEntries.join('\n')}
   </Entries>
-</FileMap>`;
-    
-    zip.file("FileMap.xml", fileMapXml);
-
-    // OPC (Open Packaging Conventions) boilerplate — required for .NET's
-    // System.IO.Packaging to recognise this ZIP as a valid package.
-    // Without these, Grid3 treats the file as a generic compressed archive.
-    const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="xml" ContentType="application/xml" />
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml" />
-  <Default Extension="png" ContentType="image/png" />
-</Types>`;
-    zip.file("[Content_Types].xml", contentTypesXml);
-
-    const relsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.thinksmartbox.com/grid3/settings" Target="Settings0/settings.xml" />
-</Relationships>`;
-    zip.file("_rels/.rels", relsXml);
+</FileMap>`);
 
     return await zip.generateAsync({ type: "blob" });
   }
-  
-  private static generateGridXml(gridName: string, gridGuid: string, grid: { rows: number; cols: number }, page: any, symbolMap?: Map<string, string>): string {
-    // Generate column and row definitions
-    const columnDefs = Array(grid.cols).fill('<ColumnDefinition />').join('\n    ');
-    const rowDefs = Array(grid.rows).fill('<RowDefinition />').join('\n    ');
-    
-    // Generate cells from buttons
-    const buttonCells = page.buttons.map((button: any) => this.generateCellXml(button, symbolMap));
-    
-    // Generate cells from video players
-    const videoCells = (page.videoPlayers || []).map((videoPlayer: any) => 
-      this.generateVideoPlayerCellXml(videoPlayer, symbolMap)
-    );
-    
-    // Combine all cells
-    const allCells = [...buttonCells, ...videoCells].join('\n    ');
-    
+
+  // --------------- Grid XML builder ---------------
+
+  private static generateGridXml(
+    layout: { rows: number; cols: number },
+    page: PageIR,
+    pageNameMap: Map<string, string>,
+  ): string {
+    const gridGuid = this.generateGuid();
+    const columnDefs = Array(layout.cols).fill('    <ColumnDefinition />').join('\n');
+    const rowDefs = Array(layout.rows).fill('    <RowDefinition />').join('\n');
+
+    // Track every position occupied by a button or video span
+    const occupied = new Set<string>();
+    const cells: string[] = [];
+
+    // Regular buttons (1×1 cells)
+    for (const btn of page.buttons) {
+      occupied.add(`${btn.col},${btn.row}`);
+      cells.push(this.generateButtonCell(btn, pageNameMap));
+    }
+
+    // Video players (spanning cells)
+    for (const vp of page.videoPlayers || []) {
+      for (let r = 0; r < vp.rowSpan; r++) {
+        for (let c = 0; c < vp.colSpan; c++) {
+          occupied.add(`${vp.col + c},${vp.row + r}`);
+        }
+      }
+      cells.push(this.generateVideoCell(vp));
+    }
+
+    // Fill every remaining position with an empty Default cell
+    for (let row = 0; row < layout.rows; row++) {
+      for (let col = 0; col < layout.cols; col++) {
+        if (!occupied.has(`${col},${row}`)) {
+          cells.push(
+            `    <Cell X="${col}" Y="${row}">\n` +
+            `      <Content>\n` +
+            `        <Style>\n` +
+            `          <BasedOnStyle>Default</BasedOnStyle>\n` +
+            `        </Style>\n` +
+            `      </Content>\n` +
+            `    </Cell>`
+          );
+        }
+      }
+    }
+
     return `<Grid xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <GridGuid>${gridGuid}</GridGuid>
   <ColumnDefinitions>
-    ${columnDefs}
+${columnDefs}
   </ColumnDefinitions>
   <RowDefinitions>
-    ${rowDefs}
+${rowDefs}
   </RowDefinitions>
   <AutoContentCommands />
   <Cells>
-    ${allCells}
+${cells.join('\n')}
   </Cells>
   <ScanBlockAudioDescriptions />
   <WordList>
@@ -150,241 +146,163 @@ export class GridsetPackager {
   </WordList>
 </Grid>`;
   }
-  
-  private static generateCellXml(button: any, symbolMap?: Map<string, string>): string {
-    // Convert color to Grid3 format (with alpha)
+
+  // --------------- Button cell ---------------
+
+  private static generateButtonCell(
+    button: ButtonIR,
+    pageNameMap: Map<string, string>,
+  ): string {
     const color = this.convertColorToGrid3Format(button.color || '#3B82F6');
     const text = button.label || 'Button';
-    const spokenText = button.spokenText || button.label || 'Button';
+    const action = button.action;
 
-    // Resolve symbol: rebusKey (primary) → emoji lookup (legacy fallback) → label text
+    // Resolve Widgit symbol path
     let imageRef: string;
     if (button.rebusKey) {
-      // Board has rebusKey — use it directly via cleanup utility
       imageRef = resolveGrid3Path(button.rebusKey, text);
     } else {
-      // Legacy board without rebusKey — try emoji → concept, then label
       const emojiConcept = button.iconRef ? emojiToConcept(button.iconRef) : null;
       const conceptOrLabel = emojiConcept || this.translateHebrewToEnglish(text.toLowerCase());
       imageRef = resolveGrid3Path(undefined, conceptOrLabel);
     }
-    
-    // Handle different action types
-    let commands = '';
-    if (button.action?.type === 'youtube') {
-      // YouTube action using Grid3's proper YouTube integration
-      commands = `
-          <Command ID="WebBrowser.NavigateUrl">
-            <Parameter Key="url">http://youtube.sensorysoftware.com/play.html?${button.action.videoId}</Parameter>
-          </Command>`;
+
+    // Build <Command> list
+    const commands: string[] = [];
+
+    if (action?.type === 'youtube') {
+      commands.push(
+        `          <Command ID="WebBrowser.NavigateUrl">\n` +
+        `            <Parameter Key="url">http://youtube.sensorysoftware.com/play.html?${action.videoId}</Parameter>\n` +
+        `          </Command>`
+      );
+    } else if (action?.type === 'navigate' || action?.type === 'link') {
+      // Insert text, then jump to the target grid
+      commands.push(this.makeInsertTextCommand(imageRef, text));
+      const targetName = pageNameMap.get(action.toPageId) || action.toPageId;
+      commands.push(
+        `          <Command ID="Jump.To">\n` +
+        `            <Parameter Key="grid">${this.escapeXml(targetName)}</Parameter>\n` +
+        `          </Command>`
+      );
+    } else if (action?.type === 'back') {
+      commands.push(`          <Command ID="Jump.Back" />`);
+    } else if (action?.type === 'home') {
+      // Home: just jump, no text insertion
     } else {
-      // Default speak action
-      commands = `
-          <Command ID="Action.InsertText">
-            <Parameter Key="indicatorenabled">1</Parameter>
-            <Parameter Key="text">
-              <p>
-                <s Image="${imageRef}">
-                  <r>${this.escapeXml(text)}</r>
-                </s>
-                <s>
-                  <r><![CDATA[ ]]></r>
-                </s>
-              </p>
-            </Parameter>
-            <Parameter Key="showincelllabel">Yes</Parameter>
-          </Command>`;
+      // Default: speak the label
+      commands.push(this.makeInsertTextCommand(imageRef, text));
     }
-    
-    return `<Cell X="${button.col}" Y="${button.row}">
-      <Content>
-        <Commands>${commands}
-        </Commands>
-        <CaptionAndImage>
-          <Caption>${this.escapeXml(text)}</Caption>
-          <Image>${imageRef}</Image>
-        </CaptionAndImage>
-        <Style>
-          <BasedOnStyle>Vocab cell</BasedOnStyle>
-          <BackColour>${color}</BackColour>
-        </Style>
-      </Content>
-    </Cell>`;
+
+    // Choose style and image based on action type
+    let styleName = 'Vocab cell';
+    let cellImage = imageRef;
+    if (action?.type === 'navigate' || action?.type === 'link') {
+      styleName = 'Navigation cell';
+    } else if (action?.type === 'back') {
+      styleName = 'Navigation cell';
+      cellImage = '[GRID3X]jump_back.wmf';
+    } else if (action?.type === 'home') {
+      styleName = 'Navigation cell';
+      cellImage = '[GRID3X]jump_home.wmf';
+    }
+
+    const commandsXml = commands.length > 0
+      ? `\n        <Commands>\n${commands.join('\n')}\n        </Commands>`
+      : '';
+
+    return (
+      `    <Cell X="${button.col}" Y="${button.row}">` +
+      `\n      <Content>${commandsXml}` +
+      `\n        <CaptionAndImage>` +
+      `\n          <Caption>${this.escapeXml(text)}</Caption>` +
+      `\n          <Image>${cellImage}</Image>` +
+      `\n        </CaptionAndImage>` +
+      `\n        <Style>` +
+      `\n          <BasedOnStyle>${styleName}</BasedOnStyle>` +
+      `\n          <BackColour>${color}</BackColour>` +
+      `\n        </Style>` +
+      `\n      </Content>` +
+      `\n    </Cell>`
+    );
   }
 
-  private static generateVideoPlayerCellXml(videoPlayer: any, symbolMap?: Map<string, string>): string {
-    // Create a video player cell spanning multiple grid cells
-    const text = videoPlayer.title || 'Video Player';
+  // --------------- Video cell (with ColumnSpan/RowSpan) ---------------
+
+  private static generateVideoCell(vp: VideoPlayerIR): string {
+    const text = vp.title || 'Video Player';
     const imageRef = resolveGrid3Path(undefined, 'video player');
-    const backgroundColor = this.convertColorToGrid3Format('#1F2937'); // Dark background for video
-    
-    // Create YouTube web browser command using Grid3's proper integration
-    const commands = `
-          <Command ID="WebBrowser.NavigateUrl">
-            <Parameter Key="url">http://youtube.sensorysoftware.com/play.html?${videoPlayer.videoId}</Parameter>
-          </Command>`;
-    
-    // Generate a cell for each grid position the video player spans
-    const cells = [];
-    for (let r = 0; r < videoPlayer.rowSpan; r++) {
-      for (let c = 0; c < videoPlayer.colSpan; c++) {
-        const cellRow = videoPlayer.row + r;
-        const cellCol = videoPlayer.col + c;
-        
-        // Only add content to the top-left cell, others are empty placeholders
-        if (r === 0 && c === 0) {
-          cells.push(`<Cell X="${cellCol}" Y="${cellRow}">
-      <Content>
-        <Commands>${commands}
-        </Commands>
-        <CaptionAndImage>
-          <Caption>${this.escapeXml(text)}</Caption>
-          <Image>${imageRef}</Image>
-        </CaptionAndImage>
-        <Style>
-          <BasedOnStyle>Vocab cell</BasedOnStyle>
-          <BackColour>${backgroundColor}</BackColour>
-        </Style>
-      </Content>
-    </Cell>`);
-        } else {
-          // Empty placeholder cells for the spanning area
-          cells.push(`<Cell X="${cellCol}" Y="${cellRow}">
-      <Content>
-        <Commands>
-          <Command ID="Action.DoNothing" />
-        </Commands>
-        <CaptionAndImage>
-          <Caption></Caption>
-          <Image>${imageRef}</Image>
-        </CaptionAndImage>
-        <Style>
-          <BasedOnStyle>Vocab cell</BasedOnStyle>
-          <BackColour>${backgroundColor}</BackColour>
-        </Style>
-      </Content>
-    </Cell>`);
-        }
-      }
-    }
-    
-    return cells.join('\n    ');
+    const bgColor = this.convertColorToGrid3Format('#1F2937');
+
+    return (
+      `    <Cell X="${vp.col}" Y="${vp.row}" ColumnSpan="${vp.colSpan}" RowSpan="${vp.rowSpan}">` +
+      `\n      <Content>` +
+      `\n        <Commands>` +
+      `\n          <Command ID="WebBrowser.NavigateUrl">` +
+      `\n            <Parameter Key="url">http://youtube.sensorysoftware.com/play.html?${vp.videoId}</Parameter>` +
+      `\n          </Command>` +
+      `\n        </Commands>` +
+      `\n        <CaptionAndImage>` +
+      `\n          <Caption>${this.escapeXml(text)}</Caption>` +
+      `\n          <Image>${imageRef}</Image>` +
+      `\n        </CaptionAndImage>` +
+      `\n        <Style>` +
+      `\n          <BasedOnStyle>Vocab cell</BasedOnStyle>` +
+      `\n          <BackColour>${bgColor}</BackColour>` +
+      `\n        </Style>` +
+      `\n      </Content>` +
+      `\n    </Cell>`
+    );
   }
-  
+
+  // --------------- Insert-text command helper ---------------
+
+  private static makeInsertTextCommand(imageRef: string, text: string): string {
+    return (
+      `          <Command ID="Action.InsertText">\n` +
+      `            <Parameter Key="indicatorenabled">1</Parameter>\n` +
+      `            <Parameter Key="text">\n` +
+      `              <p>\n` +
+      `                <s Image="${imageRef}">\n` +
+      `                  <r>${this.escapeXml(text)}</r>\n` +
+      `                </s>\n` +
+      `                <s>\n` +
+      `                  <r><![CDATA[ ]]></r>\n` +
+      `                </s>\n` +
+      `              </p>\n` +
+      `            </Parameter>\n` +
+      `            <Parameter Key="showincelllabel">Yes</Parameter>\n` +
+      `          </Command>`
+    );
+  }
+
+  // --------------- Helpers ---------------
+
   private static convertColorToGrid3Format(hexColor: string): string {
-    // Ensure hex color has # prefix
-    if (!hexColor.startsWith('#')) {
-      hexColor = '#' + hexColor;
-    }
-    
-    // Convert #RRGGBB to #RRGGBBFF (add full alpha)
-    if (hexColor.length === 7) {
-      return hexColor.toUpperCase() + 'FF';
-    }
-    
-    // If already 8 chars, just uppercase
-    if (hexColor.length === 9) {
-      return hexColor.toUpperCase();
-    }
-    
-    // Fallback
+    if (!hexColor.startsWith('#')) hexColor = '#' + hexColor;
+    if (hexColor.length === 7) return hexColor.toUpperCase() + 'FF';
+    if (hexColor.length === 9) return hexColor.toUpperCase();
     return '#D3D3D3FF';
   }
-  
 
-  private static mapIconToSymbol(iconRef?: string): string {
-    // Map common FontAwesome icons to Widgit symbol names that Grid3 should recognize
-    const iconMap: { [key: string]: string } = {
-      'fas fa-utensils': '[widgit]eat',          // eating/food
-      'fas fa-glass-water': '[widgit]drink',     // drinking/water
-      'fas fa-restroom': '[widgit]toilet',       // bathroom/toilet
-      'fas fa-plus': '[widgit]more',             // more/add
-      'fas fa-check': '[widgit]finished',        // finished/done
-      'fas fa-thumbs-up': '[widgit]yes',         // yes/good
-      'fas fa-thumbs-down': '[widgit]no',        // no/bad
-      'fas fa-question': '[widgit]help',         // help/question
-      'fas fa-smile': '[widgit]happy',           // happy/smile
-      'fas fa-frown': '[widgit]sad',             // sad/unhappy
-      'fas fa-heart': '[widgit]love',            // love/heart
-      'fas fa-hand': '[widgit]want',             // want/hand
-      'fas fa-user': '[widgit]person',           // person/people
-      'fas fa-gamepad': '[widgit]play',          // play/games
-      'fas fa-tv': '[widgit]tv',                 // tv/watch
-      'fas fa-tree': '[widgit]outside',          // outside/nature
-      'fas fa-bed': '[widgit]sleep',             // tired/sleep
-      'fas fa-female': '[widgit]mum',            // mom/woman
-      'fas fa-male': '[widgit]dad',              // dad/man
-      'fas fa-fire': '[widgit]hot',              // hot
-      'fas fa-snowflake': '[widgit]cold',        // cold
-    };
-    
-    return iconMap[iconRef || ''] || '[widgit]button'; // Default symbol
-  }
-  
   private static translateHebrewToEnglish(hebrewText: string): string {
-    // Map Hebrew words to their English equivalents for symbol mapping
-    const hebrewToEnglish: { [key: string]: string } = {
-      'רעב': 'hungry',
-      'צמא': 'thirsty', 
-      'לאכול': 'eat',
-      'לשתות': 'drink',
-      'עוד': 'more',
-      'סיימתי': 'finished',
-      'גמר': 'done',
-      'נגמר': 'done', 
-      'גמרתי': 'done',
-      'אין': 'done',
-      'all done': 'done',
-      'חם': 'hot',
-      'קר': 'cold',
-      'טוב': 'good',
-      'טוב לי': 'good',
-      'רע': 'bad',
-      'לא טוב': 'bad',
-      'כן': 'yes',
-      'לא': 'no',
-      'עזרה': 'help',
-      'שמח': 'happy',
-      'עצוב': 'sad',
-      'אהבה': 'love',
-      'רוצה': 'want',
-      'צריך': 'need',
-      'לשחק': 'play',
-      'טלוויזיה': 'tv',
-      'בחוץ': 'outside',
-      'לישון': 'sleep',
-      'עייף': 'tired',
-      'עייף/ה': 'tired',
-      'אמא': 'mom',
-      'אבא': 'dad',
-      'משפחה': 'family',
-      'בית': 'home',
-      'שירותים': 'toilet',
-      'בבקשה': 'please',
-      'תודה': 'thank you',
-      'שלום': 'hello',
-      'להתראות': 'goodbye',
-      'להתקלח': 'wash',
-      'ללכת': 'go',
-      'לחכות': 'wait',
-      'מפחד': 'scared',
-      'סוס': 'horse',
-      'עצור': 'stop',
-      'קדימה': 'forward',
-      'כועס': 'angry',
-      'מבולבל': 'confused',
-      'מופתע': 'surprised',
-      'נרגש': 'excited',
-      'רגוע': 'calm'
+    const map: Record<string, string> = {
+      'רעב': 'hungry', 'צמא': 'thirsty', 'לאכול': 'eat', 'לשתות': 'drink',
+      'עוד': 'more', 'סיימתי': 'finished', 'גמר': 'done', 'נגמר': 'done',
+      'גמרתי': 'done', 'אין': 'done', 'all done': 'done', 'חם': 'hot',
+      'קר': 'cold', 'טוב': 'good', 'טוב לי': 'good', 'רע': 'bad',
+      'לא טוב': 'bad', 'כן': 'yes', 'לא': 'no', 'עזרה': 'help',
+      'שמח': 'happy', 'עצוב': 'sad', 'אהבה': 'love', 'רוצה': 'want',
+      'צריך': 'need', 'לשחק': 'play', 'טלוויזיה': 'tv', 'בחוץ': 'outside',
+      'לישון': 'sleep', 'עייף': 'tired', 'עייף/ה': 'tired', 'אמא': 'mom',
+      'אבא': 'dad', 'משפחה': 'family', 'בית': 'home', 'שירותים': 'toilet',
+      'בבקשה': 'please', 'תודה': 'thank you', 'שלום': 'hello',
+      'להתראות': 'goodbye', 'להתקלח': 'wash', 'ללכת': 'go',
+      'לחכות': 'wait', 'מפחד': 'scared', 'סוס': 'horse', 'עצור': 'stop',
+      'קדימה': 'forward', 'כועס': 'angry', 'מבולבל': 'confused',
+      'מופתע': 'surprised', 'נרגש': 'excited', 'רגוע': 'calm',
     };
-    
-    return hebrewToEnglish[hebrewText] || hebrewText;
-  }
-
-
-
-  private static mapMulberryToWidgit(symbolFilename: string): string {
-    return resolveGrid3Path(undefined, symbolFilename);
+    return map[hebrewText] || hebrewText;
   }
 
   private static escapeXml(text: string): string {
@@ -395,11 +313,11 @@ export class GridsetPackager {
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&apos;');
   }
-  
+
   private static generateGuid(): string {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-      const r = Math.random() * 16 | 0;
-      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      const r = (Math.random() * 16) | 0;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
       return v.toString(16);
     });
   }

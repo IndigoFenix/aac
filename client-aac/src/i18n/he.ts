@@ -284,6 +284,15 @@ export const he: Translations = {
     aiNamePlaceholder: "לדוגמה: באדי, סם, אלכס",
   },
 
+  calibration: {
+    followDot: "עקוב אחרי הנקודה",
+    lookAtDot: "הסתכל על הנקודה",
+    checkingAccuracy: "בודק דיוק...",
+    complete: "הכיול הושלם!",
+    failed: "הכיול לא הצליח. נסה לשפר את התאורה ונסה שוב.",
+    retrying: "מנסה כיול מחדש...",
+  },
+
   errors: {
     POLICY_VIOLATION: "תגובה זו נחסמה עקב הפרת מדיניות.",
     NO_RESPONSE: "אירעה שגיאה בעיבוד התגובה.",

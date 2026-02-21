@@ -1,6 +1,6 @@
 // client-aac/src/lib/gazeEstimator.ts
 // Pure computation: maps RawTrackedFace data to a screen-space gaze point.
-// Supports optional calibration for per-user accuracy correction.
+// Supports optional calibration via ridge regression for per-user accuracy correction.
 
 import type { RawTrackedFace } from "./faceTrackingTypes";
 
@@ -15,19 +15,23 @@ export interface CalibrationSample {
   target: GazePoint; // where the user was actually told to look
 }
 
-/** Affine correction: correctedX = scaleX * rawX + offsetX */
+/**
+ * Ridge regression calibration transform.
+ * Maps raw gaze to screen position using normalized features:
+ *   normalized_target = c0 + c1 * (rawX / screenW) + c2 * (rawY / screenH)
+ * Two separate regressions: one for X, one for Y.
+ * Cross-terms (rawY → targetX, rawX → targetY) handle head tilt/rotation.
+ */
 export interface CalibrationTransform {
-  scaleX: number;
-  scaleY: number;
-  offsetX: number;
-  offsetY: number;
+  xCoeffs: [number, number, number]; // [intercept, rawX_weight, rawY_weight] → normalized targetX
+  yCoeffs: [number, number, number]; // [intercept, rawX_weight, rawY_weight] → normalized targetY
 }
 
 const EMA_ALPHA = 0.3;
 
 // Scale factors for eye blendshape offsets
-const EYE_H_SCALE = 200;
-const EYE_V_SCALE = 150;
+const EYE_H_SCALE = 500;
+const EYE_V_SCALE = 400;
 
 // Scale factors for head pose correction
 const HEAD_YAW_SCALE = 100;
@@ -43,54 +47,132 @@ export const CALIBRATION_TARGETS: Array<{ nx: number; ny: number }> = [
   { nx: 1 - INSET, ny: 1 - INSET }, // bottom-right
 ];
 
+// Verification targets: 3 points distinct from calibration points
+export const VERIFICATION_TARGETS: Array<{ nx: number; ny: number }> = [
+  { nx: 0.5, ny: 0.2 },   // center-top
+  { nx: 0.25, ny: 0.5 },  // center-left
+  { nx: 0.75, ny: 0.75 }, // lower-right quadrant
+];
+
 const STORAGE_KEY = "eyetracking_calibration";
+const STORAGE_VERSION = 2; // bump when transform format changes
 
-/** Compute affine transform from calibration samples (least-squares fit) */
-function computeCalibration(samples: CalibrationSample[]): CalibrationTransform {
-  if (samples.length < 2) {
-    return { scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0 };
-  }
+// ─── Ridge regression helpers ─────────────────────────────────────
 
-  // Fit independently for x and y:  target = scale * raw + offset
-  // Using least squares: minimize sum((target_i - scale*raw_i - offset)^2)
-  const n = samples.length;
-  let sumRawX = 0, sumRawY = 0, sumTargetX = 0, sumTargetY = 0;
-  let sumRawX2 = 0, sumRawY2 = 0, sumRawXTargetX = 0, sumRawYTargetY = 0;
+/** Invert a 3x3 matrix using cofactor expansion. Returns null if singular. */
+function invert3x3(m: number[][]): number[][] | null {
+  const [a, b, c] = m[0];
+  const [d, e, f] = m[1];
+  const [g, h, i] = m[2];
 
-  for (const s of samples) {
-    sumRawX += s.raw.x;
-    sumRawY += s.raw.y;
-    sumTargetX += s.target.x;
-    sumTargetY += s.target.y;
-    sumRawX2 += s.raw.x * s.raw.x;
-    sumRawY2 += s.raw.y * s.raw.y;
-    sumRawXTargetX += s.raw.x * s.target.x;
-    sumRawYTargetY += s.raw.y * s.target.y;
-  }
+  const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+  if (Math.abs(det) < 1e-10) return null;
 
-  // Solve for scaleX, offsetX
-  const denomX = n * sumRawX2 - sumRawX * sumRawX;
-  let scaleX = 1, offsetX = 0;
-  if (Math.abs(denomX) > 1e-6) {
-    scaleX = (n * sumRawXTargetX - sumRawX * sumTargetX) / denomX;
-    offsetX = (sumTargetX - scaleX * sumRawX) / n;
-  } else {
-    // All raw X values are the same — just use offset
-    offsetX = (sumTargetX - sumRawX) / n;
-  }
-
-  // Solve for scaleY, offsetY
-  const denomY = n * sumRawY2 - sumRawY * sumRawY;
-  let scaleY = 1, offsetY = 0;
-  if (Math.abs(denomY) > 1e-6) {
-    scaleY = (n * sumRawYTargetY - sumRawY * sumTargetY) / denomY;
-    offsetY = (sumTargetY - scaleY * sumRawY) / n;
-  } else {
-    offsetY = (sumTargetY - sumRawY) / n;
-  }
-
-  return { scaleX, scaleY, offsetX, offsetY };
+  const inv = 1 / det;
+  return [
+    [(e * i - f * h) * inv, (c * h - b * i) * inv, (b * f - c * e) * inv],
+    [(f * g - d * i) * inv, (a * i - c * g) * inv, (c * d - a * f) * inv],
+    [(d * h - e * g) * inv, (b * g - a * h) * inv, (a * e - b * d) * inv],
+  ];
 }
+
+/**
+ * Solve ridge regression for a 3-feature system: y = X * coeffs
+ * where X rows are [1, f1, f2] and lambda regularizes f1, f2 (not intercept).
+ * Returns [c0, c1, c2].
+ */
+function solveRidge3(
+  X: number[][],
+  y: number[],
+  lambda: number,
+): [number, number, number] {
+  const n = X.length;
+
+  // X^T X (3x3)
+  const XtX = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < 3; j++) {
+      for (let k = 0; k < 3; k++) {
+        XtX[j][k] += X[i][j] * X[i][k];
+      }
+    }
+  }
+
+  // Add regularization to non-intercept features
+  XtX[1][1] += lambda;
+  XtX[2][2] += lambda;
+
+  // X^T y (3x1)
+  const Xty = [0, 0, 0];
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < 3; j++) {
+      Xty[j] += X[i][j] * y[i];
+    }
+  }
+
+  // Solve via matrix inverse
+  const inv = invert3x3(XtX);
+  if (!inv) {
+    // Degenerate — return identity-like mapping
+    return [0, 1, 0];
+  }
+
+  return [
+    inv[0][0] * Xty[0] + inv[0][1] * Xty[1] + inv[0][2] * Xty[2],
+    inv[1][0] * Xty[0] + inv[1][1] * Xty[1] + inv[1][2] * Xty[2],
+    inv[2][0] * Xty[0] + inv[2][1] * Xty[1] + inv[2][2] * Xty[2],
+  ];
+}
+
+// ─── Calibration computation ──────────────────────────────────────
+
+/**
+ * Compute ridge regression calibration transform from samples.
+ * All features are normalized to [0,1] (raw / screenDim) to keep
+ * regularization scale-independent. Coefficients stored in normalized space.
+ */
+export function computeCalibrationTransform(samples: CalibrationSample[]): CalibrationTransform {
+  if (samples.length < 2) {
+    // Identity: output ≈ input in normalized space
+    return { xCoeffs: [0, 1, 0], yCoeffs: [0, 0, 1] };
+  }
+
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const LAMBDA = 1.0; // regularization strength
+
+  // Build normalized feature matrix [1, rawX/w, rawY/h] and targets
+  const X = samples.map(s => [1, s.raw.x / w, s.raw.y / h]);
+  const yX = samples.map(s => s.target.x / w);
+  const yY = samples.map(s => s.target.y / h);
+
+  const xCoeffs = solveRidge3(X, yX, LAMBDA);
+  const yCoeffs = solveRidge3(X, yY, LAMBDA);
+
+  return { xCoeffs, yCoeffs };
+}
+
+/** Apply a calibration transform to a raw gaze point (normalized-space coefficients) */
+export function applyTransformToPoint(raw: GazePoint, transform: CalibrationTransform): GazePoint {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+
+  // Normalize raw input
+  const nx = raw.x / w;
+  const ny = raw.y / h;
+
+  // Apply regression: normalized_target = c0 + c1*nx + c2*ny
+  const tx = transform.xCoeffs[0] + transform.xCoeffs[1] * nx + transform.xCoeffs[2] * ny;
+  const ty = transform.yCoeffs[0] + transform.yCoeffs[1] * nx + transform.yCoeffs[2] * ny;
+
+  // Denormalize and clamp
+  return {
+    x: Math.max(0, Math.min(w, tx * w)),
+    y: Math.max(0, Math.min(h, ty * h)),
+  };
+}
+
+// ─── Estimator ────────────────────────────────────────────────────
 
 export function createGazeEstimator() {
   let smoothX = 0;
@@ -98,11 +180,18 @@ export function createGazeEstimator() {
   let initialized = false;
   let calibration: CalibrationTransform | null = null;
 
-  // Try to load saved calibration
+  // Try to load saved calibration (version-checked)
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
-      calibration = JSON.parse(saved) as CalibrationTransform;
+      const parsed = JSON.parse(saved);
+      // Only accept current format (has xCoeffs/yCoeffs)
+      if (parsed && Array.isArray(parsed.xCoeffs) && Array.isArray(parsed.yCoeffs)) {
+        calibration = parsed as CalibrationTransform;
+      } else {
+        // Old format — discard
+        localStorage.removeItem(STORAGE_KEY);
+      }
     }
   } catch { /* ignore */ }
 
@@ -124,8 +213,12 @@ export function createGazeEstimator() {
     const lookOutRight = blendshapes.get("eyeLookOutRight") ?? 0;
     const lookInRight = blendshapes.get("eyeLookInRight") ?? 0;
 
+    // eyeLookOutLeft = left eye looking toward user's left (outward)
+    // eyeLookInLeft  = left eye looking toward user's right (inward)
+    // hEye positive = user looking to their left
+    // rawX is mirrored (user's left = screen left = decreasing X), so subtract
     const hEye = (lookOutLeft - lookInLeft + lookInRight - lookOutRight) / 2;
-    rawX += hEye * EYE_H_SCALE;
+    rawX -= hEye * EYE_H_SCALE;
 
     // Eye blendshape vertical offset
     const lookUpLeft = blendshapes.get("eyeLookUpLeft") ?? 0;
@@ -155,18 +248,15 @@ export function createGazeEstimator() {
     if (!raw) return null;
 
     // Apply calibration transform if available
-    let cx = raw.x;
-    let cy = raw.y;
+    let cx: number, cy: number;
     if (calibration) {
-      cx = calibration.scaleX * raw.x + calibration.offsetX;
-      cy = calibration.scaleY * raw.y + calibration.offsetY;
+      const calibrated = applyTransformToPoint(raw, calibration);
+      cx = calibrated.x;
+      cy = calibrated.y;
+    } else {
+      cx = raw.x;
+      cy = raw.y;
     }
-
-    // Clamp
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    cx = Math.max(0, Math.min(w, cx));
-    cy = Math.max(0, Math.min(h, cy));
 
     // EMA smoothing
     if (!initialized) {
@@ -188,7 +278,7 @@ export function createGazeEstimator() {
 
   /** Apply calibration from collected samples and persist to localStorage */
   function applyCalibration(samples: CalibrationSample[]) {
-    calibration = computeCalibration(samples);
+    calibration = computeCalibrationTransform(samples);
     initialized = false; // reset smoothing so it snaps to calibrated position
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(calibration));
