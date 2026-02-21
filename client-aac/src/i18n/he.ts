@@ -196,6 +196,16 @@ export const he: Translations = {
     enableEyegaze: "הפעל מבט עיניים",
     enableEyegazeHint: "בחר סמלים על ידי ריחוף למשך זמן מוגדר",
 
+    inputSource: "מקור קלט",
+    inputSourceAuto: "זיהוי אוטומטי",
+    inputSourceCursor: "שליטת סמן (מכשיר חיצוני)",
+    inputSourceCamera: "מצלמה (וובקם)",
+    inputSourceTobii: "עוקב עיניים Tobii",
+    inputSourceEyetech: "EyeTech",
+    inputSourceLctech: "LC Technologies",
+    inputSourceWebhid: "מכשיר WebHID",
+    inputSourceCursorHint: "לשימוש עם Tobii, עוקבי עיניים אחרים השולטים בסמן, או מכשירי מעקב ראש. אין צורך בכיול.",
+
     systemPrompt: "הוראות מערכת",
 
     restartSession: "הפעל מחדש",
@@ -291,6 +301,9 @@ export const he: Translations = {
     complete: "הכיול הושלם!",
     failed: "הכיול לא הצליח. נסה לשפר את התאורה ונסה שוב.",
     retrying: "מנסה כיול מחדש...",
+    calibrating: "מכייל...",
+    calibrate: "כיול מעקב עיניים",
+    recalibrate: "כיול מחדש של מעקב עיניים",
   },
 
   errors: {

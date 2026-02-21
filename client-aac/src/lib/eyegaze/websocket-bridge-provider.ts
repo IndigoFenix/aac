@@ -41,9 +41,9 @@ export class WebSocketBridgeProvider implements EyeGazeProvider {
         const timeout = setTimeout(() => controller.abort(), 500);
         const res = await fetch(this.config.probeUrl, { signal: controller.signal });
         clearTimeout(timeout);
-        return res.ok;
+        if (res.ok) return true;
       } catch {
-        return false;
+        // HTTP probe failed — fall through to WebSocket probe
       }
     }
 

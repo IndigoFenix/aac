@@ -805,21 +805,26 @@ export default function UserSettings({
                   <div className="space-y-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                     {/* Provider selection */}
                     <div className="space-y-1">
-                      <Label className="text-sm font-medium">Input Source</Label>
+                      <Label className="text-sm font-medium">{t("settings.inputSource")}</Label>
                       <Select value={eyegazeProvider} onValueChange={(v) => setEyegazeProvider(v as EyeGazeProviderType | "auto")}>
                         <SelectTrigger className="w-full">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="auto">Auto-detect</SelectItem>
-                          <SelectItem value="camera">Camera (Webcam)</SelectItem>
-                          <SelectItem value="tobii">Tobii Eye Tracker</SelectItem>
-                          <SelectItem value="eyetech">EyeTech</SelectItem>
-                          <SelectItem value="lctech">LC Technologies</SelectItem>
-                          <SelectItem value="webhid">WebHID Device</SelectItem>
-                          <SelectItem value="mouse">Mouse (Testing)</SelectItem>
+                          <SelectItem value="auto">{t("settings.inputSourceAuto")}</SelectItem>
+                          <SelectItem value="mouse">{t("settings.inputSourceCursor")}</SelectItem>
+                          <SelectItem value="camera">{t("settings.inputSourceCamera")}</SelectItem>
+                          <SelectItem value="tobii">{t("settings.inputSourceTobii")}</SelectItem>
+                          <SelectItem value="eyetech">{t("settings.inputSourceEyetech")}</SelectItem>
+                          <SelectItem value="lctech">{t("settings.inputSourceLctech")}</SelectItem>
+                          <SelectItem value="webhid">{t("settings.inputSourceWebhid")}</SelectItem>
                         </SelectContent>
                       </Select>
+                      {eyegazeProvider === "mouse" && (
+                        <p className="text-xs text-blue-600 dark:text-blue-400">
+                          {t("settings.inputSourceCursorHint")}
+                        </p>
+                      )}
                     </div>
 
                     {/* Dwell timeout */}
@@ -847,20 +852,22 @@ export default function UserSettings({
                       {t("settings.eyegazeTip", { seconds: String(eyegazeTimeout / 1000) })}
                     </p>
 
-                    {/* Recalibrate button */}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        onClose();
-                        setTimeout(() => startCalibration(), 300);
-                      }}
-                      disabled={isCalibrating}
-                      className="w-full flex items-center gap-2"
-                    >
-                      <Target className="w-4 h-4" />
-                      {isCalibrating ? "Calibrating..." : isCalibrated ? "Recalibrate Eye Tracking" : "Calibrate Eye Tracking"}
-                    </Button>
+                    {/* Recalibrate button — only for camera provider */}
+                    {eyegazeProvider !== "mouse" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          onClose();
+                          setTimeout(() => startCalibration(), 300);
+                        }}
+                        disabled={isCalibrating}
+                        className="w-full flex items-center gap-2"
+                      >
+                        <Target className="w-4 h-4" />
+                        {isCalibrating ? t("calibration.calibrating") : isCalibrated ? t("calibration.recalibrate") : t("calibration.calibrate")}
+                      </Button>
+                    )}
                   </div>
                 )}
               </div>

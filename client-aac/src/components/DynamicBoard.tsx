@@ -477,7 +477,7 @@ export default function DynamicBoard({
           className="grid gap-2 w-full h-full"
           style={{
             gridTemplateColumns: `repeat(${gridCols}, 1fr)`,
-            gridTemplateRows: `repeat(${gridRows}, 1fr)`,
+            gridTemplateRows: `repeat(${gridRows}, minmax(0, 1fr))`,
           }}
         >
           <AnimatePresence mode="popLayout">
