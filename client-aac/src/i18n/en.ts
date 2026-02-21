@@ -282,6 +282,15 @@ export const en = {
     aiNamePlaceholder: "e.g. Buddy, Sam, Alex",
   },
 
+  calibration: {
+    followDot: "Follow the dot",
+    lookAtDot: "Look at the dot",
+    checkingAccuracy: "Checking accuracy...",
+    complete: "Calibration complete!",
+    failed: "Calibration could not complete. Try improving lighting and try again.",
+    retrying: "Retrying calibration...",
+  },
+
   errors: {
     POLICY_VIOLATION: "This response was blocked due to a policy violation.",
     NO_RESPONSE: "An error occurred while processing the response.",
