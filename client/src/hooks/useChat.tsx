@@ -831,13 +831,23 @@ export const ChatProvider = ({
           selectStudent(studentId);
         },
         onComplete: (data) => {
-          setIsThinking(false);
-          setThinkingText(null);
-          if (replyType === 'md') {
-            // Remove the streaming placeholder before adding the final message
-            setHistory(prev => prev.filter(m => !(m.metadata as any)?.isStreaming));
+          try {
+            setIsThinking(false);
+            setThinkingText(null);
+            if (replyType === 'md') {
+              // Remove the streaming placeholder before adding the final message
+              setHistory(prev => prev.filter(m => !(m.metadata as any)?.isStreaming));
+            }
+            streamingResult = processResponseData(data);
+          } catch (err) {
+            console.error('[useChat] Error processing streaming response:', err);
+            // Still mark as completed to prevent fallback — the AI already responded
+            streamingResult = {
+              role: 'assistant',
+              content: data?.message?.content || { md: mdAccumulated || '' },
+              timestamp: Date.now(),
+            };
           }
-          streamingResult = processResponseData(data);
         },
         onError: (errorMsg) => {
           // Log but don't fail - we'll try non-streaming fallback
@@ -853,6 +863,13 @@ export const ChatProvider = ({
       // If user explicitly stopped, don't fall back
       if (stoppedByUserRef.current) {
         return null;
+      }
+
+      // If we already received streaming content (md mode), don't fire
+      // a redundant non-streaming request that would duplicate the response
+      if (replyType === 'md' && mdAccumulated) {
+        console.log('[useChat] Streaming content already received, skipping fallback');
+        return streamingResult;
       }
 
       // Fallback to non-streaming endpoint if streaming didn't complete
