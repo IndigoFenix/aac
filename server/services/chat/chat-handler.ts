@@ -676,7 +676,7 @@ import {
           try {
               const gptResponse: GPTResponse = await this.gpt.getStructuredResponse(
                   inputItems,
-                  String(hashCode(JSON.stringify(promptBuild.schema))),
+                  String(hashCode(JSON.stringify(promptBuild.schema ?? {}))),
                   promptBuild.schema,
                   promptBuild.tools,
                   tokensAvailableForResponse,
@@ -757,7 +757,7 @@ import {
                   }
               }
           } catch (e: any) {
-              console.error('ERROR:', e.message);
+              console.error('ERROR:', e.message, e.stack);
               return {
                   message: {
                       role: 'system',
