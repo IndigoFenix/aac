@@ -321,7 +321,7 @@ import {
                   if (typeof message.content === 'string') {
                       stringifiedContent = message.content;
                   } else if (typeof message.content === 'object' && message.content) {
-                      stringifiedContent = message.content.html || message.content.text || '';
+                      stringifiedContent = message.content.html || message.content.md || message.content.text || '';
                   }
 
                   if (stringifiedContent && message.role !== 'tool') {
@@ -352,7 +352,7 @@ import {
                   if (message.content.setValues) {
                       stringifiedContent = JSON.stringify(message.content);
                   } else {
-                      stringifiedContent = message.content.html || message.content.text || '';
+                      stringifiedContent = message.content.html || message.content.md || message.content.text || '';
                   }
               }
 
@@ -581,7 +581,7 @@ import {
                       if (typeof msg.content === 'string') {
                           text = msg.content;
                       } else if (msg.content && typeof msg.content === 'object') {
-                          text = (msg.content as ChatMessageContent).text || (msg.content as ChatMessageContent).html || '';
+                          text = (msg.content as ChatMessageContent).text || (msg.content as ChatMessageContent).html || (msg.content as ChatMessageContent).md || '';
                       }
                       if (text) texts.push(`${msg.role}: ${text}`);
                   }
@@ -729,7 +729,7 @@ import {
                   console.log('[ChatMsgMgr] After tool calls — Context_Board name:', this.memoryValues?.Context_Board?.name ?? '(none)', 'pages:', this.memoryValues?.Context_Board?.pages?.length ?? 0);
                   return await this.updateConversation(totalCreditsUsed, responseType, apiValues, toolRound + 1);
               } else if (gptResponse.content){
-                  let reply = await this.uponGPTResponse(gptResponse.content, creditsUsed);
+                  let reply = await this.uponGPTResponse(gptResponse.content, creditsUsed, responseType);
                   totalCreditsUsed += creditsUsed;
                   return {
                       message: reply,
@@ -785,7 +785,20 @@ import {
           return messages;
       }
   
-      async uponGPTResponse(response: string, creditsUsed: number): Promise<ChatMessage> {
+      async uponGPTResponse(response: string, creditsUsed: number, responseType?: 'text' | 'html' | 'md'): Promise<ChatMessage> {
+          // In md mode, the LLM returns raw markdown (no JSON wrapper)
+          if (responseType === 'md') {
+              const trimmed = response.trim();
+              const newMessage: ChatMessage = {
+                  role: 'assistant',
+                  timestamp: Date.now(),
+                  content: { md: trimmed },
+                  credits: creditsUsed,
+              };
+              await this.addMessage(newMessage);
+              return newMessage;
+          }
+
           let parsedResponse;
           try {
               parsedResponse = JSON.parse(response);
@@ -824,15 +837,15 @@ import {
                   }
               }
           }
-  
+
           let reply: ChatMessage = {
               role: 'assistant',
               content: {},
               timestamp: new Date().getTime(),
           }
-  
+
           const setValues = parsedResponse.setValues;
-  
+
           // Set fields and push buttons
           if (setValues){
               let valueSetMessage = '';
@@ -856,7 +869,7 @@ import {
                   (reply.content as ChatMessageContent).setValues = setValues;
               }
           }
-  
+
           if (parsedResponse.html){
               (reply.content as ChatMessageContent).html = this.gpt.convertContent(parsedResponse.html);
           }

@@ -35,7 +35,9 @@ export function getUserSession() {
     cookie: {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      // 'none' is required for cross-origin requests from Electron (app:// → https://)
+      // CORS credentials policy still restricts which origins can use cookies
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: sessionTtl,
     },
   });

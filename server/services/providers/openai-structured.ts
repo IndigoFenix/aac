@@ -40,14 +40,16 @@ export class OpenAIStructuredProvider implements StructuredLLMProvider {
       input: request.input,
       max_output_tokens: request.maxTokens || 150,
       tools: rspTools.length > 0 ? rspTools : undefined,
-      text: {
-        format: {
-          type: "json_schema",
-          strict: true,
-          name: request.schemaName,
-          schema: request.schema,
-        },
-      },
+      text: request.schema
+        ? {
+            format: {
+              type: "json_schema",
+              strict: true,
+              name: request.schemaName,
+              schema: request.schema,
+            },
+          }
+        : undefined,
     };
 
     const response = await this.openai.responses.create(rspParams);

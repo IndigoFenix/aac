@@ -8,7 +8,7 @@ import type { CalibrationSample } from "@/lib/gazeEstimator";
 import { EyeGazeService } from "@/lib/eyegaze/eyegaze-service";
 import { CameraGazeProvider } from "@/lib/eyegaze/camera-provider";
 import { MouseGazeProvider } from "@/lib/eyegaze/mouse-provider";
-import { createTobiiProvider, createEyeTechProvider, createLCTechProvider } from "@/lib/eyegaze/websocket-bridge-provider";
+import { createTobiiProvider, createEyeTechProvider, createLCTechProvider, createGazepointProvider } from "@/lib/eyegaze/websocket-bridge-provider";
 import { WebHIDGazeProvider } from "@/lib/eyegaze/webhid-provider";
 import type { GazeData, GazePoint, EyeGazeProviderType, EyeGazeProviderStatus } from "@/lib/eyegaze/types";
 
@@ -25,6 +25,9 @@ interface UseEyeGazeReturn {
   providerStatuses: EyeGazeProviderStatus[];
   supportsCalibration: boolean;
   isCalibrated: boolean;
+  /** Provider the user selected that failed to connect (null if ok or auto) */
+  failedProvider: EyeGazeProviderType | null;
+  detectionDone: boolean;
   switchProvider: (type: EyeGazeProviderType) => Promise<boolean>;
   // Camera calibration pass-through
   getRawGaze: () => GazePoint | null;
@@ -33,6 +36,8 @@ interface UseEyeGazeReturn {
 }
 
 export function useEyeGaze({ enabled, rawFaces, preferredProvider = "auto" }: UseEyeGazeOptions): UseEyeGazeReturn {
+  // Track whether auto-detection has finished (prevents premature calibration)
+  const [detectionDone, setDetectionDone] = useState(false);
   const serviceRef = useRef<EyeGazeService | null>(null);
   const cameraProviderRef = useRef<CameraGazeProvider | null>(null);
 
@@ -41,6 +46,7 @@ export function useEyeGaze({ enabled, rawFaces, preferredProvider = "auto" }: Us
   const [activeProvider, setActiveProvider] = useState<EyeGazeProviderType | null>(null);
   const [providerStatuses, setProviderStatuses] = useState<EyeGazeProviderStatus[]>([]);
   const [isCalibrated, setIsCalibrated] = useState(false);
+  const [failedProvider, setFailedProvider] = useState<EyeGazeProviderType | null>(null);
 
   // Create service + register providers (once)
   useEffect(() => {
@@ -53,6 +59,7 @@ export function useEyeGaze({ enabled, rawFaces, preferredProvider = "auto" }: Us
     service.registerProvider(createTobiiProvider());
     service.registerProvider(createEyeTechProvider());
     service.registerProvider(createLCTechProvider());
+    service.registerProvider(createGazepointProvider());
     service.registerProvider(new WebHIDGazeProvider());
     service.registerProvider(camera);
     service.registerProvider(mouse);
@@ -101,9 +108,11 @@ export function useEyeGaze({ enabled, rawFaces, preferredProvider = "auto" }: Us
     service.onGaze(handler);
 
     // Auto-detect and start
+    setDetectionDone(false);
     service.autoDetectAndStart().then((type) => {
       setActiveProvider(type);
       setProviderStatuses(service.getAllStatuses());
+      setDetectionDone(true);
     });
 
     return () => {
@@ -121,12 +130,38 @@ export function useEyeGaze({ enabled, rawFaces, preferredProvider = "auto" }: Us
     const service = serviceRef.current;
     if (!service || !enabled || preferredProvider === "auto") return;
 
-    service.switchProvider(preferredProvider).then((ok) => {
+    let cancelled = false;
+
+    // Try switching to the preferred provider, with a retry for slow devices
+    const trySwitch = async () => {
+      const ok = await service.switchProvider(preferredProvider);
+      if (cancelled) return;
       if (ok) {
         setActiveProvider(preferredProvider);
+        setFailedProvider(null);
         setProviderStatuses(service.getAllStatuses());
+        setDetectionDone(true);
+        return;
       }
-    });
+
+      // First attempt failed — retry after 2s (device may still be starting)
+      await new Promise((r) => setTimeout(r, 2000));
+      if (cancelled) return;
+
+      const retryOk = await service.switchProvider(preferredProvider);
+      if (cancelled) return;
+      if (retryOk) {
+        setActiveProvider(preferredProvider);
+        setFailedProvider(null);
+      } else {
+        setFailedProvider(preferredProvider);
+      }
+      setProviderStatuses(service.getAllStatuses());
+      setDetectionDone(true);
+    };
+
+    trySwitch();
+    return () => { cancelled = true; };
   }, [preferredProvider, enabled]);
 
   const switchProvider = useCallback(async (type: EyeGazeProviderType): Promise<boolean> => {
@@ -140,7 +175,11 @@ export function useEyeGaze({ enabled, rawFaces, preferredProvider = "auto" }: Us
     return ok;
   }, []);
 
-  const supportsCalibration = activeProvider === "camera";
+  // Only offer calibration when: detection is done, camera is actually active,
+  // AND the user explicitly chose camera (not "auto"). When on "auto", the camera
+  // may win detection simply because external devices probe slower — auto-calibrating
+  // would be disruptive for users with hardware eye trackers that control the cursor.
+  const supportsCalibration = detectionDone && activeProvider === "camera" && preferredProvider === "camera";
 
   // Calibration pass-through
   const getRawGaze = useCallback((): GazePoint | null => {
@@ -164,6 +203,8 @@ export function useEyeGaze({ enabled, rawFaces, preferredProvider = "auto" }: Us
     providerStatuses,
     supportsCalibration,
     isCalibrated,
+    failedProvider,
+    detectionDone,
     switchProvider,
     getRawGaze,
     applyCalibration,

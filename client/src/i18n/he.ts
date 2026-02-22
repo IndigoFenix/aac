@@ -160,7 +160,7 @@ export const he = {
     students: "תלמידים",
     progress: "התקדמות תלמידים",
     reports: "תיק תלמיד",
-    symbols: "ספריית סמלים",
+    AACsymbols: "ספריית סמלים לתת״ח",
     aacSettings: 'הגדרות תת"ח',
     currentStudent: "תלמיד נוכחי",
     studentManagement: "ניהול תלמידים",

@@ -12,8 +12,8 @@ export default defineConfig({
     },
   },
   root: path.resolve(import.meta.dirname, "client-aac"),
-  // In production, the app is served from /aac path
-  base: process.env.NODE_ENV === "production" ? "/aac/" : "/",
+  // Electron build uses relative paths; web production uses /aac/; dev uses /
+  base: process.env.ELECTRON_BUILD === "1" ? "./" : process.env.NODE_ENV === "production" ? "/aac/" : "/",
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public-aac"),
     emptyOutDir: true,

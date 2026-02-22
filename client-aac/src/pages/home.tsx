@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { UserX, Eye } from "lucide-react";
+import { UserX, Eye, EyeOff } from "lucide-react";
 import DynamicBoard from "@/components/DynamicBoard";
 import PrebuiltBoardSection from "@/components/PrebuiltBoardSection";
 import QuickActions from "@/components/QuickActions";
@@ -313,12 +313,13 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   });
 
   // Eyegaze provider detection notification
-  const [eyegazeNotification, setEyegazeNotification] = useState<string | null>(null);
+  const [eyegazeNotification, setEyegazeNotification] = useState<{ name: string; type: "connected" | "failed" } | null>(null);
   const prevProviderRef = useRef<string | null>(null);
   const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
     tobii: "Tobii Eye Tracker",
     eyetech: "EyeTech",
     lctech: "LC Technologies",
+    gazepoint: "Gazepoint Eye Tracker",
     webhid: "WebHID Device",
     camera: "Camera Eye Tracking",
     mouse: "Cursor Control (External Device)",
@@ -326,12 +327,22 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   useEffect(() => {
     if (eyeGaze.activeProvider && !prevProviderRef.current) {
       const name = PROVIDER_DISPLAY_NAMES[eyeGaze.activeProvider] || eyeGaze.activeProvider;
-      setEyegazeNotification(name);
+      setEyegazeNotification({ name, type: "connected" });
       const timer = setTimeout(() => setEyegazeNotification(null), 4000);
       return () => clearTimeout(timer);
     }
     prevProviderRef.current = eyeGaze.activeProvider;
   }, [eyeGaze.activeProvider]);
+
+  // Show failure notification when selected provider wasn't detected
+  useEffect(() => {
+    if (eyeGaze.failedProvider) {
+      const name = PROVIDER_DISPLAY_NAMES[eyeGaze.failedProvider] || eyeGaze.failedProvider;
+      setEyegazeNotification({ name, type: "failed" });
+      const timer = setTimeout(() => setEyegazeNotification(null), 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [eyeGaze.failedProvider]);
 
   // Face image cache (in-memory, session-scoped — no server storage)
   const faceImageCache = useFaceImageCache();
@@ -978,10 +989,18 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -60, opacity: 0 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="fixed top-2 left-1/2 -translate-x-1/2 z-[60] bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 text-sm font-medium"
+            className={`fixed top-2 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-full shadow-lg flex items-center gap-2 text-sm font-medium ${
+              eyegazeNotification.type === "connected"
+                ? "bg-blue-600 text-white"
+                : "bg-amber-500 text-white"
+            }`}
           >
-            <Eye className="w-4 h-4" />
-            {eyegazeNotification} connected
+            {eyegazeNotification.type === "connected" ? (
+              <Eye className="w-4 h-4" />
+            ) : (
+              <EyeOff className="w-4 h-4" />
+            )}
+            {eyegazeNotification.name} {eyegazeNotification.type === "connected" ? "connected" : "not detected"}
           </motion.div>
         )}
       </AnimatePresence>

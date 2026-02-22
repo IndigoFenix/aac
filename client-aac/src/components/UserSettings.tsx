@@ -817,6 +817,7 @@ export default function UserSettings({
                           <SelectItem value="tobii">{t("settings.inputSourceTobii")}</SelectItem>
                           <SelectItem value="eyetech">{t("settings.inputSourceEyetech")}</SelectItem>
                           <SelectItem value="lctech">{t("settings.inputSourceLctech")}</SelectItem>
+                          <SelectItem value="gazepoint">{t("settings.inputSourceGazepoint")}</SelectItem>
                           <SelectItem value="webhid">{t("settings.inputSourceWebhid")}</SelectItem>
                         </SelectContent>
                       </Select>

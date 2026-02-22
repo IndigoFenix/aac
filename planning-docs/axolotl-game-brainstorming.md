@@ -20,6 +20,11 @@ The AAC avatar is presented as an axolotl who can interact with the user periodi
 - When socializing, asks about activities during the day
   - Narrows down what the user wants to talk about
 
+
+
+
+
+
 ## Feeding Activities
     Communication & Language Goals
 

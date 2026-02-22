@@ -26,8 +26,11 @@ export class GeminiStructuredProvider implements StructuredLLMProvider {
       systemInstruction,
       temperature: request.temperature ?? 0.7,
       maxOutputTokens: request.maxTokens || 2048,
-      responseMimeType: "application/json",
-      responseSchema: this.cleanSchema(request.schema),
+      // Only use JSON response format when a schema is provided.
+      // When schema is undefined (e.g. md mode), the model returns plain text.
+      ...(request.schema
+        ? { responseMimeType: "application/json", responseSchema: this.cleanSchema(request.schema) }
+        : {}),
     };
 
     if (tools.length > 0) {

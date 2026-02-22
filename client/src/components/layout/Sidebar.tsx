@@ -88,6 +88,12 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
       disabled: !student, // Only enabled when a student is selected
     },
     {
+      icon: Image,
+      labelKey: 'nav.symbols',
+      feature: 'symbols' as FeatureType,
+      testId: 'nav-symbols',
+    },
+    {
       icon: ClipboardList,
       labelKey: 'nav.progress',
       feature: 'progress' as FeatureType,
@@ -100,12 +106,6 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
       feature: 'reports' as FeatureType,
       testId: 'nav-reports',
       disabled: !student, // Only enabled when a student is selected
-    },
-    {
-      icon: Image,
-      labelKey: 'nav.symbols',
-      feature: 'symbols' as FeatureType,
-      testId: 'nav-symbols',
     }
   ];
 

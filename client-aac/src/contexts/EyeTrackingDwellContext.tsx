@@ -138,14 +138,20 @@ export function EyeTrackingDwellProvider({
   }, [externalApplyCalibration]);
 
   // ── Auto-trigger calibration on first eyegaze use ──
+  // Uses a longer delay (1.5s) to let provider auto-detection settle.
+  // supportsCalibration is only true after detection completes and camera is confirmed active.
   const autoCalibTriggeredRef = useRef(false);
+  const supportsCalibrationRef = useRef(supportsCalibration);
+  supportsCalibrationRef.current = supportsCalibration;
   useEffect(() => {
     if (mode === "eyegaze" && supportsCalibration && !isCalibrated && !isCalibrating && !autoCalibTriggeredRef.current) {
       autoCalibTriggeredRef.current = true;
-      // Small delay so UI renders first
       const timer = setTimeout(() => {
-        startCalibration();
-      }, 500);
+        // Re-check: provider detection may have switched away from camera
+        if (supportsCalibrationRef.current) {
+          startCalibration();
+        }
+      }, 1500);
       return () => clearTimeout(timer);
     }
   }, [mode, supportsCalibration, isCalibrated, isCalibrating, startCalibration]);

@@ -792,9 +792,10 @@ export const ChatProvider = ({
         onThinking: (text) => {
           setIsThinking(true);
           setThinkingText(text);
-          // Hide streaming placeholder while thinking
-          if (replyType === 'md' && mdAccumulated) {
-            // Keep the accumulated text visible
+          // Clear accumulated text — any text before a tool call is preamble,
+          // not part of the final response (the model will regenerate after tools)
+          if (replyType === 'md') {
+            mdAccumulated = '';
           }
         },
         onTextDelta: (text) => {

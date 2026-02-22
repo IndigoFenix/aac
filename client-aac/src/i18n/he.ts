@@ -203,8 +203,11 @@ export const he: Translations = {
     inputSourceTobii: "עוקב עיניים Tobii",
     inputSourceEyetech: "EyeTech",
     inputSourceLctech: "LC Technologies",
+    inputSourceGazepoint: "עוקב עיניים Gazepoint",
     inputSourceWebhid: "מכשיר WebHID",
     inputSourceCursorHint: "לשימוש עם Tobii, עוקבי עיניים אחרים השולטים בסמן, או מכשירי מעקב ראש. אין צורך בכיול.",
+    inputSourceConnected: "מחובר",
+    inputSourceNotDetected: "לא זוהה",
 
     systemPrompt: "הוראות מערכת",
 

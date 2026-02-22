@@ -4,7 +4,7 @@
 import type { EyeGazeProvider, EyeGazeProviderType, EyeGazeProviderStatus, GazeCallback, GazeData } from "./types";
 
 const DEFAULT_PROBE_PRIORITY: EyeGazeProviderType[] = [
-  "tobii", "eyetech", "lctech", "webhid", "camera", "mouse",
+  "tobii", "eyetech", "lctech", "gazepoint", "webhid", "camera", "mouse",
 ];
 
 const PROBE_TIMEOUT_MS = 500;
