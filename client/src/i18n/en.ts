@@ -160,7 +160,7 @@ export const en = {
     students: "Students",
     progress: "Student Progress",
     reports: "Student File",
-    symbols: "Symbol Library",
+    symbols: "AAC Symbol Library",
     aacSettings: "AAC Settings",
     currentStudent: "Current Student",
     studentManagement: "Student Management",

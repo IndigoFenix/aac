@@ -1,7 +1,8 @@
 {
-  "name": "rest-express",
+  "name": "xahaph-aac",
   "version": "1.0.0",
   "type": "module",
+  "main": "dist-electron/main.js",
   "license": "MIT",
   "scripts": {
     "dev": "cross-env NODE_ENV=development tsx server/index.ts",
@@ -26,6 +27,11 @@
     "test:ai": "cross-env NODE_OPTIONS='--experimental-vm-modules' jest --testPathPatterns=ai-response.test.ts --runInBand",
     "test:coverage": "cross-env NODE_OPTIONS='--experimental-vm-modules' jest --coverage",
     "test:watch": "cross-env NODE_OPTIONS='--experimental-vm-modules' jest --watch",
+    "electron:build-main": "node electron/build.mjs",
+    "electron:dev": "npm run electron:build-main && concurrently -n vite,electron \"npm run client-aac:dev\" \"electron .\"",
+    "electron:build": "cross-env ELECTRON_BUILD=1 vite build --config vite.config.aac.ts --mode electron && npm run electron:build-main",
+    "electron:package": "npm run electron:build && electron-builder",
+    "electron:package:win": "npm run electron:build && electron-builder --win",
     "audit": "npm audit",
     "audit:fix": "npm audit fix",
     "audit:critical": "npm audit --audit-level=critical"
@@ -157,6 +163,9 @@
     "@types/uuid": "^10.0.0",
     "@types/ws": "^8.5.13",
     "@vitejs/plugin-react": "^4.3.2",
+    "concurrently": "^9.1.2",
+    "electron": "^34.2.0",
+    "electron-builder": "^25.1.8",
     "autoprefixer": "^10.4.20",
     "drizzle-kit": "^0.30.4",
     "esbuild": "^0.25.0",

@@ -201,8 +201,11 @@ export const en = {
     inputSourceTobii: "Tobii Eye Tracker",
     inputSourceEyetech: "EyeTech",
     inputSourceLctech: "LC Technologies",
+    inputSourceGazepoint: "Gazepoint Eye Tracker",
     inputSourceWebhid: "WebHID Device",
     inputSourceCursorHint: "Use with Tobii, other eye trackers that control the cursor, or head-tracking devices. No calibration needed.",
+    inputSourceConnected: "connected",
+    inputSourceNotDetected: "not detected",
 
     systemPrompt: "System Prompt",
 

@@ -16,7 +16,7 @@ export interface GazeData {
   headPose?: { yaw: number; pitch: number; roll?: number };
 }
 
-export type EyeGazeProviderType = "camera" | "tobii" | "eyetech" | "lctech" | "webhid" | "mouse";
+export type EyeGazeProviderType = "camera" | "tobii" | "eyetech" | "lctech" | "gazepoint" | "webhid" | "mouse";
 
 export interface EyeGazeProviderStatus {
   type: EyeGazeProviderType;

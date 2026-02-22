@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { RefreshCw, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppInitialization } from "@/contexts/AppInitializationContext";
+import axolotlLogo from "@assets/axolotl-logo.png";
 
 export default function InitializationLoadingScreen() {
   const {
@@ -37,19 +38,7 @@ export default function InitializationLoadingScreen() {
             }}
           />
           <div className="absolute inset-2 bg-white dark:bg-gray-900 rounded-full flex items-center justify-center">
-            <svg
-              className="w-8 h-8 text-purple-600"
-              viewBox="0 0 100 100"
-              fill="currentColor"
-            >
-              {/* Seagull silhouette */}
-              <path d="M20 60 C20 55, 25 50, 35 45 C40 42, 45 40, 50 40 C55 40, 60 42, 65 45 C75 50, 80 55, 80 60 C78 58, 75 56, 70 55 C65 54, 60 54, 55 55 L52 52 C50 50, 48 50, 46 52 L43 55 C38 54, 33 54, 28 55 C23 56, 20 58, 20 60 Z" />
-              {/* Wing details */}
-              <path d="M25 58 C30 56, 35 56, 40 57 C42 58, 44 59, 45 60 C43 61, 40 61, 37 60 C32 59, 28 59, 25 58 Z" />
-              <path d="M55 60 C56 59, 58 58, 60 57 C65 56, 70 56, 75 58 C72 59, 68 59, 63 60 C61 61, 58 61, 55 60 Z" />
-              {/* Body center */}
-              <ellipse cx="50" cy="58" rx="8" ry="4" />
-            </svg>
+            <img src={axolotlLogo} alt="Xahaph" className="w-12 h-12 object-contain" />
           </div>
         </motion.div>
 

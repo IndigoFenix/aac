@@ -50,6 +50,10 @@ import { useTextToSpeech, htmlToPlainText } from '@/hooks/useTextToSpeech';
 import { ChatMessage, ChatMessageContent } from '@shared/schema';
 import { cn } from '@/lib/utils';
 import { PersonaIcon, getPersonaColorClasses } from '@/components/chat/PersonaIcon';
+import { marked } from 'marked';
+
+// Configure marked for synchronous rendering
+marked.setOptions({ async: false });
 
 export function ChatPopup() {
   const [prompt, setPrompt] = useState('');
@@ -247,11 +251,21 @@ export function ChatPopup() {
 
   // Helper to extract display content from message
   const getMessageContent = (message: ChatMessage): string => {
+    let text: string;
     if (typeof message.content === 'string') {
-      return message.content;
+      text = message.content;
+    } else {
+      const content = message.content as ChatMessageContent;
+      if (content.md) {
+        return marked.parse(content.md) as string;
+      }
+      text = content.html || content.text || '';
     }
-    const content = message.content as ChatMessageContent;
-    return content.html || content.text || '';
+    // Translate error codes (e.g. "error:MESSAGE_FAILED" → translated string)
+    if (text.startsWith('error:')) {
+      return t(`errors.${text.slice(6)}`);
+    }
+    return text;
   };
 
   // Helper to detect if a string contains HTML markup

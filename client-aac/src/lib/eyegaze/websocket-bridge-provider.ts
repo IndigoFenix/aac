@@ -14,7 +14,13 @@ export interface WebSocketBridgeConfig {
   probeUrl?: string;     // HTTP endpoint to check if companion is running
   parser: VendorParser;
   reconnectMs?: number;
+  probeTimeoutMs?: number;
 }
+
+// In Electron, local WebSocket servers may take longer to respond (mixed-content negotiation).
+// Use a longer probe timeout to avoid false negatives.
+const isElectron = typeof window !== "undefined" && !!(window as any).electronAPI;
+const DEFAULT_PROBE_TIMEOUT = isElectron ? 1500 : 500;
 
 export class WebSocketBridgeProvider implements EyeGazeProvider {
   readonly type: EyeGazeProviderType;
@@ -34,13 +40,15 @@ export class WebSocketBridgeProvider implements EyeGazeProvider {
   }
 
   async probe(): Promise<boolean> {
+    const timeout = this.config.probeTimeoutMs ?? DEFAULT_PROBE_TIMEOUT;
+
     // Try HTTP probe first (faster, non-destructive)
     if (this.config.probeUrl) {
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 500);
+        const timer = setTimeout(() => controller.abort(), timeout);
         const res = await fetch(this.config.probeUrl, { signal: controller.signal });
-        clearTimeout(timeout);
+        clearTimeout(timer);
         if (res.ok) return true;
       } catch {
         // HTTP probe failed — fall through to WebSocket probe
@@ -54,7 +62,7 @@ export class WebSocketBridgeProvider implements EyeGazeProvider {
         const timer = setTimeout(() => {
           ws.close();
           resolve(false);
-        }, 500);
+        }, timeout);
 
         ws.onopen = () => {
           clearTimeout(timer);
@@ -211,6 +219,27 @@ function parseLCTech(raw: unknown): GazeData | null {
   };
 }
 
+/** Gazepoint Open Gaze API bridge — normalized 0-1 coords */
+function parseGazepoint(raw: unknown): GazeData | null {
+  const r = raw as Record<string, unknown>;
+  if (typeof r.x !== "number" || typeof r.y !== "number") return null;
+
+  return {
+    point: {
+      x: r.x * window.innerWidth,
+      y: r.y * window.innerHeight,
+    },
+    confidence: typeof r.confidence === "number" ? r.confidence : 0.8,
+    timestamp: performance.now(),
+    pupils: typeof r.leftPupil === "number"
+      ? { leftDiameter: r.leftPupil, rightDiameter: r.rightPupil as number | undefined }
+      : undefined,
+    fixation: typeof r.fixationDuration === "number"
+      ? { active: r.fixationDuration > 0, durationMs: r.fixationDuration * 1000 }
+      : undefined,
+  };
+}
+
 // ─── Factory Functions ──────────────────────────────────────────
 
 export function createTobiiProvider(port = 49152): WebSocketBridgeProvider {
@@ -238,5 +267,14 @@ export function createLCTechProvider(port = 30000): WebSocketBridgeProvider {
     deviceName: "LC Technologies Eyegaze",
     url: `ws://localhost:${port}`,
     parser: parseLCTech,
+  });
+}
+
+export function createGazepointProvider(port = 4243): WebSocketBridgeProvider {
+  return new WebSocketBridgeProvider({
+    type: "gazepoint",
+    deviceName: "Gazepoint Eye Tracker",
+    url: `ws://localhost:${port}`,
+    parser: parseGazepoint,
   });
 }

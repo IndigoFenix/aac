@@ -32,16 +32,21 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
       systemPrompt = extraSystem + "\n\n" + systemPrompt;
     }
 
-    // Convert real tools to Claude format and append the structured output tool
+    // Convert real tools to Claude format
     const tools = this.convertTools(request);
-    tools.push({
-      name: STRUCTURED_TOOL_NAME,
-      description:
-        "Return your final structured response. Call this tool when you are " +
-        "ready to reply to the user (i.e. you have no more tool calls to make). " +
-        "The input MUST conform to the output schema.",
-      input_schema: request.schema,
-    });
+
+    // Only add the structured output tool when a schema is provided.
+    // When schema is undefined (e.g. md mode), the model returns plain text.
+    if (request.schema) {
+      tools.push({
+        name: STRUCTURED_TOOL_NAME,
+        description:
+          "Return your final structured response. Call this tool when you are " +
+          "ready to reply to the user (i.e. you have no more tool calls to make). " +
+          "The input MUST conform to the output schema.",
+        input_schema: request.schema,
+      });
+    }
 
     const params: any = {
       model,
@@ -51,11 +56,11 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
       messages,
       max_tokens: request.maxTokens || 2048,
       temperature: request.temperature ?? 0.7,
-      tools,
-      // Force the model to call at least one tool on every turn.
+      tools: tools.length > 0 ? tools : undefined,
+      // Force the model to call at least one tool on every turn when we have tools.
       // It will call real tools when it needs to, and _structured_response
       // when it is ready to produce its final answer.
-      tool_choice: { type: "any" as const },
+      tool_choice: tools.length > 0 ? { type: "any" as const } : undefined,
     };
 
     const response = await this.client.messages.create(params);
