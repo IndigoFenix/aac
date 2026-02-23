@@ -4,7 +4,7 @@
 export const en = {
   app: {
     name: "Xahaph",
-    loading: "Loading Xahaph...",
+    loading: "Loading...",
   },
 
   common: {

@@ -6,7 +6,7 @@ import type { Translations } from "./en";
 export const he: Translations = {
   app: {
     name: "זאהאפ",
-    loading: "טוען את זאהאפ...",
+    loading: "טוען...",
   },
 
   common: {
