@@ -5,7 +5,7 @@ import type { Translations } from "./en";
 
 export const he: Translations = {
   app: {
-    name: "זאהאפ",
+    name: "Xahaph",
     loading: "טוען...",
   },
 
@@ -38,7 +38,7 @@ export const he: Translations = {
     loadingStudents: "טוען תלמידים...",
     failedToLoadStudents: "טעינת התלמידים נכשלה. נסה שוב.",
     noStudentsFound: "לא נמצאו תלמידים.",
-    addStudentHint: "נא להוסיף תלמיד באפליקציית זאהאפ הראשית.",
+    addStudentHint: "נא להוסיף תלמיד באפליקציית הראשית.",
     chooseStudent: "בחר תלמיד להתחלה",
     loggingOut: "מתנתק...",
     loginTitle: "ברוך הבא",
