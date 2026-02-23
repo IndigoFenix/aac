@@ -36,7 +36,7 @@ export const en = {
     loadingStudents: "Loading students...",
     failedToLoadStudents: "Failed to load students. Please try again.",
     noStudentsFound: "No students found.",
-    addStudentHint: "Please add a student in the main Xahaph app first.",
+    addStudentHint: "Please add a student in the CliniAACian app first.",
     chooseStudent: "Choose a student to start",
     loggingOut: "Logging out...",
     loginTitle: "Welcome",
