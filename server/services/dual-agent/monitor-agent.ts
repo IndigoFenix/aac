@@ -34,6 +34,9 @@ export class MonitorAgent {
   private sessionId?: string;
   private student?: StudentWithAacSettings;
   private framework: string | null = null;
+  private privacyOptions: { allowReadProgress: boolean; allowReadReports: boolean; allowNotes: boolean } = {
+    allowReadProgress: true, allowReadReports: true, allowNotes: true,
+  };
 
   constructor(
     studentId: string,
@@ -52,6 +55,13 @@ export class MonitorAgent {
    */
   getStudent() {
     return this.student;
+  }
+
+  /**
+   * Get privacy options for the current session
+   */
+  getPrivacyOptions() {
+    return this.privacyOptions;
   }
 
   /**
@@ -77,6 +87,13 @@ export class MonitorAgent {
 
     const aac = student.aacSettings;
     const personaPrompt = aac?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+
+    // Store privacy options from AAC settings
+    this.privacyOptions = {
+      allowReadProgress: aac?.allowReadProgress ?? true,
+      allowReadReports: aac?.allowReadReports ?? true,
+      allowNotes: aac?.allowNotes ?? true,
+    };
 
     // Branch on startup mode: 0=fast (no LLM), 1=thorough (preload + LLM summary)
     const startupMode = aac?.startupMode ?? 0;
@@ -147,7 +164,7 @@ export class MonitorAgent {
     const now = new Date();
     contextParts.push(`Date: ${now.toLocaleDateString()} Time: ${now.toLocaleTimeString()}`);
 
-    if (memory.Student_Notes) {
+    if (memory.Student_Notes && this.privacyOptions.allowNotes) {
       contextParts.push(`Previous notes: ${memory.Student_Notes}`);
     }
     if (memory.Student_Interests) {
@@ -176,8 +193,11 @@ export class MonitorAgent {
     additionalContext?: string;
   }> {
     try {
-      // Load all context data in parallel
-      const allContext = await preloadAllStudentContext(this.studentId);
+      // Load all context data in parallel (gated by privacy settings)
+      const allContext = await preloadAllStudentContext(this.studentId, {
+        allowReadProgress: this.privacyOptions.allowReadProgress,
+        allowReadReports: this.privacyOptions.allowReadReports,
+      });
 
       // Also read chatMemory fields
       const memory = (student.chatMemory as Record<string, any>) || {};

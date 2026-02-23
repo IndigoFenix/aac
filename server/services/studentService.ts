@@ -18,6 +18,7 @@ const AAC_SETTINGS_FIELDS = new Set([
   "elevenlabsAiVoiceId", "elevenlabsStudentVoiceId", "iconTextRatio",
   "usePcsSymbols", "signLanguageReading", "multiCameraMode",
   "eyegazeEnabled", "eyegazeTimeout", "eyegazeProvider", "aiName", "knownPeople",
+  "allowReadProgress", "allowReadReports", "allowNotes",
 ]);
 
 /**

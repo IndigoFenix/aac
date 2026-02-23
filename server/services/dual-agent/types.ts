@@ -91,6 +91,8 @@ export interface PendingMessage {
   boardState?: ParsedBoardData;
   visualContext?: string;
   audioContext?: string;
+  /** When true, excluded from Gemini context on reconnection but kept for monitor/DB visibility */
+  safetyExcluded?: boolean;
 }
 
 /**
@@ -176,6 +178,9 @@ export interface DualAgentSessionState {
 
   // Cached diagnosis from medicalRecords table (loaded once per session)
   cachedDiagnosis?: string | null;
+
+  // Privacy settings — gate monitor access to sensitive student data
+  privacyOptions?: { allowReadProgress: boolean; allowReadReports: boolean; allowNotes: boolean };
 
   // Live API hook: called when monitor injects context, so relay can forward to Gemini session
   onContextInjection?: (text: string) => void;

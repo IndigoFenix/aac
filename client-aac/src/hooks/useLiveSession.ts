@@ -79,6 +79,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   const [error, setError] = useState<string | null>(null);
   const [thinkingMode, setThinkingMode] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
+  const [safetyBlocked, setSafetyBlocked] = useState(false);
   const rateLimitedRef = useRef(false);
 
   // Message state
@@ -353,7 +354,13 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
         case "reconnected":
           setReconnecting(false);
+          setSafetyBlocked(false);
           setError(null);
+          break;
+
+        case "safety_blocked":
+          setSafetyBlocked(true);
+          setTimeout(() => setSafetyBlocked(false), 5000);
           break;
 
         case "session_reset":
@@ -719,5 +726,6 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
     // Reconnection state
     reconnecting,
+    safetyBlocked,
   };
 }

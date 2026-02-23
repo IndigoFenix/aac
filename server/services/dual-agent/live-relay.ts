@@ -77,6 +77,7 @@ export type ServerMessage =
   | { type: "reconnected" }                              // Reconnection successful
   | { type: "session_reset"; sessionId: string }         // New session created after repeated failures
   | { type: "rate_limited"; data: string }               // Rate limited — client should NOT auto-reconnect
+  | { type: "safety_blocked"; data: string }             // Safety/policy block — transient indicator
   | { type: "complete"; data?: any };
 
 // ---------------------------------------------------------------------------
@@ -127,6 +128,9 @@ export class LiveRelay {
   private static readonly MAX_RECONNECT_BEFORE_RESET = 2;
   private initialConnectionDone = false;
 
+  // Safety block tracking — progressive content scrubbing
+  private consecutiveSafetyBlocks = 0;
+
   // Client WebSocket health check (ping/pong)
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private pongReceived = true;
@@ -166,11 +170,18 @@ export class LiveRelay {
         // Initial connection is handled by handleInitialize after greeting prompt
       },
       onReconnecting: () => {
+        // Safety blocks: progressive content scrubbing instead of forceNewSession
+        if (this.gemini.lastCloseWasSafety) {
+          this.handleSafetyBlock();
+          this.send({ type: "reconnecting", data: "error:RECONNECTING" });
+          return; // Don't increment reconnectAttempts or trigger forceNewSession
+        }
+
         this.reconnectAttempts++;
         console.log(`[LiveRelay] Reconnecting (attempt ${this.reconnectAttempts})...`);
         this.send({ type: "reconnecting", data: "error:RECONNECTING" });
 
-        // If too many reconnect attempts (e.g. repeated safety errors), force new session
+        // If too many reconnect attempts, force new session
         if (this.reconnectAttempts >= LiveRelay.MAX_RECONNECT_BEFORE_RESET && this.sessionId) {
           console.log("[LiveRelay] Too many reconnect attempts — creating new session");
           this.forceNewSession().catch(err => {
@@ -183,6 +194,8 @@ export class LiveRelay {
         // Check if this is a rate-limit error
         if (this.gemini.lastCloseWasRateLimit || /resource.exhausted|rate.limit|quota|too many requests|overloaded/i.test(error.message)) {
           this.send({ type: "rate_limited", data: "error:RATE_LIMITED" });
+        } else if (this.gemini.lastCloseWasSafety || /policy.violation|unsafe|blocked|safety/i.test(error.message)) {
+          // Safety errors are handled by onReconnecting → handleSafetyBlock; skip generic error
         } else {
           this.send({ type: "error", data: "error:CONNECTION_ERROR" });
         }
@@ -192,6 +205,10 @@ export class LiveRelay {
         // Check if rate-limited — send specific message so client doesn't auto-reconnect
         if (this.gemini.lastCloseWasRateLimit) {
           this.send({ type: "rate_limited", data: "error:RATE_LIMITED" });
+          return;
+        }
+        // Safety blocks are handled by onReconnecting → handleSafetyBlock; skip generic error
+        if (this.gemini.lastCloseWasSafety) {
           return;
         }
         // Forward non-normal closes to client so they see specific error feedback
@@ -208,10 +225,11 @@ export class LiveRelay {
         if (!this.sessionId) return;
         console.log("[LiveRelay] Reconnect failed — reloading history from DB");
         try {
-          const turns = await dualAgentService.loadHistoryForReconnect(this.sessionId);
+          const excludeSafety = this.consecutiveSafetyBlocks > 0;
+          const turns = await dualAgentService.loadHistoryForReconnect(this.sessionId, excludeSafety);
           if (turns.length > 0) {
             this.gemini.sendConversationHistory(turns);
-            console.log(`[LiveRelay] Sent ${turns.length} history turns to fresh Gemini session`);
+            console.log(`[LiveRelay] Sent ${turns.length} history turns to fresh Gemini session (excludeSafety=${excludeSafety})`);
           }
           // Context injection is also handled by onReady → injectReconnectionContext()
         } catch (err) {
@@ -537,6 +555,8 @@ If you hear speech that resembles text you recently produced, it is your echo. I
       this.turnStartTime = Date.now();
       // Reset reconnect counter on first text of a new turn — connection is healthy
       this.reconnectAttempts = 0;
+      // Successful turn = safety recovery worked — reset safety counter
+      this.consecutiveSafetyBlocks = 0;
     }
     this.turnTextBuffer += text;
 
@@ -1400,8 +1420,10 @@ If you hear speech that resembles text you recently produced, it is your echo. I
       parts.push(`Current emotion: ${state.currentEmote}`);
     }
 
-    // Recent conversation from pending messages (last 20)
-    const recent = (state.pendingMessages || []).slice(-20);
+    // Recent conversation from pending messages (last 20), filtering out safety-excluded messages
+    const recent = (state.pendingMessages || [])
+      .filter(m => !m.safetyExcluded)
+      .slice(-20);
     if (recent.length > 0) {
       const summary = recent.map(m => {
         const role = m.role === "assistant" ? "AI" : "User";
@@ -1411,8 +1433,12 @@ If you hear speech that resembles text you recently produced, it is your echo. I
       parts.push(`Recent conversation:\n${summary}`);
     }
 
+    const header = this.consecutiveSafetyBlocks > 0
+      ? `[SESSION RESUMED] Your connection was briefly interrupted due to a content filter. Continue the conversation naturally.`
+      : `[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.`;
+
     const contextText = [
-      `[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.`,
+      header,
       ...parts,
       `IMPORTANT: Continue the conversation naturally from where you left off.`,
       `Do NOT greet the user again. Do NOT rebuild or reset the board — it is already displayed correctly on the client.`,
@@ -1479,6 +1505,45 @@ If you hear speech that resembles text you recently produced, it is your echo. I
     }
   }
 
+  /**
+   * Handle a safety/policy block from Gemini. Progressively excludes recent
+   * messages from reconnection context to break the safety-retrigger loop.
+   * Messages stay in DB/memory for monitor visibility — only excluded from Gemini.
+   */
+  private handleSafetyBlock(): void {
+    this.consecutiveSafetyBlocks++;
+    const level = this.consecutiveSafetyBlocks;
+
+    const state = this.sessionCache?.state;
+    if (state) {
+      const msgs = state.pendingMessages;
+      const excludeCount = level === 1 ? 3 : level === 2 ? 10 : msgs.length;
+      // Mark most recent N non-excluded messages
+      let marked = 0;
+      for (let i = msgs.length - 1; i >= 0 && marked < excludeCount; i--) {
+        if (!msgs[i].safetyExcluded) {
+          msgs[i].safetyExcluded = true;
+          marked++;
+        }
+      }
+      // Record safety block in conversation log
+      dualAgentService.addPendingMessage(this.sessionId!, {
+        role: "system",
+        content: `[SAFETY BLOCK] A response was blocked by the content safety filter (attempt ${level}). ${marked} messages excluded from AI context.`,
+        timestamp: Date.now(),
+      }).catch(err => console.error("[LiveRelay] Failed to persist safety block:", err));
+    }
+
+    // Notify client
+    this.send({ type: "safety_blocked", data: "error:SAFETY_BLOCKED" });
+
+    logDualAgent("LiveRelay.safetyBlock", {
+      sessionId: this.sessionId,
+      level,
+      lastCloseCode: this.gemini.lastCloseCode,
+    });
+  }
+
   private cleanup(): void {
     // Stop timers
     this.stopPingTimer();
@@ -1503,9 +1568,16 @@ If you hear speech that resembles text you recently produced, it is your echo. I
   /**
    * Handle session close: add a close marker and force-trigger the monitor
    * for a final summary of the session.
+   * Skipped when notes are disabled (no memory stored outside message logs).
    */
   private async handleSessionClose(): Promise<void> {
     if (!this.sessionId) return;
+
+    // Skip final summary when notes are disabled — no memory to write
+    if (this.sessionCache?.state.privacyOptions?.allowNotes === false) {
+      logDualAgent("LiveRelay.handleSessionClose.skipped", { sessionId: this.sessionId, reason: "allowNotes=false" });
+      return;
+    }
 
     await dualAgentService.addPendingMessage(this.sessionId, {
       role: "user",

@@ -886,8 +886,14 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     // It does NOT use User_*, Relationship_*, institute, progress, or reports fields
     console.log('[getMessageManager] AAC mode - building memory fields');
 
+    // Privacy options from AAC settings
+    const aacPrivacy = (context.student as any)?.aacSettings;
+
     // Filter to only Student_* fields (not User_* or Relationship_*)
-    const studentFields = MASTER_MEMORY_FIELDS.filter(f => f.id.startsWith('Student_'));
+    let studentFields = MASTER_MEMORY_FIELDS.filter(f => f.id.startsWith('Student_'));
+    if (aacPrivacy?.allowNotes === false) {
+      studentFields = studentFields.filter(f => f.id !== 'Student_Notes');
+    }
     contextMemoryFields.push(...studentFields);
 
     // Add library field (Context_Library)
@@ -895,8 +901,11 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
 
     // Note: BOARD_MEMORY_FIELD is NOT added for AAC - board uses formSchema/setValues instead
 
-    // Add AAC-specific read-only context fields
-    const aacFields = getAACMemoryFields();
+    // Add AAC-specific read-only context fields (gated by privacy settings)
+    const aacFields = getAACMemoryFields({
+      allowReadProgress: aacPrivacy?.allowReadProgress ?? true,
+      allowReadReports: aacPrivacy?.allowReadReports ?? true,
+    });
     contextMemoryFields.push(...aacFields);
     console.log('[getMessageManager] AAC mode - added', studentFields.length, 'Student fields +', aacFields.length, 'AAC context fields');
   } else {
@@ -1169,12 +1178,19 @@ Example button with custom symbol:
     // AAC mode: Student_* fields + Library + AAC context fields
     // Note: BOARD_MEMORY_FIELD is disabled for AAC - board updates use formSchema/setValues instead
     // for faster single-pass responses
-    const studentFields = MASTER_MEMORY_FIELDS.filter(f => f.id.startsWith('Student_'));
+    const aacPrivacy2 = (context.student as any)?.aacSettings;
+    let studentFieldsProc = MASTER_MEMORY_FIELDS.filter(f => f.id.startsWith('Student_'));
+    if (aacPrivacy2?.allowNotes === false) {
+      studentFieldsProc = studentFieldsProc.filter(f => f.id !== 'Student_Notes');
+    }
     fieldsForProcessor = [
-      ...studentFields,
+      ...studentFieldsProc,
       LIBRARY_TOPICS_FIELD as AgentMemoryFieldWithDB,
       // BOARD_MEMORY_FIELD disabled - using formSchema/setValues for board updates
-      ...getAACMemoryFields(),
+      ...getAACMemoryFields({
+        allowReadProgress: aacPrivacy2?.allowReadProgress ?? true,
+        allowReadReports: aacPrivacy2?.allowReadReports ?? true,
+      }),
     ];
   } else {
     // Non-AAC modes: use chatContextManager fields (includes institute, library, progress, reports)

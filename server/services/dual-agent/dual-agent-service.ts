@@ -640,6 +640,7 @@ export class DualAgentService {
       cachedSymbols,
       availableBoards,
       cachedDiagnosis,
+      privacyOptions: monitorAgent.getPrivacyOptions(),
     };
 
     // Save to database
@@ -2550,7 +2551,7 @@ export class DualAgentService {
    * Returns turns in Gemini format (user/model) suitable for sendConversationHistory().
    * Filters out internal monitor messages, keeps [CONTEXT] injections.
    */
-  async loadHistoryForReconnect(sessionId: string): Promise<Array<{ role: "user" | "model"; text: string }>> {
+  async loadHistoryForReconnect(sessionId: string, excludeSafetyMessages = false): Promise<Array<{ role: "user" | "model"; text: string }>> {
     try {
       const dbRow = await db
         .select({
@@ -2588,6 +2589,8 @@ export class DualAgentService {
 
       // Also include pending messages (not yet processed by monitor)
       for (const pm of pending) {
+        // Skip safety-excluded messages when recovering from safety blocks
+        if (excludeSafetyMessages && pm.safetyExcluded) continue;
         turns.push({
           role: pm.role === "assistant" ? "model" : "user",
           text: pm.content,

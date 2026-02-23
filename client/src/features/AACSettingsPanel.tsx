@@ -34,6 +34,7 @@ import {
   Search,
   Crosshair,
   Play,
+  Shield,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -90,6 +91,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [startupMode, setStartupMode] = useState(0);
   const [eyegazeEnabled, setEyegazeEnabled] = useState(false);
   const [eyegazeTimeout, setEyegazeTimeout] = useState(2000);
+  const [allowReadProgress, setAllowReadProgress] = useState(true);
+  const [allowReadReports, setAllowReadReports] = useState(true);
+  const [allowNotes, setAllowNotes] = useState(true);
   const [hasChanges, setHasChanges] = useState(false);
 
   // Fetch ElevenLabs voices when API key is present
@@ -164,6 +168,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setStartupMode(aac?.startupMode ?? 0);
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
       setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
+      setAllowReadProgress(aac?.allowReadProgress ?? true);
+      setAllowReadReports(aac?.allowReadReports ?? true);
+      setAllowNotes(aac?.allowNotes ?? true);
       setHasChanges(false);
     }
   }, [student]);
@@ -186,6 +193,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalStartupMode = aac?.startupMode ?? 0;
       const originalEyegazeEnabled = aac?.eyegazeEnabled ?? false;
       const originalEyegazeTimeout = aac?.eyegazeTimeout ?? 2000;
+      const originalAllowReadProgress = aac?.allowReadProgress ?? true;
+      const originalAllowReadReports = aac?.allowReadReports ?? true;
+      const originalAllowNotes = aac?.allowNotes ?? true;
       setHasChanges(
         aiName !== originalAiName ||
         chatAgentPrompt !== originalPrompt ||
@@ -200,10 +210,13 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         interpretationLevel !== originalInterpretationLevel ||
         startupMode !== originalStartupMode ||
         eyegazeEnabled !== originalEyegazeEnabled ||
-        eyegazeTimeout !== originalEyegazeTimeout
+        eyegazeTimeout !== originalEyegazeTimeout ||
+        allowReadProgress !== originalAllowReadProgress ||
+        allowReadReports !== originalAllowReadReports ||
+        allowNotes !== originalAllowNotes
       );
     }
-  }, [aiName, chatAgentPrompt, voiceType, studentVoiceType, customVoiceId, customStudentVoiceId, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, student]);
+  }, [aiName, chatAgentPrompt, voiceType, studentVoiceType, customVoiceId, customStudentVoiceId, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, allowReadProgress, allowReadReports, allowNotes, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -222,6 +235,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       startupMode: number;
       eyegazeEnabled: boolean;
       eyegazeTimeout: number;
+      allowReadProgress: boolean;
+      allowReadReports: boolean;
+      allowNotes: boolean;
     }) => {
       const response = await apiRequest('PATCH', `/api/students/${student?.id}`, data);
       return response.json();
@@ -261,6 +277,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       startupMode,
       eyegazeEnabled,
       eyegazeTimeout,
+      allowReadProgress,
+      allowReadReports,
+      allowNotes,
     });
   };
 
@@ -281,6 +300,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setStartupMode(aac?.startupMode ?? 0);
       setEyegazeEnabled(aac?.eyegazeEnabled ?? false);
       setEyegazeTimeout(aac?.eyegazeTimeout ?? 2000);
+      setAllowReadProgress(aac?.allowReadProgress ?? true);
+      setAllowReadReports(aac?.allowReadReports ?? true);
+      setAllowNotes(aac?.allowNotes ?? true);
     }
   };
 
@@ -887,6 +909,75 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </div>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Privacy */}
+          <Card>
+            <CardHeader>
+              <CardTitle className={cn(
+                "flex items-center gap-2",
+                isRTL && "flex-row-reverse"
+              )}>
+                <Shield className="w-5 h-5" />
+                {t('aacSettings.privacy')}
+              </CardTitle>
+              <CardDescription>
+                {t('aacSettings.privacyDesc')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className={cn(
+                "flex items-center justify-between",
+                isRTL && "flex-row-reverse"
+              )}>
+                <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                  <Label className="text-base font-medium">
+                    {t('aacSettings.allowReadProgress')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.allowReadProgressDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={allowReadProgress}
+                  onCheckedChange={setAllowReadProgress}
+                />
+              </div>
+              <div className={cn(
+                "flex items-center justify-between",
+                isRTL && "flex-row-reverse"
+              )}>
+                <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                  <Label className="text-base font-medium">
+                    {t('aacSettings.allowReadReports')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.allowReadReportsDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={allowReadReports}
+                  onCheckedChange={setAllowReadReports}
+                />
+              </div>
+              <div className={cn(
+                "flex items-center justify-between",
+                isRTL && "flex-row-reverse"
+              )}>
+                <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                  <Label className="text-base font-medium">
+                    {t('aacSettings.allowNotes')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.allowNotesDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={allowNotes}
+                  onCheckedChange={setAllowNotes}
+                />
+              </div>
             </CardContent>
           </Card>
 

@@ -327,6 +327,7 @@ export const en = {
     CONNECTION_CLOSED: "Connection closed. Reconnecting...",
     CONNECTION_ERROR: "Connection error.",
     TURN_FAILED: "Turn processing error.",
+    SAFETY_BLOCKED: "A response was filtered for safety. Continuing conversation...",
     SESSION_RESET_FAILED: "Failed to create new session.",
     BOARD_NOT_FOUND: "Board not found.",
     TRANSCRIBE_FAILED: "Failed to transcribe audio.",
