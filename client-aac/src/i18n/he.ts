@@ -329,6 +329,7 @@ export const he: Translations = {
     CONNECTION_CLOSED: "החיבור נסגר. מתחבר מחדש...",
     CONNECTION_ERROR: "שגיאת חיבור.",
     TURN_FAILED: "שגיאה בעיבוד התור.",
+    SAFETY_BLOCKED: "תגובה סוננה מסיבות בטיחות. ממשיכים בשיחה...",
     SESSION_RESET_FAILED: "יצירת מפגש חדש נכשלה.",
     BOARD_NOT_FOUND: "הלוח לא נמצא.",
     TRANSCRIBE_FAILED: "תמלול השמע נכשל.",

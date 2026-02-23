@@ -1633,6 +1633,15 @@ export const en = {
     systemPromptPlaceholder: "Enter custom instructions for the AI assistant...",
     systemPromptHint: "This prompt defines how the AI assistant behaves when interacting with this student.",
     resetToDefault: "Reset to Default",
+    // Privacy
+    privacy: "Privacy",
+    privacyDesc: "Control what information the AI monitor can access during sessions",
+    allowReadProgress: "Allow Reading Goals & Objectives",
+    allowReadProgressDesc: "When disabled, the AI cannot view the student's IEP goals and objectives",
+    allowReadReports: "Allow Reading Reports",
+    allowReadReportsDesc: "When disabled, the AI cannot view medical, educational, or functional records",
+    allowNotes: "Allow Notes",
+    allowNotesDesc: "When disabled, the AI cannot read or write session notes (no memory stored outside message logs)",
     // Actions
     saveChanges: "Save Changes",
     discard: "Discard",

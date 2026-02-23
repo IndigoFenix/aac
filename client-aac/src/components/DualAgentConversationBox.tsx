@@ -143,6 +143,7 @@ export function DualAgentConversationBox({
     responseMode,
     setResponseMode,
     reconnecting,
+    safetyBlocked,
   } = useDualAgentContext();
   const { t } = useLanguage();
   const { theme, toggleTheme } = useTheme();
@@ -453,6 +454,11 @@ export function DualAgentConversationBox({
                     <div className="flex items-center gap-2 text-white/80">
                       <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse" />
                       <span className="text-sm">{t('errors.RECONNECTING')}</span>
+                    </div>
+                  ) : safetyBlocked ? (
+                    <div className="flex items-center gap-2 text-white/80">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span className="text-sm">{t('errors.SAFETY_BLOCKED')}</span>
                     </div>
                   ) : error ? (
                     <div className="flex items-center justify-between w-full">

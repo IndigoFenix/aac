@@ -70,6 +70,8 @@ export class GeminiLiveSession {
   lastCloseCode: number | null = null;
   /** Whether the last close was due to a rate limit */
   lastCloseWasRateLimit = false;
+  /** Whether the last close was due to a safety/policy violation */
+  lastCloseWasSafety = false;
 
   // Proactive reconnection timer (reconnect before the 2-min video limit)
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -93,6 +95,7 @@ export class GeminiLiveSession {
    */
   async connect(systemPrompt: string, config: LiveSessionConfig): Promise<void> {
     this.closedIntentionally = false;
+    this.lastCloseWasSafety = false;
     this.systemPrompt = systemPrompt;
     this.config = config;
 
@@ -146,6 +149,10 @@ export class GeminiLiveSession {
             // Detect rate limit / quota errors — do NOT auto-reconnect
             const isRateLimit = /resource.exhausted|rate.limit|quota|too many requests|overloaded/i.test(reason);
             this.lastCloseWasRateLimit = isRateLimit;
+
+            // Detect safety/policy violations (code 1007 or safety-related reasons)
+            const isSafety = !isRateLimit && (e.code === 1007 || /policy.violation|unsafe|blocked|safety/i.test(reason));
+            this.lastCloseWasSafety = isSafety;
 
             this.callbacks.onClose?.(e.code, reason);
 

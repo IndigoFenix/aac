@@ -109,6 +109,8 @@ interface DualAgentContextType {
 
   // Reconnection state (Live API only)
   reconnecting: boolean;
+  /** Transient safety block indicator (auto-clears after 5s) */
+  safetyBlocked: boolean;
 
   // PCM gating debug (Live API only)
   pcmDebug: {
@@ -736,6 +738,7 @@ function ProviderShell({
     },
 
     reconnecting: agent.reconnecting ?? false,
+    safetyBlocked: agent.safetyBlocked ?? false,
 
     pcmDebug: pcmDebugProp ?? { audioBusy: false, isPlaying: false, sentCount: 0, gatedCount: 0 },
   };

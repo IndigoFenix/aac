@@ -159,6 +159,8 @@ export interface UseDualAgentReturn {
   // Reconnection state (Live API only)
   /** Whether the server is currently reconnecting to Gemini */
   reconnecting?: boolean;
+  /** Transient safety block indicator (auto-clears after 5s) */
+  safetyBlocked?: boolean;
 }
 
 export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {

@@ -1293,17 +1293,23 @@ async function loadProgressInfo(studentId: string): Promise<AACStudentContext['p
  * Returns a single formatted string with all context sections.
  * Used by MonitorAgent.longInitializeContext() to build a comprehensive briefing.
  */
-export async function preloadAllStudentContext(studentId: string): Promise<string> {
+export async function preloadAllStudentContext(
+  studentId: string,
+  options?: { allowReadProgress?: boolean; allowReadReports?: boolean }
+): Promise<string> {
+  const readProgress = options?.allowReadProgress !== false;
+  const readReports = options?.allowReadReports !== false;
+
   const [studentInfo, institutes, classes, classmates, medicalInfo, functionalInfo, educationalInfo, progress] =
     await Promise.all([
       loadStudentInfo(studentId),
       loadStudentInstitutes(studentId),
       loadStudentClasses(studentId),
       loadClassmates(studentId),
-      loadMedicalInfo(studentId),
-      loadFunctionalInfo(studentId),
-      loadEducationalInfo(studentId),
-      loadProgressInfo(studentId),
+      readReports ? loadMedicalInfo(studentId) : Promise.resolve(null),
+      readReports ? loadFunctionalInfo(studentId) : Promise.resolve(null),
+      readReports ? loadEducationalInfo(studentId) : Promise.resolve(null),
+      readProgress ? loadProgressInfo(studentId) : Promise.resolve(null),
     ]);
 
   const sections: string[] = [];
@@ -1324,8 +1330,14 @@ export async function preloadAllStudentContext(studentId: string): Promise<strin
  * Get AAC-specific memory fields (all read-only context fields with lazy loading)
  * Each field loads data on-demand when the AI reads it via the memory tool
  */
-export function getAACMemoryFields(): AgentMemoryFieldWithDB[] {
-  return [
+export function getAACMemoryFields(options?: {
+  allowReadProgress?: boolean;
+  allowReadReports?: boolean;
+}): AgentMemoryFieldWithDB[] {
+  const readProgress = options?.allowReadProgress !== false;
+  const readReports = options?.allowReadReports !== false;
+
+  const fields: AgentMemoryFieldWithDB[] = [
     createReadOnlyObjectField(
       'Context_StudentInfo',
       'Student Information',
@@ -1386,65 +1398,77 @@ export function getAACMemoryFields(): AgentMemoryFieldWithDB[] {
         return loadClassmates(studentId);
       }
     ),
-    createReadOnlyObjectField(
-      'Context_MedicalInfo',
-      'Medical Information',
-      'Medical records and health information (read-only)',
-      false,
-      async (ctx) => {
-        const studentId = ctx.all.studentId;
-        if (!studentId) {
-          console.log('[AAC] Context_MedicalInfo: No studentId in context');
-          return null;
-        }
-        console.log('[AAC] Loading Context_MedicalInfo for student:', studentId);
-        return loadMedicalInfo(studentId);
-      }
-    ),
-    createReadOnlyObjectField(
-      'Context_FunctionalInfo',
-      'Functional Assessment',
-      'Functional assessment reports (read-only)',
-      false,
-      async (ctx) => {
-        const studentId = ctx.all.studentId;
-        if (!studentId) {
-          console.log('[AAC] Context_FunctionalInfo: No studentId in context');
-          return null;
-        }
-        console.log('[AAC] Loading Context_FunctionalInfo for student:', studentId);
-        return loadFunctionalInfo(studentId);
-      }
-    ),
-    createReadOnlyObjectField(
-      'Context_EducationalInfo',
-      'Educational Information',
-      'Educational reports and accommodations (read-only)',
-      false,
-      async (ctx) => {
-        const studentId = ctx.all.studentId;
-        if (!studentId) {
-          console.log('[AAC] Context_EducationalInfo: No studentId in context');
-          return null;
-        }
-        console.log('[AAC] Loading Context_EducationalInfo for student:', studentId);
-        return loadEducationalInfo(studentId);
-      }
-    ),
-    createReadOnlyObjectField(
-      'Context_Progress',
-      'Program & Goals',
-      'Current IEP/program goals and progress (read-only)',
-      true,
-      async (ctx) => {
-        const studentId = ctx.all.studentId;
-        if (!studentId) {
-          console.log('[AAC] Context_Progress: No studentId in context');
-          return null;
-        }
-        console.log('[AAC] Loading Context_Progress for student:', studentId);
-        return loadProgressInfo(studentId);
-      }
-    ),
   ];
+
+  if (readReports) {
+    fields.push(
+      createReadOnlyObjectField(
+        'Context_MedicalInfo',
+        'Medical Information',
+        'Medical records and health information (read-only)',
+        false,
+        async (ctx) => {
+          const studentId = ctx.all.studentId;
+          if (!studentId) {
+            console.log('[AAC] Context_MedicalInfo: No studentId in context');
+            return null;
+          }
+          console.log('[AAC] Loading Context_MedicalInfo for student:', studentId);
+          return loadMedicalInfo(studentId);
+        }
+      ),
+      createReadOnlyObjectField(
+        'Context_FunctionalInfo',
+        'Functional Assessment',
+        'Functional assessment reports (read-only)',
+        false,
+        async (ctx) => {
+          const studentId = ctx.all.studentId;
+          if (!studentId) {
+            console.log('[AAC] Context_FunctionalInfo: No studentId in context');
+            return null;
+          }
+          console.log('[AAC] Loading Context_FunctionalInfo for student:', studentId);
+          return loadFunctionalInfo(studentId);
+        }
+      ),
+      createReadOnlyObjectField(
+        'Context_EducationalInfo',
+        'Educational Information',
+        'Educational reports and accommodations (read-only)',
+        false,
+        async (ctx) => {
+          const studentId = ctx.all.studentId;
+          if (!studentId) {
+            console.log('[AAC] Context_EducationalInfo: No studentId in context');
+            return null;
+          }
+          console.log('[AAC] Loading Context_EducationalInfo for student:', studentId);
+          return loadEducationalInfo(studentId);
+        }
+      ),
+    );
+  }
+
+  if (readProgress) {
+    fields.push(
+      createReadOnlyObjectField(
+        'Context_Progress',
+        'Program & Goals',
+        'Current IEP/program goals and progress (read-only)',
+        true,
+        async (ctx) => {
+          const studentId = ctx.all.studentId;
+          if (!studentId) {
+            console.log('[AAC] Context_Progress: No studentId in context');
+            return null;
+          }
+          console.log('[AAC] Loading Context_Progress for student:', studentId);
+          return loadProgressInfo(studentId);
+        }
+      ),
+    );
+  }
+
+  return fields;
 }

@@ -707,6 +707,11 @@ export const aacSettings = pgTable("aac_settings", {
   // AI identity
   aiName: text("ai_name"), // Custom AI name (e.g. "Buddy", "Sam")
 
+  // Privacy — gate monitor agent access to sensitive student data
+  allowReadProgress: boolean("allow_read_progress").default(true).notNull(),
+  allowReadReports: boolean("allow_read_reports").default(true).notNull(),
+  allowNotes: boolean("allow_notes").default(true).notNull(),
+
   // Recognition
   knownPeople: jsonb("known_people").default([]), // Array of known people for recognition
 
