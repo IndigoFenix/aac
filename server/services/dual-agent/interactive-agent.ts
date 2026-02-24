@@ -1300,7 +1300,9 @@ Observe changes across frames to understand motion, gestures, and temporal conte
     const focusPrompt = isFocusFrame && focusReason
       ? `\n\n== FOCUS FRAME ==\nThis is a HIGH-RESOLUTION single frame captured at your request. Reason: "${focusReason}"\nAnalyze the image carefully for fine details, text, labels, faces, or objects you couldn't identify before. Report findings via [CONTEXT] and update the board if needed.`
       : "";
-    const userText = `Observe the environment and respond using prefix tokens as described in your system prompt. If nothing noteworthy changed, output nothing.${gridContext}${focusPrompt}`;
+    const userText = `Observe the environment and respond using prefix tokens as described in your system prompt.
+Your PRIMARY task is to keep the AAC board relevant. If you observe new objects, activities, people, or communication opportunities, use [ADD_BUTTONS] to add relevant buttons. If items are no longer relevant, use [REMOVE_BUTTONS]. Always pair [CONTEXT] observations with board updates when applicable.
+If nothing noteworthy changed, output nothing.${gridContext}${focusPrompt}`;
 
     const imageDetail = isFocusFrame ? "high" : "low";
     const contentParts: any[] = [{ type: "text", text: userText }];

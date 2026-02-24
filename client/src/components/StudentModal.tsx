@@ -716,7 +716,7 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
             )}
           </div>
 
-          {/* Biometric Enrollment - Only for existing students */}
+          {/* Biometric Enrollment - hidden until feature is ready
           {editingStudent && (
             <BiometricEnrollment
               entityType="student"
@@ -724,6 +724,7 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
               compact
             />
           )}
+          */}
         </DialogBody>
 
         <DialogFooter className={isRTL ? 'flex-row-reverse' : ''}>

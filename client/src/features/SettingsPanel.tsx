@@ -124,13 +124,14 @@ export function SettingsPanel() {
             </Card>
           )}
 
-          {/* Biometric Recognition Section */}
+          {/* Biometric Recognition Section - hidden until feature is ready
           {user && (
             <BiometricEnrollment
               entityType="user"
               entityId={user.id}
             />
           )}
+          */}
 
           {/* System Settings */}
           <Card>
