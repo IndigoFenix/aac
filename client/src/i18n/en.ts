@@ -180,6 +180,7 @@ export const en = {
     credits: "credits",
     active: "Active",
     admin: "Admin Panel",
+    selectInstitute: "Select institute",
   },
 
   // ============================================================================
@@ -1081,6 +1082,12 @@ export const en = {
     email: "Email",
     emailRequired: "Email is required",
     website: "Website",
+    logo: "Logo",
+    logoHint: "JPG, PNG up to 10MB",
+    idNumber: "Institute ID",
+    idNumberPlaceholder: "e.g. 123456",
+    idType: "ID Type",
+    idTypePlaceholder: "e.g. MOE, MOH",
     created: "Institute Created",
     createdDesc: "Your institute has been created successfully.",
     updated: "Institute Updated",
@@ -1507,6 +1514,7 @@ export const en = {
     },
 
     lastUpdated: "Last updated",
+    print: "Print",
   },
 
   // ============================================================================

@@ -134,14 +134,22 @@ export class InstituteController {
    * PATCH /api/institutes/:id
    * Update an institute
    */
-  async updateInstitute(req: Request, res: Response): Promise<void> {
+  async updateInstitute(req: Request & { file?: Express.Multer.File }, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
       const instituteId = req.params.id;
 
+      // If a logo file was uploaded, convert to base64 data URI
+      const updates = { ...req.body };
+      if (req.file) {
+        const base64Image = req.file.buffer.toString("base64");
+        const mimeType = req.file.mimetype;
+        updates.logoUrl = `data:${mimeType};base64,${base64Image}`;
+      }
+
       const result = await instituteService.updateInstitute(
         instituteId,
-        req.body,
+        updates,
         currentUser.id
       );
 

@@ -314,6 +314,8 @@ export const institutes = pgTable("institutes", {
   email: text("email"),
   website: text("website"),
   logoUrl: text("logo_url"),
+  instituteIdNumber: text("institute_id_number"), // Official ID number (e.g. school code, hospital license)
+  instituteIdType: text("institute_id_type"), // Type of ID (e.g. 'MOE' for Ministry of Education, 'MOH' for Ministry of Health)
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

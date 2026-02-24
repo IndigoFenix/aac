@@ -2,9 +2,10 @@
 
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { User, Menu, Settings, LogOut, Shield } from 'lucide-react';
+import { User, Menu, Settings, LogOut, Shield, Building2 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useStudent } from '@/hooks/useStudent';
+import { useInstitute } from '@/hooks/useInstitute';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useFeaturePanel } from '@/contexts/FeaturePanelContext';
 import { LanguageSelector } from '@/components/LanguageSelector';
@@ -18,6 +19,7 @@ type TopHeaderProps = {
 export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
   const { user, logout } = useAuth();
   const { student, students, isLoading: isStudentLoading, selectStudent } = useStudent();
+  const { institutes, currentInstitute, selectInstitute } = useInstitute();
   const { t, isRTL } = useLanguage();
   const { activeFeature } = useFeaturePanel();
 
@@ -71,6 +73,30 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
 
       {/* End side - Controls */}
       <div className="flex items-center gap-2 sm:gap-3">
+        {/* Institution selector */}
+        {institutes.length > 1 && (
+          <div className="flex items-center gap-2">
+            <Building2 className="hidden sm:block w-4 h-4 text-muted-foreground" />
+            <select
+              id="institute-selector"
+              className={cn(
+                "max-w-[160px] text-xs sm:text-sm border border-input bg-background rounded-md px-2 py-1",
+                "focus:outline-none focus:ring-2 focus:ring-primary"
+              )}
+              dir="auto"
+              value={currentInstitute?.id ?? ''}
+              onChange={(event) => {
+                selectInstitute(event.target.value || null);
+              }}
+            >
+              <option value="">{t('header.selectInstitute')}</option>
+              {institutes.map((inst) => (
+                <option key={inst.id} value={inst.id}>{inst.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Student selector */}
         <div className="flex items-center gap-2">
           <label

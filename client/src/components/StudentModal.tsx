@@ -15,6 +15,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogBody,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -384,7 +385,7 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
           <DialogTitle className={isRTL ? 'text-right' : ''}>
             {editingStudent ? t('student.edit') || 'Edit Student' : t('student.addNew') || 'Add New Student'}
@@ -396,7 +397,7 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 py-4">
+        <DialogBody className="grid gap-4 py-4">
           {/* Row 1: First Name and Last Name */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -723,7 +724,7 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
               compact
             />
           )}
-        </div>
+        </DialogBody>
 
         <DialogFooter className={isRTL ? 'flex-row-reverse' : ''}>
           <Button variant="outline" onClick={handleClose}>

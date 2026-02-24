@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useStudent } from '@/hooks/useStudent';
 import { useChat } from '@/hooks/useChat';
+import { useInstitute } from '@/hooks/useInstitute';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
 
@@ -18,7 +19,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogBody, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
   DropdownMenu,
@@ -104,12 +105,145 @@ const STATUS_ICONS: Record<ReportStatus, React.ReactNode> = {
 type ReportType = 'medical' | 'functional' | 'educational';
 
 // =============================================================================
+// PRINTABLE REPORT
+// =============================================================================
+
+function getArrayField(field: unknown): string[] {
+  if (Array.isArray(field)) return field as string[];
+  return [];
+}
+
+function openPrintableReport(
+  report: MedicalRecord | FunctionalReport | EducationalReport,
+  type: ReportType,
+  student: { name: string; id: string } | null,
+  institute: { name: string; logoUrl?: string } | null,
+  t: (key: string) => string,
+) {
+  const statusLabels: Record<string, string> = {
+    draft: t('reports.status.draft'),
+    pending_review: t('reports.status.pending_review'),
+    final: t('reports.status.final'),
+    superseded: t('reports.status.superseded'),
+  };
+
+  const renderArraySection = (label: string, items: string[]) => {
+    if (!items.length) return '';
+    return `
+      <div class="section">
+        <h3>${label}</h3>
+        <ul>${items.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul>
+      </div>`;
+  };
+
+  const escapeHtml = (str: string) =>
+    str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  let bodyContent = '';
+
+  if (type === 'medical') {
+    const r = report as MedicalRecord;
+    bodyContent = `
+      ${r.primaryDiagnosis ? `<div class="section"><h3>${t('reports.medical.primaryDiagnosis')}</h3><p>${escapeHtml(r.primaryDiagnosis)}${r.primaryDiagnosisCode ? ` (${escapeHtml(r.primaryDiagnosisCode)})` : ''}</p></div>` : ''}
+      ${renderArraySection(t('reports.medical.coMorbidities'), getArrayField(r.coMorbidities))}
+      ${renderArraySection(t('reports.medical.secondaryDiagnoses'), getArrayField(r.secondaryDiagnoses))}
+      ${renderArraySection(t('reports.medical.allergies'), getArrayField(r.alertsAllergies))}
+      ${renderArraySection(t('reports.medical.seizures'), getArrayField(r.alertsSeizures))}
+      ${renderArraySection(t('reports.medical.cardiac'), getArrayField(r.alertsCardiac))}
+      ${renderArraySection(t('reports.medical.medications'), getArrayField(r.medications))}
+      ${renderArraySection(t('reports.medical.medicalEquipment'), getArrayField(r.medicalEquipment))}
+    `;
+  } else if (type === 'functional') {
+    const r = report as FunctionalReport;
+    bodyContent = `
+      ${renderArraySection(t('reports.functional.mobilityStatus'), getArrayField(r.mobilityStatus))}
+      ${renderArraySection(t('reports.functional.adlStatus'), getArrayField(r.adlStatus))}
+      ${renderArraySection(t('reports.functional.sensoryProfile'), getArrayField(r.sensoryProfile))}
+      ${renderArraySection(t('reports.functional.safetyRisks'), getArrayField(r.safetyRisks))}
+    `;
+  } else {
+    const r = report as EducationalReport;
+    bodyContent = `
+      ${renderArraySection(t('reports.educational.communicationMode'), getArrayField(r.communicationMode))}
+      ${renderArraySection(t('reports.educational.receptiveLanguage'), getArrayField(r.receptiveLanguage))}
+      ${renderArraySection(t('reports.educational.assistiveTechnology'), getArrayField(r.assistiveTechnologyUsed))}
+      ${renderArraySection(t('reports.educational.reinforcers'), getArrayField(r.reinforcers))}
+      ${renderArraySection(t('reports.educational.preferredActivities'), getArrayField(r.preferredActivities))}
+      ${renderArraySection(t('reports.educational.behavioralStrategies'), getArrayField(r.behavioralStrategies))}
+    `;
+  }
+
+  const logoHtml = institute?.logoUrl
+    ? `<img src="${institute.logoUrl}" alt="${escapeHtml(institute.name)}" class="logo" />`
+    : '';
+  const instituteNameHtml = institute?.name
+    ? `<span class="institute-name">${escapeHtml(institute.name)}</span>`
+    : '';
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${t(`reports.${type}.title`)} - ${student?.name || ''}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; padding: 40px; color: #1a1a1a; max-width: 800px; margin: 0 auto; }
+    .header { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; padding-bottom: 16px; border-bottom: 2px solid #333; }
+    .logo { width: 64px; height: 64px; object-fit: contain; }
+    .header-text { flex: 1; }
+    .institute-name { font-size: 20px; font-weight: 600; display: block; }
+    .report-title { font-size: 24px; font-weight: 700; margin-top: 16px; }
+    .meta { display: flex; gap: 24px; margin: 12px 0 24px; font-size: 13px; color: #555; }
+    .meta span { display: inline-flex; gap: 4px; }
+    .section { margin-bottom: 20px; }
+    .section h3 { font-size: 15px; font-weight: 600; margin-bottom: 6px; color: #333; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+    .section p { font-size: 14px; line-height: 1.5; }
+    .section ul { list-style: disc; padding-left: 24px; font-size: 14px; line-height: 1.8; }
+    @media print {
+      body { padding: 20px; }
+      .no-print { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    ${logoHtml}
+    <div class="header-text">
+      ${instituteNameHtml}
+    </div>
+  </div>
+  <div class="report-title">${t(`reports.${type}.title`)}</div>
+  <div class="meta">
+    <span><strong>${t('header.student')}:</strong> ${escapeHtml(student?.name || '')}</span>
+    <span><strong>${statusLabels[report.status] || report.status}</strong></span>
+    <span>${t('reports.createdAt')}: ${new Date(report.createdAt).toLocaleDateString()}</span>
+    <span>${t('reports.updatedAt')}: ${new Date(report.updatedAt).toLocaleDateString()}</span>
+    ${report.finalizedAt ? `<span>${t('reports.finalizedAt')}: ${new Date(report.finalizedAt).toLocaleDateString()}</span>` : ''}
+  </div>
+  ${bodyContent}
+  <div class="no-print" style="margin-top:32px;text-align:center;">
+    <button onclick="window.print()" style="padding:10px 32px;font-size:16px;cursor:pointer;border:1px solid #333;border-radius:6px;background:#fff;">
+      ${t('reports.print') || 'Print'}
+    </button>
+  </div>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank');
+  if (win) {
+    win.document.write(html);
+    win.document.close();
+  }
+}
+
+// =============================================================================
 // MAIN COMPONENT
 // =============================================================================
 
 export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
   const { user } = useAuth();
   const { student } = useStudent();
+  const { currentInstitute } = useInstitute();
   const { aiRefreshing } = useChat();
   const isAiRefreshing = aiRefreshing.has('reports');
   const { t, isRTL } = useLanguage();
@@ -178,6 +312,10 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
   };
 
   const handleViewReport = (report: MedicalRecord | FunctionalReport | EducationalReport, type: ReportType) => {
+    openPrintableReport(report, type, student, currentInstitute, t);
+  };
+
+  const handleEditReport = (report: MedicalRecord | FunctionalReport | EducationalReport, type: ReportType) => {
     setSelectedReport(report);
     setSelectedReportType(type);
     setShowViewDialog(true);
@@ -318,7 +456,7 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
                   {t('common.view')}
                 </Button>
                 {isEditable && (
-                  <Button variant="outline" size="sm" onClick={() => handleViewReport(report, type)}>
+                  <Button variant="outline" size="sm" onClick={() => handleEditReport(report, type)}>
                     <Edit className="w-4 h-4 me-2" />
                     {t('common.edit')}
                   </Button>
@@ -635,7 +773,7 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
 
       {/* View/Edit Report Dialog */}
       <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
-        <DialogContent className="sm:max-w-[700px] max-h-[80vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[700px]">
           <DialogHeader>
             <DialogTitle>
               {selectedReportType && t(`reports.${selectedReportType}.title`)}
@@ -646,7 +784,7 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
               </div>
             )}
           </DialogHeader>
-          <div className="py-4">
+          <DialogBody className="py-4">
             {selectedReport && selectedReportType === 'medical' && (
               <MedicalRecordForm
                 record={selectedReport as MedicalRecord}
@@ -692,7 +830,7 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
                 isSaving={updateEducationalReport.isPending}
               />
             )}
-          </div>
+          </DialogBody>
         </DialogContent>
       </Dialog>
     </div>
@@ -776,12 +914,6 @@ function ArrayFieldEditor({ label, values, onChange, placeholder, disabled }: Ar
 // =============================================================================
 // FORM COMPONENTS
 // =============================================================================
-
-// Helper to safely get array from JSONB field
-function getArrayField(field: unknown): string[] {
-  if (Array.isArray(field)) return field as string[];
-  return [];
-}
 
 interface MedicalRecordFormProps {
   record: MedicalRecord;

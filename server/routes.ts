@@ -194,8 +194,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/institutes", requireAuth, (req, res) =>
     instituteController.createInstitute(req, res)
   );
-  app.patch("/api/institutes/:id", requireAuth, (req, res) =>
-    instituteController.updateInstitute(req, res)
+  app.patch("/api/institutes/:id", requireAuth, (req, res, next) => {
+    // Only use multer when the request is multipart (logo upload)
+    if (req.is('multipart/form-data')) {
+      upload.single("logo")(req, res, next);
+    } else {
+      next();
+    }
+  }, (req, res) =>
+    instituteController.updateInstitute(req as any, res)
   );
   app.delete("/api/institutes/:id", requireAuth, (req, res) =>
     instituteController.deleteInstitute(req, res)
