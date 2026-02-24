@@ -294,7 +294,7 @@ export class LiveRelay {
           // Send frame grid as image with detection prompt — triggers model response
           this.gemini.sendFrameWithPrompt(
             msg.data,
-            `[VISUAL CHECK] Composite frame grid (${msg.timestamps?.length ?? '?'} frames). Observe the scene. Use [CONTEXT] to record any changes in the environment. Use [ADD_BUTTONS]/[REMOVE_BUTTONS] to keep the board relevant. Speak or interpret only with HIGH CONFIDENCE. Stay silent if nothing important changed.`,
+            `[VISUAL CHECK] Composite frame grid (${msg.timestamps?.length ?? '?'} frames). Observe the scene. Your PRIMARY task is to keep the AAC board relevant — if you observe new objects, activities, people, or communication opportunities, use [ADD_BUTTONS]. Prioritize objects in your user's hands or that they appear to be interested in (looking at, pointing to or reaching for). If items are no longer relevant, use [REMOVE_BUTTONS]. Always pair [CONTEXT] observations with board updates when applicable. Speak or interpret only with HIGH CONFIDENCE. Stay silent if nothing important changed.`,
           );
           break;
         }
