@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import logoImage from '@assets/cliniaacian_logo.png';
 import { useAuth } from '@/hooks/useAuth';
+import { useInstitute } from '@/hooks/useInstitute';
 import { openUI } from '@/lib/uiEvents';
 import { cn } from '@/lib/utils';
 import { FeatureType } from '@shared/schema';
@@ -46,6 +47,11 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
   const { t, isRTL } = useLanguage();
   const { activeFeature, setActiveFeature } = useFeaturePanel();
   const { student, students } = useStudent();
+  const { currentInstitute } = useInstitute();
+
+  // Use institution logo if available, otherwise default CliniAACian logo
+  const displayLogo = currentInstitute?.logoUrl || logoImage;
+  const displayName = currentInstitute?.name || 'CliniAACian';
 
   // Core workspace items (original features)
   const coreWorkspaceItems = [
@@ -159,27 +165,27 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
       <div className="p-6 cursor-pointer" onClick={() => setActiveFeature('chat' as FeatureType)}>
         {!isCollapsed ? (
           <div className="flex items-start gap-3">
-            <img 
-              src={logoImage} 
-              alt="CliniAACian Logo" 
-              className="w-8 h-8 flex-shrink-0"
+            <img
+              src={displayLogo}
+              alt={displayName}
+              className="w-8 h-8 flex-shrink-0 rounded"
               data-testid="img-logo"
             />
             <div className="flex-1">
-              <h1 
-                className="text-2xl font-semibold text-sidebar-foreground leading-8"
+              <h1
+                className="text-2xl font-semibold text-sidebar-foreground leading-8 truncate"
                 data-testid="text-logo"
               >
-                CliniAACian
+                {displayName}
               </h1>
             </div>
           </div>
         ) : (
           <div className="flex justify-center" data-testid="logo-collapsed">
-            <img 
-              src={logoImage} 
-              alt="CliniAACian Logo" 
-              className="w-8 h-8"
+            <img
+              src={displayLogo}
+              alt={displayName}
+              className="w-8 h-8 rounded"
               data-testid="img-logo-collapsed"
             />
           </div>

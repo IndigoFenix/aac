@@ -20,6 +20,8 @@ export interface Institute {
   email?: string;
   website?: string;
   logoUrl?: string;
+  instituteIdNumber?: string;
+  instituteIdType?: string;
   isActive: boolean;
   isAdmin?: boolean;
   role?: string;
@@ -168,7 +170,7 @@ interface InstituteContextType {
   // Institute operations
   selectInstitute: (instituteId: string | null) => void;
   createInstitute: (data: Partial<Institute> & { creatorRole?: string }) => Promise<Institute>;
-  updateInstitute: (id: string, data: Partial<Institute>) => Promise<Institute>;
+  updateInstitute: (id: string, data: Partial<Institute>, logoFile?: File) => Promise<Institute>;
   deleteInstitute: (id: string) => Promise<void>;
   leaveInstitute: (id: string) => Promise<void>;
 
@@ -277,7 +279,7 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
 
   const pendingInvites: PendingInvite[] = pendingInvitesData || [];
 
-  // Restore selected institute from localStorage
+  // Restore selected institute from localStorage, or auto-set if only one
   useEffect(() => {
     if (institutes.length > 0 && !currentInstitute) {
       const storedId = localStorage.getItem('cliniaacian.currentInstituteId');
@@ -285,7 +287,13 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
         const found = institutes.find((i) => i.id === storedId);
         if (found) {
           setCurrentInstitute(found);
+          return;
         }
+      }
+      // Auto-select if user belongs to exactly one institute
+      if (institutes.length === 1) {
+        setCurrentInstitute(institutes[0]);
+        localStorage.setItem('cliniaacian.currentInstituteId', institutes[0].id);
       }
     }
   }, [institutes, currentInstitute]);
@@ -324,8 +332,21 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
     return result.institute;
   }, [queryClient]);
 
-  const updateInstitute = useCallback(async (id: string, data: Partial<Institute>): Promise<Institute> => {
-    const response = await apiRequest('PATCH', `/api/institutes/${id}`, data);
+  const updateInstitute = useCallback(async (id: string, data: Partial<Institute>, logoFile?: File): Promise<Institute> => {
+    let response: Response;
+    if (logoFile) {
+      // Use FormData when uploading a logo file — apiRequest handles FormData natively
+      const formData = new FormData();
+      formData.append('logo', logoFile);
+      for (const [key, value] of Object.entries(data)) {
+        if (value !== undefined && value !== null) {
+          formData.append(key, String(value));
+        }
+      }
+      response = await apiRequest('PATCH', `/api/institutes/${id}`, formData);
+    } else {
+      response = await apiRequest('PATCH', `/api/institutes/${id}`, data);
+    }
     const result = await response.json();
 
     if (!response.ok || !result.success) {

@@ -36,6 +36,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogBody,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -199,9 +200,13 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
     phone: '',
     email: '',
     website: '',
+    instituteIdNumber: '',
+    instituteIdType: '',
     creatorRole: 'admin' as string,
   });
   const [editForm, setEditForm] = useState<Partial<Institute>>({});
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [inviteForm, setInviteForm] = useState({
     email: '',
     role: 'staff',
@@ -447,8 +452,10 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
 
     setIsSubmitting(true);
     try {
-      await updateInstitute(currentInstitute.id, editForm);
+      await updateInstitute(currentInstitute.id, editForm, logoFile || undefined);
       setShowEditDialog(false);
+      setLogoFile(null);
+      setLogoPreview(null);
       toast({
         title: t('institute.updated') || 'Institute Updated',
         description: t('institute.updatedDesc') || 'Changes saved successfully.',
@@ -1162,7 +1169,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                 {t('institute.createDesc') || 'Create a new institute to manage your organization.'}
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
+            <DialogBody className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label htmlFor="name">{t('institute.name') || 'Name'} *</Label>
                 <Input
@@ -1227,7 +1234,28 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                   placeholder={t('institute.descriptionPlaceholder') || 'Brief description of the institute'}
                 />
               </div>
-            </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="createIdNumber">{t('institute.idNumber') || 'Institute ID'}</Label>
+                  <Input
+                    id="createIdNumber"
+                    dir="ltr"
+                    value={createForm.instituteIdNumber}
+                    onChange={(e) => setCreateForm({ ...createForm, instituteIdNumber: e.target.value })}
+                    placeholder={t('institute.idNumberPlaceholder') || 'e.g. 123456'}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="createIdType">{t('institute.idType') || 'ID Type'}</Label>
+                  <Input
+                    id="createIdType"
+                    value={createForm.instituteIdType}
+                    onChange={(e) => setCreateForm({ ...createForm, instituteIdType: e.target.value })}
+                    placeholder={t('institute.idTypePlaceholder') || 'e.g. MOE, MOH'}
+                  />
+                </div>
+              </div>
+            </DialogBody>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
                 {t('common.cancel') || 'Cancel'}
@@ -1393,6 +1421,17 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                         <a href={currentInstitute.website} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
                           {currentInstitute.website}
                         </a>
+                      </p>
+                    </div>
+                  )}
+                  {currentInstitute.instituteIdNumber && (
+                    <div>
+                      <Label className="text-muted-foreground">{t('institute.idNumber') || 'Institute ID'}</Label>
+                      <p dir="ltr">
+                        {currentInstitute.instituteIdNumber}
+                        {currentInstitute.instituteIdType && (
+                          <span className="text-muted-foreground ms-2">({currentInstitute.instituteIdType})</span>
+                        )}
                       </p>
                     </div>
                   )}
@@ -1988,7 +2027,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
               {t('institute.inviteMemberDesc') || 'Send an invitation to join this institute.'}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <DialogBody className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="inviteEmail">{t('institute.email') || 'Email'} *</Label>
               <Input
@@ -2035,7 +2074,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                 placeholder={t('institute.messagePlaceholder') || 'Add a personal message...'}
               />
             </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowInviteDialog(false)}>
               {t('common.cancel') || 'Cancel'}
@@ -2049,12 +2088,44 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
       </Dialog>
 
       {/* Edit Institute Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+      <Dialog open={showEditDialog} onOpenChange={(open) => {
+        setShowEditDialog(open);
+        if (!open) { setLogoFile(null); setLogoPreview(null); }
+      }}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>{t('institute.edit') || 'Edit Institute'}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <DialogBody className="space-y-4 py-4">
+            {/* Logo upload */}
+            <div className="space-y-2">
+              <Label>{t('institute.logo') || 'Logo'}</Label>
+              <div className="flex items-center gap-4">
+                {(logoPreview || editForm.logoUrl) && (
+                  <img
+                    src={logoPreview || editForm.logoUrl}
+                    alt="Logo"
+                    className="w-16 h-16 rounded object-cover border"
+                  />
+                )}
+                <div className="flex-1">
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setLogoFile(file);
+                        setLogoPreview(URL.createObjectURL(file));
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {t('institute.logoHint') || 'JPG, PNG up to 10MB'}
+                  </p>
+                </div>
+              </div>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="editName">{t('institute.name') || 'Name'}</Label>
               <Input
@@ -2109,7 +2180,28 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                 onChange={(e) => setEditForm({ ...editForm, website: e.target.value })}
               />
             </div>
-          </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="editIdNumber">{t('institute.idNumber') || 'Institute ID'}</Label>
+                <Input
+                  id="editIdNumber"
+                  dir="ltr"
+                  value={editForm.instituteIdNumber || ''}
+                  onChange={(e) => setEditForm({ ...editForm, instituteIdNumber: e.target.value })}
+                  placeholder={t('institute.idNumberPlaceholder') || 'e.g. 123456'}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editIdType">{t('institute.idType') || 'ID Type'}</Label>
+                <Input
+                  id="editIdType"
+                  value={editForm.instituteIdType || ''}
+                  onChange={(e) => setEditForm({ ...editForm, instituteIdType: e.target.value })}
+                  placeholder={t('institute.idTypePlaceholder') || 'e.g. MOE, MOH'}
+                />
+              </div>
+            </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowEditDialog(false)}>
               {t('common.cancel') || 'Cancel'}
@@ -2132,7 +2224,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                 : (t('classroom.create') || 'Create Classroom')}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <DialogBody className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="classroomName">{t('classroom.name') || 'Name'} *</Label>
               <Input
@@ -2201,7 +2293,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                 placeholder={t('classroom.descriptionPlaceholder') || 'Brief description of the classroom...'}
               />
             </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => {
               setShowClassroomDialog(false);
@@ -2230,7 +2322,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
               {t('classroom.addMemberDesc') || 'Assign an institute member to this classroom.'}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <DialogBody className="space-y-4 py-4">
             <div className="space-y-2">
               <Label>{t('classroom.selectMember') || 'Select Staff Member'}</Label>
               <Select
@@ -2280,7 +2372,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                 onCheckedChange={(checked) => setClassroomMemberForm({ ...classroomMemberForm, isPrimary: checked })}
               />
             </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => {
               setShowClassroomMemberDialog(false);
@@ -2308,7 +2400,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
               {t('classroom.addStudentDesc') || 'Enroll a student in this classroom.'}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <DialogBody className="space-y-4 py-4">
             <div className="space-y-2">
               <Label>{t('classroom.selectStudent') || 'Select Student'}</Label>
               <Select
@@ -2349,7 +2441,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                 placeholder={t('classroom.notesPlaceholder') || 'Any special notes...'}
               />
             </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => {
               setShowClassroomStudentDialog(false);
@@ -2440,7 +2532,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
               {t('institute.addStudentDesc') || 'Select a student to add to this institute.'}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <DialogBody className="space-y-4 py-4">
             <div className="space-y-2">
               <Label>{t('institute.selectStudent') || 'Student'} *</Label>
               <Select
@@ -2494,7 +2586,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                 placeholder={t('institute.studentIdPlaceholder') || 'Institution ID (optional)'}
               />
             </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => {
               setShowAddInstituteStudentDialog(false);
@@ -2524,7 +2616,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                 : (t('institute.editEnrollmentDesc') || 'Update student enrollment details.')}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <DialogBody className="space-y-4 py-4">
             <div className="space-y-2">
               <Label>{t('institute.grade') || 'Grade Level'}</Label>
               <Select
@@ -2551,7 +2643,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                 placeholder={t('institute.studentIdPlaceholder') || 'Institution ID (optional)'}
               />
             </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => {
               setShowEditInstituteStudentDialog(false);

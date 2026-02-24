@@ -5,6 +5,7 @@ import {
   Dialog,
   DialogContent,
   DialogHeader,
+  DialogBody,
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
@@ -254,7 +255,7 @@ export function ScheduleManager({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl">
         <DialogHeader>
           <DialogTitle className={language === "he" ? "text-right" : "text-left"}>
             <div className={`flex items-center gap-2 ${language === "he" ? "flex-row-reverse" : ""}`}>
@@ -269,7 +270,7 @@ export function ScheduleManager({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <DialogBody className="space-y-4">
           {/* Add/Edit Form */}
           {isCreating ? (
             <div className="bg-muted/50 p-4 rounded-lg space-y-4">
@@ -481,7 +482,7 @@ export function ScheduleManager({
               </div>
             )}
           </div>
-        </div>
+        </DialogBody>
       </DialogContent>
     </Dialog>
   );

@@ -180,6 +180,7 @@ export const he = {
     credits: "קרדיטים",
     active: "פעיל",
     admin: "פאנל ניהול",
+    selectInstitute: "בחר מוסד",
   },
 
   // ============================================================================
@@ -1275,6 +1276,12 @@ export const he = {
     email: "דוא״ל",
     emailRequired: "דוא״ל נדרש",
     website: "אתר אינטרנט",
+    logo: "לוגו",
+    logoHint: "JPG, PNG עד 10MB",
+    idNumber: "מספר זיהוי מוסד",
+    idNumberPlaceholder: "לדוגמה: 123456",
+    idType: "סוג זיהוי",
+    idTypePlaceholder: "לדוגמה: משרד החינוך, משרד הבריאות",
     created: "המוסד נוצר",
     createdDesc: "המוסד שלך נוצר בהצלחה.",
     updated: "המוסד עודכן",
@@ -1700,6 +1707,7 @@ export const he = {
     },
 
     lastUpdated: "עדכון אחרון",
+    print: "הדפסה",
   },
 
   // ============================================================================
