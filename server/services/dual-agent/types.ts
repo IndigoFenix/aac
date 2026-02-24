@@ -146,6 +146,7 @@ export interface DualAgentSessionState {
   // Board state
   currentBoard?: ParsedBoardData;
   boardButtonLabels: string[]; // Server-side tracking of current button labels for limit enforcement
+  aiAddedButtonLabels: string[]; // Buttons AI added on top of a loaded custom board (removable by AI)
 
   // Pre-built board selection
   availableBoards?: Array<{ id: string; key: string; name: string; hint?: string; grid: { rows: number; cols: number } }>;

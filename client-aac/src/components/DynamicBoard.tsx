@@ -33,21 +33,21 @@ interface DynamicBoardProps {
 /**
  * Sizing config for each icon-text ratio level.
  * iconFlex/textFlex control vertical space allocation.
- * iconClass controls emoji/FA font size, textClass controls label font size.
+ * iconScale/textScale are fractions of the computed row height used for font-size.
  * imgSize controls symbol/face image size as percentage.
  */
 const RATIO_LEVELS: Record<number, {
   iconFlex: number;
   textFlex: number;
-  iconClass: string;
-  textClass: string;
+  iconScale: number;
+  textScale: number;
   imgSize: string;
 }> = {
-  1: { iconFlex: 9, textFlex: 1, iconClass: "text-[4rem] sm:text-[6rem] md:text-[8rem]", textClass: "text-[8px] sm:text-[9px]", imgSize: "70%" },
-  2: { iconFlex: 4, textFlex: 1, iconClass: "text-[3.5rem] sm:text-[5.5rem] md:text-[7.5rem]", textClass: "text-[9px] sm:text-[10px]", imgSize: "65%" },
-  3: { iconFlex: 3, textFlex: 1, iconClass: "text-[3rem] sm:text-[5rem] md:text-[7rem]", textClass: "text-xs", imgSize: "60%" },
-  4: { iconFlex: 2, textFlex: 1, iconClass: "text-[2rem] sm:text-[3.5rem] md:text-[5rem]", textClass: "text-xs sm:text-sm", imgSize: "50%" },
-  5: { iconFlex: 1, textFlex: 2, iconClass: "text-[1.5rem] sm:text-[2.5rem] md:text-[3.5rem]", textClass: "text-sm sm:text-base md:text-lg", imgSize: "40%" },
+  1: { iconFlex: 9, textFlex: 1, iconScale: 0.55, textScale: 0.08, imgSize: "70%" },
+  2: { iconFlex: 4, textFlex: 1, iconScale: 0.50, textScale: 0.09, imgSize: "65%" },
+  3: { iconFlex: 3, textFlex: 1, iconScale: 0.45, textScale: 0.10, imgSize: "60%" },
+  4: { iconFlex: 2, textFlex: 1, iconScale: 0.35, textScale: 0.12, imgSize: "50%" },
+  5: { iconFlex: 1, textFlex: 2, iconScale: 0.25, textScale: 0.15, imgSize: "40%" },
 };
 
 /** Slot state for the grid */
@@ -132,10 +132,15 @@ export default function DynamicBoard({
   // Icon/text sizing based on ratio level
   const level = RATIO_LEVELS[Math.max(1, Math.min(5, iconTextRatio))] || RATIO_LEVELS[3];
 
-  // Grid dimensions from board data
+  // Grid dimensions from board data — needed before computing sizes
   const gridRows = board?.grid?.rows || DEFAULT_ROWS;
   const gridCols = board?.grid?.cols || DEFAULT_COLS;
   const totalSlots = gridRows * gridCols;
+
+  // Compute icon/text font sizes dynamically based on available height and row count.
+  // Available height ≈ 100dvh - header (6rem) - quickActions (~3.5rem) - padding (~1rem) = 100dvh - 10.5rem
+  const iconFontSize = `clamp(1rem, calc((100dvh - 10.5rem) / ${gridRows} * ${level.iconScale}), 8rem)`;
+  const textFontSize = `clamp(0.5rem, calc((100dvh - 10.5rem) / ${gridRows} * ${level.textScale}), 1.5rem)`;
 
   // Multi-page navigation state
   const [currentPageId, setCurrentPageId] = useState<string | null>(null);
@@ -212,13 +217,24 @@ export default function DynamicBoard({
         }
       }
 
+      // Step 1.5: Deduplicate — filter out buttons that already exist on the board
+      // (same label AND same icon). This prevents the AI from adding duplicates.
+      const existingButtons = new Set(
+        next
+          .filter((s): s is { type: "occupied"; button: BoardButton; anim: "stable" | "entering" } => s.type === "occupied")
+          .map(s => `${s.button.label.toLowerCase().trim()}|${(s.button.iconRef || "").toLowerCase().trim()}`),
+      );
+      const dedupedAdd = add.filter(
+        btn => !existingButtons.has(`${btn.label.toLowerCase().trim()}|${(btn.iconRef || "").toLowerCase().trim()}`),
+      );
+
       // Step 2: Place new buttons in blank slots first
       let addIndex = 0;
-      for (let i = 0; i < next.length && addIndex < add.length; i++) {
+      for (let i = 0; i < next.length && addIndex < dedupedAdd.length; i++) {
         if (next[i].type === "blank") {
           next[i] = {
             type: "occupied",
-            button: makeBoardButton(add[addIndex], addIndex),
+            button: makeBoardButton(dedupedAdd[addIndex], addIndex),
             anim: "entering",
           };
           addIndex++;
@@ -226,12 +242,12 @@ export default function DynamicBoard({
       }
 
       // Step 3: Queue remaining new buttons as replacements for fading slots
-      for (let i = 0; i < next.length && addIndex < add.length; i++) {
+      for (let i = 0; i < next.length && addIndex < dedupedAdd.length; i++) {
         if (next[i].type === "fading" && !(next[i] as any).replaceWith) {
           next[i] = {
             type: "fading",
             button: (next[i] as { type: "fading"; button: BoardButton }).button,
-            replaceWith: makeBoardButton(add[addIndex], addIndex),
+            replaceWith: makeBoardButton(dedupedAdd[addIndex], addIndex),
           };
           addIndex++;
         }
@@ -380,14 +396,14 @@ export default function DynamicBoard({
           initial={{ opacity: 1, scale: 1 }}
           animate={{ opacity: 0, scale: 0.9 }}
           transition={{ duration: 1.5 }}
-          className="flex flex-col items-center justify-center p-2 rounded-xl shadow-sm border border-gray-200 pointer-events-none min-h-0"
+          className="flex flex-col items-center justify-center p-2 rounded-xl shadow-sm border border-gray-200 pointer-events-none min-h-0 overflow-hidden"
           style={{ backgroundColor: getButtonColor(button.color) }}
         >
-          <div className="flex items-center justify-center min-h-0 w-full" style={{ flex: level.iconFlex }}>
+          <div className="flex items-center justify-center min-h-0 w-full overflow-hidden" style={{ flex: level.iconFlex }}>
             {renderIcon(button)}
           </div>
           <div className="flex items-center justify-center w-full overflow-hidden" style={{ flex: level.textFlex }}>
-            <span className={`${level.textClass} font-medium text-center text-gray-800 leading-tight`}>
+            <span className="font-medium text-center text-gray-800 leading-tight" style={{ fontSize: textFontSize }}>
               {button.label}
             </span>
           </div>
@@ -413,11 +429,11 @@ export default function DynamicBoard({
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
       >
-        <div className="flex items-center justify-center min-h-0 w-full" style={{ flex: level.iconFlex }}>
+        <div className="flex items-center justify-center min-h-0 w-full overflow-hidden" style={{ flex: level.iconFlex }}>
           {renderIcon(button)}
         </div>
         <div className="flex items-center justify-center w-full overflow-hidden" style={{ flex: level.textFlex }}>
-          <span className={`${level.textClass} font-medium text-center text-gray-800 leading-tight line-clamp-2`}>
+          <span className="font-medium text-center text-gray-800 leading-tight line-clamp-2" style={{ fontSize: textFontSize }}>
             {button.label}
           </span>
         </div>
@@ -426,31 +442,32 @@ export default function DynamicBoard({
   };
 
   const renderIcon = (button: BoardButton) => {
-    const imgStyle = { width: level.imgSize, height: level.imgSize };
+    const imgStyle = { width: level.imgSize, height: level.imgSize, maxHeight: "100%", objectFit: "contain" as const };
+    const emojiStyle = { fontSize: iconFontSize, lineHeight: 1 };
     // Resolve __FACE__:contactId to cached face image
     if (button.symbolPath?.startsWith("__FACE__:")) {
       const contactId = button.symbolPath.substring(9);
       const cached = getFaceImage?.(contactId);
       if (cached) {
-        return <img src={cached} alt={button.label} className="object-contain rounded-full" style={imgStyle} />;
+        return <img src={cached} alt={button.label} className="rounded-full" style={imgStyle} />;
       }
-      return <span className={`${level.iconClass} leading-none`}>👤</span>;
+      return <span style={emojiStyle}>👤</span>;
     }
     // Resolve __SYMBOL__:symbolId to custom symbol image
     if (button.symbolPath?.startsWith("__SYMBOL__:")) {
       const symbolId = button.symbolPath.substring(11);
-      return <img src={apiUrl(`/api/custom-symbols/${symbolId}/image`)} alt={button.label} className="object-contain" style={imgStyle} loading="lazy" />;
+      return <img src={apiUrl(`/api/custom-symbols/${symbolId}/image`)} alt={button.label} style={imgStyle} loading="lazy" />;
     }
     if (button.symbolPath) {
-      return <img src={button.symbolPath} alt={button.label} className="object-contain" style={imgStyle} />;
+      return <img src={button.symbolPath} alt={button.label} style={imgStyle} />;
     }
     if (button.iconRef && isEmoji(button.iconRef)) {
-      return <span className={`${level.iconClass} leading-none`}>{button.iconRef}</span>;
+      return <span style={emojiStyle}>{button.iconRef}</span>;
     }
     if (button.iconRef) {
-      return <i className={`${button.iconRef} ${level.iconClass} leading-none`} />;
+      return <i className={button.iconRef} style={emojiStyle} />;
     }
-    return <span className={`${level.iconClass} leading-none`}>{getEmojiForLabel(button.label)}</span>;
+    return <span style={emojiStyle}>{getEmojiForLabel(button.label)}</span>;
   };
 
   return (

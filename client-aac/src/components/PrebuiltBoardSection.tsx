@@ -92,6 +92,11 @@ export default function PrebuiltBoardSection({
   // Get grid dimensions
   const grid = currentPage?.layout || selectedBoard?.irData?.grid || { rows: 4, cols: 4 };
 
+  // Compute icon/text font sizes dynamically based on available height and row count.
+  // Available height ≈ 100dvh - header (6rem) - quickActions (~3.5rem) - board header (~2.5rem) - padding (~1rem) = 100dvh - 13rem
+  const iconFontSize = `clamp(1rem, calc((100dvh - 13rem) / ${grid.rows} * 0.42), 6rem)`;
+  const textFontSize = `clamp(0.5rem, calc((100dvh - 13rem) / ${grid.rows} * 0.10), 1rem)`;
+
   // Navigate to a page
   const navigateToPage = useCallback((pageId: string) => {
     if (currentPageId) {
@@ -255,12 +260,12 @@ export default function PrebuiltBoardSection({
       </div>
 
       {/* Board grid */}
-      <div className="flex-1 p-2 overflow-hidden">
+      <div className="flex-1 p-2 overflow-hidden min-h-0">
         <div
           className="grid gap-1 h-full"
           style={{
             gridTemplateColumns: `repeat(${grid.cols}, 1fr)`,
-            gridTemplateRows: `repeat(${grid.rows}, 1fr)`,
+            gridTemplateRows: `repeat(${grid.rows}, minmax(0, 1fr))`,
           }}
         >
           {cells.flat().map((button, index) => {
@@ -279,29 +284,30 @@ export default function PrebuiltBoardSection({
               <motion.button
                 key={button.id}
                 onClick={() => handleButtonClick(button)}
-                className="flex flex-col items-center justify-center p-1 rounded-lg shadow-sm border border-gray-200 dark:border-gray-600 relative overflow-hidden"
+                className="flex flex-col items-center justify-center p-1 rounded-lg shadow-sm border border-gray-200 dark:border-gray-600 relative overflow-hidden min-h-0"
                 style={{ backgroundColor: getButtonColor(button.color) }}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.95 }}
               >
-                <div className="flex-1 flex items-center justify-center min-h-0">
+                <div className="flex-[3] flex items-center justify-center min-h-0 w-full overflow-hidden">
                   {button.symbolPath ? (
                     <img
                       src={button.symbolPath}
                       alt={button.label}
-                      className="w-[55%] h-[55%] object-contain"
+                      className="object-contain"
+                      style={{ width: "55%", height: "55%", maxHeight: "100%" }}
                     />
                   ) : button.iconRef && isEmoji(button.iconRef) ? (
-                    <span className="text-[1.5rem] sm:text-[1.75rem] leading-none">{button.iconRef}</span>
+                    <span style={{ fontSize: iconFontSize, lineHeight: 1 }}>{button.iconRef}</span>
                   ) : button.iconRef ? (
-                    <i className={`${button.iconRef} text-[1.5rem] sm:text-[1.75rem] leading-none`} />
+                    <i className={button.iconRef} style={{ fontSize: iconFontSize, lineHeight: 1 }} />
                   ) : (
-                    <span className="text-[1.5rem] sm:text-[1.75rem] leading-none">
+                    <span style={{ fontSize: iconFontSize, lineHeight: 1 }}>
                       {getEmojiForLabel(button.label)}
                     </span>
                   )}
                 </div>
-                <span className="flex-shrink-0 text-[10px] font-medium text-center text-gray-800 leading-tight line-clamp-2">
+                <span className="font-medium text-center text-gray-800 leading-tight line-clamp-2" style={{ fontSize: textFontSize }}>
                   {button.label}
                 </span>
                 {isLink && (

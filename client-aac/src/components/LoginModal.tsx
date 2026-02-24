@@ -41,7 +41,8 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
         title: "Welcome back!",
         description: "You have successfully logged in.",
       });
-      queryClient.invalidateQueries({ queryKey: ["/auth/user"] });
+      // Set query data directly to avoid race condition between invalidateQueries and refetch
+      queryClient.setQueryData(["/auth/user"], { success: true, user: data.user });
       onClose(data.user);
     },
     onError: (error: any) => {
@@ -65,7 +66,8 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
         title: "Welcome to Xahaph!",
         description: "Your account has been created successfully.",
       });
-      queryClient.invalidateQueries({ queryKey: ["/auth/user"] });
+      // Set query data directly to avoid race condition between invalidateQueries and refetch
+      queryClient.setQueryData(["/auth/user"], { success: true, user: data.user });
       onClose(data.user);
     },
     onError: (error: any) => {
