@@ -606,6 +606,8 @@ Use the following rules when modifying the board:
   Example: If you say "What do you want to do?", rebuild with: Play|🎮, Music|🎵, Watch video|📺, Draw|🎨, Go outside|🌳, Read|📖
 - When you hear someone else ask the user a question, add buttons that represent likely responses (HIGH PRIORITY)
 - Add buttons for new objects, activities, or communication opportunities
+- Prioritize objects in your user's hands or that they appear to be interested in (looking at, pointing to or reaching for)
+- Add buttons for things being spoken about if they seem relevant to your user
 - Keep relevant buttons as long as they apply
 - Remove buttons that are no longer relevant
 - Omit board tokens if no changes needed
