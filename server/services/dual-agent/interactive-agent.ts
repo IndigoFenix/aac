@@ -459,7 +459,8 @@ export class InteractiveAgent {
     messages: ChatMessage[],
     pendingMessages: PendingMessage[],
     currentBoard?: ParsedBoardData,
-    maxBoardItems: number = 12
+    maxBoardItems: number = 12,
+    customBoardInfo?: { fixedButtons: string[]; aiAddedButtons: string[] }
   ): ProviderChatMessage[] {
     const result: ProviderChatMessage[] = [
       { role: "system", content: this.systemPrompt },
@@ -538,7 +539,7 @@ export class InteractiveAgent {
 
     // Add current board context if available
     if (currentBoard) {
-      const boardContext = this.formatBoardContext(currentBoard, maxBoardItems);
+      const boardContext = this.formatBoardContext(currentBoard, maxBoardItems, customBoardInfo);
       result.push({
         role: "system",
         content: boardContext,
@@ -551,9 +552,21 @@ export class InteractiveAgent {
   /**
    * Format board state as context for the AI
    */
-  private formatBoardContext(board: ParsedBoardData, maxBoardItems: number = 12): string {
+  private formatBoardContext(board: ParsedBoardData, maxBoardItems: number = 12, customBoardInfo?: { fixedButtons: string[]; aiAddedButtons: string[] }): string {
     const currentPage = board.pages?.find(p => p.id === board.currentPageId) || board.pages?.[0];
     const buttons = currentPage?.buttons || [];
+
+    if (customBoardInfo && customBoardInfo.fixedButtons.length > 0) {
+      const blankSlots = maxBoardItems - customBoardInfo.fixedButtons.length;
+      const available = blankSlots - customBoardInfo.aiAddedButtons.length;
+      return `[Current Board — ${maxBoardItems} slots, custom board loaded]
+Fixed buttons (cannot remove): ${customBoardInfo.fixedButtons.join(", ")} (${customBoardInfo.fixedButtons.length} of ${maxBoardItems})
+AI-added buttons (can remove): ${customBoardInfo.aiAddedButtons.join(", ") || "none"} (${customBoardInfo.aiAddedButtons.length} added)
+Available slots: ${available}
+You can ONLY [REMOVE_BUTTONS] that you previously added. Fixed board buttons cannot be removed.
+Use [REBUILD_BOARD] to exit the custom board and return to the default board.`;
+    }
+
     const occupiedCount = Math.min(buttons.length, maxBoardItems);
     const blankCount = maxBoardItems - occupiedCount;
     const buttonLabels = buttons
@@ -572,9 +585,32 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
   /**
    * Format board state for detection — shows 12-slot positions with blank indicators.
    */
-  private formatBoardContextForDetection(board: ParsedBoardData, maxBoardItems: number = 12): string {
+  private formatBoardContextForDetection(board: ParsedBoardData, maxBoardItems: number = 12, customBoardInfo?: { fixedButtons: string[]; aiAddedButtons: string[] }): string {
     const currentPage = board.pages?.find(p => p.id === board.currentPageId) || board.pages?.[0];
     const buttons = currentPage?.buttons || [];
+
+    if (customBoardInfo && customBoardInfo.fixedButtons.length > 0) {
+      const fixedSet = new Set(customBoardInfo.fixedButtons.map(l => l.toLowerCase()));
+      const aiSet = new Set(customBoardInfo.aiAddedButtons.map(l => l.toLowerCase()));
+      const slotLines: string[] = [];
+      for (let i = 0; i < maxBoardItems; i++) {
+        const btn = buttons[i] as { label?: string } | undefined;
+        if (btn?.label) {
+          if (fixedSet.has(btn.label.toLowerCase())) {
+            slotLines.push(`  Slot ${i + 1}: "${btn.label}" [FIXED]`);
+          } else if (aiSet.has(btn.label.toLowerCase())) {
+            slotLines.push(`  Slot ${i + 1}: "${btn.label}" [AI-added]`);
+          } else {
+            slotLines.push(`  Slot ${i + 1}: "${btn.label}"`);
+          }
+        } else {
+          slotLines.push(`  Slot ${i + 1}: [blank]`);
+        }
+      }
+      const blankSlots = maxBoardItems - customBoardInfo.fixedButtons.length;
+      const available = blankSlots - customBoardInfo.aiAddedButtons.length;
+      return `[Current Board — ${maxBoardItems} slots, custom board loaded]\n${slotLines.join("\n")}\nFixed buttons: ${customBoardInfo.fixedButtons.length} | AI-added: ${customBoardInfo.aiAddedButtons.length} | Available: ${available}\nYou can ONLY remove [AI-added] buttons. [FIXED] buttons cannot be removed.`;
+    }
 
     const slotLines: string[] = [];
     for (let i = 0; i < maxBoardItems; i++) {
@@ -792,7 +828,8 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
     visualContext?: string,
     audioContext?: string,
     imageData?: string, // base64 data URL or URL
-    personContext?: string // Identified person context from biometrics
+    personContext?: string, // Identified person context from biometrics
+    customBoardInfo?: { fixedButtons: string[]; aiAddedButtons: string[] }
   ): AsyncGenerator<{ type: "speak" | "interpret" | "transcript" | "context" | "board" | "board_patch" | "command" | "usage" | "call_monitor" | "open_app" | "close_app" | "emote" | "learn_face" | "set_board" | "press_button" | "yes_no" | "ask_yes_no"; data: any; speaker?: string }> {
     // Build context message if we have visual/audio/person context
     let contextMessage = "";
@@ -812,7 +849,8 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
       messages,
       pendingMessages,
       currentBoard,
-      boardMax
+      boardMax,
+      customBoardInfo
     );
 
     // Add context if any
@@ -1107,7 +1145,8 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
     appCanvasData?: string,
     envFrameTimestamps?: number[],
     audioMimeType?: string,
-    maxBoardItems: number = 12
+    maxBoardItems: number = 12,
+    customBoardInfo?: { fixedButtons: string[]; aiAddedButtons: string[] }
   ): Promise<InteractiveResponse> {
     const messageHistory: ProviderChatMessage[] = [
       { role: "system", content: detectionSystemPrompt || this.systemPrompt },
@@ -1169,7 +1208,7 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
     if (currentBoard) {
       const detectionBoardMax = (currentBoard.grid?.rows || 3) * (currentBoard.grid?.cols || 4);
       const effectiveMax = Math.max(maxBoardItems, detectionBoardMax);
-      const boardContext = this.formatBoardContextForDetection(currentBoard, effectiveMax);
+      const boardContext = this.formatBoardContextForDetection(currentBoard, effectiveMax, customBoardInfo);
       messageHistory.push({ role: "system", content: boardContext });
       console.log("[InteractiveAgent] Board context for detection:", boardContext);
     }

@@ -83,6 +83,18 @@ class SessionMutex {
  * Extract navigation button info from a board page for the prompt.
  * Returns buttons that have link, back, or home actions.
  */
+/**
+ * Get the native (built-in) button labels for the current page of a loaded custom board.
+ * These buttons are "fixed" and cannot be removed by the AI.
+ */
+function getNativePageButtonLabels(state: DualAgentSessionState): string[] {
+  if (!state.loadedBoardData) return [];
+  const page = state.loadedBoardData.pages?.find(p => p.id === state.currentPageId)
+    || state.loadedBoardData.pages?.[0];
+  if (!page?.buttons) return [];
+  return page.buttons.filter(b => b.label).map(b => b.label);
+}
+
 function getPageNavButtons(state: DualAgentSessionState): Array<{ label: string; action: string; targetPageName?: string }> {
   if (!state.loadedBoardData) return [];
   const page = state.loadedBoardData.pages?.find(p => p.id === state.currentPageId) || state.loadedBoardData.pages?.[0];
@@ -633,6 +645,7 @@ export class DualAgentService {
       appState: { enabledApps: getDefaultEnabledApps(), activeApp: null },
       currentEmote: "happy",
       boardButtonLabels: [],
+      aiAddedButtonLabels: [],
       lastInteractiveActivity: Date.now(),
       lastMonitorActivity: Date.now(),
       monitorConsecutiveFailures: 0,
@@ -706,6 +719,7 @@ export class DualAgentService {
         appState: { enabledApps: getDefaultEnabledApps(), activeApp: null },
         currentEmote: "neutral",
         boardButtonLabels: [],
+        aiAddedButtonLabels: [],
         lastInteractiveActivity: Date.now(),
         lastMonitorActivity: Date.now(),
         monitorConsecutiveFailures: 0,
@@ -793,6 +807,8 @@ export class DualAgentService {
           state.cachedSymbols,
           state.isLiveMode,
           student.aacSettings?.aiName || undefined,
+          state.loadedBoardId ? getNativePageButtonLabels(state) : undefined,
+          state.loadedBoardId ? state.aiAddedButtonLabels : undefined,
         );
       }
 
@@ -953,6 +969,8 @@ export class DualAgentService {
           state.cachedSymbols,
           state.isLiveMode,
           student.aacSettings?.aiName || undefined,
+          state.loadedBoardId ? getNativePageButtonLabels(state) : undefined,
+          state.loadedBoardId ? state.aiAddedButtonLabels : undefined,
         );
         interactiveAgent.setSystemPrompt(newPrompt);
         state.interactivePrompt = newPrompt;
@@ -1037,13 +1055,56 @@ export class DualAgentService {
     if (patchData.rebuild && patchData.rebuild.length > 0) {
       const labels = patchData.rebuild.slice(0, maxSlots).map(b => b.label);
       state.boardButtonLabels = labels;
+      state.aiAddedButtonLabels = [];
       if (patchData.rebuild.length > maxSlots) {
         console.log(`[DualAgentService] REBUILD_BOARD trimmed from ${patchData.rebuild.length} to ${maxSlots}`);
       }
       return null; // Rebuilds always succeed (trimmed)
     }
 
-    // Incremental add/remove — enforce limit
+    // When a custom board is loaded, protect native buttons
+    if (state.loadedBoardId) {
+      const nativeLabels = getNativePageButtonLabels(state);
+      const nativeSet = new Set(nativeLabels.map(l => l.toLowerCase()));
+
+      // Removes: only allow removing AI-added buttons (silently ignore native)
+      const requestedRemoves = (patchData.remove || []);
+      const allowedRemoves = requestedRemoves.filter(l => !nativeSet.has(l.toLowerCase()));
+      const blockedRemoves = requestedRemoves.filter(l => nativeSet.has(l.toLowerCase()));
+      if (blockedRemoves.length > 0) {
+        console.log(`[DualAgentService] Protected board: silently ignored removal of native buttons: ${blockedRemoves.join(", ")}`);
+      }
+
+      // Apply allowed removes to aiAddedButtonLabels tracking
+      const removeSet = new Set(allowedRemoves.map(l => l.toLowerCase()));
+      state.aiAddedButtonLabels = state.aiAddedButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
+
+      // Adds: check against blank slot budget (total slots - native count)
+      const blankSlots = maxSlots - nativeLabels.length;
+      const addCount = (patchData.add || []).length;
+      const newAiCount = state.aiAddedButtonLabels.length + addCount;
+
+      if (newAiCount > blankSlots) {
+        return `Board change rejected: adding ${addCount} button(s) would result in ${newAiCount} AI-added buttons, exceeding the ${blankSlots} available blank slots on this custom board (${nativeLabels.length} fixed buttons use ${nativeLabels.length} of ${maxSlots} slots). You MUST remove AI-added buttons first to make room.`;
+      }
+
+      // Valid — update tracking
+      const addLabels = (patchData.add || []).map(b => b.label);
+      state.aiAddedButtonLabels = [...state.aiAddedButtonLabels, ...addLabels];
+
+      // Update boardButtonLabels: native + AI-added (after allowed removes)
+      const afterRemoveAll = state.boardButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
+      state.boardButtonLabels = [...afterRemoveAll, ...addLabels];
+
+      // Mutate patchData to reflect the filtered removes
+      if (patchData.remove) {
+        patchData.remove = allowedRemoves;
+      }
+
+      return null;
+    }
+
+    // No custom board — standard behavior
     const removeSet = new Set((patchData.remove || []).map(l => l.toLowerCase()));
     const afterRemove = state.boardButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
     const addCount = (patchData.add || []).length;
@@ -1130,6 +1191,11 @@ export class DualAgentService {
 
     // Stream response from Interactive agent (with image if provided)
     let interactiveUsage: { promptTokens: number; completionTokens: number } | undefined;
+    // Build custom board info for the interactive agent if a custom board is loaded
+    const customBoardInfo = state.loadedBoardId
+      ? { fixedButtons: getNativePageButtonLabels(state), aiAddedButtons: state.aiAddedButtonLabels }
+      : undefined;
+
     for await (const chunk of interactiveAgent.processMessageStream(
       userMessage,
       state.messages,
@@ -1138,7 +1204,8 @@ export class DualAgentService {
       visualContext,
       audioContext,
       imageData,
-      combinedContext
+      combinedContext,
+      customBoardInfo
     )) {
       if (chunk.type === "speak") {
         fullText += chunk.data;
@@ -1166,6 +1233,7 @@ export class DualAgentService {
           state.maxBoardItems = 12;
           console.log("[DualAgentService] REBUILD_BOARD: exited custom board, back to default 4x3 grid");
         }
+        state.aiAddedButtonLabels = [];
         // Update server-side board label tracking from the rebuild
         const rebuildPage = chunk.data?.pages?.[0];
         const rebuildButtons = rebuildPage?.buttons || [];
@@ -1284,6 +1352,8 @@ export class DualAgentService {
             state.currentPageId = boardData.pages?.[0]?.id || null;
             state.pageHistory = [];
             state.maxBoardItems = matchedBoard.grid.rows * matchedBoard.grid.cols;
+            state.aiAddedButtonLabels = [];
+            state.boardButtonLabels = getNativePageButtonLabels(state);
             yield { type: "set_board", data: { board: boardData, name: matchedBoard.name, boardId: matchedBoard.id } };
             state.pendingMessages.push({
               role: "assistant",
@@ -1321,6 +1391,8 @@ export class DualAgentService {
             state.pageHistory = [...(state.pageHistory || []), state.currentPageId];
           }
           state.currentPageId = targetPageId;
+          state.aiAddedButtonLabels = [];
+          state.boardButtonLabels = getNativePageButtonLabels(state);
           yield { type: "ai_button_press", data: { label: pressButtonLabel, action: "navigate", targetPageId, targetPageName: targetPage.name, buttons: targetPage.buttons } };
           state.pendingMessages.push({
             role: "assistant",
@@ -1335,6 +1407,8 @@ export class DualAgentService {
           const prevPageId = history[history.length - 1];
           state.pageHistory = history.slice(0, -1);
           state.currentPageId = prevPageId;
+          state.aiAddedButtonLabels = [];
+          state.boardButtonLabels = getNativePageButtonLabels(state);
           const prevPage = state.loadedBoardData.pages?.find(p => p.id === prevPageId);
           yield { type: "ai_button_press", data: { label: pressButtonLabel, action: "back", targetPageId: prevPageId, targetPageName: prevPage?.name || "Previous", buttons: prevPage?.buttons || [] } };
           state.pendingMessages.push({
@@ -1349,6 +1423,8 @@ export class DualAgentService {
         if (homePage) {
           state.pageHistory = [];
           state.currentPageId = homePage.id;
+          state.aiAddedButtonLabels = [];
+          state.boardButtonLabels = getNativePageButtonLabels(state);
           yield { type: "ai_button_press", data: { label: pressButtonLabel, action: "home", targetPageId: homePage.id, targetPageName: homePage.name, buttons: homePage.buttons } };
           state.pendingMessages.push({
             role: "assistant",
@@ -1958,6 +2034,8 @@ export class DualAgentService {
           state.cachedSymbols,
           state.isLiveMode,
           student.aacSettings?.aiName || undefined,
+          state.loadedBoardId ? getNativePageButtonLabels(state) : undefined,
+          state.loadedBoardId ? state.aiAddedButtonLabels : undefined,
         );
         interactiveAgent.setSystemPrompt(newPrompt);
         state.interactivePrompt = newPrompt;
@@ -1998,12 +2076,19 @@ export class DualAgentService {
       state.cachedSymbols,
       undefined, // isLiveMode (HTTP detection)
       student?.aacSettings?.aiName || undefined,
+      state.loadedBoardId ? getNativePageButtonLabels(state) : undefined,
+      state.loadedBoardId ? state.aiAddedButtonLabels : undefined,
     );
 
     const detStart = Date.now();
     try {
       // Call interactive agent — raw audio buffer goes directly to the provider
       // (Gemini handles audio natively; OpenAI/Claude strip it and fall back to text context)
+      // Build custom board info for detection if a custom board is loaded
+      const detCustomBoardInfo = state.loadedBoardId
+        ? { fixedButtons: getNativePageButtonLabels(state), aiAddedButtons: state.aiAddedButtonLabels }
+        : undefined;
+
       const result = await interactiveAgent.processDetection(
         state.messages,
         state.pendingMessages,
@@ -2017,7 +2102,8 @@ export class DualAgentService {
         input.appCanvasData,
         input.envFrameTimestamps,
         input.audioMimeType,
-        state.maxBoardItems || 12
+        state.maxBoardItems || 12,
+        detCustomBoardInfo
       );
 
       console.log("[DualAgentService] Detection processed:", JSON.stringify(result));
@@ -2132,6 +2218,8 @@ export class DualAgentService {
               state.currentPageId = boardData.pages?.[0]?.id || null;
               state.pageHistory = [];
               state.maxBoardItems = matchedBoard.grid.rows * matchedBoard.grid.cols;
+              state.aiAddedButtonLabels = [];
+              state.boardButtonLabels = getNativePageButtonLabels(state);
               setBoardResult = { board: boardData, name: matchedBoard.name, boardId: matchedBoard.id };
               state.pendingMessages.push({
                 role: "assistant",
@@ -2161,6 +2249,8 @@ export class DualAgentService {
               state.pageHistory = [...(state.pageHistory || []), state.currentPageId];
             }
             state.currentPageId = targetPageId;
+            state.aiAddedButtonLabels = [];
+            state.boardButtonLabels = getNativePageButtonLabels(state);
             pressButtonResult = { label: result.pressButton!, action: "navigate", targetPageId, targetPageName: targetPage.name, buttons: targetPage.buttons };
             state.pendingMessages.push({
               role: "assistant",
@@ -2175,6 +2265,8 @@ export class DualAgentService {
             const prevPageId = history[history.length - 1];
             state.pageHistory = history.slice(0, -1);
             state.currentPageId = prevPageId;
+            state.aiAddedButtonLabels = [];
+            state.boardButtonLabels = getNativePageButtonLabels(state);
             const prevPage = state.loadedBoardData.pages?.find(p => p.id === prevPageId);
             pressButtonResult = { label: result.pressButton!, action: "back", targetPageId: prevPageId, targetPageName: prevPage?.name || "Previous", buttons: prevPage?.buttons || [] };
             state.pendingMessages.push({
@@ -2189,6 +2281,8 @@ export class DualAgentService {
           if (homePage) {
             state.pageHistory = [];
             state.currentPageId = homePage.id;
+            state.aiAddedButtonLabels = [];
+            state.boardButtonLabels = getNativePageButtonLabels(state);
             pressButtonResult = { label: result.pressButton!, action: "home", targetPageId: homePage.id, targetPageName: homePage.name, buttons: homePage.buttons };
             state.pendingMessages.push({
               role: "assistant",
@@ -2207,6 +2301,7 @@ export class DualAgentService {
         state.currentPageId = null;
         state.pageHistory = [];
         state.maxBoardItems = 12;
+        state.aiAddedButtonLabels = [];
         console.log("[DualAgentService] Detection REBUILD_BOARD: exited custom board");
       }
 

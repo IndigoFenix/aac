@@ -110,6 +110,10 @@ export class LiveRelay {
   private lastBoardUpdateTime = 0;
   private static readonly BOARD_REMINDER_INTERVAL_MS = 45_000; // 45s
 
+  // Behavioral reminder: periodically re-inject critical rules to prevent prompt drift
+  private behavioralReminderTimer: ReturnType<typeof setInterval> | null = null;
+  private static readonly BEHAVIORAL_REMINDER_INTERVAL_MS = 180_000; // 3 min
+
   // Dedup guard: track last user message to prevent rapid duplicates
   private lastUserMessage: { text: string; timestamp: number } | null = null;
   private static readonly DEDUP_WINDOW_MS = 2000;
@@ -485,8 +489,9 @@ If you hear speech that resembles text you recently produced, it is your echo. I
 
       await this.gemini.connect(systemPrompt, config);
 
-      // Start periodic board state reminders
+      // Start periodic reminders
       this.startBoardReminder();
+      this.startBehavioralReminder();
 
       // Send initialization confirmation to client
       this.send({ type: "initialized", sessionId: state.sessionId });
@@ -538,7 +543,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
 
     this.gemini.sendMessage(`[BUTTON PRESS] ${buttonList}
     The user pressed the above button(s). Interpret this as a user message and respond accordingly.
-    IMPORTANT: Call [REBUILD_BOARD] NOW to update the board with new buttons or content.
+    IMPORTANT: Call [REBUILD_BOARD] (or [SET_BOARD], if relevant) NOW to update the board with new buttons or content.
     `, "user");
   }
 
@@ -661,32 +666,80 @@ If you hear speech that resembles text you recently produced, it is your echo. I
         if (seg.type === "add_buttons" && parsed.addButtons) {
           // Enforce button limit — reject and ask Gemini to retry
           if (state) {
-            const newCount = state.boardButtonLabels.length + parsed.addButtons.length;
-            if (newCount > maxSlots) {
-              const available = maxSlots - state.boardButtonLabels.length;
-              const msg = `[BOARD REJECTED] Cannot add ${parsed.addButtons.length} button(s) — would exceed the ${maxSlots}-button limit. Currently ${state.boardButtonLabels.length} buttons, ${available} slot(s) available. Current buttons: ${state.boardButtonLabels.join(", ")}. Please use [REMOVE_BUTTONS] first to free slots, then retry with [ADD_BUTTONS] (You may respond with both tokens in a single response.)`;
-              logDualAgent("LiveRelay.boardPatchRejected", { sessionId: this.sessionId, attempted: parsed.addButtons.length, current: state.boardButtonLabels.length, max: maxSlots });
-              this.gemini.sendContextInjection(msg);
-              break;
+            if (state.loadedBoardId) {
+              // Custom board: check against blank slot budget
+              const nativeLabels = this.getNativePageButtonLabels(state);
+              const blankSlots = maxSlots - nativeLabels.length;
+              const newAiCount = state.aiAddedButtonLabels.length + parsed.addButtons.length;
+              if (newAiCount > blankSlots) {
+                const available = blankSlots - state.aiAddedButtonLabels.length;
+                const msg = `[BOARD REJECTED] Cannot add ${parsed.addButtons.length} button(s) — would exceed ${blankSlots} blank slots on this custom board (${nativeLabels.length} fixed buttons). Currently ${state.aiAddedButtonLabels.length} AI-added buttons, ${available} slot(s) available. AI-added buttons: ${state.aiAddedButtonLabels.join(", ") || "none"}. Please use [REMOVE_BUTTONS] to remove AI-added buttons first.`;
+                logDualAgent("LiveRelay.boardPatchRejected", { sessionId: this.sessionId, attempted: parsed.addButtons.length, current: state.aiAddedButtonLabels.length, max: blankSlots });
+                this.gemini.sendContextInjection(msg);
+                break;
+              }
+              state.aiAddedButtonLabels = [...state.aiAddedButtonLabels, ...parsed.addButtons.map(b => b.label)];
+            } else {
+              const newCount = state.boardButtonLabels.length + parsed.addButtons.length;
+              if (newCount > maxSlots) {
+                const available = maxSlots - state.boardButtonLabels.length;
+                const msg = `[BOARD REJECTED] Cannot add ${parsed.addButtons.length} button(s) — would exceed the ${maxSlots}-button limit. Currently ${state.boardButtonLabels.length} buttons, ${available} slot(s) available. Current buttons: ${state.boardButtonLabels.join(", ")}. Please use [REMOVE_BUTTONS] first to free slots, then retry with [ADD_BUTTONS] (You may respond with both tokens in a single response.)`;
+                logDualAgent("LiveRelay.boardPatchRejected", { sessionId: this.sessionId, attempted: parsed.addButtons.length, current: state.boardButtonLabels.length, max: maxSlots });
+                this.gemini.sendContextInjection(msg);
+                break;
+              }
             }
             state.boardButtonLabels = [...state.boardButtonLabels, ...parsed.addButtons.map(b => b.label)];
           }
           this.lastBoardUpdateTime = Date.now();
           this.send({ type: "board_patch", data: { add: parsed.addButtons, remove: [] } });
           if (state) {
-            const available = maxSlots - state.boardButtonLabels.length;
-            this.gemini.sendContextInjection(`[BOARD STATE UPDATE] Current buttons (${state.boardButtonLabels.length}/${maxSlots}, ${available} slots available): ${state.boardButtonLabels.join(", ")}`);
+            if (state.loadedBoardId) {
+              const nativeLabels = this.getNativePageButtonLabels(state);
+              const blankSlots = maxSlots - nativeLabels.length;
+              const available = blankSlots - state.aiAddedButtonLabels.length;
+              this.gemini.sendContextInjection(`[BOARD STATE UPDATE] Custom board — Fixed: ${nativeLabels.join(", ")} | AI-added (${state.aiAddedButtonLabels.length}/${blankSlots}): ${state.aiAddedButtonLabels.join(", ") || "none"} | ${available} slots available`);
+            } else {
+              const available = maxSlots - state.boardButtonLabels.length;
+              this.gemini.sendContextInjection(`[BOARD STATE UPDATE] Current buttons (${state.boardButtonLabels.length}/${maxSlots}, ${available} slots available): ${state.boardButtonLabels.join(", ")}`);
+            }
           }
         } else if (seg.type === "remove_buttons" && parsed.removeButtons) {
           if (state) {
-            const removeSet = new Set(parsed.removeButtons.map(l => l.toLowerCase()));
-            state.boardButtonLabels = state.boardButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
+            if (state.loadedBoardId) {
+              // Custom board: only allow removing AI-added buttons
+              const nativeSet = new Set(this.getNativePageButtonLabels(state).map(l => l.toLowerCase()));
+              const allowedRemoves = parsed.removeButtons.filter(l => !nativeSet.has(l.toLowerCase()));
+              const blockedRemoves = parsed.removeButtons.filter(l => nativeSet.has(l.toLowerCase()));
+              if (blockedRemoves.length > 0) {
+                console.log(`[LiveRelay] Protected board: silently ignored removal of native buttons: ${blockedRemoves.join(", ")}`);
+              }
+              if (allowedRemoves.length === 0) {
+                // Nothing to remove after filtering
+                break;
+              }
+              const removeSet = new Set(allowedRemoves.map(l => l.toLowerCase()));
+              state.aiAddedButtonLabels = state.aiAddedButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
+              state.boardButtonLabels = state.boardButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
+              // Override parsed.removeButtons for the client message
+              parsed.removeButtons = allowedRemoves;
+            } else {
+              const removeSet = new Set(parsed.removeButtons.map(l => l.toLowerCase()));
+              state.boardButtonLabels = state.boardButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
+            }
           }
           this.lastBoardUpdateTime = Date.now();
           this.send({ type: "board_patch", data: { add: [], remove: parsed.removeButtons } });
           if (state) {
-            const available = maxSlots - state.boardButtonLabels.length;
-            this.gemini.sendContextInjection(`[BOARD STATE UPDATE] Current buttons (${state.boardButtonLabels.length}/${maxSlots}, ${available} slots available): ${state.boardButtonLabels.join(", ") || "none"}`);
+            if (state.loadedBoardId) {
+              const nativeLabels = this.getNativePageButtonLabels(state);
+              const blankSlots = maxSlots - nativeLabels.length;
+              const available = blankSlots - state.aiAddedButtonLabels.length;
+              this.gemini.sendContextInjection(`[BOARD STATE UPDATE] Custom board — Fixed: ${nativeLabels.join(", ")} | AI-added (${state.aiAddedButtonLabels.length}/${blankSlots}): ${state.aiAddedButtonLabels.join(", ") || "none"} | ${available} slots available`);
+            } else {
+              const available = maxSlots - state.boardButtonLabels.length;
+              this.gemini.sendContextInjection(`[BOARD STATE UPDATE] Current buttons (${state.boardButtonLabels.length}/${maxSlots}, ${available} slots available): ${state.boardButtonLabels.join(", ") || "none"}`);
+            }
           }
         } else if (seg.type === "rebuild_board" && parsed.rebuildBoard) {
           // Clear loaded custom board — REBUILD returns to default AI-generated board
@@ -696,6 +749,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
             state.currentPageId = null;
             state.pageHistory = [];
             state.maxBoardItems = 12;
+            state.aiAddedButtonLabels = [];
             state.boardButtonLabels = parsed.rebuildBoard.slice(0, 12).map(b => b.label);
           }
           this.lastBoardUpdateTime = Date.now();
@@ -1041,10 +1095,15 @@ If you hear speech that resembles text you recently produced, it is your echo. I
             state.currentPageId = boardData.pages?.[0]?.id || null;
             state.pageHistory = [];
             state.maxBoardItems = (boardData.grid?.rows || 3) * (boardData.grid?.cols || 4);
+            state.aiAddedButtonLabels = [];
+            // Set boardButtonLabels to native page labels
+            const nativeLabels = this.getNativePageButtonLabels(state);
+            state.boardButtonLabels = [...nativeLabels];
 
             this.send({ type: "set_board", data: { board: boardData, name: match.name, boardId: match.id } });
+            const blankSlots = state.maxBoardItems - nativeLabels.length;
             this.gemini.sendContextInjection(
-              `Board "${match.name}" loaded with ${boardData.pages?.length || 1} pages, ${state.maxBoardItems} slots`,
+              `Board "${match.name}" loaded with ${boardData.pages?.length || 1} pages, ${state.maxBoardItems} slots. Fixed buttons: ${nativeLabels.join(", ")}. ${blankSlots} blank slots available for AI-added buttons. You CANNOT remove the board's built-in buttons.`,
             );
             logDualAgent("LiveRelay.setBoard", { sessionId: this.sessionId, boardName: match.name, boardId: match.id });
           }
@@ -1079,6 +1138,8 @@ If you hear speech that resembles text you recently produced, it is your echo. I
                 state.pageHistory = [...(state.pageHistory || []), state.currentPageId];
               }
               state.currentPageId = targetPage.id;
+              state.aiAddedButtonLabels = [];
+              state.boardButtonLabels = this.getNativePageButtonLabels(state);
 
               this.send({
                 type: "ai_button_press",
@@ -1116,6 +1177,8 @@ If you hear speech that resembles text you recently produced, it is your echo. I
               const prevPageId = history[history.length - 1];
               state.pageHistory = history.slice(0, -1);
               state.currentPageId = prevPageId;
+              state.aiAddedButtonLabels = [];
+              state.boardButtonLabels = this.getNativePageButtonLabels(state);
 
               const prevPage = state.loadedBoardData.pages?.find((p: any) => p.id === prevPageId);
               if (prevPage) {
@@ -1141,6 +1204,8 @@ If you hear speech that resembles text you recently produced, it is your echo. I
             if (homePage) {
               state.pageHistory = [];
               state.currentPageId = homePage.id;
+              state.aiAddedButtonLabels = [];
+              state.boardButtonLabels = this.getNativePageButtonLabels(state);
 
               this.send({
                 type: "ai_button_press",
@@ -1408,7 +1473,12 @@ If you hear speech that resembles text you recently produced, it is your echo. I
     // Current board state
     const maxSlots = state.maxBoardItems || 12;
     const labels = state.boardButtonLabels;
-    if (labels.length > 0) {
+    if (state.loadedBoardId) {
+      const nativeLabels = this.getNativePageButtonLabels(state);
+      const blankSlots = maxSlots - nativeLabels.length;
+      const available = blankSlots - state.aiAddedButtonLabels.length;
+      parts.push(`Custom board loaded — Fixed buttons (cannot remove): ${nativeLabels.join(", ")} | AI-added (can remove): ${state.aiAddedButtonLabels.join(", ") || "none"} | ${available} slots available`);
+    } else if (labels.length > 0) {
       parts.push(`Current AAC board buttons (${labels.length}/${maxSlots}): ${labels.join(", ")}`);
     }
 
@@ -1450,6 +1520,13 @@ If you hear speech that resembles text you recently produced, it is your echo. I
       boardButtons: labels.length,
       recentMessages: recent.length,
     });
+
+    // Re-inject behavioral rules immediately after reconnection to prevent drift
+    const behavioralReminder = this.buildBehavioralReminder();
+    if (behavioralReminder) {
+      this.gemini.sendContextInjection(behavioralReminder);
+      logDualAgent("LiveRelay.behavioralReminder", { sessionId: this.sessionId, trigger: "reconnect" });
+    }
   }
 
   /**
@@ -1467,11 +1544,125 @@ If you hear speech that resembles text you recently produced, it is your echo. I
 
     const maxSlots = state.maxBoardItems || 12;
     const labels = state.boardButtonLabels;
-    const available = maxSlots - labels.length;
 
-    this.gemini.sendContextInjection(
-      `[BOARD STATE REMINDER] Current buttons (${labels.length}/${maxSlots}, ${available} slots available): ${labels.join(", ") || "none"}`,
-    );
+    if (state.loadedBoardId) {
+      const nativeLabels = this.getNativePageButtonLabels(state);
+      const blankSlots = maxSlots - nativeLabels.length;
+      const available = blankSlots - state.aiAddedButtonLabels.length;
+      this.gemini.sendContextInjection(
+        `[BOARD STATE REMINDER] Custom board — Fixed buttons (cannot remove): ${nativeLabels.join(", ")} | AI-added (can remove, ${state.aiAddedButtonLabels.length}/${blankSlots}): ${state.aiAddedButtonLabels.join(", ") || "none"} | ${available} slots available`,
+      );
+    } else {
+      const available = maxSlots - labels.length;
+      this.gemini.sendContextInjection(
+        `[BOARD STATE REMINDER] Current buttons (${labels.length}/${maxSlots}, ${available} slots available): ${labels.join(", ") || "none"}`,
+      );
+    }
+  }
+
+  /**
+   * Get the native (built-in) button labels for the current page of a loaded custom board.
+   */
+  private getNativePageButtonLabels(state: DualAgentSessionState): string[] {
+    if (!state.loadedBoardData) return [];
+    const page = state.loadedBoardData.pages?.find((p: any) => p.id === state.currentPageId)
+      || state.loadedBoardData.pages?.[0];
+    if (!page?.buttons) return [];
+    return page.buttons.filter((b: any) => b.label).map((b: any) => b.label);
+  }
+
+  // -------------------------------------------------------------------------
+  // Periodic behavioral reminders (prevent prompt drift in long sessions)
+  // -------------------------------------------------------------------------
+
+  private startBehavioralReminder(): void {
+    this.stopBehavioralReminder();
+    this.behavioralReminderTimer = setInterval(() => {
+      const reminder = this.buildBehavioralReminder();
+      if (reminder) {
+        this.gemini.sendContextInjection(reminder);
+        logDualAgent("LiveRelay.behavioralReminder", { sessionId: this.sessionId, trigger: "periodic" });
+      }
+    }, LiveRelay.BEHAVIORAL_REMINDER_INTERVAL_MS);
+  }
+
+  private stopBehavioralReminder(): void {
+    if (this.behavioralReminderTimer) {
+      clearInterval(this.behavioralReminderTimer);
+      this.behavioralReminderTimer = null;
+    }
+  }
+
+  /**
+   * Build a concise behavioral reminder based on current session state.
+   * Re-injects the most critical rules that tend to drift during long sessions.
+   */
+  private buildBehavioralReminder(): string | null {
+    const state = this.sessionCache?.state;
+    if (!state) return null;
+
+    const level = state.interpretationLevel ?? 1;
+    const isSilent = this.interactionMode === "silent";
+
+    // Interpretation level rules — the most critical source of drift
+    let interpretRule: string;
+    switch (level) {
+      case 0:
+        interpretRule = "Interpretation Level: 0 (Off)\n- Do NOT use [INTERPRET]. Button text is spoken directly by the system.";
+        break;
+      case 1:
+        interpretRule = "Interpretation Level: 1 (Minimal)\n- ONLY use [INTERPRET] immediately after [BUTTON PRESS]. Never from gestures, gaze, or context alone.\n- Expand button labels into short natural phrases.";
+        break;
+      case 2:
+        interpretRule = "Interpretation Level: 2 (Moderate)\n- [INTERPRET] from button presses, clear gestures, or strong contextual cues.\n- Do NOT interpret weak or ambiguous signals — add a button instead.";
+        break;
+      case 3:
+        interpretRule = "Interpretation Level: 3 (Active)\n- Interpret button presses, gestures, gaze patterns, and contextual cues.\n- Prefer interpreting over silence — the user benefits from having intent voiced.";
+        break;
+      case 4:
+        interpretRule = "Interpretation Level: 4 (Autonomous)\n- You are the user's voice. Actively interpret and speak for them.\n- Respond to questions on the user's behalf when possible.";
+        break;
+      default:
+        interpretRule = `Interpretation Level: ${level}`;
+    }
+
+    const parts: string[] = [
+      `[BEHAVIORAL REMINDER]`,
+      interpretRule,
+    ];
+
+    // Confidence requirement
+    if (level > 0 && level < 4) {
+      parts.push("Confidence: Always include confidence (high/medium/low) on [INTERPRET]. Only [SPEAK] or [INTERPRET] with HIGH CONFIDENCE from visual/audio input alone.");
+    }
+
+    // Visual check conservatism
+    parts.push("Visual checks: Stay silent if nothing important changed. Only report meaningful context changes.");
+
+    // Mode
+    if (isSilent) {
+      parts.push("Mode: silent — You are INVISIBLE. NEVER use [SPEAK]. Only output board buttons.");
+    } else {
+      parts.push(`Mode: interact — AI voice active.`);
+    }
+
+    // Echo awareness (always critical for live sessions)
+    parts.push("Echo: Speech you hear shortly after your own [SPEAK] or [INTERPRET] output is YOUR echo — ignore it completely. Do NOT transcribe or respond to it.");
+
+    // Board limit
+    const maxSlots = state.maxBoardItems || 12;
+    parts.push(`Board limit: ${maxSlots} buttons max. Use [REMOVE_BUTTONS] before [ADD_BUTTONS] if near the limit.`);
+
+    // Custom boards reminder
+    if (state.availableBoards && state.availableBoards.length > 0 && !state.loadedBoardId) {
+      const boardKeys = state.availableBoards.map(b => {
+        const hint = b.hint ? ` (${b.hint})` : '';
+        return `${b.key}${hint}`;
+      }).join(", ");
+      parts.push(`Custom boards available: ${boardKeys}. Use [SET_BOARD] board_key silently when the context matches a board's purpose — do NOT announce board switches with [SPEAK].`);
+    }
+
+    return parts.join("\n");
   }
 
   /**
@@ -1548,6 +1739,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
     // Stop timers
     this.stopPingTimer();
     this.stopBoardReminder();
+    this.stopBehavioralReminder();
 
     // Remove context injection callback to prevent leaks
     if (this.sessionCache?.state) {

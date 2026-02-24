@@ -1277,6 +1277,8 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             debugMode={debugMode}
             showDebugPanel={showDebugPanel}
             onDebugPanelToggle={() => setShowDebugPanel(!showDebugPanel)}
+            rawFaces={rawFaces}
+            rawHands={rawHands}
           />
           {debugMode && (
             <UnifiedDebugPanel

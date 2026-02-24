@@ -43,10 +43,13 @@ import avatarSleep from "@assets/axolotl-sleep.png";
 import avatarError from "@assets/axolotl-error.png";
 import { motion, AnimatePresence } from "framer-motion";
 import type { ParsedBoardData } from "@shared/schema";
+import type { RawTrackedFace } from "@/lib/faceTrackingTypes";
+import type { RawTrackedHand } from "@/lib/handGestureTypes";
 import { useDualAgentContext } from "@/contexts/DualAgentContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { LanguageSelector } from "@/components/LanguageSelector";
+import { FaceMirror } from "@/components/FaceMirror";
 
 // Avatar image maps by emotion
 const AVATAR_BODY: Record<string, string> = {
@@ -86,6 +89,8 @@ interface DualAgentConversationBoxProps {
   debugMode?: boolean;
   showDebugPanel?: boolean;
   onDebugPanelToggle?: () => void;
+  rawFaces?: RawTrackedFace[];
+  rawHands?: RawTrackedHand[];
 }
 
 export function DualAgentConversationBox({
@@ -106,6 +111,8 @@ export function DualAgentConversationBox({
   debugMode,
   showDebugPanel,
   onDebugPanelToggle,
+  rawFaces,
+  rawHands,
 }: DualAgentConversationBoxProps) {
   const {
     currentMessage,
@@ -550,6 +557,15 @@ export function DualAgentConversationBox({
                 </div>
               )}
             </div>
+
+            {/* Face Mirror — opposite the avatar, only when tracking data exists */}
+            {((rawFaces && rawFaces.length > 0) || (rawHands && rawHands.length > 0)) && (
+              <FaceMirror
+                faces={rawFaces ?? []}
+                hands={rawHands ?? []}
+                size={80}
+              />
+            )}
           </div>
         </div>
       </motion.div>

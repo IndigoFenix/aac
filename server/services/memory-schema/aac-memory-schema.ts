@@ -326,6 +326,8 @@ export function buildInteractiveSystemPrompt(
   cachedSymbols?: Array<{ id: string; key: string | null; description?: string | null }>,
   isLiveMode?: boolean,
   aiName?: string,
+  customBoardFixedButtons?: string[],
+  customBoardAiAddedButtons?: string[],
 ): string {
   // Header with student context
   const genderStr = studentGender === 'male' ? 'boy' : studentGender === 'female' ? 'girl' : '';
@@ -420,7 +422,7 @@ Your purpose is to assist your user with daily tasks, guide them to complete per
 
   // Board tokens
   const setBoardTokenDesc = availableBoards?.length
-    ? `[SET_BOARD] board_key — Switch to a pre-built custom board. Only use board keys from the "Available Custom Boards" list below.`
+    ? `[SET_BOARD] board_key — Silently switch to a pre-built custom board. Do NOT announce or narrate board switches with [SPEAK]. Only use board keys from the "Available Custom Boards" list below.`
     : '';
 
   const pressButtonTokenDesc = loadedBoardName
@@ -441,9 +443,11 @@ Your purpose is to assist your user with daily tasks, guide them to complete per
     : [
         `[REBUILD_BOARD] label|icon, label|icon, ... — replace entire board`,
       ];
-  if (setBoardTokenDesc) boardLines.push(`- ${setBoardTokenDesc}`);
   if (pressButtonTokenDesc) boardLines.push(`- ${pressButtonTokenDesc}`);
   const boardTokenDesc = boardLines.join('\n   ');
+
+  // SET_BOARD gets its own top-level token entry so it's not buried as a sub-bullet
+  const setBoardFullTokenDesc = setBoardTokenDesc || '';
 
   // Apps
   const appTokenDesc = enabledApps.length > 0
@@ -504,7 +508,7 @@ Your purpose is to assist your user with daily tasks, guide them to complete per
 
   if (responseMode === 'fast') {
     orderedTokens = [
-      interpretTokenDesc, speakTokenDesc, boardTokenDesc, appTokenDesc,
+      interpretTokenDesc, speakTokenDesc, boardTokenDesc, setBoardFullTokenDesc, appTokenDesc,
       emoteTokenDesc, yesNoTokenDesc,
       transcriptTokenDesc, contextTokenDesc,
       learnFaceTokenDesc, monitorTokenDesc,
@@ -516,7 +520,7 @@ ${sharedRules}`;
   } else {
     orderedTokens = [
       transcriptTokenDesc, contextTokenDesc,
-      interpretTokenDesc, speakTokenDesc, boardTokenDesc, appTokenDesc,
+      interpretTokenDesc, speakTokenDesc, boardTokenDesc, setBoardFullTokenDesc, appTokenDesc,
       emoteTokenDesc, yesNoTokenDesc,
       learnFaceTokenDesc, monitorTokenDesc,
     ];
@@ -595,8 +599,17 @@ Use the following rules when modifying the board:
 - Remove buttons that are no longer relevant
 - Omit board tokens if no changes needed
 - HARD LIMIT: The standard board CANNOT have more than ${maxBoardItems} buttons. The system will REJECT any [ADD_BUTTONS] that would exceed this limit. Always use [REMOVE_BUTTONS] first to make room. You may [REMOVE_BUTTONS] and [ADD_BUTTONS] in the same response to swap out buttons without going over the limit (buttons are always removed first).
-
-${(availableBoards && availableBoards.length > 0) ? `Note: This limit may change if a custom board is loaded that has a different max. If a custom board is loaded, follow the button limits for that board instead of the default.` : ''}
+${customBoardFixedButtons && customBoardFixedButtons.length > 0 ? `
+=== Custom Board Protection ===
+A custom board is currently loaded. The board has ${customBoardFixedButtons.length} FIXED buttons that are part of the board's design.
+Fixed buttons (CANNOT remove): ${customBoardFixedButtons.join(", ")}
+${customBoardAiAddedButtons && customBoardAiAddedButtons.length > 0 ? `AI-added buttons (CAN remove): ${customBoardAiAddedButtons.join(", ")}` : `No AI-added buttons yet.`}
+Available slots for new buttons: ${maxBoardItems - customBoardFixedButtons.length - (customBoardAiAddedButtons?.length || 0)}
+RULES:
+- [REMOVE_BUTTONS] can ONLY remove buttons you previously added. The board's built-in buttons are FIXED and cannot be removed.
+- You can add up to ${maxBoardItems - customBoardFixedButtons.length} buttons total in the blank slots (currently ${(customBoardAiAddedButtons?.length || 0)} used).
+- Attempts to remove fixed buttons will be silently ignored by the system.
+` : `${(availableBoards && availableBoards.length > 0) ? `Note: This limit may change if a custom board is loaded that has a different max. If a custom board is loaded, follow the button limits for that board instead of the default.` : ''}`}
 
 ${isLiveMode ? `Use [REBUILD_BOARD] ONLY immediately after a [BUTTON PRESS] input. DO NOT use it in response to audio or visual input alone.
 Using REBUILD_BOARD will exit any loaded custom board and return to the default AI-generated board and ${maxBoardItems}-button limit.` : ``}
@@ -644,14 +657,22 @@ If a contact has no name, use a short descriptive pseudonym (e.g., "Boy with gla
     prompt += `
 == Available Custom Boards ==
 
-You can switch to a pre-built board using: [SET_BOARD] board_key
+IMPORTANT: Custom boards are pre-built boards with curated content. When a custom board matches the current activity or context, you SHOULD use [SET_BOARD] to load it instead of generating buttons from scratch with [REBUILD_BOARD].
+
+Use: [SET_BOARD] board_key
 
 ${availableBoards.map(b => {
-  const hint = b.hint ? ` — ${b.hint}` : '';
+  const hint = b.hint ? ` — WHEN TO USE: ${b.hint}` : '';
   return `- ${b.key} ("${b.name}")${hint} (${b.grid.cols}x${b.grid.rows} grid)`;
 }).join('\n')}
+
+Rules:
+- [SET_BOARD] should be used in place of [REBUILD_BOARD] when the context matches a board's description.
+- When the context matches a board's description, use [SET_BOARD] to load it. Custom boards provide richer, more structured options than dynamically generated buttons.
+- You should still use [ADD_BUTTONS] and [REMOVE_BUTTONS] to modify buttons on a loaded custom board's current page.
+- Using [REBUILD_BOARD] will EXIT the custom board and return to the default AI-generated board. Only do this if the custom board is no longer relevant.
 ${loadedBoardName
-  ? `\nCurrently loaded: "${loadedBoardName}"${loadedPageName ? ` (page "${loadedPageName}")` : ''}\nDo NOT re-select the already loaded board. You can still use [ADD_BUTTONS] and [REMOVE_BUTTONS] to modify buttons on the current page.${
+  ? `\nCurrently loaded: "${loadedBoardName}"${loadedPageName ? ` (page "${loadedPageName}")` : ''}\nDo NOT re-select the already loaded board.${
     loadedPageNavButtons && loadedPageNavButtons.length > 0
       ? `\n\nNavigation buttons on current page (use [PRESS_BUTTON] label to navigate):\n${loadedPageNavButtons.map(b => `- "${b.label}" → ${b.targetPageName || b.action}`).join('\n')}\nPrefer pressing navigation buttons to load sub-pages rather than generating entirely new buttons.`
       : ''
