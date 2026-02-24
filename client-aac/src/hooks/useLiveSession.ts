@@ -608,6 +608,23 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       wsSend({ type: "unknown_face_descriptors", data: unknownFaceDescriptors });
     }
 
+    // Capture and send app canvas (e.g. drawing) if an app is active
+    if (activeApp?.appId === "drawing" && captureAppCanvasRef.current) {
+      try {
+        const canvasBlob = await captureAppCanvasRef.current();
+        if (canvasBlob && canvasBlob.size > 0) {
+          const canvasReader = new FileReader();
+          canvasReader.onloadend = () => {
+            const base64 = (canvasReader.result as string).split(",")[1];
+            wsSend({ type: "app_canvas", data: base64 });
+          };
+          canvasReader.readAsDataURL(canvasBlob);
+        }
+      } catch {
+        // Ignore canvas capture failures
+      }
+    }
+
     // Convert grid JPEG to base64
     const reader = new FileReader();
     reader.onloadend = () => {
@@ -633,7 +650,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       };
       audioReader.readAsDataURL(audioClip);
     }
-  }, [wsSend]);
+  }, [wsSend, activeApp]);
 
   /**
    * Send a raw PCM audio chunk (base64 Int16 16kHz) directly to the server

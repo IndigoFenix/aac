@@ -244,8 +244,18 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
   // Queued message to send after detection finishes
   const queuedMessageRef = useRef<{ message: string; board?: ParsedBoardData } | null>(null);
 
-  // Dismiss app callback
-  const dismissApp = useCallback(() => setActiveApp(null), []);
+  // Dismiss app callback — also sends a message to tell the AI to refresh the board
+  // Uses sendMessageFnRef (assigned after sendMessage is defined) to avoid circular deps
+  const sendMessageFnRef = useRef<((msg: string, board?: ParsedBoardData) => Promise<void>) | null>(null);
+  const dismissApp = useCallback(() => {
+    const closedApp = activeApp;
+    setActiveApp(null);
+    if (closedApp && sendMessageFnRef.current) {
+      sendMessageFnRef.current(
+        `[APP CLOSED] The user closed the "${closedApp.appId}" app and returned to the AAC board. Comment briefly on what they were doing in the app, then use [REBUILD_BOARD] to create a fresh set of communication buttons for the current context.`,
+      );
+    }
+  }, [activeApp]);
 
   // Refs
   const currentBoardRef = useRef<ParsedBoardData | null>(null);
@@ -878,6 +888,7 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
   // Stable ref for sendMessage — used by detection flush to avoid circular deps
   const sendMessageRef = useRef(sendMessage);
   sendMessageRef.current = sendMessage;
+  sendMessageFnRef.current = sendMessage;
 
   /**
    * Send voice input (with optional camera frame)
