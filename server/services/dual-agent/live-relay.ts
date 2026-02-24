@@ -31,7 +31,7 @@ import { boardRepository } from "../../repositories/boardRepository";
 
 /** Messages from client → server */
 export type ClientMessage =
-  | { type: "initialize"; studentId: string; userId?: string; sessionId?: string; interactionMode?: AACInteractionMode; responseMode?: AACResponseMode; debugMode?: boolean }
+  | { type: "initialize"; studentId: string; userId?: string; sessionId?: string; interactionMode?: AACInteractionMode; responseMode?: AACResponseMode; debugMode?: boolean; initialFrame?: string }
   | { type: "frame_grid"; data: string; timestamps?: number[] }    // base64 JPEG
   | { type: "audio_clip"; data: string; mimeType?: string }        // base64 audio (ignored in live mode — Gemini hears PCM directly)
   | { type: "pcm_audio"; data: string }                            // base64 raw PCM Int16 16kHz — streamed directly to Gemini
@@ -45,7 +45,8 @@ export type ClientMessage =
   | { type: "set_response_mode"; mode: AACResponseMode }
   | { type: "unknown_face_descriptors"; data: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number } }> }
   | { type: "page_navigate"; pageId: string; pageName: string; buttons: string[] }
-  | { type: "app_dismissed"; appId: string };
+  | { type: "app_dismissed"; appId: string }
+  | { type: "focus_frame"; data: string };                   // base64 JPEG — high-res focus frame
 
 /** Messages from server → client */
 export type ServerMessage =
@@ -78,6 +79,7 @@ export type ServerMessage =
   | { type: "session_reset"; sessionId: string }         // New session created after repeated failures
   | { type: "rate_limited"; data: string }               // Rate limited — client should NOT auto-reconnect
   | { type: "safety_blocked"; data: string }             // Safety/policy block — transient indicator
+  | { type: "focus_request"; data: { reason: string } }  // AI requests a high-res focus frame
   | { type: "complete"; data?: any };
 
 // ---------------------------------------------------------------------------
@@ -306,6 +308,15 @@ export class LiveRelay {
           // No-op: Gemini already hears audio via continuous PCM streaming
           break;
 
+        case "focus_frame":
+          // High-resolution single frame requested by AI for detailed analysis
+          this.gemini.sendFrameWithPrompt(
+            msg.data,
+            `[FOCUS FRAME] This is a HIGH-RESOLUTION single frame captured at your request. Analyze the image carefully for fine details, text, labels, faces, or objects you couldn't identify before. Report findings via [CONTEXT] and update the board if needed.`,
+          );
+          console.log("[LiveRelay] Focus frame sent to Gemini");
+          break;
+
         case "user_message": {
           // Dedup guard: skip identical messages within 500ms window
           const now = Date.now();
@@ -509,11 +520,19 @@ If you hear speech that resembles text you recently produced, it is your echo. I
       const personaHint = student?.aacSettings?.chatAgentPrompt?.trim()
         ? `\nThe student is ${student.name}. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs.`
         : "";
+      const imageHint = msg.initialFrame ? "\nUse the camera image to observe the environment and make the buttons contextually relevant." : "";
+      const boardHint = state.availableBoards && state.availableBoards.length > 0
+        ? " If a custom board from the Available Custom Boards list is appropriate for this student, use [SET_BOARD] instead of [REBUILD_BOARD]."
+        : "";
       const greetingPrompt = isSilent
-        ? `Generate 4-12 contextual utterance buttons — complete phrases the user might want to say. Use the student's profile and interests from the system prompt to make them relevant. Use [REBUILD_BOARD] to create the initial board.${personaHint}`
-        : `Greet the user with a short, friendly greeting (1-2 sentences) and provide 4-12 initial communication buttons that reflect the student's interests, needs, and communication level from the system prompt. The buttons should be appropriate responses to your greeting. Use [SPEAK] for your greeting and [REBUILD_BOARD] for the buttons.${personaHint}`;
+        ? `Generate 4-12 contextual utterance buttons — complete phrases the user might want to say. Use the student's profile and interests from the system prompt to make them relevant.${imageHint} Use [REBUILD_BOARD] to create the initial board.${boardHint}${personaHint}`
+        : `Greet the user with a short, friendly greeting (1-2 sentences) and provide 4-12 initial communication buttons that reflect the student's interests, needs, and communication level from the system prompt. The buttons should be appropriate responses to your greeting.${imageHint} Use [SPEAK] for your greeting and [REBUILD_BOARD] for the buttons.${boardHint}${personaHint}`;
 
-      this.gemini.sendMessage(greetingPrompt, "user");
+      if (msg.initialFrame) {
+        this.gemini.sendFrameWithPrompt(msg.initialFrame, greetingPrompt);
+      } else {
+        this.gemini.sendMessage(greetingPrompt, "user");
+      }
       this.initialConnectionDone = true;
 
       console.log(`[LiveRelay] Initialized session ${state.sessionId} for student ${msg.studentId}`);
@@ -783,6 +802,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
       case "close_app":
       case "call_monitor":
       case "learn_face":
+      case "request_focus":
         // These are handled during turn completion
         break;
     }
@@ -804,6 +824,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
     let closeAppTriggered = false;
     let setBoardName: string | undefined;
     let pressButtonLabel: string | undefined;
+    let focusReason: string | undefined;
 
     // Board change tracking
     let boardRebuilt = false;
@@ -872,6 +893,9 @@ If you hear speech that resembles text you recently produced, it is your echo. I
           break;
         case "press_button":
           pressButtonLabel = seg.data.trim();
+          break;
+        case "request_focus":
+          focusReason = seg.data.trim();
           break;
       }
     }
@@ -1287,6 +1311,14 @@ If you hear speech that resembles text you recently produced, it is your echo. I
       } catch (err) {
         console.error("[LiveRelay] AI TTS error:", (err as Error).message);
       }
+    }
+
+    // -----------------------------------------------------------------------
+    // Focus frame request — ask client for a high-res image
+    // -----------------------------------------------------------------------
+    if (focusReason) {
+      this.send({ type: "focus_request", data: { reason: focusReason } });
+      console.log("[LiveRelay] Focus frame requested:", focusReason);
     }
 
     // -----------------------------------------------------------------------

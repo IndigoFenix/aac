@@ -494,6 +494,17 @@ Your purpose is to assist your user with daily tasks, guide them to complete per
     `Do NOT call monitor repeatedly for the same event. Do not overuse.`,
   ].join('\n   ');
 
+  const focusTokenDesc = [
+    `[REQUEST_FOCUS] reason — Request a high-resolution close-up frame for detailed analysis.`,
+    `Use when you see something in a camera frame that you can't identify clearly at the current resolution:`,
+    `- Text or writing that you need to read (book, paper, screen, whiteboard)`,
+    `- A small or distant object you can't identify`,
+    `- A face you need to see more clearly`,
+    `- Fine details like symbols, icons, or labels`,
+    `The next frame will be captured at higher resolution and sent for focused analysis.`,
+    `Only request once per observation — do NOT repeat if already requested.`,
+  ].join('\n   ');
+
   // ── Token ordering ──
 
   const sharedRules = [
@@ -511,7 +522,7 @@ Your purpose is to assist your user with daily tasks, guide them to complete per
       interpretTokenDesc, speakTokenDesc, boardTokenDesc, setBoardFullTokenDesc, appTokenDesc,
       emoteTokenDesc, yesNoTokenDesc,
       transcriptTokenDesc, contextTokenDesc,
-      learnFaceTokenDesc, monitorTokenDesc,
+      learnFaceTokenDesc, monitorTokenDesc, focusTokenDesc,
     ];
     rulesText = `Rules:
 - Output [INTERPRET] or [SPEAK] FIRST for fastest response (respond first, then record observations.)
@@ -522,7 +533,7 @@ ${sharedRules}`;
       transcriptTokenDesc, contextTokenDesc,
       interpretTokenDesc, speakTokenDesc, boardTokenDesc, setBoardFullTokenDesc, appTokenDesc,
       emoteTokenDesc, yesNoTokenDesc,
-      learnFaceTokenDesc, monitorTokenDesc,
+      learnFaceTokenDesc, monitorTokenDesc, focusTokenDesc,
     ];
     rulesText = `Rules:
 - Output [TRANSCRIPT] and [CONTEXT] BEFORE [INTERPRET] or [SPEAK] (observe first, then respond.)

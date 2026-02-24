@@ -246,6 +246,8 @@ export interface InteractiveResponse {
   yesNo?: boolean;
   // Deferred Yes/No — show overlay after TTS playback completes
   askYesNo?: boolean;
+  // AI requested a high-resolution focus frame for detailed analysis
+  requestFocus?: string;
   // Provider finish reason (e.g. "STOP", "MAX_TOKENS", "SAFETY", "RECITATION")
   finishReason?: string;
 }
@@ -382,6 +384,8 @@ export interface DetectionInput {
   appCanvasData?: string;     // base64 data URL of active app canvas (e.g. drawing)
   responseMode?: AACResponseMode; // 'fast' (voice first) or 'analyze' (observe first)
   unknownFaceDescriptors?: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number } }>;
+  isFocusFrame?: boolean;       // High-resolution single frame for detailed analysis
+  focusReason?: string;         // Why the AI requested this focus frame
 }
 
 /**
@@ -410,6 +414,7 @@ export interface DetectionOutput {
   pressButton?: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] }; // AI pressed a navigation button
   yesNo?: boolean;                 // Yes/No question detected — trigger overlay
   askYesNo?: boolean;              // Deferred Yes/No — show overlay after TTS playback
+  focusRequested?: string;         // AI requested a high-res focus frame (reason)
   error?: string;                  // error message if processing failed
 }
 

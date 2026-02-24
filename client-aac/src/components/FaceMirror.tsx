@@ -128,16 +128,20 @@ function drawPrimaryFace(
 
   const yaw = face.headPose?.yaw ?? 0;
   const pitch = face.headPose?.pitch ?? 0;
+  const roll = face.headPose?.roll ?? 0;
 
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.rotate(yaw * 0.3); // subtle head tilt
+  ctx.rotate(roll); // head tilt (roll) from face-edge landmark angle
 
-  // Head circle — warm skin tone
+  // Head circle — warm skin tone (drawn centered, unaffected by yaw)
   ctx.fillStyle = "#FFD9A0";
   ctx.beginPath();
   ctx.arc(0, 0, r, 0, Math.PI * 2);
   ctx.fill();
+
+  // Yaw + pitch offset — shift inner features when head turns/tilts
+  ctx.translate(yaw * r * 0.3, pitch * r * 0.3);
 
   // Cheek blush on smile
   const smileAmount = Math.max(bs(b, "mouthSmileLeft"), bs(b, "mouthSmileRight"));
@@ -167,27 +171,29 @@ function drawPrimaryFace(
     const eyeW = r * 0.2;
     const eyeH = r * 0.22 * (1 - blink * 0.85);
 
-    // White of eye
-    ctx.fillStyle = "#FFFFFF";
-    ctx.beginPath();
-    ctx.ellipse(ex, ey, eyeW, Math.max(eyeH, r * 0.03), 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Pupil (only if eye is somewhat open)
-    if (blink < 0.7) {
-      const pupilR = r * 0.09;
-      const px = ex + gazeX * eyeW * 0.5;
-      const py = ey + gazeY * eyeH * 0.4;
-      ctx.fillStyle = "#3A2F28";
-      ctx.beginPath();
-      ctx.arc(px, py, pupilR, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Pupil highlight
+    if (blink < 0.8) {
+      // White of eye (hidden when mostly closed)
       ctx.fillStyle = "#FFFFFF";
       ctx.beginPath();
-      ctx.arc(px - pupilR * 0.3, py - pupilR * 0.3, pupilR * 0.3, 0, Math.PI * 2);
+      ctx.ellipse(ex, ey, eyeW, eyeH, 0, 0, Math.PI * 2);
       ctx.fill();
+
+      // Pupil (only if eye is somewhat open)
+      if (blink < 0.7) {
+        const pupilR = r * 0.09;
+        const px = ex + gazeX * eyeW * 0.5;
+        const py = ey + gazeY * eyeH * 0.4;
+        ctx.fillStyle = "#3A2F28";
+        ctx.beginPath();
+        ctx.arc(px, py, pupilR, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Pupil highlight
+        ctx.fillStyle = "#FFFFFF";
+        ctx.beginPath();
+        ctx.arc(px - pupilR * 0.3, py - pupilR * 0.3, pupilR * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     // Eyelid line when closed

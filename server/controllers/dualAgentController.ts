@@ -54,6 +54,8 @@ const detectSchema = z.object({
   debugMode: z.string().optional(), // "true" to enable debug SSE events
   responseMode: z.enum(['fast', 'analyze']).optional(), // 'fast' (voice first) or 'analyze' (observe first)
   unknownFaceDescriptors: z.string().optional(), // JSON array of unknown face descriptors for AI enrollment
+  isFocusFrame: z.string().optional(), // "true" if this is a high-res focus frame
+  focusReason: z.string().optional(), // Why the AI requested this focus frame
 });
 
 const interpretSchema = z.object({
@@ -665,7 +667,7 @@ export class DualAgentController {
         appCanvasData = `data:${appCanvasFile.mimetype};base64,${base64}`;
       }
 
-      const { studentId, sessionId, board, audioContext, gestureContext, interactionMode, frameTimestamps: frameTimestampsRaw, envFrameTimestamps: envFrameTimestampsRaw, debugMode: debugModeRaw, responseMode, unknownFaceDescriptors: unknownFaceDescriptorsRaw } = detectSchema.parse(body);
+      const { studentId, sessionId, board, audioContext, gestureContext, interactionMode, frameTimestamps: frameTimestampsRaw, envFrameTimestamps: envFrameTimestampsRaw, debugMode: debugModeRaw, responseMode, unknownFaceDescriptors: unknownFaceDescriptorsRaw, isFocusFrame: isFocusFrameRaw, focusReason } = detectSchema.parse(body);
 
       // Parse frame timestamps if provided (from composite grid)
       let frameTimestamps: number[] | undefined;
@@ -710,6 +712,8 @@ export class DualAgentController {
         appCanvasData,
         responseMode,
         unknownFaceDescriptors,
+        isFocusFrame: isFocusFrameRaw === "true",
+        focusReason,
       })) {
         switch (chunk.type) {
           case "text":
@@ -762,6 +766,9 @@ export class DualAgentController {
             break;
           case "ask_yes_no":
             sendSSEEvent(res, "ask_yes_no", chunk.data);
+            break;
+          case "focus_request":
+            sendSSEEvent(res, "focus_request", chunk.data);
             break;
           case "error":
             sendSSEEvent(res, "error", { error: chunk.data });

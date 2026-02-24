@@ -430,6 +430,8 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
         phone: '',
         email: '',
         website: '',
+        instituteIdNumber: '',
+        instituteIdType: '',
         creatorRole: 'admin',
       });
       toast({

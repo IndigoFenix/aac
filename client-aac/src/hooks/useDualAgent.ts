@@ -68,6 +68,8 @@ export interface UseDualAgentOptions {
   autoPlayAudio?: boolean;
   /** Function to capture a camera frame - returns Blob */
   captureFrame?: () => Promise<Blob | null>;
+  /** Function to capture a high-resolution frame for focus analysis */
+  captureHighResFrame?: () => Promise<Blob | null>;
   /** Function to get the current identified person (if any) */
   getIdentifiedPerson?: () => IdentifiedPerson | null;
   /** Function to get serialized gesture/expression context string (face + hand events) */
@@ -156,6 +158,10 @@ export interface UseDualAgentReturn {
   /** Synchronous ref: true from first queued audio chunk until echo tail ends. Use for mic gating. */
   isBusyRef?: { readonly current: boolean };
 
+  // Focus frame
+  /** True while a focus frame is being captured/sent (briefly shows glasses overlay) */
+  focusActive: boolean;
+
   // Reconnection state (Live API only)
   /** Whether the server is currently reconnecting to Gemini */
   reconnecting?: boolean;
@@ -164,7 +170,7 @@ export interface UseDualAgentReturn {
 }
 
 export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
-  const { studentId, language = "en", onBoardUpdate, onBoardPatch, onSetBoard, onAiButtonPress, onThinkingModeChange, autoPlayAudio = true, captureFrame, getIdentifiedPerson, getGestureContext, debugMode = false } = options;
+  const { studentId, language = "en", onBoardUpdate, onBoardPatch, onSetBoard, onAiButtonPress, onThinkingModeChange, autoPlayAudio = true, captureFrame, captureHighResFrame, getIdentifiedPerson, getGestureContext, debugMode = false } = options;
   const { user } = useAuth();
 
   // Debug state
@@ -218,6 +224,10 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
   // Yes/No overlay state
   const [yesNoActive, setYesNoActive] = useState(false);
   const dismissYesNo = useCallback(() => setYesNoActive(false), []);
+
+  // Focus frame active state — briefly true when AI requests a focus frame
+  const [focusActive, setFocusActive] = useState(false);
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Deferred ask_yes_no: show overlay after TTS playback completes
   const pendingAskYesNoRef = useRef(false);
@@ -309,6 +319,8 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
   // Stable refs for callbacks that change identity often (avoids restarting detection loop)
   const captureFrameRef = useRef(captureFrame);
   captureFrameRef.current = captureFrame;
+  const captureHighResFrameRef = useRef(captureHighResFrame);
+  captureHighResFrameRef.current = captureHighResFrame;
   const getGestureContextRef = useRef(getGestureContext);
   getGestureContextRef.current = getGestureContext;
   const onBoardUpdateRef = useRef(onBoardUpdate);
@@ -540,6 +552,41 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
               case "ask_yes_no":
                 // Deferred yes/no — show overlay after TTS playback completes
                 pendingAskYesNoRef.current = true;
+                break;
+
+              case "focus_request":
+                // AI requested a high-resolution focus frame
+                if (data.reason && captureHighResFrameRef.current) {
+                  console.log("[DualAgent] Focus frame requested:", data.reason);
+                  // Show glasses overlay briefly
+                  setFocusActive(true);
+                  if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
+                  focusTimerRef.current = setTimeout(() => setFocusActive(false), 1500);
+                  // Fire-and-forget: capture high-res frame and send as a focus detection
+                  captureHighResFrameRef.current().then(async (blob) => {
+                    if (!blob || blob.size === 0) return;
+                    const formData = new FormData();
+                    formData.append("studentId", studentId);
+                    if (sessionId) formData.append("sessionId", sessionId);
+                    formData.append("image", blob, "focus.jpg");
+                    formData.append("isFocusFrame", "true");
+                    formData.append("focusReason", data.reason);
+                    formData.append("interactionMode", interactionMode);
+                    formData.append("responseMode", responseMode);
+                    if (currentBoardRef.current) formData.append("board", JSON.stringify(currentBoardRef.current));
+                    try {
+                      const resp = await fetchWithAuth("/api/aac/dual/detect", {
+                        method: "POST",
+                        body: formData,
+                      });
+                      if (resp.ok) {
+                        await processSSEStream(resp);
+                      }
+                    } catch (err) {
+                      console.warn("[DualAgent] Focus detection error:", err);
+                    }
+                  }).catch(err => console.warn("[DualAgent] Focus frame capture failed:", err));
+                }
                 break;
 
               case "board_patch":
@@ -1209,6 +1256,9 @@ export function useDualAgent(options: UseDualAgentOptions): UseDualAgentReturn {
     // Yes/No overlay
     yesNoActive,
     dismissYesNo,
+
+    // Focus frame
+    focusActive,
 
     // Actions
     initialize,

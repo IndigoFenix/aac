@@ -90,6 +90,10 @@ interface DualAgentContextType {
   yesNoActive: boolean;
   dismissYesNo: () => void;
 
+  // Focus frame
+  /** True while a focus frame is being captured (glasses overlay) */
+  focusActive: boolean;
+
   // Face image cache
   getFaceImage: (contactId: string) => string | null;
 
@@ -236,6 +240,25 @@ function HttpProviderInner({
     return null;
   }, [attentiveness, captureFrameProp]);
 
+  // Capture a high-resolution frame for AI focus analysis (640x480, JPEG 0.9)
+  const captureHighResFrame = useCallback(async (): Promise<Blob | null> => {
+    if (attentiveness) {
+      try {
+        const frame = await attentiveness.captureNow('high');
+        if (frame && frame.blob && frame.blob.size > 0) {
+          return frame.blob;
+        }
+      } catch (err) {
+        console.warn("[DualAgentContext] High-res capture failed:", err);
+      }
+    }
+    // Fallback to normal capture if attentiveness not available
+    if (captureFrameProp) {
+      return captureFrameProp();
+    }
+    return null;
+  }, [attentiveness, captureFrameProp]);
+
   const handleBoardUpdate = useCallback((board: ParsedBoardData) => {
     setCurrentBoard(board);
     onBoardUpdateRef.current?.(board);
@@ -272,6 +295,7 @@ function HttpProviderInner({
     onThinkingModeChange: handleThinkingModeChange,
     autoPlayAudio: true,
     captureFrame,
+    captureHighResFrame,
     getIdentifiedPerson,
     getGestureContext,
     debugMode,
@@ -408,6 +432,22 @@ function LiveApiProviderInner({
 
   const attentiveness = useCameraAttentivenessOptional();
 
+  // Capture a camera frame for initial image on startup
+  const captureFrame = useCallback(async (): Promise<Blob | null> => {
+    if (attentiveness) {
+      try {
+        const frame = await attentiveness.captureNow('medium');
+        if (frame && frame.blob && frame.blob.size > 0) {
+          return frame.blob;
+        }
+      } catch { /* fall through */ }
+    }
+    if (captureFrameProp) {
+      return captureFrameProp();
+    }
+    return null;
+  }, [attentiveness, captureFrameProp]);
+
   const captureBufferedFrame = useCallback(async (): Promise<BufferedFrame | null> => {
     if (attentiveness) {
       try {
@@ -424,6 +464,24 @@ function LiveApiProviderInner({
           return { blob, timestamp: Date.now(), motionLevel: 0 };
         }
       } catch { /* fall through */ }
+    }
+    return null;
+  }, [attentiveness, captureFrameProp]);
+
+  // Capture a high-resolution frame for AI focus analysis (640x480, JPEG 0.9)
+  const captureHighResFrame = useCallback(async (): Promise<Blob | null> => {
+    if (attentiveness) {
+      try {
+        const frame = await attentiveness.captureNow('high');
+        if (frame && frame.blob && frame.blob.size > 0) {
+          return frame.blob;
+        }
+      } catch (err) {
+        console.warn("[DualAgentContext] High-res capture failed:", err);
+      }
+    }
+    if (captureFrameProp) {
+      return captureFrameProp();
     }
     return null;
   }, [attentiveness, captureFrameProp]);
@@ -458,6 +516,8 @@ function LiveApiProviderInner({
     onAiButtonPress: handleAiButtonPress,
     autoPlayAudio: true,
     debugMode,
+    captureFrame,
+    captureHighResFrame,
   });
 
   const registerAppCanvasCapture = useCallback((fn: (() => Promise<Blob | null>) | null) => {
@@ -722,6 +782,8 @@ function ProviderShell({
 
     yesNoActive: agent.yesNoActive,
     dismissYesNo: agent.dismissYesNo,
+
+    focusActive: agent.focusActive,
 
     getFaceImage,
 

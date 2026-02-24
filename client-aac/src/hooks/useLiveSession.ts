@@ -38,6 +38,10 @@ export interface UseLiveSessionOptions {
   onThinkingModeChange?: (thinking: boolean) => void;
   autoPlayAudio?: boolean;
   debugMode?: boolean;
+  /** Function to capture a camera frame (used for initial image on startup) */
+  captureFrame?: () => Promise<Blob | null>;
+  /** Function to capture a high-resolution frame for focus analysis */
+  captureHighResFrame?: () => Promise<Blob | null>;
 }
 
 export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentReturn {
@@ -51,6 +55,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     onThinkingModeChange,
     autoPlayAudio = true,
     debugMode = false,
+    captureFrame,
+    captureHighResFrame,
   } = options;
   const { user, isLoading: isAuthLoading } = useAuth();
   // Stable ref so ws.onopen always reads the latest user
@@ -58,6 +64,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   userRef.current = user;
   const authLoadingRef = useRef(isAuthLoading);
   authLoadingRef.current = isAuthLoading;
+  const captureFrameRef = useRef(captureFrame);
+  captureFrameRef.current = captureFrame;
+  const captureHighResFrameRef = useRef(captureHighResFrame);
+  captureHighResFrameRef.current = captureHighResFrame;
 
   // WebSocket ref
   const wsRef = useRef<WebSocket | null>(null);
@@ -115,6 +125,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Yes/No overlay state
   const [yesNoActive, setYesNoActive] = useState(false);
   const dismissYesNo = useCallback(() => setYesNoActive(false), []);
+
+  // Focus frame active state — briefly true when AI requests a focus frame
+  const [focusActive, setFocusActive] = useState(false);
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Deferred ask_yes_no: show overlay after TTS playback completes
   const pendingAskYesNoRef = useRef(false);
@@ -325,6 +339,27 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           pendingAskYesNoRef.current = true;
           break;
 
+        case "focus_request":
+          // AI requested a high-resolution focus frame
+          if (msg.data?.reason && captureHighResFrameRef.current) {
+            console.log("[LiveSession] Focus frame requested:", msg.data.reason);
+            // Show glasses overlay briefly
+            setFocusActive(true);
+            if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
+            focusTimerRef.current = setTimeout(() => setFocusActive(false), 1500);
+            captureHighResFrameRef.current().then((blob) => {
+              if (!blob || blob.size === 0) return;
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                const base64 = (reader.result as string).split(",")[1];
+                wsSend({ type: "focus_frame", data: base64 });
+                console.log("[LiveSession] Focus frame sent:", blob.size, "bytes");
+              };
+              reader.readAsDataURL(blob);
+            }).catch(err => console.warn("[LiveSession] Focus frame capture failed:", err));
+          }
+          break;
+
         case "app_open":
           setActiveApp(msg.data);
           break;
@@ -412,6 +447,25 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     rateLimitedRef.current = false; // Reset on manual/retry initialization
 
     try {
+      // Capture an initial camera frame (non-blocking, best-effort)
+      let initialFrameBase64: string | undefined;
+      const capture = captureFrameRef.current;
+      if (capture) {
+        try {
+          const blob = await capture();
+          if (blob && blob.size > 0) {
+            initialFrameBase64 = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve((reader.result as string).split(",")[1]);
+              reader.readAsDataURL(blob);
+            });
+            console.log("[useLiveSession] Captured initial frame for init,", blob.size, "bytes");
+          }
+        } catch (err) {
+          console.warn("[useLiveSession] Initial frame capture failed:", err);
+        }
+      }
+
       // Build WebSocket URL from VITE_API_URL (same base as HTTP requests)
       // In dev: VITE_API_URL="http://localhost:5000" → "ws://localhost:5000/ws/live"
       // In prod: VITE_API_URL="" or unset → same origin as page
@@ -441,6 +495,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
             interactionMode,
             responseMode,
             debugMode,
+            ...(initialFrameBase64 ? { initialFrame: initialFrameBase64 } : {}),
           });
         };
 
@@ -706,6 +761,9 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // Yes/No overlay
     yesNoActive,
     dismissYesNo,
+
+    // Focus frame
+    focusActive,
 
     // Actions
     initialize,

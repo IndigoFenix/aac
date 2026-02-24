@@ -69,7 +69,7 @@ export interface RawTrackedFace {
   boundingBox: BoundingBox | null;
   blendshapes: Map<string, number>;
   noseTip: { x: number; y: number } | null; // landmark #4, normalized [0,1]
-  headPose: { yaw: number; pitch: number } | null; // from landmark asymmetry, ~-1 to 1
+  headPose: { yaw: number; pitch: number; roll: number } | null; // from landmark asymmetry, ~-1 to 1
 }
 
 // =============================================================================
