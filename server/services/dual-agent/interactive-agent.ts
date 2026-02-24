@@ -57,6 +57,8 @@ export interface ParsedStreamOutput {
   yesNo?: boolean;
   /** Deferred Yes/No — show overlay after TTS playback completes */
   askYesNo?: boolean;
+  /** Request a high-resolution focus frame for detailed analysis */
+  requestFocus?: string;
 }
 
 /**
@@ -205,6 +207,15 @@ export function parseStreamedText(text: string): ParsedStreamOutput {
     result.askYesNo = true;
   }
 
+  // Match [REQUEST_FOCUS] reason
+  const requestFocusMatch = text.match(/\[REQUEST_FOCUS\]\s*([^\[]*)/i);
+  if (requestFocusMatch) {
+    const reason = requestFocusMatch[1].trim();
+    if (reason) {
+      result.requestFocus = reason;
+    }
+  }
+
   return result;
 }
 
@@ -256,7 +267,7 @@ export function parseBoardButtons(content: string): Array<{ label: string; iconR
 }
 
 /** Types that the streaming parser can emit */
-export type StreamingSegmentType = "speak" | "interpret" | "transcript" | "context" | "add_buttons" | "remove_buttons" | "rebuild_board" | "call_monitor" | "open_app" | "close_app" | "emote" | "learn_face" | "set_board" | "press_button" | "yes_no" | "ask_yes_no";
+export type StreamingSegmentType = "speak" | "interpret" | "transcript" | "context" | "add_buttons" | "remove_buttons" | "rebuild_board" | "call_monitor" | "open_app" | "close_app" | "emote" | "learn_face" | "set_board" | "press_button" | "yes_no" | "ask_yes_no" | "request_focus";
 
 export interface StreamingSegment {
   type: StreamingSegmentType;
@@ -271,7 +282,7 @@ export interface StreamingSegment {
  */
 export class StreamingPrefixParser {
   private buffer = "";
-  private currentMode: "none" | "transcript" | "context" | "speak" | "interpret" | "add_buttons" | "remove_buttons" | "rebuild_board" | "call_monitor" | "open_app" | "close_app" | "emote" | "learn_face" | "set_board" | "press_button" | "yes_no" | "ask_yes_no" = "none";
+  private currentMode: "none" | "transcript" | "context" | "speak" | "interpret" | "add_buttons" | "remove_buttons" | "rebuild_board" | "call_monitor" | "open_app" | "close_app" | "emote" | "learn_face" | "set_board" | "press_button" | "yes_no" | "ask_yes_no" | "request_focus" = "none";
   private transcriptSpeaker = "";
   private currentConfidence?: 'high' | 'medium' | 'low';
 
@@ -303,6 +314,7 @@ export class StreamingPrefixParser {
         const pressButtonMatch = this.buffer.match(/^\s*\[PRESS_BUTTON\]\s*/i);
         const yesNoMatch = this.buffer.match(/^\s*\[YES_NO\]\s*/i);
         const askYesNoMatch = this.buffer.match(/^\s*\[ASK_YES_NO\]\s*/i);
+        const requestFocusMatch = this.buffer.match(/^\s*\[REQUEST_FOCUS\]\s*/i);
 
         if (transcriptMatch) {
           this.currentMode = "transcript";
@@ -357,6 +369,9 @@ export class StreamingPrefixParser {
           // [ASK_YES_NO] is a standalone token — deferred overlay after TTS
           this.buffer = this.buffer.slice(askYesNoMatch[0].length);
           results.push({ type: "ask_yes_no", data: "true" });
+        } else if (requestFocusMatch) {
+          this.currentMode = "request_focus";
+          this.buffer = this.buffer.slice(requestFocusMatch[0].length);
         } else {
           // No prefix found yet, wait for more data
           // But trim leading whitespace/newlines that aren't part of a token
@@ -365,7 +380,7 @@ export class StreamingPrefixParser {
         }
       } else {
         // We're in a mode, collect content until the next prefix or end
-        const nextPrefixMatch = this.buffer.match(/\[(?:TRANSCRIPT(?::\w+)?|CONTEXT|SPEAK|INTERPRET(?::\w+)?|ADD_BUTTONS|REMOVE_BUTTONS|REBUILD_BOARD|CALL_MONITOR|OPEN_APP|CLOSE_APP|EMOTE|LEARN_FACE|SET_BOARD|PRESS_BUTTON|YES_NO|ASK_YES_NO)[\s\]]/i);
+        const nextPrefixMatch = this.buffer.match(/\[(?:TRANSCRIPT(?::\w+)?|CONTEXT|SPEAK|INTERPRET(?::\w+)?|ADD_BUTTONS|REMOVE_BUTTONS|REBUILD_BOARD|CALL_MONITOR|OPEN_APP|CLOSE_APP|EMOTE|LEARN_FACE|SET_BOARD|PRESS_BUTTON|YES_NO|ASK_YES_NO|REQUEST_FOCUS)[\s\]]/i);
 
         if (nextPrefixMatch && nextPrefixMatch.index !== undefined && nextPrefixMatch.index > 0) {
           // Found next prefix, emit current content
@@ -1146,7 +1161,9 @@ Use [REBUILD_BOARD] to replace the entire board or [ADD_BUTTONS]/[REMOVE_BUTTONS
     envFrameTimestamps?: number[],
     audioMimeType?: string,
     maxBoardItems: number = 12,
-    customBoardInfo?: { fixedButtons: string[]; aiAddedButtons: string[] }
+    customBoardInfo?: { fixedButtons: string[]; aiAddedButtons: string[] },
+    isFocusFrame?: boolean,
+    focusReason?: string,
   ): Promise<InteractiveResponse> {
     const messageHistory: ProviderChatMessage[] = [
       { role: "system", content: detectionSystemPrompt || this.systemPrompt },
@@ -1280,11 +1297,15 @@ Observe changes across frames to understand motion, gestures, and temporal conte
     // Build the user message with optional image + raw audio
     // Raw audio goes as input_audio — Gemini converts to inlineData natively.
     // OpenAI/Claude providers strip input_audio blocks they can't handle.
-    const userText = `Observe the environment and respond using prefix tokens as described in your system prompt. If nothing noteworthy changed, output nothing.${gridContext}`;
+    const focusPrompt = isFocusFrame && focusReason
+      ? `\n\n== FOCUS FRAME ==\nThis is a HIGH-RESOLUTION single frame captured at your request. Reason: "${focusReason}"\nAnalyze the image carefully for fine details, text, labels, faces, or objects you couldn't identify before. Report findings via [CONTEXT] and update the board if needed.`
+      : "";
+    const userText = `Observe the environment and respond using prefix tokens as described in your system prompt. If nothing noteworthy changed, output nothing.${gridContext}${focusPrompt}`;
 
+    const imageDetail = isFocusFrame ? "high" : "low";
     const contentParts: any[] = [{ type: "text", text: userText }];
     if (imageData) {
-      contentParts.push({ type: "image_url", image_url: { url: imageData, detail: "low" } });
+      contentParts.push({ type: "image_url", image_url: { url: imageData, detail: imageDetail } });
     }
     if (appCanvasData) {
       contentParts.push({ type: "text", text: "The student is using the Drawing app. The second image shows their current drawing." });
@@ -1405,7 +1426,7 @@ Observe changes across frames to understand motion, gestures, and temporal conte
         usage: result.usage,
       });
 
-      return { text, isCommand: false, usage: result.usage, addButtons, removeLabels, interpretation, interpretConfidence: parsed.interpretConfidence, transcriptConfidence: parsed.transcriptConfidence, transcript, transcriptSpeaker, contextUpdate, rebuildBoard, callMonitor: parsed.callMonitor, openApp: parsed.openApp, closeApp: parsed.closeApp, emote: parsed.emote, learnFace: parsed.learnFace, setBoard: parsed.setBoard, pressButton: parsed.pressButton, yesNo: parsed.yesNo, askYesNo: parsed.askYesNo, finishReason: result.finishReason };
+      return { text, isCommand: false, usage: result.usage, addButtons, removeLabels, interpretation, interpretConfidence: parsed.interpretConfidence, transcriptConfidence: parsed.transcriptConfidence, transcript, transcriptSpeaker, contextUpdate, rebuildBoard, callMonitor: parsed.callMonitor, openApp: parsed.openApp, closeApp: parsed.closeApp, emote: parsed.emote, learnFace: parsed.learnFace, setBoard: parsed.setBoard, pressButton: parsed.pressButton, yesNo: parsed.yesNo, askYesNo: parsed.askYesNo, requestFocus: parsed.requestFocus, finishReason: result.finishReason };
     } catch (error: any) {
       console.error("[InteractiveAgent] processDetection error:", error?.message || error);
       if (error?.stack) console.error("[InteractiveAgent] Stack trace:", error.stack);

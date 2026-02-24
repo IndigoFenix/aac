@@ -238,7 +238,7 @@ export function useFaceTracking(options: UseFaceTrackingOptions): UseFaceTrackin
 
             // Extract nose tip and head pose from landmarks
             let noseTip: { x: number; y: number } | null = null;
-            let headPose: { yaw: number; pitch: number } | null = null;
+            let headPose: { yaw: number; pitch: number; roll: number } | null = null;
             if (results.faceLandmarks && results.faceLandmarks[i]) {
               const lms = results.faceLandmarks[i];
               const lm4 = lms[4]; // nose tip
@@ -260,9 +260,13 @@ export function useFaceTracking(options: UseFaceTrackingOptions): UseFaceTrackin
                 const hSum = dLeft + dRight;
                 const vSum = dUp + dDown;
                 if (hSum > 0 && vSum > 0) {
+                  // Roll (sideways head tilt) from angle of face-edge line
+                  // positive = tilted right (person's right ear down)
+                  const roll = Math.atan2(rFace.y - lFace.y, lFace.x - rFace.x);
                   headPose = {
                     yaw: (dLeft - dRight) / hSum,   // +right, -left (person perspective)
                     pitch: (dUp - dDown) / vSum,     // +down, -up
+                    roll,                            // radians, +right tilt, -left tilt
                   };
                 }
               }

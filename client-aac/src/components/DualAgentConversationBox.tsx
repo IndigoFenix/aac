@@ -41,6 +41,8 @@ import mouthNeutralOpen from "@assets/axolotl-mouth-neutral-open.png";
 import avatarSleep from "@assets/axolotl-sleep.png";
 // Error image
 import avatarError from "@assets/axolotl-error.png";
+// Glasses overlay (focus frame)
+import avatarGlasses from "@assets/axolotl-glasses.png";
 import { motion, AnimatePresence } from "framer-motion";
 import type { ParsedBoardData } from "@shared/schema";
 import type { RawTrackedFace } from "@/lib/faceTrackingTypes";
@@ -151,6 +153,7 @@ export function DualAgentConversationBox({
     setResponseMode,
     reconnecting,
     safetyBlocked,
+    focusActive,
   } = useDualAgentContext();
   const { t } = useLanguage();
   const { theme, toggleTheme } = useTheme();
@@ -296,6 +299,21 @@ export function DualAgentConversationBox({
                       className="absolute inset-0 w-full h-full object-contain pointer-events-none"
                     />
                   )}
+                  {/* Glasses overlay — briefly shown when AI requests a focus frame */}
+                  <AnimatePresence>
+                    {focusActive && (
+                      <motion.img
+                        key="focus-glasses"
+                        src={avatarGlasses}
+                        alt=""
+                        initial={{ opacity: 0, scale: 1.3 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.9 }}
+                        transition={{ duration: 0.3 }}
+                        className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+                      />
+                    )}
+                  </AnimatePresence>
                 </>
             </button>
 

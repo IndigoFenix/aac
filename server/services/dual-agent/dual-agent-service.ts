@@ -398,11 +398,15 @@ export class DualAgentService {
 
     // Combined greeting + board in one LLM call
     const imageHint = imageData ? "\nUse the camera image to observe the environment and make the buttons contextually relevant." : "";
+    const boardHint = state.availableBoards && state.availableBoards.length > 0
+      ? " If a custom board from the Available Custom Boards list is appropriate for this student, use [SET_BOARD] instead of [REBUILD_BOARD]."
+      : "";
     const greetingBoardMessage = isSilent
-      ? `Generate 4-12 contextual utterance buttons — complete phrases the user might want to say. Use the student's profile and interests from the system prompt to make them relevant.${imageHint} Use [REBUILD_BOARD] to create the initial board.${personaHint}`
-      : `Greet the user with a short, friendly greeting (1-2 sentences) and provide 4-12 initial communication buttons that reflect the student's interests, needs, and communication level from the system prompt. The buttons should be appropriate responses to your greeting.${imageHint} Use [SPEAK] for your greeting and [REBUILD_BOARD] for the buttons.${personaHint}`;
+      ? `Generate 4-12 contextual utterance buttons — complete phrases the user might want to say. Use the student's profile and interests from the system prompt to make them relevant.${imageHint} Use [REBUILD_BOARD] to create the initial board.${boardHint}${personaHint}`
+      : `Greet the user with a short, friendly greeting (1-2 sentences) and provide 4-12 initial communication buttons that reflect the student's interests, needs, and communication level from the system prompt. The buttons should be appropriate responses to your greeting.${imageHint} Use [SPEAK] for your greeting and [REBUILD_BOARD] for the buttons.${boardHint}${personaHint}`;
 
     let boardCreated = false;
+    let setBoardName: string | undefined;
     try {
       let streamUsage: { promptTokens: number; completionTokens: number } | undefined;
       for await (const chunk of interactiveAgent.processMessageStream(
@@ -434,11 +438,48 @@ export class DualAgentService {
         } else if (chunk.type === "emote") {
           state.currentEmote = chunk.data as "happy" | "sad" | "neutral";
           yield { type: "emote", data: chunk.data };
+        } else if (chunk.type === "set_board") {
+          setBoardName = chunk.data as string;
         }
       }
       if (streamUsage) {
         await this.trackInteractiveCredits(state.sessionId, state.studentId, state.userId, streamUsage);
       }
+
+      // Handle [SET_BOARD] — load a pre-built board selected during greeting
+      if (setBoardName) {
+        const setBoardKey = setBoardName.toLowerCase().replace(/ /g, '_');
+        const matchedBoard = state.availableBoards?.find(b => b.key === setBoardKey);
+        if (matchedBoard) {
+          try {
+            const fullBoard = await boardRepository.getBoard(matchedBoard.id);
+            if (fullBoard?.irData) {
+              const boardData = fullBoard.irData as ParsedBoardData;
+              state.loadedBoardId = matchedBoard.id;
+              state.loadedBoardData = boardData;
+              state.currentPageId = boardData.pages?.[0]?.id || null;
+              state.pageHistory = [];
+              state.maxBoardItems = matchedBoard.grid.rows * matchedBoard.grid.cols;
+              state.aiAddedButtonLabels = [];
+              state.boardButtonLabels = getNativePageButtonLabels(state);
+              yield { type: "set_board", data: { board: boardData, name: matchedBoard.name, boardId: matchedBoard.id } };
+              boardCreated = true;
+              state.pendingMessages.push({
+                role: "assistant",
+                content: `[SYSTEM — Board "${matchedBoard.name}" loaded with ${boardData.pages?.length || 0} pages]`,
+                timestamp: Date.now(),
+              });
+              console.log(`[DualAgentService] SET_BOARD (init): loaded "${matchedBoard.name}" (${boardData.pages?.length || 0} pages)`);
+            }
+          } catch (err) {
+            console.error("[DualAgentService] SET_BOARD (init) load error:", err);
+          }
+        } else {
+          const availableKeys = state.availableBoards?.map(b => b.key).join(", ") || "none";
+          console.warn(`[DualAgentService] SET_BOARD (init): "${setBoardName}" not found. Available keys: ${availableKeys}`);
+        }
+      }
+
       // Fallback: create default board if the model didn't produce one (e.g., stream cut off early)
       if (!boardCreated) {
         console.warn("[DualAgentService] No board generated during initialization, creating default board");
@@ -2103,7 +2144,9 @@ export class DualAgentService {
         input.envFrameTimestamps,
         input.audioMimeType,
         state.maxBoardItems || 12,
-        detCustomBoardInfo
+        detCustomBoardInfo,
+        input.isFocusFrame,
+        input.focusReason,
       );
 
       console.log("[DualAgentService] Detection processed:", JSON.stringify(result));
@@ -2350,6 +2393,7 @@ export class DualAgentService {
         pressButton: pressButtonResult,
         yesNo: result.yesNo,
         askYesNo: result.askYesNo,
+        focusRequested: result.requestFocus,
       };
     } catch (error: any) {
       const errorMessage = error?.message || String(error);
@@ -2366,7 +2410,7 @@ export class DualAgentService {
    * This provides streaming audio without requiring streaming LLM.
    */
   async *processDetectionStream(input: DetectionInput): AsyncGenerator<{
-    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "error" | "complete" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no" | "ask_yes_no" | "client_tts";
+    type: "text" | "board" | "board_patch" | "audio" | "interpretation" | "interpretation_audio" | "transcript" | "context" | "debug" | "error" | "complete" | "monitor_status" | "app_open" | "app_close" | "emote" | "set_board" | "ai_button_press" | "yes_no" | "ask_yes_no" | "client_tts" | "focus_request";
     data: any;
     speaker?: string;
   }> {
@@ -2536,6 +2580,11 @@ export class DualAgentService {
           console.error("[DualAgentService] Detection stream TTS error:", err);
         }
       }
+    }
+
+    // Yield focus_request if AI wants a high-resolution frame
+    if (result.focusRequested) {
+      yield { type: "focus_request", data: { reason: result.focusRequested } };
     }
 
     // Alert frontend if the monitor agent has been failing
