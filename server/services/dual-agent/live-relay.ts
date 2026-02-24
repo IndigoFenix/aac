@@ -46,6 +46,7 @@ export type ClientMessage =
   | { type: "unknown_face_descriptors"; data: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number } }> }
   | { type: "page_navigate"; pageId: string; pageName: string; buttons: string[] }
   | { type: "app_dismissed"; appId: string }
+  | { type: "app_canvas"; data: string }                     // base64 PNG — app canvas (e.g. drawing)
   | { type: "focus_frame"; data: string };                   // base64 JPEG — high-res focus frame
 
 /** Messages from server → client */
@@ -106,6 +107,9 @@ export class LiveRelay {
 
   // For contact enrollment
   private unknownFaceDescriptors: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number } }> = [];
+
+  // Latest app canvas snapshot (e.g. drawing) — included with next frame_grid
+  private latestAppCanvas: string | null = null; // base64 PNG
 
   // Board state reminder: periodically remind Gemini of current board state
   private boardReminderTimer: ReturnType<typeof setInterval> | null = null;
@@ -292,9 +296,14 @@ export class LiveRelay {
             break; // Silently skip — activity monitor will retrigger naturally
           }
           // Send frame grid as image with detection prompt — triggers model response
+          // Include app canvas (e.g. drawing) as a second image if available
+          const extraImages = this.latestAppCanvas
+            ? [{ data: this.latestAppCanvas, mimeType: "image/png", label: "The student is using the Drawing app. This image shows their current drawing." }]
+            : undefined;
           this.gemini.sendFrameWithPrompt(
             msg.data,
             `[VISUAL CHECK] Composite frame grid (${msg.timestamps?.length ?? '?'} frames). Observe the scene. Your PRIMARY task is to keep the AAC board relevant — if you observe new objects, activities, people, or communication opportunities, use [ADD_BUTTONS]. Prioritize objects in your user's hands or that they appear to be interested in (looking at, pointing to or reaching for), or things being spoken about. If items are no longer relevant, use [REMOVE_BUTTONS]. Always pair [CONTEXT] observations with board updates when applicable. Speak or interpret only with HIGH CONFIDENCE. Stay silent if nothing important changed.`,
+            extraImages,
           );
           break;
         }
@@ -408,9 +417,19 @@ export class LiveRelay {
           }
           break;
 
+        case "app_canvas":
+          // Cache latest app canvas snapshot — will be included with next frame_grid
+          this.latestAppCanvas = msg.data;
+          break;
+
         case "app_dismissed":
-          this.gemini.sendContextInjection(
-            `[APP CLOSED] The user closed the "${msg.appId}" app and returned to the AAC board.`,
+          // Clear cached canvas since app is closing
+          this.latestAppCanvas = null;
+          // Trigger AI response (like a button press) — AI should comment + rebuild board
+          this.userMessageSentAt = Date.now();
+          this.gemini.sendMessage(
+            `[APP CLOSED] The user closed the "${msg.appId}" app and returned to the AAC board. Comment briefly on what they were doing in the app, then use [REBUILD_BOARD] to create a fresh set of communication buttons for the current context.`,
+            "user",
           );
           logDualAgent("LiveRelay.appDismissed", { sessionId: this.sessionId, appId: msg.appId });
           break;

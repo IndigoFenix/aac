@@ -267,17 +267,21 @@ export class GeminiLiveSession {
    * Send a frame grid with a text prompt to trigger model analysis.
    * Sets turnComplete=true so the model responds with observations.
    */
-  sendFrameWithPrompt(jpegBase64: string, prompt: string): void {
+  sendFrameWithPrompt(jpegBase64: string, prompt: string, extraImages?: Array<{ data: string; mimeType: string; label?: string }>): void {
     if (!this.session || !this.connected) return;
     try {
+      const parts: any[] = [
+        { inlineData: { data: jpegBase64, mimeType: "image/jpeg" } },
+      ];
+      if (extraImages) {
+        for (const img of extraImages) {
+          if (img.label) parts.push({ text: img.label });
+          parts.push({ inlineData: { data: img.data, mimeType: img.mimeType } });
+        }
+      }
+      parts.push({ text: prompt });
       this.session.sendClientContent({
-        turns: [{
-          role: "user",
-          parts: [
-            { inlineData: { data: jpegBase64, mimeType: "image/jpeg" } },
-            { text: prompt },
-          ],
-        }],
+        turns: [{ role: "user", parts }],
         turnComplete: true,
       });
     } catch (err) {

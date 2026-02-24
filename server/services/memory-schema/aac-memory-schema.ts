@@ -299,6 +299,9 @@ export const AAC_SYSTEM_PROMPT = AAC_CHAT_PROMPT + AAC_MEMORY_PROMPT + AAC_BUTTO
  * Build the system prompt for the Interactive Agent.
  * Uses streaming-friendly prefix token format for speech.
  * Called by monitor-agent.ts during init and dual-agent-service.ts for detection.
+ * 
+ * IMPORTANT: In Live mode, this prompt is generated only once at the start of the session. 
+ * Instructions will NOT be updated dynamically during the session, so live-mode instructions must be either included in the initial prompt or injected through other means.
  *
  * @param isDetection - If true, adds detection-specific guidance (conservative changes, HIGH CONFIDENCE emphasis)
  */
@@ -456,7 +459,7 @@ Your purpose is to assist your user with daily tasks, guide them to complete per
         `Available apps:`,
         ...enabledApps.map(app => `- ${app.name} (${app.icon}): ${app.description}  →  [OPEN_APP] ${app.id}`),
         `Close any open app with: [CLOSE_APP]`,
-        activeApp ? `The student currently has the "${activeApp}" app open.` : 'No apps are currently open.',
+        activeApp ? `The student currently has the "${activeApp}" app open.${activeApp === 'drawing' ? ' You can see their drawing in the camera feed — feel free to comment on it periodically with [SPEAK] to encourage and engage them.' : ''}` : 'No apps are currently open.',
       ].join('\n   ')
     : 'App commands are available but no apps are currently enabled.';
 
