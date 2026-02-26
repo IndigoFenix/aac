@@ -10,6 +10,7 @@ import {
 import { db } from "../db";
 import { eq, and, gt, isNull, lt } from "drizzle-orm";
 import crypto from "crypto";
+import { hydrateRecords } from "../external-storage";
 
 export class PasswordResetRepository {
   /**
@@ -83,9 +84,10 @@ export class PasswordResetRepository {
       return { valid: false, error: "Invalid or expired reset link" };
     }
 
+    const [hydratedUser] = await hydrateRecords("users", [result.user]);
     return {
       valid: true,
-      user: result.user,
+      user: hydratedUser,
       tokenRecord: result.token,
     };
   }

@@ -2,7 +2,10 @@ import type { Express, Request } from "express";
 import { DropboxService } from './dropboxService';
 import { generatePKCEVerifier, createPKCEChallenge } from './encryption';
 import { db } from '../db';
-import { dropboxConnections, dropboxBackups, boards, User } from '@shared/schema';
+// Tables `dropboxConnections` and `dropboxBackups` have been deleted from @shared/schema. Stubs keep this dead-code file compiling.
+import { boards, User } from '@shared/schema';
+const dropboxConnections = null as any;
+const dropboxBackups = null as any;
 import { eq, and, desc } from 'drizzle-orm';
 // Note: Import packagers dynamically to avoid asset import issues on server-side
 import { BoardIR } from '../../client/src/types/board-ir';

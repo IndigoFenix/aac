@@ -18,7 +18,7 @@ const url = new URL(process.env.DATABASE_URL);
 
 export default defineConfig({
   dialect: 'postgresql',
-  schema: './shared/schema.ts',
+  schema: ['./shared/schema.ts', './shared/schema-private.ts'],
   out: './drizzle',
   dbCredentials: {
     host: url.hostname,

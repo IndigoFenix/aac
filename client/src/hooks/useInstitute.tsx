@@ -22,6 +22,7 @@ export interface Institute {
   logoUrl?: string;
   instituteIdNumber?: string;
   instituteIdType?: string;
+  language?: string;
   isActive: boolean;
   isAdmin?: boolean;
   role?: string;

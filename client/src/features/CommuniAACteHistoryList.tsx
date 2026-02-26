@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { History, Plus, Minus, Trash2 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { Interpretation } from "@shared/schema";
+// Type `Interpretation` has been deleted from @shared/schema. Stub keeps this file compiling.
+type Interpretation = any;
 import { useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
 

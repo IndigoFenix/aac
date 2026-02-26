@@ -12,8 +12,19 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, and, desc } from "drizzle-orm";
+import {
+  hydrateRecords,
+  extractSensitiveFields,
+  persistExtracted,
+  deleteExternalData,
+  type EntityRef,
+} from "../external-storage";
 
 export class StudentRepository {
+  private ref(id: string): EntityRef {
+    return { type: "student", id };
+  }
+
   // ==================== AAC User Operations ====================
 
   /**
@@ -24,7 +35,18 @@ export class StudentRepository {
       .insert(students)
       .values(insertStudent)
       .returning();
-    return student;
+    const ref = this.ref(student.id);
+    const ext = await extractSensitiveFields("students", student.id, student as Record<string, unknown>, ref);
+    if (ext.isExternal) {
+      const nullSet: Record<string, null> = {};
+      for (const key of ext.externalWrites.keys()) {
+        const field = key.split("/").pop()!;
+        nullSet[field] = null;
+      }
+      await db.update(students).set(nullSet).where(eq(students.id, student.id));
+      await persistExtracted(ref, ext.externalWrites);
+    }
+    return ext.completeData as Student;
   }
 
   /**
@@ -35,7 +57,7 @@ export class StudentRepository {
     userId: string,
     role: string = "owner"
   ): Promise<{ student: Student; link: UserStudent }> {
-    return await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       // Create the AAC user
       const [student] = await tx
         .insert(students)
@@ -55,6 +77,20 @@ export class StudentRepository {
 
       return { student, link };
     });
+
+    // External writes happen AFTER transaction commit
+    const ref = this.ref(result.student.id);
+    const ext = await extractSensitiveFields("students", result.student.id, result.student as Record<string, unknown>, ref);
+    if (ext.isExternal) {
+      const nullSet: Record<string, null> = {};
+      for (const key of ext.externalWrites.keys()) {
+        const field = key.split("/").pop()!;
+        nullSet[field] = null;
+      }
+      await db.update(students).set(nullSet).where(eq(students.id, result.student.id));
+      await persistExtracted(ref, ext.externalWrites);
+    }
+    return { student: ext.completeData as Student, link: result.link };
   }
 
   /**
@@ -65,7 +101,9 @@ export class StudentRepository {
       .select()
       .from(students)
       .where(eq(students.id, id));
-    return student || undefined;
+    if (!student) return undefined;
+    const [hydrated] = await hydrateRecords("students", [student]);
+    return hydrated;
   }
 
   /**
@@ -123,7 +161,8 @@ export class StudentRepository {
       )
       .orderBy(desc(students.createdAt));
 
-    return results.map((r) => r.student);
+    const rows = results.map((r) => r.student);
+    return hydrateRecords("students", rows);
   }
 
   /**
@@ -155,12 +194,17 @@ export class StudentRepository {
    * Update an AAC user
    */
   async updateStudent(id: string, updates: UpdateStudent): Promise<Student | undefined> {
+    const ref = this.ref(id);
+    const ext = await extractSensitiveFields("students", id, updates as Record<string, unknown>, ref);
     const [updated] = await db
       .update(students)
-      .set({ ...updates, updatedAt: new Date() })
+      .set({ ...ext.dbData, updatedAt: new Date() })
       .where(eq(students.id, id))
       .returning();
-    return updated || undefined;
+    if (!updated) return undefined;
+    if (ext.isExternal) await persistExtracted(ref, ext.externalWrites);
+    const [hydrated] = await hydrateRecords("students", [updated]);
+    return hydrated;
   }
 
   /**
@@ -172,6 +216,9 @@ export class StudentRepository {
       .set({ isActive: false, updatedAt: new Date() })
       .where(eq(students.id, id))
       .returning();
+    if (updated) {
+      await deleteExternalData("students", id, this.ref(id));
+    }
     return !!updated;
   }
 
@@ -284,13 +331,7 @@ export class StudentRepository {
    * @deprecated Use getStudentById instead
    */
   async getStudentByStudentId(studentId: string): Promise<Student | undefined> {
-    // During migration period, this might still be called with old studentId values
-    // First try to find by id (new system)
-    const byId = await this.getStudentById(studentId);
-    if (byId) return byId;
-    
-    // Fallback: the studentId might actually be an id
-    return undefined;
+    return this.getStudentById(studentId);
   }
 }
 

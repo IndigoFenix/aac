@@ -913,7 +913,7 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     contextMemoryFields.push(...chatContextManager.getMemoryFields());
 
     // Add progress system prompt
-    const additionalPrompt = buildProgressSystemPrompt(accessPermissions, hasStudent);
+    const additionalPrompt = buildProgressSystemPrompt(accessPermissions, hasStudent, context.institute?.language);
     template.corePrompt = template.corePrompt + additionalPrompt;
 
     // === Board Mode Setup ===

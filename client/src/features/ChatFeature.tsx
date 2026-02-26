@@ -6,6 +6,13 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -50,7 +57,6 @@ marked.setOptions({ async: false });
 
 export function ChatFeature() {
   const [prompt, setPrompt] = useState('');
-  const [showPersonaSelector, setShowPersonaSelector] = useState(false);
   const [ttsEnabled, setTtsEnabled] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -271,7 +277,6 @@ export function ChatFeature() {
 
   const handlePersonaChange = (newPersona: string) => {
     setPersona(newPersona === 'default' ? undefined : newPersona);
-    setShowPersonaSelector(false);
   };
 
   const handleToggleTts = () => {
@@ -387,25 +392,43 @@ export function ChatFeature() {
     </div>
   ), [persona, t, personas, isPersonasLoading]);
 
-  // Current persona indicator (shows in chat header when conversation has started)
-  const PersonaIndicator = currentPersonaInfo && !showWelcome && (
-    <div
-      className={cn(
-        "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs",
-        getPersonaColorClasses(currentPersonaInfo)
-      )}
-    >
-      <span>{currentPersonaInfo.icon}</span>
-      <span>{currentPersonaInfo.title}</span>
-      <Button
-        size="icon"
-        variant="ghost"
-        className="h-5 w-5 rounded-full hover:bg-background/50"
-        onClick={() => setShowPersonaSelector(!showPersonaSelector)}
-        title={t('chat.changePersona')}
+  // Persona dropdown for chat header (matches popup style)
+  const PersonaDropdown = !showWelcome && (
+    <div className="flex items-center gap-2">
+      <PersonaIcon persona={persona} size="md" withBackground />
+      <Select
+        value={persona || 'default'}
+        onValueChange={handlePersonaChange}
+        disabled={isPersonasLoading}
       >
-        <Sparkles className="w-3 h-3" />
-      </Button>
+        <SelectTrigger className="h-8 text-xs border-none bg-transparent shadow-none px-1 w-auto">
+          <SelectValue placeholder={t('chat.selectPersona')} />
+        </SelectTrigger>
+        <SelectContent>
+          {isPersonasLoading ? (
+            <SelectItem value="loading" disabled>
+              <Loader2 className="w-3 h-3 animate-spin" />
+            </SelectItem>
+          ) : (
+            <>
+              <SelectItem value="default">
+                <div className="flex items-center gap-2">
+                  <span>🤖</span>
+                  <span className="text-sm">{t('chat.persona.assistant')}</span>
+                </div>
+              </SelectItem>
+              {personas.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  <div className="flex items-center gap-2">
+                    <span>{p.icon}</span>
+                    <span className="text-sm">{p.title}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </>
+          )}
+        </SelectContent>
+      </Select>
     </div>
   );
 
@@ -726,27 +749,9 @@ export function ChatFeature() {
       ) : (
         /* Chat conversation view */
         <>
-          {/* Header with persona indicator */}
+          {/* Header with persona dropdown */}
           <div className="flex-shrink-0 border-b border-border px-6 py-3 flex items-center justify-between">
-            {PersonaIndicator}
-            
-            {/* Inline persona selector when toggled */}
-            {showPersonaSelector && (
-              <div className="flex gap-1 ms-auto">
-                {personas.map((p) => (
-                  <Button
-                    key={p.id}
-                    size="sm"
-                    variant={persona === p.id ? "default" : "ghost"}
-                    className="h-7 gap-1 text-xs rounded-full"
-                    onClick={() => handlePersonaChange(p.id)}
-                    title={p.title}
-                  >
-                    <span>{p.icon}</span>
-                  </Button>
-                ))}
-              </div>
-            )}
+            {PersonaDropdown}
           </div>
 
           {/* Scrollable messages area */}

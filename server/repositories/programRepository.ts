@@ -75,8 +75,19 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, and, desc, asc, sql, inArray, isNull, count } from "drizzle-orm";
+import {
+  hydrateRecords,
+  extractSensitiveFields,
+  persistExtracted,
+  deleteExternalData,
+  type EntityRef,
+} from "../external-storage";
 
 export class ProgramRepository {
+  private studentRef(studentId: string): EntityRef {
+    return { type: "student", id: studentId };
+  }
+
   // ==========================================================================
   // PROGRAM OPERATIONS
   // ==========================================================================
@@ -89,7 +100,19 @@ export class ProgramRepository {
       .insert(programs)
       .values(insert)
       .returning();
-    return program;
+
+    const ref = this.studentRef(program.studentId);
+    const ext = await extractSensitiveFields("programs", program.id, program as Record<string, unknown>, ref);
+    if (ext.isExternal) {
+      const nullSet: Record<string, null> = {};
+      for (const key of ext.externalWrites.keys()) {
+        const field = key.split("/").pop()!;
+        nullSet[field] = null;
+      }
+      await db.update(programs).set(nullSet).where(eq(programs.id, program.id));
+      await persistExtracted(ref, ext.externalWrites);
+    }
+    return ext.completeData as Program;
   }
 
   /**
@@ -100,18 +123,21 @@ export class ProgramRepository {
       .select()
       .from(programs)
       .where(eq(programs.id, id));
-    return program || undefined;
+    if (!program) return undefined;
+    const [hydrated] = await hydrateRecords("programs", [program]);
+    return hydrated;
   }
 
   /**
    * Get all programs for a student
    */
   async getProgramsByStudentId(studentId: string): Promise<Program[]> {
-    return await db
+    const rows = await db
       .select()
       .from(programs)
       .where(eq(programs.studentId, studentId))
       .orderBy(desc(programs.createdAt));
+    return hydrateRecords("programs", rows, this.studentRef(studentId));
   }
 
   /**
@@ -120,6 +146,8 @@ export class ProgramRepository {
    * This allows users to work with draft programs before activation.
    */
   async getCurrentProgram(studentId: string): Promise<Program | undefined> {
+    const ref = this.studentRef(studentId);
+
     // First try to get an active program
     const [activeProgram] = await db
       .select()
@@ -132,9 +160,10 @@ export class ProgramRepository {
       )
       .orderBy(desc(programs.createdAt))
       .limit(1);
-    
+
     if (activeProgram) {
-      return activeProgram;
+      const [hydrated] = await hydrateRecords("programs", [activeProgram], ref);
+      return hydrated;
     }
 
     // If no active program, get the most recent draft
@@ -149,32 +178,53 @@ export class ProgramRepository {
       )
       .orderBy(desc(programs.createdAt))
       .limit(1);
-    
-    return draftProgram || undefined;
+
+    if (!draftProgram) return undefined;
+    const [hydrated] = await hydrateRecords("programs", [draftProgram], ref);
+    return hydrated;
   }
 
   /**
    * Update a program
    */
   async updateProgram(id: string, updates: UpdateProgram): Promise<Program | undefined> {
+    // Look up the existing record to resolve entity ref
+    const existing = await this.getProgramById(id);
+    if (!existing) return undefined;
+
+    const ref = this.studentRef(existing.studentId);
+    const ext = await extractSensitiveFields("programs", id, updates as Record<string, unknown>, ref);
+
     const [updated] = await db
       .update(programs)
-      .set({ ...updates, updatedAt: new Date() })
+      .set({ ...ext.dbData, updatedAt: new Date() })
       .where(eq(programs.id, id))
       .returning();
-    return updated || undefined;
+
+    if (!updated) return undefined;
+    if (ext.isExternal) await persistExtracted(ref, ext.externalWrites);
+    const [hydrated] = await hydrateRecords("programs", [updated], ref);
+    return hydrated;
   }
 
   /**
    * Delete a program and all related data
    */
   async deleteProgram(id: string): Promise<boolean> {
+    // Look up the record to get studentId for external cleanup
+    const existing = await this.getProgramById(id);
+
     // This would cascade delete related entities in a real implementation
     // For now, just delete the program itself
     const result = await db
       .delete(programs)
       .where(eq(programs.id, id));
-    return (result.rowCount ?? 0) > 0;
+
+    const deleted = (result.rowCount ?? 0) > 0;
+    if (deleted && existing) {
+      await deleteExternalData("programs", id, this.studentRef(existing.studentId));
+    }
+    return deleted;
   }
 
   /**
@@ -277,15 +327,18 @@ export class ProgramRepository {
       .select()
       .from(profileDomains)
       .where(eq(profileDomains.id, id));
-    return domain || undefined;
+    if (!domain) return undefined;
+    const [hydrated] = await hydrateRecords("profile_domains", [domain]);
+    return hydrated;
   }
 
   async getProfileDomainsByProgramId(programId: string): Promise<ProfileDomain[]> {
-    return await db
+    const rows = await db
       .select()
       .from(profileDomains)
       .where(eq(profileDomains.programId, programId))
       .orderBy(asc(profileDomains.sortOrder));
+    return hydrateRecords("profile_domains", rows);
   }
 
   async updateProfileDomain(id: string, updates: UpdateProfileDomain): Promise<ProfileDomain | undefined> {
@@ -317,10 +370,11 @@ export class ProgramRepository {
   }
 
   async getBaselineMeasurementsByDomainId(domainId: string): Promise<BaselineMeasurement[]> {
-    return await db
+    const rows = await db
       .select()
       .from(baselineMeasurements)
       .where(eq(baselineMeasurements.profileDomainId, domainId));
+    return hydrateRecords("baseline_measurements", rows);
   }
 
   async deleteBaselineMeasurement(id: string): Promise<boolean> {
@@ -343,10 +397,11 @@ export class ProgramRepository {
   }
 
   async getAssessmentSourcesByDomainId(domainId: string): Promise<AssessmentSource[]> {
-    return await db
+    const rows = await db
       .select()
       .from(assessmentSources)
       .where(eq(assessmentSources.profileDomainId, domainId));
+    return hydrateRecords("assessment_sources", rows);
   }
 
   async deleteAssessmentSource(id: string): Promise<boolean> {
@@ -373,15 +428,18 @@ export class ProgramRepository {
       .select()
       .from(goals)
       .where(eq(goals.id, id));
-    return goal || undefined;
+    if (!goal) return undefined;
+    const [hydrated] = await hydrateRecords("goals", [goal]);
+    return hydrated;
   }
 
   async getGoalsByProgramId(programId: string): Promise<Goal[]> {
-    return await db
+    const rows = await db
       .select()
       .from(goals)
       .where(eq(goals.programId, programId))
       .orderBy(asc(goals.sortOrder));
+    return hydrateRecords("goals", rows);
   }
 
   /**
@@ -405,11 +463,12 @@ export class ProgramRepository {
     }
     
     // Fetch the actual domain records
-    return await db
+    const rows = await db
       .select()
       .from(profileDomains)
       .where(inArray(profileDomains.id, domainIds))
       .orderBy(asc(profileDomains.sortOrder));
+    return hydrateRecords("profile_domains", rows);
   }
 
   /**
@@ -431,11 +490,12 @@ export class ProgramRepository {
     }
     
     // Fetch the goals
-    return await db
+    const rows = await db
       .select()
       .from(goals)
       .where(inArray(goals.id, goalIds))
       .orderBy(asc(goals.sortOrder));
+    return hydrateRecords("goals", rows);
   }
 
   async getGoalWithContext(goalId: string): Promise<GoalWithContext | undefined> {
@@ -492,26 +552,30 @@ export class ProgramRepository {
       .select()
       .from(objectives)
       .where(eq(objectives.id, id));
-    return objective || undefined;
+    if (!objective) return undefined;
+    const [hydrated] = await hydrateRecords("objectives", [objective]);
+    return hydrated;
   }
 
   async getObjectivesByGoalId(goalId: string): Promise<Objective[]> {
-    return await db
+    const rows = await db
       .select()
       .from(objectives)
       .where(eq(objectives.goalId, goalId))
       .orderBy(asc(objectives.sequenceOrder));
+    return hydrateRecords("objectives", rows);
   }
 
   /**
    * Get objectives by domain ID
    */
   async getObjectivesByDomainId(domainId: string): Promise<Objective[]> {
-    return await db
+    const rows = await db
       .select()
       .from(objectives)
       .where(eq(objectives.profileDomainId, domainId))
       .orderBy(asc(objectives.sequenceOrder));
+    return hydrateRecords("objectives", rows);
   }
 
   async updateObjective(id: string, updates: UpdateObjective): Promise<Objective | undefined> {
@@ -547,14 +611,17 @@ export class ProgramRepository {
       .select()
       .from(services)
       .where(eq(services.id, id));
-    return service || undefined;
+    if (!service) return undefined;
+    const [hydrated] = await hydrateRecords("services", [service]);
+    return hydrated;
   }
 
   async getServicesByProgramId(programId: string): Promise<Service[]> {
-    return await db
+    const rows = await db
       .select()
       .from(services)
       .where(eq(services.programId, programId));
+    return hydrateRecords("services", rows);
   }
 
   async updateService(id: string, updates: UpdateService): Promise<Service | undefined> {
@@ -603,17 +670,19 @@ export class ProgramRepository {
   }
 
   async getAccommodationsByServiceId(serviceId: string): Promise<Accommodation[]> {
-    return await db
+    const rows = await db
       .select()
       .from(accommodations)
       .where(eq(accommodations.serviceId, serviceId));
+    return hydrateRecords("accommodations", rows);
   }
 
   async getAccommodationsByProgramId(programId: string): Promise<Accommodation[]> {
-    return await db
+    const rows = await db
       .select()
       .from(accommodations)
       .where(eq(accommodations.programId, programId));
+    return hydrateRecords("accommodations", rows);
   }
 
   async updateAccommodation(id: string, updates: UpdateAccommodation): Promise<Accommodation | undefined> {
@@ -649,15 +718,18 @@ export class ProgramRepository {
       .select()
       .from(progressReports)
       .where(eq(progressReports.id, id));
-    return report || undefined;
+    if (!report) return undefined;
+    const [hydrated] = await hydrateRecords("progress_reports", [report]);
+    return hydrated;
   }
 
   async getProgressReportsByProgramId(programId: string): Promise<ProgressReport[]> {
-    return await db
+    const rows = await db
       .select()
       .from(progressReports)
       .where(eq(progressReports.programId, programId))
       .orderBy(desc(progressReports.reportDate));
+    return hydrateRecords("progress_reports", rows);
   }
 
   async updateProgressReport(id: string, updates: UpdateProgressReport): Promise<ProgressReport | undefined> {
@@ -689,18 +761,20 @@ export class ProgramRepository {
   }
 
   async getGoalProgressEntriesByReportId(reportId: string): Promise<GoalProgressEntry[]> {
-    return await db
+    const rows = await db
       .select()
       .from(goalProgressEntries)
       .where(eq(goalProgressEntries.progressReportId, reportId));
+    return hydrateRecords("goal_progress_entries", rows);
   }
 
   async getGoalProgressEntriesByGoalId(goalId: string): Promise<GoalProgressEntry[]> {
-    return await db
+    const rows = await db
       .select()
       .from(goalProgressEntries)
       .where(eq(goalProgressEntries.goalId, goalId))
       .orderBy(desc(goalProgressEntries.createdAt));
+    return hydrateRecords("goal_progress_entries", rows);
   }
 
   async getLatestGoalProgressEntryByGoalId(goalId: string): Promise<GoalProgressEntry | undefined> {
@@ -710,7 +784,9 @@ export class ProgramRepository {
       .where(eq(goalProgressEntries.goalId, goalId))
       .orderBy(desc(goalProgressEntries.createdAt))
       .limit(1);
-    return entry || undefined;
+    if (!entry) return undefined;
+    const [hydrated] = await hydrateRecords("goal_progress_entries", [entry]);
+    return hydrated;
   }
 
   // ==========================================================================
@@ -726,19 +802,21 @@ export class ProgramRepository {
   }
 
   async getDataPointsByGoalId(goalId: string): Promise<DataPoint[]> {
-    return await db
+    const rows = await db
       .select()
       .from(dataPoints)
       .where(eq(dataPoints.goalId, goalId))
       .orderBy(desc(dataPoints.recordedAt));
+    return hydrateRecords("data_points", rows);
   }
 
   async getDataPointsByObjectiveId(objectiveId: string): Promise<DataPoint[]> {
-    return await db
+    const rows = await db
       .select()
       .from(dataPoints)
       .where(eq(dataPoints.objectiveId, objectiveId))
       .orderBy(desc(dataPoints.recordedAt));
+    return hydrateRecords("data_points", rows);
   }
 
   async deleteDataPoint(id: string): Promise<boolean> {
@@ -765,7 +843,9 @@ export class ProgramRepository {
       .select()
       .from(transitionPlans)
       .where(eq(transitionPlans.id, id));
-    return plan || undefined;
+    if (!plan) return undefined;
+    const [hydrated] = await hydrateRecords("transition_plans", [plan]);
+    return hydrated;
   }
 
   async getTransitionPlanByProgramId(programId: string): Promise<TransitionPlan | undefined> {
@@ -773,7 +853,9 @@ export class ProgramRepository {
       .select()
       .from(transitionPlans)
       .where(eq(transitionPlans.programId, programId));
-    return plan || undefined;
+    if (!plan) return undefined;
+    const [hydrated] = await hydrateRecords("transition_plans", [plan]);
+    return hydrated;
   }
 
   async updateTransitionPlan(id: string, updates: UpdateTransitionPlan): Promise<TransitionPlan | undefined> {
@@ -805,10 +887,11 @@ export class ProgramRepository {
   }
 
   async getTransitionGoalsByPlanId(planId: string): Promise<TransitionGoal[]> {
-    return await db
+    const rows = await db
       .select()
       .from(transitionGoals)
       .where(eq(transitionGoals.transitionPlanId, planId));
+    return hydrateRecords("transition_goals", rows);
   }
 
   async updateTransitionGoal(id: string, updates: UpdateTransitionGoal): Promise<TransitionGoal | undefined> {
@@ -844,11 +927,13 @@ export class ProgramRepository {
       .select()
       .from(teamMembers)
       .where(eq(teamMembers.id, id));
-    return member || undefined;
+    if (!member) return undefined;
+    const [hydrated] = await hydrateRecords("team_members", [member]);
+    return hydrated;
   }
 
   async getTeamMembersByProgramId(programId: string): Promise<TeamMember[]> {
-    return await db
+    const rows = await db
       .select()
       .from(teamMembers)
       .where(
@@ -857,6 +942,7 @@ export class ProgramRepository {
           eq(teamMembers.isActive, true)
         )
       );
+    return hydrateRecords("team_members", rows);
   }
 
   async updateTeamMember(id: string, updates: UpdateTeamMember): Promise<TeamMember | undefined> {
@@ -895,15 +981,18 @@ export class ProgramRepository {
       .select()
       .from(meetings)
       .where(eq(meetings.id, id));
-    return meeting || undefined;
+    if (!meeting) return undefined;
+    const [hydrated] = await hydrateRecords("meetings", [meeting]);
+    return hydrated;
   }
 
   async getMeetingsByProgramId(programId: string): Promise<Meeting[]> {
-    return await db
+    const rows = await db
       .select()
       .from(meetings)
       .where(eq(meetings.programId, programId))
       .orderBy(desc(meetings.scheduledDate));
+    return hydrateRecords("meetings", rows);
   }
 
   async updateMeeting(id: string, updates: UpdateMeeting): Promise<Meeting | undefined> {
@@ -939,14 +1028,17 @@ export class ProgramRepository {
       .select()
       .from(consentForms)
       .where(eq(consentForms.id, id));
-    return form || undefined;
+    if (!form) return undefined;
+    const [hydrated] = await hydrateRecords("consent_forms", [form]);
+    return hydrated;
   }
 
   async getConsentFormsByProgramId(programId: string): Promise<ConsentForm[]> {
-    return await db
+    const rows = await db
       .select()
       .from(consentForms)
       .where(eq(consentForms.programId, programId));
+    return hydrateRecords("consent_forms", rows);
   }
 
   async updateConsentForm(id: string, updates: UpdateConsentForm): Promise<ConsentForm | undefined> {
@@ -982,34 +1074,39 @@ export class ProgramRepository {
       .select()
       .from(userGoals)
       .where(eq(userGoals.id, id));
-    return userGoal || undefined;
+    if (!userGoal) return undefined;
+    const [hydrated] = await hydrateRecords("user_goals", [userGoal]);
+    return hydrated;
   }
 
   async getUserGoalsByGoalId(goalId: string): Promise<UserGoal[]> {
-    return await db
+    const rows = await db
       .select()
       .from(userGoals)
       .where(eq(userGoals.goalId, goalId));
+    return hydrateRecords("user_goals", rows);
   }
 
   async getUserGoalsByUserId(userId: string): Promise<UserGoal[]> {
-    return await db
+    const rows = await db
       .select()
       .from(userGoals)
       .where(eq(userGoals.userId, userId));
+    return hydrateRecords("user_goals", rows);
   }
 
   async getGoalsForUser(userId: string): Promise<Goal[]> {
     const userGoalLinks = await this.getUserGoalsByUserId(userId);
     const goalIds = userGoalLinks.map(ug => ug.goalId);
-    
+
     if (goalIds.length === 0) return [];
-    
-    return await db
+
+    const rows = await db
       .select()
       .from(goals)
       .where(inArray(goals.id, goalIds))
       .orderBy(asc(goals.sortOrder));
+    return hydrateRecords("goals", rows);
   }
 
   async updateUserGoal(id: string, updates: UpdateUserGoal): Promise<UserGoal | undefined> {
@@ -1050,34 +1147,39 @@ export class ProgramRepository {
       .select()
       .from(userObjectives)
       .where(eq(userObjectives.id, id));
-    return userObjective || undefined;
+    if (!userObjective) return undefined;
+    const [hydrated] = await hydrateRecords("user_objectives", [userObjective]);
+    return hydrated;
   }
 
   async getUserObjectivesByObjectiveId(objectiveId: string): Promise<UserObjective[]> {
-    return await db
+    const rows = await db
       .select()
       .from(userObjectives)
       .where(eq(userObjectives.objectiveId, objectiveId));
+    return hydrateRecords("user_objectives", rows);
   }
 
   async getUserObjectivesByUserId(userId: string): Promise<UserObjective[]> {
-    return await db
+    const rows = await db
       .select()
       .from(userObjectives)
       .where(eq(userObjectives.userId, userId));
+    return hydrateRecords("user_objectives", rows);
   }
 
   async getObjectivesForUser(userId: string): Promise<Objective[]> {
     const userObjectiveLinks = await this.getUserObjectivesByUserId(userId);
     const objectiveIds = userObjectiveLinks.map(uo => uo.objectiveId);
-    
+
     if (objectiveIds.length === 0) return [];
-    
-    return await db
+
+    const rows = await db
       .select()
       .from(objectives)
       .where(inArray(objectives.id, objectiveIds))
       .orderBy(asc(objectives.sequenceOrder));
+    return hydrateRecords("objectives", rows);
   }
 
   async updateUserObjective(id: string, updates: UpdateUserObjective): Promise<UserObjective | undefined> {
@@ -1124,7 +1226,7 @@ export class ProgramRepository {
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
 
-    return await db
+    const rows = await db
       .select()
       .from(programs)
       .where(
@@ -1135,6 +1237,7 @@ export class ProgramRepository {
         )
       )
       .orderBy(asc(programs.dueDate));
+    return hydrateRecords("programs", rows);
   }
 
   /**

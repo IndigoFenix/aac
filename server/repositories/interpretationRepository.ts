@@ -1,9 +1,8 @@
-import {
-  interpretations,
-  users,
-  type Interpretation,
-  type InsertInterpretation,
-} from "@shared/schema";
+// Table `interpretations` has been deleted from @shared/schema. Stubs keep this dead-code file compiling.
+import { users } from "@shared/schema";
+type Interpretation = any;
+type InsertInterpretation = any;
+const interpretations = null as any;
 import { db } from "../db";
 import { eq, desc, count, and, sql } from "drizzle-orm";
 
@@ -11,10 +10,10 @@ export class InterpretationRepository {
   async createInterpretation(
     insertInterpretation: InsertInterpretation
   ): Promise<Interpretation> {
-    const [interpretation] = await db
+    const [interpretation] = (await db
       .insert(interpretations)
       .values(insertInterpretation)
-      .returning();
+      .returning()) as any[];
     return interpretation;
   }
 

@@ -145,23 +145,6 @@ export class AdminService {
     return interpretationRepository.getAllInterpretationsWithUsers(limit);
   }
 
-  // API usage stats
-  async getApiUsageStats() {
-    return apiProviderRepository.getApiUsageStats();
-  }
-
-  async getApiCalls(limit?: number, offset?: number) {
-    return apiProviderRepository.getApiCalls(limit, offset);
-  }
-
-  async getApiCallsByProvider(providerId: string, limit?: number, offset?: number) {
-    return apiProviderRepository.getApiCallsByProvider(providerId, limit, offset);
-  }
-
-  async getApiCallsCount(providerId?: string) {
-    return apiProviderRepository.getApiCallsCount(providerId);
-  }
-
   // API providers
   async getApiProviders() {
     return apiProviderRepository.getApiProviders();

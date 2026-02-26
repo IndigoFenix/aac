@@ -9,6 +9,7 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, desc, and, sql } from "drizzle-orm";
+import { hydrateRecords } from "../external-storage";
 
 export class InviteCodeRepository {
   async createInviteCode(inviteCode: InsertInviteCode): Promise<InviteCode> {
@@ -78,14 +79,16 @@ export class InviteCodeRepository {
       }
 
       // Get the AAC user that this code grants access to
-      const [student] = await db
+      const [rawStudent] = await db
         .select()
         .from(students)
         .where(eq(students.id, inviteCode.studentId));
 
-      if (!student) {
+      if (!rawStudent) {
         return { success: false, error: "AAC user not found" };
       }
+
+      const [student] = await hydrateRecords("students", [rawStudent]);
 
       // Create redemption record and update count
       await db.transaction(async (tx) => {

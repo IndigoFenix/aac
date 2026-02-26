@@ -10,6 +10,7 @@ import {
 import { db } from "../db";
 import { eq, and, gt, isNull, lt } from "drizzle-orm";
 import crypto from "crypto";
+import { hydrateRecords } from "../external-storage";
 
 export class MfaRepository {
   /**
@@ -83,9 +84,10 @@ export class MfaRepository {
       return { valid: false, error: "Invalid or expired recovery link" };
     }
 
+    const [hydratedUser] = await hydrateRecords("users", [result.user]);
     return {
       valid: true,
-      user: result.user,
+      user: hydratedUser,
       tokenRecord: result.token,
     };
   }
@@ -188,7 +190,9 @@ export class MfaRepository {
    */
   async getUserById(userId: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, userId));
-    return user || undefined;
+    if (!user) return undefined;
+    const [hydrated] = await hydrateRecords("users", [user]);
+    return hydrated;
   }
 
   /**
@@ -199,7 +203,9 @@ export class MfaRepository {
       .select()
       .from(users)
       .where(eq(users.email, email.toLowerCase()));
-    return user || undefined;
+    if (!user) return undefined;
+    const [hydrated] = await hydrateRecords("users", [user]);
+    return hydrated;
   }
 }
 

@@ -1,17 +1,16 @@
-import {
-  savedLocations,
-  type SavedLocation,
-  type InsertSavedLocation,
-} from "@shared/schema";
+// Table `savedLocations` has been deleted from @shared/schema. Stubs keep this dead-code file compiling.
+type SavedLocation = any;
+type InsertSavedLocation = any;
+const savedLocations = null as any;
 import { db } from "../db";
 import { eq, and, desc } from "drizzle-orm";
 
 export class SavedLocationRepository {
   async createSavedLocation(location: InsertSavedLocation): Promise<SavedLocation> {
-    const [createdLocation] = await db
+    const [createdLocation] = (await db
       .insert(savedLocations)
       .values(location)
-      .returning();
+      .returning()) as any[];
     return createdLocation;
   }
 

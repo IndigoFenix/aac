@@ -1,5 +1,5 @@
 import { storage } from '../storage';
-import type { ApiProvider, InsertApiCall } from '@shared/schema';
+import type { ApiProvider } from '@shared/schema';
 import { pricingJsonSchema } from '@shared/schema';
 import { Decimal } from 'decimal.js';
 import { costCalculator, ApiUsageData } from "./costCalculatorService";
@@ -309,12 +309,12 @@ export class ApiTracker {
       }
   
       // Build insert payload
-      const apiCallData: InsertApiCall = {
+      const apiCallData: Record<string, any> = {
         providerId,
         apiType,
         endpoint,
         model,
-  
+
         inputTokens: normalizedUsage.inputTokens ?? null,
         outputTokens: normalizedUsage.outputTokens ?? null,
         totalTokens: normalizedUsage.totalTokens ?? null,
@@ -322,25 +322,26 @@ export class ApiTracker {
         seconds: normalizedUsage.seconds ?? null,
         unitsUsed: normalizedUsage.unitsUsed ?? null,
         requests: normalizedUsage.requests ?? 1,
-  
+
         inputCostUsd,
         outputCostUsd,
         totalCostUsd,
-  
+
         requestData: this.sanitizeRequestData(requestData),
         responseMetadata: responseMetadata ?? null,
-  
+
         durationMs: durationMs ?? null,
         responseTimeMs: responseTimeMs ?? null,
-  
+
         success,
         errorMessage: errorMessage ? errorMessage.slice(0, 500) : null,
-  
+
         userId: userId ?? null,
         sessionId: sessionId ?? null,
       };
-  
-      await storage.createApiCall(apiCallData);
+
+      // apiCalls table removed — recording is a no-op until a replacement is implemented
+      void apiCallData;
     } catch (e) {
       // Absolute last-ditch guard: do not disrupt main flow
       console.error("[recordApiCall] unexpected failure:", e);
@@ -402,8 +403,17 @@ export class ApiTracker {
    * Get usage statistics for admin dashboard
    */
   async getUsageStats(): Promise<ApiUsageStats> {
-    const stats = await storage.getApiUsageStats();
-    return stats;
+    // apiCalls table removed — return empty stats until a replacement is implemented
+    return {
+      totalCostToday: 0,
+      totalCostWeek: 0,
+      totalCostMonth: 0,
+      totalCallsToday: 0,
+      totalCallsWeek: 0,
+      totalCallsMonth: 0,
+      averageCostPerCall: 0,
+      topProviderBySpend: null,
+    };
   }
 
   /**
@@ -489,51 +499,19 @@ export class ApiTracker {
   /**
    * Get API cost summary for a user
    */
-  async getUserCostSummary(userId: string, days: number = 30): Promise<{
+  async getUserCostSummary(_userId: string, _days: number = 30): Promise<{
     totalCostUsd: number;
     callCount: number;
     averageCostPerCall: number;
     providerBreakdown: { [provider: string]: { cost: number; calls: number } };
   }> {
-    try {
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - days);
-      
-      const { calls } = await storage.getUserApiCalls(userId, 1000);
-      const recentCalls = calls.filter(call => 
-        call.createdAt && new Date(call.createdAt) >= startDate
-      );
-
-      let totalCostUsd = 0;
-      const providerBreakdown: { [provider: string]: { cost: number; calls: number } } = {};
-
-      for (const call of recentCalls) {
-        const cost = parseFloat(call.totalCostUsd || "0");
-        totalCostUsd += cost;
-
-        if (!providerBreakdown[call.providerId]) {
-          providerBreakdown[call.providerId] = { cost: 0, calls: 0 };
-        }
-        providerBreakdown[call.providerId].cost += cost;
-        providerBreakdown[call.providerId].calls += 1;
-      }
-
-      return {
-        totalCostUsd,
-        callCount: recentCalls.length,
-        averageCostPerCall: recentCalls.length > 0 ? totalCostUsd / recentCalls.length : 0,
-        providerBreakdown
-      };
-
-    } catch (error) {
-      console.error("Failed to get user cost summary:", error);
-      return {
-        totalCostUsd: 0,
-        callCount: 0,
-        averageCostPerCall: 0,
-        providerBreakdown: {}
-      };
-    }
+    // apiCalls table removed — return empty summary until a replacement is implemented
+    return {
+      totalCostUsd: 0,
+      callCount: 0,
+      averageCostPerCall: 0,
+      providerBreakdown: {}
+    };
   }
 }
 

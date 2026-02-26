@@ -2,26 +2,38 @@ import {
   users,
   inviteCodeRedemptions,
   inviteCodes,
-  interpretations,
-  savedLocations,
   creditTransactions,
   passwordResetTokens,
-  apiCalls,
   type User,
   type InsertUser,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, desc, count, sql } from "drizzle-orm";
+import {
+  hydrateRecords,
+  extractSensitiveFields,
+  persistExtracted,
+  deleteExternalData,
+  type EntityRef,
+} from "../external-storage";
 
 export class UserRepository {
+  private ref(id: string): EntityRef {
+    return { type: "user", id };
+  }
+
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user || undefined;
+    if (!user) return undefined;
+    const [hydrated] = await hydrateRecords("users", [user]);
+    return hydrated;
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.email, email));
-    return user || undefined;
+    if (!user) return undefined;
+    const [hydrated] = await hydrateRecords("users", [user]);
+    return hydrated;
   }
 
   async getUserByGoogleId(googleId: string): Promise<User | undefined> {
@@ -29,7 +41,9 @@ export class UserRepository {
       .select()
       .from(users)
       .where(eq(users.googleId, googleId));
-    return user || undefined;
+    if (!user) return undefined;
+    const [hydrated] = await hydrateRecords("users", [user]);
+    return hydrated;
   }
 
   async getUserByReferralCode(referralCode: string): Promise<User | undefined> {
@@ -38,7 +52,9 @@ export class UserRepository {
         .select()
         .from(users)
         .where(eq(users.referralCode, referralCode));
-      return user || undefined;
+      if (!user) return undefined;
+      const [hydrated] = await hydrateRecords("users", [user]);
+      return hydrated;
     } catch (error) {
       console.error(`Error getting user by referral code:`, error);
       return undefined;
@@ -65,7 +81,18 @@ export class UserRepository {
     };
 
     const [user] = await db.insert(users).values(userData).returning();
-    return user;
+    const ref = this.ref(user.id);
+    const ext = await extractSensitiveFields("users", user.id, user as Record<string, unknown>, ref);
+    if (ext.isExternal) {
+      const nullSet: Record<string, null> = {};
+      for (const key of ext.externalWrites.keys()) {
+        const field = key.split("/").pop()!;
+        nullSet[field] = null;
+      }
+      await db.update(users).set(nullSet).where(eq(users.id, user.id));
+      await persistExtracted(ref, ext.externalWrites);
+    }
+    return ext.completeData as User;
   }
 
   async createGoogleUser(googleData: {
@@ -90,20 +117,37 @@ export class UserRepository {
     };
 
     const [user] = await db.insert(users).values(userData).returning();
-    return user;
+    const ref = this.ref(user.id);
+    const ext = await extractSensitiveFields("users", user.id, user as Record<string, unknown>, ref);
+    if (ext.isExternal) {
+      const nullSet: Record<string, null> = {};
+      for (const key of ext.externalWrites.keys()) {
+        const field = key.split("/").pop()!;
+        nullSet[field] = null;
+      }
+      await db.update(users).set(nullSet).where(eq(users.id, user.id));
+      await persistExtracted(ref, ext.externalWrites);
+    }
+    return ext.completeData as User;
   }
 
   async getAllUsers(): Promise<User[]> {
-    return await db.select().from(users).orderBy(desc(users.createdAt));
+    const rows = await db.select().from(users).orderBy(desc(users.createdAt));
+    return hydrateRecords("users", rows);
   }
 
   async updateUser(id: string, updates: Partial<User>): Promise<User | undefined> {
+    const ref = this.ref(id);
+    const ext = await extractSensitiveFields("users", id, updates as Record<string, unknown>, ref);
     const [user] = await db
       .update(users)
-      .set({ ...updates, updatedAt: new Date() })
+      .set({ ...ext.dbData, updatedAt: new Date() })
       .where(eq(users.id, id))
       .returning();
-    return user || undefined;
+    if (!user) return undefined;
+    if (ext.isExternal) await persistExtracted(ref, ext.externalWrites);
+    const [hydrated] = await hydrateRecords("users", [user]);
+    return hydrated;
   }
 
   async updateUserOnboardingStep(userId: string, step: number): Promise<void> {
@@ -123,12 +167,6 @@ export class UserRepository {
       // Delete invite codes created by user (foreign key to users)
       await db.delete(inviteCodes).where(eq(inviteCodes.createdByUserId, id));
 
-      // Delete user's interpretations
-      await db.delete(interpretations).where(eq(interpretations.userId, id));
-
-      // Delete user's saved locations
-      await db.delete(savedLocations).where(eq(savedLocations.userId, id));
-
       // Delete user's credit transactions
       await db
         .delete(creditTransactions)
@@ -139,11 +177,11 @@ export class UserRepository {
         .delete(passwordResetTokens)
         .where(eq(passwordResetTokens.userId, id));
 
-      // Delete user's API calls (nullable userId, so this is safe)
-      await db.delete(apiCalls).where(eq(apiCalls.userId, id));
-
       // Finally delete the user
       await db.delete(users).where(eq(users.id, id));
+
+      // Clean up any externally stored data
+      await deleteExternalData("users", id, this.ref(id));
 
       return true;
     } catch (error) {

@@ -5,16 +5,14 @@
  * for non-verbal users.
  */
 
-import {
-  aacSessions,
-  students,
-  users,
-  type AACSession,
-  type InsertAACSession,
-  type UpdateAACSession,
-  type AACSessionContext,
-  type AACMessage,
-} from "@shared/schema";
+// Table `aacSessions` has been deleted from @shared/schema. Stubs keep this dead-code file compiling.
+import { students, users } from "@shared/schema";
+type AACSession = any;
+type InsertAACSession = any;
+type UpdateAACSession = any;
+type AACSessionContext = any;
+type AACMessage = any;
+const aacSessions = null as any;
 import { db } from "../db";
 import { eq, and, desc, sql, isNull, or, gt, gte, lte, count } from "drizzle-orm";
 
@@ -32,10 +30,10 @@ export class AACSessionRepository {
   // ============================================================================
 
   async createSession(session: InsertAACSession): Promise<AACSession> {
-    const [newSession] = await db
+    const [newSession] = (await db
       .insert(aacSessions)
       .values(session)
-      .returning();
+      .returning()) as any[];
     return newSession;
   }
 
