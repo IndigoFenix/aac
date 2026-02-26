@@ -1,0 +1,1 @@
+ALTER TABLE "institutes" ADD COLUMN "language" text;

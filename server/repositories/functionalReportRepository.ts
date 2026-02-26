@@ -1,21 +1,30 @@
 import {
     functionalReports,
-    auditLogs,
     type FunctionalReport,
     type InsertFunctionalReport,
     type UpdateFunctionalReport,
-    type InsertAuditLog,
   } from "@shared/schema";
   import { db } from "../db";
   import { eq, and, desc, asc } from "drizzle-orm";
-  
+  import {
+    hydrateRecords,
+    extractSensitiveFields,
+    persistExtracted,
+    deleteExternalData,
+    type EntityRef,
+  } from "../external-storage";
+
   export interface SecurityContext {
     userId: string;
     role?: string;
     instituteId?: string;
   }
-  
+
   export class FunctionalReportRepository {
+    private ref(studentId: string): EntityRef {
+      return { type: "student", id: studentId };
+    }
+
     /**
      * Get all functional reports for a student
      */
@@ -35,24 +44,18 @@ import {
         .from(functionalReports)
         .where(and(...conditions))
         .orderBy(desc(functionalReports.createdAt));
-  
+
       if (options?.limit) {
         query = query.limit(options.limit) as typeof query;
       }
       if (options?.offset) {
         query = query.offset(options.offset) as typeof query;
       }
-  
+
       const reports = await query;
-  
-      // Log access
-      if (reports.length > 0) {
-        await this.logAccess(ctx, "read", `student:${studentId}`);
-      }
-  
-      return reports;
+      return hydrateRecords("functional_reports", reports, this.ref(studentId));
     }
-  
+
     /**
      * Get functional reports by program
      */
@@ -61,20 +64,20 @@ import {
       ctx: SecurityContext
     ): Promise<FunctionalReport[]> {
       const conditions = [eq(functionalReports.programId, programId)];
-      
+
       if (ctx.instituteId) {
         conditions.push(eq(functionalReports.instituteId, ctx.instituteId));
       }
-  
+
       const reports = await db
         .select()
         .from(functionalReports)
         .where(and(...conditions))
         .orderBy(desc(functionalReports.createdAt));
-  
-      return reports;
+
+      return hydrateRecords("functional_reports", reports);
     }
-  
+
     /**
      * Get a single functional report by ID
      */
@@ -83,23 +86,21 @@ import {
       ctx: SecurityContext
     ): Promise<FunctionalReport | undefined> {
       const conditions = [eq(functionalReports.id, id)];
-      
+
       if (ctx.instituteId) {
         conditions.push(eq(functionalReports.instituteId, ctx.instituteId));
       }
-  
+
       const [report] = await db
         .select()
         .from(functionalReports)
         .where(and(...conditions));
-  
-      if (report) {
-        await this.logAccess(ctx, "read", report.id);
-      }
-  
-      return report || undefined;
+
+      if (!report) return undefined;
+      const [hydrated] = await hydrateRecords("functional_reports", [report]);
+      return hydrated;
     }
-  
+
     /**
      * Create a new functional report
      */
@@ -117,12 +118,21 @@ import {
           status: data.status || "draft",
         })
         .returning();
-  
-      await this.logAccess(ctx, "create", report.id);
-  
-      return report;
+
+      const ref = this.ref(report.studentId);
+      const ext = await extractSensitiveFields("functional_reports", report.id, report as Record<string, unknown>, ref);
+      if (ext.isExternal) {
+        const nullSet: Record<string, null> = {};
+        for (const key of ext.externalWrites.keys()) {
+          const field = key.split("/").pop()!;
+          nullSet[field] = null;
+        }
+        await db.update(functionalReports).set(nullSet).where(eq(functionalReports.id, report.id));
+        await persistExtracted(ref, ext.externalWrites);
+      }
+      return ext.completeData as FunctionalReport;
     }
-  
+
     /**
      * Update a functional report
      */
@@ -131,26 +141,27 @@ import {
       updates: UpdateFunctionalReport,
       ctx: SecurityContext
     ): Promise<FunctionalReport | undefined> {
+      const existing = await this.getById(id, ctx);
+      if (!existing) return undefined;
+
+      const ref = this.ref(existing.studentId);
+      const ext = await extractSensitiveFields("functional_reports", id, updates as Record<string, unknown>, ref);
+
       const conditions = [eq(functionalReports.id, id)];
-      
       if (ctx.instituteId) {
         conditions.push(eq(functionalReports.instituteId, ctx.instituteId));
       }
-  
+
       const [updated] = await db
         .update(functionalReports)
-        .set({
-          ...updates,
-          updatedAt: new Date(),
-        })
+        .set({ ...ext.dbData, updatedAt: new Date() })
         .where(and(...conditions))
         .returning();
-  
-      if (updated) {
-        await this.logAccess(ctx, "update", id, Object.keys(updates));
-      }
-  
-      return updated || undefined;
+
+      if (!updated) return undefined;
+      if (ext.isExternal) await persistExtracted(ref, ext.externalWrites);
+      const [hydrated] = await hydrateRecords("functional_reports", [updated], ref);
+      return hydrated;
     }
   
     /**
@@ -193,54 +204,27 @@ import {
       // Only allow deleting drafts
       const existing = await this.getById(id, ctx);
       if (!existing) return false;
-      
+
       if (existing.status !== "draft") {
         throw new Error("Only draft reports can be deleted");
       }
-  
+
       const conditions = [eq(functionalReports.id, id)];
-      
       if (ctx.instituteId) {
         conditions.push(eq(functionalReports.instituteId, ctx.instituteId));
       }
-  
+
       const result = await db
         .delete(functionalReports)
         .where(and(...conditions))
         .returning();
-  
+
       if (result.length > 0) {
-        await this.logAccess(ctx, "delete", id);
+        await deleteExternalData("functional_reports", id, this.ref(existing.studentId));
       }
-  
       return result.length > 0;
     }
   
-    /**
-     * Log access to audit trail
-     */
-    private async logAccess(
-      ctx: SecurityContext,
-      action: "read" | "create" | "update" | "delete",
-      resourceId: string,
-      changedFields?: string[]
-    ): Promise<void> {
-      try {
-        const auditEntry: InsertAuditLog = {
-          actorUserId: ctx.userId,
-          action,
-          resourceType: "functional_report",
-          resourceId,
-          instituteId: ctx.instituteId,
-          changedFields,
-          success: true,
-        };
-  
-        await db.insert(auditLogs).values(auditEntry);
-      } catch (error) {
-        console.error("Failed to log audit entry:", error);
-      }
-    }
   }
   
   export const functionalReportRepository = new FunctionalReportRepository();

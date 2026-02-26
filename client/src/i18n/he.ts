@@ -1359,6 +1359,8 @@ export const he = {
     studentRemovedDesc: "התלמיד הוסר מהמוסד.",
     confirmRemoveStudent: "להסיר תלמיד מהמוסד?",
     confirmRemoveStudentDesc: "תלמיד זה יוסר מהמוסד ומכל הכיתות המשויכות.",
+    language: "שפה",
+    languagePlaceholder: "בחר שפה...",
     type: {
       school: "בית ספר",
       hospital: "בית חולים"

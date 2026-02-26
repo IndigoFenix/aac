@@ -27,6 +27,7 @@ import {
 import { db } from "../db";
 import { eq, and, desc, or, sql, lt, ne } from "drizzle-orm";
 import crypto from "crypto";
+import { hydrateRecords } from "../external-storage";
 
 export class InstituteRepository {
   // ==================== Institute Operations ====================
@@ -779,7 +780,10 @@ export class InstituteRepository {
       )
       .orderBy(students.name);
 
-    return results;
+    // Hydrate student data
+    const studentRows = results.map(r => r.student);
+    const hydrated = await hydrateRecords("students", studentRows);
+    return results.map((r, i) => ({ ...r, student: hydrated[i] }));
   }
 
   /**

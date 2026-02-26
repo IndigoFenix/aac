@@ -5,6 +5,13 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, and, or, isNull } from "drizzle-orm";
+import {
+  hydrateRecords,
+  extractSensitiveFields,
+  persistExtracted,
+  deleteExternalData,
+  resolveEntityRef,
+} from "../external-storage";
 
 type BoardWithOptionalIrData = Omit<Board, 'irData'> & { irData?: Board['irData'] };
 
@@ -12,6 +19,20 @@ export class BoardRepository {
   // Board CRUD operations
   async createBoard(board: InsertBoard): Promise<Board> {
     const [newBoard] = await db.insert(boards).values(board).returning();
+    const ref = resolveEntityRef("boards", newBoard as Record<string, unknown>);
+    if (ref) {
+      const ext = await extractSensitiveFields("boards", newBoard.id, newBoard as Record<string, unknown>, ref);
+      if (ext.isExternal) {
+        const nullSet: Record<string, null> = {};
+        for (const key of ext.externalWrites.keys()) {
+          const field = key.split("/").pop()!;
+          nullSet[field] = null;
+        }
+        await db.update(boards).set(nullSet).where(eq(boards.id, newBoard.id));
+        await persistExtracted(ref, ext.externalWrites);
+        return ext.completeData as Board;
+      }
+    }
     return newBoard;
   }
 
@@ -33,8 +54,7 @@ export class BoardRepository {
   }
 
   async getStudentBoards(userId: string, studentId: string): Promise<Board[]> {
-    // Get boards that are either assigned to this student or have no student assigned (shared boards)
-    return await db.select()
+    const rows = await db.select()
       .from(boards)
       .where(
         and(
@@ -45,10 +65,11 @@ export class BoardRepository {
           )
         )
       );
+    return hydrateRecords("boards", rows, { type: "student", id: studentId });
   }
 
   async getStudentBoardsMetadata(userId: string, studentId: string): Promise<BoardWithOptionalIrData[]> {
-    // Like getStudentBoards but without irData (for dropdown lists)
+    // Metadata queries skip irData (the sensitive field) — no hydration needed
     return await db.select({
       id: boards.id,
       userId: boards.userId,
@@ -74,7 +95,7 @@ export class BoardRepository {
   }
 
   async getAutoSelectableBoards(userId: string, studentId: string): Promise<Board[]> {
-    return await db.select()
+    const rows = await db.select()
       .from(boards)
       .where(
         and(
@@ -86,27 +107,42 @@ export class BoardRepository {
           )
         )
       );
+    return hydrateRecords("boards", rows, { type: "student", id: studentId });
   }
 
   async getBoard(id: string): Promise<Board | undefined> {
     const [board] = await db.select().from(boards).where(eq(boards.id, id));
-    return board || undefined;
+    if (!board) return undefined;
+    const [hydrated] = await hydrateRecords("boards", [board]);
+    return hydrated;
   }
 
   async updateBoard(
     id: string,
     data: Partial<InsertBoard>
   ): Promise<Board | undefined> {
-    const [board] = await db
-      .update(boards)
-      .set(data)
-      .where(eq(boards.id, id))
-      .returning();
+    const existing = await this.getBoard(id);
+    if (!existing) return undefined;
+    const ref = resolveEntityRef("boards", existing as Record<string, unknown>);
+    if (ref) {
+      const ext = await extractSensitiveFields("boards", id, data as Record<string, unknown>, ref);
+      const [board] = await db.update(boards).set(ext.dbData).where(eq(boards.id, id)).returning();
+      if (!board) return undefined;
+      if (ext.isExternal) await persistExtracted(ref, ext.externalWrites);
+      const [hydrated] = await hydrateRecords("boards", [board]);
+      return hydrated;
+    }
+    const [board] = await db.update(boards).set(data).where(eq(boards.id, id)).returning();
     return board || undefined;
   }
 
   async deleteBoard(id: string): Promise<void> {
+    const existing = await this.getBoard(id);
     await db.delete(boards).where(eq(boards.id, id));
+    if (existing) {
+      const ref = resolveEntityRef("boards", existing as Record<string, unknown>);
+      if (ref) await deleteExternalData("boards", id, ref);
+    }
   }
 }
 

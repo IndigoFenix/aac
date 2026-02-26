@@ -1165,6 +1165,8 @@ export const en = {
     studentRemovedDesc: "Student has been removed from the institute.",
     confirmRemoveStudent: "Remove Student from Institute?",
     confirmRemoveStudentDesc: "This student will be removed from this institute and any associated classrooms.",
+    language: "Language",
+    languagePlaceholder: "Select language...",
     type: {
       school: "School",
       hospital: "Hospital"

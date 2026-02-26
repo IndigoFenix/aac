@@ -1,6 +1,8 @@
 import type { Request, Response } from "express";
 import { savedLocationRepository } from "../repositories";
-import { insertSavedLocationSchema } from "@shared/schema";
+// `insertSavedLocationSchema` has been deleted from @shared/schema. Stub keeps this dead-code file compiling.
+import { z } from "zod";
+const insertSavedLocationSchema = z.any();
 
 export class SavedLocationController {
   async getSavedLocations(req: Request, res: Response): Promise<void> {

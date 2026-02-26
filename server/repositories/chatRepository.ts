@@ -16,6 +16,13 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, ne, and, isNull, desc, or, sql, gte, lte, count } from "drizzle-orm";
+import {
+  hydrateRecords,
+  extractSensitiveFields,
+  persistExtracted,
+  deleteExternalData,
+  resolveEntityRef,
+} from "../external-storage";
 
 export interface ChatAdminSessionFilters {
   userId?: string;
@@ -32,6 +39,20 @@ export class ChatRepository {
 
   async createSession(session: InsertChatSession): Promise<ChatSession> {
     const [newSession] = await db.insert(chatSessions).values(session).returning();
+    const ref = resolveEntityRef("chat_sessions", newSession as Record<string, unknown>);
+    if (ref) {
+      const ext = await extractSensitiveFields("chat_sessions", newSession.id, newSession as Record<string, unknown>, ref);
+      if (ext.isExternal) {
+        const nullSet: Record<string, null> = {};
+        for (const key of ext.externalWrites.keys()) {
+          const field = key.split("/").pop()!;
+          nullSet[field] = null;
+        }
+        await db.update(chatSessions).set(nullSet).where(eq(chatSessions.id, newSession.id));
+        await persistExtracted(ref, ext.externalWrites);
+        return ext.completeData as ChatSession;
+      }
+    }
     return newSession;
   }
 
@@ -40,51 +61,74 @@ export class ChatRepository {
       .select()
       .from(chatSessions)
       .where(and(eq(chatSessions.id, id), isNull(chatSessions.deletedAt)));
-    return session || undefined;
+    if (!session) return undefined;
+    const [hydrated] = await hydrateRecords("chat_sessions", [session]);
+    return hydrated;
   }
 
   async getSessionsByUserId(userId: string): Promise<ChatSession[]> {
-    return await db
+    const rows = await db
       .select()
       .from(chatSessions)
       .where(and(eq(chatSessions.userId, userId), isNull(chatSessions.deletedAt)))
       .orderBy(desc(chatSessions.lastUpdate));
+    return hydrateRecords("chat_sessions", rows);
   }
 
   async getSessionsByStudentId(studentId: string): Promise<ChatSession[]> {
-    return await db
+    const rows = await db
       .select()
       .from(chatSessions)
       .where(and(eq(chatSessions.studentId, studentId), isNull(chatSessions.deletedAt)))
       .orderBy(desc(chatSessions.lastUpdate));
+    return hydrateRecords("chat_sessions", rows, { type: "student", id: studentId });
   }
 
   async getSessionsByUserStudentId(userStudentId: string): Promise<ChatSession[]> {
-    return await db
+    const rows = await db
       .select()
       .from(chatSessions)
       .where(and(eq(chatSessions.userStudentId, userStudentId), isNull(chatSessions.deletedAt)))
       .orderBy(desc(chatSessions.lastUpdate));
+    return hydrateRecords("chat_sessions", rows);
   }
 
   async getOpenSessions(userId?: string, studentId?: string): Promise<ChatSession[]> {
     const conditions = [eq(chatSessions.status, "open"), isNull(chatSessions.deletedAt)];
-    
+
     if (userId) {
       conditions.push(eq(chatSessions.userId, userId));
     }
     if (studentId) {
       conditions.push(eq(chatSessions.studentId, studentId));
     }
-    
-    return await db
+
+    const rows = await db
       .select()
       .from(chatSessions)
       .where(and(...conditions))
       .orderBy(desc(chatSessions.priority), desc(chatSessions.lastUpdate));
+    const ref = studentId ? { type: "student" as const, id: studentId } : undefined;
+    return hydrateRecords("chat_sessions", rows, ref);
   }
 
   async updateSession(id: string, updates: Partial<InsertChatSession>): Promise<ChatSession | undefined> {
+    // For updates that include sensitive fields, use extract pattern
+    const existing = await this.getSession(id);
+    if (!existing) return undefined;
+    const ref = resolveEntityRef("chat_sessions", existing as Record<string, unknown>);
+    if (ref) {
+      const ext = await extractSensitiveFields("chat_sessions", id, updates as Record<string, unknown>, ref);
+      const [session] = await db
+        .update(chatSessions)
+        .set({ ...ext.dbData, updatedAt: new Date() })
+        .where(eq(chatSessions.id, id))
+        .returning();
+      if (!session) return undefined;
+      if (ext.isExternal) await persistExtracted(ref, ext.externalWrites);
+      const [hydrated] = await hydrateRecords("chat_sessions", [session]);
+      return hydrated;
+    }
     const [session] = await db
       .update(chatSessions)
       .set({ ...updates, updatedAt: new Date() })
@@ -94,6 +138,7 @@ export class ChatRepository {
   }
 
   async deleteSession(id: string): Promise<void> {
+    // Soft delete — external data stays for potential audit
     await db
       .update(chatSessions)
       .set({ deletedAt: new Date(), updatedAt: new Date() })
@@ -112,10 +157,16 @@ export class ChatRepository {
     if (log !== undefined) {
       updates.log = log;
     }
-    await db
-      .update(chatSessions)
-      .set({ ...updates, updatedAt: new Date() })
-      .where(eq(chatSessions.id, id));
+    // state and log are both sensitive — use extract pattern
+    const existing = await this.getSession(id);
+    const ref = existing ? resolveEntityRef("chat_sessions", existing as Record<string, unknown>) : null;
+    if (ref) {
+      const ext = await extractSensitiveFields("chat_sessions", id, updates as Record<string, unknown>, ref);
+      await db.update(chatSessions).set({ ...ext.dbData, updatedAt: new Date() }).where(eq(chatSessions.id, id));
+      if (ext.isExternal) await persistExtracted(ref, ext.externalWrites);
+    } else {
+      await db.update(chatSessions).set({ ...updates, updatedAt: new Date() }).where(eq(chatSessions.id, id));
+    }
   }
 
   async updateSessionCredits(id: string, creditsUsed: number): Promise<void> {
@@ -154,7 +205,7 @@ export class ChatRepository {
     limit: number = 5
   ): Promise<ChatSession[]> {
     const conditions = [isNull(chatSessions.deletedAt)];
-    
+
     if (userId && studentId) {
       conditions.push(
         or(
@@ -167,13 +218,15 @@ export class ChatRepository {
     } else if (studentId) {
       conditions.push(eq(chatSessions.studentId, studentId));
     }
-    
-    return await db
+
+    const rows = await db
       .select()
       .from(chatSessions)
       .where(and(...conditions))
       .orderBy(desc(chatSessions.lastUpdate))
       .limit(limit);
+    const ref = studentId ? { type: "student" as const, id: studentId } : undefined;
+    return hydrateRecords("chat_sessions", rows, ref);
   }
   // ============================================================================
   // ADMIN OPERATIONS

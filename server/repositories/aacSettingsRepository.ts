@@ -6,8 +6,19 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 import { eq } from "drizzle-orm";
+import {
+  hydrateRecords,
+  extractSensitiveFields,
+  persistExtracted,
+  deleteExternalData,
+  type EntityRef,
+} from "../external-storage";
 
 export class AacSettingsRepository {
+  private ref(studentId: string): EntityRef {
+    return { type: "student", id: studentId };
+  }
+
   /**
    * Get AAC settings for a student
    */
@@ -16,7 +27,9 @@ export class AacSettingsRepository {
       .select()
       .from(aacSettings)
       .where(eq(aacSettings.studentId, studentId));
-    return settings || undefined;
+    if (!settings) return undefined;
+    const [hydrated] = await hydrateRecords("aac_settings", [settings], this.ref(studentId));
+    return hydrated;
   }
 
   /**
@@ -27,7 +40,18 @@ export class AacSettingsRepository {
       .insert(aacSettings)
       .values(data)
       .returning();
-    return created;
+    const ref = this.ref(created.studentId);
+    const ext = await extractSensitiveFields("aac_settings", created.id, created as Record<string, unknown>, ref);
+    if (ext.isExternal) {
+      const nullSet: Record<string, null> = {};
+      for (const key of ext.externalWrites.keys()) {
+        const field = key.split("/").pop()!;
+        nullSet[field] = null;
+      }
+      await db.update(aacSettings).set(nullSet).where(eq(aacSettings.id, created.id));
+      await persistExtracted(ref, ext.externalWrites);
+    }
+    return ext.completeData as AacSettings;
   }
 
   /**
@@ -43,12 +67,16 @@ export class AacSettingsRepository {
   async upsert(studentId: string, updates: UpdateAacSettings): Promise<AacSettings> {
     const existing = await this.getByStudentId(studentId);
     if (existing) {
+      const ref = this.ref(studentId);
+      const ext = await extractSensitiveFields("aac_settings", existing.id, updates as Record<string, unknown>, ref);
       const [updated] = await db
         .update(aacSettings)
-        .set({ ...updates, updatedAt: new Date() })
+        .set({ ...ext.dbData, updatedAt: new Date() })
         .where(eq(aacSettings.studentId, studentId))
         .returning();
-      return updated;
+      if (ext.isExternal) await persistExtracted(ref, ext.externalWrites);
+      const [hydrated] = await hydrateRecords("aac_settings", [updated], ref);
+      return hydrated;
     }
     return this.create({ studentId, ...updates });
   }
@@ -57,10 +85,14 @@ export class AacSettingsRepository {
    * Delete AAC settings for a student
    */
   async deleteByStudentId(studentId: string): Promise<boolean> {
+    const existing = await this.getByStudentId(studentId);
     const result = await db
       .delete(aacSettings)
       .where(eq(aacSettings.studentId, studentId))
       .returning();
+    if (result.length > 0 && existing) {
+      await deleteExternalData("aac_settings", existing.id, this.ref(studentId));
+    }
     return result.length > 0;
   }
 }

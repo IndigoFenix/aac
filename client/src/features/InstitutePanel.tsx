@@ -20,6 +20,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { INSTITUTE_ROLES, CLASSROOM_ROLES } from '@shared/schema';
+import { SUPPORTED_LANGUAGES } from '@/i18n/index';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -83,6 +84,7 @@ import {
   GraduationCap,
   UserCheck,
   AlertTriangle,
+  Languages,
 } from 'lucide-react';
 
 // Grade options for UI - map enum to display labels
@@ -202,6 +204,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
     website: '',
     instituteIdNumber: '',
     instituteIdType: '',
+    language: 'en',
     creatorRole: 'admin' as string,
   });
   const [editForm, setEditForm] = useState<Partial<Institute>>({});
@@ -432,6 +435,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
         website: '',
         instituteIdNumber: '',
         instituteIdType: '',
+        language: 'en',
         creatorRole: 'admin',
       });
       toast({
@@ -980,6 +984,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
         phone: currentInstitute.phone || '',
         email: currentInstitute.email || '',
         website: currentInstitute.website || '',
+        language: currentInstitute.language || '',
       });
       setShowEditDialog(true);
     }
@@ -1257,6 +1262,27 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                   />
                 </div>
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="createLanguage">{t('institute.language') || 'Language'}</Label>
+                <Select
+                  value={createForm.language}
+                  onValueChange={(value) => setCreateForm({ ...createForm, language: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('institute.languagePlaceholder') || 'Select language...'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SUPPORTED_LANGUAGES.map((lang) => (
+                      <SelectItem key={lang.code} value={lang.code}>
+                        <span className="flex items-center gap-2">
+                          <Languages className="w-4 h-4" />
+                          {lang.name} ({lang.nativeName})
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </DialogBody>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
@@ -1435,6 +1461,12 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                           <span className="text-muted-foreground ms-2">({currentInstitute.instituteIdType})</span>
                         )}
                       </p>
+                    </div>
+                  )}
+                  {currentInstitute.language && (
+                    <div>
+                      <Label className="text-muted-foreground">{t('institute.language') || 'Language'}</Label>
+                      <p>{SUPPORTED_LANGUAGES.find(l => l.code === currentInstitute.language)?.name || currentInstitute.language}</p>
                     </div>
                   )}
                 </CardContent>
@@ -2202,6 +2234,27 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                   placeholder={t('institute.idTypePlaceholder') || 'e.g. MOE, MOH'}
                 />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editLanguage">{t('institute.language') || 'Language'}</Label>
+              <Select
+                value={editForm.language || ''}
+                onValueChange={(value) => setEditForm({ ...editForm, language: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={t('institute.languagePlaceholder') || 'Select language...'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {SUPPORTED_LANGUAGES.map((lang) => (
+                    <SelectItem key={lang.code} value={lang.code}>
+                      <span className="flex items-center gap-2">
+                        <Languages className="w-4 h-4" />
+                        {lang.name} ({lang.nativeName})
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </DialogBody>
           <DialogFooter>

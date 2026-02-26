@@ -747,10 +747,12 @@ export function getProgressMemoryFields(
  * Build a combined system prompt based on context and permissions
  * - Institute instructions are always included
  * - Progress/student instructions are only included when hasStudent is true
+ * - Institute language is used to set the default language for report content
  */
 export function buildProgressSystemPrompt(
   permissions: AccessPermissions = DEFAULT_REPORT_PERMISSIONS,
-  hasStudent: boolean = true
+  hasStudent: boolean = true,
+  instituteLanguage?: string | null
 ): string {
   // Always include institute prompt (institute management doesn't require a student)
   let prompt = INSTITUTE_SYSTEM_PROMPT;
@@ -791,6 +793,17 @@ export function buildProgressSystemPrompt(
 
       if (readonlyTypes.length > 0) {
         prompt += `**Note:** The following are read-only: ${readonlyTypes.join(', ')}.\n`;
+      }
+
+      // Add institute language instruction for report content
+      if (instituteLanguage) {
+        const languageNames: Record<string, string> = {
+          en: 'English', he: 'Hebrew', ar: 'Arabic', es: 'Spanish',
+          fr: 'French', de: 'German', zh: 'Chinese', ja: 'Japanese',
+          ru: 'Russian', pt: 'Portuguese',
+        };
+        const langName = languageNames[instituteLanguage] || instituteLanguage;
+        prompt += `\nReport data should be written in ${langName} by default, unless the user specifies otherwise.\n`;
       }
     }
   }

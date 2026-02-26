@@ -119,6 +119,7 @@ function openPrintableReport(
   student: { name: string; id: string } | null,
   institute: { name: string; logoUrl?: string } | null,
   t: (key: string) => string,
+  isRTL: boolean = false,
 ) {
   const statusLabels: Record<string, string> = {
     draft: t('reports.status.draft'),
@@ -181,7 +182,7 @@ function openPrintableReport(
     : '';
 
   const html = `<!DOCTYPE html>
-<html>
+<html dir="${isRTL ? 'rtl' : 'ltr'}" lang="${isRTL ? 'he' : 'en'}">
 <head>
   <meta charset="utf-8">
   <title>${t(`reports.${type}.title`)} - ${student?.name || ''}</title>
@@ -193,12 +194,12 @@ function openPrintableReport(
     .header-text { flex: 1; }
     .institute-name { font-size: 20px; font-weight: 600; display: block; }
     .report-title { font-size: 24px; font-weight: 700; margin-top: 16px; }
-    .meta { display: flex; gap: 24px; margin: 12px 0 24px; font-size: 13px; color: #555; }
+    .meta { display: flex; flex-wrap: wrap; gap: 24px; margin: 12px 0 24px; font-size: 13px; color: #555; }
     .meta span { display: inline-flex; gap: 4px; }
     .section { margin-bottom: 20px; }
     .section h3 { font-size: 15px; font-weight: 600; margin-bottom: 6px; color: #333; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
     .section p { font-size: 14px; line-height: 1.5; }
-    .section ul { list-style: disc; padding-left: 24px; font-size: 14px; line-height: 1.8; }
+    .section ul { list-style: disc; padding-inline-start: 24px; font-size: 14px; line-height: 1.8; }
     @media print {
       body { padding: 20px; }
       .no-print { display: none; }
@@ -312,7 +313,7 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
   };
 
   const handleViewReport = (report: MedicalRecord | FunctionalReport | EducationalReport, type: ReportType) => {
-    openPrintableReport(report, type, student, currentInstitute, t);
+    openPrintableReport(report, type, student, currentInstitute, t, isRTL);
   };
 
   const handleEditReport = (report: MedicalRecord | FunctionalReport | EducationalReport, type: ReportType) => {

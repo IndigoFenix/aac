@@ -1,6 +1,8 @@
 import { encrypt, decrypt } from './encryption';
 import { db } from '../db';
-import { dropboxConnections, dropboxBackups } from '@shared/schema';
+// Tables `dropboxConnections` and `dropboxBackups` have been deleted from @shared/schema. Stubs keep this dead-code file compiling.
+const dropboxConnections = null as any;
+const dropboxBackups = null as any;
 import { eq } from 'drizzle-orm';
 
 export interface DropboxTokens {

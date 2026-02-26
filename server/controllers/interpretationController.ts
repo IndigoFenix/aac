@@ -1,7 +1,9 @@
 import type { Request, Response } from "express";
 import { interpretationRepository, studentRepository, userRepository } from "../repositories";
 import { creditService } from "../services";
-import { interpretRequestSchema } from "@shared/schema";
+// `interpretRequestSchema` has been deleted from @shared/schema. Stub keeps this dead-code file compiling.
+import { z } from "zod";
+const interpretRequestSchema = z.any();
 import { interpretAACText, interpretAACImage } from "../services/interpretationService";
 
 export class InterpretationController {
