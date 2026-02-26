@@ -1312,6 +1312,7 @@ export const en = {
     invalid: 'Invalid Invite',
     invalidDesc: 'This invite link is invalid or has expired.',
     createAccount: 'Create Your Account',
+    joinTitle: 'Welcome to {institute}',
     invitedBy: 'Invited by {name}',
     invitedByToJoin: '{name} invited you to join {institute}',
     invitedToJoinInstitute: 'You have been invited to join {institute}',
@@ -1329,6 +1330,9 @@ export const en = {
     registered: 'Welcome!',
     registeredDesc: 'Your account has been created and you have joined {institute}',
     error: 'Error',
+
+    // Account switching
+    switchingAccounts: 'Switching accounts...',
 
     // Expiry
     expiresAt: 'Expires',

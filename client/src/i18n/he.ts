@@ -1506,6 +1506,7 @@ export const he = {
     invalid: 'הזמנה לא תקינה',
     invalidDesc: 'קישור ההזמנה לא תקין או שפג תוקפו.',
     createAccount: 'צור את החשבון שלך',
+    joinTitle: 'הצטרף ל-{institute}',
     invitedBy: 'הוזמנת על ידי {name}',
     invitedByToJoin: '{name} הזמין אותך להצטרף ל-{institute}',
     invitedToJoinInstitute: 'הוזמנת להצטרף ל-{institute}',
@@ -1523,6 +1524,9 @@ export const he = {
     registered: 'ברוכים הבאים!',
     registeredDesc: 'החשבון שלך נוצר והצטרפת ל-{institute}',
     error: 'שגיאה',
+
+    // Account switching
+    switchingAccounts: 'מחליף חשבונות...',
 
     // Expiry
     expiresAt: 'פג תוקף',

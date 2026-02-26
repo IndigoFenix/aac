@@ -35,6 +35,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<LoginResult>;
   logout: () => void;
+  logoutQuietly: () => Promise<void>;
   refetchUser: () => Promise<void>;
 }
 
@@ -136,21 +137,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       queryClient.removeQueries({ queryKey: ['/api/students'] });
       queryClient.removeQueries({ queryKey: ['/api/onboarding/status'] });
       queryClient.removeQueries({ queryKey: ['/api/invite-codes'] });
-      
+
       // Clear all queries to be safe
       queryClient.clear();
-  
+
       // Also clear the currently selected AAC user
       if (typeof window !== 'undefined') {
         window.localStorage.removeItem('aac.currentUserId');
       }
-  
+
       // Clear user state
       setUser(null);
-      
+
       // Redirect to login page
       window.location.href = '/login';
     }
+  };
+
+  const logoutQuietly = async () => {
+    try {
+      await apiRequest("POST", "/auth/logout", {});
+    } catch {}
+    queryClient.clear();
+    localStorage.removeItem('aac.currentUserId');
+    localStorage.removeItem('cliniaacian.currentInstituteId');
+    setUser(null);
   };
   
 
@@ -168,6 +179,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     isLoading,
     login,
     logout,
+    logoutQuietly,
     refetchUser,
   };
 
