@@ -121,7 +121,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
   const inviteToken = propToken || params.token;
   const isInviteMode = !!inviteToken;
   
-  const { isAuthenticated, isLoading: authLoading, login, refetchUser } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, login, logoutQuietly, refetchUser, user } = useAuth();
   const { t, language, direction } = useLanguage();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
@@ -146,6 +146,9 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
   
   // Invite acceptance state
   const [isAcceptingInvite, setIsAcceptingInvite] = useState(false);
+
+  // Email mismatch auto-logout state
+  const [isLoggingOutMismatch, setIsLoggingOutMismatch] = useState(false);
 
   // MFA state
   const [mfaStep, setMfaStep] = useState<'login' | 'mfa_verify' | 'mfa_setup'>('login');
@@ -228,6 +231,15 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
     enabled: isInviteMode,
     retry: false,
   });
+
+  // Auto-logout if logged-in user doesn't match invite email
+  useEffect(() => {
+    if (!isInviteMode || !inviteData || !isAuthenticated || !user) return;
+    if (user.email.toLowerCase() !== inviteData.invite.email.toLowerCase()) {
+      setIsLoggingOutMismatch(true);
+      logoutQuietly().finally(() => setIsLoggingOutMismatch(false));
+    }
+  }, [isInviteMode, isAuthenticated, inviteData, user]);
 
   // User type options with translations
   const userTypeOptions = [
@@ -491,7 +503,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
       if (isInviteMode && inviteData) {
         toast({ 
           title: t('invite.registered') || 'Welcome!',
-          description: (t('invite.registeredDesc') || `Your account has been created and you've joined ${inviteData.institute.name}`)
+          description: (t('invite.registeredDesc') || 'Your account has been created and you have joined {institute}').replace('{institute}', inviteData.institute.name)
         });
       } else {
         toast({ 
@@ -525,7 +537,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
 
       toast({
         title: t('invite.accepted') || 'Invite Accepted',
-        description: (t('invite.acceptedDesc') || `You have joined ${inviteData?.institute.name}`),
+        description: (t('invite.acceptedDesc') || 'You have joined {institute}').replace('{institute}', inviteData?.institute.name || ''),
       });
 
       setLocation('/');
@@ -541,10 +553,15 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
   };
 
   // Loading state
-  if (authLoading || (isInviteMode && inviteLoading)) {
+  if (authLoading || (isInviteMode && inviteLoading) || isLoggingOutMismatch) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          {isLoggingOutMismatch && (
+            <p className="text-sm text-muted-foreground">{t('invite.switchingAccounts')}</p>
+          )}
+        </div>
       </div>
     );
   }
@@ -592,7 +609,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
               )}
             </div>
             <CardTitle className="text-2xl font-bold">
-              {t('invite.joinTitle') || 'Join Institute'}
+              {(t('invite.joinTitle') || 'Welcome to {institute}').replace('{institute}', institute.name)}
             </CardTitle>
             <CardDescription>
               {invitedBy?.fullName 
