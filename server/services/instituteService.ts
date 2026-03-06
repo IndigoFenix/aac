@@ -245,7 +245,7 @@ export class InstituteService {
       grantAdmin?: boolean;
       message?: string;
     } = {},
-    baseUrl: string = "https://cliniaacian.com" // Pass this from the controller
+    baseUrl: string = "https://aivota.ai" // Pass this from the controller
   ): Promise<{ success: boolean; invite?: InstituteInvite; error?: string }> {
     // Verify admin access
     const isAdmin = await instituteRepository.isUserAdminOfInstitute(
@@ -463,7 +463,7 @@ export class InstituteService {
   async resendInvite(
     inviteId: string,
     requestingUserId: string,
-    baseUrl: string = "https://cliniaacian.com"
+    baseUrl: string = "https://aivota.ai"
   ): Promise<{ success: boolean; invite?: InstituteInvite; error?: string }> {
     const oldInvite = await instituteRepository.getInviteById(inviteId);
     

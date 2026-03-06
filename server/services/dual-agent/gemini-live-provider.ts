@@ -1,99 +1,53 @@
-// server/services/dual-agent/live-session.ts
-// Manages a persistent Gemini Live API WebSocket session for real-time AAC interaction.
-// Uses TEXT response modality to preserve the prefix token system and ElevenLabs TTS.
+// server/services/dual-agent/gemini-live-provider.ts
+// Gemini Live API provider — wraps the @google/genai SDK's Live session.
+// Uses native-audio model with function calling. Audio output is discarded (ElevenLabs TTS used).
 
-import { GoogleGenAI, Modality } from "@google/genai";
-import type { Session, LiveServerMessage } from "@google/genai";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-export interface LiveSessionConfig {
-  model: string;                  // e.g. "gemini-2.0-flash-exp-image-generation"
-  temperature?: number;           // default 0.7
-  maxOutputTokens?: number;       // default 500
-  /** Token threshold that triggers context window compression */
-  compressionTriggerTokens?: number;  // default 100000
-  /** Target token count after compression */
-  compressionTargetTokens?: number;   // default 50000
-}
-
-export interface LiveSessionCallbacks {
-  /** Incremental text from the model (prefix-token chunks) */
-  onText: (text: string) => void;
-  /** Model finished its turn */
-  onTurnComplete: () => void;
-  /** Model was interrupted by new user input */
-  onInterrupted: () => void;
-  /** Usage metadata from the model */
-  onUsage?: (usage: { promptTokens: number; completionTokens: number }) => void;
-  /** Session is about to disconnect (goAway) — reconnect soon */
-  onGoAway?: () => void;
-  /** Session setup completed — ready to send data */
-  onReady?: () => void;
-  /** Connection error */
-  onError: (error: Error) => void;
-  /** Connection closed (code + reason from WebSocket close event) */
-  onClose?: (code?: number, reason?: string) => void;
-  /** Input transcription (if audio is sent and transcription is enabled) */
-  onInputTranscription?: (text: string) => void;
-  /** Called when resumption-handle reconnect fails and a fresh session was created.
-   *  The relay should reload conversation history from DB and send it to the new session. */
-  onReconnectFailed?: () => Promise<void>;
-  /** Called when reconnection is starting (before connect) */
-  onReconnecting?: () => void;
-}
-
-// Safety settings — all OFF, matching gemini-chat.ts
-const SAFETY_SETTINGS = [
-  { category: "HARM_CATEGORY_HARASSMENT" as const, threshold: "OFF" as const },
-  { category: "HARM_CATEGORY_HATE_SPEECH" as const, threshold: "OFF" as const },
-  { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT" as const, threshold: "OFF" as const },
-  { category: "HARM_CATEGORY_DANGEROUS_CONTENT" as const, threshold: "OFF" as const },
-];
+import { GoogleGenAI, Modality, FunctionResponse, FunctionResponseScheduling } from "@google/genai";
+import type { Session, LiveServerMessage, FunctionCall, Tool } from "@google/genai";
+import type {
+  LiveProvider,
+  LiveProviderCallbacks,
+  LiveProviderConfig,
+  ToolCall,
+  ToolResponse,
+} from "./live-provider";
 
 // ---------------------------------------------------------------------------
-// GeminiLiveSession
+// GeminiLiveProvider
 // ---------------------------------------------------------------------------
 
-export class GeminiLiveSession {
+export class GeminiLiveProvider implements LiveProvider {
   private client: GoogleGenAI;
   private session: Session | null = null;
   private resumptionHandle: string | null = null;
-  private config: LiveSessionConfig;
-  private callbacks: LiveSessionCallbacks;
-  private systemPrompt: string = "";
+  private config: LiveProviderConfig = { model: "gemini-2.5-flash-native-audio-preview-12-2025" };
+  private callbacks: LiveProviderCallbacks;
+  private systemPrompt = "";
   private connected = false;
 
-  /** Last WebSocket close code — readable by relay for reconnection decisions */
   lastCloseCode: number | null = null;
-  /** Whether the last close was due to a rate limit */
   lastCloseWasRateLimit = false;
-  /** Whether the last close was due to a safety/policy violation */
   lastCloseWasSafety = false;
 
-  // Proactive reconnection timer (reconnect before the 2-min video limit)
+  // Proactive reconnection timer (reconnect before the 10-min session limit)
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private static RECONNECT_INTERVAL_MS = 90_000; // 90s — well before 2-min limit
+  // Gemini Live sessions disconnect with 1011 after ~10 min.
+  // A GoAway message arrives at ~9 min. Proactively reconnect at 8.5 min.
+  private static RECONNECT_INTERVAL_MS = 510_000;
 
   // Set by close() so onclose handler knows not to auto-reconnect
   private closedIntentionally = false;
 
-  constructor(callbacks: LiveSessionCallbacks) {
+  constructor(callbacks: LiveProviderCallbacks) {
     this.client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
     this.callbacks = callbacks;
-    this.config = { model: "gemini-2.0-flash-exp-image-generation" };
   }
 
   // -------------------------------------------------------------------------
   // Lifecycle
   // -------------------------------------------------------------------------
 
-  /**
-   * Open a new Gemini Live session with the given system prompt and config.
-   */
-  async connect(systemPrompt: string, config: LiveSessionConfig): Promise<void> {
+  async connect(systemPrompt: string, config: LiveProviderConfig): Promise<void> {
     this.closedIntentionally = false;
     this.lastCloseWasSafety = false;
     this.systemPrompt = systemPrompt;
@@ -106,17 +60,20 @@ export class GeminiLiveSession {
       this.session = await this.client.live.connect({
         model: config.model,
         config: {
-          responseModalities: [Modality.TEXT],
+          // TEXT modality for prefix token mode (no tools), AUDIO for function calling mode (with tools)
+          responseModalities: [config.responseModality === "TEXT" ? Modality.TEXT
+            : config.responseModality === "AUDIO" ? Modality.AUDIO
+            : config.tools ? Modality.AUDIO : Modality.TEXT],
           systemInstruction: { parts: [{ text: systemPrompt }] },
           temperature: config.temperature ?? 0.7,
-          // Safety settings not typed on LiveConnectConfig, but accepted by the API
-          ...(({ safetySettings: SAFETY_SETTINGS }) as any),
+          // Tool declarations for function calling
+          ...(config.tools ? { tools: config.tools as Tool[] } : {}),
           sessionResumption: {
-            // First connect — no handle yet
             ...(this.resumptionHandle ? { handle: this.resumptionHandle } : {}),
           },
-          // Enable built-in audio transcription (Gemini returns inputTranscription events)
+          // Enable built-in audio transcription
           inputAudioTranscription: {},
+          outputAudioTranscription: {},
           contextWindowCompression: {
             triggerTokens: String(triggerTokens),
             slidingWindow: {
@@ -127,13 +84,12 @@ export class GeminiLiveSession {
         callbacks: {
           onopen: () => {
             this.connected = true;
-            console.log("[LiveSession] Connected to Gemini Live API");
+            console.log("[GeminiLiveProvider] Connected to Gemini Live API");
           },
           onmessage: (msg: LiveServerMessage) => this.handleServerMessage(msg),
           onerror: (e: ErrorEvent) => {
             const msg = e.message || "WebSocket error";
-            console.error("[LiveSession] WebSocket error:", msg);
-            // Flag rate-limit errors so the relay can distinguish them
+            console.error("[GeminiLiveProvider] WebSocket error:", msg);
             if (/resource.exhausted|rate.limit|quota|too many requests|overloaded/i.test(msg)) {
               this.lastCloseWasRateLimit = true;
             }
@@ -143,28 +99,31 @@ export class GeminiLiveSession {
             this.connected = false;
             this.lastCloseCode = e.code;
             const reason = e.reason || "";
-            console.log(`[LiveSession] Connection closed: code=${e.code} reason=${reason}`);
+            console.log(`[GeminiLiveProvider] Connection closed: code=${e.code} reason=${reason}`);
             this.clearReconnectTimer();
 
-            // Detect rate limit / quota errors — do NOT auto-reconnect
             const isRateLimit = /resource.exhausted|rate.limit|quota|too many requests|overloaded/i.test(reason);
             this.lastCloseWasRateLimit = isRateLimit;
 
-            // Detect safety/policy violations (code 1007 or safety-related reasons)
-            const isSafety = !isRateLimit && (e.code === 1007 || /policy.violation|unsafe|blocked|safety/i.test(reason));
+            const isConfigError = e.code === 1007 && /Invalid JSON payload|Unknown name|Cannot find field/i.test(reason);
+            if (isConfigError) {
+              console.error(`[GeminiLiveProvider] CONFIG ERROR (not safety): ${reason}`);
+            }
+
+            const isSafety = !isRateLimit && !isConfigError && /policy.violation|unsafe|blocked|safety/i.test(reason);
             this.lastCloseWasSafety = isSafety;
 
             this.callbacks.onClose?.(e.code, reason);
 
             if (isRateLimit) {
-              console.warn(`[LiveSession] Rate limited — NOT auto-reconnecting. Reason: ${reason}`);
-              return; // Do not reconnect
+              console.warn(`[GeminiLiveProvider] Rate limited — NOT auto-reconnecting. Reason: ${reason}`);
+              return;
             }
 
-            // Auto-reconnect on unexpected closes (not from intentional close())
+            // Auto-reconnect on unexpected closes
             if (!this.closedIntentionally && e.code !== 1000) {
-              const delay = e.code === 1007 ? 2000 : 1000; // longer delay for safety rejections
-              console.log(`[LiveSession] Unexpected close, reconnecting in ${delay}ms...`);
+              const delay = e.code === 1011 ? 1000 : e.code === 1007 ? 2000 : 1000;
+              console.log(`[GeminiLiveProvider] Unexpected close (code=${e.code}), reconnecting in ${delay}ms...`);
               this.callbacks.onReconnecting?.();
               this.scheduleReconnect(delay);
             }
@@ -173,25 +132,18 @@ export class GeminiLiveSession {
       });
 
       this.startReconnectTimer();
-      console.log(`[LiveSession] Session established, model=${config.model}`);
+      console.log(`[GeminiLiveProvider] Session established, model=${config.model}`);
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
-      console.error("[LiveSession] Failed to connect:", error.message);
+      console.error("[GeminiLiveProvider] Failed to connect:", error.message);
       this.callbacks.onError(error);
       throw error;
     }
   }
 
-  /**
-   * Reconnect using the stored resumption handle.
-   * Preserves conversation history and context.
-   * If resumption fails, falls back to a fresh connection and calls onReconnectFailed
-   * so the relay can reload history from DB.
-   */
   async reconnect(): Promise<void> {
     this.callbacks.onReconnecting?.();
 
-    // Close old session gracefully
     if (this.session) {
       try { this.session.close(); } catch { /* ignore */ }
       this.session = null;
@@ -200,29 +152,24 @@ export class GeminiLiveSession {
     this.clearReconnectTimer();
 
     if (!this.resumptionHandle) {
-      console.warn("[LiveSession] No resumption handle — full reconnect");
+      console.warn("[GeminiLiveProvider] No resumption handle — full reconnect");
       await this.connect(this.systemPrompt, this.config);
       await this.callbacks.onReconnectFailed?.();
       return;
     }
 
-    console.log("[LiveSession] Reconnecting with resumption handle...");
+    console.log("[GeminiLiveProvider] Reconnecting with resumption handle...");
 
     try {
       await this.connect(this.systemPrompt, this.config);
     } catch (err) {
-      // Resumption handle may be stale — try fresh connection
-      console.warn("[LiveSession] Resumption failed, trying fresh connect:", err);
+      console.warn("[GeminiLiveProvider] Resumption failed, trying fresh connect:", err);
       this.resumptionHandle = null;
       await this.connect(this.systemPrompt, this.config);
-      // Notify relay to reload history from DB
       await this.callbacks.onReconnectFailed?.();
     }
   }
 
-  /**
-   * Close the session and clean up.
-   */
   close(): void {
     this.closedIntentionally = true;
     this.clearReconnectTimer();
@@ -232,7 +179,7 @@ export class GeminiLiveSession {
     }
     this.connected = false;
     this.resumptionHandle = null;
-    console.log("[LiveSession] Session closed");
+    console.log("[GeminiLiveProvider] Session closed");
   }
 
   get isConnected(): boolean {
@@ -243,11 +190,6 @@ export class GeminiLiveSession {
   // Sending data
   // -------------------------------------------------------------------------
 
-  /**
-   * Send a video frame (JPEG) via sendClientContent with inlineData.
-   * Images must go through sendClientContent (sendRealtimeInput doesn't work for images
-   * on this model). Uses turnComplete=false so the model doesn't respond to every frame.
-   */
   sendFrame(jpegBase64: string, turnComplete = false): void {
     if (!this.session || !this.connected) return;
     try {
@@ -259,15 +201,15 @@ export class GeminiLiveSession {
         turnComplete,
       });
     } catch (err) {
-      console.error("[LiveSession] Failed to send frame:", err);
+      console.error("[GeminiLiveProvider] Failed to send frame:", err);
     }
   }
 
-  /**
-   * Send a frame grid with a text prompt to trigger model analysis.
-   * Sets turnComplete=true so the model responds with observations.
-   */
-  sendFrameWithPrompt(jpegBase64: string, prompt: string, extraImages?: Array<{ data: string; mimeType: string; label?: string }>): void {
+  sendFrameWithPrompt(
+    jpegBase64: string,
+    prompt: string,
+    extraImages?: Array<{ data: string; mimeType: string; label?: string }>,
+  ): void {
     if (!this.session || !this.connected) return;
     try {
       const parts: any[] = [
@@ -285,38 +227,21 @@ export class GeminiLiveSession {
         turnComplete: true,
       });
     } catch (err) {
-      console.error("[LiveSession] Failed to send frame with prompt:", err);
+      console.error("[GeminiLiveProvider] Failed to send frame with prompt:", err);
     }
   }
 
-  /**
-   * Send raw PCM audio via realtime input.
-   * NOTE: The Live API only accepts raw PCM audio (audio/pcm;rate=16000).
-   * Encoded formats (webm, wav, mp3) must be transcribed first.
-   * @param audioBase64 Base64-encoded raw PCM audio data
-   * @param mimeType Audio MIME type (default: "audio/pcm;rate=16000")
-   */
   sendAudio(audioBase64: string, mimeType = "audio/pcm;rate=16000"): void {
     if (!this.session || !this.connected) return;
     try {
       this.session.sendRealtimeInput({
-        audio: {
-          data: audioBase64,
-          mimeType,
-        },
+        audio: { data: audioBase64, mimeType },
       });
     } catch (err) {
-      console.error("[LiveSession] Failed to send audio:", err);
+      console.error("[GeminiLiveProvider] Failed to send audio:", err);
     }
   }
 
-  /**
-   * Send a text message as a conversation turn.
-   * Ordered — added to context sequentially.
-   * @param text The message text
-   * @param role "user" or "model" (default: "user")
-   * @param turnComplete Whether to signal the model to respond (default: true)
-   */
   sendMessage(text: string, role: "user" | "model" = "user", turnComplete = true): void {
     if (!this.session || !this.connected) return;
     try {
@@ -325,31 +250,22 @@ export class GeminiLiveSession {
         turnComplete,
       });
     } catch (err) {
-      console.error("[LiveSession] Failed to send message:", err);
+      console.error("[GeminiLiveProvider] Failed to send message:", err);
     }
   }
 
-  /**
-   * Inject context without triggering a model response.
-   * Used for monitor agent context injections, person identification updates, etc.
-   */
   sendContextInjection(text: string): void {
     if (!this.session || !this.connected) return;
     try {
-      // Send as user turn without completing — model won't respond
       this.session.sendClientContent({
         turns: [{ role: "user", parts: [{ text: `[SYSTEM CONTEXT UPDATE]\n${text}` }] }],
         turnComplete: false,
       });
     } catch (err) {
-      console.error("[LiveSession] Failed to send context injection:", err);
+      console.error("[GeminiLiveProvider] Failed to send context injection:", err);
     }
   }
 
-  /**
-   * Send conversation history to prime the session.
-   * Used after reconnection to restore context.
-   */
   sendConversationHistory(turns: Array<{ role: "user" | "model"; text: string }>): void {
     if (!this.session || !this.connected) return;
     try {
@@ -362,7 +278,31 @@ export class GeminiLiveSession {
         turnComplete: false,
       });
     } catch (err) {
-      console.error("[LiveSession] Failed to send conversation history:", err);
+      console.error("[GeminiLiveProvider] Failed to send conversation history:", err);
+    }
+  }
+
+  sendToolResponse(responses: ToolResponse[]): void {
+    if (!this.session || !this.connected) return;
+    try {
+      // Convert from provider-agnostic ToolResponse to Gemini FunctionResponse
+      const fnResponses: FunctionResponse[] = responses.map(r => {
+        const fr = Object.assign(new FunctionResponse(), {
+          id: r.id,
+          name: r.name,
+          response: r.response,
+        });
+        // Apply scheduling if specified (e.g. SILENT for native-audio mode)
+        if (r.scheduling === "SILENT") {
+          (fr as any).scheduling = FunctionResponseScheduling.SILENT;
+        } else if (r.scheduling === "WHEN_IDLE") {
+          (fr as any).scheduling = FunctionResponseScheduling.WHEN_IDLE;
+        }
+        return fr;
+      });
+      this.session.sendToolResponse({ functionResponses: fnResponses });
+    } catch (err) {
+      console.error("[GeminiLiveProvider] Failed to send tool response:", err);
     }
   }
 
@@ -371,14 +311,12 @@ export class GeminiLiveSession {
   // -------------------------------------------------------------------------
 
   private handleServerMessage(msg: LiveServerMessage): void {
-    // Setup complete — session is ready
     if (msg.setupComplete) {
-      console.log("[LiveSession] Setup complete — ready to send data");
+      console.log("[GeminiLiveProvider] Setup complete — ready to send data");
       this.callbacks.onReady?.();
       return;
     }
 
-    // Session resumption update — store handle for reconnection
     if (msg.sessionResumptionUpdate) {
       const update = msg.sessionResumptionUpdate;
       if (update.newHandle) {
@@ -387,16 +325,13 @@ export class GeminiLiveSession {
       return;
     }
 
-    // Go away — server requesting disconnect soon
     if (msg.goAway) {
-      console.log("[LiveSession] Received goAway — scheduling reconnect");
+      console.log("[GeminiLiveProvider] Received goAway — scheduling reconnect");
       this.callbacks.onGoAway?.();
-      // Trigger immediate reconnect
       this.scheduleReconnect(0);
       return;
     }
 
-    // Usage metadata
     if (msg.usageMetadata) {
       const usage = msg.usageMetadata;
       this.callbacks.onUsage?.({
@@ -405,36 +340,55 @@ export class GeminiLiveSession {
       });
     }
 
-    // Server content — text responses, turn completion, interruption
+    // Tool call — normalize FunctionCall[] to ToolCall[]
+    if (msg.toolCall?.functionCalls) {
+      const normalized: ToolCall[] = msg.toolCall.functionCalls.map((fc: FunctionCall) => ({
+        id: fc.id || "",
+        name: fc.name || "unknown",
+        args: (fc.args || {}) as Record<string, any>,
+      }));
+      this.callbacks.onToolCall?.(normalized);
+    }
+
+    if (msg.toolCallCancellation?.ids) {
+      this.callbacks.onToolCallCancellation?.(msg.toolCallCancellation.ids);
+    }
+
     if (msg.serverContent) {
       const content = msg.serverContent;
 
-      // Model text output
       if (content.modelTurn?.parts) {
         for (const part of content.modelTurn.parts) {
           if (part.text) {
             this.callbacks.onText(part.text);
           }
+          if (part.inlineData?.data && part.inlineData.mimeType?.startsWith("audio/")) {
+            this.callbacks.onAudioData?.({
+              mimeType: part.inlineData.mimeType,
+              data: part.inlineData.data,
+            });
+          }
         }
       }
 
-      // Input transcription
       if (content.inputTranscription?.text) {
         this.callbacks.onInputTranscription?.(content.inputTranscription.text);
       }
 
-      // Turn complete — callback is async, catch errors to prevent silent failures
+      if ((content as any).outputTranscription?.text) {
+        this.callbacks.onOutputTranscription?.((content as any).outputTranscription.text);
+      }
+
       if (content.turnComplete) {
         Promise.resolve(this.callbacks.onTurnComplete()).catch(err => {
-          console.error("[LiveSession] onTurnComplete callback error:", (err as Error).message);
+          console.error("[GeminiLiveProvider] onTurnComplete callback error:", (err as Error).message);
           this.callbacks.onError?.(err instanceof Error ? err : new Error(String(err)));
         });
       }
 
-      // Interrupted — callback may be async, catch errors
       if (content.interrupted) {
         Promise.resolve(this.callbacks.onInterrupted()).catch(err => {
-          console.error("[LiveSession] onInterrupted callback error:", (err as Error).message);
+          console.error("[GeminiLiveProvider] onInterrupted callback error:", (err as Error).message);
         });
       }
     }
@@ -448,12 +402,12 @@ export class GeminiLiveSession {
     this.clearReconnectTimer();
     this.reconnectTimer = setTimeout(() => {
       if (this.connected) {
-        console.log("[LiveSession] Proactive reconnect (approaching session limit)");
+        console.log("[GeminiLiveProvider] Proactive reconnect (approaching session limit)");
         this.reconnect().catch(err => {
-          console.error("[LiveSession] Proactive reconnect failed:", err);
+          console.error("[GeminiLiveProvider] Proactive reconnect failed:", err);
         });
       }
-    }, GeminiLiveSession.RECONNECT_INTERVAL_MS);
+    }, GeminiLiveProvider.RECONNECT_INTERVAL_MS);
   }
 
   private clearReconnectTimer(): void {
@@ -467,7 +421,7 @@ export class GeminiLiveSession {
     this.clearReconnectTimer();
     this.reconnectTimer = setTimeout(() => {
       this.reconnect().catch(err => {
-        console.error("[LiveSession] Scheduled reconnect failed:", err);
+        console.error("[GeminiLiveProvider] Scheduled reconnect failed:", err);
       });
     }, delayMs);
   }

@@ -140,6 +140,10 @@ export interface DualAgentSessionState {
   // instead of separate isDetection toggle (system prompt sent once, not per-request)
   isLiveMode?: boolean;
 
+  // Function calling mode: when true, prompt tells the model to use tool calls (OpenAI realtime).
+  // When false, prompt tells the model to use text prefix tokens like [SPEAK], [ADD_BUTTONS] (Gemini live).
+  useFunctionCalling?: boolean;
+
   // Interpretation aggressiveness level (0-4)
   interpretationLevel: AACInterpretationLevel;
 
@@ -416,6 +420,54 @@ export interface DetectionOutput {
   askYesNo?: boolean;              // Deferred Yes/No — show overlay after TTS playback
   focusRequested?: string;         // AI requested a high-res focus frame (reason)
   error?: string;                  // error message if processing failed
+}
+
+/**
+ * Accumulator for tool calls within a single Gemini turn.
+ * Replaces the per-segment aggregation from the prefix token parser.
+ */
+export interface TurnToolAccumulator {
+  speakText: string;
+  interpretText: string;
+  interpretConfidence: 'high' | 'medium' | 'low' | null;
+  transcriptText: string;
+  transcriptSpeaker: string;
+  contextText: string;
+  callMonitorReason: string | null;
+  learnFaceData: { name: string; relationship?: string; description?: string } | null;
+  focusReason: string | null;
+  openAppData: { appId: string; data?: string } | null;
+  closeApp: boolean;
+  setBoardName: string | null;
+  pressButtonLabel: string | null;
+  boardChanged: boolean;
+  boardRebuilt: boolean;
+  boardAddLabels: string[];
+  boardRemoveLabels: string[];
+  emote: 'happy' | 'sad' | 'neutral' | null;
+}
+
+export function createEmptyAccumulator(): TurnToolAccumulator {
+  return {
+    speakText: "",
+    interpretText: "",
+    interpretConfidence: null,
+    transcriptText: "",
+    transcriptSpeaker: "",
+    contextText: "",
+    callMonitorReason: null,
+    learnFaceData: null,
+    focusReason: null,
+    openAppData: null,
+    closeApp: false,
+    setBoardName: null,
+    pressButtonLabel: null,
+    boardChanged: false,
+    boardRebuilt: false,
+    boardAddLabels: [],
+    boardRemoveLabels: [],
+    emote: null,
+  };
 }
 
 export const DEFAULT_CONFIG: DualAgentConfig = {

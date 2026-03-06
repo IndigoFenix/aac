@@ -1,0 +1,147 @@
+Email service: SMTP configured successfully
+Google OAuth not configured - missing credentials
+[LiveRelay] WebSocket server ready on /ws/live
+3:55:54 PM [express] serving on port 5000
+[Recognition] Found 2 people for student 547976c7-9b1d-49db-9cfb-5c6500806533, 0 with embeddings (0 contacts)
+3:56:19 PM [express] GET /api/aac/students/547976c7-9b1d-49db-9cfb-5c6500806533/known-people 304 in 2929ms :: {"success":true,"people":[],"count":0}
+[Recognition] Found 2 people for student 547976c7-9b1d-49db-9cfb-5c6500806533, 0 with embeddings (0 contacts)
+3:56:26 PM [express] GET /api/aac/students/547976c7-9b1d-49db-9cfb-5c6500806533/known-people 304 in 1469ms :: {"success":true,"people":[],"count":0}
+3:56:27 PM [express] GET /api/boards/student/547976c7-9b1d-49db-9cfb-5c6500806533 304 in 2007ms :: [{"id":"4f135334-9876-4806-a17f-763dcb733be5","userId":"d936e807-7ea3-4ca2-86b4-b486a31d051a","studentId":null,"name":"So…
+3:56:27 PM [express] GET /api/students/547976c7-9b1d-49db-9cfb-5c6500806533 200 in 2205ms :: {"success":true,"student":{"id":"547976c7-9b1d-49db-9cfb-5c6500806533","firstName":"Daniel","lastName":"Nadel","name":"Daniel N…
+[LiveRelay] New WebSocket connection
+[DualAgentService] Creating new session for student: 547976c7-9b1d-49db-9cfb-5c6500806533
+[MonitorAgent] Initializing session for student: 547976c7-9b1d-49db-9cfb-5c6500806533
+[MonitorAgent] Startup mode: fast
+[MonitorAgent] Session initialized: aac-1772373388040
+3:56:28 PM [express] GET /api/voices/active 304 in 638ms :: {"success":true,"voices":[]}
+3:56:29 PM [express] PATCH /api/students/547976c7-9b1d-49db-9cfb-5c6500806533 200 in 1385ms :: {"success":true,"message":"student updated successfully","student":{"id":"547976c7-9b1d-49db-9cfb-5c6500806533","firstName":"…
+[LiveSession] Connected to Gemini Live API
+[LiveSession] Session established, model=gemini-2.5-flash-native-audio-preview-12-2025
+[LiveRelay] Initialized session aac-1772373388040 for student 547976c7-9b1d-49db-9cfb-5c6500806533
+[LiveSession] Setup complete — ready to send data
+[LiveRelay] Gemini session ready
+[DualAgentService] Monitor throttled, next in 114 s
+[DualAgentService] Monitor throttled, next in 105 s
+[DualAgentService] Monitor throttled, next in 102 s
+[LiveSession] Connection closed: code=1011 reason=Internal error occurred.
+[LiveRelay] Gemini session closed: code=1011 reason=Internal error occurred.
+[LiveSession] Unexpected close (code=1011), reconnecting in 1000ms...
+[LiveRelay] Reconnecting (attempt 1)...
+[LiveRelay] Reconnecting (attempt 2)...
+[LiveRelay] Too many reconnect attempts — creating new session
+[LiveSession] Session closed
+[DualAgentService] Creating new session for student: 547976c7-9b1d-49db-9cfb-5c6500806533
+[LiveSession] No resumption handle — full reconnect
+[LiveSession] Connected to Gemini Live API
+[LiveSession] Session established, model=gemini-2.5-flash-native-audio-preview-12-2025
+[LiveRelay] Reconnect failed — reloading history from DB
+[MonitorAgent] Initializing session for student: 547976c7-9b1d-49db-9cfb-5c6500806533
+[LiveSession] Setup complete — ready to send data
+[LiveRelay] Gemini session ready
+[MonitorAgent] Startup mode: fast
+[MonitorAgent] Session initialized: aac-1772373412235
+[LiveRelay] Sent 1 history turns to fresh Gemini session (excludeSafety=false)
+[LiveSession] Connected to Gemini Live API
+[LiveSession] Session established, model=gemini-2.5-flash-native-audio-preview-12-2025
+[LiveRelay] Initialized session aac-1772373412235 for student 547976c7-9b1d-49db-9cfb-5c6500806533
+[LiveSession] Setup complete — ready to send data
+[LiveRelay] Gemini session ready
+[DualAgentService] Monitor throttled, next in 119 s
+[DualAgentService] Monitor throttled, next in 108 s
+[DualAgentService] Monitor throttled, next in 107 s
+[DualAgentService] Monitor throttled, next in 97 s
+[DualAgentService] Monitor throttled, next in 93 s
+[DualAgentService] Monitor throttled, next in 93 s
+[DualAgentService] Monitor throttled, next in 86 s
+[DualAgentService] Monitor throttled, next in 82 s
+[LiveRelay] Interpreting buttons: No
+[LiveSession] Connection closed: code=1011 reason=Internal error occurred.
+[LiveRelay] Gemini session closed: code=1011 reason=Internal error occurred.
+[LiveSession] Unexpected close (code=1011), reconnecting in 1000ms...
+[LiveRelay] Reconnecting (attempt 1)...
+[LiveRelay] Reconnecting (attempt 2)...
+[LiveRelay] Too many reconnect attempts — creating new session
+[LiveSession] Session closed
+[DualAgentService] Creating new session for student: 547976c7-9b1d-49db-9cfb-5c6500806533
+[LiveSession] No resumption handle — full reconnect
+[LiveSession] Connected to Gemini Live API
+[LiveSession] Session established, model=gemini-2.5-flash-native-audio-preview-12-2025
+[LiveRelay] Reconnect failed — reloading history from DB
+[MonitorAgent] Initializing session for student: 547976c7-9b1d-49db-9cfb-5c6500806533
+[LiveSession] Setup complete — ready to send data
+[LiveRelay] Gemini session ready
+[MonitorAgent] Startup mode: fast
+[LiveSession] Connected to Gemini Live API
+[LiveSession] Session established, model=gemini-2.5-flash-native-audio-preview-12-2025
+[LiveRelay] Reconnect failed — reloading history from DB
+[MonitorAgent] Initializing session for student: 547976c7-9b1d-49db-9cfb-5c6500806533
+[LiveSession] Setup complete — ready to send data
+[LiveRelay] Gemini session ready
+[MonitorAgent] Startup mode: fast
+[LiveRelay] Reconnect failed — reloading history from DB
+[MonitorAgent] Initializing session for student: 547976c7-9b1d-49db-9cfb-5c6500806533
+[LiveSession] Setup complete — ready to send data
+[LiveRelay] Gemini session ready
+[MonitorAgent] Startup mode: fast
+[LiveSession] Setup complete — ready to send data
+[LiveRelay] Gemini session ready
+[MonitorAgent] Startup mode: fast
+[MonitorAgent] Startup mode: fast
+[MonitorAgent] Session initialized: aac-1772373455886
+[LiveRelay] Sent 6 history turns to fresh Gemini session (excludeSafety=false)
+[LiveSession] Connected to Gemini Live API
+[LiveSession] Session established, model=gemini-2.5-flash-native-audio-preview-12-2025
+[LiveRelay] Initialized session aac-1772373455886 for student 547976c7-9b1d-49db-9cfb-5c6500806533
+[LiveSession] Setup complete — ready to send data
+[LiveRelay] Gemini session ready
+[DualAgentService] Monitor throttled, next in 118 s
+[LiveRelay] Interpreting buttons: I'm writing code
+[DualAgentService] Monitor throttled, next in 111 s
+[DualAgentService] Monitor throttled, next in 103 s
+[DualAgentService] Monitor throttled, next in 86 s
+[DualAgentService] Monitor throttled, next in 76 s
+[DualAgentService] Monitor throttled, next in 62 s
+[OpenAITTSService] Streaming 1 sentence(s)
+[OpenAITTSService] Synthesizing: "I'm writing code...." (voice: echo, model: tts-1)
+[OpenAITTSService] Synthesized 20640 bytes of audio
+[OpenAITTSService] Streaming 2 sentence(s)
+[OpenAITTSService] Synthesizing: "That sounds interesting!..." (voice: nova, model: tts-1)
+[OpenAITTSService] Synthesized 23520 bytes of audio
+[OpenAITTSService] Synthesizing: "Are you working on debugging, a new feature, or so..." (voice: nova, model: tts-1)
+[LiveRelay] handleGeminiTurnComplete called while already processing — skipping
+[OpenAITTSService] Synthesized 73920 bytes of audio
+[DualAgentService] Monitor throttled, next in 43 s
+[DualAgentService] Monitor throttled, next in 37 s
+[DualAgentService] Monitor throttled, next in 32 s
+[LiveRelay] Interpreting buttons: Tests are failing
+[DualAgentService] Monitor throttled, next in 23 s
+[LiveSession] Connection closed: code=1011 reason=Internal error occurred.
+[LiveRelay] Gemini session closed: code=1011 reason=Internal error occurred.
+[LiveSession] Unexpected close (code=1011), reconnecting in 1000ms...
+[LiveRelay] Reconnecting (attempt 1)...
+[LiveRelay] Reconnecting (attempt 2)...
+[LiveRelay] Too many reconnect attempts — creating new session
+[LiveSession] Session closed
+[DualAgentService] Creating new session for student: 547976c7-9b1d-49db-9cfb-5c6500806533
+[LiveSession] No resumption handle — full reconnect
+[LiveSession] Connected to Gemini Live API
+[LiveSession] Session established, model=gemini-2.5-flash-native-audio-preview-12-2025
+[LiveRelay] Reconnect failed — reloading history from DB
+[LiveSession] Setup complete — ready to send data
+[LiveRelay] Gemini session ready
+[MonitorAgent] Initializing session for student: 547976c7-9b1d-49db-9cfb-5c6500806533
+[LiveRelay] Sent 7 history turns to fresh Gemini session (excludeSafety=false)
+[MonitorAgent] Startup mode: fast
+[MonitorAgent] Session initialized: aac-1772373560677
+[LiveSession] Connected to Gemini Live API
+[LiveSession] Session established, model=gemini-2.5-flash-native-audio-preview-12-2025
+[LiveRelay] Initialized session aac-1772373560677 for student 547976c7-9b1d-49db-9cfb-5c6500806533
+[LiveSession] Setup complete — ready to send data
+[LiveRelay] Gemini session ready
+[DualAgentService] Monitor throttled, next in 119 s
+[LiveRelay] Interpreting buttons: Tests are failing
+[DualAgentService] Monitor throttled, next in 87 s
+[DualAgentService] Monitor throttled, next in 84 s
+[DualAgentService] Monitor throttled, next in 76 s
+[DualAgentService] Monitor throttled, next in 73 s
+[DualAgentService] Monitor throttled, next in 59 s

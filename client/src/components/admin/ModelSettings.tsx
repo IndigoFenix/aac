@@ -10,6 +10,7 @@ import { useLLMConfigs, useLLMConfigMutations } from '@/hooks/useAdminData';
 import { Loader2, Save, AlertCircle } from 'lucide-react';
 import {
   PROVIDER_LABELS,
+  getProvidersWithModels,
   type LLMProviderKey,
   type UseCaseKey,
   type LLMConfigValue,
@@ -57,8 +58,11 @@ export function ModelSettings() {
 
   const { useCases, modelOptions } = data;
 
-  const getModelsForProvider = (provider: LLMProviderKey): ModelOption[] => {
-    return ((modelOptions || []) as ModelOption[]).filter((m) => m.provider === provider);
+  const getModelsForUseCase = (provider: LLMProviderKey, useCaseKey: UseCaseKey): ModelOption[] => {
+    const requiresLive = (useCases as Record<UseCaseKey, UseCaseInfo>)[useCaseKey]?.requiresLive;
+    return ((modelOptions || []) as ModelOption[]).filter(
+      (m) => m.provider === provider && (!requiresLive || m.supportsLive)
+    );
   };
 
   const getModelInfo = (provider: LLMProviderKey, modelId: string): ModelOption | undefined => {
@@ -67,8 +71,13 @@ export function ModelSettings() {
     );
   };
 
+  const getAvailableProviders = (useCaseKey: UseCaseKey): LLMProviderKey[] => {
+    const requiresLive = (useCases as Record<UseCaseKey, UseCaseInfo>)[useCaseKey]?.requiresLive;
+    return getProvidersWithModels(requiresLive);
+  };
+
   const handleProviderChange = (useCase: string, provider: LLMProviderKey) => {
-    const models = getModelsForProvider(provider);
+    const models = getModelsForUseCase(provider, useCase as UseCaseKey);
     const firstModel = models[0]?.modelId || '';
     setLocalConfigs((prev) => ({
       ...prev,
@@ -121,14 +130,22 @@ export function ModelSettings() {
           const config = localConfigs[useCaseKey];
           if (!config) return null;
 
-          const availableModels = getModelsForProvider(config.provider);
+          const availableModels = getModelsForUseCase(config.provider, useCaseKey);
           const currentModel = getModelInfo(config.provider, config.model);
+          const availableProviders = getAvailableProviders(useCaseKey);
 
           return (
             <Card key={useCaseKey}>
               <CardHeader>
                 <CardTitle>{useCaseInfo.label}</CardTitle>
-                <CardDescription>{useCaseInfo.description}</CardDescription>
+                <CardDescription>
+                  {useCaseInfo.description}
+                  {useCaseInfo.requiresLive && (
+                    <Badge variant="outline" className="ms-2 text-xs bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
+                      Live
+                    </Badge>
+                  )}
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
@@ -143,7 +160,7 @@ export function ModelSettings() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {(Object.keys(PROVIDER_LABELS) as LLMProviderKey[]).map((p) => (
+                        {availableProviders.map((p) => (
                           <SelectItem key={p} value={p}>
                             {PROVIDER_LABELS[p]}
                           </SelectItem>

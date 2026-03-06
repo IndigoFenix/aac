@@ -319,7 +319,8 @@ export class DualAgentService {
     userId?: string,
     existingSessionId?: string,
     interactionMode: AACInteractionMode = 'interact',
-    isLiveMode: boolean = false
+    isLiveMode: boolean = false,
+    useFunctionCalling?: boolean,
   ): Promise<DualAgentSessionState> {
     // Check cache first
     if (existingSessionId && sessionCache.has(existingSessionId)) {
@@ -340,7 +341,7 @@ export class DualAgentService {
 
     // Create new session
     console.log("[DualAgentService] Creating new session for student:", studentId);
-    return this.createNewSession(studentId, userId, interactionMode, isLiveMode);
+    return this.createNewSession(studentId, userId, interactionMode, isLiveMode, useFunctionCalling);
   }
 
   /**
@@ -571,7 +572,8 @@ export class DualAgentService {
     studentId: string,
     userId?: string,
     interactionMode: AACInteractionMode = 'interact',
-    isLiveMode: boolean = false
+    isLiveMode: boolean = false,
+    useFunctionCalling?: boolean,
   ): Promise<DualAgentSessionState> {
     // Fetch AAC chat LLM config from DB
     const aacChatConfig = await settingsRepository.getLLMConfig('aac_chat');
@@ -660,8 +662,14 @@ export class DualAgentService {
         cachedSymbols.length > 0 ? cachedSymbols : undefined,
         isLiveMode,
         student.aacSettings?.aiName || undefined,
+        undefined, // customBoardFixedButtons
+        undefined, // customBoardAiAddedButtons
+        useFunctionCalling ?? isLiveMode, // useFunctionCalling — caller can override (relay passes false for Gemini)
       );
     }
+
+    // Resolve effective useFunctionCalling value
+    const effectiveUseFunctionCalling = useFunctionCalling ?? isLiveMode;
 
     // Create Interactive agent with the complete prompt
     const interactiveAgent = createInteractiveAgent(
@@ -682,6 +690,7 @@ export class DualAgentService {
       pendingMessages: [],
       interactionMode,
       isLiveMode,
+      useFunctionCalling: effectiveUseFunctionCalling,
       interpretationLevel: (monitorAgent.getStudent?.()?.aacSettings?.interpretationLevel ?? 2) as import("./types").AACInterpretationLevel,
       appState: { enabledApps: getDefaultEnabledApps(), activeApp: null },
       currentEmote: "happy",
@@ -850,6 +859,7 @@ export class DualAgentService {
           student.aacSettings?.aiName || undefined,
           state.loadedBoardId ? getNativePageButtonLabels(state) : undefined,
           state.loadedBoardId ? state.aiAddedButtonLabels : undefined,
+          state.useFunctionCalling ?? state.isLiveMode, // useFunctionCalling
         );
       }
 
@@ -1012,6 +1022,7 @@ export class DualAgentService {
           student.aacSettings?.aiName || undefined,
           state.loadedBoardId ? getNativePageButtonLabels(state) : undefined,
           state.loadedBoardId ? state.aiAddedButtonLabels : undefined,
+          state.useFunctionCalling ?? state.isLiveMode, // useFunctionCalling
         );
         interactiveAgent.setSystemPrompt(newPrompt);
         state.interactivePrompt = newPrompt;
@@ -2077,6 +2088,7 @@ export class DualAgentService {
           student.aacSettings?.aiName || undefined,
           state.loadedBoardId ? getNativePageButtonLabels(state) : undefined,
           state.loadedBoardId ? state.aiAddedButtonLabels : undefined,
+          state.useFunctionCalling ?? state.isLiveMode, // useFunctionCalling
         );
         interactiveAgent.setSystemPrompt(newPrompt);
         state.interactivePrompt = newPrompt;
