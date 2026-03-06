@@ -149,20 +149,85 @@ jobs:
             -backend-config="key=cliniaacian/${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}/terraform.tfstate" \
             -backend-config="region=${{ env.AWS_REGION }}"
 
-      - name: Import existing resources if state is empty
+      - name: Clean up orphaned state and import existing resources
         working-directory: terraform
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
         run: |
-          # Check if state has any resources
-          RESOURCE_COUNT=$(terraform state list 2>/dev/null | wc -l || echo "0")
-          if [ "$RESOURCE_COUNT" -lt 5 ]; then
-            echo "State appears empty ($RESOURCE_COUNT resources). Running import..."
-            chmod +x import-existing.sh
-            bash import-existing.sh
-          else
-            echo "State has $RESOURCE_COUNT resources, skipping import."
+          PROFILE="${{ github.event.inputs.deploy_profile || 'full' }}"
+          ENV="${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}"
+
+          # Build the same var flags used by terraform plan
+          TF_VAR_FLAGS="-var=environment=${ENV} -var=aws_region=${{ env.AWS_REGION }}"
+          if [ "$PROFILE" = "lean" ]; then
+            TF_VAR_FLAGS="-var-file=lean.tfvars"
           fi
+
+          # Check if state has existing resources that need the old VPC
+          # (i.e., resources referencing the real infrastructure, not just
+          # the duplicates from a failed apply)
+          REAL_RESOURCE_COUNT=$(terraform state list 2>/dev/null | grep -v "^data\." | wc -l || echo "0")
+
+          if [ "$REAL_RESOURCE_COUNT" -gt 20 ]; then
+            echo "State has $REAL_RESOURCE_COUNT resources, skipping import."
+            exit 0
+          fi
+
+          echo "State has $REAL_RESOURCE_COUNT resources. Cleaning up and importing..."
+
+          # Remove any resources from a partial failed apply (duplicates)
+          echo "--- Removing orphaned resources from state ---"
+          for res in $(terraform state list 2>/dev/null || true); do
+            echo "Removing from state: $res"
+            terraform state rm "$res" 2>/dev/null || true
+          done
+
+          # Now destroy the duplicate resources that were actually created
+          # (new VPC, subnets, etc. from the failed run)
+          # These have known IDs from the error output — we clean them via
+          # AWS CLI to avoid needing them in state.
+
+          # Clean up duplicate resources from the failed 2026-03-06 apply.
+          # These are orphaned — not in any state file.
+          echo "--- Cleaning up orphaned duplicate resources ---"
+          # Duplicate API Gateway (original found by name; this duplicate would cause ambiguity)
+          aws apigatewayv2 delete-api --api-id j7sbhgbvg7 --region "${{ env.AWS_REGION }}" 2>/dev/null || true
+          # Duplicate KMS key (schedule deletion; original found via alias)
+          aws kms schedule-key-deletion --key-id 57dca2f8-2526-4641-802b-45f2b161e3f8 --pending-window-in-days 7 --region "${{ env.AWS_REGION }}" 2>/dev/null || true
+          # Duplicate VPC networking — delete NATs first, then the rest
+          for nat in nat-06a61514c7c3db90e nat-0144be9c5f13b2456; do
+            aws ec2 delete-nat-gateway --nat-gateway-id "$nat" --region "${{ env.AWS_REGION }}" 2>/dev/null || true
+          done
+          echo "Waiting for NAT gateway deletion..."
+          sleep 45
+          for eip in eipalloc-0ded4cae6091f3c1a eipalloc-0788103ed297ce96e; do
+            aws ec2 release-address --allocation-id "$eip" --region "${{ env.AWS_REGION }}" 2>/dev/null || true
+          done
+          for vpce in vpce-06d758b96ea2b60ae vpce-0902ce65c97e9dc15 vpce-0438e1ad64f98b8ec vpce-08b1da44714964da6 vpce-0eea8bf8b31a17da5; do
+            aws ec2 delete-vpc-endpoints --vpc-endpoint-ids "$vpce" --region "${{ env.AWS_REGION }}" 2>/dev/null || true
+          done
+          for assoc in rtbassoc-0f9006c812a64e8b0 rtbassoc-08f27b2dbefec9ede rtbassoc-09cc2ef3836e3a840 rtbassoc-06eeb1f1faa493135; do
+            aws ec2 disassociate-route-table --association-id "$assoc" --region "${{ env.AWS_REGION }}" 2>/dev/null || true
+          done
+          for rt in rtb-06e39e85408b26c48 rtb-041b3939d864e60c6 rtb-06538bf25766ced63; do
+            aws ec2 delete-route-table --route-table-id "$rt" --region "${{ env.AWS_REGION }}" 2>/dev/null || true
+          done
+          for sg in sg-07f6aaa63bb770714 sg-0bf653b183009e649 sg-04328a11bdf1c1124 sg-01ed9c008e12f4c4e sg-0a8aae9886fc43260 sg-0b6f34a73c8e8328c sg-08a0d2c4295e2d0dc; do
+            aws ec2 delete-security-group --group-id "$sg" --region "${{ env.AWS_REGION }}" 2>/dev/null || true
+          done
+          for subnet in subnet-0f4ba8ae5c8063ccb subnet-01303d977ff81bdfe subnet-0101962e2e7a52486 subnet-0b98a321a15098a3f; do
+            aws ec2 delete-subnet --subnet-id "$subnet" --region "${{ env.AWS_REGION }}" 2>/dev/null || true
+          done
+          aws ec2 detach-internet-gateway --internet-gateway-id igw-0bd57ac4ca267a04d --vpc-id vpc-022fbcaaf2da67d74 --region "${{ env.AWS_REGION }}" 2>/dev/null || true
+          aws ec2 delete-internet-gateway --internet-gateway-id igw-0bd57ac4ca267a04d --region "${{ env.AWS_REGION }}" 2>/dev/null || true
+          aws ec2 delete-vpc --vpc-id vpc-022fbcaaf2da67d74 --region "${{ env.AWS_REGION }}" 2>/dev/null || true
+          # Duplicate ACM cert (us-east-1)
+          aws acm delete-certificate --certificate-arn "arn:aws:acm:us-east-1:748560966885:certificate/2065bdd0-638d-4154-89c8-0eb344e285eb" --region us-east-1 2>/dev/null || true
+
+          echo "--- Importing existing resources ---"
+          chmod +x import-existing.sh
+          export TF_VAR_FLAGS
+          bash import-existing.sh
 
       - name: Migrate State for Lambda Resources
         working-directory: terraform

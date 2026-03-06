@@ -13,10 +13,15 @@ PREFIX="cliniaacian-prod"
 REGION="${AWS_REGION:-il-central-1}"
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
+# TF_VAR_FLAGS must be set by the caller (e.g. "-var-file=lean.tfvars")
+# This is required so terraform import can evaluate the config.
+VAR_FLAGS="${TF_VAR_FLAGS:-}"
+
 echo "=== Importing existing resources ==="
 echo "Prefix: $PREFIX"
 echo "Region: $REGION"
 echo "Account: $ACCOUNT_ID"
+echo "Var flags: $VAR_FLAGS"
 
 # Helper: import a resource, skip if already in state or not found in AWS
 tf_import() {
@@ -34,7 +39,8 @@ tf_import() {
   fi
 
   echo "IMPORT $addr = $id"
-  terraform import "$addr" "$id" || echo "WARN: Failed to import $addr"
+  # shellcheck disable=SC2086
+  terraform import $VAR_FLAGS "$addr" "$id" || echo "WARN: Failed to import $addr"
 }
 
 # =============================================================================
@@ -80,17 +86,22 @@ for i in 0 1; do
   fi
 done
 
-# NAT Gateway (single_nat_gateway=true, so just one)
-NAT_GW_ID=$(aws ec2 describe-nat-gateways --region "$REGION" \
+# NAT Gateways and EIPs (may be 1 or 2 depending on single_nat_gateway setting)
+NAT_GW_IDS=($(aws ec2 describe-nat-gateways --region "$REGION" \
   --filter "Name=tag:Name,Values=${PREFIX}-nat-*" "Name=state,Values=available" \
-  --query "NatGateways[0].NatGatewayId" --output text 2>/dev/null || echo "")
-tf_import "aws_nat_gateway.main[0]" "$NAT_GW_ID"
+  --query "NatGateways[*].NatGatewayId" --output text 2>/dev/null || echo ""))
+for i in "${!NAT_GW_IDS[@]}"; do
+  tf_import "aws_nat_gateway.main[$i]" "${NAT_GW_IDS[$i]}"
+done
 
-# EIP for NAT
-EIP_ALLOC=$(aws ec2 describe-addresses --region "$REGION" \
-  --filters "Name=tag:Name,Values=${PREFIX}-nat-eip-0" \
-  --query "Addresses[0].AllocationId" --output text 2>/dev/null || echo "")
-tf_import "aws_eip.nat[0]" "$EIP_ALLOC"
+for i in 0 1; do
+  EIP_ALLOC=$(aws ec2 describe-addresses --region "$REGION" \
+    --filters "Name=tag:Name,Values=${PREFIX}-nat-eip-${i}" \
+    --query "Addresses[0].AllocationId" --output text 2>/dev/null || echo "")
+  if [ -n "$EIP_ALLOC" ] && [ "$EIP_ALLOC" != "None" ]; then
+    tf_import "aws_eip.nat[$i]" "$EIP_ALLOC"
+  fi
+done
 
 # Route Tables
 PUB_RT=$(aws ec2 describe-route-tables --region "$REGION" \
@@ -410,10 +421,69 @@ echo "--- Route53 ---"
 # Skip Route53 record imports since the domain is changing.
 
 # =============================================================================
+# VPC Interface Endpoints (full profile only — enable_vpc_interface_endpoints)
+# =============================================================================
+echo "--- VPC Interface Endpoints ---"
+VPC_EP_SG=$(aws ec2 describe-security-groups --region "$REGION" \
+  --filters "Name=tag:Name,Values=${PREFIX}-vpc-endpoints-sg" "Name=vpc-id,Values=${VPC_ID}" \
+  --query "SecurityGroups[0].GroupId" --output text 2>/dev/null || echo "")
+tf_import "aws_security_group.vpc_endpoints[0]" "$VPC_EP_SG"
+
+for ep_suffix in ecr.api ecr.dkr secretsmanager logs; do
+  EP_TAG="${ep_suffix//./-}"  # ecr.api -> ecr-api
+  EP_ID=$(aws ec2 describe-vpc-endpoints --region "$REGION" \
+    --filters "Name=tag:Name,Values=${PREFIX}-${EP_TAG}-endpoint" "Name=vpc-id,Values=${VPC_ID}" \
+    --query "VpcEndpoints[0].VpcEndpointId" --output text 2>/dev/null || echo "")
+  case "$ep_suffix" in
+    ecr.api) tf_import "aws_vpc_endpoint.ecr_api[0]" "$EP_ID" ;;
+    ecr.dkr) tf_import "aws_vpc_endpoint.ecr_dkr[0]" "$EP_ID" ;;
+    secretsmanager) tf_import "aws_vpc_endpoint.secretsmanager[0]" "$EP_ID" ;;
+    logs) tf_import "aws_vpc_endpoint.logs[0]" "$EP_ID" ;;
+  esac
+done
+
+# =============================================================================
+# CloudTrail (full profile — enable_cloudtrail)
+# =============================================================================
+echo "--- CloudTrail ---"
+CT_ARN=$(aws cloudtrail describe-trails --region "$REGION" \
+  --trail-name-list "${PREFIX}-trail" \
+  --query "trailList[0].TrailARN" --output text 2>/dev/null || echo "")
+tf_import "aws_cloudtrail.main[0]" "$CT_ARN"
+
+CT_ROLE=$(aws iam get-role --role-name "${PREFIX}-cloudtrail-role" \
+  --query "Role.RoleName" --output text 2>/dev/null || echo "")
+tf_import "aws_iam_role.cloudtrail[0]" "$CT_ROLE"
+tf_import "aws_iam_role_policy.cloudtrail[0]" "${PREFIX}-cloudtrail-role/${PREFIX}-cloudtrail-policy"
+
+# =============================================================================
+# VPC Flow Logs (full profile — enable_vpc_flow_logs)
+# =============================================================================
+echo "--- VPC Flow Logs ---"
+FLOW_LOG_ID=$(aws ec2 describe-flow-logs --region "$REGION" \
+  --filter "Name=tag:Name,Values=${PREFIX}-vpc-flow-logs" \
+  --query "FlowLogs[0].FlowLogId" --output text 2>/dev/null || echo "")
+tf_import "aws_flow_log.main[0]" "$FLOW_LOG_ID"
+
+VPC_FL_ROLE=$(aws iam get-role --role-name "${PREFIX}-vpc-flow-logs-role" \
+  --query "Role.RoleName" --output text 2>/dev/null || echo "")
+tf_import "aws_iam_role.vpc_flow_logs[0]" "$VPC_FL_ROLE"
+tf_import "aws_iam_role_policy.vpc_flow_logs[0]" "${PREFIX}-vpc-flow-logs-role/${PREFIX}-vpc-flow-logs-policy"
+
+# =============================================================================
+# RDS Enhanced Monitoring (full profile — enable_rds_enhanced_monitoring)
+# =============================================================================
+echo "--- RDS Monitoring ---"
+RDS_MON_ROLE=$(aws iam get-role --role-name "${PREFIX}-rds-monitoring-role" \
+  --query "Role.RoleName" --output text 2>/dev/null || echo "")
+tf_import "aws_iam_role.rds_monitoring[0]" "$RDS_MON_ROLE"
+tf_import "aws_iam_role_policy_attachment.rds_monitoring[0]" "${PREFIX}-rds-monitoring-role/arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
+
+# =============================================================================
 # CloudWatch Log Groups
 # =============================================================================
 echo "--- CloudWatch Log Groups ---"
-for lg in "/ecs/${PREFIX}" "/aws/ecs/${PREFIX}/exec" "/aws/lambda/${PREFIX}-api"; do
+for lg in "/ecs/${PREFIX}" "/aws/ecs/${PREFIX}/exec" "/aws/lambda/${PREFIX}-api" "/aws/cloudtrail/${PREFIX}" "/aws/vpc-flow-logs/${PREFIX}"; do
   LG_EXISTS=$(aws logs describe-log-groups --log-group-name-prefix "$lg" --region "$REGION" \
     --query "logGroups[?logGroupName=='${lg}'].logGroupName | [0]" --output text 2>/dev/null || echo "")
   if [ -n "$LG_EXISTS" ] && [ "$LG_EXISTS" != "None" ]; then
@@ -421,6 +491,8 @@ for lg in "/ecs/${PREFIX}" "/aws/ecs/${PREFIX}/exec" "/aws/lambda/${PREFIX}-api"
       "/ecs/${PREFIX}") tf_import "aws_cloudwatch_log_group.app" "$lg" ;;
       "/aws/ecs/${PREFIX}/exec") tf_import "aws_cloudwatch_log_group.ecs_exec" "$lg" ;;
       "/aws/lambda/${PREFIX}-api") tf_import "aws_cloudwatch_log_group.lambda[0]" "$lg" ;;
+      "/aws/cloudtrail/${PREFIX}") tf_import "aws_cloudwatch_log_group.cloudtrail[0]" "$lg" ;;
+      "/aws/vpc-flow-logs/${PREFIX}") tf_import "aws_cloudwatch_log_group.vpc_flow_logs[0]" "$lg" ;;
     esac
   fi
 done
