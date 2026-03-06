@@ -113,6 +113,34 @@ jobs:
             aws dynamodb wait table-exists --table-name terraform-state-lock --region "${{ env.AWS_REGION }}"
           fi
 
+          # Fix stale DynamoDB digest: if the state checksum doesn't match the
+          # digest stored in DynamoDB, delete the stale digest entry so
+          # terraform init can re-read the state cleanly.
+          STATE_KEY="cliniaacian/${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}/terraform.tfstate"
+          LOCK_ID="${STATE_BUCKET}/${STATE_KEY}-md5"
+          STORED_DIGEST=$(aws dynamodb get-item \
+            --table-name terraform-state-lock \
+            --key "{\"LockID\":{\"S\":\"${LOCK_ID}\"}}" \
+            --region "${{ env.AWS_REGION }}" \
+            --query "Item.Digest.S" --output text 2>/dev/null || echo "")
+
+          if [ -n "$STORED_DIGEST" ] && [ "$STORED_DIGEST" != "None" ]; then
+            # Calculate actual checksum of the state file in S3
+            ACTUAL_MD5=$(aws s3api head-object \
+              --bucket "$STATE_BUCKET" \
+              --key "$STATE_KEY" \
+              --region "${{ env.AWS_REGION }}" \
+              --query "ETag" --output text 2>/dev/null | tr -d '"' || echo "")
+
+            if [ "$STORED_DIGEST" != "$ACTUAL_MD5" ]; then
+              echo "DynamoDB digest mismatch (stored=$STORED_DIGEST, actual=$ACTUAL_MD5). Removing stale entry."
+              aws dynamodb delete-item \
+                --table-name terraform-state-lock \
+                --key "{\"LockID\":{\"S\":\"${LOCK_ID}\"}}" \
+                --region "${{ env.AWS_REGION }}"
+            fi
+          fi
+
       - name: Terraform Init
         working-directory: terraform
         run: |
