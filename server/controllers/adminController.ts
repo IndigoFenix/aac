@@ -416,13 +416,23 @@ export class AdminController {
         }
 
         // Validate model exists in catalog
-        const modelExists = MODEL_OPTIONS.some(
+        const modelOption = MODEL_OPTIONS.find(
           (m) => m.provider === config.provider && m.modelId === config.model
         );
-        if (!modelExists) {
+        if (!modelOption) {
           res.status(400).json({
             success: false,
             message: `Invalid model ${config.model} for provider ${config.provider}`,
+          });
+          return;
+        }
+
+        // Validate live requirement
+        const useCaseInfo = USE_CASES[useCase as UseCaseKey];
+        if (useCaseInfo?.requiresLive && !modelOption.supportsLive) {
+          res.status(400).json({
+            success: false,
+            message: `${useCaseInfo.label} requires a Live/Realtime model. ${modelOption.displayName} does not support live sessions.`,
           });
           return;
         }

@@ -42,7 +42,7 @@ class EmailService {
   private fromAddress: string;
 
   constructor() {
-    this.fromAddress = process.env.SMTP_FROM || "noreply@cliniaacian.com";
+    this.fromAddress = process.env.SMTP_FROM || "noreply@aivota.ai";
     this.initialize();
   }
 
@@ -310,7 +310,7 @@ You can now access all the AAC tools and features available on our platform:
 - Collaborate with your team
 - And much more!
 
-Get started by logging in at: https://cliniaacian.com/login
+Get started by logging in at: https://aivota.ai/login
 
 If you have any questions, feel free to reach out to our support team.
 
@@ -369,7 +369,7 @@ The CliniAACian Team
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 30px 0;">
                 <tr>
                   <td align="center">
-                    <a href="https://cliniaacian.com/login" style="display: inline-block; background-color: #6366f1; color: #ffffff; text-decoration: none; font-weight: 600; padding: 14px 32px; border-radius: 8px; font-size: 16px;">
+                    <a href="https://aivota.ai/login" style="display: inline-block; background-color: #6366f1; color: #ffffff; text-decoration: none; font-weight: 600; padding: 14px 32px; border-radius: 8px; font-size: 16px;">
                       Get Started
                     </a>
                   </td>

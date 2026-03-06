@@ -425,5 +425,5 @@ jobs:
           else
             echo "### ✅ Phase 2 Complete" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Domain:** https://cliniaacian.com" >> $GITHUB_STEP_SUMMARY
+            echo "**Domain:** https://aivota.ai" >> $GITHUB_STEP_SUMMARY
           fi

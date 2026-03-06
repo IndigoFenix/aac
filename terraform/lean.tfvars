@@ -14,7 +14,7 @@
 
 environment = "prod"
 aws_region  = "il-central-1"
-domain_name = "cliniaacian.com"
+domain_name = "aivota.ai"
 
 # =============================================================================
 # Architecture - Lambda serverless (same as production)

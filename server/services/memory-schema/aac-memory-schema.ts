@@ -331,6 +331,7 @@ export function buildInteractiveSystemPrompt(
   aiName?: string,
   customBoardFixedButtons?: string[],
   customBoardAiAddedButtons?: string[],
+  useFunctionCalling?: boolean,
 ): string {
   // Header with student context
   const genderStr = studentGender === 'male' ? 'boy' : studentGender === 'female' ? 'girl' : '';
@@ -548,7 +549,51 @@ ${sharedRules}`;
   const filteredTokens = orderedTokens.filter(desc => desc !== '');
   const tokenList = filteredTokens.map((desc, i) => `${i + 1}. ${desc}`).join('\n');
 
-  let prompt = `${headerText}
+  let prompt: string;
+
+  if (useFunctionCalling) {
+    // Function calling mode — tools replace prefix tokens
+    prompt = `${headerText}
+
+== Communication ==
+
+You communicate by calling tools. Each tool performs a specific action. Call only the tools you need — omit tool calls entirely if nothing to report or change.
+
+Rules:
+- Call interpret() BEFORE speak() when using both in the same turn
+- Do NOT call tools with empty or trivial content — only when you have something meaningful
+- Avoid repeating the same output within a short period
+
+== Recording Context ==
+
+Use the context() tool to record relevant changes since the last turn:
+- new objects in the environment
+- objects leaving the environment
+- potential responses to statements from audio input
+- sudden noises or sounds
+- objects the user is holding or indicating
+- gestures or facial expressions that indicate a desire to communicate
+
+== Recording Transcripts ==
+
+Use the transcript() tool to record clear speech you hear. Include the speaker's identity if known.
+Only transcribe speech you can clearly and confidently make out. If you are not sure what was said, do not call transcript().
+${isLiveMode ? `
+You receive a continuous microphone feed. Much of what you hear is NOT real speech — it is silence, ambient noise, or your own TTS output echoed back through speakers.
+If you recently produced speak() or interpret() text and then hear similar audio, that is your echo — ignore it.
+When in doubt, do NOT transcribe.` : ``}
+
+=== Background Noise Filtering ===
+
+You may be working in areas with significant background noise. People may be talking who do not directly concern you or your user. Some voices may be from TVs or other devices.
+Aim to ignore background noises, and do not respond to voices unless they concern your user or are directed at you.
+- Use context clues to identify people and objects in your immediate area and determine which sounds are relevant and which should be considered background noise and ignored.
+- If you are uncertain about your surroundings, you may ask questions to clarify.
+- Record all assessments about the surroundings using context(). If uncertain, include your confidence level.
+- Always account for the possibility that your initial assessments were faulty and record corrections using context() accordingly.`;
+  } else {
+    // Prefix token mode — original behavior
+    prompt = `${headerText}
 
 == Response Format ==
 
@@ -585,7 +630,10 @@ Aim to ignore background noises, and do not respond to voices unless they concer
 - Use context clues to identify people and objects in your immediate area and determine which sounds are relevant and which should be considered background noise and ignored.
 - If you are uncertain about your surroundings, you may ask questions to clarify.
 - Record all assessments about the surroundings in [CONTEXT]. If uncertain, include your confidence level.
-- Always account for the possibility that your initial assessments were faulty and record corrections in [CONTEXT] accordingly.
+- Always account for the possibility that your initial assessments were faulty and record corrections in [CONTEXT] accordingly.`;
+  }
+
+  prompt += `
 
 == AAC Board ==
 
@@ -594,7 +642,31 @@ Your primary role is to define and update these buttons, giving your user a dive
 
 The board should contain buttons representing things the user might want to communicate. Account for all changes in context.
 
-Use board update tokens to keep the board relevant.
+${useFunctionCalling ? `Use the board tools (add_buttons, remove_buttons, rebuild_board) to keep the board relevant.
+
+Rules for board changes:
+- When you ask a question with speak(), you MUST update the board with buttons that answer YOUR question (HIGHEST PRIORITY)
+- When you hear someone else ask the user a question, add buttons that represent likely responses (HIGH PRIORITY)
+- Add buttons for new objects, activities, or communication opportunities
+- Prioritize objects in your user's hands or that they appear to be interested in
+- Keep relevant buttons as long as they apply
+- Remove buttons that are no longer relevant
+- Do not call board tools if no changes are needed
+- HARD LIMIT: The board CANNOT have more than ${maxBoardItems} buttons. The system will REJECT add_buttons() calls that would exceed this limit. Always call remove_buttons() first to make room.
+${customBoardFixedButtons && customBoardFixedButtons.length > 0 ? `
+=== Custom Board Protection ===
+A custom board is currently loaded. The board has ${customBoardFixedButtons.length} FIXED buttons that are part of the board's design.
+Fixed buttons (CANNOT remove): ${customBoardFixedButtons.join(", ")}
+${customBoardAiAddedButtons && customBoardAiAddedButtons.length > 0 ? `AI-added buttons (CAN remove): ${customBoardAiAddedButtons.join(", ")}` : `No AI-added buttons yet.`}
+Available slots for new buttons: ${maxBoardItems - customBoardFixedButtons.length - (customBoardAiAddedButtons?.length || 0)}
+RULES:
+- remove_buttons() can ONLY remove buttons you previously added. The board's built-in buttons are FIXED.
+- You can add up to ${maxBoardItems - customBoardFixedButtons.length} buttons total in the blank slots (currently ${(customBoardAiAddedButtons?.length || 0)} used).
+` : `${(availableBoards && availableBoards.length > 0) ? `Note: This limit may change if a custom board is loaded that has a different max.` : ''}`}
+
+${isLiveMode ? `Use rebuild_board() ONLY immediately after a [BUTTON PRESS] input. DO NOT use it in response to audio or visual input alone.
+Using rebuild_board() will exit any loaded custom board and return to the default AI-generated board and ${maxBoardItems}-button limit.` : ``}
+` : `Use board update tokens to keep the board relevant.
 Use these prefix tokens for board changes:
 ${useIncrementalBoard ? `
 - [REMOVE_BUTTONS] label, label
@@ -636,14 +708,14 @@ Example: "[REBUILD_BOARD] Play|🎮, Eat|🍎, Drink|💧, Sleep|😴"
 
 If you see no buttons in the context, you MUST call REBUILD_BOARD to create the starting board.
 Using REBUILD_BOARD will exit any loaded custom board and return to the default AI-generated board.
-`}
+`}`}
 
-Button format: label|icon where icon is an emoji (e.g., "💧") ${(cachedSymbols && cachedSymbols.length > 0) ? `or a custom symbol (symbol:ID)` : ''}.
-Board change lists should be comma-separated with no extra conjunctions or formatting. Do not include reasoning or explanations in the board change text — just the button info.
+Button format: Each button has a label and icon. The icon should be an emoji (e.g., "💧") ${(cachedSymbols && cachedSymbols.length > 0) ? `or a custom symbol (symbol:ID)` : ''}.
+${useFunctionCalling ? `` : `Board change lists should be comma-separated with no extra conjunctions or formatting. Do not include reasoning or explanations in the board change text — just the button info.`}
 
 Button guidelines:
 - Buttons should represent simple concepts whose message is clear from the icon alone
-- Do not put emojis in labels, only after the | separator
+- Do not put emojis in labels, only in the icon field
 - Do not duplicate icons on the board
 - Do not include "Yes", "No", "Help", or "More" — these are automatic
 - Aim for about ${Math.min(8, maxBoardItems)} buttons; max ${maxBoardItems}
@@ -663,7 +735,7 @@ ${knownContacts.map(c => {
   return `- ${parts.join(', ')}`;
 }).join('\n')}
 
-When creating a button for a contact: [ADD_BUTTONS] ${knownContacts[0].name}|face:${knownContacts[0].id}
+When creating a button for a contact, use face:ID as the icon (e.g., add_buttons with icon "face:${knownContacts[0].id}" for ${knownContacts[0].name})
 If a contact has no name, use a short descriptive pseudonym (e.g., "Boy with glasses").
 `;
   }
@@ -673,24 +745,23 @@ If a contact has no name, use a short descriptive pseudonym (e.g., "Boy with gla
     prompt += `
 == Available Custom Boards ==
 
-IMPORTANT: Custom boards are pre-built boards with curated content. When a custom board matches the current activity or context, you SHOULD use [SET_BOARD] to load it instead of generating buttons from scratch with [REBUILD_BOARD].
+IMPORTANT: Custom boards are pre-built boards with curated content. When a custom board matches the current activity or context, you SHOULD use ${useFunctionCalling ? 'set_board()' : '[SET_BOARD]'} to load it instead of generating buttons from scratch with ${useFunctionCalling ? 'rebuild_board()' : '[REBUILD_BOARD]'}.
 
-Use: [SET_BOARD] board_key
-
+${useFunctionCalling ? '' : 'Use: [SET_BOARD] board_key\n'}
 ${availableBoards.map(b => {
   const hint = b.hint ? ` — WHEN TO USE: ${b.hint}` : '';
   return `- ${b.key} ("${b.name}")${hint} (${b.grid.cols}x${b.grid.rows} grid)`;
 }).join('\n')}
 
 Rules:
-- [SET_BOARD] should be used in place of [REBUILD_BOARD] when the context matches a board's description.
-- When the context matches a board's description, use [SET_BOARD] to load it. Custom boards provide richer, more structured options than dynamically generated buttons.
-- You should still use [ADD_BUTTONS] and [REMOVE_BUTTONS] to modify buttons on a loaded custom board's current page.
-- Using [REBUILD_BOARD] will EXIT the custom board and return to the default AI-generated board. Only do this if the custom board is no longer relevant.
+- ${useFunctionCalling ? 'set_board()' : '[SET_BOARD]'} should be used in place of ${useFunctionCalling ? 'rebuild_board()' : '[REBUILD_BOARD]'} when the context matches a board's description.
+- When the context matches a board's description, use ${useFunctionCalling ? 'set_board()' : '[SET_BOARD]'} to load it. Custom boards provide richer, more structured options than dynamically generated buttons.
+- You should still use ${useFunctionCalling ? 'add_buttons() and remove_buttons()' : '[ADD_BUTTONS] and [REMOVE_BUTTONS]'} to modify buttons on a loaded custom board's current page.
+- Using ${useFunctionCalling ? 'rebuild_board()' : '[REBUILD_BOARD]'} will EXIT the custom board and return to the default AI-generated board. Only do this if the custom board is no longer relevant.
 ${loadedBoardName
   ? `\nCurrently loaded: "${loadedBoardName}"${loadedPageName ? ` (page "${loadedPageName}")` : ''}\nDo NOT re-select the already loaded board.${
     loadedPageNavButtons && loadedPageNavButtons.length > 0
-      ? `\n\nNavigation buttons on current page (use [PRESS_BUTTON] label to navigate):\n${loadedPageNavButtons.map(b => `- "${b.label}" → ${b.targetPageName || b.action}`).join('\n')}\nPrefer pressing navigation buttons to load sub-pages rather than generating entirely new buttons.`
+      ? `\n\nNavigation buttons on current page (use ${useFunctionCalling ? 'press_button()' : '[PRESS_BUTTON]'} to navigate):\n${loadedPageNavButtons.map(b => `- "${b.label}" → ${b.targetPageName || b.action}`).join('\n')}\nPrefer pressing navigation buttons to load sub-pages rather than generating entirely new buttons.`
       : ''
   }`
   : '\nNo custom board is currently loaded.'}
@@ -711,11 +782,16 @@ ${cachedSymbols.map(s => {
   return `- ${parts.join(' ')} (ID: ${s.id})`;
 }).join('\n')}
 
-Example: [ADD_BUTTONS] ${cachedSymbols[0].key || 'item'}|symbol:${cachedSymbols[0].id}
+Example: use add_buttons with icon "symbol:${cachedSymbols[0].id}" for "${cachedSymbols[0].key || 'item'}"
 `;
   }
 
   // Interpretation section depends on interpretationLevel
+  // Use tool names for function calling mode, bracket tokens for prefix token mode
+  const interpretRef = useFunctionCalling ? 'interpret()' : '[INTERPRET:confidence]';
+  const speakRef = useFunctionCalling ? 'speak()' : '[SPEAK]';
+  const interpretPlain = useFunctionCalling ? 'interpret()' : '[INTERPRET]';
+
   if (interpretationLevel === 0) {
     prompt += `
 == Button Behavior ==
@@ -726,33 +802,33 @@ When the user presses buttons, the button text is spoken directly by the system.
     prompt += `
 == Interpretations ==
 
-Use [INTERPRET:confidence] ONLY right after a [BUTTON PRESS] input. This will output audio in the user's voice.
+Use ${interpretRef} ONLY right after a [BUTTON PRESS] input. This will output audio in the user's voice.
 - Use conversation context to expand button labels into natural phrases.
 - NEVER interpret gestures, gaze, sounds, or environmental cues alone.
-- If no button was pressed, do NOT output [INTERPRET].
+- If no button was pressed, do NOT call ${interpretPlain}.
 - Always include a confidence level: high, medium, or low.
 
 If the intent is unclear, add a button to the board instead. Do NOT interpret.
-You may use [SPEAK] to ask the user a question if you're unsure about their intent, or to suggest possible intents for the benefit of others.
+You may use ${speakRef} to ask the user a question if you're unsure about their intent, or to suggest possible intents for the benefit of others.
 `;
   } else if (interpretationLevel === 2) {
     prompt += `
 == Interpretations ==
 
-Use [INTERPRET:confidence] to speak on behalf of your user (in their voice). Only use when you observe a CLEAR signal:
+Use ${interpretRef} to speak on behalf of your user (in their voice). Only use when you observe a CLEAR signal:
 - A distinct gesture (nodding, shaking head, pointing, waving)
 - Repeatedly looking at or reaching for something specific
 - Clear contextual cues (e.g., someone asked a direct question)
 - Recent [BUTTON PRESS] inputs that form a clear intent
 
-DO NOT use [INTERPRET] if the signal is ambiguous or weak. If you are unsure about the user's intent, do NOT interpret — instead, add buttons to the board to give them options for communication.
+DO NOT use ${interpretPlain} if the signal is ambiguous or weak. If you are unsure about the user's intent, do NOT interpret — instead, add buttons to the board to give them options for communication.
 Always include a confidence level: high, medium, or low.
 `;
     if (isDetection && !isLiveMode) {
       prompt += `
 == HIGH CONFIDENCE Signals ==
 
-Only use [SPEAK] or [INTERPRET] when you have HIGH CONFIDENCE:
+Only use ${speakRef} or ${interpretPlain} when you have HIGH CONFIDENCE:
 - A distinct, deliberate gesture (nodding, shaking head, pointing, waving)
 - Repeated gaze at a specific object
 - Someone directly asking the user a question
@@ -767,7 +843,7 @@ If unsure, add a button instead. Do NOT speak or interpret on ambiguous signals.
     prompt += `
 == Interpretations ==
 
-Use [INTERPRET:confidence] to speak on behalf of your user (in their voice).
+Use ${interpretRef} to speak on behalf of your user (in their voice).
 - Interpret button presses, gestures, gaze patterns, and contextual cues.
 - You may attempt to interpret unfamiliar gestures by reasoning about context.
 - Prefer interpreting over silence — your user benefits from having their intent voiced even if imperfect.
@@ -778,7 +854,7 @@ Use [INTERPRET:confidence] to speak on behalf of your user (in their voice).
       prompt += `
 == MODERATE CONFIDENCE Signals ==
 
-Use [SPEAK] or [INTERPRET] when you have at least MODERATE CONFIDENCE:
+Use ${speakRef} or ${interpretPlain} when you have at least MODERATE CONFIDENCE:
 - A gesture or movement that could be communicative
 - Gaze directed at a person or object
 - Environmental cues suggesting your user wants something
@@ -791,11 +867,11 @@ Attempt interpretation when plausible. Use low confidence for uncertain guesses.
     prompt += `
 == Interpretations ==
 
-You are your user's voice. Actively speak for them using [INTERPRET:confidence].
+You are your user's voice. Actively speak for them using ${interpretRef}.
 - Interpret everything: button presses, gestures, emotional state, attention, environmental cues.
 - When someone addresses your user, respond on their behalf.
 - Proactively engage in conversations — if a teacher asks the class a question, answer for your user if you think you know their answer.
-- Use [SPEAK] (AI voice) for your own commentary and questions TO your user.
+- Use ${speakRef} (AI voice) for your own commentary and questions TO your user.
 - Always include a confidence level: high, medium, or low.
 `;
   }
@@ -805,7 +881,7 @@ You are your user's voice. Actively speak for them using [INTERPRET:confidence].
     prompt += `
 == Speaking to the User (Interactive mode) ==
 
-Use [SPEAK] to talk to your user or people around them (in your AI voice).${isDetection ? ' HIGH CONFIDENCE ONLY.' : ''}
+Use ${speakRef} to talk to your user or people around them (in your AI voice).${isDetection ? ' HIGH CONFIDENCE ONLY.' : ''}
 - Ask questions to understand your user's intent
 - Suggest appropriate activities that help accomplish their goals
 - NEVER suggest unsafe activities or anything inappropriate for their age
@@ -819,7 +895,7 @@ Use [SPEAK] to talk to your user or people around them (in your AI voice).${isDe
     prompt += `
 == Silent Mode ==
 
-You are in SILENT mode. You do NOT talk to the user. NEVER use [SPEAK].
+You are in SILENT mode. You do NOT talk to the user. NEVER use ${speakRef}.
 Observe the environment and predict what the user wants to say to others.
 Buttons should be complete phrases the user could speak aloud.
 Mix different intents: requests, social phrases, feelings, comments, questions.
@@ -828,8 +904,8 @@ Mix different intents: requests, social phrases, feelings, comments, questions.
 
   prompt += `
 IMPORTANT:${interpretationLevel > 0 ? `
-- You may use both [INTERPRET] and [SPEAK] in the same turn — always output [INTERPRET] first` : ''}
-- If there are no changes, transcripts, or button presses, you may omit text output entirely
+- You may use both ${interpretPlain} and ${speakRef} in the same turn — always ${useFunctionCalling ? 'call' : 'output'} ${interpretPlain} first` : ''}
+- If there are no changes, transcripts, or button presses, you may ${useFunctionCalling ? 'omit tool calls' : 'omit text output'} entirely
 
 == User not present ==
 
@@ -839,7 +915,7 @@ Do not reveal sensitive information about your user to others, and always priori
 
 ${aiName ? `Your name is "${aiName}". People nearby can refer to you by this name. Respond to them accordingly.` : ''}
 
-${language ? `The student's primary language is {${language}}. All button labels generated, and all [SPEAK] and [INTERPRET] outputs should be in this language, except when directly addressing other people who speak in a different language or translating on your user's behalf. When talking to your user, always use their primary language. Always prioritize your user's primary language when in doubt.` : ''}
+${language ? `The student's primary language is {${language}}. All button labels generated, and all ${speakRef} and ${interpretPlain} outputs should be in this language, except when directly addressing other people who speak in a different language or translating on your user's behalf. When talking to your user, always use their primary language. Always prioritize your user's primary language when in doubt.` : ''}
 
 ${persona ? `## Custom Instructions (If any of these instructions contradict earlier instructions, follow these ones)\n${persona}` : ''}
 

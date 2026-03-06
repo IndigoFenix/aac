@@ -19,6 +19,8 @@ export interface ModelOption {
   supportsTools: boolean;
   supportsStreaming: boolean;
   supportsStructuredOutput: boolean;
+  /** Can be used as a Live/Realtime provider (WebSocket session) */
+  supportsLive?: boolean;
 }
 
 export interface UseCaseInfo {
@@ -29,6 +31,8 @@ export interface UseCaseInfo {
   requiresTools: boolean;
   requiresStreaming: boolean;
   requiresStructuredOutput: boolean;
+  /** Use case requires a Live/Realtime-capable model (WebSocket session) */
+  requiresLive?: boolean;
 }
 
 export interface LLMConfigValue {
@@ -52,12 +56,13 @@ export const USE_CASES: Record<UseCaseKey, UseCaseInfo> = {
   },
   aac_chat: {
     label: "AAC Interactive Chat",
-    description: "Real-time AAC conversation agent (streaming with tool calls)",
-    defaultProvider: "openai",
-    defaultModel: "gpt-4o-mini",
+    description: "Real-time AAC conversation agent (live WebSocket session)",
+    defaultProvider: "gemini",
+    defaultModel: "gemini-2.5-flash-native-audio-preview-12-2025",
     requiresTools: true,
     requiresStreaming: true,
     requiresStructuredOutput: false,
+    requiresLive: true,
   },
   aac_moderator: {
     label: "AAC Moderator",
@@ -112,6 +117,33 @@ export const MODEL_OPTIONS: ModelOption[] = [
     supportsStreaming: true,
     supportsStructuredOutput: true,
   },
+  // OpenAI Realtime (GA models — support images + function calling)
+  {
+    provider: "openai",
+    modelId: "gpt-realtime-mini",
+    displayName: "GPT Realtime Mini",
+    description: "OpenAI's fast realtime model. Low-latency live interactions with vision support.",
+    tier: "economy",
+    inputCostPer1M: 0.60,
+    outputCostPer1M: 2.40,
+    supportsTools: true,
+    supportsStreaming: true,
+    supportsStructuredOutput: false,
+    supportsLive: true,
+  },
+  {
+    provider: "openai",
+    modelId: "gpt-realtime",
+    displayName: "GPT Realtime",
+    description: "OpenAI's most capable realtime model. Higher quality with vision support.",
+    tier: "standard",
+    inputCostPer1M: 4.00,
+    outputCostPer1M: 16.00,
+    supportsTools: true,
+    supportsStreaming: true,
+    supportsStructuredOutput: false,
+    supportsLive: true,
+  },
   // Gemini
   {
     provider: "gemini",
@@ -124,6 +156,32 @@ export const MODEL_OPTIONS: ModelOption[] = [
     supportsTools: true,
     supportsStreaming: true,
     supportsStructuredOutput: true,
+  },
+  {
+    provider: "gemini",
+    modelId: "gemini-2.5-flash-native-audio-preview-12-2025",
+    displayName: "Gemini 2.5 Flash Live",
+    description: "Google's native-audio live model for real-time AAC.",
+    tier: "economy",
+    inputCostPer1M: 0.15,
+    outputCostPer1M: 0.60,
+    supportsTools: true,
+    supportsStreaming: true,
+    supportsStructuredOutput: false,
+    supportsLive: true,
+  },
+  {
+    provider: "gemini",
+    modelId: "gemini-2.0-flash-exp-image-generation",
+    displayName: "Gemini 2.0 Flash Live (Text)",
+    description: "Gemini text-mode live model. Uses prefix tokens (stable, deprecated model).",
+    tier: "economy",
+    inputCostPer1M: 0.15,
+    outputCostPer1M: 0.60,
+    supportsTools: false,
+    supportsStreaming: true,
+    supportsStructuredOutput: false,
+    supportsLive: true,
   },
   {
     provider: "gemini",
@@ -196,12 +254,23 @@ export const SETTING_KEYS: Record<UseCaseKey, string> = {
 // Helpers
 // ──────────────────────────────────────────────────────────────────
 
-export function getModelsForProvider(provider: LLMProviderKey): ModelOption[] {
-  return MODEL_OPTIONS.filter((m) => m.provider === provider);
+export function getModelsForProvider(provider: LLMProviderKey, requiresLive?: boolean): ModelOption[] {
+  return MODEL_OPTIONS.filter((m) => m.provider === provider && (!requiresLive || m.supportsLive));
 }
 
 export function getModelOption(provider: LLMProviderKey, modelId: string): ModelOption | undefined {
   return MODEL_OPTIONS.find((m) => m.provider === provider && m.modelId === modelId);
+}
+
+/** Get providers that have at least one model matching the given constraint */
+export function getProvidersWithModels(requiresLive?: boolean): LLMProviderKey[] {
+  const providers = new Set<LLMProviderKey>();
+  for (const m of MODEL_OPTIONS) {
+    if (!requiresLive || m.supportsLive) {
+      providers.add(m.provider);
+    }
+  }
+  return Array.from(providers);
 }
 
 export function getDefaultConfig(useCase: UseCaseKey): LLMConfigValue {

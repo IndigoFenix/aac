@@ -13,7 +13,7 @@ aws_region = "il-central-1"
 
 # Your domain name (leave empty to use ALB DNS with HTTP only)
 # When you get a domain, add it here and Terraform will set up HTTPS
-domain_name = "cliniaacian.com"
+domain_name = "aivota.ai"
 
 # =============================================================================
 # Architecture Variables (Use lambda mode for cost saving)

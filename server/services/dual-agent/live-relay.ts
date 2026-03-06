@@ -1,21 +1,61 @@
 // server/services/dual-agent/live-relay.ts
-// WebSocket relay layer: bridges a client WebSocket to a Gemini Live session.
-// Handles prefix token parsing, TTS synthesis, contact enrollment, monitor triggering.
+// WebSocket relay layer: bridges a client WebSocket to a live provider session.
+// Handles tool call dispatch, TTS synthesis, contact enrollment, monitor triggering.
+// Provider-agnostic: works with GeminiLiveProvider, OpenAILiveProvider, etc.
 
 import type { IncomingMessage } from "http";
 import { WebSocket, WebSocketServer } from "ws";
-import { GeminiLiveSession, type LiveSessionConfig } from "./live-session";
-import {
-  StreamingPrefixParser,
-  parseStreamedText,
-  parseBoardButtons,
-  type StreamingSegment,
-} from "./interactive-agent";
+import type {
+  LiveProvider,
+  LiveProviderCallbacks,
+  LiveProviderConfig,
+  ToolCall,
+  ToolResponse,
+} from "./live-provider";
+import { GeminiLiveProvider } from "./gemini-live-provider";
+import { OpenAILiveProvider } from "./openai-live-provider";
+import { parseBoardButtons, StreamingPrefixParser, type StreamingSegment } from "./interactive-agent";
+
+/** Extract a string argument from tool call args.
+ *  Gemini's native function calling frequently uses wrong parameter names
+ *  (e.g. "board_name" instead of "name", "observations" instead of "text").
+ *  Falls back to the first non-ID string value in the args object. */
+function extractStringArg(args: Record<string, any>, declaredName: string, fallback = ""): string {
+  if (typeof args[declaredName] === "string") return args[declaredName];
+  // Fall back: find the first string value that isn't an internal ID or status marker
+  for (const [key, val] of Object.entries(args)) {
+    if (key === "id" || key === "status") continue;
+    if (typeof val === "string" && val.length > 0) return val;
+  }
+  return fallback;
+}
+
+/** Convert structured tool-call button args to internal format.
+ *  Handles missing fields defensively — the model may omit icon or label. */
+function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string; symbolPath?: string }> {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((b: any) => {
+    const label = (typeof b?.label === "string" ? b.label : String(b?.label ?? "")).trim() || "?";
+    let iconRef = (typeof b?.icon === "string" ? b.icon : "").trim() || "fas fa-comment";
+    let symbolPath: string | undefined;
+    if (iconRef.startsWith("face:")) {
+      symbolPath = `__FACE__:${iconRef.substring(5).trim()}`;
+      iconRef = "👤";
+    } else if (iconRef.startsWith("symbol:")) {
+      symbolPath = `__SYMBOL__:${iconRef.substring(7).trim()}`;
+      iconRef = "🖼️";
+    }
+    return { label, iconRef, symbolPath };
+  });
+}
 import type {
   AACInteractionMode,
   AACResponseMode,
   DualAgentSessionState,
+  TurnToolAccumulator,
 } from "./types";
+import { createEmptyAccumulator } from "./types";
+import { buildToolDeclarations, buildOpenAIToolDeclarations, type ToolDeclarationConfig } from "./tool-declarations";
 import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
 import { searchYouTube } from "../youtube/youtube-search";
 import { createContact, findSimilarContact, updateContact, getContactsByStudent } from "../biometric";
@@ -24,6 +64,8 @@ import { logDualAgent } from "./dual-agent-logger";
 // Re-use the existing dual-agent service for session management (monitor, voices, state)
 import { dualAgentService, type SessionCache } from "./dual-agent-service";
 import { boardRepository } from "../../repositories/boardRepository";
+import { settingsRepository } from "../../repositories/settingsRepository";
+import { getModelOption, type LLMProviderKey } from "@shared/llm-options";
 
 // ---------------------------------------------------------------------------
 // Client ↔ Server Protocol
@@ -89,8 +131,8 @@ export type ServerMessage =
 
 export class LiveRelay {
   private ws: WebSocket;
-  private gemini: GeminiLiveSession;
-  private parser: StreamingPrefixParser;
+  private provider: LiveProvider | null = null;
+  private providerKey: LLMProviderKey = "gemini";
 
   // Session state
   private studentId: string | null = null;
@@ -146,9 +188,18 @@ export class LiveRelay {
   private pongReceived = true;
   private static readonly PING_INTERVAL_MS = 30_000; // 30s
 
-  // Accumulation for turn processing
+  // Mode flag: true = function calling (OpenAI / Gemini native audio), false = text prefix tokens (Gemini text)
+  private useFunctionCalling = true;
+
+  // When true, tool responses include scheduling: "SILENT" (Gemini native audio mode)
+  private useToolResponseScheduling = false;
+
+  // Text prefix token parser (used when useFunctionCalling = false)
+  private parser = new StreamingPrefixParser();
   private turnTextBuffer = "";
-  private turnSegments: StreamingSegment[] = [];
+
+  // Accumulation for turn processing (both modes share this)
+  private turnAccum: TurnToolAccumulator = createEmptyAccumulator();
   private turnStartTime = 0;
 
   // Turn processing guard: prevents concurrent processTurnEnd() calls
@@ -156,97 +207,6 @@ export class LiveRelay {
 
   constructor(ws: WebSocket) {
     this.ws = ws;
-    this.parser = new StreamingPrefixParser();
-
-    // Set up Gemini Live session with callbacks
-    this.gemini = new GeminiLiveSession({
-      onText: (text) => this.handleGeminiText(text),
-      onTurnComplete: () => this.handleGeminiTurnComplete(),
-      onInterrupted: () => this.handleGeminiInterrupted(),
-      onUsage: (usage) => this.handleUsage(usage),
-      onGoAway: () => {
-        console.log("[LiveRelay] Gemini session goAway — reconnecting");
-      },
-      onReady: () => {
-        console.log("[LiveRelay] Gemini session ready");
-        // Reset reconnect counter on successful connection
-        this.reconnectAttempts = 0;
-
-        if (this.initialConnectionDone) {
-          // This is a reconnection — restore context so the model doesn't start over
-          this.send({ type: "reconnected" });
-          this.injectReconnectionContext();
-        }
-        // Initial connection is handled by handleInitialize after greeting prompt
-      },
-      onReconnecting: () => {
-        // Safety blocks: progressive content scrubbing instead of forceNewSession
-        if (this.gemini.lastCloseWasSafety) {
-          this.handleSafetyBlock();
-          this.send({ type: "reconnecting", data: "error:RECONNECTING" });
-          return; // Don't increment reconnectAttempts or trigger forceNewSession
-        }
-
-        this.reconnectAttempts++;
-        console.log(`[LiveRelay] Reconnecting (attempt ${this.reconnectAttempts})...`);
-        this.send({ type: "reconnecting", data: "error:RECONNECTING" });
-
-        // If too many reconnect attempts, force new session
-        if (this.reconnectAttempts >= LiveRelay.MAX_RECONNECT_BEFORE_RESET && this.sessionId) {
-          console.log("[LiveRelay] Too many reconnect attempts — creating new session");
-          this.forceNewSession().catch(err => {
-            console.error("[LiveRelay] Force new session failed:", err);
-          });
-        }
-      },
-      onError: (error) => {
-        console.error("[LiveRelay] Gemini error:", error.message);
-        // Check if this is a rate-limit error
-        if (this.gemini.lastCloseWasRateLimit || /resource.exhausted|rate.limit|quota|too many requests|overloaded/i.test(error.message)) {
-          this.send({ type: "rate_limited", data: "error:RATE_LIMITED" });
-        } else if (this.gemini.lastCloseWasSafety || /policy.violation|unsafe|blocked|safety/i.test(error.message)) {
-          // Safety errors are handled by onReconnecting → handleSafetyBlock; skip generic error
-        } else {
-          this.send({ type: "error", data: "error:CONNECTION_ERROR" });
-        }
-      },
-      onClose: (code, reason) => {
-        console.log(`[LiveRelay] Gemini session closed: code=${code} reason=${reason}`);
-        // Check if rate-limited — send specific message so client doesn't auto-reconnect
-        if (this.gemini.lastCloseWasRateLimit) {
-          this.send({ type: "rate_limited", data: "error:RATE_LIMITED" });
-          return;
-        }
-        // Safety blocks are handled by onReconnecting → handleSafetyBlock; skip generic error
-        if (this.gemini.lastCloseWasSafety) {
-          return;
-        }
-        // Forward non-normal closes to client so they see specific error feedback
-        if (code && code !== 1000) {
-          this.send({ type: "error", data: "error:CONNECTION_CLOSED" });
-        }
-      },
-      // onInputTranscription intentionally omitted — the model's own [TRANSCRIPT]
-      // tokens are the canonical transcript source (with speaker labels).
-      // Gemini's built-in inputTranscription fires for ALL audio including echoed
-      // TTS, which caused duplicate/noisy transcripts in the session log.
-      onReconnectFailed: async () => {
-        // Resumption handle was stale — reload history from DB and prime the fresh session
-        if (!this.sessionId) return;
-        console.log("[LiveRelay] Reconnect failed — reloading history from DB");
-        try {
-          const excludeSafety = this.consecutiveSafetyBlocks > 0;
-          const turns = await dualAgentService.loadHistoryForReconnect(this.sessionId, excludeSafety);
-          if (turns.length > 0) {
-            this.gemini.sendConversationHistory(turns);
-            console.log(`[LiveRelay] Sent ${turns.length} history turns to fresh Gemini session (excludeSafety=${excludeSafety})`);
-          }
-          // Context injection is also handled by onReady → injectReconnectionContext()
-        } catch (err) {
-          console.error("[LiveRelay] History reload failed:", err);
-        }
-      },
-    });
 
     // Handle client messages
     ws.on("message", (raw) => {
@@ -277,6 +237,112 @@ export class LiveRelay {
     this.startPingTimer();
   }
 
+  /**
+   * Build the LiveProviderCallbacks object wired to this relay instance.
+   * Shared by all providers — the interface is provider-agnostic.
+   */
+  private buildProviderCallbacks(): LiveProviderCallbacks {
+    return {
+      onText: (text) => this.handleProviderText(text),
+      onTurnComplete: () => this.handleProviderTurnComplete(),
+      onInterrupted: () => this.handleProviderInterrupted(),
+      onToolCall: (calls) => this.handleToolCalls(calls),
+      onToolCallCancellation: (ids) => {
+        console.log(`[LiveRelay] Tool call cancellation for ids: ${ids.join(", ")}`);
+      },
+      onAudioData: () => { /* Discard — we use ElevenLabs TTS */ },
+      onOutputTranscription: (text) => {
+        logDualAgent("LiveRelay.outputTranscription", { sessionId: this.sessionId, text: text.substring(0, 100) });
+      },
+      onUsage: (usage) => this.handleUsage(usage),
+      onGoAway: () => {
+        console.log("[LiveRelay] Provider session goAway — reconnecting");
+      },
+      onReady: () => {
+        console.log("[LiveRelay] Provider session ready");
+        this.reconnectAttempts = 0;
+
+        if (this.initialConnectionDone) {
+          this.send({ type: "reconnected" });
+          this.injectReconnectionContext();
+        }
+      },
+      onReconnecting: () => {
+        if (this.provider?.lastCloseWasSafety) {
+          this.handleSafetyBlock();
+          this.send({ type: "reconnecting", data: "error:RECONNECTING" });
+          return;
+        }
+
+        this.reconnectAttempts++;
+        console.log(`[LiveRelay] Reconnecting (attempt ${this.reconnectAttempts})...`);
+        this.send({ type: "reconnecting", data: "error:RECONNECTING" });
+
+        if (this.reconnectAttempts >= LiveRelay.MAX_RECONNECT_BEFORE_RESET && this.sessionId) {
+          console.log("[LiveRelay] Too many reconnect attempts — creating new session");
+          this.forceNewSession().catch(err => {
+            console.error("[LiveRelay] Force new session failed:", err);
+          });
+        }
+      },
+      onError: (error) => {
+        console.error("[LiveRelay] Provider error:", error.message);
+        if (this.provider?.lastCloseWasRateLimit || /resource.exhausted|rate.limit|quota|too many requests|overloaded/i.test(error.message)) {
+          this.send({ type: "rate_limited", data: "error:RATE_LIMITED" });
+        } else if (this.provider?.lastCloseWasSafety || /policy.violation|unsafe|blocked|safety/i.test(error.message)) {
+          // Safety errors are handled by onReconnecting → handleSafetyBlock
+        } else {
+          this.send({ type: "error", data: "error:CONNECTION_ERROR" });
+        }
+      },
+      onClose: (code, reason) => {
+        console.log(`[LiveRelay] Provider session closed: code=${code} reason=${reason}`);
+        if (this.provider?.lastCloseWasRateLimit) {
+          this.send({ type: "rate_limited", data: "error:RATE_LIMITED" });
+          return;
+        }
+        if (this.provider?.lastCloseWasSafety) {
+          return;
+        }
+        if (code && code !== 1000) {
+          this.send({ type: "error", data: "error:CONNECTION_CLOSED" });
+        }
+      },
+      onInputTranscription: (text) => {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+
+        // Skip likely echoes of our own recent TTS output
+        if (this.lastAiSpeak && Date.now() - this.lastAiSpeak.timestamp < 10_000) {
+          const lastSpoke = this.lastAiSpeak.text.toLowerCase();
+          const heard = trimmed.toLowerCase();
+          if (lastSpoke.includes(heard) || heard.includes(lastSpoke)) {
+            logDualAgent("LiveRelay.echoFiltered", { sessionId: this.sessionId, text: trimmed.substring(0, 80) });
+            return;
+          }
+        }
+
+        logDualAgent("LiveRelay.inputTranscription", { sessionId: this.sessionId, text: trimmed.substring(0, 200) });
+        this.send({ type: "transcript", data: trimmed, speaker: "Unknown" });
+        this.turnAccum.transcriptText += `[Heard] ${trimmed} `;
+      },
+      onReconnectFailed: async () => {
+        if (!this.sessionId || !this.provider) return;
+        console.log("[LiveRelay] Reconnect failed — reloading history from DB");
+        try {
+          const excludeSafety = this.consecutiveSafetyBlocks > 0;
+          const turns = await dualAgentService.loadHistoryForReconnect(this.sessionId, excludeSafety);
+          if (turns.length > 0) {
+            this.provider.sendConversationHistory(turns);
+            console.log(`[LiveRelay] Sent ${turns.length} history turns to fresh session (excludeSafety=${excludeSafety})`);
+          }
+        } catch (err) {
+          console.error("[LiveRelay] History reload failed:", err);
+        }
+      },
+    };
+  }
+
   // -------------------------------------------------------------------------
   // Client message handling
   // -------------------------------------------------------------------------
@@ -300,9 +366,14 @@ export class LiveRelay {
           const extraImages = this.latestAppCanvas
             ? [{ data: this.latestAppCanvas, mimeType: "image/png", label: "The student is using the Drawing app. This image shows their current drawing." }]
             : undefined;
-          this.gemini.sendFrameWithPrompt(
+          const addRef = this.useFunctionCalling ? "add_buttons()" : "[ADD_BUTTONS]";
+          const removeRef = this.useFunctionCalling ? "remove_buttons()" : "[REMOVE_BUTTONS]";
+          const contextRef = this.useFunctionCalling ? "context()" : "[CONTEXT]";
+          const speakRef = this.useFunctionCalling ? "speak()" : "[SPEAK]";
+          const interpretRef = this.useFunctionCalling ? "interpret()" : "[INTERPRET]";
+          this.provider!.sendFrameWithPrompt(
             msg.data,
-            `[VISUAL CHECK] Composite frame grid (${msg.timestamps?.length ?? '?'} frames). Observe the scene. Your PRIMARY task is to keep the AAC board relevant — if you observe new objects, activities, people, or communication opportunities, use [ADD_BUTTONS]. Prioritize objects in your user's hands or that they appear to be interested in (looking at, pointing to or reaching for), or things being spoken about. If items are no longer relevant, use [REMOVE_BUTTONS]. Always pair [CONTEXT] observations with board updates when applicable. Speak or interpret only with HIGH CONFIDENCE. Stay silent if nothing important changed.`,
+            `[VISUAL CHECK] Composite frame grid (${msg.timestamps?.length ?? '?'} frames). Observe the scene. Your PRIMARY task is to keep the AAC board relevant — if you observe new objects, activities, people, or communication opportunities, use ${addRef}. Prioritize objects in your user's hands or that they appear to be interested in (looking at, pointing to or reaching for), or things being spoken about. If items are no longer relevant, use ${removeRef}. Always pair ${contextRef} observations with board updates when applicable. Use ${speakRef} or ${interpretRef} only with HIGH CONFIDENCE. Stay silent if nothing important changed.`,
             extraImages,
           );
           break;
@@ -310,21 +381,23 @@ export class LiveRelay {
 
         case "pcm_audio":
           // Raw PCM Int16 16kHz — stream directly to Gemini (no transcription needed)
-          this.gemini.sendAudio(msg.data);
+          this.provider!.sendAudio(msg.data);
           break;
 
         case "audio_clip":
           // No-op: Gemini already hears audio via continuous PCM streaming
           break;
 
-        case "focus_frame":
+        case "focus_frame": {
           // High-resolution single frame requested by AI for detailed analysis
-          this.gemini.sendFrameWithPrompt(
+          const focusCtxRef = this.useFunctionCalling ? "context() tool" : "[CONTEXT]";
+          this.provider!.sendFrameWithPrompt(
             msg.data,
-            `[FOCUS FRAME] This is a HIGH-RESOLUTION single frame captured at your request. Analyze the image carefully for fine details, text, labels, faces, or objects you couldn't identify before. Report findings via [CONTEXT] and update the board if needed.`,
+            `[FOCUS FRAME] This is a HIGH-RESOLUTION single frame captured at your request. Analyze the image carefully for fine details, text, labels, faces, or objects you couldn't identify before. Report findings via ${focusCtxRef} and update the board if needed.`,
           );
           console.log("[LiveRelay] Focus frame sent to Gemini");
           break;
+        }
 
         case "user_message": {
           // Dedup guard: skip identical messages within 500ms window
@@ -352,7 +425,7 @@ export class LiveRelay {
               timestamp: now,
             }).catch(err => console.error("[LiveRelay] Failed to persist user message:", err));
           }
-          this.gemini.sendMessage(msg.text, "user");
+          this.provider!.sendMessage(msg.text, "user");
           logDualAgent("LiveRelay.userMessage", {
             sessionId: this.sessionId,
             text: msg.text.substring(0, 80),
@@ -372,11 +445,11 @@ export class LiveRelay {
 
         case "gesture_context":
           // Inject gesture context as system context
-          this.gemini.sendContextInjection(`[GESTURE CONTEXT]\n${msg.data}`);
+          this.provider!.sendContextInjection(`[GESTURE CONTEXT]\n${msg.data}`);
           break;
 
         case "person_context":
-          this.gemini.sendContextInjection(`[PERSON IDENTIFIED]\n${JSON.stringify(msg.data)}`);
+          this.provider!.sendContextInjection(`[PERSON IDENTIFIED]\n${JSON.stringify(msg.data)}`);
           break;
 
         case "board_state": {
@@ -390,13 +463,13 @@ export class LiveRelay {
               .filter((l: string) => l);
           }
           this.lastBoardUpdateTime = Date.now();
-          this.gemini.sendContextInjection(`[CURRENT BOARD STATE]\n${JSON.stringify(msg.data)}`);
+          this.provider!.sendContextInjection(`[CURRENT BOARD STATE]\n${JSON.stringify(msg.data)}`);
           break;
         }
 
         case "set_mode":
           this.interactionMode = msg.mode;
-          this.gemini.sendContextInjection(`[MODE CHANGE] Interaction mode changed to: ${msg.mode}`);
+          this.provider!.sendContextInjection(`[MODE CHANGE] Interaction mode changed to: ${msg.mode}`);
           break;
 
         case "set_response_mode":
@@ -408,7 +481,7 @@ export class LiveRelay {
           break;
 
         case "page_navigate":
-          this.gemini.sendContextInjection(
+          this.provider!.sendContextInjection(
             `[PAGE NAVIGATE] User navigated to page "${msg.pageName}". Current buttons: ${msg.buttons.join(", ")}`,
           );
           // Update session state
@@ -422,17 +495,19 @@ export class LiveRelay {
           this.latestAppCanvas = msg.data;
           break;
 
-        case "app_dismissed":
+        case "app_dismissed": {
           // Clear cached canvas since app is closing
           this.latestAppCanvas = null;
           // Trigger AI response (like a button press) — AI should comment + rebuild board
           this.userMessageSentAt = Date.now();
-          this.gemini.sendMessage(
-            `[APP CLOSED] The user closed the "${msg.appId}" app and returned to the AAC board. Comment briefly on what they were doing in the app, then use [REBUILD_BOARD] to create a fresh set of communication buttons for the current context.`,
+          const rbAppRef = this.useFunctionCalling ? "rebuild_board()" : "[REBUILD_BOARD]";
+          this.provider!.sendMessage(
+            `[APP CLOSED] The user closed the "${msg.appId}" app and returned to the AAC board. Comment briefly on what they were doing in the app, then use ${rbAppRef} to create a fresh set of communication buttons for the current context.`,
             "user",
           );
           logDualAgent("LiveRelay.appDismissed", { sessionId: this.sessionId, appId: msg.appId });
           break;
+        }
       }
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
@@ -454,6 +529,24 @@ export class LiveRelay {
     this.debugMode = msg.debugMode || false;
 
     try {
+      // -----------------------------------------------------------------------
+      // Provider selection: read from aac_chat LLM settings FIRST
+      // (determines useFunctionCalling before prompt is built)
+      // -----------------------------------------------------------------------
+      const aacChatConfig = await settingsRepository.getLLMConfig('aac_chat');
+      this.providerKey = aacChatConfig.provider;
+
+      // Look up the model in the catalog to determine capabilities
+      const modelInfo = getModelOption(aacChatConfig.provider, aacChatConfig.model);
+      const isOpenAIRealtime = this.providerKey === "openai" && !!modelInfo?.supportsLive;
+      const isGeminiLive = this.providerKey === "gemini";
+      // Gemini native-audio models use function calling; text models use prefix tokens
+      const isGeminiNativeAudio = isGeminiLive && !aacChatConfig.model.includes("image-generation");
+      const isGeminiText = isGeminiLive && !isGeminiNativeAudio;
+
+      // Function calling: OpenAI + Gemini native audio. Text tokens: Gemini text.
+      const useFunctionCallingForProvider = isOpenAIRealtime || isGeminiNativeAudio;
+
       // Use existing dual-agent service to get/create session + resolve prompt + voices
       const state = await dualAgentService.initializeSession(
         msg.studentId,
@@ -461,6 +554,7 @@ export class LiveRelay {
         msg.sessionId,
         this.interactionMode,
         true, // isLiveMode — unified prompt with contextual rules for different input types
+        useFunctionCallingForProvider, // Gemini=false (text tokens), OpenAI=true (function calling)
       );
       this.sessionId = state.sessionId;
 
@@ -472,30 +566,86 @@ export class LiveRelay {
       this.sessionCache = cached;
 
       // Register context injection callback — when monitor injects [CONTEXT],
-      // forward it to the Gemini Live session so the model sees it immediately
+      // forward it to the live session so the model sees it immediately
       cached.state.onContextInjection = (text: string) => {
         console.log("[LiveRelay] Monitor context injection →", text.substring(0, 80));
-        this.gemini.sendContextInjection(`[Monitor Context]\n${text}`);
+        this.provider?.sendContextInjection(`[Monitor Context]\n${text}`);
         this.send({ type: "context", data: `[Monitor] ${text}` });
       };
 
-      // Get the system prompt from the session state, with Live API audio echo warning
-      const systemPrompt = state.interactivePrompt + `\n\n` +
-`CRITICAL — AUDIO ECHO AWARENESS:
-You receive continuous microphone audio. Because your text responses are converted to speech (TTS) and played through speakers near the microphone, you WILL hear echoes of your own output in the audio stream shortly after you generate it.
-- Your [INTERPRET] text (if present) is spoken aloud in one voice (student voice)
-- Your [SPEAK] text (if present) is spoken aloud in a different voice (AI voice)
-INTERPRET text comes before the SPEAK text, so the student voice is always heard before the AI voice.
-Both play through speakers and are picked up by the microphone within seconds.
+      // Build tool declarations based on session configuration
+      const toolConfig: ToolDeclarationConfig = {
+        interpretationLevel: cached.state.interpretationLevel ?? 1,
+        enabledApps: (cached.state.appState?.enabledApps || [])
+          .map(id => {
+            const appDefs = (dualAgentService as any).getAppDefinitions?.() || [];
+            return appDefs.find((a: any) => a.id === id);
+          })
+          .filter(Boolean),
+        availableBoards: (cached.state.availableBoards || []).map(b => ({ key: b.key, name: b.name })),
+        hasLoadedBoard: !!cached.state.loadedBoardId,
+        youtubeEnabled: cached.state.appState?.enabledApps?.includes("youtube") || false,
+        faceRecognitionActive: (cached.state.cachedContacts?.length || 0) > 0 || this.unknownFaceDescriptors.length > 0,
+        isSilentMode: this.interactionMode === "silent",
+      };
 
-You MUST:
-- Recognize BOTH of these echoes as YOUR OWN output, not new user speech
-- NEVER transcribe your own echoed speech as [TRANSCRIPT]
-- NEVER respond to or build upon your own echoed speech
-- Do not treat your own echoed speech as interruptions
-- Only treat audio input as genuine user speech if it clearly does NOT match something you recently said via [SPEAK] or [INTERPRET]
+      // Close any existing provider (for forceNewSession re-init)
+      this.provider?.close();
 
-If you hear speech that resembles text you recently produced, it is your echo. Ignore it completely and produce no output.`;
+      // Create the appropriate provider + tools
+      const callbacks = this.buildProviderCallbacks();
+      let tools: any[];
+      let providerConfig: LiveProviderConfig;
+
+      if (isOpenAIRealtime) {
+        this.useFunctionCalling = true;
+        this.useToolResponseScheduling = false;
+        this.provider = new OpenAILiveProvider(callbacks);
+        tools = buildOpenAIToolDeclarations(toolConfig);
+        providerConfig = {
+          model: aacChatConfig.model,
+          temperature: 0.7,
+          tools,
+        };
+      } else if (isGeminiNativeAudio) {
+        // Gemini native audio with function calling + SILENT scheduling
+        this.useFunctionCalling = true;
+        this.useToolResponseScheduling = true;
+        this.provider = new GeminiLiveProvider(callbacks);
+        tools = buildToolDeclarations(toolConfig);
+        providerConfig = {
+          model: aacChatConfig.model,
+          temperature: 0.7,
+          tools,
+          compressionTriggerTokens: 100_000,
+          compressionTargetTokens: 50_000,
+          responseModality: "AUDIO",
+        };
+      } else {
+        // Gemini TEXT mode: prefix tokens, no tools
+        this.useFunctionCalling = false;
+        this.useToolResponseScheduling = false;
+        this.provider = new GeminiLiveProvider(callbacks);
+        // No tools — Gemini responds with text prefix tokens parsed by StreamingPrefixParser
+        // TEXT modality: model outputs text, not audio (audio comes from ElevenLabs TTS)
+        // Native-audio models only support AUDIO modality, so swap to the text-compatible variant
+        const textModel = this.resolveGeminiTextModel(aacChatConfig.model);
+        providerConfig = {
+          model: textModel,
+          temperature: 0.7,
+          compressionTriggerTokens: 100_000,
+          compressionTargetTokens: 50_000,
+          responseModality: "TEXT",
+        };
+      }
+
+      // Build system prompt with provider-specific echo awareness appendix
+      const echoAwareness = isOpenAIRealtime
+        ? this.buildOpenAIEchoAwareness()
+        : isGeminiNativeAudio
+          ? this.buildGeminiNativeAudioEchoAwareness()
+          : this.buildGeminiEchoAwareness();
+      const systemPrompt = state.interactivePrompt + "\n\n" + echoAwareness;
 
       // Resolve voices for TTS via the monitor agent's student info
       try {
@@ -509,15 +659,8 @@ If you hear speech that resembles text you recently produced, it is your echo. I
         console.warn("[LiveRelay] Voice resolution failed, using defaults:", err);
       }
 
-      // Connect to Gemini Live API
-      const config: LiveSessionConfig = {
-        model: "gemini-2.0-flash-exp-image-generation",
-        temperature: 0.7,
-        compressionTriggerTokens: 100_000,
-        compressionTargetTokens: 50_000,
-      };
-
-      await this.gemini.connect(systemPrompt, config);
+      // Connect to the provider
+      await this.provider.connect(systemPrompt, providerConfig);
 
       // Start periodic reminders
       this.startBoardReminder();
@@ -529,32 +672,39 @@ If you hear speech that resembles text you recently produced, it is your echo. I
       logDualAgent("LiveRelay.initialize", {
         sessionId: state.sessionId,
         studentId: msg.studentId,
+        provider: isOpenAIRealtime ? "openai-realtime" : isGeminiNativeAudio ? "gemini-native-audio" : "gemini-text",
+        model: providerConfig.model,
+        mode: this.useFunctionCalling ? "function-calling" : "text-tokens",
+        responseModality: providerConfig.responseModality || "default",
         interactionMode: this.interactionMode,
         responseMode: this.responseMode,
       });
 
-      // Send greeting prompt to Gemini — include persona hint (matching HTTP mode)
+      // Send greeting prompt — include persona hint
       const isSilent = this.interactionMode === "silent";
       const student = cached.monitorAgent.getStudent?.();
       const personaHint = student?.aacSettings?.chatAgentPrompt?.trim()
         ? `\nThe student is ${student.name}. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs.`
         : "";
       const imageHint = msg.initialFrame ? "\nUse the camera image to observe the environment and make the buttons contextually relevant." : "";
+      const setBoardRef = this.useFunctionCalling ? "set_board()" : "[SET_BOARD]";
+      const rebuildBoardRef = this.useFunctionCalling ? "rebuild_board()" : "[REBUILD_BOARD]";
+      const speakGreetRef = this.useFunctionCalling ? "speak()" : "[SPEAK]";
       const boardHint = state.availableBoards && state.availableBoards.length > 0
-        ? " If a custom board from the Available Custom Boards list is appropriate for this student, use [SET_BOARD] instead of [REBUILD_BOARD]."
+        ? ` If a custom board from the Available Custom Boards list is appropriate for this student, use ${setBoardRef} instead of ${rebuildBoardRef}.`
         : "";
       const greetingPrompt = isSilent
-        ? `Generate 4-12 contextual utterance buttons — complete phrases the user might want to say. Use the student's profile and interests from the system prompt to make them relevant.${imageHint} Use [REBUILD_BOARD] to create the initial board.${boardHint}${personaHint}`
-        : `Greet the user with a short, friendly greeting (1-2 sentences) and provide 4-12 initial communication buttons that reflect the student's interests, needs, and communication level from the system prompt. The buttons should be appropriate responses to your greeting.${imageHint} Use [SPEAK] for your greeting and [REBUILD_BOARD] for the buttons.${boardHint}${personaHint}`;
+        ? `Generate 4-12 contextual utterance buttons — complete phrases the user might want to say. Use the student's profile and interests from the system prompt to make them relevant.${imageHint} Use ${rebuildBoardRef} to create the initial board.${boardHint}${personaHint}`
+        : `Greet the user with a short, friendly greeting (1-2 sentences) and provide 4-12 initial communication buttons that reflect the student's interests, needs, and communication level from the system prompt. The buttons should be appropriate responses to your greeting.${imageHint} Use ${speakGreetRef} for your greeting and ${rebuildBoardRef} for the buttons.${boardHint}${personaHint}`;
 
       if (msg.initialFrame) {
-        this.gemini.sendFrameWithPrompt(msg.initialFrame, greetingPrompt);
+        this.provider.sendFrameWithPrompt(msg.initialFrame, greetingPrompt);
       } else {
-        this.gemini.sendMessage(greetingPrompt, "user");
+        this.provider.sendMessage(greetingPrompt, "user");
       }
       this.initialConnectionDone = true;
 
-      console.log(`[LiveRelay] Initialized session ${state.sessionId} for student ${msg.studentId}`);
+      console.log(`[LiveRelay] Initialized session ${state.sessionId} for student ${msg.studentId} (provider: ${isOpenAIRealtime ? "openai" : isGeminiNativeAudio ? "gemini-native-audio" : "gemini-text"}, mode: ${this.useFunctionCalling ? "function-calling" : "text-tokens"}, model: ${providerConfig.model})`);
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       console.error("[LiveRelay] Initialize failed:", error.message);
@@ -563,7 +713,75 @@ If you hear speech that resembles text you recently produced, it is your echo. I
   }
 
   // -------------------------------------------------------------------------
-  // Button interpretation (send interpretation prompt to Gemini)
+  // Provider-specific echo awareness prompts
+  // -------------------------------------------------------------------------
+
+  private buildGeminiEchoAwareness(): string {
+    return `CRITICAL — AUDIO ECHO AWARENESS:
+You receive continuous microphone audio. Because your [SPEAK] and [INTERPRET] text output is converted to speech (TTS) and played through speakers near the microphone, you WILL hear echoes of your own output in the audio stream shortly after you generate it.
+- Your [INTERPRET] text (if present) is spoken aloud in one voice (student voice)
+- Your [SPEAK] text (if present) is spoken aloud in a different voice (AI voice)
+[INTERPRET] is always spoken first (student voice), then [SPEAK] (AI voice).
+Both play through speakers and are picked up by the microphone within seconds.
+
+You MUST:
+- Recognize BOTH of these echoes as YOUR OWN output, not new user speech
+- NEVER transcribe your own echoed speech with [TRANSCRIPT]
+- NEVER respond to or build upon your own echoed speech
+- Do not treat your own echoed speech as interruptions
+- Only treat audio input as genuine user speech if it clearly does NOT match something you recently said via [SPEAK] or [INTERPRET]
+
+If you hear speech that resembles text you recently produced, it is your echo. Ignore it completely and produce no output.
+
+CRITICAL — AUDIO OUTPUT:
+Your audio responses are NOT played to the user — a separate TTS system voices the text from your [SPEAK] and [INTERPRET] prefix tokens instead.
+Therefore, keep your audio output minimal. When you have nothing to communicate, remain silent. Focus on outputting [SPEAK] and [INTERPRET] tokens with the text you want voiced.`;
+  }
+
+  private buildGeminiNativeAudioEchoAwareness(): string {
+    return `CRITICAL — AUDIO ECHO AWARENESS (Gemini Native Audio):
+You receive continuous microphone audio. Because your tool calls (speak/interpret) are converted to speech by a SEPARATE TTS system and played through speakers near the microphone, you WILL hear echoes of your own output in the audio stream shortly after you generate it.
+- Your interpret() text is spoken aloud in one voice (student voice)
+- Your speak() text is spoken aloud in a different voice (AI voice)
+Both play through speakers and are picked up by the microphone within seconds.
+
+You MUST:
+- Recognize BOTH of these echoes as YOUR OWN output, not new user speech
+- NEVER transcribe your own echoed speech with transcript()
+- NEVER respond to or build upon your own echoed speech
+- Only treat audio input as genuine user speech if it clearly does NOT match something you recently said via speak() or interpret()
+
+If you hear speech that resembles text you recently produced, it is your echo. Ignore it completely and produce no output.
+
+CRITICAL — AUDIO OUTPUT:
+Your audio responses are NOT played to the user — a separate TTS system voices the text from your speak() and interpret() tool calls instead.
+Therefore, keep your audio output minimal. When you have nothing to communicate, remain silent. Focus on using tool calls with the text you want voiced.
+
+TOOL RESPONSE SCHEDULING:
+Your tool responses are delivered with SILENT scheduling — the system absorbs your tool results
+without generating intermediate audio. Call all tools you need, then wait for the consolidated response.`;
+  }
+
+  private buildOpenAIEchoAwareness(): string {
+    return `CRITICAL — AUDIO ECHO AWARENESS:
+You receive continuous microphone audio. Because your tool calls (speak/interpret) are converted to speech by a SEPARATE TTS system and played through speakers near the microphone, you WILL hear echoes of your own output in the audio stream shortly after you generate it.
+- Your interpret() text is spoken aloud in one voice (student voice)
+- Your speak() text is spoken aloud in a different voice (AI voice)
+Both play through speakers and are picked up by the microphone within seconds.
+
+You MUST:
+- Recognize BOTH of these echoes as YOUR OWN output, not new user speech
+- NEVER transcribe your own echoed speech with transcript()
+- NEVER respond to or build upon your own echoed speech
+- Only treat audio input as genuine user speech if it clearly does NOT match something you recently said via speak() or interpret()
+
+If you hear speech that resembles text you recently produced, it is your echo. Ignore it completely and produce no output.
+
+Your text output from speak()/interpret() is synthesized by a separate TTS system — you do NOT generate audio directly.`;
+  }
+
+  // -------------------------------------------------------------------------
+  // Button interpretation (send interpretation prompt to provider)
   // -------------------------------------------------------------------------
 
   private handleInterpretButtons(buttons: string[], board?: any): void {
@@ -579,353 +797,879 @@ If you hear speech that resembles text you recently produced, it is your echo. I
       }).catch(err => console.error("[LiveRelay] Failed to persist button press:", err));
     }
 
-    this.gemini.sendMessage(`[BUTTON PRESS] ${buttonList}
+    const rbRef = this.useFunctionCalling ? "rebuild_board()" : "[REBUILD_BOARD]";
+    const sbRef = this.useFunctionCalling ? "set_board()" : "[SET_BOARD]";
+    this.provider!.sendMessage(`[BUTTON PRESS] ${buttonList}
     The user pressed the above button(s). Interpret this as a user message and respond accordingly.
-    IMPORTANT: Call [REBUILD_BOARD] (or [SET_BOARD], if relevant) NOW to update the board with new buttons or content.
+    IMPORTANT: Use ${rbRef} (or ${sbRef}, if relevant) NOW to update the board with new buttons or content.
     `, "user");
   }
 
   // -------------------------------------------------------------------------
-  // Gemini response handling
+  // Provider response handling (function calling mode)
   // -------------------------------------------------------------------------
 
   /**
-   * Handle incremental text from Gemini.
-   * Feed through the streaming prefix parser to detect tokens as they arrive.
+   * Handle text from the provider.
+   * In function calling mode: stray text (log only — real output comes through tool calls).
+   * In text token mode: feed into StreamingPrefixParser and process segments.
    */
-  private handleGeminiText(text: string): void {
-    if (this.turnTextBuffer === "") {
+  private handleProviderText(text: string): void {
+    if (this.turnStartTime === 0) {
       this.turnStartTime = Date.now();
-      // Reset reconnect counter on first text of a new turn — connection is healthy
       this.reconnectAttempts = 0;
-      // Successful turn = safety recovery worked — reset safety counter
       this.consecutiveSafetyBlocks = 0;
     }
-    this.turnTextBuffer += text;
 
-    // Feed through parser to detect complete segments
+    if (this.useFunctionCalling) {
+      // Function calling mode — stray text, just log
+      if (text.trim()) {
+        logDualAgent("LiveRelay.strayText", { sessionId: this.sessionId, text: text.substring(0, 200) });
+      }
+      return;
+    }
+
+    // Text prefix token mode: feed into parser
+    this.turnTextBuffer += text;
     const segments = this.parser.addChunk(text);
     for (const seg of segments) {
-      this.turnSegments.push(seg);
-      this.processSegment(seg);
+      this.processTextSegment(seg);
     }
   }
 
   /**
-   * Handle turn completion from Gemini.
-   * Flush the parser and do post-turn processing (TTS, contact enrollment, monitor).
-   * Wrapped in try-catch-finally to prevent errors from killing the relay.
+   * Process a single streaming segment from the text prefix token parser.
+   * Mirrors handleSingleToolCall but for text tokens — populates turnAccum
+   * and sends real-time messages to the client.
    */
-  private async handleGeminiTurnComplete(): Promise<void> {
-    // Guard against concurrent turn processing (shouldn't happen but safety first)
+  private processTextSegment(seg: StreamingSegment): void {
+    const isSilent = this.interactionMode === "silent";
+    const state = this.sessionCache?.state;
+
+    switch (seg.type) {
+      case "speak": {
+        if (seg.data && !isSilent) {
+          this.send({ type: "text", data: seg.data });
+        }
+        this.turnAccum.speakText += (this.turnAccum.speakText ? " " : "") + seg.data;
+        break;
+      }
+
+      case "interpret": {
+        if (seg.data) {
+          this.send({ type: "interpret", text: seg.data, confidence: seg.confidence });
+        }
+        this.turnAccum.interpretText += (this.turnAccum.interpretText ? " " : "") + seg.data;
+        if (seg.confidence) {
+          this.turnAccum.interpretConfidence = seg.confidence;
+        }
+        break;
+      }
+
+      case "transcript": {
+        const speaker = seg.speaker || "Unknown";
+        if (seg.data) {
+          this.send({ type: "transcript", data: seg.data, speaker, confidence: seg.confidence });
+        }
+        this.turnAccum.transcriptText += `[${speaker}] ${seg.data} `;
+        this.turnAccum.transcriptSpeaker = speaker;
+        break;
+      }
+
+      case "context": {
+        if (seg.data) {
+          this.send({ type: "context", data: seg.data });
+        }
+        this.turnAccum.contextText += (this.turnAccum.contextText ? " " : "") + seg.data;
+        break;
+      }
+
+      case "add_buttons": {
+        const buttons = parseBoardButtons(seg.data);
+        if (buttons.length === 0) break;
+
+        const maxSlots = state?.maxBoardItems || 12;
+
+        // Enforce button limit
+        if (state) {
+          if (state.loadedBoardId) {
+            const nativeLabels = this.getNativePageButtonLabels(state);
+            const blankSlots = maxSlots - nativeLabels.length;
+            const newAiCount = state.aiAddedButtonLabels.length + buttons.length;
+            if (newAiCount > blankSlots) {
+              const available = blankSlots - state.aiAddedButtonLabels.length;
+              logDualAgent("LiveRelay.textBoardPatchRejected", { sessionId: this.sessionId, attempted: buttons.length, current: state.aiAddedButtonLabels.length, max: blankSlots });
+              this.provider?.sendContextInjection(`[BOARD ERROR] Cannot add ${buttons.length} button(s) — would exceed ${blankSlots} blank slots. ${available} slot(s) available. Use [REMOVE_BUTTONS] first.`);
+              break;
+            }
+            state.aiAddedButtonLabels = [...state.aiAddedButtonLabels, ...buttons.map(b => b.label)];
+          } else {
+            const newCount = state.boardButtonLabels.length + buttons.length;
+            if (newCount > maxSlots) {
+              const available = maxSlots - state.boardButtonLabels.length;
+              logDualAgent("LiveRelay.textBoardPatchRejected", { sessionId: this.sessionId, attempted: buttons.length, current: state.boardButtonLabels.length, max: maxSlots });
+              this.provider?.sendContextInjection(`[BOARD ERROR] Cannot add ${buttons.length} button(s) — would exceed the ${maxSlots}-button limit. ${available} slot(s) available. Use [REMOVE_BUTTONS] first.`);
+              break;
+            }
+          }
+          state.boardButtonLabels = [...state.boardButtonLabels, ...buttons.map(b => b.label)];
+        }
+
+        this.lastBoardUpdateTime = Date.now();
+        this.send({ type: "board_patch", data: { add: buttons, remove: [] } });
+        this.turnAccum.boardChanged = true;
+        this.turnAccum.boardAddLabels.push(...buttons.map(b => b.label));
+        break;
+      }
+
+      case "remove_buttons": {
+        const labels = seg.data.split(",").map(l => l.trim()).filter(Boolean);
+        if (labels.length === 0) break;
+
+        const maxSlots = state?.maxBoardItems || 12;
+        let effectiveRemoves = labels;
+
+        if (state) {
+          if (state.loadedBoardId) {
+            const nativeSet = new Set(this.getNativePageButtonLabels(state).map(l => l.toLowerCase()));
+            effectiveRemoves = labels.filter(l => !nativeSet.has(l.toLowerCase()));
+            if (effectiveRemoves.length === 0) {
+              this.provider?.sendContextInjection(`[BOARD ERROR] Cannot remove fixed board buttons. Only AI-added buttons can be removed.`);
+              break;
+            }
+            const removeSet = new Set(effectiveRemoves.map(l => l.toLowerCase()));
+            state.aiAddedButtonLabels = state.aiAddedButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
+            state.boardButtonLabels = state.boardButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
+          } else {
+            const removeSet = new Set(labels.map(l => l.toLowerCase()));
+            state.boardButtonLabels = state.boardButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
+          }
+        }
+
+        this.lastBoardUpdateTime = Date.now();
+        this.send({ type: "board_patch", data: { add: [], remove: effectiveRemoves } });
+        this.turnAccum.boardChanged = true;
+        this.turnAccum.boardRemoveLabels.push(...effectiveRemoves);
+        break;
+      }
+
+      case "rebuild_board": {
+        const buttons = parseBoardButtons(seg.data);
+        if (buttons.length === 0) break;
+
+        if (state) {
+          state.loadedBoardId = null;
+          state.loadedBoardData = undefined;
+          state.currentPageId = null;
+          state.pageHistory = [];
+          state.maxBoardItems = 12;
+          state.aiAddedButtonLabels = [];
+          state.boardButtonLabels = buttons.slice(0, 12).map(b => b.label);
+        }
+
+        this.lastBoardUpdateTime = Date.now();
+        this.send({ type: "board", data: this.buildBoardFromButtons(buttons) });
+        this.turnAccum.boardChanged = true;
+        this.turnAccum.boardRebuilt = true;
+        this.turnAccum.boardAddLabels.push(...buttons.map(b => b.label));
+        break;
+      }
+
+      case "set_board": {
+        this.turnAccum.setBoardName = seg.data.trim();
+        break;
+      }
+
+      case "press_button": {
+        this.turnAccum.pressButtonLabel = seg.data.trim();
+        break;
+      }
+
+      case "emote": {
+        const emotion = seg.data.trim().toLowerCase();
+        if (state && (emotion === "happy" || emotion === "sad" || emotion === "neutral")) {
+          state.currentEmote = emotion;
+        }
+        this.send({ type: "emote", data: emotion });
+        this.turnAccum.emote = (emotion as any) || null;
+        break;
+      }
+
+      case "open_app": {
+        // Format: "appId data" or just "appId"
+        const parts = seg.data.trim().split(/\s+/);
+        const appId = parts[0] || "";
+        const data = parts.slice(1).join(" ") || undefined;
+        this.turnAccum.openAppData = { appId, data };
+        if (appId && appId !== "youtube") {
+          this.send({ type: "app_open", data: { appId, data } });
+        }
+        break;
+      }
+
+      case "close_app": {
+        this.turnAccum.closeApp = true;
+        this.send({ type: "app_close", data: {} });
+        break;
+      }
+
+      case "learn_face": {
+        // Format: "name | relationship | description"
+        const faceParts = seg.data.split("|").map(s => s.trim());
+        const faceName = faceParts[0] || "";
+        const relationship = faceParts[1] || undefined;
+        const description = faceParts[2] || undefined;
+        if (faceName) {
+          this.turnAccum.learnFaceData = { name: faceName, relationship, description };
+        }
+        break;
+      }
+
+      case "call_monitor": {
+        this.turnAccum.callMonitorReason = seg.data.trim() || "unspecified";
+        break;
+      }
+
+      case "yes_no": {
+        this.send({ type: "yes_no", data: {} });
+        break;
+      }
+
+      case "ask_yes_no": {
+        this.send({ type: "ask_yes_no", data: {} });
+        break;
+      }
+
+      case "request_focus": {
+        this.turnAccum.focusReason = seg.data.trim() || "detail analysis";
+        this.send({ type: "focus_request", data: { reason: this.turnAccum.focusReason } });
+        break;
+      }
+
+      default:
+        logDualAgent("LiveRelay.unknownTextSegment", { sessionId: this.sessionId, type: seg.type, data: seg.data.substring(0, 100) });
+        break;
+    }
+  }
+
+  /**
+   * Handle tool calls from Gemini. Process each call and send responses back.
+   */
+  private async handleToolCalls(calls: ToolCall[]): Promise<void> {
+    if (this.turnStartTime === 0) {
+      this.turnStartTime = Date.now();
+      this.reconnectAttempts = 0;
+      this.consecutiveSafetyBlocks = 0;
+    }
+
+    const responses: ToolResponse[] = [];
+
+    for (const call of calls) {
+      try {
+        logDualAgent("LiveRelay.toolCall", { sessionId: this.sessionId, name: call.name, args: call.args });
+        const resp = await this.handleSingleToolCall(call);
+        responses.push(resp);
+      } catch (err) {
+        console.error(`[LiveRelay] Tool call "${call.name}" failed:`, (err as Error).message);
+        responses.push({
+          id: call.id,
+          name: call.name || "unknown",
+          response: { error: (err as Error).message },
+        });
+      }
+    }
+
+    // Send all responses back to the provider (with scheduling if applicable)
+    this.sendToolResponseWithScheduling(responses);
+  }
+
+  /**
+   * Send tool responses with SILENT scheduling injected when useToolResponseScheduling is enabled.
+   * Gemini native-audio mode uses SILENT to absorb results without generating intermediate audio.
+   */
+  private sendToolResponseWithScheduling(responses: ToolResponse[]): void {
+    if (this.useToolResponseScheduling) {
+      responses = responses.map(r => ({ ...r, scheduling: "SILENT" as const }));
+    }
+    this.provider!.sendToolResponse(responses);
+  }
+
+  /**
+   * Process a single tool call and return the tool response.
+   * Also sends real-time messages to the client and accumulates data for turn-end.
+   */
+  private async handleSingleToolCall(call: ToolCall): Promise<ToolResponse> {
+    const name = call.name || "unknown";
+    const args = call.args || {};
+    const isSilent = this.interactionMode === "silent";
+    const state = this.sessionCache?.state;
+
+    logDualAgent("LiveRelay.toolCall", { sessionId: this.sessionId, tool: name, args: JSON.stringify(args).substring(0, 200) });
+
+    switch (name) {
+      case "speak": {
+        const text = extractStringArg(args, "text");
+        if (text && !isSilent) {
+          this.send({ type: "text", data: text });
+        }
+        this.turnAccum.speakText += (this.turnAccum.speakText ? " " : "") + text;
+        return ({
+          id: call.id,
+          name,
+          response: { output: "ok" },
+        });
+      }
+
+      case "interpret": {
+        const text = extractStringArg(args, "text");
+        const confidence = (args.confidence ?? "medium") as string;
+        this.send({ type: "interpret", text, confidence });
+        this.turnAccum.interpretText += (this.turnAccum.interpretText ? " " : "") + text;
+        this.turnAccum.interpretConfidence = confidence as any;
+        return ({
+          id: call.id,
+          name,
+          response: { output: "ok" },
+        });
+      }
+
+      case "transcript": {
+        const text = extractStringArg(args, "text");
+        const speaker = (typeof args.speaker === "string" ? args.speaker : "Unknown");
+        const confidence = args.confidence as string | undefined;
+        this.send({ type: "transcript", data: text, speaker, confidence });
+        this.turnAccum.transcriptText += `[${speaker}] ${text} `;
+        this.turnAccum.transcriptSpeaker = speaker;
+        return ({
+          id: call.id,
+          name,
+          response: { output: "ok" },
+        });
+      }
+
+      case "context": {
+        const text = extractStringArg(args, "text");
+        this.send({ type: "context", data: text });
+        this.turnAccum.contextText += (this.turnAccum.contextText ? " " : "") + text;
+        return ({
+          id: call.id,
+          name,
+          response: { output: "ok" },
+        });
+      }
+
+      case "add_buttons": {
+        const buttons = toolArgsToButtons(args.buttons);
+        const maxSlots = state?.maxBoardItems || 12;
+
+        // Enforce button limit
+        if (state) {
+          if (state.loadedBoardId) {
+            const nativeLabels = this.getNativePageButtonLabels(state);
+            const blankSlots = maxSlots - nativeLabels.length;
+            const newAiCount = state.aiAddedButtonLabels.length + buttons.length;
+            if (newAiCount > blankSlots) {
+              const available = blankSlots - state.aiAddedButtonLabels.length;
+              logDualAgent("LiveRelay.boardPatchRejected", { sessionId: this.sessionId, attempted: buttons.length, current: state.aiAddedButtonLabels.length, max: blankSlots });
+              return ({
+                id: call.id,
+                name,
+                response: { error: `Cannot add ${buttons.length} button(s) — would exceed ${blankSlots} blank slots on this custom board. Currently ${state.aiAddedButtonLabels.length} AI-added buttons, ${available} slot(s) available. Use remove_buttons() to remove AI-added buttons first.` },
+                    });
+            }
+            state.aiAddedButtonLabels = [...state.aiAddedButtonLabels, ...buttons.map(b => b.label)];
+          } else {
+            const newCount = state.boardButtonLabels.length + buttons.length;
+            if (newCount > maxSlots) {
+              const available = maxSlots - state.boardButtonLabels.length;
+              logDualAgent("LiveRelay.boardPatchRejected", { sessionId: this.sessionId, attempted: buttons.length, current: state.boardButtonLabels.length, max: maxSlots });
+              return ({
+                id: call.id,
+                name,
+                response: { error: `Cannot add ${buttons.length} button(s) — would exceed the ${maxSlots}-button limit. Currently ${state.boardButtonLabels.length} buttons, ${available} slot(s) available. Use remove_buttons() first to free slots.` },
+                    });
+            }
+          }
+          state.boardButtonLabels = [...state.boardButtonLabels, ...buttons.map(b => b.label)];
+        }
+
+        this.lastBoardUpdateTime = Date.now();
+        this.send({ type: "board_patch", data: { add: buttons, remove: [] } });
+        this.turnAccum.boardChanged = true;
+        this.turnAccum.boardAddLabels.push(...buttons.map(b => b.label));
+
+        // Confirm with board state
+        let stateMsg = "";
+        if (state) {
+          if (state.loadedBoardId) {
+            const nativeLabels = this.getNativePageButtonLabels(state);
+            const blankSlots = maxSlots - nativeLabels.length;
+            const available = blankSlots - state.aiAddedButtonLabels.length;
+            stateMsg = `Custom board — AI-added (${state.aiAddedButtonLabels.length}/${blankSlots}): ${state.aiAddedButtonLabels.join(", ")}. ${available} slots available.`;
+          } else {
+            const available = maxSlots - state.boardButtonLabels.length;
+            stateMsg = `Board: ${state.boardButtonLabels.length}/${maxSlots} buttons (${available} available): ${state.boardButtonLabels.join(", ")}`;
+          }
+        }
+
+        return ({
+          id: call.id,
+          name,
+          response: { output: "ok", board_state: stateMsg },
+        });
+      }
+
+      case "remove_buttons": {
+        const labels = args.labels as string[] || [];
+        const maxSlots = state?.maxBoardItems || 12;
+
+        let effectiveRemoves = labels;
+        if (state) {
+          if (state.loadedBoardId) {
+            const nativeSet = new Set(this.getNativePageButtonLabels(state).map(l => l.toLowerCase()));
+            effectiveRemoves = labels.filter(l => !nativeSet.has(l.toLowerCase()));
+            if (effectiveRemoves.length === 0) {
+              return ({
+                id: call.id,
+                name,
+                response: { error: "Cannot remove fixed board buttons. Only AI-added buttons can be removed." },
+                    });
+            }
+            const removeSet = new Set(effectiveRemoves.map(l => l.toLowerCase()));
+            state.aiAddedButtonLabels = state.aiAddedButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
+            state.boardButtonLabels = state.boardButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
+          } else {
+            const removeSet = new Set(labels.map(l => l.toLowerCase()));
+            state.boardButtonLabels = state.boardButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
+          }
+        }
+
+        this.lastBoardUpdateTime = Date.now();
+        this.send({ type: "board_patch", data: { add: [], remove: effectiveRemoves } });
+        this.turnAccum.boardChanged = true;
+        this.turnAccum.boardRemoveLabels.push(...effectiveRemoves);
+
+        let stateMsg = "";
+        if (state) {
+          if (state.loadedBoardId) {
+            const nativeLabels = this.getNativePageButtonLabels(state);
+            const blankSlots = maxSlots - nativeLabels.length;
+            const available = blankSlots - state.aiAddedButtonLabels.length;
+            stateMsg = `Custom board — AI-added (${state.aiAddedButtonLabels.length}/${blankSlots}): ${state.aiAddedButtonLabels.join(", ") || "none"}. ${available} slots available.`;
+          } else {
+            const available = maxSlots - state.boardButtonLabels.length;
+            stateMsg = `Board: ${state.boardButtonLabels.length}/${maxSlots} buttons (${available} available): ${state.boardButtonLabels.join(", ") || "none"}`;
+          }
+        }
+
+        return ({
+          id: call.id,
+          name,
+          response: { output: "ok", board_state: stateMsg },
+        });
+      }
+
+      case "rebuild_board": {
+        const buttons = toolArgsToButtons(args.buttons);
+
+        if (state) {
+          state.loadedBoardId = null;
+          state.loadedBoardData = undefined;
+          state.currentPageId = null;
+          state.pageHistory = [];
+          state.maxBoardItems = 12;
+          state.aiAddedButtonLabels = [];
+          state.boardButtonLabels = buttons.slice(0, 12).map(b => b.label);
+        }
+
+        this.lastBoardUpdateTime = Date.now();
+        this.send({ type: "board", data: this.buildBoardFromButtons(buttons) });
+        this.turnAccum.boardChanged = true;
+        this.turnAccum.boardRebuilt = true;
+        this.turnAccum.boardAddLabels.push(...buttons.map(b => b.label));
+
+        const available = state ? ((state.maxBoardItems || 12) - state.boardButtonLabels.length) : 0;
+        return ({
+          id: call.id,
+          name,
+          response: { output: "ok", board_state: `Board rebuilt. ${state?.boardButtonLabels.length || 0}/12 buttons (${available} available): ${state?.boardButtonLabels.join(", ") || ""}` },
+        });
+      }
+
+      case "set_board": {
+        // BLOCKING — model waits for response with board layout info
+        const boardKey = extractStringArg(args, "board_key").toLowerCase().replace(/ /g, '_');
+        if (!state) {
+          return ({ id: call.id, name, response: { error: "No session state" } });
+        }
+        const match = state.availableBoards?.find(b => b.key === boardKey);
+        if (!match) {
+          const availableKeys = state.availableBoards?.map(b => b.key).join(", ") || "none";
+          return ({ id: call.id, name, response: { error: `Board "${boardKey}" not found. Available: ${availableKeys}` } });
+        }
+
+        try {
+          const fullBoard = await boardRepository.getBoard(match.id);
+          if (!fullBoard?.irData) {
+            return ({ id: call.id, name, response: { error: "Board has no data" } });
+          }
+          const boardData = fullBoard.irData as any;
+          state.loadedBoardId = match.id;
+          state.loadedBoardData = boardData;
+          state.currentPageId = boardData.pages?.[0]?.id || null;
+          state.pageHistory = [];
+          state.maxBoardItems = (boardData.grid?.rows || 3) * (boardData.grid?.cols || 4);
+          state.aiAddedButtonLabels = [];
+          const nativeLabels = this.getNativePageButtonLabels(state);
+          state.boardButtonLabels = [...nativeLabels];
+
+          this.send({ type: "set_board", data: { board: boardData, name: match.name, boardId: match.id } });
+          this.turnAccum.setBoardName = match.name;
+          this.turnAccum.boardChanged = true;
+
+          logDualAgent("LiveRelay.setBoard", { sessionId: this.sessionId, boardName: match.name, boardId: match.id });
+
+          const blankSlots = state.maxBoardItems - nativeLabels.length;
+          return ({
+            id: call.id,
+            name,
+            response: {
+              output: "ok",
+              board_name: match.name,
+              pages: boardData.pages?.length || 1,
+              slots: state.maxBoardItems,
+              fixed_buttons: nativeLabels.join(", "),
+              blank_slots: blankSlots,
+              note: "You CANNOT remove the board's built-in buttons. Use add_buttons() for the blank slots.",
+            },
+          });
+        } catch (err) {
+          return ({ id: call.id, name, response: { error: `Failed to load board: ${(err as Error).message}` } });
+        }
+      }
+
+      case "press_button": {
+        // BLOCKING — model waits for navigation result
+        const label = extractStringArg(args, "label").trim();
+        if (!state?.loadedBoardData) {
+          return ({ id: call.id, name, response: { error: "No custom board loaded" } });
+        }
+
+        const currentPage = state.loadedBoardData.pages?.find((p: any) => p.id === state.currentPageId)
+          || state.loadedBoardData.pages?.[0];
+        if (!currentPage?.buttons) {
+          return ({ id: call.id, name, response: { error: "Current page has no buttons" } });
+        }
+
+        const btn = currentPage.buttons.find((b: any) =>
+          b.label.toLowerCase().trim() === label.toLowerCase().trim()
+        );
+        if (!btn?.action) {
+          return ({ id: call.id, name, response: { error: `Button "${label}" not found or has no action` } });
+        }
+
+        const navResult = this.executeButtonNavigation(btn, state);
+        this.turnAccum.pressButtonLabel = label;
+        this.turnAccum.boardChanged = true;
+
+        return ({
+          id: call.id,
+          name,
+          response: navResult,
+        });
+      }
+
+      case "emote": {
+        const emotion = extractStringArg(args, "emotion", "neutral");
+        if (state) {
+          state.currentEmote = emotion as any;
+        }
+        this.send({ type: "emote", data: emotion });
+        this.turnAccum.emote = emotion as any;
+        return ({
+          id: call.id,
+          name,
+          response: { output: "ok" },
+        });
+      }
+
+      case "play_video": {
+        const query = extractStringArg(args, "query");
+        this.turnAccum.openAppData = { appId: "youtube", data: query };
+        return ({
+          id: call.id,
+          name,
+          response: { output: "ok", note: "Video search will execute after turn completes" },
+        });
+      }
+
+      case "open_app": {
+        const appId = extractStringArg(args, "app_id");
+        const data = args.data as string | undefined;
+        this.turnAccum.openAppData = { appId, data };
+        // For youtube, defer to processTurnEnd; for others, send immediately
+        if (appId !== "youtube") {
+          this.send({ type: "app_open", data: { appId, data } });
+        }
+        return ({
+          id: call.id,
+          name,
+          response: { output: "ok" },
+        });
+      }
+
+      case "close_app": {
+        this.turnAccum.closeApp = true;
+        this.send({ type: "app_close", data: {} });
+        return ({
+          id: call.id,
+          name,
+          response: { output: "ok" },
+        });
+      }
+
+      case "learn_face": {
+        const faceName = args.name as string || "";
+        const relationship = args.relationship as string | undefined;
+        const description = args.description as string | undefined;
+        this.turnAccum.learnFaceData = { name: faceName, relationship, description };
+        return ({
+          id: call.id,
+          name,
+          response: { output: "ok", note: "Face enrollment will process after turn completes" },
+        });
+      }
+
+      case "call_monitor": {
+        const reason = args.reason as string || "unspecified";
+        this.turnAccum.callMonitorReason = reason;
+        return ({
+          id: call.id,
+          name,
+          response: { output: "ok" },
+        });
+      }
+
+      case "yes_no": {
+        this.send({ type: "yes_no", data: {} });
+        return ({
+          id: call.id,
+          name,
+          response: { output: "ok" },
+        });
+      }
+
+      case "ask_yes_no": {
+        this.send({ type: "ask_yes_no", data: {} });
+        return ({
+          id: call.id,
+          name,
+          response: { output: "ok" },
+        });
+      }
+
+      case "request_focus": {
+        const reason = args.reason as string || "";
+        this.turnAccum.focusReason = reason;
+        this.send({ type: "focus_request", data: { reason } });
+        return ({
+          id: call.id,
+          name,
+          response: { output: "ok" },
+        });
+      }
+
+      default:
+        console.warn(`[LiveRelay] Unknown tool call: ${name}`);
+        return ({
+          id: call.id,
+          name,
+          response: { error: `Unknown tool: ${name}` },
+        });
+    }
+  }
+
+  /**
+   * Execute a navigation button press on a custom board.
+   * Returns the result to include in the ToolResponse.
+   */
+  private executeButtonNavigation(btn: any, state: DualAgentSessionState): Record<string, unknown> {
+    const action = btn.action;
+
+    if (action.type === "link" && action.toPageId) {
+      const targetPage = state.loadedBoardData?.pages?.find((p: any) => p.id === action.toPageId);
+      if (!targetPage) return { error: "Target page not found" };
+
+      if (state.currentPageId) {
+        state.pageHistory = [...(state.pageHistory || []), state.currentPageId];
+      }
+      state.currentPageId = targetPage.id;
+      state.aiAddedButtonLabels = [];
+      state.boardButtonLabels = this.getNativePageButtonLabels(state);
+
+      this.send({
+        type: "ai_button_press",
+        data: {
+          label: btn.label,
+          action: "link",
+          targetPageId: targetPage.id,
+          targetPageName: targetPage.name || targetPage.id,
+          buttons: targetPage.buttons || [],
+        },
+      });
+
+      if (this.sessionId) {
+        dualAgentService.addPendingMessage(this.sessionId, {
+          role: "assistant",
+          content: `[AI navigated to page "${targetPage.name || targetPage.id}"]`,
+          timestamp: Date.now(),
+        }).catch(err => console.error("[LiveRelay] Failed to persist nav message:", err));
+      }
+
+      const buttonLabels = (targetPage.buttons || []).map((b: any) => b.label).join(", ");
+      return { output: "ok", page: targetPage.name || targetPage.id, buttons: buttonLabels };
+    }
+
+    if (action.type === "back") {
+      const history = state.pageHistory || [];
+      if (history.length === 0) return { error: "No page history to go back to" };
+
+      const prevPageId = history[history.length - 1];
+      state.pageHistory = history.slice(0, -1);
+      state.currentPageId = prevPageId;
+      state.aiAddedButtonLabels = [];
+      state.boardButtonLabels = this.getNativePageButtonLabels(state);
+
+      const prevPage = state.loadedBoardData?.pages?.find((p: any) => p.id === prevPageId);
+      if (prevPage) {
+        this.send({
+          type: "ai_button_press",
+          data: {
+            label: btn.label,
+            action: "back",
+            targetPageId: prevPageId,
+            targetPageName: prevPage.name || prevPageId,
+            buttons: prevPage.buttons || [],
+          },
+        });
+        const buttonLabels = (prevPage.buttons || []).map((b: any) => b.label).join(", ");
+        return { output: "ok", page: prevPage.name || prevPageId, buttons: buttonLabels };
+      }
+      return { output: "ok" };
+    }
+
+    if (action.type === "home") {
+      const homePage = state.loadedBoardData?.pages?.[0];
+      if (!homePage) return { error: "No home page found" };
+
+      state.pageHistory = [];
+      state.currentPageId = homePage.id;
+      state.aiAddedButtonLabels = [];
+      state.boardButtonLabels = this.getNativePageButtonLabels(state);
+
+      this.send({
+        type: "ai_button_press",
+        data: {
+          label: btn.label,
+          action: "home",
+          targetPageId: homePage.id,
+          targetPageName: homePage.name || homePage.id,
+          buttons: homePage.buttons || [],
+        },
+      });
+      const buttonLabels = (homePage.buttons || []).map((b: any) => b.label).join(", ");
+      return { output: "ok", page: homePage.name || homePage.id, buttons: buttonLabels };
+    }
+
+    return { error: `Unknown action type: ${action.type}` };
+  }
+
+  /**
+   * Handle turn completion from the provider.
+   * Do post-turn processing using accumulated tool call / text token data.
+   */
+  private async handleProviderTurnComplete(): Promise<void> {
     if (this.turnProcessingBusy) {
-      console.warn("[LiveRelay] handleGeminiTurnComplete called while already processing — skipping");
+      console.warn("[LiveRelay] handleProviderTurnComplete called while already processing — skipping");
       return;
     }
     this.turnProcessingBusy = true;
 
     try {
-      // Flush remaining content from parser
-      const remaining = this.parser.flush();
-      for (const seg of remaining) {
-        this.turnSegments.push(seg);
-        this.processSegment(seg);
+      // Flush remaining text from parser in text token mode
+      if (!this.useFunctionCalling) {
+        const remaining = this.parser.flush();
+        for (const seg of remaining) {
+          this.processTextSegment(seg);
+        }
       }
 
-      // Post-turn processing with timeout (60s max)
       const turnEndPromise = this.processTurnEnd();
       const timeoutPromise = new Promise<void>((_, reject) =>
         setTimeout(() => reject(new Error("processTurnEnd timed out after 60s")), 60_000)
       );
       await Promise.race([turnEndPromise, timeoutPromise]);
     } catch (err) {
-      console.error("[LiveRelay] handleGeminiTurnComplete error:", (err as Error).message);
-      // Send error to client so they know something went wrong
+      console.error("[LiveRelay] handleProviderTurnComplete error:", (err as Error).message);
       this.send({ type: "error", data: "error:TURN_FAILED" });
     } finally {
-      // Always reset state so the relay can process the next turn
-      this.turnTextBuffer = "";
-      this.turnSegments = [];
+      this.turnAccum = createEmptyAccumulator();
+      this.turnStartTime = 0;
       this.turnProcessingBusy = false;
+      // Reset text mode state for next turn
+      this.turnTextBuffer = "";
+      this.parser = new StreamingPrefixParser();
     }
   }
 
   /**
    * Handle interruption (model was cut off by new input).
    */
-  private handleGeminiInterrupted(): void {
-    // Tell client to stop playing audio immediately
-    this.send({ type: "audio_interrupt" });
-
-    // Flush parser
-    const remaining = this.parser.flush();
-    for (const seg of remaining) {
-      this.processSegment(seg);
+  private handleProviderInterrupted(): void {
+    // Flush remaining text from parser in text token mode
+    if (!this.useFunctionCalling) {
+      const remaining = this.parser.flush();
+      for (const seg of remaining) {
+        this.processTextSegment(seg);
+      }
     }
 
-    // Reset
+    this.send({ type: "audio_interrupt" });
+    this.turnAccum = createEmptyAccumulator();
+    this.turnStartTime = 0;
+    // Reset text mode state
     this.turnTextBuffer = "";
-    this.turnSegments = [];
+    this.parser = new StreamingPrefixParser();
     console.log("[LiveRelay] Model interrupted by new input");
   }
 
   /**
-   * Process a single parsed segment immediately (streaming to client).
-   */
-  private processSegment(seg: StreamingSegment): void {
-    const isSilent = this.interactionMode === "silent";
-
-    switch (seg.type) {
-      case "speak":
-        if (!isSilent) {
-          this.send({ type: "text", data: seg.data });
-        }
-        break;
-
-      case "interpret":
-        this.send({ type: "interpret", text: seg.data, confidence: seg.confidence });
-        break;
-
-      case "transcript":
-        this.send({ type: "transcript", data: seg.data, speaker: seg.speaker, confidence: seg.confidence });
-        break;
-
-      case "context":
-        this.send({ type: "context", data: seg.data });
-        break;
-
-      case "add_buttons":
-      case "remove_buttons":
-      case "rebuild_board": {
-        const parsed = parseStreamedText(`[${seg.type.toUpperCase()}] ${seg.data}`);
-        const state = this.sessionCache?.state;
-        const maxSlots = state?.maxBoardItems || 12;
-
-        if (seg.type === "add_buttons" && parsed.addButtons) {
-          // Enforce button limit — reject and ask Gemini to retry
-          if (state) {
-            if (state.loadedBoardId) {
-              // Custom board: check against blank slot budget
-              const nativeLabels = this.getNativePageButtonLabels(state);
-              const blankSlots = maxSlots - nativeLabels.length;
-              const newAiCount = state.aiAddedButtonLabels.length + parsed.addButtons.length;
-              if (newAiCount > blankSlots) {
-                const available = blankSlots - state.aiAddedButtonLabels.length;
-                const msg = `[BOARD REJECTED] Cannot add ${parsed.addButtons.length} button(s) — would exceed ${blankSlots} blank slots on this custom board (${nativeLabels.length} fixed buttons). Currently ${state.aiAddedButtonLabels.length} AI-added buttons, ${available} slot(s) available. AI-added buttons: ${state.aiAddedButtonLabels.join(", ") || "none"}. Please use [REMOVE_BUTTONS] to remove AI-added buttons first.`;
-                logDualAgent("LiveRelay.boardPatchRejected", { sessionId: this.sessionId, attempted: parsed.addButtons.length, current: state.aiAddedButtonLabels.length, max: blankSlots });
-                this.gemini.sendContextInjection(msg);
-                break;
-              }
-              state.aiAddedButtonLabels = [...state.aiAddedButtonLabels, ...parsed.addButtons.map(b => b.label)];
-            } else {
-              const newCount = state.boardButtonLabels.length + parsed.addButtons.length;
-              if (newCount > maxSlots) {
-                const available = maxSlots - state.boardButtonLabels.length;
-                const msg = `[BOARD REJECTED] Cannot add ${parsed.addButtons.length} button(s) — would exceed the ${maxSlots}-button limit. Currently ${state.boardButtonLabels.length} buttons, ${available} slot(s) available. Current buttons: ${state.boardButtonLabels.join(", ")}. Please use [REMOVE_BUTTONS] first to free slots, then retry with [ADD_BUTTONS] (You may respond with both tokens in a single response.)`;
-                logDualAgent("LiveRelay.boardPatchRejected", { sessionId: this.sessionId, attempted: parsed.addButtons.length, current: state.boardButtonLabels.length, max: maxSlots });
-                this.gemini.sendContextInjection(msg);
-                break;
-              }
-            }
-            state.boardButtonLabels = [...state.boardButtonLabels, ...parsed.addButtons.map(b => b.label)];
-          }
-          this.lastBoardUpdateTime = Date.now();
-          this.send({ type: "board_patch", data: { add: parsed.addButtons, remove: [] } });
-          if (state) {
-            if (state.loadedBoardId) {
-              const nativeLabels = this.getNativePageButtonLabels(state);
-              const blankSlots = maxSlots - nativeLabels.length;
-              const available = blankSlots - state.aiAddedButtonLabels.length;
-              this.gemini.sendContextInjection(`[BOARD STATE UPDATE] Custom board — Fixed: ${nativeLabels.join(", ")} | AI-added (${state.aiAddedButtonLabels.length}/${blankSlots}): ${state.aiAddedButtonLabels.join(", ") || "none"} | ${available} slots available`);
-            } else {
-              const available = maxSlots - state.boardButtonLabels.length;
-              this.gemini.sendContextInjection(`[BOARD STATE UPDATE] Current buttons (${state.boardButtonLabels.length}/${maxSlots}, ${available} slots available): ${state.boardButtonLabels.join(", ")}`);
-            }
-          }
-        } else if (seg.type === "remove_buttons" && parsed.removeButtons) {
-          if (state) {
-            if (state.loadedBoardId) {
-              // Custom board: only allow removing AI-added buttons
-              const nativeSet = new Set(this.getNativePageButtonLabels(state).map(l => l.toLowerCase()));
-              const allowedRemoves = parsed.removeButtons.filter(l => !nativeSet.has(l.toLowerCase()));
-              const blockedRemoves = parsed.removeButtons.filter(l => nativeSet.has(l.toLowerCase()));
-              if (blockedRemoves.length > 0) {
-                console.log(`[LiveRelay] Protected board: silently ignored removal of native buttons: ${blockedRemoves.join(", ")}`);
-              }
-              if (allowedRemoves.length === 0) {
-                // Nothing to remove after filtering
-                break;
-              }
-              const removeSet = new Set(allowedRemoves.map(l => l.toLowerCase()));
-              state.aiAddedButtonLabels = state.aiAddedButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
-              state.boardButtonLabels = state.boardButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
-              // Override parsed.removeButtons for the client message
-              parsed.removeButtons = allowedRemoves;
-            } else {
-              const removeSet = new Set(parsed.removeButtons.map(l => l.toLowerCase()));
-              state.boardButtonLabels = state.boardButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
-            }
-          }
-          this.lastBoardUpdateTime = Date.now();
-          this.send({ type: "board_patch", data: { add: [], remove: parsed.removeButtons } });
-          if (state) {
-            if (state.loadedBoardId) {
-              const nativeLabels = this.getNativePageButtonLabels(state);
-              const blankSlots = maxSlots - nativeLabels.length;
-              const available = blankSlots - state.aiAddedButtonLabels.length;
-              this.gemini.sendContextInjection(`[BOARD STATE UPDATE] Custom board — Fixed: ${nativeLabels.join(", ")} | AI-added (${state.aiAddedButtonLabels.length}/${blankSlots}): ${state.aiAddedButtonLabels.join(", ") || "none"} | ${available} slots available`);
-            } else {
-              const available = maxSlots - state.boardButtonLabels.length;
-              this.gemini.sendContextInjection(`[BOARD STATE UPDATE] Current buttons (${state.boardButtonLabels.length}/${maxSlots}, ${available} slots available): ${state.boardButtonLabels.join(", ") || "none"}`);
-            }
-          }
-        } else if (seg.type === "rebuild_board" && parsed.rebuildBoard) {
-          // Clear loaded custom board — REBUILD returns to default AI-generated board
-          if (state) {
-            state.loadedBoardId = null;
-            state.loadedBoardData = undefined;
-            state.currentPageId = null;
-            state.pageHistory = [];
-            state.maxBoardItems = 12;
-            state.aiAddedButtonLabels = [];
-            state.boardButtonLabels = parsed.rebuildBoard.slice(0, 12).map(b => b.label);
-          }
-          this.lastBoardUpdateTime = Date.now();
-          this.send({ type: "board", data: this.buildBoardFromButtons(parsed.rebuildBoard) });
-          if (state) {
-            const available = (state.maxBoardItems || 12) - state.boardButtonLabels.length;
-            this.gemini.sendContextInjection(`[BOARD STATE UPDATE] Board rebuilt. Current buttons (${state.boardButtonLabels.length}/${state.maxBoardItems || 12}, ${available} slots available): ${state.boardButtonLabels.join(", ")}`);
-          }
-        }
-        break;
-      }
-
-      case "emote":
-        this.send({ type: "emote", data: seg.data });
-        break;
-
-      case "set_board":
-        // Handled during turn completion (needs async board loading)
-        break;
-
-      case "yes_no":
-        this.send({ type: "yes_no", data: {} });
-        break;
-
-      case "ask_yes_no":
-        this.send({ type: "ask_yes_no", data: {} });
-        break;
-
-      case "press_button":
-      case "open_app":
-      case "close_app":
-      case "call_monitor":
-      case "learn_face":
-      case "request_focus":
-        // These are handled during turn completion
-        break;
-    }
-  }
-
-  /**
    * Post-turn processing: record state, TTS, app commands, contact enrollment, monitor triggering.
+   * Uses accumulated tool call data from turnAccum.
    */
   private async processTurnEnd(): Promise<void> {
     const isSilent = this.interactionMode === "silent";
     const state = this.sessionCache?.state;
-    let fullSpeakText = "";
-    let fullInterpretText = "";
-    let fullContextText = "";
-    let fullTranscriptText = "";
-    let callMonitorReason: string | undefined;
-    let learnFaceData: { name: string; relationship?: string; description?: string } | undefined;
-    let openAppData: { appId: string; data?: string } | undefined;
-    let closeAppTriggered = false;
-    let setBoardName: string | undefined;
-    let pressButtonLabel: string | undefined;
-    let focusReason: string | undefined;
+    const accum = this.turnAccum;
 
-    // Board change tracking
-    let boardRebuilt = false;
-    let boardAddCount = 0;
-    let boardRemoveCount = 0;
-    const boardAddLabels: string[] = [];
-    const boardRemoveLabels: string[] = [];
+    const fullSpeakText = accum.speakText.trim();
+    const fullInterpretText = accum.interpretText.trim();
+    const fullContextText = accum.contextText.trim();
+    const fullTranscriptText = accum.transcriptText.trim();
+    const callMonitorReason = accum.callMonitorReason || undefined;
+    const learnFaceData = accum.learnFaceData || undefined;
+    const openAppData = accum.openAppData || undefined;
+    const closeAppTriggered = accum.closeApp;
+    const focusReason = accum.focusReason || undefined;
 
-    // Aggregate all turn segments
-    for (const seg of this.turnSegments) {
-      switch (seg.type) {
-        case "speak":
-          fullSpeakText += seg.data + " ";
-          break;
-        case "interpret":
-          fullInterpretText += seg.data + " ";
-          break;
-        case "transcript":
-          fullTranscriptText += `[${seg.speaker || "?"}] ${seg.data} `;
-          break;
-        case "context":
-          fullContextText += seg.data + " ";
-          break;
-        case "rebuild_board": {
-          boardRebuilt = true;
-          const parsed = parseStreamedText(`[REBUILD_BOARD] ${seg.data}`);
-          if (parsed.rebuildBoard) {
-            boardAddLabels.push(...parsed.rebuildBoard.map(b => b.label));
-          }
-          break;
-        }
-        case "add_buttons": {
-          const parsed = parseStreamedText(`[ADD_BUTTONS] ${seg.data}`);
-          if (parsed.addButtons) {
-            boardAddCount += parsed.addButtons.length;
-            boardAddLabels.push(...parsed.addButtons.map(b => b.label));
-          }
-          break;
-        }
-        case "remove_buttons": {
-          const parsed = parseStreamedText(`[REMOVE_BUTTONS] ${seg.data}`);
-          if (parsed.removeButtons) {
-            boardRemoveCount += parsed.removeButtons.length;
-            boardRemoveLabels.push(...parsed.removeButtons);
-          }
-          break;
-        }
-        case "call_monitor":
-          callMonitorReason = seg.data;
-          break;
-        case "learn_face": {
-          const parsed = parseStreamedText(`[LEARN_FACE] ${seg.data}`);
-          if (parsed.learnFace) learnFaceData = parsed.learnFace;
-          break;
-        }
-        case "open_app": {
-          const parts = seg.data.trim().split(/\s+/);
-          openAppData = { appId: parts[0], data: parts.slice(1).join(" ") || undefined };
-          break;
-        }
-        case "close_app":
-          closeAppTriggered = true;
-          break;
-        case "set_board":
-          setBoardName = seg.data.trim();
-          break;
-        case "press_button":
-          pressButtonLabel = seg.data.trim();
-          break;
-        case "request_focus":
-          focusReason = seg.data.trim();
-          break;
-      }
-    }
+    const boardRebuilt = accum.boardRebuilt;
+    const boardAddLabels = accum.boardAddLabels;
+    const boardRemoveLabels = accum.boardRemoveLabels;
+    const boardAddCount = boardAddLabels.length;
+    const boardRemoveCount = boardRemoveLabels.length;
 
-    fullSpeakText = fullSpeakText.trim();
-    fullInterpretText = fullInterpretText.trim();
-    fullContextText = fullContextText.trim();
-    fullTranscriptText = fullTranscriptText.trim();
-
-    const elapsed = Date.now() - this.turnStartTime;
-    const hasBoardChange = boardRebuilt || boardAddCount > 0 || boardRemoveCount > 0;
+    const elapsed = this.turnStartTime > 0 ? Date.now() - this.turnStartTime : 0;
+    const hasBoardChange = accum.boardChanged;
 
     // -----------------------------------------------------------------------
     // Response dedup: detect if AI is repeating the same speech as last turn
@@ -950,8 +1694,15 @@ If you hear speech that resembles text you recently produced, it is your echo. I
     logDualAgent("LiveRelay.turnComplete", {
       sessionId: this.sessionId,
       elapsed: `${elapsed}ms`,
-      segmentCount: this.turnSegments.length,
-      segments: this.turnSegments.map(s => s.type).join(", "),
+      toolCalls: [
+        fullSpeakText && "speak",
+        fullInterpretText && "interpret",
+        fullTranscriptText && "transcript",
+        fullContextText && "context",
+        hasBoardChange && "board",
+        callMonitorReason && "call_monitor",
+        learnFaceData && "learn_face",
+      ].filter(Boolean).join(", ") || "(none)",
       speak: fullSpeakText || "(none)",
       interpret: fullInterpretText || "(none)",
       transcript: fullTranscriptText || "(none)",
@@ -967,8 +1718,8 @@ If you hear speech that resembles text you recently produced, it is your echo. I
         : "(no changes)",
       callMonitor: callMonitorReason || false,
       learnFace: learnFaceData?.name || false,
-      setBoard: setBoardName || false,
-      pressButton: pressButtonLabel || false,
+      setBoard: accum.setBoardName || false,
+      pressButton: accum.pressButtonLabel || false,
       openApp: openAppData?.appId || false,
       closeApp: closeAppTriggered,
       speechSuppressed,
@@ -1102,7 +1853,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
     }
 
     // -----------------------------------------------------------------------
-    // App open/close
+    // App open/close (YouTube search is deferred to here for async)
     // -----------------------------------------------------------------------
     if (openAppData) {
       if (openAppData.appId === "youtube" && openAppData.data) {
@@ -1112,22 +1863,16 @@ If you hear speech that resembles text you recently produced, it is your echo. I
         } catch (err) {
           console.error("[LiveRelay] YouTube search failed:", err);
         }
-      } else {
-        this.send({ type: "app_open", data: openAppData });
       }
+      // Non-youtube apps are sent immediately in handleSingleToolCall
     }
-    if (closeAppTriggered) {
-      this.send({ type: "app_close", data: {} });
-    }
+    // close_app is sent immediately in handleSingleToolCall
 
-    // -----------------------------------------------------------------------
-    // Board selection via [SET_BOARD]
-    // -----------------------------------------------------------------------
-    if (setBoardName && state) {
-      const setBoardKey = setBoardName.toLowerCase().replace(/ /g, '_');
-      const match = state.availableBoards?.find(
-        (b) => b.key === setBoardKey,
-      );
+    // set_board and press_button: In function calling mode, these are BLOCKING tool calls.
+    // In text token mode, they are deferred to here.
+    if (!this.useFunctionCalling && accum.setBoardName && state) {
+      const boardKey = accum.setBoardName.toLowerCase().replace(/ /g, '_');
+      const match = state.availableBoards?.find(b => b.key === boardKey);
       if (match) {
         try {
           const fullBoard = await boardRepository.getBoard(match.id);
@@ -1139,134 +1884,31 @@ If you hear speech that resembles text you recently produced, it is your echo. I
             state.pageHistory = [];
             state.maxBoardItems = (boardData.grid?.rows || 3) * (boardData.grid?.cols || 4);
             state.aiAddedButtonLabels = [];
-            // Set boardButtonLabels to native page labels
             const nativeLabels = this.getNativePageButtonLabels(state);
             state.boardButtonLabels = [...nativeLabels];
 
             this.send({ type: "set_board", data: { board: boardData, name: match.name, boardId: match.id } });
-            const blankSlots = state.maxBoardItems - nativeLabels.length;
-            this.gemini.sendContextInjection(
-              `Board "${match.name}" loaded with ${boardData.pages?.length || 1} pages, ${state.maxBoardItems} slots. Fixed buttons: ${nativeLabels.join(", ")}. ${blankSlots} blank slots available for AI-added buttons. You CANNOT remove the board's built-in buttons.`,
-            );
-            logDualAgent("LiveRelay.setBoard", { sessionId: this.sessionId, boardName: match.name, boardId: match.id });
+            this.lastBoardUpdateTime = Date.now();
+            logDualAgent("LiveRelay.textSetBoard", { sessionId: this.sessionId, boardName: match.name, boardId: match.id });
           }
         } catch (err) {
-          console.error("[LiveRelay] SET_BOARD load failed:", err);
+          console.error("[LiveRelay] Text mode set_board failed:", (err as Error).message);
         }
       } else {
-        const availableKeys = state.availableBoards?.map((b) => b.key).join(", ") || "none";
-        this.gemini.sendContextInjection(
-          `Board "${setBoardName}" not found. Available board keys: ${availableKeys}`,
-        );
+        logDualAgent("LiveRelay.textSetBoardNotFound", { sessionId: this.sessionId, boardKey, available: state.availableBoards?.map(b => b.key).join(", ") });
       }
     }
 
-    // -----------------------------------------------------------------------
-    // AI button press via [PRESS_BUTTON]
-    // -----------------------------------------------------------------------
-    if (pressButtonLabel && state?.loadedBoardData) {
+    if (!this.useFunctionCalling && accum.pressButtonLabel && state?.loadedBoardData) {
+      const label = accum.pressButtonLabel;
       const currentPage = state.loadedBoardData.pages?.find((p: any) => p.id === state.currentPageId)
         || state.loadedBoardData.pages?.[0];
       if (currentPage?.buttons) {
         const btn = currentPage.buttons.find((b: any) =>
-          b.label.toLowerCase().trim() === pressButtonLabel!.toLowerCase().trim()
+          b.label.toLowerCase().trim() === label.toLowerCase().trim()
         );
         if (btn?.action) {
-          const action = btn.action;
-          if (action.type === "link" && action.toPageId) {
-            const targetPage = state.loadedBoardData.pages?.find((p: any) => p.id === action.toPageId);
-            if (targetPage) {
-              // Push current page to history
-              if (state.currentPageId) {
-                state.pageHistory = [...(state.pageHistory || []), state.currentPageId];
-              }
-              state.currentPageId = targetPage.id;
-              state.aiAddedButtonLabels = [];
-              state.boardButtonLabels = this.getNativePageButtonLabels(state);
-
-              this.send({
-                type: "ai_button_press",
-                data: {
-                  label: btn.label,
-                  action: "link",
-                  targetPageId: targetPage.id,
-                  targetPageName: targetPage.name || targetPage.id,
-                  buttons: targetPage.buttons || [],
-                },
-              });
-
-              const buttonLabels = (targetPage.buttons || []).map((b: any) => b.label).join(", ");
-              this.gemini.sendContextInjection(
-                `[AI navigated to page "${targetPage.name || targetPage.id}". Current buttons: ${buttonLabels}]`
-              );
-              if (this.sessionId) {
-                dualAgentService.addPendingMessage(this.sessionId, {
-                  role: "assistant",
-                  content: `[AI navigated to page "${targetPage.name || targetPage.id}"]`,
-                  timestamp: Date.now(),
-                }).catch(err => console.error("[LiveRelay] Failed to persist nav message:", err));
-              }
-
-              logDualAgent("LiveRelay.pressButton", {
-                sessionId: this.sessionId,
-                label: btn.label,
-                action: "link",
-                targetPage: targetPage.name || targetPage.id,
-              });
-            }
-          } else if (action.type === "back") {
-            const history = state.pageHistory || [];
-            if (history.length > 0) {
-              const prevPageId = history[history.length - 1];
-              state.pageHistory = history.slice(0, -1);
-              state.currentPageId = prevPageId;
-              state.aiAddedButtonLabels = [];
-              state.boardButtonLabels = this.getNativePageButtonLabels(state);
-
-              const prevPage = state.loadedBoardData.pages?.find((p: any) => p.id === prevPageId);
-              if (prevPage) {
-                this.send({
-                  type: "ai_button_press",
-                  data: {
-                    label: btn.label,
-                    action: "back",
-                    targetPageId: prevPageId,
-                    targetPageName: prevPage.name || prevPageId,
-                    buttons: prevPage.buttons || [],
-                  },
-                });
-
-                const buttonLabels = (prevPage.buttons || []).map((b: any) => b.label).join(", ");
-                this.gemini.sendContextInjection(
-                  `[AI navigated back to page "${prevPage.name || prevPageId}". Current buttons: ${buttonLabels}]`
-                );
-              }
-            }
-          } else if (action.type === "home") {
-            const homePage = state.loadedBoardData.pages?.[0];
-            if (homePage) {
-              state.pageHistory = [];
-              state.currentPageId = homePage.id;
-              state.aiAddedButtonLabels = [];
-              state.boardButtonLabels = this.getNativePageButtonLabels(state);
-
-              this.send({
-                type: "ai_button_press",
-                data: {
-                  label: btn.label,
-                  action: "home",
-                  targetPageId: homePage.id,
-                  targetPageName: homePage.name || homePage.id,
-                  buttons: homePage.buttons || [],
-                },
-              });
-
-              const buttonLabels = (homePage.buttons || []).map((b: any) => b.label).join(", ");
-              this.gemini.sendContextInjection(
-                `[AI navigated to home page "${homePage.name || homePage.id}". Current buttons: ${buttonLabels}]`
-              );
-            }
-          }
+          this.executeButtonNavigation(btn, state);
         }
       }
     }
@@ -1436,6 +2078,21 @@ If you hear speech that resembles text you recently produced, it is your echo. I
     }
   }
 
+  /**
+   * Resolve a Gemini model to one that supports TEXT modality in the Live API.
+   * Native-audio models only support AUDIO modality and bidiGenerateContent.
+   * For text token mode, we need a model that supports bidiGenerateContent + TEXT modality.
+   * Currently only gemini-2.0-flash-exp-image-generation supports both.
+   */
+  private resolveGeminiTextModel(configuredModel: string): string {
+    // Native-audio models → swap to the text-compatible live model
+    if (/native-audio/i.test(configuredModel)) {
+      return "gemini-2.0-flash-exp-image-generation";
+    }
+    // Already a text-compatible model — use as-is
+    return configuredModel || "gemini-2.0-flash-exp-image-generation";
+  }
+
   private buildBoardFromButtons(buttons: Array<{ label: string; iconRef: string; symbolPath?: string }>): any {
     const pageId = `page-${Date.now()}`;
     const cols = 4;
@@ -1562,10 +2219,10 @@ If you hear speech that resembles text you recently produced, it is your echo. I
       header,
       ...parts,
       `IMPORTANT: Continue the conversation naturally from where you left off.`,
-      `Do NOT greet the user again. Do NOT rebuild or reset the board — it is already displayed correctly on the client.`,
+      `Do NOT greet the user again. Do NOT use ${this.useFunctionCalling ? "rebuild_board()" : "[REBUILD_BOARD]"} — the board is already displayed correctly on the client.`,
     ].join("\n");
 
-    this.gemini.sendContextInjection(contextText);
+    this.provider!.sendContextInjection(contextText);
     logDualAgent("LiveRelay.reconnectionContext", {
       sessionId: this.sessionId,
       boardButtons: labels.length,
@@ -1575,7 +2232,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
     // Re-inject behavioral rules immediately after reconnection to prevent drift
     const behavioralReminder = this.buildBehavioralReminder();
     if (behavioralReminder) {
-      this.gemini.sendContextInjection(behavioralReminder);
+      this.provider!.sendContextInjection(behavioralReminder);
       logDualAgent("LiveRelay.behavioralReminder", { sessionId: this.sessionId, trigger: "reconnect" });
     }
   }
@@ -1600,12 +2257,12 @@ If you hear speech that resembles text you recently produced, it is your echo. I
       const nativeLabels = this.getNativePageButtonLabels(state);
       const blankSlots = maxSlots - nativeLabels.length;
       const available = blankSlots - state.aiAddedButtonLabels.length;
-      this.gemini.sendContextInjection(
+      this.provider!.sendContextInjection(
         `[BOARD STATE REMINDER] Custom board — Fixed buttons (cannot remove): ${nativeLabels.join(", ")} | AI-added (can remove, ${state.aiAddedButtonLabels.length}/${blankSlots}): ${state.aiAddedButtonLabels.join(", ") || "none"} | ${available} slots available`,
       );
     } else {
       const available = maxSlots - labels.length;
-      this.gemini.sendContextInjection(
+      this.provider!.sendContextInjection(
         `[BOARD STATE REMINDER] Current buttons (${labels.length}/${maxSlots}, ${available} slots available): ${labels.join(", ") || "none"}`,
       );
     }
@@ -1631,7 +2288,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
     this.behavioralReminderTimer = setInterval(() => {
       const reminder = this.buildBehavioralReminder();
       if (reminder) {
-        this.gemini.sendContextInjection(reminder);
+        this.provider!.sendContextInjection(reminder);
         logDualAgent("LiveRelay.behavioralReminder", { sessionId: this.sessionId, trigger: "periodic" });
       }
     }, LiveRelay.BEHAVIORAL_REMINDER_INTERVAL_MS);
@@ -1654,24 +2311,32 @@ If you hear speech that resembles text you recently produced, it is your echo. I
 
     const level = state.interpretationLevel ?? 1;
     const isSilent = this.interactionMode === "silent";
+    const fc = this.useFunctionCalling;
+
+    // Mode-aware tool references
+    const iRef = fc ? "interpret()" : "[INTERPRET]";
+    const sRef = fc ? "speak()" : "[SPEAK]";
+    const abRef = fc ? "add_buttons()" : "[ADD_BUTTONS]";
+    const rbRef = fc ? "remove_buttons()" : "[REMOVE_BUTTONS]";
+    const sbRef = fc ? "set_board()" : "[SET_BOARD]";
 
     // Interpretation level rules — the most critical source of drift
     let interpretRule: string;
     switch (level) {
       case 0:
-        interpretRule = "Interpretation Level: 0 (Off)\n- Do NOT use [INTERPRET]. Button text is spoken directly by the system.";
+        interpretRule = `Interpretation Level: 0 (Off)\n- Do NOT use ${iRef}. Button text is spoken directly by the system.`;
         break;
       case 1:
-        interpretRule = "Interpretation Level: 1 (Minimal)\n- ONLY use [INTERPRET] immediately after [BUTTON PRESS]. Never from gestures, gaze, or context alone.\n- Expand button labels into short natural phrases.";
+        interpretRule = `Interpretation Level: 1 (Minimal)\n- ONLY use ${iRef} immediately after [BUTTON PRESS]. Never from gestures, gaze, or context alone.\n- Expand button labels into short natural phrases.`;
         break;
       case 2:
-        interpretRule = "Interpretation Level: 2 (Moderate)\n- [INTERPRET] from button presses, clear gestures, or strong contextual cues.\n- Do NOT interpret weak or ambiguous signals — add a button instead.";
+        interpretRule = `Interpretation Level: 2 (Moderate)\n- Use ${iRef} from button presses, clear gestures, or strong contextual cues.\n- Do NOT interpret weak or ambiguous signals — add a button instead.`;
         break;
       case 3:
-        interpretRule = "Interpretation Level: 3 (Active)\n- Interpret button presses, gestures, gaze patterns, and contextual cues.\n- Prefer interpreting over silence — the user benefits from having intent voiced.";
+        interpretRule = `Interpretation Level: 3 (Active)\n- Use ${iRef} for button presses, gestures, gaze patterns, and contextual cues.\n- Prefer interpreting over silence — the user benefits from having intent voiced.`;
         break;
       case 4:
-        interpretRule = "Interpretation Level: 4 (Autonomous)\n- You are the user's voice. Actively interpret and speak for them.\n- Respond to questions on the user's behalf when possible.";
+        interpretRule = `Interpretation Level: 4 (Autonomous)\n- You are the user's voice. Actively interpret and speak for them.\n- Respond to questions on the user's behalf when possible.`;
         break;
       default:
         interpretRule = `Interpretation Level: ${level}`;
@@ -1684,7 +2349,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
 
     // Confidence requirement
     if (level > 0 && level < 4) {
-      parts.push("Confidence: Always include confidence (high/medium/low) on [INTERPRET]. Only [SPEAK] or [INTERPRET] with HIGH CONFIDENCE from visual/audio input alone.");
+      parts.push(`Confidence: Always include confidence (high/medium/low) on ${iRef}. Only use ${sRef} or ${iRef} with HIGH CONFIDENCE from visual/audio input alone.`);
     }
 
     // Visual check conservatism
@@ -1692,17 +2357,17 @@ If you hear speech that resembles text you recently produced, it is your echo. I
 
     // Mode
     if (isSilent) {
-      parts.push("Mode: silent — You are INVISIBLE. NEVER use [SPEAK]. Only output board buttons.");
+      parts.push(`Mode: silent — You are INVISIBLE. NEVER use ${sRef}. Only use board tools.`);
     } else {
       parts.push(`Mode: interact — AI voice active.`);
     }
 
     // Echo awareness (always critical for live sessions)
-    parts.push("Echo: Speech you hear shortly after your own [SPEAK] or [INTERPRET] output is YOUR echo — ignore it completely. Do NOT transcribe or respond to it.");
+    parts.push(`Echo: Speech you hear shortly after your own ${sRef} or ${iRef} output is YOUR echo — ignore it completely. Do NOT transcribe or respond to it.`);
 
     // Board limit
     const maxSlots = state.maxBoardItems || 12;
-    parts.push(`Board limit: ${maxSlots} buttons max. Use [REMOVE_BUTTONS] before [ADD_BUTTONS] if near the limit.`);
+    parts.push(`Board limit: ${maxSlots} buttons max. Use ${rbRef} before ${abRef} if near the limit.`);
 
     // Custom boards reminder
     if (state.availableBoards && state.availableBoards.length > 0 && !state.loadedBoardId) {
@@ -1710,7 +2375,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
         const hint = b.hint ? ` (${b.hint})` : '';
         return `${b.key}${hint}`;
       }).join(", ");
-      parts.push(`Custom boards available: ${boardKeys}. Use [SET_BOARD] board_key silently when the context matches a board's purpose — do NOT announce board switches with [SPEAK].`);
+      parts.push(`Custom boards available: ${boardKeys}. Use ${sbRef} silently when the context matches a board's purpose — do NOT announce board switches with ${sRef}.`);
     }
 
     return parts.join("\n");
@@ -1724,7 +2389,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
     if (!this.studentId || !this.sessionId) return;
 
     // Close the current Gemini session (prevents auto-reconnect)
-    this.gemini.close();
+    this.provider?.close();
 
     // Re-initialize from scratch
     try {
@@ -1782,7 +2447,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
     logDualAgent("LiveRelay.safetyBlock", {
       sessionId: this.sessionId,
       level,
-      lastCloseCode: this.gemini.lastCloseCode,
+      lastCloseCode: this.provider?.lastCloseCode,
     });
   }
 
@@ -1804,7 +2469,7 @@ If you hear speech that resembles text you recently produced, it is your echo. I
       });
     }
 
-    this.gemini.close();
+    this.provider?.close();
     logDualAgent("LiveRelay.cleanup", { sessionId: this.sessionId });
   }
 

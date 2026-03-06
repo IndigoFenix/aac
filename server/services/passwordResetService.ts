@@ -21,7 +21,7 @@ export class PasswordResetService {
    */
   async requestPasswordReset(
     email: string,
-    baseUrl: string = "https://cliniaacian.com"
+    baseUrl: string = "https://aivota.ai"
   ): Promise<PasswordResetResult> {
     try {
       // Find user by email
