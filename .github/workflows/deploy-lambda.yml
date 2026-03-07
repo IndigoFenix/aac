@@ -149,6 +149,23 @@ jobs:
             -backend-config="key=aivota/${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}/terraform.tfstate" \
             -backend-config="region=${{ env.AWS_REGION }}"
 
+      - name: Check if Lambda image exists in ECR
+        id: check-ecr
+        run: |
+          REPO_NAME="aivota-lambda"
+          IMAGE_EXISTS=$(aws ecr describe-images \
+            --repository-name "$REPO_NAME" \
+            --region "${{ env.AWS_REGION }}" \
+            --query "imageDetails[0].imageTags" \
+            --output text 2>/dev/null || echo "")
+          if [ -z "$IMAGE_EXISTS" ] || [ "$IMAGE_EXISTS" = "None" ]; then
+            echo "No image found in $REPO_NAME — will skip Lambda function creation this run"
+            echo "lambda_image_exists=false" >> $GITHUB_OUTPUT
+          else
+            echo "Image found in $REPO_NAME"
+            echo "lambda_image_exists=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Terraform Plan
         working-directory: terraform
         run: |
@@ -159,8 +176,15 @@ jobs:
             echo "::notice::Using LEAN deployment profile (security/monitoring disabled)"
           fi
 
+          LAMBDA_FLAG=""
+          if [ "${{ steps.check-ecr.outputs.lambda_image_exists }}" = "false" ]; then
+            LAMBDA_FLAG="-var=lambda_image_exists=false"
+            echo "::notice::First deploy — Lambda function will be created on next run after image is pushed"
+          fi
+
           terraform plan \
             $VAR_FILE_FLAG \
+            $LAMBDA_FLAG \
             -var="environment=${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}" \
             -var="aws_region=${{ env.AWS_REGION }}" \
             -out=tfplan

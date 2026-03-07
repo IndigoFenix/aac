@@ -319,7 +319,7 @@ resource "aws_lb" "main" {
   access_logs {
     bucket  = aws_s3_bucket.logs.bucket
     prefix  = "alb-logs"
-    enabled = true
+    enabled = !var.use_lambda
   }
 
   tags = {
