@@ -89,7 +89,7 @@ resource "aws_iam_role_policy" "github_actions" {
         Resource = "*"
         Condition = {
           StringEquals = {
-            "aws:ResourceTag/Project" = "CliniAACian"
+            "aws:ResourceTag/Project" = "AiVota"
           }
         }
       },

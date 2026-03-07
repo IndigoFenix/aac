@@ -1,5 +1,5 @@
 # =============================================================================
-# CliniAACian Terraform Variables
+# AiVota Terraform Variables
 # =============================================================================
 # Copy this file to terraform.tfvars and update the values
 # DO NOT commit terraform.tfvars to version control

@@ -210,7 +210,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "logs" {
 # These are created MANUALLY during bootstrap (before Terraform can run).
 # See SETUP_GUIDE.md for creation instructions.
 # 
-# - S3 Bucket: cliniaacian-prod-terraform-state (or with account ID suffix)
+# - S3 Bucket: aivota-prod-terraform-state (or with account ID suffix)
 # - DynamoDB Table: terraform-state-lock
 #
 # DO NOT add these to Terraform - it creates a chicken-and-egg problem.

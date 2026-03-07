@@ -101,7 +101,7 @@ resource "aws_wafv2_web_acl" "main" {
   count = var.enable_waf && !var.use_lambda ? 1 : 0
 
   name        = "${local.name_prefix}-waf"
-  description = "WAF for CliniAACian ALB"
+  description = "WAF for AiVota ALB"
   scope       = "REGIONAL"
 
   default_action {
@@ -295,7 +295,7 @@ resource "aws_cloudwatch_metric_alarm" "failed_logins" {
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
   metric_name         = "FailedLoginAttempts"
-  namespace           = "CliniAACian"
+  namespace           = "AiVota"
   period              = 300
   statistic           = "Sum"
   threshold           = 10

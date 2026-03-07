@@ -1,5 +1,5 @@
 # =============================================================================
-# CliniAACian - LEAN Mode Configuration
+# AiVota - LEAN Mode Configuration
 # =============================================================================
 # Minimal-cost deployment for early-stage development.
 # Disables security/compliance features and downsizes infrastructure.

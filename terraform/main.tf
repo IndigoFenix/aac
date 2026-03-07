@@ -1,5 +1,5 @@
 # =============================================================================
-# CliniAACian - HIPAA/FERPA Compliant AWS Infrastructure
+# AiVota - HIPAA/FERPA Compliant AWS Infrastructure
 # =============================================================================
 
 terraform {
@@ -32,7 +32,7 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project     = "CliniAACian"
+      Project     = "AiVota"
       Environment = var.environment
       ManagedBy   = "Terraform"
       Compliance  = "HIPAA-FERPA"
@@ -48,10 +48,10 @@ data "aws_region" "current" {}
 # Local Variables
 # =============================================================================
 locals {
-  name_prefix = "cliniaacian-${var.environment}"
-  
+  name_prefix = "aivota-${var.environment}"
+
   common_tags = {
-    Project     = "CliniAACian"
+    Project     = "AiVota"
     Environment = var.environment
   }
 
