@@ -1,19 +1,20 @@
 # =============================================================================
 # Bastion Host - Minimal EC2 instance for SSM tunneling to RDS
 # =============================================================================
-# No SSH key, no public IP needed — access is via AWS SSM Session Manager.
+# No SSH key needed for SSM, but key pair retained for emergency SSH access.
+# No public IP — reaches SSM service via NAT gateway.
 # Used for: npm run db-tunnel, database migrations, ad-hoc DB access.
-# Cost: ~$3/month (t3.micro in a public subnet, no EIP needed)
+# Cost: ~$1.50/month (t4g.nano)
 # =============================================================================
 
-# Find latest Amazon Linux 2023 AMI (SSM agent pre-installed)
-data "aws_ami" "amazon_linux" {
+# Find latest Amazon Linux 2023 AMI for ARM (Graviton)
+data "aws_ami" "amazon_linux_arm" {
   most_recent = true
   owners      = ["amazon"]
 
   filter {
     name   = "name"
-    values = ["al2023-ami-*-kernel-*-x86_64"]
+    values = ["al2023-ami-*-kernel-*-arm64"]
   }
 
   filter {
@@ -55,18 +56,20 @@ resource "aws_iam_instance_profile" "bastion" {
 }
 
 resource "aws_instance" "bastion" {
-  ami                    = data.aws_ami.amazon_linux.id
-  instance_type          = "t3.micro"
-  subnet_id              = aws_subnet.public[0].id
+  ami                    = data.aws_ami.amazon_linux_arm.id
+  instance_type          = "t4g.nano"
+  subnet_id              = aws_subnet.private[1].id  # il-central-1b
   vpc_security_group_ids = [aws_security_group.bastion.id]
   iam_instance_profile   = aws_iam_instance_profile.bastion.name
+  key_name               = "db-access-keypair"
 
-  # No SSH key — SSM only
-  associate_public_ip_address = true
+  associate_public_ip_address = false
 
-  metadata_options {
-    http_tokens = "required" # IMDSv2 only
-  }
+  user_data = <<-EOF
+    #!/bin/bash
+    systemctl enable amazon-ssm-agent
+    systemctl start amazon-ssm-agent
+  EOF
 
   tags = {
     Name = "${local.name_prefix}-bastion"

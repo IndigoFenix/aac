@@ -11,6 +11,8 @@
 set -euo pipefail
 
 REGION="il-central-1"
+PROFILE="${AWS_PROFILE:-aac}"
+export AWS_PROFILE="$PROFILE"
 
 OLD_RDS_HOST="cliniaacian-prod-postgres.cpea2as2c1xa.il-central-1.rds.amazonaws.com"
 
