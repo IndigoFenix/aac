@@ -80,17 +80,38 @@ OLD_ECR_LAMBDA=$(aws ecr describe-repositories --repository-names "cliniaacian-l
 echo "ECR Main: $OLD_ECR_MAIN"
 echo "ECR Lambda: $OLD_ECR_LAMBDA"
 
-# Secrets Manager
-OLD_SECRET_DB=$(aws secretsmanager describe-secret --secret-id "${OLD_PREFIX}-db-credentials" \
-  --region "$REGION" --query "Name" --output text 2>/dev/null || echo "None")
-OLD_SECRET_APP=$(aws secretsmanager describe-secret --secret-id "${OLD_PREFIX}-app-secrets" \
-  --region "$REGION" --query "Name" --output text 2>/dev/null || echo "None")
+# Secrets Manager (format: prefix/database, prefix/app-secrets)
+OLD_SECRET_DB="None"
+for SECRET_NAME in "${OLD_PREFIX}/database" "${OLD_PREFIX}-db-credentials" "${OLD_PREFIX}-database"; do
+  FOUND=$(aws secretsmanager describe-secret --secret-id "$SECRET_NAME" \
+    --region "$REGION" --query "Name" --output text 2>/dev/null || echo "None")
+  if [ "$FOUND" != "None" ] && [ -n "$FOUND" ]; then
+    OLD_SECRET_DB="$FOUND"
+    break
+  fi
+done
+OLD_SECRET_APP="None"
+for SECRET_NAME in "${OLD_PREFIX}/app-secrets" "${OLD_PREFIX}-app-secrets"; do
+  FOUND=$(aws secretsmanager describe-secret --secret-id "$SECRET_NAME" \
+    --region "$REGION" --query "Name" --output text 2>/dev/null || echo "None")
+  if [ "$FOUND" != "None" ] && [ -n "$FOUND" ]; then
+    OLD_SECRET_APP="$FOUND"
+    break
+  fi
+done
 echo "Secret DB: $OLD_SECRET_DB"
 echo "Secret App: $OLD_SECRET_APP"
 
-# KMS
-OLD_KMS=$(aws kms list-aliases --region "$REGION" \
-  --query "Aliases[?AliasName=='alias/${OLD_PREFIX}-key'].TargetKeyId | [0]" --output text 2>/dev/null || echo "None")
+# KMS (format: alias/prefix or alias/prefix-key)
+OLD_KMS="None"
+for ALIAS_NAME in "alias/${OLD_PREFIX}" "alias/${OLD_PREFIX}-key" "alias/${OLD_PREFIX}-kms"; do
+  FOUND=$(aws kms list-aliases --region "$REGION" \
+    --query "Aliases[?AliasName=='${ALIAS_NAME}'].TargetKeyId | [0]" --output text 2>/dev/null || echo "None")
+  if [ "$FOUND" != "None" ] && [ -n "$FOUND" ]; then
+    OLD_KMS="$FOUND"
+    break
+  fi
+done
 echo "KMS Key: $OLD_KMS"
 
 echo ""
