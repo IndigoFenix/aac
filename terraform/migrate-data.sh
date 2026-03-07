@@ -18,6 +18,8 @@ set -euo pipefail
 REGION="il-central-1"
 OLD_PREFIX="cliniaacian-prod"
 NEW_PREFIX="aivota-prod"
+PROFILE="${AWS_PROFILE:-aac}"
+export AWS_PROFILE="$PROFILE"
 # Auto-discover bastion instance by tag
 EC2_INSTANCE=$(aws ec2 describe-instances --region "$REGION" \
   --filters "Name=tag:Name,Values=aivota-prod-bastion" "Name=instance-state-name,Values=running" \
