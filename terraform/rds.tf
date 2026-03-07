@@ -15,7 +15,7 @@ data "aws_rds_engine_version" "postgres" {
 # =============================================================================
 resource "aws_db_subnet_group" "main" {
   name        = "${local.name_prefix}-db-subnet-group"
-  description = "Database subnet group for CliniAACian"
+  description = "Database subnet group for AiVota"
   subnet_ids  = aws_subnet.private[*].id
 
   tags = {
@@ -76,8 +76,8 @@ resource "aws_db_instance" "main" {
   kms_key_id            = aws_kms_key.main.arn
 
   # Database
-  db_name  = "cliniaacian"
-  username = "cliniaacian_admin"
+  db_name  = "aivota"
+  username = "aivota_admin"
   password = random_password.db_password.result
 
   # Network

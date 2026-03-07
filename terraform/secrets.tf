@@ -2,7 +2,7 @@
 # KMS Key for encryption (HIPAA requirement)
 # =============================================================================
 resource "aws_kms_key" "main" {
-  description             = "KMS key for CliniAACian ${var.environment} environment"
+  description             = "KMS key for AiVota ${var.environment} environment"
   deletion_window_in_days = 30
   enable_key_rotation     = true
 
@@ -88,7 +88,7 @@ resource "aws_kms_alias" "main" {
 # =============================================================================
 resource "aws_secretsmanager_secret" "database" {
   name        = "${local.name_prefix}/database"
-  description = "Database credentials for CliniAACian"
+  description = "Database credentials for AiVota"
   kms_key_id  = aws_kms_key.main.arn
 
   recovery_window_in_days = var.environment == "prod" ? 30 : 7
@@ -105,7 +105,7 @@ resource "aws_secretsmanager_secret" "database" {
 # =============================================================================
 resource "aws_secretsmanager_secret" "app_secrets" {
   name        = "${local.name_prefix}/app-secrets"
-  description = "Application secrets for CliniAACian"
+  description = "Application secrets for AiVota"
   kms_key_id  = aws_kms_key.main.arn
 
   recovery_window_in_days = var.environment == "prod" ? 30 : 7

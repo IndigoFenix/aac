@@ -2,7 +2,7 @@
 # ECR Repository
 # =============================================================================
 resource "aws_ecr_repository" "main" {
-  name                 = "cliniaacian"
+  name                 = "aivota"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -93,7 +93,7 @@ resource "aws_ecs_task_definition" "main" {
 
   container_definitions = jsonencode([
     {
-      name  = "cliniaacian-app"
+      name  = "aivota-app"
       image = "${aws_ecr_repository.main.repository_url}:latest"
       
       portMappings = [
@@ -234,7 +234,7 @@ resource "aws_ecs_service" "main" {
 
   load_balancer {
     target_group_arn = aws_lb_target_group.main.arn
-    container_name   = "cliniaacian-app"
+    container_name   = "aivota-app"
     container_port   = var.container_port
   }
 

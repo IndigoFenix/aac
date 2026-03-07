@@ -69,18 +69,15 @@ resource "aws_acm_certificate" "cloudfront" {
 
 resource "aws_route53_record" "cloudfront_cert_validation" {
   for_each = var.use_lambda && var.domain_name != "" ? {
-    for dvo in aws_acm_certificate.cloudfront[0].domain_validation_options : dvo.domain_name => {
-      name   = dvo.resource_record_name
-      record = dvo.resource_record_value
-      type   = dvo.resource_record_type
-    }
+    main = var.domain_name
+    www  = "www.${var.domain_name}"
   } : {}
 
   allow_overwrite = true
-  name            = each.value.name
-  records         = [each.value.record]
+  name            = one([for dvo in aws_acm_certificate.cloudfront[0].domain_validation_options : dvo.resource_record_name if dvo.domain_name == each.value])
+  records         = [one([for dvo in aws_acm_certificate.cloudfront[0].domain_validation_options : dvo.resource_record_value if dvo.domain_name == each.value])]
   ttl             = 60
-  type            = each.value.type
+  type            = one([for dvo in aws_acm_certificate.cloudfront[0].domain_validation_options : dvo.resource_record_type if dvo.domain_name == each.value])
   zone_id         = data.aws_route53_zone.main[0].zone_id
 }
 

@@ -9,7 +9,7 @@
 resource "aws_ecr_repository" "lambda" {
   count = var.use_lambda ? 1 : 0
 
-  name                 = "cliniaacian-lambda"  # Keep consistent name
+  name                 = "aivota-lambda"
   image_tag_mutability = "MUTABLE"
   force_delete         = true  # Allow deletion even with images
 
