@@ -211,6 +211,13 @@
       "when": 1772114495146,
       "tag": "0029_white_the_hood",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1772976931323,
+      "tag": "0030_lonely_scarlet_spider",
+      "breakpoints": true
     }
   ]
 }

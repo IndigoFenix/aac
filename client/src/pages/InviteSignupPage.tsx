@@ -99,7 +99,7 @@ export default function InviteSignupPage() {
         description: t('invite.acceptedDesc') || `You have joined ${inviteData?.institute.name}`,
       });
 
-      setLocation('/');
+      setLocation('/home');
     } catch (error: any) {
       toast({
         title: t('invite.error') || 'Error',
@@ -164,7 +164,7 @@ export default function InviteSignupPage() {
         description: t('invite.registeredDesc') || `Your account has been created and you've joined ${inviteData?.institute.name}`,
       });
 
-      setLocation('/');
+      setLocation('/home');
     } catch (error: any) {
       toast({
         title: t('auth.registerFailed') || 'Registration Failed',

@@ -22,7 +22,7 @@ export interface FeatureConfig {
 
 // URL path to feature mapping
 export const PATH_TO_FEATURE: Record<string, FeatureType> = {
-  '/': 'chat',
+  '/home': 'chat',
   '/interpret': 'interpret',
   '/boards': 'boards',
   '/docuslp': 'docuslp',
@@ -37,7 +37,7 @@ export const PATH_TO_FEATURE: Record<string, FeatureType> = {
 
 // Feature to URL path mapping
 export const FEATURE_TO_PATH: Record<FeatureType, string> = {
-  chat: '/',
+  chat: '/home',
   interpret: '/interpret',
   boards: '/boards',
   docuslp: '/docuslp',
@@ -61,7 +61,7 @@ export const FEATURE_CONFIG: Record<FeatureType, FeatureConfig> = {
     maxSize: 0,
     isFullScreen: false,
     isFullChat: true,
-    path: '/',
+    path: '/home',
   },
   interpret: {
     id: 'interpret',

@@ -14,12 +14,13 @@ import {
   ArrowLeft,
   Moon,
   Sun,
+  Mail,
 } from 'lucide-react';
 import logoImage from '@assets/cliniaacian_logo.png';
 import { cn } from '@/lib/utils';
 import { useLocation } from 'wouter';
 
-type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions';
+type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts';
 
 type AdminSidebarProps = {
   activeSection: AdminSection;
@@ -61,6 +62,12 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
       label: 'Sessions',
       section: 'sessions' as AdminSection,
       testId: 'admin-nav-sessions',
+    },
+    {
+      icon: Mail,
+      label: 'Contacts',
+      section: 'contacts' as AdminSection,
+      testId: 'admin-nav-contacts',
     },
   ];
 

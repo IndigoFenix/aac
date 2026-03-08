@@ -47,6 +47,7 @@ import { voiceRecordController } from "./controllers/voiceRecordController";
 import { dualAgentController } from "./controllers/dualAgentController";
 import { biometricController } from "./controllers/biometricController";
 import { customSymbolController } from "./controllers/customSymbolController";
+import { contactController } from "./controllers/contactController";
 
 // Configure multer for image uploads
 const upload = multer({
@@ -100,6 +101,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
+
+  // ============= CONTACT FORM (public) =============
+  app.post("/api/contact", (req, res) => contactController.submit(req, res));
 
   // ============= AUTH ROUTES =============
   app.post("/auth/register", (req, res) => authController.register(req, res));
@@ -1147,6 +1151,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.get("/api/admin/sessions/chat/:id/log", requireAdmin, (req, res) =>
     sessionHistoryController.getChatSessionLog(req, res)
+  );
+
+  // Contact inquiries (admin)
+  app.get("/api/admin/contacts", requireAuth, requireSystemAdmin, (req, res) =>
+    contactController.list(req, res)
+  );
+  app.delete("/api/admin/contacts/:id", requireAuth, requireSystemAdmin, (req, res) =>
+    contactController.remove(req, res)
   );
 
   // Credit packages (admin)

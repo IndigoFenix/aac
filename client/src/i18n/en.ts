@@ -1713,4 +1713,74 @@ export const en = {
     },
   },
 
+  // ============================================================================
+  // LANDING PAGE
+  // ============================================================================
+  landing: {
+    nav: {
+      login: "Log In",
+    },
+    hero: {
+      tagline: "The Solution: A Two-Pillar Platform",
+      title: "Return Time to Clinicians. Give Voice to Students.",
+      subtitle: "An integrated ecosystem that automates IEP documentation and syncs therapy goals with dynamic, GenAI-powered communication.",
+      cta: "Join Strategic Pilot →",
+      screenshotAlt: "AiVota Dashboard Screenshot",
+    },
+    pillars: {
+      title: "One Ecosystem, Two Pillars",
+      subtitle: "Reducing therapist burnout and district inefficiencies through integrated GenAI.",
+      iep: {
+        label: "Lead Product",
+        title: "IEP Automation Engine",
+        description: "The GenAI platform automates the creation of data-driven IEPs. It analyzes student progress to draft precise goals, reducing documentation by up to 50%.",
+      },
+      aac: {
+        label: "Companion Solution",
+        title: "GenAI-Powered AAC",
+        description: "A next-generation, context-aware communication tool that automatically aligns with IEP goals, perfectly syncing therapy and daily communication.",
+      },
+    },
+    founder: {
+      label: "Founder & Vision",
+      title: "Veteran AI Expertise. Deep Personal Mission.",
+      bio: "Opher Suhami is a veteran AI executive and former CEO of a publicly traded AI company. As a father to a daughter with Rett Syndrome, he is dedicated to returning time to clinicians and voice to students.",
+      imageAlt: "Opher Suhami",
+      calloutTitle: "HIPAA & FERPA Compliant Source of Truth",
+      calloutText: "By integrating the IEP process with a live communication tool, our AI improves student outcomes while slashing operational costs.",
+    },
+    testimonial: {
+      quote: "Xahaph is changing the picture for SLPs. This technology has the ability to make our work easier and better. It's crazy.",
+      authorName: "Dr. Raz Tenebaum",
+      authorRole: "President of ISAAC-ISRAEL",
+    },
+    form: {
+      firstName: "First Name",
+      lastName: "Last Name",
+      email: "Email",
+      organization: "School District / Organization",
+      role: "Your Role",
+      selectRole: "Select your role...",
+      message: "Comment / Message",
+      submit: "Schedule a Discovery Call",
+      required: "Please fill in all required fields.",
+      error: "Something went wrong. Please try again.",
+      success: "Thank you! We'll be in touch shortly to schedule your discovery call.",
+      roles: {
+        district_administrator: "District Administrator",
+        special_education_director: "Special Education Director",
+        speech_language_pathologist: "Speech-Language Pathologist",
+        educator: "Educator",
+        other: "Other",
+      },
+    },
+    pilot: {
+      title: "Launching Strategic US Pilots",
+      subtitle: "Join us as a Design Partner. Let's discuss how we can return time to your clinicians.",
+    },
+    footer: {
+      text: "© 2026 AiVota • HIPAA & FERPA Compliant • Built for the Future of Special Education",
+    },
+  },
+
 };

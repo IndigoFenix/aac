@@ -195,7 +195,7 @@ export default function OnboardingFlow() {
     // Invalidate queries to refresh onboarding status
     queryClient.invalidateQueries({ queryKey: ["/api/onboarding/status"] });
     queryClient.invalidateQueries({ queryKey: ["/api/students"] });
-    setLocation("/");
+    setLocation("/home");
   };
 
   // Helper to calculate age from birth date for display

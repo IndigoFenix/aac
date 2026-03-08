@@ -1581,6 +1581,43 @@ export const inviteCodeRedemptionsRelations = relations(inviteCodeRedemptions, (
   }),
 }));
 
+// =============================================================================
+// CONTACT INQUIRIES (landing page form submissions)
+// =============================================================================
+export const contactRoleEnum = pgEnum("contact_role", [
+  "district_administrator",
+  "special_education_director",
+  "speech_language_pathologist",
+  "educator",
+  "other",
+]);
+
+export const contactInquiries = pgTable("contact_inquiries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
+  email: text("email").notNull(),
+  organization: text("organization").notNull(),
+  role: contactRoleEnum("role").notNull(),
+  message: text("message"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_contact_inquiries_email").on(table.email),
+  index("idx_contact_inquiries_created_at").on(table.createdAt),
+]);
+
+export const insertContactInquirySchema = createInsertSchema(contactInquiries).pick({
+  firstName: true,
+  lastName: true,
+  email: true,
+  organization: true,
+  role: true,
+  message: true,
+});
+
+export type ContactInquiry = typeof contactInquiries.$inferSelect;
+export type InsertContactInquiry = z.infer<typeof insertContactInquirySchema>;
+
 // Board relations
 export const boardsRelations = relations(boards, ({ one }) => ({
   user: one(users, {
