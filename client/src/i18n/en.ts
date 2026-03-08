@@ -1750,7 +1750,7 @@ export const en = {
       calloutText: "By integrating the IEP process with a live communication tool, our AI improves student outcomes while slashing operational costs.",
     },
     testimonial: {
-      quote: "Xahaph is changing the picture for SLPs. This technology has the ability to make our work easier and better. It's crazy.",
+      quote: "AiVota is changing the picture for SLPs. This technology has the ability to make our work easier and better. It's crazy.",
       authorName: "Dr. Raz Tenebaum",
       authorRole: "President of ISAAC-ISRAEL",
     },
