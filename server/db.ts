@@ -11,8 +11,12 @@ if (!process.env.DATABASE_URL) {
 
 const { Pool } = pg;
 
+// Remove sslmode from URL — we configure SSL explicitly below.
+// node-postgres URL params override Pool options, causing cert verification failures with RDS.
+const connectionString = process.env.DATABASE_URL.replace(/[?&]sslmode=[^&]*/g, '');
+
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString,
   ssl: {
     // Connection is still TLS encrypted, just not verifying the server certificate
     // This is safe because Lambda is in a private VPC with security group rules
