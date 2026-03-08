@@ -65,6 +65,7 @@ resource "aws_instance" "bastion" {
 
   associate_public_ip_address = false
 
+  user_data_replace_on_change = true
   user_data = <<-EOF
     #!/bin/bash
     dnf install -y amazon-ssm-agent
@@ -74,6 +75,18 @@ resource "aws_instance" "bastion" {
 
   tags = {
     Name = "${local.name_prefix}-bastion"
+  }
+
+  lifecycle {
+    # Force replacement when user_data content changes aren't detected
+    replace_triggered_by = [null_resource.bastion_version]
+  }
+}
+
+# Bump this to force bastion replacement
+resource "null_resource" "bastion_version" {
+  triggers = {
+    version = "2"
   }
 }
 
