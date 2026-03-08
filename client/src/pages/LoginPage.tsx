@@ -295,7 +295,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
         if (isInviteMode) {
           // Page will re-render and show accept invite UI
         } else {
-          setLocation('/');
+          setLocation('/home');
         }
       } else {
         toast({
@@ -336,7 +336,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
         if (isInviteMode) {
           // Page will re-render and show accept invite UI
         } else {
-          setLocation('/');
+          setLocation('/home');
         }
       } else {
         toast({
@@ -377,7 +377,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
         if (isInviteMode) {
           // Page will re-render and show accept invite UI
         } else {
-          setLocation('/');
+          setLocation('/home');
         }
       } else {
         toast({
@@ -512,7 +512,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
         });
       }
       
-      setLocation('/');
+      setLocation('/home');
       
     } catch (error: any) {
       toast({ 
@@ -540,7 +540,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
         description: (t('invite.acceptedDesc') || 'You have joined {institute}').replace('{institute}', inviteData?.institute.name || ''),
       });
 
-      setLocation('/');
+      setLocation('/home');
     } catch (error: any) {
       toast({
         title: t('invite.error') || 'Error',

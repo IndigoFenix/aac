@@ -24,6 +24,7 @@ import { InstituteProvider } from "./hooks/useInstitute";
 import ForgotPasswordPage from "./pages/forgotPasswordPage";
 import MfaRecoveryPage from "./pages/MfaRecoveryPage";
 import { AdminDashboard } from "./pages/AdminDashboard";
+import LandingPage from "./components/landing-page/LandingPage";
 
 // Component to redirect authenticated users away from login page
 function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
@@ -39,7 +40,7 @@ function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
   
   // If already authenticated, redirect to home
   if (isAuthenticated) {
-    return <Redirect to="/" />;
+    return <Redirect to="/home" />;
   }
   
   return <>{children}</>;
@@ -92,7 +93,7 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
 
     // If user has completed onboarding or has students, and is on onboarding page, redirect to home
     if ((onboardingStep === 3 || hasStudents) && location === "/onboarding") {
-      setLocation("/");
+      setLocation("/home");
     }
   }, [user, onboardingStatus, isStudentLoading, students, location, setLocation]);
 
@@ -127,7 +128,7 @@ function SystemAdminRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!user?.isSystemAdmin) {
-    return <Redirect to="/" />;
+    return <Redirect to="/home" />;
   }
 
   return <>{children}</>;
@@ -228,14 +229,22 @@ function Router() {
           <AdminDashboard />
         </SystemAdminRoute>
       </Route>
+      <Route path="/admin/contacts">
+        <SystemAdminRoute>
+          <AdminDashboard />
+        </SystemAdminRoute>
+      </Route>
       <Route path="/admin">
         <SystemAdminRoute>
           <AdminDashboard />
         </SystemAdminRoute>
       </Route>
 
-      {/* Default home route (chat) - protected */}
-      <Route path="/" component={ProtectedDashboard} />
+      {/* Authenticated home (chat/dashboard) */}
+      <Route path="/home" component={ProtectedDashboard} />
+
+      {/* Landing page for unauthenticated users, redirects to /home if logged in */}
+      <Route path="/" component={LandingPage} />
 
       {/* 404 fallback */}
       <Route component={NotFound} />

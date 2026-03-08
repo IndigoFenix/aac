@@ -124,7 +124,7 @@ export default function PendingInvitesPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setLocation('/')}
+              onClick={() => setLocation('/home')}
             >
               <ArrowLeft className="w-4 h-4 me-2" />
               {t('common.back') || 'Back'}
@@ -158,7 +158,7 @@ export default function PendingInvitesPage() {
               <p className="text-sm text-muted-foreground mb-4">
                 {t('invite.noInvitesDesc') || "You don't have any pending institute invitations."}
               </p>
-              <Button onClick={() => setLocation('/')}>
+              <Button onClick={() => setLocation('/home')}>
                 {t('common.back') || 'Go Back'}
               </Button>
             </CardContent>

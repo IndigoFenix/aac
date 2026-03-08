@@ -10,9 +10,10 @@ import { TopicView } from '@/components/admin/TopicView';
 import { VoiceList } from '@/components/admin/VoiceList';
 import { ModelSettings } from '@/components/admin/ModelSettings';
 import { SessionHistory } from '@/components/admin/SessionHistory';
+import { ContactInquiries } from '@/components/admin/ContactInquiries';
 import { cn } from '@/lib/utils';
 
-type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions';
+type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts';
 
 export function AdminDashboard() {
   const [location, navigate] = useLocation();
@@ -24,6 +25,7 @@ export function AdminDashboard() {
     if (location.startsWith('/admin/voices')) return 'voices';
     if (location.startsWith('/admin/models')) return 'models';
     if (location.startsWith('/admin/sessions')) return 'sessions';
+    if (location.startsWith('/admin/contacts')) return 'contacts';
     if (location.startsWith('/admin/personas')) return 'personas';
     return 'personas'; // default
   };
@@ -47,6 +49,8 @@ export function AdminDashboard() {
       navigate('/admin/models');
     } else if (section === 'sessions') {
       navigate('/admin/sessions');
+    } else if (section === 'contacts') {
+      navigate('/admin/contacts');
     }
   };
 
@@ -75,6 +79,10 @@ export function AdminDashboard() {
 
     if (activeSection === 'sessions') {
       return <SessionHistory />;
+    }
+
+    if (activeSection === 'contacts') {
+      return <ContactInquiries />;
     }
 
     return null;
