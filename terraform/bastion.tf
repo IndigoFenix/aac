@@ -67,6 +67,7 @@ resource "aws_instance" "bastion" {
 
   user_data = <<-EOF
     #!/bin/bash
+    dnf install -y amazon-ssm-agent
     systemctl enable amazon-ssm-agent
     systemctl start amazon-ssm-agent
   EOF
