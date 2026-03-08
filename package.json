@@ -16,8 +16,6 @@
     "check": "tsc",
     "get-ec2": "aws ssm describe-instance-information --query \"InstanceInformationList[*].InstanceId\"",
     "db-tunnel": "bash scripts/db-tunnel.sh",
-    "db-tunnel:old": "bash scripts/db-tunnel.sh old",
-    "db-tunnel:new": "bash scripts/db-tunnel.sh new",
     "db:generate": "npx drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:migrate": "tsx scripts/migrate.ts",
