@@ -40,6 +40,19 @@ resource "aws_route53_record" "www" {
 }
 
 # =============================================================================
+# MX Record for Google email
+# =============================================================================
+resource "aws_route53_record" "mx" {
+  count = var.domain_name != "" ? 1 : 0
+
+  zone_id = data.aws_route53_zone.main[0].zone_id
+  name    = var.domain_name
+  type    = "MX"
+  ttl     = 3600
+  records = ["1 SMTP.GOOGLE.COM"]
+}
+
+# =============================================================================
 # ACM Certificate DNS Validation (for ALB - only when NOT using Lambda)
 # =============================================================================
 resource "aws_route53_record" "cert_validation" {

@@ -14,6 +14,8 @@ set -euo pipefail
 
 REGION="il-central-1"
 OLD_PREFIX="cliniaacian-prod"
+PROFILE="${AWS_PROFILE:-aac}"
+export AWS_PROFILE="$PROFILE"
 ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
 
 echo "=== Cleanup old cliniaacian-prod resources ==="
@@ -192,7 +194,25 @@ if [ "$OLD_RDS" != "None" ] && [ -n "$OLD_RDS" ]; then
     --skip-final-snapshot \
     --region "$REGION" 2>/dev/null || true
   echo "  RDS deletion initiated (takes several minutes)."
+  echo "  Waiting for RDS to be fully deleted before cleaning up subnet/param groups..."
+  aws rds wait db-instance-deleted \
+    --db-instance-identifier "$OLD_RDS" \
+    --region "$REGION" 2>/dev/null || true
 fi
+
+# Delete RDS subnet group
+OLD_SUBNET_GROUP="${OLD_PREFIX}-db-subnet-group"
+aws rds delete-db-subnet-group \
+  --db-subnet-group-name "$OLD_SUBNET_GROUP" \
+  --region "$REGION" 2>/dev/null && echo "  Deleted DB subnet group $OLD_SUBNET_GROUP" || true
+
+# Delete RDS parameter groups
+OLD_PARAM_GROUPS=$(aws rds describe-db-parameter-groups --region "$REGION" \
+  --query "DBParameterGroups[?starts_with(DBParameterGroupName, '${OLD_PREFIX}')].DBParameterGroupName" --output text 2>/dev/null || echo "")
+for pg in $OLD_PARAM_GROUPS; do
+  echo "  Deleting parameter group $pg..."
+  aws rds delete-db-parameter-group --db-parameter-group-name "$pg" --region "$REGION" 2>/dev/null || true
+done
 
 # =============================================================================
 # Delete ECR repositories
@@ -441,6 +461,26 @@ for role in $OLD_ROLES; do
   aws iam delete-role --role-name "$role" 2>/dev/null || true
 done
 
+# Delete instance profiles
+OLD_PROFILES=$(aws iam list-instance-profiles \
+  --query "InstanceProfiles[?starts_with(InstanceProfileName, '${OLD_PREFIX}')].InstanceProfileName" --output text 2>/dev/null || echo "")
+for prof in $OLD_PROFILES; do
+  echo "  Deleting instance profile $prof..."
+  aws iam delete-instance-profile --instance-profile-name "$prof" 2>/dev/null || true
+done
+
+# =============================================================================
+# Delete SNS topics
+# =============================================================================
+echo ""
+echo "=== Deleting old SNS topics ==="
+OLD_TOPICS=$(aws sns list-topics --region "$REGION" \
+  --query "Topics[?contains(TopicArn, '${OLD_PREFIX}')].TopicArn" --output text 2>/dev/null || echo "")
+for topic in $OLD_TOPICS; do
+  echo "  Deleting SNS topic $topic..."
+  aws sns delete-topic --topic-arn "$topic" --region "$REGION" 2>/dev/null || true
+done
+
 # =============================================================================
 # Delete CloudWatch log groups
 # =============================================================================
@@ -517,3 +557,5 @@ echo ""
 echo "You can now delete the migration scripts:"
 echo "  rm terraform/migrate-data.sh terraform/cleanup-old-resources.sh"
 echo "  rm terraform/cleanup-duplicates.sh terraform/import-existing.sh"
+echo "  rm terraform/release-old-eips.sh"
+echo "  rm scripts/migrate-db.ts"
