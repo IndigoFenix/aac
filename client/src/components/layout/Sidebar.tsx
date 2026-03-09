@@ -29,7 +29,7 @@ import {
   MessageSquare,
   Image,
 } from 'lucide-react';
-import logoImage from '@assets/cliniaacian_logo.png';
+import logoImage from '@assets/aivota_icon.png';
 import { useAuth } from '@/hooks/useAuth';
 import { useInstitute } from '@/hooks/useInstitute';
 import { openUI } from '@/lib/uiEvents';

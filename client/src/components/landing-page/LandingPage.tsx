@@ -3,7 +3,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
 import { Redirect } from "wouter";
-import logo from "@assets/cliniaacian_logo.png";
+import logo from "@assets/aivota_icon.png";
 import raz from "@assets/landing-page/raz.png";
 import opher from "@assets/landing-page/opher.png";
 import screenshot from "@assets/landing-page/screenshot.png";
@@ -11,9 +11,14 @@ import "./landing-page.css";
 
 const ROLE_OPTIONS = [
   "district_administrator",
-  "special_education_director",
-  "speech_language_pathologist",
+  "wing_administrator",
+  "supervisor",
+  "training",
+  "school_administrator",
   "educator",
+  "educator_SLP",
+  "educator_OP",
+  "educator_PT",
   "other",
 ] as const;
 
@@ -76,7 +81,7 @@ export default function LandingPage() {
         <div className="landing-container">
           <a href="#" className="landing-logo">
             <img src={logo} alt="Aivota" />
-            Aivota
+            aivota
           </a>
           <div className="landing-header-actions">
             <button
