@@ -16,7 +16,7 @@ import {
   Sun,
   Mail,
 } from 'lucide-react';
-import logoImage from '@assets/cliniaacian_logo.png';
+import logoImage from '@assets/aivota_icon.png';
 import { cn } from '@/lib/utils';
 import { useLocation } from 'wouter';
 
