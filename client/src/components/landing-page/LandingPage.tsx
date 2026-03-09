@@ -75,8 +75,8 @@ export default function LandingPage() {
       <header className="landing-header">
         <div className="landing-container">
           <a href="#" className="landing-logo">
-            <img src={logo} alt="AiVota" />
-            AiVota
+            <img src={logo} alt="Aivota" />
+            Aivota
           </a>
           <div className="landing-header-actions">
             <button

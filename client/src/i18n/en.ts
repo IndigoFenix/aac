@@ -1725,7 +1725,7 @@ export const en = {
       title: "Return Time to Clinicians. Give Voice to Students.",
       subtitle: "An integrated ecosystem that automates IEP documentation and syncs therapy goals with dynamic, GenAI-powered communication.",
       cta: "Join Strategic Pilot →",
-      screenshotAlt: "AiVota Dashboard Screenshot",
+      screenshotAlt: "Aivota Dashboard Screenshot",
     },
     pillars: {
       title: "One Ecosystem, Two Pillars",
@@ -1750,7 +1750,7 @@ export const en = {
       calloutText: "By integrating the IEP process with a live communication tool, our AI improves student outcomes while slashing operational costs.",
     },
     testimonial: {
-      quote: "AiVota is changing the picture for SLPs. This technology has the ability to make our work easier and better. It's crazy.",
+      quote: "Aivota is changing the picture for SLPs. This technology has the ability to make our work easier and better. It's crazy.",
       authorName: "Dr. Raz Tenebaum",
       authorRole: "President of ISAAC-ISRAEL",
     },
@@ -1779,7 +1779,7 @@ export const en = {
       subtitle: "Join us as a Design Partner. Let's discuss how we can return time to your clinicians.",
     },
     footer: {
-      text: "© 2026 AiVota • HIPAA & FERPA Compliant • Built for the Future of Special Education",
+      text: "© 2026 Aivota • HIPAA & FERPA Compliant • Built for the Future of Special Education",
     },
   },
 
