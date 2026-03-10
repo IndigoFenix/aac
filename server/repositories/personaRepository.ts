@@ -8,7 +8,7 @@ import {
   type UpdatePersona,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, or, isNull, inArray, desc, SQL } from "drizzle-orm";
 
 export class PersonaRepository {
   /**
@@ -55,18 +55,43 @@ export class PersonaRepository {
   }
 
   /**
-   * Get personas available for manual selection (active + manualSelection)
+   * Get personas available for manual selection, filtered by user access.
+   * System admins see all active+selectable personas.
+   * Regular users don't see testMode personas, and only see personas
+   * with no instituteId or matching their institute memberships.
    */
-  async getSelectablePersonas(): Promise<Persona[]> {
+  async getSelectablePersonas(options?: {
+    userInstituteIds?: string[];
+    isSystemAdmin?: boolean;
+  }): Promise<Persona[]> {
+    const conditions: SQL[] = [
+      eq(personas.active, true),
+      eq(personas.manualSelection, true),
+    ];
+
+    if (!options?.isSystemAdmin) {
+      // Exclude test-mode personas for non-admins
+      conditions.push(eq(personas.testMode, false));
+
+      // Institute filter: show global (null) + user's institute personas
+      const instituteIds = options?.userInstituteIds ?? [];
+      if (instituteIds.length > 0) {
+        conditions.push(
+          or(
+            isNull(personas.instituteId),
+            inArray(personas.instituteId, instituteIds),
+          )!
+        );
+      } else {
+        // User has no institutes — only show global personas
+        conditions.push(isNull(personas.instituteId));
+      }
+    }
+
     return await db
       .select()
       .from(personas)
-      .where(
-        and(
-          eq(personas.active, true),
-          eq(personas.manualSelection, true)
-        )
-      )
+      .where(and(...conditions))
       .orderBy(personas.title);
   }
 

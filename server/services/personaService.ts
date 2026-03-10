@@ -2,6 +2,7 @@
 // Business logic for persona management
 
 import { personaRepository } from "../repositories/personaRepository";
+import { instituteRepository } from "../repositories/instituteRepository";
 import {
   type Persona,
   type InsertPersona,
@@ -64,11 +65,22 @@ export class PersonaService {
   }
 
   /**
-   * Get selectable personas for chat (active + manualSelection)
+   * Get selectable personas for chat, filtered by user access.
    */
-  async getSelectablePersonas(): Promise<{ success: boolean; personas?: Persona[]; error?: string }> {
+  async getSelectablePersonas(
+    userId?: string,
+    isSystemAdmin?: boolean,
+  ): Promise<{ success: boolean; personas?: Persona[]; error?: string }> {
     try {
-      const personas = await personaRepository.getSelectablePersonas();
+      let userInstituteIds: string[] | undefined;
+      if (userId && !isSystemAdmin) {
+        userInstituteIds = await instituteRepository.getInstituteIdsByUserId(userId);
+      }
+
+      const personas = await personaRepository.getSelectablePersonas({
+        userInstituteIds,
+        isSystemAdmin,
+      });
       return { success: true, personas };
     } catch (error: any) {
       console.error("Error getting selectable personas:", error);

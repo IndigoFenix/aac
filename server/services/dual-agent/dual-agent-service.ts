@@ -29,6 +29,7 @@ import { INTERACTIVE_COMMANDS, DEFAULT_CONFIG } from "./types";
 import {
   AAC_DEFAULT_PERSONA_PROMPT,
   buildInteractiveSystemPrompt,
+  buildFunctionCallingPrompt,
 } from "../memory-schema/aac-memory-schema";
 import { whisperService } from "../voice/whisper-service";
 import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
@@ -636,40 +637,57 @@ export class DualAgentService {
     // (monitorAgent.initializeSession builds the base prompt before these are loaded)
     let interactivePrompt = initResult.interactivePrompt;
     const student = monitorAgent.getStudent?.();
-    if (student) {
-      const personaPrompt = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
-      interactivePrompt = buildInteractiveSystemPrompt(
-        student.name,
-        personaPrompt,
-        student.primaryLanguage || undefined,
-        initResult.initialContext,
-        interactionMode,
-        computeAge(student.birthDate),
-        student.gender || undefined,
-        cachedDiagnosis || undefined,
-        false,
-        enabledAppDefs,
-        null, // activeApp
-        "happy",
-        'analyze',
-        cachedContacts.length > 0 ? cachedContacts : undefined,
-        availableBoards.length > 0 ? availableBoards : undefined,
-        undefined, // loadedBoardName
-        undefined, // loadedPageName
-        12, // maxBoardItems
-        undefined, // loadedPageNavButtons
-        student.aacSettings?.interpretationLevel ?? 2,
-        cachedSymbols.length > 0 ? cachedSymbols : undefined,
-        isLiveMode,
-        student.aacSettings?.aiName || undefined,
-        undefined, // customBoardFixedButtons
-        undefined, // customBoardAiAddedButtons
-        useFunctionCalling ?? isLiveMode, // useFunctionCalling — caller can override (relay passes false for Gemini)
-      );
-    }
-
     // Resolve effective useFunctionCalling value
     const effectiveUseFunctionCalling = useFunctionCalling ?? isLiveMode;
+
+    if (student) {
+      const personaPrompt = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+      if (effectiveUseFunctionCalling) {
+        interactivePrompt = buildFunctionCallingPrompt({
+          studentName: student.name,
+          persona: personaPrompt,
+          language: student.primaryLanguage || undefined,
+          memoryContext: initResult.initialContext,
+          mode: interactionMode,
+          studentAge: computeAge(student.birthDate),
+          studentGender: student.gender || undefined,
+          studentDiagnosis: cachedDiagnosis || undefined,
+          aiName: student.aacSettings?.aiName || undefined,
+          knownContacts: cachedContacts.length > 0 ? cachedContacts : undefined,
+          availableBoards: availableBoards.length > 0 ? availableBoards : undefined,
+          cachedSymbols: cachedSymbols.length > 0 ? cachedSymbols : undefined,
+          interpretationLevel: student.aacSettings?.interpretationLevel ?? 2,
+        });
+      } else {
+        interactivePrompt = buildInteractiveSystemPrompt(
+          student.name,
+          personaPrompt,
+          student.primaryLanguage || undefined,
+          initResult.initialContext,
+          interactionMode,
+          computeAge(student.birthDate),
+          student.gender || undefined,
+          cachedDiagnosis || undefined,
+          false,
+          enabledAppDefs,
+          null, // activeApp
+          "happy",
+          'analyze',
+          cachedContacts.length > 0 ? cachedContacts : undefined,
+          availableBoards.length > 0 ? availableBoards : undefined,
+          undefined, // loadedBoardName
+          undefined, // loadedPageName
+          12, // maxBoardItems
+          undefined, // loadedPageNavButtons
+          student.aacSettings?.interpretationLevel ?? 2,
+          cachedSymbols.length > 0 ? cachedSymbols : undefined,
+          isLiveMode,
+          student.aacSettings?.aiName || undefined,
+          undefined, // customBoardFixedButtons
+          undefined, // customBoardAiAddedButtons
+        );
+      }
+    }
 
     // Create Interactive agent with the complete prompt
     const interactiveAgent = createInteractiveAgent(
@@ -833,34 +851,53 @@ export class DualAgentService {
           } catch { state.availableBoards = []; }
         }
 
-        state.interactivePrompt = buildInteractiveSystemPrompt(
-          student.name,
-          personaPrompt,
-          student.primaryLanguage || undefined,
-          undefined,
-          state.interactionMode,
-          computeAge(student.birthDate),
-          student.gender || undefined,
-          state.cachedDiagnosis || undefined,
-          false,
-          enabledApps,
-          state.appState.activeApp,
-          state.currentEmote,
-          'analyze', // default on session resume
-          state.cachedContacts,
-          state.availableBoards,
-          state.loadedBoardData?.name || null,
-          null,
-          state.maxBoardItems || 12,
-          getPageNavButtons(state),
-          state.interpretationLevel,
-          state.cachedSymbols,
-          state.isLiveMode,
-          student.aacSettings?.aiName || undefined,
-          state.loadedBoardId ? getNativePageButtonLabels(state) : undefined,
-          state.loadedBoardId ? state.aiAddedButtonLabels : undefined,
-          state.useFunctionCalling ?? state.isLiveMode, // useFunctionCalling
-        );
+        if (state.useFunctionCalling ?? state.isLiveMode) {
+          state.interactivePrompt = buildFunctionCallingPrompt({
+            studentName: student.name,
+            persona: personaPrompt,
+            language: student.primaryLanguage || undefined,
+            mode: state.interactionMode,
+            studentAge: computeAge(student.birthDate),
+            studentGender: student.gender || undefined,
+            studentDiagnosis: state.cachedDiagnosis || undefined,
+            aiName: student.aacSettings?.aiName || undefined,
+            knownContacts: state.cachedContacts,
+            availableBoards: state.availableBoards,
+            loadedBoardName: state.loadedBoardData?.name || null,
+            cachedSymbols: state.cachedSymbols,
+            currentEmote: state.currentEmote,
+            activeApp: state.appState.activeApp,
+            interpretationLevel: state.interpretationLevel,
+          });
+        } else {
+          state.interactivePrompt = buildInteractiveSystemPrompt(
+            student.name,
+            personaPrompt,
+            student.primaryLanguage || undefined,
+            undefined,
+            state.interactionMode,
+            computeAge(student.birthDate),
+            student.gender || undefined,
+            state.cachedDiagnosis || undefined,
+            false,
+            enabledApps,
+            state.appState.activeApp,
+            state.currentEmote,
+            'analyze', // default on session resume
+            state.cachedContacts,
+            state.availableBoards,
+            state.loadedBoardData?.name || null,
+            null,
+            state.maxBoardItems || 12,
+            getPageNavButtons(state),
+            state.interpretationLevel,
+            state.cachedSymbols,
+            state.isLiveMode,
+            student.aacSettings?.aiName || undefined,
+            state.loadedBoardId ? getNativePageButtonLabels(state) : undefined,
+            state.loadedBoardId ? state.aiAddedButtonLabels : undefined,
+          );
+        }
       }
 
       const interactiveAgent = createInteractiveAgent(
@@ -994,36 +1031,56 @@ export class DualAgentService {
       const student = monitorAgent.getStudent();
       if (student) {
         const personaPrompt = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
-        const enabledApps = APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id));
-        const inputLoadedPage = state.loadedBoardData?.pages?.find(p => p.id === state.currentPageId);
-        const newPrompt = buildInteractiveSystemPrompt(
-          student.name,
-          personaPrompt,
-          student.primaryLanguage || undefined,
-          undefined,
-          interactionMode,
-          computeAge(student.birthDate),
-          student.gender || undefined,
-          state.cachedDiagnosis || undefined,
-          false,
-          enabledApps,
-          state.appState.activeApp,
-          state.currentEmote,
-          responseMode,
-          state.cachedContacts,
-          state.availableBoards,
-          state.loadedBoardData?.name || null,
-          inputLoadedPage?.name || null,
-          state.maxBoardItems || 12,
-          getPageNavButtons(state),
-          state.interpretationLevel,
-          state.cachedSymbols,
-          state.isLiveMode,
-          student.aacSettings?.aiName || undefined,
-          state.loadedBoardId ? getNativePageButtonLabels(state) : undefined,
-          state.loadedBoardId ? state.aiAddedButtonLabels : undefined,
-          state.useFunctionCalling ?? state.isLiveMode, // useFunctionCalling
-        );
+        let newPrompt: string;
+        if (state.useFunctionCalling ?? state.isLiveMode) {
+          newPrompt = buildFunctionCallingPrompt({
+            studentName: student.name,
+            persona: personaPrompt,
+            language: student.primaryLanguage || undefined,
+            mode: interactionMode,
+            studentAge: computeAge(student.birthDate),
+            studentGender: student.gender || undefined,
+            studentDiagnosis: state.cachedDiagnosis || undefined,
+            aiName: student.aacSettings?.aiName || undefined,
+            knownContacts: state.cachedContacts,
+            availableBoards: state.availableBoards,
+            loadedBoardName: state.loadedBoardData?.name || null,
+            cachedSymbols: state.cachedSymbols,
+            currentEmote: state.currentEmote,
+            activeApp: state.appState.activeApp,
+            interpretationLevel: state.interpretationLevel,
+          });
+        } else {
+          const enabledApps = APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id));
+          const inputLoadedPage = state.loadedBoardData?.pages?.find(p => p.id === state.currentPageId);
+          newPrompt = buildInteractiveSystemPrompt(
+            student.name,
+            personaPrompt,
+            student.primaryLanguage || undefined,
+            undefined,
+            interactionMode,
+            computeAge(student.birthDate),
+            student.gender || undefined,
+            state.cachedDiagnosis || undefined,
+            false,
+            enabledApps,
+            state.appState.activeApp,
+            state.currentEmote,
+            responseMode,
+            state.cachedContacts,
+            state.availableBoards,
+            state.loadedBoardData?.name || null,
+            inputLoadedPage?.name || null,
+            state.maxBoardItems || 12,
+            getPageNavButtons(state),
+            state.interpretationLevel,
+            state.cachedSymbols,
+            state.isLiveMode,
+            student.aacSettings?.aiName || undefined,
+            state.loadedBoardId ? getNativePageButtonLabels(state) : undefined,
+            state.loadedBoardId ? state.aiAddedButtonLabels : undefined,
+          );
+        }
         interactiveAgent.setSystemPrompt(newPrompt);
         state.interactivePrompt = newPrompt;
       }
@@ -2060,36 +2117,56 @@ export class DualAgentService {
       const student = monitorAgent.getStudent();
       if (student) {
         const personaPrompt = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
-        const enabledApps = APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id));
-        const detSwitchPage = state.loadedBoardData?.pages?.find(p => p.id === state.currentPageId);
-        const newPrompt = buildInteractiveSystemPrompt(
-          student.name,
-          personaPrompt,
-          student.primaryLanguage || undefined,
-          undefined,
-          interactionMode,
-          computeAge(student.birthDate),
-          student.gender || undefined,
-          state.cachedDiagnosis || undefined,
-          false,
-          enabledApps,
-          state.appState.activeApp,
-          state.currentEmote,
-          responseMode,
-          state.cachedContacts,
-          state.availableBoards,
-          state.loadedBoardData?.name || null,
-          detSwitchPage?.name || null,
-          state.maxBoardItems || 12,
-          getPageNavButtons(state),
-          state.interpretationLevel,
-          state.cachedSymbols,
-          state.isLiveMode,
-          student.aacSettings?.aiName || undefined,
-          state.loadedBoardId ? getNativePageButtonLabels(state) : undefined,
-          state.loadedBoardId ? state.aiAddedButtonLabels : undefined,
-          state.useFunctionCalling ?? state.isLiveMode, // useFunctionCalling
-        );
+        let newPrompt: string;
+        if (state.useFunctionCalling ?? state.isLiveMode) {
+          newPrompt = buildFunctionCallingPrompt({
+            studentName: student.name,
+            persona: personaPrompt,
+            language: student.primaryLanguage || undefined,
+            mode: interactionMode,
+            studentAge: computeAge(student.birthDate),
+            studentGender: student.gender || undefined,
+            studentDiagnosis: state.cachedDiagnosis || undefined,
+            aiName: student.aacSettings?.aiName || undefined,
+            knownContacts: state.cachedContacts,
+            availableBoards: state.availableBoards,
+            loadedBoardName: state.loadedBoardData?.name || null,
+            cachedSymbols: state.cachedSymbols,
+            currentEmote: state.currentEmote,
+            activeApp: state.appState.activeApp,
+            interpretationLevel: state.interpretationLevel,
+          });
+        } else {
+          const enabledApps = APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id));
+          const detSwitchPage = state.loadedBoardData?.pages?.find(p => p.id === state.currentPageId);
+          newPrompt = buildInteractiveSystemPrompt(
+            student.name,
+            personaPrompt,
+            student.primaryLanguage || undefined,
+            undefined,
+            interactionMode,
+            computeAge(student.birthDate),
+            student.gender || undefined,
+            state.cachedDiagnosis || undefined,
+            false,
+            enabledApps,
+            state.appState.activeApp,
+            state.currentEmote,
+            responseMode,
+            state.cachedContacts,
+            state.availableBoards,
+            state.loadedBoardData?.name || null,
+            detSwitchPage?.name || null,
+            state.maxBoardItems || 12,
+            getPageNavButtons(state),
+            state.interpretationLevel,
+            state.cachedSymbols,
+            state.isLiveMode,
+            student.aacSettings?.aiName || undefined,
+            state.loadedBoardId ? getNativePageButtonLabels(state) : undefined,
+            state.loadedBoardId ? state.aiAddedButtonLabels : undefined,
+          );
+        }
         interactiveAgent.setSystemPrompt(newPrompt);
         state.interactivePrompt = newPrompt;
       }

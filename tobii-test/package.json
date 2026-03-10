@@ -1,0 +1,39 @@
+{
+  "name": "tobii-dwell-test",
+  "version": "1.0.0",
+  "description": "Tobii eye tracker dwell-selection test app with hardware bridge",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "rebuild": "electron-rebuild -f -w koffi",
+    "postinstall": "electron-rebuild -f -w koffi",
+    "build": "electron-builder --win portable"
+  },
+  "build": {
+    "appId": "com.test.tobii-dwell",
+    "productName": "Tobii Dwell Test",
+    "win": {
+      "target": "portable"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "tobii-bridge.js",
+      "index.html",
+      "!dist",
+      "!dist/**"
+    ],
+    "directories": {
+      "output": "dist"
+    }
+  },
+  "dependencies": {
+    "koffi": "^2.9.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "@electron/rebuild": "^3.7.0"
+  }
+}

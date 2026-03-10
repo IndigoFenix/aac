@@ -218,6 +218,13 @@
       "when": 1772976931323,
       "tag": "0030_lonely_scarlet_spider",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1773172930543,
+      "tag": "0031_fuzzy_sphinx",
+      "breakpoints": true
     }
   ]
 }

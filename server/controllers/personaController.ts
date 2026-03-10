@@ -38,10 +38,15 @@ export class PersonaController {
   /**
    * GET /api/personas/selectable
    * Get personas available for manual selection (any authenticated user)
+   * Filters by institute access and test mode based on user role.
    */
   async getSelectablePersonas(req: Request, res: Response): Promise<void> {
     try {
-      const result = await personaService.getSelectablePersonas();
+      const user = req.user as any;
+      const result = await personaService.getSelectablePersonas(
+        user?.id,
+        user?.isSystemAdmin,
+      );
 
       if (!result.success) {
         res.status(500).json({

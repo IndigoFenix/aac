@@ -926,8 +926,8 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
                   </div>
                 </div>
 
-                {/* Google Login Button */}
-                <Button
+                {/* Google Login Button - hidden for now */}
+                {false && <Button
                   variant="outline"
                   className="w-full"
                   onClick={handleGoogleLogin}
@@ -936,17 +936,18 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
                 >
                   <GoogleIcon className="w-4 h-4 me-2" />
                   {t('auth.googleLogin')}
-                </Button>
+                </Button>}
               </CardContent>
 
               <CardFooter className="flex flex-col gap-3">
-                <button
+                {/* Signup link - hidden for now */}
+                {false && <button
                   type="button"
                   onClick={() => setShowRegister(true)}
                   className="text-sm text-primary hover:underline"
                 >
                   {t('auth.noAccount')}
-                </button>
+                </button>}
 
                 <button
                   type="button"

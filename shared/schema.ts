@@ -381,13 +381,17 @@ export const apiProviderPricing = pgTable("api_provider_pricing", {
 // =============================================================================
 
 // AI Personas - configurable AI personalities with custom prompts
+// title and description support multilingual content: plain string or JSON {"en":"...", "he":"..."}
 export const personas = pgTable("personas", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  title: text("title").notNull(),
+  title: text("title").notNull(), // Plain string or JSON {"en":"...", "he":"..."}
+  description: text("description"), // Plain string or JSON {"en":"...", "he":"..."}
   icon: text("icon").notNull(), // Emoji or icon identifier
-  prompt: text("prompt").notNull(), // System prompt text for this persona
+  prompt: text("prompt").notNull(), // System prompt text for this persona (not multilingual)
   manualSelection: boolean("manual_selection").default(true).notNull(), // Whether users can manually select this persona
   active: boolean("active").default(true).notNull(),
+  testMode: boolean("test_mode").default(false).notNull(), // If true, only system admins can see this persona
+  instituteId: varchar("institute_id").references(() => institutes.id), // If set, only users in this institute can see it
   llmProvider: text("llm_provider"), // Optional per-persona LLM provider override (e.g. "openai", "gemini", "claude")
   llmModel: text("llm_model"), // Optional per-persona LLM model override (e.g. "gpt-4o", "claude-sonnet")
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -395,6 +399,7 @@ export const personas = pgTable("personas", {
 }, (table) => [
   index("idx_personas_active").on(table.active),
   index("idx_personas_manual_selection").on(table.manualSelection),
+  index("idx_personas_institute_id").on(table.instituteId),
 ]);
 
 // Custom Voices - admin-managed TTS voices (e.g. ElevenLabs)

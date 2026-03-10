@@ -38,8 +38,31 @@ export class GeminiLiveProvider implements LiveProvider {
   // Set by close() so onclose handler knows not to auto-reconnect
   private closedIntentionally = false;
 
-  constructor(callbacks: LiveProviderCallbacks) {
-    this.client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+  // Vertex AI does not support the `behavior` parameter on tool declarations
+  private useVertexAI = false;
+
+  constructor(callbacks: LiveProviderCallbacks, useVertexAI = false) {
+    if (useVertexAI) {
+      const project = process.env.GOOGLE_CLOUD_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || "";
+      const location = process.env.GOOGLE_CLOUD_LOCATION || "us-central1";
+      console.log(`[GeminiLiveProvider] Using Vertex AI (project=${project}, location=${location})`);
+      this.useVertexAI = true;
+
+      // Parse inline service account credentials if available
+      const credentialsJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
+      const googleAuthOptions = credentialsJson
+        ? { credentials: JSON.parse(credentialsJson) }
+        : undefined; // Falls back to ADC (GOOGLE_APPLICATION_CREDENTIALS file or gcloud auth)
+
+      this.client = new GoogleGenAI({
+        vertexai: true,
+        project,
+        location,
+        ...(googleAuthOptions ? { googleAuthOptions } : {}),
+      });
+    } else {
+      this.client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+    }
     this.callbacks = callbacks;
   }
 
@@ -67,7 +90,8 @@ export class GeminiLiveProvider implements LiveProvider {
           systemInstruction: { parts: [{ text: systemPrompt }] },
           temperature: config.temperature ?? 0.7,
           // Tool declarations for function calling
-          ...(config.tools ? { tools: config.tools as Tool[] } : {}),
+          // Vertex AI does not support the `behavior` parameter — strip it
+          ...(config.tools ? { tools: (this.useVertexAI ? this.stripBehavior(config.tools as Tool[]) : config.tools) as Tool[] } : {}),
           sessionResumption: {
             ...(this.resumptionHandle ? { handle: this.resumptionHandle } : {}),
           },
@@ -286,13 +310,13 @@ export class GeminiLiveProvider implements LiveProvider {
     if (!this.session || !this.connected) return;
     try {
       // Convert from provider-agnostic ToolResponse to Gemini FunctionResponse
+      // scheduling is a top-level field on FunctionResponse, serialized via JSON.stringify
       const fnResponses: FunctionResponse[] = responses.map(r => {
         const fr = Object.assign(new FunctionResponse(), {
           id: r.id,
           name: r.name,
           response: r.response,
         });
-        // Apply scheduling if specified (e.g. SILENT for native-audio mode)
         if (r.scheduling === "SILENT") {
           (fr as any).scheduling = FunctionResponseScheduling.SILENT;
         } else if (r.scheduling === "WHEN_IDLE") {
@@ -424,5 +448,24 @@ export class GeminiLiveProvider implements LiveProvider {
         console.error("[GeminiLiveProvider] Scheduled reconnect failed:", err);
       });
     }, delayMs);
+  }
+
+  /**
+   * Strip the `behavior` field from tool declarations.
+   * Vertex AI does not support this parameter (Google AI Studio only).
+   * Without it, all function calls default to blocking (sequential execution),
+   * which is acceptable — we process tool responses quickly.
+   */
+  private stripBehavior(tools: Tool[]): Tool[] {
+    return tools.map(tool => {
+      if (!tool.functionDeclarations) return tool;
+      return {
+        ...tool,
+        functionDeclarations: tool.functionDeclarations.map(fd => {
+          const { behavior, ...rest } = fd as any;
+          return rest;
+        }),
+      };
+    });
   }
 }

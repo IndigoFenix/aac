@@ -90,9 +90,9 @@ export default function LandingPage() {
             >
               {language === "en" ? "עב" : "EN"}
             </button>
-            {false && <a href="/login" className="landing-btn landing-btn-sm">
+            <a href="/login" className="landing-btn landing-btn-sm">
               {t("landing.nav.login")}
-            </a>}
+            </a>
           </div>
         </div>
       </header>

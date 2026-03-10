@@ -64,11 +64,13 @@ export type PersonaIconName =
 // Persona from database - the new dynamic persona format
 export interface PersonaInfo {
   id: string;              // UUID from database
-  title: string;           // Display title
+  title: string;           // Display title (plain string or JSON multilingual)
+  description?: string | null; // Description (plain string or JSON multilingual)
   icon: string;            // Emoji icon (e.g., "🤖", "🎯")
   prompt: string;          // Persona-specific prompt
   manualSelection: boolean; // Whether user can select this persona
   active: boolean;         // Whether persona is active
+  testMode?: boolean;      // If true, only visible to system admins
 }
 
 // Legacy persona info type for backwards compatibility with hardcoded personas

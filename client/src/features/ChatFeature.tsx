@@ -49,6 +49,7 @@ import { useSpeechToText } from '@/hooks/useSpeechToText';
 import { useTextToSpeech, htmlToPlainText } from '@/hooks/useTextToSpeech';
 import { ChatMessage, ChatMessageContent } from '@shared/schema';
 import { PersonaIcon, getPersonaColorClasses } from '@/components/chat/PersonaIcon';
+import { resolveLocalizedText } from '@shared/localized-text';
 import { cn } from '@/lib/utils';
 import { marked } from 'marked';
 
@@ -66,7 +67,7 @@ export function ChatFeature() {
   
   const { user } = useAuth();
   const { student } = useStudent();
-  const { t, isRTL } = useLanguage();
+  const { t, isRTL, language } = useLanguage();
   const { sharedState, setSharedState } = useSharedState();
   const { 
     chatMode, 
@@ -380,17 +381,18 @@ export function ChatFeature() {
                   persona === p.id && "ring-2 ring-offset-2 ring-primary"
                 )}
                 onClick={() => handlePersonaChange(p.id)}
-                title={p.prompt?.substring(0, 100) || p.title}
+                title={resolveLocalizedText(p.description, language) || p.prompt?.substring(0, 100) || resolveLocalizedText(p.title, language)}
               >
                 <span>{p.icon}</span>
-                <span>{p.title}</span>
+                <span>{resolveLocalizedText(p.title, language)}</span>
+                {p.testMode && <span className="text-[9px] text-amber-500 font-bold">TEST</span>}
               </Button>
             ))}
           </>
         )}
       </div>
     </div>
-  ), [persona, t, personas, isPersonasLoading]);
+  ), [persona, t, language, personas, isPersonasLoading]);
 
   // Persona dropdown for chat header (matches popup style)
   const PersonaDropdown = !showWelcome && (
@@ -421,7 +423,8 @@ export function ChatFeature() {
                 <SelectItem key={p.id} value={p.id}>
                   <div className="flex items-center gap-2">
                     <span>{p.icon}</span>
-                    <span className="text-sm">{p.title}</span>
+                    <span className="text-sm">{resolveLocalizedText(p.title, language)}</span>
+                    {p.testMode && <span className="text-[9px] text-amber-500 font-bold">TEST</span>}
                   </div>
                 </SelectItem>
               ))}

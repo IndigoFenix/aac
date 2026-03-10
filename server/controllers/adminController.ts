@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { adminService, userService, creditService } from "../services";
 import { mfaService } from "../services/mfaService";
-import { userRepository, interpretationRepository, settingsRepository } from "../repositories";
+import { userRepository, interpretationRepository, settingsRepository, instituteRepository } from "../repositories";
 import { insertApiProviderSchemaWithValidation } from "@shared/schema";
 import { MODEL_OPTIONS, USE_CASES, type UseCaseKey, type LLMConfigValue } from "@shared/llm-options";
 
@@ -492,6 +492,20 @@ export class AdminController {
         success: false,
         message: "Failed to update MFA enforcement",
       });
+    }
+  }
+
+  /**
+   * GET /api/admin/institutes
+   * Get all active institutes (for admin dropdowns)
+   */
+  async getAllInstitutes(req: Request, res: Response): Promise<void> {
+    try {
+      const allInstitutes = await instituteRepository.getAllActiveInstitutes();
+      res.json({ success: true, institutes: allInstitutes });
+    } catch (error: any) {
+      console.error("Error fetching institutes:", error);
+      res.status(500).json({ success: false, message: "Failed to fetch institutes" });
     }
   }
 }
