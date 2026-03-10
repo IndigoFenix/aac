@@ -223,7 +223,10 @@ async function buildPersonaSystemPrompt(
 
   // Combine base prompt with persona-specific prompt
   if (processedPersonaPrompt) {
-    return { prompt: `${basePrompt}\n\n=== Persona: ${persona.title} ===\n${processedPersonaPrompt}`, persona };
+    // Resolve multilingual title to English for AI system prompts
+    const { resolveLocalizedText } = await import("@shared/localized-text");
+    const resolvedTitle = resolveLocalizedText(persona.title, 'en');
+    return { prompt: `${basePrompt}\n\n=== Persona: ${resolvedTitle} ===\n${processedPersonaPrompt}`, persona };
   }
 
   return { prompt: basePrompt, persona };

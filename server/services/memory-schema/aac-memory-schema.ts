@@ -930,6 +930,103 @@ ${memoryContext ? `## Additional Context from Memory\n${memoryContext}` : ''}
   return prompt;
 }
 
+// ============================================================================
+// Function-Calling Mode Prompt (for Gemini Native Audio / OpenAI Realtime)
+// ============================================================================
+
+/**
+ * Build a CONCISE system prompt for function-calling mode.
+ * All behavioral rules live in tool declarations — this prompt only contains
+ * identity, student context, memory, and minimal global rules.
+ */
+export function buildFunctionCallingPrompt(params: {
+  studentName: string;
+  persona: string;
+  language?: string;
+  memoryContext?: string;
+  mode: 'interact' | 'silent';
+  studentAge?: string;
+  studentGender?: string;
+  studentDiagnosis?: string;
+  aiName?: string;
+  knownContacts?: Array<{ id: string; name: string; relationship?: string; hasFaceImage: boolean }>;
+  availableBoards?: Array<{ id: string; key: string; name: string; hint?: string; grid: { rows: number; cols: number } }>;
+  loadedBoardName?: string | null;
+  loadedPageName?: string | null;
+  cachedSymbols?: Array<{ id: string; key: string | null; description?: string | null }>;
+  currentEmote?: string;
+  activeApp?: string | null;
+  interpretationLevel?: number;
+}): string {
+  const {
+    studentName, persona, language, memoryContext, mode,
+    studentAge, studentGender, studentDiagnosis, aiName,
+    knownContacts, availableBoards, loadedBoardName, loadedPageName,
+    cachedSymbols, activeApp, interpretationLevel = 1,
+  } = params;
+
+  const genderStr = studentGender === 'male' ? 'boy' : studentGender === 'female' ? 'girl' : '';
+  const ageStr = studentAge
+    ? (genderStr ? `a ${studentAge} year old ${genderStr}` : `a ${studentAge} year old`)
+    : (genderStr ? `a ${genderStr}` : 'a student');
+  const diagnosisStr = studentDiagnosis ? ` with ${studentDiagnosis}` : '';
+  const aiIdentity = aiName ? `You are ${aiName}, a companion AI` : `You are a companion AI`;
+
+  let prompt = `${aiIdentity} for ${studentName}, ${ageStr}${diagnosisStr} ("your user").
+You observe the environment through a camera and listen to ambient audio.
+You communicate ONLY by calling tools. Never produce speech or audio directly — your audio output is discarded. All speech goes through speak() and interpret() tools which are voiced by a separate TTS system.
+
+${mode === 'silent' ? `MODE: SILENT — You do NOT talk to the user. Never call speak(). Observe and provide utterance buttons the user can press to communicate.` : `MODE: INTERACTIVE — You can talk to the user via speak() and interpret their button presses via interpret().`}`;
+
+  // Known contacts
+  if (knownContacts && knownContacts.length > 0) {
+    prompt += `\n\nKnown people: ${knownContacts.map(c => `${c.name}${c.relationship ? ` (${c.relationship})` : ''} [face:${c.id}]`).join(', ')}`;
+  }
+
+  // Custom boards
+  if (availableBoards && availableBoards.length > 0) {
+    prompt += `\n\nCustom boards: ${availableBoards.map(b => `"${b.key}" (${b.name}${b.hint ? ` — ${b.hint}` : ''})`).join(', ')}`;
+    if (loadedBoardName) {
+      prompt += `\nCurrently loaded: "${loadedBoardName}"${loadedPageName ? ` page "${loadedPageName}"` : ''}`;
+    }
+  }
+
+  // Custom symbols
+  if (cachedSymbols && cachedSymbols.length > 0) {
+    prompt += `\n\nCustom symbols (use symbol:ID as icon): ${cachedSymbols.map(s => `${s.key || s.id}${s.description ? ` — ${s.description}` : ''} (ID: ${s.id})`).join(', ')}`;
+  }
+
+  // Active app
+  if (activeApp) {
+    prompt += `\n\nThe "${activeApp}" app is currently open.`;
+  }
+
+  // Language
+  if (language) {
+    prompt += `\n\nLanguage: ${language}. All button labels, speak(), and interpret() output must be in this language unless translating for someone.`;
+  }
+
+  // User not present rule
+  prompt += `\n\nIf your user is not present but someone else is, you may respond if addressed directly. Never reveal sensitive information about your user.`;
+
+  // Custom instructions
+  if (persona) {
+    prompt += `\n\n## Custom Instructions\n${persona}`;
+  }
+
+  // Memory
+  if (memoryContext) {
+    prompt += `\n\n## Memory\n${memoryContext}`;
+  }
+
+  // Time
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  prompt += `\n\nTime: ${timeStr}`;
+
+  return prompt;
+}
+
 /**
  * Build the system prompt for the Monitor Agent.
  * Replaces buildAACPersonaSystemPrompt when used in dual-agent context.

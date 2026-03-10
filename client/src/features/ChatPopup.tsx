@@ -50,6 +50,7 @@ import { useTextToSpeech, htmlToPlainText } from '@/hooks/useTextToSpeech';
 import { ChatMessage, ChatMessageContent } from '@shared/schema';
 import { cn } from '@/lib/utils';
 import { PersonaIcon, getPersonaColorClasses } from '@/components/chat/PersonaIcon';
+import { resolveLocalizedText } from '@shared/localized-text';
 import { marked } from 'marked';
 
 // Configure marked for synchronous rendering
@@ -66,7 +67,7 @@ export function ChatPopup() {
 
   const { user } = useAuth();
   const { student } = useStudent();
-  const { t, isRTL } = useLanguage();
+  const { t, isRTL, language } = useLanguage();
   const {
     chatMode,
     setChatMode,
@@ -362,7 +363,7 @@ export function ChatPopup() {
                           <div className="flex items-center gap-2">
                             <span>{p.icon}</span>
                             <div className="flex flex-col">
-                              <span className="text-sm">{p.title}</span>
+                              <span className="text-sm">{resolveLocalizedText(p.title, language)}</span>
                             </div>
                           </div>
                         </SelectItem>
@@ -448,7 +449,7 @@ export function ChatPopup() {
                 {t('chat.popupWelcome')}
               </p>
               <p className="text-xs text-muted-foreground/70 text-center">
-                {currentPersonaInfo?.title || t('chat.persona.assistantDesc')}
+                {currentPersonaInfo ? resolveLocalizedText(currentPersonaInfo.title, language) : t('chat.persona.assistantDesc')}
               </p>
             </div>
           ) : (

@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import {
   Plus,
@@ -15,6 +16,7 @@ import {
 import {
   usePersonas,
   usePersonaMutations,
+  useAllInstitutes,
   type Persona,
 } from '@/hooks/useAdminData';
 import { PersonaForm } from './PersonaForm';
@@ -28,15 +30,24 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { resolveLocalizedText } from '@shared/localized-text';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 export function PersonaList() {
   const { toast } = useToast();
+  const { language } = useLanguage();
   const { data: personas, isLoading, error } = usePersonas();
+  const { data: institutes } = useAllInstitutes();
   const { updatePersona, deletePersona } = usePersonaMutations();
 
   const [editingPersona, setEditingPersona] = useState<Persona | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  const getInstituteName = (id: string | null) => {
+    if (!id || !institutes) return null;
+    return institutes.find((i) => i.id === id)?.name ?? null;
+  };
 
   const handleToggleActive = async (persona: Persona) => {
     try {
@@ -121,67 +132,85 @@ export function PersonaList() {
       {/* Persona Grid */}
       {personas && personas.length > 0 ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {personas.map((persona) => (
-            <Card key={persona.id} className={!persona.active ? 'opacity-60' : ''}>
-              <CardHeader className="pb-2">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl">{persona.icon}</span>
-                    <CardTitle className="text-lg">{persona.title}</CardTitle>
+          {personas.map((persona) => {
+            const title = resolveLocalizedText(persona.title, language);
+            const description = resolveLocalizedText(persona.description, language);
+            const instituteName = getInstituteName(persona.instituteId);
+
+            return (
+              <Card key={persona.id} className={!persona.active ? 'opacity-60' : ''}>
+                <CardHeader className="pb-2">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-2xl flex-shrink-0">{persona.icon}</span>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <CardTitle className="text-lg">{title}</CardTitle>
+                          {persona.testMode && (
+                            <Badge variant="outline" className="bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200 text-[10px] px-1.5 py-0">
+                              Test
+                            </Badge>
+                          )}
+                        </div>
+                        {instituteName && (
+                          <span className="text-xs text-muted-foreground">{instituteName}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEdit(persona)}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setDeleteConfirmId(persona.id)}
+                      >
+                        <Trash2 className="w-4 h-4 text-destructive" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleEdit(persona)}
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setDeleteConfirmId(persona.id)}
-                    >
-                      <Trash2 className="w-4 h-4 text-destructive" />
-                    </Button>
+                  <CardDescription className="line-clamp-2">
+                    {description || persona.prompt.substring(0, 100) + '...'}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id={`active-${persona.id}`}
+                        checked={persona.active}
+                        onCheckedChange={() => handleToggleActive(persona)}
+                      />
+                      <label
+                        htmlFor={`active-${persona.id}`}
+                        className="text-sm text-muted-foreground cursor-pointer"
+                      >
+                        Active
+                      </label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id={`manual-${persona.id}`}
+                        checked={persona.manualSelection}
+                        disabled
+                      />
+                      <label
+                        htmlFor={`manual-${persona.id}`}
+                        className="text-sm text-muted-foreground"
+                      >
+                        Manual Selection
+                      </label>
+                    </div>
                   </div>
-                </div>
-                <CardDescription className="line-clamp-2">
-                  {persona.prompt.substring(0, 100)}...
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id={`active-${persona.id}`}
-                      checked={persona.active}
-                      onCheckedChange={() => handleToggleActive(persona)}
-                    />
-                    <label
-                      htmlFor={`active-${persona.id}`}
-                      className="text-sm text-muted-foreground cursor-pointer"
-                    >
-                      Active
-                    </label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id={`manual-${persona.id}`}
-                      checked={persona.manualSelection}
-                      disabled
-                    />
-                    <label
-                      htmlFor={`manual-${persona.id}`}
-                      className="text-sm text-muted-foreground"
-                    >
-                      Manual Selection
-                    </label>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       ) : (
         <Card>

@@ -1718,7 +1718,7 @@ export const en = {
   // ============================================================================
   landing: {
     nav: {
-      login: "Log In",
+      login: "Customer Portal",
     },
     hero: {
       tagline: "The Solution: A Two-Pillar Platform",

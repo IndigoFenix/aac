@@ -1060,6 +1060,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
 
   // ============= ADMIN ROUTES =============
+  // Institutes (admin lookup)
+  app.get("/api/admin/institutes", requireAuth, requireSystemAdmin, (req, res) =>
+    adminController.getAllInstitutes(req, res)
+  );
+
   // Users
   app.get("/api/admin/users", requireAdmin, (req, res) =>
     adminController.getUsers(req, res)

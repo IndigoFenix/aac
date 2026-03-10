@@ -11,10 +11,13 @@ import { apiRequest } from '@/lib/queryClient';
 export interface Persona {
   id: string;
   title: string;
+  description: string | null;
   icon: string;
   prompt: string;
   manualSelection: boolean;
   active: boolean;
+  testMode: boolean;
+  instituteId: string | null;
   llmProvider: string | null;
   llmModel: string | null;
   createdAt: string;
@@ -35,20 +38,26 @@ export interface Topic {
 
 export interface CreatePersonaData {
   title: string;
+  description?: string | null;
   icon: string;
   prompt: string;
   manualSelection?: boolean;
   active?: boolean;
+  testMode?: boolean;
+  instituteId?: string | null;
   llmProvider?: string | null;
   llmModel?: string | null;
 }
 
 export interface UpdatePersonaData {
   title?: string;
+  description?: string | null;
   icon?: string;
   prompt?: string;
   manualSelection?: boolean;
   active?: boolean;
+  testMode?: boolean;
+  instituteId?: string | null;
   llmProvider?: string | null;
   llmModel?: string | null;
 }
@@ -422,4 +431,29 @@ export function useVoiceMutations() {
     updateVoice,
     deleteVoice,
   };
+}
+
+// =============================================================================
+// INSTITUTE HOOKS (admin)
+// =============================================================================
+
+export interface AdminInstitute {
+  id: string;
+  name: string;
+  type: string;
+  isActive: boolean;
+}
+
+/**
+ * Hook to fetch all active institutes (for admin dropdowns like persona form)
+ */
+export function useAllInstitutes() {
+  return useQuery({
+    queryKey: ['/api/admin/institutes'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', '/api/admin/institutes');
+      const data = await res.json();
+      return data.institutes as AdminInstitute[];
+    },
+  });
 }

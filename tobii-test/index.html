@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Tobii Dwell Test</title>
+  <style>
+    :root {
+      --bg: #1a1a2e;
+      --panel-bg: #16213e;
+      --accent: rgba(59, 130, 246, 0.8);
+      --accent-light: rgba(59, 130, 246, 0.4);
+      --text: #e0e0e0;
+      --success: #27ae60;
+      --warning: #f39c12;
+      --error: #e74c3c;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* ── Status Bar ── */
+    #status-bar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 8px 16px;
+      background: var(--panel-bg);
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+    .status-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      display: inline-block; margin-right: 4px;
+    }
+    .status-dot.ok { background: var(--success); }
+    .status-dot.warn { background: var(--warning); }
+    .status-dot.err { background: var(--error); }
+    #gaze-info { margin-left: auto; font-family: monospace; color: #64ffda; }
+
+    /* ── Settings Bar ── */
+    #settings-bar {
+      display: flex; align-items: center; gap: 16px;
+      padding: 6px 16px; background: #0f3460; flex-shrink: 0; flex-wrap: wrap;
+    }
+    #settings-bar label {
+      font-size: 13px; display: flex; align-items: center; gap: 4px;
+    }
+    #settings-bar input[type="range"] { width: 90px; }
+    .val { min-width: 38px; text-align: right; font-weight: bold; color: #64ffda; font-size: 12px; }
+    #settings-bar button {
+      padding: 4px 12px; border: none; border-radius: 4px;
+      background: #e94560; color: white; font-size: 12px; cursor: pointer;
+    }
+
+    /* ── Button Grid ── */
+    #grid {
+      flex: 1; display: grid; padding: 16px; gap: 12px;
+    }
+    .cell {
+      position: relative; display: flex; align-items: center; justify-content: center;
+      border-radius: 16px; font-size: 28px; font-weight: bold; color: #fff;
+      text-shadow: 1px 1px 4px rgba(0,0,0,0.5);
+      cursor: none; overflow: hidden; transition: transform 0.15s;
+    }
+    .cell .label { position: relative; z-index: 2; pointer-events: none; }
+
+    /* Dwell progress: fills from bottom */
+    .cell .progress-fill {
+      position: absolute; bottom: 0; left: 0; right: 0; height: 0%;
+      background: rgba(255,255,255,0.3); transition: none; pointer-events: none; z-index: 1;
+    }
+
+    /* Selection flash */
+    .cell.selected { transform: scale(0.92); }
+    .cell.selected .progress-fill {
+      height: 100% !important;
+      background: rgba(255,255,255,0.6);
+    }
+
+    /* ── Dwell Border (SVG overlay, mirrors DwellOverlay.tsx) ── */
+    #dwell-overlay {
+      position: fixed; inset: 0; pointer-events: none; z-index: 9998;
+    }
+
+    /* ── Gaze Dot ── */
+    #gaze-dot {
+      position: fixed; pointer-events: none; z-index: 9999;
+      width: 20px; height: 20px; border-radius: 50%;
+      background: var(--accent-light); border: 2px solid var(--accent);
+      transform: translate(-50%, -50%);
+      transition: left 50ms linear, top 50ms linear;
+      display: none;
+    }
+    #gaze-dot.active { display: block; }
+
+    /* ── Selection Log ── */
+    #log-container {
+      height: 120px; background: #0a1628; padding: 6px 16px;
+      overflow-y: auto; flex-shrink: 0; font-size: 13px; font-family: monospace;
+    }
+    .log-entry { padding: 1px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .log-entry .time { color: #64ffda; }
+    .log-entry .name { color: #f8c291; font-weight: bold; }
+    .log-entry .source { color: #888; font-size: 11px; }
+  </style>
+</head>
+<body>
+
+  <div id="gaze-dot"></div>
+  <div id="dwell-overlay"></div>
+
+  <!-- Status bar -->
+  <div id="status-bar">
+    <div>
+      <span class="status-dot err" id="conn-dot"></span>
+      <span id="conn-text">Connecting...</span>
+    </div>
+    <div>Source: <strong id="source-label">—</strong></div>
+    <div>FPS: <strong id="fps-label">0</strong></div>
+    <div id="gaze-info">x: — y: —</div>
+  </div>
+
+  <!-- Settings bar -->
+  <div id="settings-bar">
+    <label>Dwell:
+      <input type="range" id="opt-dwell" min="300" max="5000" step="50" />
+      <span class="val" id="val-dwell"></span>
+    </label>
+    <label>Cooldown:
+      <input type="range" id="opt-cooldown" min="100" max="2000" step="50" />
+      <span class="val" id="val-cooldown"></span>
+    </label>
+    <label>Columns:
+      <input type="range" id="opt-cols" min="1" max="8" step="1" />
+      <span class="val" id="val-cols"></span>
+    </label>
+    <label>Smoothing:
+      <input type="range" id="opt-smooth" min="1" max="30" step="1" />
+      <span class="val" id="val-smooth"></span>
+    </label>
+    <button id="btn-clear">Clear Log</button>
+    <button id="btn-fullscreen">Fullscreen</button>
+    <button id="btn-cursor" style="background:#0f3460">Show Cursor</button>
+  </div>
+
+  <!-- Button grid -->
+  <div id="grid"></div>
+
+  <!-- Log -->
+  <div id="log-container"></div>
+
+<script>
+/* ============================================================================
+   CONFIGURATION — Adjust these to tune the experience
+   ============================================================================ */
+
+const CONFIG = {
+  DWELL_TIME_MS:  1200,   // How long to look at a button to select it
+  COOLDOWN_MS:    500,    // Dead time after selection
+  COLUMNS:        3,      // Grid columns
+  GAZE_SMOOTHING: 8,      // Average last N gaze points (reduces jitter)
+};
+
+/**
+ * BUTTONS — The test grid. Each has a label and color.
+ * Add, remove, or change freely.
+ */
+const BUTTONS = [
+  { label: "Yes",       color: "#27ae60" },
+  { label: "No",        color: "#e74c3c" },
+  { label: "More",      color: "#2980b9" },
+  { label: "Stop",      color: "#e67e22" },
+  { label: "Help",      color: "#8e44ad" },
+  { label: "Happy",     color: "#f39c12" },
+  { label: "Sad",       color: "#2c3e50" },
+  { label: "Drink",     color: "#1abc9c" },
+  { label: "Eat",       color: "#d35400" },
+];
+
+/** WebSocket port — must match WS_PORT in tobii-bridge.js */
+const WS_PORT = 49152;
+
+/* ============================================================================
+   GAZE SOURCES — Tobii bridge WebSocket (primary) or mouse (fallback)
+   ============================================================================ */
+
+let gazeSource = "none"; // "tobii" | "mouse" | "none"
+let ws = null;
+let wsRetryTimer = null;
+let bridgeStatus = null;
+
+// Smoothing buffer
+const gazeBuffer = [];
+let smoothedGaze = null; // { x, y } in screen pixels
+
+// FPS tracking
+let gazeFrameCount = 0;
+let lastFpsUpdate = performance.now();
+let currentFps = 0;
+
+// ── WebSocket connection to bridge ──
+
+function connectWebSocket() {
+  if (ws && ws.readyState <= WebSocket.OPEN) return;
+
+  try {
+    ws = new WebSocket(`ws://127.0.0.1:${WS_PORT}`);
+  } catch {
+    scheduleReconnect();
+    return;
+  }
+
+  ws.onopen = () => {
+    console.log("[Gaze] WebSocket connected to bridge");
+    clearTimeout(wsRetryTimer);
+  };
+
+  ws.onmessage = (ev) => {
+    try {
+      const msg = JSON.parse(ev.data);
+
+      if (msg.type === "status") {
+        bridgeStatus = msg;
+        updateStatusBar();
+
+        if (msg.code === "connected") {
+          // Bridge has Tobii hardware — switch to tobii source
+          gazeSource = "tobii";
+          updateStatusBar();
+        } else if (msg.code === "fallback" || msg.code === "dll_not_found") {
+          // No hardware — use mouse
+          if (gazeSource !== "tobii") {
+            enableMouseFallback();
+          }
+        }
+        return;
+      }
+
+      // Gaze data from Tobii bridge: { gazePoint: { x, y }, validity, timestamp }
+      // x,y are normalized 0-1 — convert to screen pixels
+      if (msg.gazePoint && typeof msg.gazePoint.x === "number") {
+        gazeSource = "tobii";
+        const screenX = msg.gazePoint.x * window.innerWidth;
+        const screenY = msg.gazePoint.y * window.innerHeight;
+        pushGazePoint(screenX, screenY, msg.validity ?? 1.0);
+      }
+    } catch { /* skip */ }
+  };
+
+  ws.onerror = () => {};
+  ws.onclose = () => {
+    console.log("[Gaze] WebSocket disconnected");
+    if (gazeSource === "tobii") {
+      gazeSource = "none";
+      enableMouseFallback();
+    }
+    scheduleReconnect();
+  };
+}
+
+function scheduleReconnect() {
+  clearTimeout(wsRetryTimer);
+  wsRetryTimer = setTimeout(connectWebSocket, 2000);
+}
+
+// ── Mouse fallback ──
+
+let mouseListenerActive = false;
+
+function enableMouseFallback() {
+  gazeSource = "mouse";
+  updateStatusBar();
+
+  if (!mouseListenerActive) {
+    mouseListenerActive = true;
+    window.addEventListener("mousemove", (e) => {
+      if (gazeSource === "mouse") {
+        pushGazePoint(e.clientX, e.clientY, 1.0);
+      }
+    }, { passive: true });
+  }
+}
+
+// ── Gaze point processing with smoothing ──
+
+function pushGazePoint(x, y, confidence) {
+  if (confidence < 0.5) return; // skip low-confidence samples
+
+  gazeBuffer.push({ x, y });
+  while (gazeBuffer.length > CONFIG.GAZE_SMOOTHING) gazeBuffer.shift();
+
+  // Average
+  let sx = 0, sy = 0;
+  for (const p of gazeBuffer) { sx += p.x; sy += p.y; }
+  smoothedGaze = { x: sx / gazeBuffer.length, y: sy / gazeBuffer.length };
+
+  // Update gaze dot
+  const dot = document.getElementById("gaze-dot");
+  dot.classList.add("active");
+  dot.style.left = smoothedGaze.x + "px";
+  dot.style.top = smoothedGaze.y + "px";
+
+  // Update info
+  gazeFrameCount++;
+  const gazeInfo = document.getElementById("gaze-info");
+  gazeInfo.textContent = `x: ${Math.round(smoothedGaze.x)}  y: ${Math.round(smoothedGaze.y)}`;
+}
+
+// Start connection
+connectWebSocket();
+// Also enable mouse immediately as fallback until bridge responds
+setTimeout(() => {
+  if (gazeSource === "none") enableMouseFallback();
+}, 3000);
+
+/* ============================================================================
+   DWELL ENGINE — Mirrors EyeTrackingDwellContext.tsx from client-aac
+   ============================================================================
+
+   Polls smoothedGaze at 50ms intervals, hit-tests elements with [data-dwell],
+   tracks dwell progress, and fires click() when dwell completes.
+*/
+
+const TICK_MS = 50;
+
+let dwellElement = null;    // The element currently being dwelled on
+let dwellStartTime = 0;     // When the dwell started
+let cooldownElement = null;  // Last selected element (cooldown)
+let cooldownPosition = null; // { x, y } center of last selected element
+let selectionCount = 0;
+
+function dwellTick() {
+  if (!smoothedGaze) return;
+
+  const point = smoothedGaze;
+
+  // Hit-test: find the [data-dwell] element at the gaze point
+  const elements = document.elementsFromPoint(point.x, point.y);
+  let target = null;
+  for (const el of elements) {
+    const found = el.closest("[data-dwell]");
+    if (found) { target = found; break; }
+  }
+
+  // Clear all progress if gaze is off-grid
+  if (!target) {
+    clearDwellProgress();
+    dwellElement = null;
+    cooldownElement = null;
+    cooldownPosition = null;
+    removeDwellBorder();
+    return;
+  }
+
+  // Position-based cooldown (prevents re-select when buttons shift)
+  if (cooldownPosition) {
+    const rect = target.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dist = Math.sqrt((cx - cooldownPosition.x) ** 2 + (cy - cooldownPosition.y) ** 2);
+    if (dist < 100) {
+      removeDwellBorder();
+      return; // still near cooldown position
+    }
+    cooldownPosition = null;
+    cooldownElement = null;
+  }
+
+  if (target === cooldownElement) {
+    removeDwellBorder();
+    return;
+  }
+
+  const now = Date.now();
+
+  // New target
+  if (target !== dwellElement) {
+    clearDwellProgress();
+    dwellElement = target;
+    dwellStartTime = now;
+    updateDwellBorder(target, 0);
+    return;
+  }
+
+  // Same target — calculate progress
+  const elapsed = now - dwellStartTime;
+  const progress = Math.min(1, elapsed / CONFIG.DWELL_TIME_MS);
+
+  // Update visual progress
+  const progressFill = target.querySelector(".progress-fill");
+  if (progressFill) {
+    progressFill.style.height = (progress * 100) + "%";
+  }
+  updateDwellBorder(target, progress);
+
+  // Selection!
+  if (progress >= 1) {
+    onDwellSelect(target);
+  }
+}
+
+function clearDwellProgress() {
+  if (dwellElement) {
+    const pf = dwellElement.querySelector(".progress-fill");
+    if (pf) pf.style.height = "0%";
+  }
+}
+
+function onDwellSelect(element) {
+  const idx = parseInt(element.dataset.index);
+  const btn = BUTTONS[idx];
+  selectionCount++;
+
+  // Visual flash
+  element.classList.add("selected");
+  setTimeout(() => element.classList.remove("selected"), 300);
+
+  // Audio beep
+  playBeep();
+
+  // Log
+  addLog(btn.label, gazeSource);
+
+  // Set cooldown
+  const rect = element.getBoundingClientRect();
+  cooldownPosition = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  cooldownElement = element;
+  dwellElement = null;
+  clearDwellProgress();
+  removeDwellBorder();
+}
+
+// ── Dwell border (SVG, mirrors DwellOverlay.tsx) ──
+
+const dwellOverlay = document.getElementById("dwell-overlay");
+
+function updateDwellBorder(element, progress) {
+  const rect = element.getBoundingClientRect();
+  const bw = 4; // border width
+  const br = 16; // border radius
+  const pad = bw / 2;
+  const x = rect.left - pad;
+  const y = rect.top - pad;
+  const w = rect.width + bw;
+  const h = rect.height + bw;
+  const perimeter = 2 * (w + h) - 8 * br + 2 * Math.PI * br;
+  const dashOffset = perimeter * (1 - progress);
+
+  dwellOverlay.innerHTML = `
+    <svg style="position:absolute;left:${x}px;top:${y}px;width:${w}px;height:${h}px;overflow:visible">
+      <rect x="${bw/2}" y="${bw/2}" width="${w-bw}" height="${h-bw}"
+            rx="${br}" ry="${br}" fill="none"
+            stroke="rgba(59,130,246,0.8)" stroke-width="${bw}"
+            stroke-dasharray="${perimeter}" stroke-dashoffset="${dashOffset}"
+            stroke-linecap="round" />
+    </svg>`;
+}
+
+function removeDwellBorder() {
+  dwellOverlay.innerHTML = "";
+}
+
+// Start dwell engine
+setInterval(dwellTick, TICK_MS);
+
+/* ============================================================================
+   UI — Grid, Log, Settings
+   ============================================================================ */
+
+// ── Build grid ──
+const grid = document.getElementById("grid");
+
+function buildGrid() {
+  grid.innerHTML = "";
+  grid.style.gridTemplateColumns = `repeat(${CONFIG.COLUMNS}, 1fr)`;
+
+  BUTTONS.forEach((btn, i) => {
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    cell.dataset.dwell = "true";
+    cell.dataset.index = i;
+    cell.style.background = btn.color;
+    cell.innerHTML = `<span class="label">${btn.label}</span><div class="progress-fill"></div>`;
+    grid.appendChild(cell);
+  });
+}
+buildGrid();
+
+// ── Audio ──
+let audioCtx = null;
+function playBeep(freq = 660, dur = 0.1) {
+  try {
+    if (!audioCtx) audioCtx = new AudioContext();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.frequency.value = freq; gain.gain.value = 0.3;
+    osc.start(); osc.stop(audioCtx.currentTime + dur);
+  } catch {}
+}
+
+// ── Log ──
+const logEl = document.getElementById("log-container");
+function addLog(label, source) {
+  const time = new Date().toLocaleTimeString();
+  const div = document.createElement("div");
+  div.className = "log-entry";
+  div.innerHTML = `<span class="time">[${time}]</span> Selected: <span class="name">${label}</span> <span class="source">(${source}, #${selectionCount})</span>`;
+  logEl.prepend(div);
+}
+
+// ── Status bar ──
+function updateStatusBar() {
+  const dot = document.getElementById("conn-dot");
+  const text = document.getElementById("conn-text");
+  const sourceEl = document.getElementById("source-label");
+
+  if (gazeSource === "tobii") {
+    dot.className = "status-dot ok";
+    text.textContent = "Tobii Connected";
+    sourceEl.textContent = "Tobii Hardware";
+  } else if (gazeSource === "mouse") {
+    dot.className = "status-dot warn";
+    text.textContent = bridgeStatus?.message || "Mouse Fallback";
+    sourceEl.textContent = "Mouse (fallback)";
+  } else {
+    dot.className = "status-dot err";
+    text.textContent = "No gaze source";
+    sourceEl.textContent = "—";
+  }
+}
+
+// FPS counter
+setInterval(() => {
+  const now = performance.now();
+  const elapsed = (now - lastFpsUpdate) / 1000;
+  currentFps = Math.round(gazeFrameCount / elapsed);
+  gazeFrameCount = 0;
+  lastFpsUpdate = now;
+  document.getElementById("fps-label").textContent = currentFps;
+}, 1000);
+
+// ── Settings sliders ──
+function wireSlider(id, key, valId, fmt) {
+  const input = document.getElementById(id);
+  const valEl = document.getElementById(valId);
+  input.value = CONFIG[key];
+  valEl.textContent = fmt(CONFIG[key]);
+  input.addEventListener("input", () => {
+    CONFIG[key] = parseInt(input.value);
+    valEl.textContent = fmt(CONFIG[key]);
+    if (key === "COLUMNS") buildGrid();
+  });
+}
+wireSlider("opt-dwell",    "DWELL_TIME_MS",  "val-dwell",    v => v + "ms");
+wireSlider("opt-cooldown", "COOLDOWN_MS",    "val-cooldown", v => v + "ms");
+wireSlider("opt-cols",     "COLUMNS",        "val-cols",     v => v);
+wireSlider("opt-smooth",   "GAZE_SMOOTHING", "val-smooth",   v => v);
+
+// ── Toolbar ──
+document.getElementById("btn-clear").addEventListener("click", () => {
+  logEl.innerHTML = ""; selectionCount = 0;
+});
+document.getElementById("btn-fullscreen").addEventListener("click", () => {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+  else document.exitFullscreen();
+});
+let cursorShown = true;
+document.getElementById("btn-cursor").addEventListener("click", () => {
+  cursorShown = !cursorShown;
+  document.body.style.cursor = cursorShown ? "default" : "none";
+  document.getElementById("btn-cursor").textContent = cursorShown ? "Hide Cursor" : "Show Cursor";
+});
+
+// ── Initial status ──
+updateStatusBar();
+</script>
+</body>
+</html>

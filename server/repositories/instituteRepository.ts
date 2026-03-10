@@ -932,6 +932,35 @@ export class InstituteRepository {
     const link = await this.getActiveInstituteStudentLink(instituteId, studentId);
     return !!link;
   }
+
+  /**
+   * Get all active institutes (for admin use)
+   */
+  async getAllActiveInstitutes(): Promise<Institute[]> {
+    return await db
+      .select()
+      .from(institutes)
+      .where(eq(institutes.isActive, true))
+      .orderBy(institutes.name);
+  }
+
+  /**
+   * Get institute IDs for a user (lightweight version for filtering)
+   */
+  async getInstituteIdsByUserId(userId: string): Promise<string[]> {
+    const results = await db
+      .select({ id: institutes.id })
+      .from(instituteUsers)
+      .innerJoin(institutes, eq(instituteUsers.instituteId, institutes.id))
+      .where(
+        and(
+          eq(instituteUsers.userId, userId),
+          eq(instituteUsers.isActive, true),
+          eq(institutes.isActive, true)
+        )
+      );
+    return results.map((r) => r.id);
+  }
 }
 
 export const instituteRepository = new InstituteRepository();

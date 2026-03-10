@@ -25,9 +25,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Globe } from 'lucide-react';
 import {
   usePersonaMutations,
+  useAllInstitutes,
   type Persona,
   type CreatePersonaData,
   type UpdatePersonaData,
@@ -38,6 +39,8 @@ import {
   getModelOption,
   type LLMProviderKey,
 } from '@shared/llm-options';
+import { isMultilingual, parseMultilingual, serializeMultilingual } from '@shared/localized-text';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 const TIER_COLORS: Record<string, string> = {
   economy: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
@@ -46,6 +49,24 @@ const TIER_COLORS: Record<string, string> = {
 };
 
 const SYSTEM_DEFAULT = '__system_default__';
+const NO_INSTITUTE = '__none__';
+
+// Helper: parse a stored value into { multilingual, en, he } state
+function parseFieldState(value: string | null | undefined): { multilingual: boolean; en: string; he: string } {
+  const map = parseMultilingual(value);
+  if (map) {
+    return { multilingual: true, en: map.en || '', he: map.he || '' };
+  }
+  return { multilingual: false, en: value || '', he: '' };
+}
+
+// Helper: serialize field state back to storage value
+function serializeFieldState(state: { multilingual: boolean; en: string; he: string }): string {
+  if (state.multilingual) {
+    return serializeMultilingual({ en: state.en, he: state.he });
+  }
+  return state.en;
+}
 
 interface PersonaFormProps {
   open: boolean;
@@ -55,42 +76,54 @@ interface PersonaFormProps {
 
 export function PersonaForm({ open, onClose, persona }: PersonaFormProps) {
   const { toast } = useToast();
+  const { t } = useLanguage();
   const { createPersona, updatePersona } = usePersonaMutations();
+  const { data: institutes } = useAllInstitutes();
   const isEditing = !!persona;
 
   const [formData, setFormData] = useState({
-    title: '',
     icon: '',
     prompt: '',
     manualSelection: true,
     active: true,
+    testMode: false,
+    instituteId: null as string | null,
     llmProvider: null as string | null,
     llmModel: null as string | null,
   });
+
+  const [titleState, setTitleState] = useState({ multilingual: false, en: '', he: '' });
+  const [descState, setDescState] = useState({ multilingual: false, en: '', he: '' });
 
   // Reset form when dialog opens/closes or persona changes
   useEffect(() => {
     if (open) {
       if (persona) {
         setFormData({
-          title: persona.title,
           icon: persona.icon,
           prompt: persona.prompt,
           manualSelection: persona.manualSelection,
           active: persona.active,
+          testMode: persona.testMode,
+          instituteId: persona.instituteId,
           llmProvider: persona.llmProvider,
           llmModel: persona.llmModel,
         });
+        setTitleState(parseFieldState(persona.title));
+        setDescState(parseFieldState(persona.description));
       } else {
         setFormData({
-          title: '',
           icon: '',
           prompt: '',
           manualSelection: true,
           active: true,
+          testMode: false,
+          instituteId: null,
           llmProvider: null,
           llmModel: null,
         });
+        setTitleState({ multilingual: false, en: '', he: '' });
+        setDescState({ multilingual: false, en: '', he: '' });
       }
     }
   }, [open, persona]);
@@ -115,18 +148,29 @@ export function PersonaForm({ open, onClose, persona }: PersonaFormProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    const title = serializeFieldState(titleState);
+    const description = serializeFieldState(descState) || null;
+
     // Validation
-    if (!formData.title.trim()) {
+    if (!titleState.en.trim()) {
       toast({
-        title: 'Validation Error',
-        description: 'Title is required',
+        title: t('common.error'),
+        description: 'Title (English) is required',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (titleState.multilingual && !titleState.he.trim()) {
+      toast({
+        title: t('common.error'),
+        description: 'Title (Hebrew) is required when multilingual is enabled',
         variant: 'destructive',
       });
       return;
     }
     if (!formData.icon.trim()) {
       toast({
-        title: 'Validation Error',
+        title: t('common.error'),
         description: 'Icon is required',
         variant: 'destructive',
       });
@@ -134,7 +178,7 @@ export function PersonaForm({ open, onClose, persona }: PersonaFormProps) {
     }
     if (!formData.prompt.trim()) {
       toast({
-        title: 'Validation Error',
+        title: t('common.error'),
         description: 'Prompt is required',
         variant: 'destructive',
       });
@@ -142,14 +186,15 @@ export function PersonaForm({ open, onClose, persona }: PersonaFormProps) {
     }
 
     try {
+      const payload = { ...formData, title, description };
       if (isEditing) {
         await updatePersona.mutateAsync({
           id: persona.id,
-          data: formData as UpdatePersonaData,
+          data: payload as UpdatePersonaData,
         });
         toast({ title: 'Agent updated successfully' });
       } else {
-        await createPersona.mutateAsync(formData as CreatePersonaData);
+        await createPersona.mutateAsync(payload as CreatePersonaData);
         toast({ title: 'Agent created successfully' });
       }
       onClose();
@@ -186,31 +231,114 @@ export function PersonaForm({ open, onClose, persona }: PersonaFormProps) {
 
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 gap-4">
           <DialogBody className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="title">Title</Label>
+
+          {/* Title */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="title-en">Title</Label>
+              <Button
+                type="button"
+                variant={titleState.multilingual ? 'default' : 'ghost'}
+                size="icon"
+                className="h-6 w-6"
+                onClick={() => setTitleState((prev) => ({ ...prev, multilingual: !prev.multilingual }))}
+                title="Toggle multilingual"
+              >
+                <Globe className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            {titleState.multilingual ? (
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-muted-foreground">English</label>
+                  <Input
+                    id="title-en"
+                    value={titleState.en}
+                    onChange={(e) => setTitleState((prev) => ({ ...prev, en: e.target.value }))}
+                    placeholder="e.g., Clinical Assistant"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">עברית</label>
+                  <Input
+                    value={titleState.he}
+                    onChange={(e) => setTitleState((prev) => ({ ...prev, he: e.target.value }))}
+                    placeholder="לדוגמה, עוזר קליני"
+                    dir="rtl"
+                  />
+                </div>
+              </div>
+            ) : (
               <Input
-                id="title"
-                value={formData.title}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, title: e.target.value }))
-                }
+                id="title-en"
+                value={titleState.en}
+                onChange={(e) => setTitleState((prev) => ({ ...prev, en: e.target.value }))}
                 placeholder="e.g., Clinical Assistant"
               />
-            </div>
+            )}
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="icon">Icon (emoji)</Label>
-              <Input
-                id="icon"
-                value={formData.icon}
-                onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, icon: e.target.value }))
-                }
-                placeholder="e.g., "
-                className="text-xl"
-              />
+          {/* Icon */}
+          <div className="space-y-2">
+            <Label htmlFor="icon">Icon (emoji)</Label>
+            <Input
+              id="icon"
+              value={formData.icon}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, icon: e.target.value }))
+              }
+              placeholder="e.g., "
+              className="text-xl w-24"
+            />
+          </div>
+
+          {/* Description */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="desc-en">Description</Label>
+              <Button
+                type="button"
+                variant={descState.multilingual ? 'default' : 'ghost'}
+                size="icon"
+                className="h-6 w-6"
+                onClick={() => setDescState((prev) => ({ ...prev, multilingual: !prev.multilingual }))}
+                title="Toggle multilingual"
+              >
+                <Globe className="h-3.5 w-3.5" />
+              </Button>
             </div>
+            {descState.multilingual ? (
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-muted-foreground">English</label>
+                  <Textarea
+                    id="desc-en"
+                    value={descState.en}
+                    onChange={(e) => setDescState((prev) => ({ ...prev, en: e.target.value }))}
+                    placeholder="Brief description of this agent..."
+                    rows={2}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">עברית</label>
+                  <Textarea
+                    value={descState.he}
+                    onChange={(e) => setDescState((prev) => ({ ...prev, he: e.target.value }))}
+                    placeholder="תיאור קצר של הסוכן..."
+                    rows={2}
+                    dir="rtl"
+                  />
+                </div>
+              </div>
+            ) : (
+              <Textarea
+                id="desc-en"
+                value={descState.en}
+                onChange={(e) => setDescState((prev) => ({ ...prev, en: e.target.value }))}
+                placeholder="Brief description of this agent..."
+                rows={2}
+              />
+            )}
           </div>
 
           <div className="space-y-2">
@@ -291,7 +419,34 @@ export function PersonaForm({ open, onClose, persona }: PersonaFormProps) {
             )}
           </div>
 
-          <div className="flex items-center gap-6">
+          {/* Institute restriction */}
+          <div className="space-y-2">
+            <Label>Institute</Label>
+            <p className="text-xs text-muted-foreground -mt-1">
+              Restrict this agent to a specific institute, or leave global for all users.
+            </p>
+            <Select
+              value={formData.instituteId || NO_INSTITUTE}
+              onValueChange={(v) =>
+                setFormData((prev) => ({ ...prev, instituteId: v === NO_INSTITUTE ? null : v }))
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_INSTITUTE}>All Institutes (Global)</SelectItem>
+                {institutes?.map((inst) => (
+                  <SelectItem key={inst.id} value={inst.id}>
+                    {inst.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Checkboxes row */}
+          <div className="flex items-center gap-6 flex-wrap">
             <div className="flex items-center gap-2">
               <Checkbox
                 id="manualSelection"
@@ -325,6 +480,25 @@ export function PersonaForm({ open, onClose, persona }: PersonaFormProps) {
               <Label htmlFor="active" className="cursor-pointer">
                 Active
               </Label>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="testMode"
+                checked={formData.testMode}
+                onCheckedChange={(checked) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    testMode: checked === true,
+                  }))
+                }
+              />
+              <Label htmlFor="testMode" className="cursor-pointer">
+                Test Mode
+              </Label>
+              <span className="text-xs text-muted-foreground">
+                (Only visible to system admins)
+              </span>
             </div>
           </div>
 
