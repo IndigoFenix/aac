@@ -422,11 +422,9 @@ export class OpenAILiveProvider implements LiveProvider {
       }
     });
 
-    // Input audio transcription completed
-    this.ws.on("conversation.item.input_audio_transcription.completed", (event) => {
-      if (event.transcript?.trim()) {
-        this.callbacks.onInputTranscription?.(event.transcript.trim());
-      }
+    // Input audio transcription completed — ignored, model handles transcription via transcript() tool
+    this.ws.on("conversation.item.input_audio_transcription.completed", (_event) => {
+      // No-op: the model decides what to transcribe via the transcript() tool
     });
 
     // Error events

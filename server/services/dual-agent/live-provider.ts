@@ -46,16 +46,12 @@ export interface LiveProviderCallbacks {
   onError: (error: Error) => void;
   /** Connection closed */
   onClose?: (code?: number, reason?: string) => void;
-  /** Input transcription (user audio → text) */
-  onInputTranscription?: (text: string) => void;
   /** Reconnection with session resumption failed — relay must reload history */
   onReconnectFailed?: () => Promise<void>;
   /** Reconnection is starting (before connect) */
   onReconnecting?: () => void;
   /** Model generated audio data (Gemini native-audio — discarded) */
   onAudioData?: (data: { mimeType: string; data: string }) => void;
-  /** Output audio transcription (for logging/debug) */
-  onOutputTranscription?: (text: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -74,6 +70,10 @@ export interface LiveProviderConfig {
   /** Response modality override for Gemini: "TEXT" for prefix token mode, "AUDIO" for native audio.
    *  Defaults to "AUDIO" when tools are present, "TEXT" when no tools. */
   responseModality?: "TEXT" | "AUDIO";
+  /** Enable affective dialog — model detects emotions and adapts (Gemini native audio) */
+  enableAffectiveDialog?: boolean;
+  /** Enable proactive audio — model can stay silent when no response is needed (Gemini native audio) */
+  proactiveAudio?: boolean;
 }
 
 // ---------------------------------------------------------------------------
