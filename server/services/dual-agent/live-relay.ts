@@ -33,13 +33,29 @@ function extractStringArg(args: Record<string, any>, declaredName: string, fallb
   return fallback;
 }
 
-/** Convert structured tool-call button args to internal format.
- *  Handles missing fields defensively — the model may omit icon or label. */
+/** Convert tool-call button args to internal format.
+ *  Accepts multiple formats the model may produce:
+ *  - String (preferred):  "Play|🎮, Water|💧, Help|face:abc123"  (parseBoardButtons format)
+ *  - Array of strings:    ["Play|🎮", "Water|💧"]  (fallback — join and parse)
+ *  - Object array:        [{label, icon}]  (OpenAI / legacy) */
 function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string; symbolPath?: string }> {
-  if (!Array.isArray(raw)) return [];
+  // String — the expected format from native audio models: "label|icon, label|icon"
+  if (typeof raw === "string") {
+    return parseBoardButtons(raw as string);
+  }
+
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+
+  // Array of strings — join into comma-separated and parse
+  if (typeof raw[0] === "string") {
+    const joined = raw.map((s: any) => String(s).trim()).filter(Boolean).join(", ");
+    return parseBoardButtons(joined);
+  }
+
+  // Object array — OpenAI / legacy Gemini format
   return raw.map((b: any) => {
     const label = (typeof b?.label === "string" ? b.label : String(b?.label ?? "")).trim() || "?";
-    let iconRef = (typeof b?.icon === "string" ? b.icon : "").trim() || "fas fa-comment";
+    let iconRef = (typeof b?.icon === "string" ? b.icon : "").trim() || "💬";
     let symbolPath: string | undefined;
     if (iconRef.startsWith("face:")) {
       symbolPath = `__FACE__:${iconRef.substring(5).trim()}`;
@@ -174,6 +190,10 @@ export class LiveRelay {
   private lastAiSpeak: { text: string; timestamp: number } | null = null;
   private static readonly RESPONSE_DEDUP_WINDOW_MS = 5000;
 
+  // Tool call dedup: suppress identical consecutive tool calls within a short window
+  private lastToolCallSig: { sig: string; timestamp: number } | null = null;
+  private static readonly TOOL_DEDUP_WINDOW_MS = 5000;
+
   // User message priority: suppress frame_grids briefly after user messages
   // so Gemini processes the user message without visual check interference
   private userMessageSentAt = 0;
@@ -210,8 +230,29 @@ export class LiveRelay {
   private turnAccum: TurnToolAccumulator = createEmptyAccumulator();
   private turnStartTime = 0;
 
+  // Prevents sending overlapping turnComplete=true messages.
+  // Set when we send ANY message with turnComplete=true to the provider.
+  // Cleared when the model's first tool call or TURN_COMPLETE arrives.
+  // Without this, a frame_grid can arrive during the "thinking gap" between
+  // sending a prompt and receiving the first tool call, queueing a second
+  // "please respond" signal that causes duplicate model turns.
+  private awaitingModelResponse = false;
+
   // Turn processing guard: prevents concurrent processTurnEnd() calls
   private turnProcessingBusy = false;
+
+  // Post-turn cooldown: suppress frame_grids briefly after the model finishes a turn
+  // to prevent immediate re-triggering of tool calls on the same visual input.
+  private lastTurnCompleteAt = 0;
+  private static readonly POST_TURN_COOLDOWN_MS = 4000;
+
+  // Consecutive model turn counter: tracks how many turns the model takes without
+  // user input in between. Used to detect and suppress rapid repeating tool calls.
+  private consecutiveModelTurns = 0;
+  private lastUserInputAt = 0;
+
+  // Sequence counter for debug logging — monotonically increasing per relay instance
+  private seqCounter = 0;
 
   constructor(ws: WebSocket) {
     this.ws = ws;
@@ -259,10 +300,6 @@ export class LiveRelay {
         console.log(`[LiveRelay] Tool call cancellation for ids: ${ids.join(", ")}`);
       },
       onAudioData: () => { /* Discard — we use ElevenLabs TTS */ },
-      onOutputTranscription: (text) => {
-        logDualAgent("LiveRelay.outputTranscription", { sessionId: this.sessionId, text: text.substring(0, 100) });
-        logLiveSession("MODEL AUDIO TRANSCRIPTION", text);
-      },
       onUsage: (usage) => this.handleUsage(usage),
       onGoAway: () => {
         console.log("[LiveRelay] Provider session goAway — reconnecting");
@@ -318,24 +355,8 @@ export class LiveRelay {
           this.send({ type: "error", data: "error:CONNECTION_CLOSED" });
         }
       },
-      onInputTranscription: (text) => {
-        const trimmed = text.trim();
-        if (!trimmed) return;
-
-        // Skip likely echoes of our own recent TTS output
-        if (this.lastAiSpeak && Date.now() - this.lastAiSpeak.timestamp < 10_000) {
-          const lastSpoke = this.lastAiSpeak.text.toLowerCase();
-          const heard = trimmed.toLowerCase();
-          if (lastSpoke.includes(heard) || heard.includes(lastSpoke)) {
-            logDualAgent("LiveRelay.echoFiltered", { sessionId: this.sessionId, text: trimmed.substring(0, 80) });
-            return;
-          }
-        }
-
-        logDualAgent("LiveRelay.inputTranscription", { sessionId: this.sessionId, text: trimmed.substring(0, 200) });
-        this.send({ type: "transcript", data: trimmed, speaker: "Unknown" });
-        this.turnAccum.transcriptText += `[Heard] ${trimmed} `;
-      },
+      // No onInputTranscription — the model decides what to transcribe via the transcript() tool,
+      // which gives it control over echo filtering (it knows what it recently said).
       onReconnectFailed: async () => {
         if (!this.sessionId || !this.provider) return;
         console.log("[LiveRelay] Reconnect failed — reloading history from DB");
@@ -365,34 +386,51 @@ export class LiveRelay {
           break;
 
         case "frame_grid": {
-          // Suppress frame_grids briefly after user messages to prevent visual checks
-          // from interfering with Gemini's response to the user message
+          // Suppress frames while the model is processing tool calls, or we're already
+          // waiting for a model response (prevents overlapping turnComplete=true signals
+          // that cause duplicate model turns).
+          if (this.turnProcessingBusy || this.turnStartTime > 0 || this.awaitingModelResponse) {
+            logLiveSession("FRAME_GRID SUPPRESSED", `turnProcessingBusy=${this.turnProcessingBusy} turnStartTime=${this.turnStartTime} awaitingModelResponse=${this.awaitingModelResponse}`);
+            break;
+          }
           const frameSendTime = Date.now();
           if (frameSendTime - this.userMessageSentAt < LiveRelay.USER_MSG_PRIORITY_MS) {
-            break; // Silently skip — activity monitor will retrigger naturally
+            logLiveSession("FRAME_GRID SUPPRESSED", `userMessagePriority (${frameSendTime - this.userMessageSentAt}ms < ${LiveRelay.USER_MSG_PRIORITY_MS}ms)`);
+            break;
           }
-          // Send frame grid as image with detection prompt — triggers model response
-          // Include app canvas (e.g. drawing) as a second image if available
+          // Post-turn cooldown: don't immediately re-trigger the model after it just finished
+          if (frameSendTime - this.lastTurnCompleteAt < LiveRelay.POST_TURN_COOLDOWN_MS) {
+            logLiveSession("FRAME_GRID SUPPRESSED", `postTurnCooldown (${frameSendTime - this.lastTurnCompleteAt}ms < ${LiveRelay.POST_TURN_COOLDOWN_MS}ms)`);
+            break;
+          }
+
+          // A frame grid that passes all gates counts as new input — reset consecutive turn counter
+          this.consecutiveModelTurns = 0;
+          this.lastUserInputAt = frameSendTime;
+          this.awaitingModelResponse = true;
+
           const extraImages = this.latestAppCanvas
             ? [{ data: this.latestAppCanvas, mimeType: "image/png", label: "The student is using the Drawing app. This image shows their current drawing." }]
             : undefined;
-          const addRef = this.useFunctionCalling ? "add_buttons()" : "[ADD_BUTTONS]";
-          const removeRef = this.useFunctionCalling ? "remove_buttons()" : "[REMOVE_BUTTONS]";
-          const contextRef = this.useFunctionCalling ? "context()" : "[CONTEXT]";
-          const speakRef = this.useFunctionCalling ? "speak()" : "[SPEAK]";
-          const interpretRef = this.useFunctionCalling ? "interpret()" : "[INTERPRET]";
           this.provider!.sendFrameWithPrompt(
             msg.data,
-            `[VISUAL CHECK] Composite frame grid (${msg.timestamps?.length ?? '?'} frames). Observe the scene. Your PRIMARY task is to keep the AAC board relevant — if you observe new objects, activities, people, or communication opportunities, use ${addRef}. Prioritize objects in your user's hands or that they appear to be interested in (looking at, pointing to or reaching for), or things being spoken about. If items are no longer relevant, use ${removeRef}. Always pair ${contextRef} observations with board updates when applicable. Use ${speakRef} or ${interpretRef} only with HIGH CONFIDENCE. Stay silent if nothing important changed.`,
+            `[VISUAL CHECK] Observe the scene. Update the AAC board if you see new objects, activities, or communication opportunities. Stay silent if nothing important changed.`,
             extraImages,
           );
           break;
         }
 
-        case "pcm_audio":
-          // Raw PCM Int16 16kHz — stream directly to Gemini (no transcription needed)
+        case "pcm_audio": {
+          // Raw PCM Int16 16kHz — stream directly to Gemini via sendRealtimeInput.
+          // Gate audio during ALL active processing states to prevent VAD from
+          // triggering new model turns that cause repeated tool calls.
+          // Audio only flows when the system is truly idle.
+          if (this.turnStartTime > 0 || this.turnProcessingBusy || this.awaitingModelResponse) break;
+          const pcmTime = Date.now();
+          if (pcmTime - this.lastTurnCompleteAt < LiveRelay.POST_TURN_COOLDOWN_MS) break;
           this.provider!.sendAudio(msg.data);
           break;
+        }
 
         case "audio_clip":
           // No-op: Gemini already hears audio via continuous PCM streaming
@@ -401,6 +439,7 @@ export class LiveRelay {
         case "focus_frame": {
           // High-resolution single frame requested by AI for detailed analysis
           const focusCtxRef = this.useFunctionCalling ? "context() tool" : "[CONTEXT]";
+          this.awaitingModelResponse = true;
           this.provider!.sendFrameWithPrompt(
             msg.data,
             `[FOCUS FRAME] This is a HIGH-RESOLUTION single frame captured at your request. Analyze the image carefully for fine details, text, labels, faces, or objects you couldn't identify before. Report findings via ${focusCtxRef} and update the board if needed.`,
@@ -426,6 +465,9 @@ export class LiveRelay {
           }
           this.lastUserMessage = { text: msg.text, timestamp: now };
           this.userMessageSentAt = now;
+          this.lastUserInputAt = now;
+          this.consecutiveModelTurns = 0;
+          this.awaitingModelResponse = true;
 
           // Record user message in session state for monitor context + persist to DB
           if (this.sessionId) {
@@ -450,6 +492,9 @@ export class LiveRelay {
 
         case "button_press":
           this.userMessageSentAt = Date.now();
+          this.lastUserInputAt = Date.now();
+          this.consecutiveModelTurns = 0;
+          this.awaitingModelResponse = true;
           this.handleInterpretButtons(msg.buttons, msg.board);
           break;
 
@@ -510,6 +555,9 @@ export class LiveRelay {
           this.latestAppCanvas = null;
           // Trigger AI response (like a button press) — AI should comment + rebuild board
           this.userMessageSentAt = Date.now();
+          this.lastUserInputAt = Date.now();
+          this.consecutiveModelTurns = 0;
+          this.awaitingModelResponse = true;
           const rbAppRef = this.useFunctionCalling ? "rebuild_board()" : "[REBUILD_BOARD]";
           this.provider!.sendMessage(
             `[APP CLOSED] The user closed the "${msg.appId}" app and returned to the AAC board. Comment briefly on what they were doing in the app, then use ${rbAppRef} to create a fresh set of communication buttons for the current context.`,
@@ -641,9 +689,13 @@ export class LiveRelay {
           tools,
         };
       } else if (isGeminiLiveGA) {
-        // GA Gemini Live model via Vertex AI: TEXT modality + function calling (no audio generation overhead)
+        // GA Gemini Live model via Vertex AI: AUDIO modality + function calling
+        // Native audio models ONLY support AUDIO output (TEXT gives 1007 error).
+        // Audio output is discarded — ElevenLabs TTS is used instead.
+        // proactiveAudio: false — prevents the model from autonomously starting new
+        // turns after completing one, which causes repeated tool calls.
         this.useFunctionCalling = true;
-        this.useToolResponseScheduling = false; // No SILENT scheduling needed — TEXT mode
+        this.useToolResponseScheduling = false;
         this.provider = new GeminiLiveProvider(callbacks, true /* useVertexAI */);
         tools = buildToolDeclarations(toolConfig);
         providerConfig = {
@@ -652,12 +704,14 @@ export class LiveRelay {
           tools,
           compressionTriggerTokens: 100_000,
           compressionTargetTokens: 50_000,
-          responseModality: "TEXT",
+          responseModality: "AUDIO",
+          proactiveAudio: false,
         };
       } else if (isGeminiNativeAudioPreview) {
-        // Preview native-audio model: AUDIO modality + function calling + SILENT scheduling
+        // Preview native-audio model: AUDIO modality + function calling
+        // proactiveAudio: false — same as GA path
         this.useFunctionCalling = true;
-        this.useToolResponseScheduling = true;
+        this.useToolResponseScheduling = false;
         this.provider = new GeminiLiveProvider(callbacks);
         tools = buildToolDeclarations(toolConfig);
         providerConfig = {
@@ -667,6 +721,7 @@ export class LiveRelay {
           compressionTriggerTokens: 100_000,
           compressionTargetTokens: 50_000,
           responseModality: "AUDIO",
+          proactiveAudio: false,
         };
       } else {
         // Gemini TEXT mode: prefix tokens, no tools
@@ -765,22 +820,21 @@ export class LiveRelay {
       const greetingPrompt = isSilent
         ? `Generate 4-12 contextual utterance buttons — complete phrases the user might want to say. Use the student's profile and interests from the system prompt to make them relevant.${imageHint} Use ${rebuildBoardRef} to create the initial board.${boardHint}${personaHint}`
         : this.useFunctionCalling
-          // FC mode: ask for board first (NON_BLOCKING, more reliable), then speak greeting.
-          // The model often generates audio instead of calling speak(), so the greeting
-          // reminder in handleToolCalls() will nudge it if it forgets.
-          ? `IMPORTANT: You communicate ONLY through function calls. Do NOT generate audio — it is discarded. Call ${rebuildBoardRef} with 4-12 initial communication buttons, then call ${speakGreetRef} to greet the user. Both must be function calls.${imageHint}${boardHint}${personaHint}`
+          // FC mode: ask for board first, then speak greeting via tool calls.
+          ? `IMPORTANT: You communicate ONLY through function calls. Call ${rebuildBoardRef} with 4-12 initial communication buttons, then call ${speakGreetRef} to greet the user. Both must be function calls — do NOT output plain text.${imageHint}${boardHint}${personaHint}`
           : `Greet the user with a short, friendly greeting (1-2 sentences) and provide 4-12 initial communication buttons that reflect the student's interests, needs, and communication level from the system prompt. The buttons should be appropriate responses to your greeting.${imageHint} Use ${speakGreetRef} for your greeting and ${rebuildBoardRef} for the buttons.${boardHint}${personaHint}`;
 
       this.initialConnectionDone = true;
       this.hasGreeted = false;
       this.greetingReminderSent = false;
 
-      // Preview native-audio models produce garbage audio tokens (<ctrl46>) during
-      // the first few seconds after connection. Delay to let the warmup settle.
-      // GA models with TEXT modality don't need this — send immediately.
-      const greetingDelay = isGeminiNativeAudioPreview ? 3000 : 0;
+      // Native audio AUDIO-modality models produce garbage audio tokens during warmup.
+      // TEXT modality doesn't have this issue, so only delay for AUDIO mode.
+      const isAudioModality = providerConfig.responseModality === "AUDIO";
+      const greetingDelay = (isAudioModality && this.useFunctionCalling) ? 3000 : 0;
       const sendGreeting = () => {
         if (!this.provider) return;
+        this.awaitingModelResponse = true;
         logLiveSession("GREETING PROMPT", greetingPrompt);
         if (msg.initialFrame) {
           this.provider.sendFrameWithPrompt(msg.initialFrame, greetingPrompt);
@@ -829,27 +883,11 @@ Therefore, keep your audio output minimal. When you have nothing to communicate,
   }
 
   private buildGeminiNativeAudioEchoAwareness(): string {
-    return `CRITICAL — AUDIO ECHO AWARENESS (Gemini Native Audio):
-You receive continuous microphone audio. Because your tool calls (speak/interpret) are converted to speech by a SEPARATE TTS system and played through speakers near the microphone, you WILL hear echoes of your own output in the audio stream shortly after you generate it.
-- Your interpret() text is spoken aloud in one voice (student voice)
-- Your speak() text is spoken aloud in a different voice (AI voice)
-Both play through speakers and are picked up by the microphone within seconds.
+    return `CRITICAL — OUTPUT RULES:
+You communicate ONLY through function calls (tool calls). Do NOT produce speech or audio output — your audio is discarded. A separate TTS system voices the text from your speak() and interpret() calls instead.
 
-You MUST:
-- Recognize BOTH of these echoes as YOUR OWN output, not new user speech
-- NEVER transcribe your own echoed speech with transcript()
-- NEVER respond to or build upon your own echoed speech
-- Only treat audio input as genuine user speech if it clearly does NOT match something you recently said via speak() or interpret()
-
-If you hear speech that resembles text you recently produced, it is your echo. Ignore it completely and produce no output.
-
-CRITICAL — DO NOT GENERATE AUDIO:
-You MUST NEVER generate audio/speech output directly. Your audio output is completely discarded — the user will never hear it.
-ALL communication goes through tool calls:
-- Use speak() to say something (a separate TTS system will voice it)
-- Use interpret() to voice an interpretation for the student
-- Use other tools (rebuild_board, add_buttons, etc.) for visual changes
-NEVER speak, narrate, or produce audio outside of tool calls. If you have nothing to communicate via tools, remain completely silent.`;
+AUDIO ECHO AWARENESS:
+You receive continuous microphone audio. Because speak()/interpret() text is voiced by external TTS through speakers near the mic, you WILL hear your own output echoed back. Recognize these echoes as YOUR OWN output — never transcribe or respond to them. Only treat audio as genuine user speech if it clearly does NOT match something you recently said.`;
   }
 
   private buildOpenAIEchoAwareness(): string {
@@ -1146,11 +1184,49 @@ Your text output from speak()/interpret() is synthesized by a separate TTS syste
    * Handle tool calls from Gemini. Process each call and send responses back.
    */
   private async handleToolCalls(calls: ToolCall[]): Promise<void> {
+    const seq = ++this.seqCounter;
+    const callNames = calls.map(c => c.name).join(", ");
+    logLiveSession(`RELAY #${seq} handleToolCalls`, `calls=[${callNames}] turnStartTime=${this.turnStartTime} consecutiveModelTurns=${this.consecutiveModelTurns} turnProcessingBusy=${this.turnProcessingBusy} awaitingModelResponse=${this.awaitingModelResponse}`);
+
+    // Model has started responding — clear the "awaiting response" guard so future
+    // user inputs (frame_grids, button presses) can be queued once this turn ends.
+    this.awaitingModelResponse = false;
+
+    // Duplicate turn suppression: if processTurnEnd is already running, these tool
+    // calls are from a duplicate model turn. Send a minimal response so the model
+    // doesn't hang (blocking tools wait for response), but don't execute any side
+    // effects (no WS events to client, no board updates, no state changes).
+    if (this.turnProcessingBusy) {
+      logLiveSession(`RELAY #${seq} DUPLICATE TURN`, `Suppressed ${callNames} — turnProcessingBusy=true`);
+      const suppressedResponses: ToolResponse[] = calls.map(c => ({
+        id: c.id, name: c.name, response: { output: "already handled" },
+      }));
+      this.sendToolResponseWithScheduling(suppressedResponses);
+      return;
+    }
+
     if (this.turnStartTime === 0) {
       this.turnStartTime = Date.now();
       this.reconnectAttempts = 0;
       this.consecutiveSafetyBlocks = 0;
     }
+
+    // Dedup: suppress identical consecutive tool call batches within a short window
+    const callSig = calls.map(c => `${c.name}:${JSON.stringify(c.args)}`).join("|");
+    const now = Date.now();
+    if (
+      this.lastToolCallSig &&
+      this.lastToolCallSig.sig === callSig &&
+      now - this.lastToolCallSig.timestamp < LiveRelay.TOOL_DEDUP_WINDOW_MS
+    ) {
+      logLiveSession("TOOL CALL DEDUP", `Suppressed duplicate: ${calls.map(c => c.name).join(", ")}`);
+      const dedupResponses: ToolResponse[] = calls.map(c => ({
+        id: c.id, name: c.name, response: { output: "already applied" },
+      }));
+      this.sendToolResponseWithScheduling(dedupResponses);
+      return;
+    }
+    this.lastToolCallSig = { sig: callSig, timestamp: now };
 
     const responses: ToolResponse[] = [];
 
@@ -1174,18 +1250,20 @@ Your text output from speak()/interpret() is synthesized by a separate TTS syste
     }
 
     // Send all responses back to the provider (with scheduling if applicable)
+    logLiveSession(`RELAY #${seq} sending tool responses`, `count=${responses.length} scheduling=${this.useToolResponseScheduling ? "SILENT" : "default"} names=[${responses.map(r => r.name).join(", ")}]`);
     this.sendToolResponseWithScheduling(responses);
 
     // Greeting nudge: if the model has processed tool calls but never used speak(),
     // it likely generated the greeting as audio (which we discard). Remind it once.
-    // Delay slightly to avoid colliding with the model processing tool responses.
+    // Uses sendContextInjection (turnComplete=false) to avoid triggering a new turn
+    // that could cause repeated tool calls. The model will see this context on its next turn.
     if (this.useFunctionCalling && !this.hasGreeted && !this.greetingReminderSent && this.interactionMode === "interact") {
       this.greetingReminderSent = true;
       setTimeout(() => {
         if (!this.hasGreeted && this.provider) {
-          const reminder = `[SYSTEM] You have not greeted the user yet. Your audio output is discarded — the user cannot hear you unless you call speak(). Greet the user now with speak() and provide initial buttons with rebuild_board().`;
-          this.provider.sendMessage(reminder, "user");
-          logLiveSession("GREETING REMINDER", "Injected — model has not called speak() yet");
+          const reminder = `You have not greeted the user yet. Your audio output is discarded — the user cannot hear you unless you call speak(). On your NEXT turn, greet the user with speak() and provide initial buttons with rebuild_board().`;
+          this.provider.sendContextInjection(reminder);
+          logLiveSession("GREETING REMINDER", "Injected via context — model has not called speak() yet");
         }
       }, 2000);
     }
@@ -1196,12 +1274,9 @@ Your text output from speak()/interpret() is synthesized by a separate TTS syste
    * Gemini native-audio mode uses SILENT to absorb results without generating intermediate audio.
    */
   private sendToolResponseWithScheduling(responses: ToolResponse[]): void {
-    // SILENT scheduling disabled — known bug on gemini-2.5-flash-native-audio-preview-12-2025
-    // causes model disconnects. No GA native audio model available on Google AI Studio yet.
-    // Re-enable when a model that supports it becomes available.
-    // if (this.useToolResponseScheduling) {
-    //   responses = responses.map(r => ({ ...r, scheduling: "SILENT" as const }));
-    // }
+    if (this.useToolResponseScheduling) {
+      responses = responses.map(r => ({ ...r, scheduling: "SILENT" as const }));
+    }
     this.provider!.sendToolResponse(responses);
   }
 
@@ -1705,10 +1780,25 @@ Your text output from speak()/interpret() is synthesized by a separate TTS syste
    * Do post-turn processing using accumulated tool call / text token data.
    */
   private async handleProviderTurnComplete(): Promise<void> {
+    const seq = ++this.seqCounter;
+    logLiveSession(`RELAY #${seq} handleProviderTurnComplete`, `turnProcessingBusy=${this.turnProcessingBusy} turnStartTime=${this.turnStartTime} consecutiveModelTurns=${this.consecutiveModelTurns} accum=[speak=${!!this.turnAccum.speakText}, interpret=${!!this.turnAccum.interpretText}, board=${this.turnAccum.boardChanged}]`);
+
     if (this.turnProcessingBusy) {
+      logLiveSession(`RELAY #${seq} SKIPPED`, `already processing`);
       console.warn("[LiveRelay] handleProviderTurnComplete called while already processing — skipping");
       return;
     }
+
+    // Skip empty turns — native audio models generate audio-only turns between
+    // tool calls. Only process turns that had actual tool calls or text content.
+    if (this.useFunctionCalling && this.turnStartTime === 0) {
+      // turnStartTime is set when the first tool call or text arrives.
+      // If it's still 0, this was an audio-only turn with no tool calls — skip it.
+      this.awaitingModelResponse = false;
+      logLiveSession(`RELAY #${seq} SKIPPED`, `empty turn (no tool calls or text)`);
+      return;
+    }
+
     this.turnProcessingBusy = true;
 
     try {
@@ -1729,9 +1819,22 @@ Your text output from speak()/interpret() is synthesized by a separate TTS syste
       console.error("[LiveRelay] handleProviderTurnComplete error:", (err as Error).message);
       this.send({ type: "error", data: "error:TURN_FAILED" });
     } finally {
+      // Inject model-role turn summary BEFORE resetting accumulator.
+      // Native audio models discard their audio output (we use ElevenLabs TTS),
+      // so without this text record the model has no memory of what it said/did
+      // and tends to repeat the same tool calls on the next turn.
+      const summary = this.buildTurnSummary(this.turnAccum);
+      if (summary && this.provider) {
+        this.provider.sendMessage(summary, "model", false);
+        logLiveSession(`RELAY #${seq} TURN SUMMARY`, summary);
+      }
+
       this.turnAccum = createEmptyAccumulator();
       this.turnStartTime = 0;
       this.turnProcessingBusy = false;
+      this.lastTurnCompleteAt = Date.now();
+      this.consecutiveModelTurns++;
+      logLiveSession(`RELAY #${seq} turnComplete DONE`, `consecutiveModelTurns now=${this.consecutiveModelTurns}`);
       // Reset text mode state for next turn
       this.turnTextBuffer = "";
       this.parser = new StreamingPrefixParser();
@@ -1753,6 +1856,7 @@ Your text output from speak()/interpret() is synthesized by a separate TTS syste
     this.send({ type: "audio_interrupt" });
     this.turnAccum = createEmptyAccumulator();
     this.turnStartTime = 0;
+    this.awaitingModelResponse = false;
     // Reset text mode state
     this.turnTextBuffer = "";
     this.parser = new StreamingPrefixParser();
@@ -2364,7 +2468,11 @@ Your text output from speak()/interpret() is synthesized by a separate TTS syste
     if (!state) return;
 
     const timeSinceUpdate = Date.now() - this.lastBoardUpdateTime;
-    if (timeSinceUpdate < LiveRelay.BOARD_REMINDER_INTERVAL_MS) return; // recent update already informed Gemini
+    if (timeSinceUpdate < LiveRelay.BOARD_REMINDER_INTERVAL_MS) {
+      logLiveSession("BOARD REMINDER SKIPPED", `timeSinceUpdate=${timeSinceUpdate}ms < ${LiveRelay.BOARD_REMINDER_INTERVAL_MS}ms`);
+      return;
+    }
+    logLiveSession("BOARD REMINDER FIRING", `timeSinceUpdate=${timeSinceUpdate}ms`);
 
     const maxSlots = state.maxBoardItems || 12;
     const labels = state.boardButtonLabels;
@@ -2415,6 +2523,48 @@ Your text output from speak()/interpret() is synthesized by a separate TTS syste
       clearInterval(this.behavioralReminderTimer);
       this.behavioralReminderTimer = null;
     }
+  }
+
+  /**
+   * Build a compact model-role summary of what the model did during this turn.
+   * Injected via sendClientContent(role="model", turnComplete=false) after each turn
+   * so the model remembers its own actions. Native audio models discard their audio
+   * output (we use external TTS), so without this the model has no text record of
+   * what it said/did and tends to repeat itself on the next turn.
+   */
+  private buildTurnSummary(accum: TurnToolAccumulator): string | null {
+    const parts: string[] = [];
+    if (accum.interpretText.trim()) {
+      parts.push(`interpret("${accum.interpretText.trim()}")`);
+    }
+    if (accum.boardRebuilt) {
+      const labels = accum.boardAddLabels.join(", ");
+      parts.push(`rebuild_board(${labels})`);
+    } else {
+      if (accum.boardAddLabels.length > 0) {
+        parts.push(`add_buttons(${accum.boardAddLabels.join(", ")})`);
+      }
+      if (accum.boardRemoveLabels.length > 0) {
+        parts.push(`remove_buttons(${accum.boardRemoveLabels.join(", ")})`);
+      }
+    }
+    if (accum.speakText.trim()) {
+      parts.push(`speak("${accum.speakText.trim()}")`);
+    }
+    if (accum.setBoardName) {
+      parts.push(`set_board("${accum.setBoardName}")`);
+    }
+    if (accum.pressButtonLabel) {
+      parts.push(`press_button("${accum.pressButtonLabel}")`);
+    }
+    if (accum.openAppData) {
+      parts.push(`open_app("${accum.openAppData.appId}")`);
+    }
+    if (accum.emote) {
+      parts.push(`emote("${accum.emote}")`);
+    }
+    if (parts.length === 0) return null;
+    return `[I just called: ${parts.join(", ")}]`;
   }
 
   /**

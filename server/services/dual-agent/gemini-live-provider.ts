@@ -2,7 +2,7 @@
 // Gemini Live API provider — wraps the @google/genai SDK's Live session.
 // Uses native-audio model with function calling. Audio output is discarded (ElevenLabs TTS used).
 
-import { GoogleGenAI, Modality, FunctionResponse, FunctionResponseScheduling } from "@google/genai";
+import { GoogleGenAI, Modality, FunctionResponse, FunctionResponseScheduling, ActivityHandling } from "@google/genai";
 import type { Session, LiveServerMessage, FunctionCall, Tool } from "@google/genai";
 import type {
   LiveProvider,
@@ -11,6 +11,7 @@ import type {
   ToolCall,
   ToolResponse,
 } from "./live-provider";
+import { logLiveSession } from "./dual-agent-logger";
 
 // ---------------------------------------------------------------------------
 // GeminiLiveProvider
@@ -91,26 +92,58 @@ export class GeminiLiveProvider implements LiveProvider {
           temperature: config.temperature ?? 0.7,
           // Tool declarations for function calling
           // Vertex AI does not support the `behavior` parameter — strip it
-          ...(config.tools ? { tools: (this.useVertexAI ? this.stripBehavior(config.tools as Tool[]) : config.tools) as Tool[] } : {}),
+          ...(config.tools ? (() => {
+            const adaptedTools = (this.useVertexAI ? this.stripBehavior(config.tools as Tool[]) : config.tools) as Tool[];
+            if (adaptedTools[0]?.functionDeclarations) {
+              const decls = adaptedTools[0].functionDeclarations;
+              const sample = decls[0] as any;
+              logLiveSession("ADAPTED TOOLS (sent to API)", [
+                `Tool count: ${decls.length}, vertexAI: ${this.useVertexAI}`,
+                `Tool[0] schema fields: hasParameters=${!!sample.parameters}, hasParametersJsonSchema=${!!sample.parametersJsonSchema}, hasBehavior=${!!sample.behavior}`,
+                `Tool[0] full: ${JSON.stringify(decls[0]).substring(0, 800)}`,
+              ].join("\n"));
+            }
+            return { tools: adaptedTools };
+          })() : {}),
           sessionResumption: {
             ...(this.resumptionHandle ? { handle: this.resumptionHandle } : {}),
           },
-          // Enable built-in audio transcription
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
+          // No built-in audio transcription — the model decides what to transcribe
+          // via the transcript() tool, which gives it control over echo filtering.
           contextWindowCompression: {
             triggerTokens: String(triggerTokens),
             slidingWindow: {
               targetTokens: String(targetTokens),
             },
           },
+          // Realtime input config: prevent audio VAD from interrupting tool call turns.
+          // Without this, background noise or TTS echo triggers VAD mid-turn, causing
+          // the model to start new turns and repeat the same tool calls.
+          realtimeInputConfig: {
+            automaticActivityDetection: {
+              disabled: false,
+              silenceDurationMs: 2000,   // Wait 2s of silence before end-of-speech
+              prefixPaddingMs: 500,      // 500ms of speech required before start-of-speech
+            },
+            activityHandling: ActivityHandling.NO_INTERRUPTION,
+          },
+          // Native audio features (from config)
+          ...(config.enableAffectiveDialog ? { enableAffectiveDialog: true } : {}),
+          ...(config.proactiveAudio !== undefined ? { proactivity: { proactiveAudio: config.proactiveAudio } } : {}),
         },
         callbacks: {
           onopen: () => {
             this.connected = true;
             console.log("[GeminiLiveProvider] Connected to Gemini Live API");
           },
-          onmessage: (msg: LiveServerMessage) => this.handleServerMessage(msg),
+          onmessage: (msg: LiveServerMessage) => {
+            // Debug: log raw message keys to understand what the server is sending
+            const keys = Object.keys(msg).filter(k => (msg as any)[k] != null);
+            if (keys.length > 0 && !keys.every(k => k === "serverContent")) {
+              console.log(`[GeminiLiveProvider] Server message keys: ${keys.join(", ")}`);
+            }
+            this.handleServerMessage(msg);
+          },
           onerror: (e: ErrorEvent) => {
             const msg = e.message || "WebSocket error";
             console.error("[GeminiLiveProvider] WebSocket error:", msg);
@@ -217,6 +250,7 @@ export class GeminiLiveProvider implements LiveProvider {
   sendFrame(jpegBase64: string, turnComplete = false): void {
     if (!this.session || !this.connected) return;
     try {
+      logLiveSession("CLIENT → sendFrame", `turnComplete=${turnComplete}`);
       this.session.sendClientContent({
         turns: [{
           role: "user",
@@ -246,6 +280,7 @@ export class GeminiLiveProvider implements LiveProvider {
         }
       }
       parts.push({ text: prompt });
+      logLiveSession("CLIENT → sendFrameWithPrompt", `prompt="${prompt.substring(0, 80)}" extraImages=${extraImages?.length ?? 0} turnComplete=true`);
       this.session.sendClientContent({
         turns: [{ role: "user", parts }],
         turnComplete: true,
@@ -269,6 +304,7 @@ export class GeminiLiveProvider implements LiveProvider {
   sendMessage(text: string, role: "user" | "model" = "user", turnComplete = true): void {
     if (!this.session || !this.connected) return;
     try {
+      logLiveSession("CLIENT → sendMessage", `role=${role} turnComplete=${turnComplete} text="${text.substring(0, 120)}"`);
       this.session.sendClientContent({
         turns: [{ role, parts: [{ text }] }],
         turnComplete,
@@ -281,6 +317,7 @@ export class GeminiLiveProvider implements LiveProvider {
   sendContextInjection(text: string): void {
     if (!this.session || !this.connected) return;
     try {
+      logLiveSession("CLIENT → sendContextInjection", `turnComplete=false text="${text.substring(0, 120)}"`);
       this.session.sendClientContent({
         turns: [{ role: "user", parts: [{ text: `[SYSTEM CONTEXT UPDATE]\n${text}` }] }],
         turnComplete: false,
@@ -324,6 +361,8 @@ export class GeminiLiveProvider implements LiveProvider {
         }
         return fr;
       });
+      const summary = responses.map(r => `${r.name}(${r.scheduling || "default"}): ${JSON.stringify(r.response).substring(0, 80)}`).join(" | ");
+      logLiveSession("CLIENT → sendToolResponse", summary);
       this.session.sendToolResponse({ functionResponses: fnResponses });
     } catch (err) {
       console.error("[GeminiLiveProvider] Failed to send tool response:", err);
@@ -366,6 +405,11 @@ export class GeminiLiveProvider implements LiveProvider {
 
     // Tool call — normalize FunctionCall[] to ToolCall[]
     if (msg.toolCall?.functionCalls) {
+      const names = msg.toolCall.functionCalls.map(fc => fc.name).join(", ");
+      logLiveSession(`SERVER → toolCall`, `functions=[${names}] ids=[${msg.toolCall.functionCalls.map(fc => fc.id).join(", ")}]`);
+      for (const fc of msg.toolCall.functionCalls) {
+        logLiveSession(`RAW FUNCTION CALL: ${fc.name}`, JSON.stringify(fc.args, null, 2));
+      }
       const normalized: ToolCall[] = msg.toolCall.functionCalls.map((fc: FunctionCall) => ({
         id: fc.id || "",
         name: fc.name || "unknown",
@@ -375,11 +419,31 @@ export class GeminiLiveProvider implements LiveProvider {
     }
 
     if (msg.toolCallCancellation?.ids) {
+      logLiveSession(`SERVER → toolCallCancellation`, `ids=[${msg.toolCallCancellation.ids.join(", ")}]`);
       this.callbacks.onToolCallCancellation?.(msg.toolCallCancellation.ids);
     }
 
     if (msg.serverContent) {
       const content = msg.serverContent;
+
+      // Compact event logging for the session log
+      const events: string[] = [];
+      if (content.modelTurn?.parts) {
+        const partSummary = content.modelTurn.parts.map((p: any) => {
+          if (p.text) return `text(${p.text.length}ch)`;
+          if (p.inlineData) return `audio(${p.inlineData.mimeType})`;
+          if (p.functionCall) return `fc(${p.functionCall.name})`;
+          return `?(${Object.keys(p).join(",")})`;
+        }).join(", ");
+        events.push(`parts=[${partSummary}]`);
+      }
+      if (content.turnComplete) events.push("TURN_COMPLETE");
+      if (content.interrupted) events.push("INTERRUPTED");
+      if ((content as any).outputTranscription) events.push("outputTranscription");
+      if ((content as any).generationComplete) events.push("generationComplete");
+      if (events.length > 0) {
+        logLiveSession(`SERVER → serverContent`, events.join(" | "));
+      }
 
       if (content.modelTurn?.parts) {
         for (const part of content.modelTurn.parts) {
@@ -395,15 +459,11 @@ export class GeminiLiveProvider implements LiveProvider {
         }
       }
 
-      if (content.inputTranscription?.text) {
-        this.callbacks.onInputTranscription?.(content.inputTranscription.text);
-      }
-
-      if ((content as any).outputTranscription?.text) {
-        this.callbacks.onOutputTranscription?.((content as any).outputTranscription.text);
-      }
+      // Input/output transcription events are ignored — the model handles
+      // transcription via the transcript() tool for proper echo filtering.
 
       if (content.turnComplete) {
+        logLiveSession("SERVER → TURN_COMPLETE", "(dispatching to relay)");
         Promise.resolve(this.callbacks.onTurnComplete()).catch(err => {
           console.error("[GeminiLiveProvider] onTurnComplete callback error:", (err as Error).message);
           this.callbacks.onError?.(err instanceof Error ? err : new Error(String(err)));
@@ -411,6 +471,7 @@ export class GeminiLiveProvider implements LiveProvider {
       }
 
       if (content.interrupted) {
+        logLiveSession("SERVER → INTERRUPTED", "(dispatching to relay)");
         Promise.resolve(this.callbacks.onInterrupted()).catch(err => {
           console.error("[GeminiLiveProvider] onInterrupted callback error:", (err as Error).message);
         });
@@ -451,10 +512,10 @@ export class GeminiLiveProvider implements LiveProvider {
   }
 
   /**
-   * Strip the `behavior` field from tool declarations.
-   * Vertex AI does not support this parameter (Google AI Studio only).
-   * Without it, all function calls default to blocking (sequential execution),
-   * which is acceptable — we process tool responses quickly.
+   * Adapt tool declarations for Vertex AI:
+   * - Strip `behavior` (Google AI Studio only, not supported on Vertex AI)
+   * Keep `parametersJsonSchema` as-is — the SDK handles serialization for Vertex AI.
+   * Without `behavior`, all function calls default to blocking (sequential execution).
    */
   private stripBehavior(tools: Tool[]): Tool[] {
     return tools.map(tool => {
