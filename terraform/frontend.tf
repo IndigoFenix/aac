@@ -100,9 +100,11 @@ locals {
   api_gateway_raw  = one(aws_apigatewayv2_api.lambda[*].api_endpoint)
   
   # Clean the URL to just the domain (remove https:// and trailing /)
+  # Prefer Function URL over API Gateway - Function URL with RESPONSE_STREAM
+  # supports SSE/streaming, while API Gateway HTTP API buffers entire responses.
   api_endpoint = var.use_lambda && var.lambda_image_exists ? replace(
     replace(
-      coalesce(local.api_gateway_raw, local.function_url_raw, ""),
+      coalesce(local.function_url_raw, local.api_gateway_raw, ""),
       "https://", ""
     ),
     "/", ""
