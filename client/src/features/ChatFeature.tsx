@@ -45,6 +45,7 @@ import { useChat, type AttachedFile } from '@/hooks/useChat';
 import { useStudent } from '@/hooks/useStudent';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useSharedState, useFeaturePanel } from '@/contexts/FeaturePanelContext';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { useSpeechToText } from '@/hooks/useSpeechToText';
 import { useTextToSpeech, htmlToPlainText } from '@/hooks/useTextToSpeech';
 import { ChatMessage, ChatMessageContent } from '@shared/schema';
@@ -131,14 +132,15 @@ export function ChatFeature() {
     continuous: false,
   });
   
+  const isMobile = useIsMobile();
   const showWelcome = history.length === 0;
   const showTools = false; // Placeholder for future tools feature
-  
+
   // Check if a panel is currently open
   const isPanelOpen = activeFeature && activeFeature !== 'chat' && panels[activeFeature]?.isOpen;
-  
-  // Show mode switch only when there's an open panel and we're in expanded mode
-  const showModeSwitch = isPanelOpen && chatMode === 'expanded' && !isFullScreenFeature;
+
+  // Show mode switch only when there's an open panel and we're in expanded mode (desktop only)
+  const showModeSwitch = isPanelOpen && chatMode === 'expanded' && !isFullScreenFeature && !isMobile;
 
   // Current persona info
   const currentPersonaInfo = getPersonaInfo(persona);

@@ -139,6 +139,9 @@ export const en = {
     passwordResetSuccessDesc: 'Your password has been updated successfully. You can now log in with your new password.',
     goToLogin: 'Go to Login',
     
+    // Navigation
+    backToHome: 'Back to Home',
+
     // Errors
     passwordResetFailed: 'Failed to reset password',
   },
@@ -291,6 +294,10 @@ export const en = {
     typing: "Typing...",
     error: "Failed to send message",
     assistant: "Assistant",
+    openChat: "Open Chat",
+    closeChat: "Close Chat",
+    fullScreen: "Full Screen",
+    halfScreen: "Half Screen",
     popupMode: "Popup",
     switchToPopup: "Switch to popup mode",
     expandMode: "Expand chat",
@@ -466,6 +473,9 @@ export const en = {
     unsavedChangesDesc: "You have unsaved changes to this board. What would you like to do?",
     discardChanges: "Discard Changes",
     saveAndSwitch: "Save & Switch",
+    loadingBoard: "Loading board",
+    loadingBoardDesc: "Loading your board. Please wait a moment.",
+    loaded: "Board Loaded",
   },
 
   // ============================================================================

@@ -333,47 +333,8 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                   </div>
                 )}
 
-                {/* Progress */}
-                <div className="w-[160px] flex flex-col gap-2">
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-muted-foreground">
-                      {t('students.progressLabel') || 'Progress'}
-                    </span>
-                    <span className="font-bold">{student.progress}%</span>
-                  </div>
-                  <div className={cn(
-                    'h-2 w-full rounded-full overflow-hidden',
-                    isDark ? 'bg-slate-800' : 'bg-secondary'
-                  )}>
-                    <div
-                      className="h-full bg-primary transition-all duration-500"
-                      style={{ width: `${student.progress}%` }}
-                    />
-                  </div>
-                  {student.nextDeadline && student.nextDeadline !== '-' && (
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <AlertCircle className="w-3 h-3 text-amber-500" />
-                      <span className="text-xs text-amber-600 font-medium">
-                        {t('students.dueLabel') || 'Due'}: {student.nextDeadline}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
                 {/* Actions */}
                 <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="gap-2 hover:bg-primary/10 hover:text-primary"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      goToProgress(student.id);
-                    }}
-                  >
-                    <FileText className="w-4 h-4" />
-                    {t('students.openProgress') || 'Open Plan'}
-                  </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                       <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -382,6 +343,13 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align={isRTL ? 'start' : 'end'}>
                       <DropdownMenuLabel>{t('students.actions') || 'Actions'}</DropdownMenuLabel>
+                      <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        goToProgress(student.id);
+                      }}>
+                        {t('students.openProgress') || 'Open Plan'}
+                      </DropdownMenuItem>
                       <DropdownMenuItem 
                         onClick={(e) => {
                           e.stopPropagation();

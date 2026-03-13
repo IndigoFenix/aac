@@ -8,6 +8,9 @@ import { useLocation } from 'wouter';
 // Chat display mode
 export type ChatDisplayMode = 'expanded' | 'popup' | 'minimized';
 
+// Mobile chat display mode
+export type MobileChatMode = 'hidden' | 'full' | 'half';
+
 // Panel configuration for each feature
 export interface FeatureConfig {
   id: FeatureType;
@@ -226,9 +229,13 @@ interface FeaturePanelContextType {
   unregisterMetadataBuilder: (feature: FeatureType) => void;
   getFeatureMetadata: (feature: FeatureType) => Record<string, any> | undefined;
   
+  // Mobile chat mode
+  mobileChatMode: MobileChatMode;
+  setMobileChatMode: (mode: MobileChatMode) => void;
+
   // Animation
   transitionDuration: number;
-  
+
   // Navigation helper
   navigateToFeature: (feature: FeatureType) => void;
 }
@@ -251,6 +258,7 @@ export function FeaturePanelProvider({ children }: { children: ReactNode }) {
   const metadataBuildersRef = useRef<Partial<Record<FeatureType, MetadataBuilder>>>({});
   const [chatMode, setChatModeState] = useState<ChatDisplayMode>('expanded');
   const [chatSize, setChatSizeState] = useState<number>(50); // Default 50% width for chat
+  const [mobileChatMode, setMobileChatMode] = useState<MobileChatMode>('hidden');
   
   // Track if we're currently syncing to prevent loops
   const isSyncingRef = useRef(false);
@@ -473,6 +481,8 @@ export function FeaturePanelProvider({ children }: { children: ReactNode }) {
     registerMetadataBuilder,
     unregisterMetadataBuilder,
     getFeatureMetadata,
+    mobileChatMode,
+    setMobileChatMode,
     transitionDuration,
     navigateToFeature,
   }), [
@@ -494,6 +504,8 @@ export function FeaturePanelProvider({ children }: { children: ReactNode }) {
     registerMetadataBuilder,
     unregisterMetadataBuilder,
     getFeatureMetadata,
+    mobileChatMode,
+    setMobileChatMode,
     navigateToFeature,
   ]);
 

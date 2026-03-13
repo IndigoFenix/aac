@@ -956,6 +956,14 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
                 >
                   {t('auth.forgotPassword')}
                 </button>
+
+                <button
+                  type="button"
+                  className="text-sm text-muted-foreground hover:text-primary hover:underline"
+                  onClick={() => setLocation('/')}
+                >
+                  {t('auth.backToHome')}
+                </button>
               </CardFooter>
             </form>
           </>

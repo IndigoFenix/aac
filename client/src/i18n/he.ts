@@ -139,6 +139,9 @@ export const he = {
     passwordResetSuccessDesc: 'הסיסמה שלך עודכנה בהצלחה. כעת תוכל להתחבר עם הסיסמה החדשה.',
     goToLogin: 'עבור להתחברות',
     
+    // Navigation
+    backToHome: 'חזרה לדף הבית',
+
     // Errors
     passwordResetFailed: 'איפוס הסיסמה נכשל',
   },
@@ -291,6 +294,10 @@ export const he = {
     typing: "מקליד...",
     error: "שליחת ההודעה נכשלה",
     assistant: "עוזר",
+    openChat: "פתח צ׳אט",
+    closeChat: "סגור צ׳אט",
+    fullScreen: "מסך מלא",
+    halfScreen: "חצי מסך",
     popupMode: "צף",
     switchToPopup: "עבור למצב צף",
     expandMode: "הרחב צ׳אט",
@@ -660,6 +667,9 @@ export const he = {
     unsavedChangesDesc: "יש שינויים שלא נשמרו בלוח זה.",
     discardChanges: "התעלם מהשינויים",
     saveAndSwitch: "שמור והחלף",
+    loadingBoard: "טוען לוח...",
+    loadingBoardDesc: "טוען את הלוח שנבחר. זה עשוי לקחת כמה רגעים.",
+    loaded: "הלוח נטען בהצלחה"
   },
 
   // ============================================================================

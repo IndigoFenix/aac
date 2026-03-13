@@ -327,7 +327,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   return (
     <ScrollArea className="h-full">
       <div className={cn(
-        "p-6",
+        "p-4 md:p-6",
         isDark ? "bg-background" : "bg-gray-50/50"
       )}>
         <div className="max-w-3xl mx-auto space-y-6">
@@ -411,8 +411,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
             </CardHeader>
             <CardContent className="space-y-6">
               <div className={cn(
-                "flex items-center justify-between",
-                isRTL && "flex-row-reverse"
+                "flex flex-col gap-2 md:flex-row md:items-center md:justify-between",
+                isRTL && "md:flex-row-reverse"
               )}>
                 <div className={cn("space-y-0.5", isRTL && "text-right")}>
                   <Label className="text-base font-medium">
@@ -423,7 +423,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </p>
                 </div>
                 <Select value={studentVoiceType} onValueChange={setStudentVoiceType}>
-                  <SelectTrigger className="w-[200px]">
+                  <SelectTrigger className="w-full md:w-[200px]">
                     <SelectValue placeholder={t('aacSettings.selectVoice')} />
                   </SelectTrigger>
                   <SelectContent>
@@ -452,7 +452,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                     value={customStudentVoiceId || "_none"}
                     onValueChange={(v) => setCustomStudentVoiceId(v === "_none" ? null : v)}
                   >
-                    <SelectTrigger className="w-[200px]">
+                    <SelectTrigger className="w-full md:w-[200px]">
                       <SelectValue placeholder={t('common.none')} />
                     </SelectTrigger>
                     <SelectContent>
@@ -465,8 +465,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 </div>
               )}
               <div className={cn(
-                "flex items-center justify-between",
-                isRTL && "flex-row-reverse"
+                "flex flex-col gap-2 md:flex-row md:items-center md:justify-between",
+                isRTL && "md:flex-row-reverse"
               )}>
                 <div className={cn("space-y-0.5", isRTL && "text-right")}>
                   <Label className="text-base font-medium">
@@ -477,7 +477,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </p>
                 </div>
                 <Select value={voiceType} onValueChange={setVoiceType}>
-                  <SelectTrigger className="w-[200px]">
+                  <SelectTrigger className="w-full md:w-[200px]">
                     <SelectValue placeholder={t('aacSettings.selectVoice')} />
                   </SelectTrigger>
                   <SelectContent>
@@ -506,7 +506,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                     value={customVoiceId || "_none"}
                     onValueChange={(v) => setCustomVoiceId(v === "_none" ? null : v)}
                   >
-                    <SelectTrigger className="w-[200px]">
+                    <SelectTrigger className="w-full md:w-[200px]">
                       <SelectValue placeholder={t('common.none')} />
                     </SelectTrigger>
                     <SelectContent>
@@ -544,7 +544,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                     value={elevenlabsApiKey}
                     onChange={(e) => setElevenlabsApiKey(e.target.value)}
                     placeholder={t('aacSettings.elevenlabsApiKeyPlaceholder')}
-                    className="w-[280px]"
+                    className="w-full md:w-[280px]"
                   />
                 </div>
 
@@ -564,14 +564,14 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                         </Label>
                       </div>
                       {elevenlabsLoading ? (
-                        <p className="text-sm text-muted-foreground w-[280px]">{t('aacSettings.elevenlabsLoadingVoices')}</p>
+                        <p className="text-sm text-muted-foreground w-full md:w-[280px]">{t('aacSettings.elevenlabsLoadingVoices')}</p>
                       ) : elevenlabsVoices && elevenlabsVoices.length > 0 ? (
                         <div className="flex gap-2 items-center">
                           <Select
                             value={elevenlabsStudentVoiceId || '_none'}
                             onValueChange={(v) => setElevenlabsStudentVoiceId(v === '_none' ? '' : v)}
                           >
-                            <SelectTrigger className="w-[280px]">
+                            <SelectTrigger className="w-full md:w-[280px]">
                               <SelectValue placeholder={t('aacSettings.elevenlabsSelectVoice')} />
                             </SelectTrigger>
                             <SelectContent>
@@ -601,7 +601,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                           )}
                         </div>
                       ) : (
-                        <p className="text-sm text-muted-foreground w-[280px]">{t('aacSettings.elevenlabsNoVoices')}</p>
+                        <p className="text-sm text-muted-foreground w-full md:w-[280px]">{t('aacSettings.elevenlabsNoVoices')}</p>
                       )}
                     </div>
 
@@ -615,14 +615,14 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                         </Label>
                       </div>
                       {elevenlabsLoading ? (
-                        <p className="text-sm text-muted-foreground w-[280px]">{t('aacSettings.elevenlabsLoadingVoices')}</p>
+                        <p className="text-sm text-muted-foreground w-full md:w-[280px]">{t('aacSettings.elevenlabsLoadingVoices')}</p>
                       ) : elevenlabsVoices && elevenlabsVoices.length > 0 ? (
                         <div className="flex gap-2 items-center">
                           <Select
                             value={elevenlabsAiVoiceId || '_none'}
                             onValueChange={(v) => setElevenlabsAiVoiceId(v === '_none' ? '' : v)}
                           >
-                            <SelectTrigger className="w-[280px]">
+                            <SelectTrigger className="w-full md:w-[280px]">
                               <SelectValue placeholder={t('aacSettings.elevenlabsSelectVoice')} />
                             </SelectTrigger>
                             <SelectContent>
@@ -652,7 +652,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                           )}
                         </div>
                       ) : (
-                        <p className="text-sm text-muted-foreground w-[280px]">{t('aacSettings.elevenlabsNoVoices')}</p>
+                        <p className="text-sm text-muted-foreground w-full md:w-[280px]">{t('aacSettings.elevenlabsNoVoices')}</p>
                       )}
                     </div>
                   </>
@@ -674,7 +674,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                         value={elevenlabsStudentVoiceId}
                         onChange={(e) => setElevenlabsStudentVoiceId(e.target.value)}
                         placeholder={t('aacSettings.elevenlabsVoiceIdPlaceholder')}
-                        className="w-[280px] font-mono"
+                        className="w-full md:w-[280px] font-mono"
                       />
                     </div>
 
@@ -692,7 +692,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                         value={elevenlabsAiVoiceId}
                         onChange={(e) => setElevenlabsAiVoiceId(e.target.value)}
                         placeholder={t('aacSettings.elevenlabsVoiceIdPlaceholder')}
-                        className="w-[280px] font-mono"
+                        className="w-full md:w-[280px] font-mono"
                       />
                     </div>
                   </>
@@ -716,7 +716,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex gap-3 justify-center">
+              <div className="flex gap-2 md:gap-3 justify-center">
                 {([1, 2, 3, 4, 5] as const).map((lvl) => {
                   const isActive = iconTextRatio === lvl;
                   // Preview sizing: icon flex vs text flex
@@ -730,7 +730,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                       type="button"
                       onClick={() => setIconTextRatio(lvl)}
                       className={cn(
-                        "flex flex-col items-center justify-center w-16 h-20 rounded-lg border-2 transition-all",
+                        "flex flex-col items-center justify-center flex-1 min-w-0 max-w-16 h-20 rounded-lg border-2 transition-all",
                         isActive
                           ? "border-primary bg-primary/10 ring-2 ring-primary/30"
                           : "border-border hover:border-primary/50 bg-card"
@@ -771,7 +771,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex gap-2 justify-center">
+              <div className="flex gap-2 justify-center flex-wrap">
                 {([
                   { level: 0, tKey: 'aacSettings.interpNone' as const, short: '0' },
                   { level: 1, tKey: 'aacSettings.interpMinimal' as const, short: '1' },
@@ -786,7 +786,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                       type="button"
                       onClick={() => setInterpretationLevel(level)}
                       className={cn(
-                        "flex flex-col items-center justify-center px-3 py-2 rounded-lg border-2 transition-all min-w-[70px]",
+                        "flex flex-col items-center justify-center px-3 py-2 rounded-lg border-2 transition-all min-w-[56px] md:min-w-[70px]",
                         isActive
                           ? "border-primary bg-primary/10 ring-2 ring-primary/30"
                           : "border-border hover:border-primary/50 bg-card"
@@ -870,8 +870,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
             </CardHeader>
             <CardContent className="space-y-4">
               <div className={cn(
-                "flex items-center justify-between",
-                isRTL && "flex-row-reverse"
+                "flex flex-col gap-2 md:flex-row md:items-center md:justify-between",
+                isRTL && "md:flex-row-reverse"
               )}>
                 <div className={cn("space-y-0.5", isRTL && "text-right")}>
                   <Label className="text-base font-medium">
@@ -928,8 +928,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
             </CardHeader>
             <CardContent className="space-y-4">
               <div className={cn(
-                "flex items-center justify-between",
-                isRTL && "flex-row-reverse"
+                "flex flex-col gap-2 md:flex-row md:items-center md:justify-between",
+                isRTL && "md:flex-row-reverse"
               )}>
                 <div className={cn("space-y-0.5", isRTL && "text-right")}>
                   <Label className="text-base font-medium">
@@ -945,8 +945,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 />
               </div>
               <div className={cn(
-                "flex items-center justify-between",
-                isRTL && "flex-row-reverse"
+                "flex flex-col gap-2 md:flex-row md:items-center md:justify-between",
+                isRTL && "md:flex-row-reverse"
               )}>
                 <div className={cn("space-y-0.5", isRTL && "text-right")}>
                   <Label className="text-base font-medium">
@@ -962,8 +962,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 />
               </div>
               <div className={cn(
-                "flex items-center justify-between",
-                isRTL && "flex-row-reverse"
+                "flex flex-col gap-2 md:flex-row md:items-center md:justify-between",
+                isRTL && "md:flex-row-reverse"
               )}>
                 <div className={cn("space-y-0.5", isRTL && "text-right")}>
                   <Label className="text-base font-medium">
