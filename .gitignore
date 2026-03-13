@@ -8,4 +8,4 @@ vite.config.ts.*
 *.tar.gz
 .env
 .claude
-.generative-ai
+generative-ai
