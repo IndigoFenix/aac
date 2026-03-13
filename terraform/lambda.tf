@@ -239,15 +239,13 @@ resource "time_sleep" "wait_for_lambda" {
   create_duration = "30s"
 }
 
-# Lambda Function URL - always created for SSE/streaming support
-# API Gateway HTTP API cannot stream responses (buffers entire response),
-# so CloudFront routes through the Function URL instead.
+# Option 1: Lambda Function URL (simpler, no extra cost)
+# Note: Not available in all regions (e.g. il-central-1). Use API Gateway instead.
 resource "aws_lambda_function_url" "api" {
-  count = var.use_lambda && var.lambda_image_exists ? 1 : 0
+  count = var.use_lambda && var.lambda_image_exists && !var.use_api_gateway ? 1 : 0
 
   function_name      = aws_lambda_function.api[0].function_name
   authorization_type = "NONE"
-  invoke_mode        = "RESPONSE_STREAM"
 
   cors {
     allow_credentials = true
