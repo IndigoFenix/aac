@@ -39,9 +39,13 @@ import { FeatureType } from '@shared/schema';
 type SidebarProps = {
   isCollapsed?: boolean;
   position?: 'left' | 'right';
+  isMobile?: boolean;
+  onNavigate?: () => void;
 };
 
-export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps) {
+export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left', isMobile = false, onNavigate }: SidebarProps) {
+  // On mobile, always show expanded sidebar
+  const isCollapsed = isMobile ? false : isCollapsedProp;
   const { user, logout } = useAuth();
   const { theme, setTheme } = useTheme();
   const { t, isRTL } = useLanguage();
@@ -135,7 +139,12 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
           isCollapsed ? "justify-center px-0" : "justify-start"
         )}
         data-testid={item.testId}
-        onClick={() => !isDisabled && setActiveFeature(item.feature)}
+        onClick={() => {
+          if (!isDisabled) {
+            setActiveFeature(item.feature);
+            onNavigate?.();
+          }
+        }}
       >
         <item.icon className="w-4 h-4" />
         {!isCollapsed && (
@@ -153,16 +162,17 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
   };
 
   return (
-    <div 
+    <div
       dir={isRTL ? 'rtl' : 'ltr'}
       className={cn(
-        "fixed top-0 h-screen bg-sidebar border-sidebar-border flex flex-col transition-all duration-300",
-        positionClasses,
-        isCollapsed ? "w-20" : "w-80"
+        "top-0 bg-sidebar border-sidebar-border flex flex-col transition-all duration-300 overflow-y-auto",
+        isMobile ? "h-full w-80" : "fixed h-screen",
+        !isMobile && positionClasses,
+        !isMobile && (isCollapsed ? "w-20" : "w-80")
       )}
     >
       {/* Logo */}
-      <div className="p-6 cursor-pointer" onClick={() => setActiveFeature('chat' as FeatureType)}>
+      <div className="p-6 cursor-pointer" onClick={() => { setActiveFeature('chat' as FeatureType); onNavigate?.(); }}>
         {!isCollapsed ? (
           <div className="flex items-start gap-3">
             <img
@@ -200,7 +210,7 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
               "bg-primary/5 border border-primary/20 rounded-md p-3 cursor-pointer hover:bg-primary/10 transition-colors",
               "group"
             )}
-            onClick={() => {if (student) {setActiveFeature('progress')}}}
+            onClick={() => { if (student) { setActiveFeature('progress'); onNavigate?.(); } }}
             data-testid="card-student-context"
           > {student ? (
             <div className="flex items-center gap-3">
@@ -317,7 +327,7 @@ export function Sidebar({ isCollapsed = false, position = 'left' }: SidebarProps
             isCollapsed ? "justify-center px-0" : "justify-start"
           )}
           data-testid="button-settings"
-          onClick={() => setActiveFeature('settings')}
+          onClick={() => { setActiveFeature('settings'); onNavigate?.(); }}
           title={isCollapsed ? t('nav.settings') : undefined}
         >
           <Settings className="w-4 h-4" />

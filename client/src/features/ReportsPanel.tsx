@@ -433,7 +433,7 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
           ) : (
             <div className="space-y-4">
               {/* Report summary info */}
-              <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                 <div>
                   <span className="text-muted-foreground">{t('reports.createdAt')}:</span>
                   <span className="ms-2">{new Date(report.createdAt).toLocaleDateString()}</span>
@@ -451,7 +451,7 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
               </div>
 
               {/* Actions */}
-              <div className="flex items-center gap-2 pt-2">
+              <div className="flex flex-wrap items-center gap-2 pt-2">
                 <Button variant="outline" size="sm" onClick={() => handleViewReport(report, type)}>
                   <Eye className="w-4 h-4 me-2" />
                   {t('common.view')}
@@ -526,7 +526,7 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
           {reports.map((report) => (
             <Card key={report.id} className="bg-muted/30">
               <CardContent className="py-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     {renderStatusBadge(report.status)}
                     <span className="text-sm text-muted-foreground">
@@ -582,7 +582,7 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
       className={cn('h-full flex flex-col bg-background', !isOpen && 'hidden')}
     >
       {/* Header */}
-      <div className="flex-shrink-0 p-6 border-b">
+      <div className="flex-shrink-0 p-4 md:p-6 border-b">
         <div className="flex items-center justify-between mb-2">
           <div>
             <div className="flex items-center gap-2">
@@ -600,24 +600,25 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
 
       {/* Content */}
       <ScrollArea className="flex-1">
-        <div className="p-6">
+        <div className="p-4 md:p-6">
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as ReportType)}>
-            <TabsList className="mb-4">
+            <TabsList className="mb-4 flex-wrap h-auto gap-1">
               {hasMedicalAccess && (
-                <TabsTrigger value="medical" className="gap-2">
+                <TabsTrigger value="medical" className="gap-1.5 text-xs md:text-sm">
                   <Stethoscope className="w-4 h-4" />
-                  {t('reports.medical.title')}
+                  <span className="hidden sm:inline">{t('reports.medical.title')}</span>
+                  <span className="sm:hidden">{t('reports.medical.title')}</span>
                 </TabsTrigger>
               )}
               {hasEducationalAccess && (
                 <>
-                  <TabsTrigger value="functional" className="gap-2">
+                  <TabsTrigger value="functional" className="gap-1.5 text-xs md:text-sm">
                     <ClipboardList className="w-4 h-4" />
-                    {t('reports.functional.title')}
+                    <span>{t('reports.functional.title')}</span>
                   </TabsTrigger>
-                  <TabsTrigger value="educational" className="gap-2">
+                  <TabsTrigger value="educational" className="gap-1.5 text-xs md:text-sm">
                     <BookOpen className="w-4 h-4" />
-                    {t('reports.educational.title')}
+                    <span>{t('reports.educational.title')}</span>
                   </TabsTrigger>
                 </>
               )}
@@ -774,7 +775,7 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
 
       {/* View/Edit Report Dialog */}
       <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
-        <DialogContent className="sm:max-w-[700px]">
+        <DialogContent className="max-w-[95vw] sm:max-w-[700px]">
           <DialogHeader>
             <DialogTitle>
               {selectedReportType && t(`reports.${selectedReportType}.title`)}

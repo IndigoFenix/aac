@@ -1,5 +1,5 @@
 // src/components/layout/MainLayout.tsx
-// UPDATED VERSION - includes resizable panels and chat popup mode with proper RTL support
+// Responsive layout with mobile chat modes and resizable desktop panels
 
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { ChatFeature } from '@/features/ChatFeature';
@@ -9,6 +9,7 @@ import { CommuniAACtePanel } from '@/features/CommuniAACtePanel';
 import { DocuSLPPanel } from '@/features/DocuSLPPanel';
 import { useFeaturePanel } from '@/contexts/FeaturePanelContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { cn } from '@/lib/utils';
 import { OverviewPanel } from '@/features/OverviewPanel';
 import { StudentsPanel } from '@/features/StudentsPanel';
@@ -18,9 +19,11 @@ import { ReportsPanel } from '@/features/ReportsPanel';
 import { SettingsPanel } from '@/features/SettingsPanel';
 import { AACSettingsPanel } from '@/features/AACSettingsPanel';
 import { SymbolsPanel } from '@/features/SymbolsPanel';
+import { Button } from '@/components/ui/button';
+import { MessageCircle, Maximize2, Minimize2, X } from 'lucide-react';
 
 export function MainLayout() {
-  const { 
+  const {
     activeFeature,
     panels,
     transitionDuration,
@@ -28,20 +31,23 @@ export function MainLayout() {
     chatSize,
     setChatSize,
     isFullScreenFeature,
+    mobileChatMode,
+    setMobileChatMode,
   } = useFeaturePanel();
-  
-  const { isRTL } = useLanguage();
+
+  const { isRTL, t } = useLanguage();
+  const isMobile = useIsMobile();
   const containerRef = useRef<HTMLDivElement>(null);
   const [isResizing, setIsResizing] = useState(false);
 
   // Get panel state
   const currentPanel = activeFeature ? panels[activeFeature] : null;
   const isPanelOpen = currentPanel?.isOpen || false;
-  
-  // Determine if chat should be shown inline or as popup
+
+  // Determine if chat should be shown inline or as popup (desktop only)
   const showChatInline = chatMode === 'expanded' && !isFullScreenFeature;
   const showChatPopup = chatMode === 'popup' || chatMode === 'minimized' || isFullScreenFeature;
-  
+
   // For full-screen features, panel takes 100%
   // For other features with popup chat, panel takes full width
   // Otherwise, use the resizable split
@@ -66,19 +72,17 @@ export function MainLayout() {
 
   const handleResizeMove = useCallback((e: MouseEvent) => {
     if (!isResizing || !containerRef.current) return;
-    
+
     const container = containerRef.current;
     const rect = container.getBoundingClientRect();
-    
+
     let percentage: number;
     if (isRTL) {
-      // In RTL, calculate from the right
       percentage = ((rect.right - e.clientX) / rect.width) * 100;
     } else {
-      // In LTR, calculate from the left
       percentage = ((e.clientX - rect.left) / rect.width) * 100;
     }
-    
+
     setChatSize(percentage);
   }, [isResizing, isRTL, setChatSize]);
 
@@ -94,7 +98,7 @@ export function MainLayout() {
       document.body.style.cursor = 'col-resize';
       document.body.style.userSelect = 'none';
     }
-    
+
     return () => {
       document.removeEventListener('mousemove', handleResizeMove);
       document.removeEventListener('mouseup', handleResizeEnd);
@@ -134,6 +138,78 @@ export function MainLayout() {
     }
   };
 
+  // ─── MOBILE LAYOUT ──────────────────────────────────────────────────────────
+  if (isMobile) {
+    const isOnChatPage = !activeFeature || activeFeature === 'chat';
+
+    // Chat page: full-screen chat
+    if (isOnChatPage) {
+      return (
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <ChatFeature />
+        </div>
+      );
+    }
+
+    // Panel page with mobile chat modes
+    return (
+      <div className="flex-1 flex flex-col min-h-0 relative overflow-hidden">
+        {mobileChatMode === 'full' ? (
+          // Full-screen chat overlay
+          <div className="flex-1 flex flex-col min-h-0">
+            <MobileChatHeader
+              mode="full"
+              onClose={() => setMobileChatMode('hidden')}
+              onToggle={() => setMobileChatMode('half')}
+            />
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <ChatFeature />
+            </div>
+          </div>
+        ) : mobileChatMode === 'half' ? (
+          // Half layout: panel top, chat bottom
+          <>
+            <div className="h-1/2 overflow-auto flex-shrink-0">
+              {renderFeaturePanel()}
+            </div>
+            <div className="h-1/2 flex flex-col border-t border-border flex-shrink-0">
+              <MobileChatHeader
+                mode="half"
+                onClose={() => setMobileChatMode('hidden')}
+                onToggle={() => setMobileChatMode('full')}
+              />
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <ChatFeature />
+              </div>
+            </div>
+          </>
+        ) : (
+          // Panel full-screen with floating chat FAB
+          <>
+            <div className="flex-1 overflow-auto">
+              {renderFeaturePanel()}
+            </div>
+            <button
+              className={cn(
+                "fixed z-30 bottom-4 h-14 w-14 rounded-full shadow-lg",
+                "bg-primary hover:bg-primary/90 text-primary-foreground",
+                "flex items-center justify-center",
+                "transition-transform hover:scale-105 active:scale-95",
+                isRTL ? "left-4" : "right-4"
+              )}
+              onClick={() => setMobileChatMode('half')}
+              aria-label={t('chat.openChat')}
+            >
+              <MessageCircle className="w-6 h-6" />
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // ─── DESKTOP LAYOUT ─────────────────────────────────────────────────────────
+
   // Resize handle component
   const ResizeHandle = showChatInline && isPanelOpen && (
     <div
@@ -161,9 +237,9 @@ export function MainLayout() {
 
   // Chat section (inline mode)
   const ChatSection = showChatInline && (
-    <div 
+    <div
       className="h-full flex flex-col min-w-[300px]"
-      style={{ 
+      style={{
         width: getChatWidth(),
         transition: isResizing ? 'none' : `width ${transitionDuration}ms ease-in-out`,
       }}
@@ -192,7 +268,7 @@ export function MainLayout() {
   );
 
   return (
-    <div 
+    <div
       ref={containerRef}
       dir={isRTL ? 'rtl' : 'ltr'}
       className="flex-1 flex flex-col min-h-0 relative overflow-hidden"
@@ -203,7 +279,7 @@ export function MainLayout() {
         {ChatSection}
         {ResizeHandle}
         {PanelSection}
-        
+
         {/* Full-width panel when chat is in popup mode */}
         {showChatPopup && activeFeature && activeFeature !== 'chat' && !showChatInline && (
           <div className="flex-1 h-full overflow-hidden">
@@ -211,9 +287,51 @@ export function MainLayout() {
           </div>
         )}
       </div>
-      
-      {/* Chat popup overlay */}
+
+      {/* Chat popup overlay (desktop only) */}
       {showChatPopup && <ChatPopup />}
+    </div>
+  );
+}
+
+// Mobile chat header bar with mode toggle and close button
+function MobileChatHeader({
+  mode,
+  onClose,
+  onToggle,
+}: {
+  mode: 'full' | 'half';
+  onClose: () => void;
+  onToggle: () => void;
+}) {
+  const { t } = useLanguage();
+  return (
+    <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30 flex-shrink-0">
+      <span className="text-sm font-medium">{t('header.title')}</span>
+      <div className="flex gap-1">
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-8 w-8"
+          onClick={onToggle}
+          aria-label={mode === 'full' ? t('chat.halfScreen') : t('chat.fullScreen')}
+        >
+          {mode === 'full' ? (
+            <Minimize2 className="w-4 h-4" />
+          ) : (
+            <Maximize2 className="w-4 h-4" />
+          )}
+        </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-8 w-8"
+          onClick={onClose}
+          aria-label={t('chat.closeChat')}
+        >
+          <X className="w-4 h-4" />
+        </Button>
+      </div>
     </div>
   );
 }

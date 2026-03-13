@@ -55,7 +55,7 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
   }
 
   return (
-    <header className="h-16 border-b border-border bg-background px-4 sm:px-6 flex items-center justify-between">
+    <header className="h-14 md:h-16 border-b border-border bg-background px-3 md:px-6 flex items-center justify-between">
       {/* Start side - Menu and title */}
       <div className="flex items-center gap-2">
         <Button
@@ -68,19 +68,19 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
         >
           <Menu className="w-5 h-5" />
         </Button>
-        <span className="text-sm sm:text-base font-medium">{getHeaderTitle()}</span>
+        <span className="text-sm md:text-base font-medium truncate max-w-[120px] md:max-w-none">{getHeaderTitle()}</span>
       </div>
 
       {/* End side - Controls */}
-      <div className="flex items-center gap-2 sm:gap-3">
-        {/* Institution selector */}
+      <div className="flex items-center gap-1.5 md:gap-3">
+        {/* Institution selector - hidden on mobile */}
         {institutes.length > 1 && (
-          <div className="flex items-center gap-2">
-            <Building2 className="hidden sm:block w-4 h-4 text-muted-foreground" />
+          <div className="hidden md:flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-muted-foreground" />
             <select
               id="institute-selector"
               className={cn(
-                "max-w-[160px] text-xs sm:text-sm border border-input bg-background rounded-md px-2 py-1",
+                "max-w-[160px] text-sm border border-input bg-background rounded-md px-2 py-1",
                 "focus:outline-none focus:ring-2 focus:ring-primary"
               )}
               dir="auto"
@@ -98,17 +98,17 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
         )}
 
         {/* Student selector */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 md:gap-2">
           <label
             htmlFor="student-selector"
-            className="hidden sm:inline text-xs text-muted-foreground"
+            className="hidden md:inline text-xs text-muted-foreground"
           >
             {t('header.student')}
           </label>
           <select
             id="student-selector"
             className={cn(
-              "max-w-[180px] text-xs sm:text-sm border border-input bg-background rounded-md px-2 py-1",
+              "max-w-[120px] md:max-w-[180px] text-xs md:text-sm border border-input bg-background rounded-md px-1.5 md:px-2 py-1",
               "focus:outline-none focus:ring-2 focus:ring-primary"
             )}
             dir="auto"
@@ -134,8 +134,8 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
           </select>
         </div>
 
-        {/* Credits */}
-        <div className="hidden sm:flex items-center gap-1 text-xs text-muted-foreground">
+        {/* Credits - hidden on mobile */}
+        <div className="hidden md:flex items-center gap-1 text-xs text-muted-foreground">
           <span className="font-medium text-foreground">{user.credits}</span>
           <span>{t('header.credits')}</span>
         </div>
@@ -155,8 +155,8 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
         )}
 
         {/* Profile, Settings, Logout */}
-        <div className="flex items-center gap-2">
-          <div className="hidden sm:block text-end">
+        <div className="flex items-center gap-1 md:gap-2">
+          <div className="hidden md:block text-end">
             <p className="text-sm font-medium text-foreground">
               {user.firstName || 'User'}
             </p>
@@ -167,9 +167,11 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
               <User className="w-4 h-4 text-primary" />
             </AvatarFallback>
           </Avatar>
+          {/* Settings & Logout - hidden on mobile (available in sidebar) */}
           <Button
             variant="ghost"
             size="icon"
+            className="hidden md:inline-flex"
             onClick={() => openUI('settings')}
             aria-label={t('nav.settings')}
           >
@@ -178,6 +180,7 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
           <Button
             variant="ghost"
             size="icon"
+            className="hidden md:inline-flex"
             onClick={logout}
             aria-label={t('auth.logout')}
           >
@@ -185,8 +188,10 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
           </Button>
         </div>
 
-        {/* Language */}
-        <LanguageSelector />
+        {/* Language - hidden on mobile (available in sidebar/settings) */}
+        <div className="hidden md:block">
+          <LanguageSelector />
+        </div>
       </div>
     </header>
   );
