@@ -1,7 +1,7 @@
 // server/services/dual-agent/live-relay.ts
 // WebSocket relay layer: bridges a client WebSocket to a live provider session.
 // Handles tool call dispatch, TTS synthesis, contact enrollment, monitor triggering.
-// Provider-agnostic: works with GeminiLiveProvider, OpenAILiveProvider, etc.
+// Provider-agnostic: works with GeminiLiveProvider.
 
 import type { IncomingMessage } from "http";
 import { WebSocket, WebSocketServer } from "ws";
@@ -13,8 +13,7 @@ import type {
   ToolResponse,
 } from "./live-provider";
 import { GeminiLiveProvider } from "./gemini-live-provider";
-import { OpenAILiveProvider } from "./openai-live-provider";
-import { parseBoardButtons, StreamingPrefixParser, type StreamingSegment } from "./interactive-agent";
+import { parseBoardButtons } from "./interactive-agent";
 
 /** Extract a string argument from tool call args.
  *  Gemini's native function calling frequently uses wrong parameter names
@@ -74,7 +73,7 @@ import type {
   TurnToolAccumulator,
 } from "./types";
 import { createEmptyAccumulator } from "./types";
-import { buildToolDeclarations, buildOpenAIToolDeclarations, type ToolDeclarationConfig } from "./tool-declarations";
+import { buildToolDeclarations, type ToolDeclarationConfig } from "./tool-declarations";
 import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
 import { searchYouTube } from "../youtube/youtube-search";
 import { createContact, findSimilarContact, updateContact, getContactsByStudent } from "../biometric";
@@ -84,7 +83,7 @@ import { logDualAgent, logLiveSession } from "./dual-agent-logger";
 import { dualAgentService, type SessionCache } from "./dual-agent-service";
 import { boardRepository } from "../../repositories/boardRepository";
 import { settingsRepository } from "../../repositories/settingsRepository";
-import { getModelOption, MODEL_OPTIONS, type LLMProviderKey } from "@shared/llm-options";
+import { MODEL_OPTIONS, type LLMProviderKey } from "@shared/llm-options";
 
 // ---------------------------------------------------------------------------
 // Client ↔ Server Protocol
@@ -216,15 +215,8 @@ export class LiveRelay {
   private pongReceived = true;
   private static readonly PING_INTERVAL_MS = 30_000; // 30s
 
-  // Mode flag: true = function calling (OpenAI / Gemini native audio), false = text prefix tokens (Gemini text)
-  private useFunctionCalling = true;
-
   // When true, tool responses include scheduling: "SILENT" (Gemini native audio mode)
   private useToolResponseScheduling = false;
-
-  // Text prefix token parser (used when useFunctionCalling = false)
-  private parser = new StreamingPrefixParser();
-  private turnTextBuffer = "";
 
   // Accumulation for turn processing (both modes share this)
   private turnAccum: TurnToolAccumulator = createEmptyAccumulator();
@@ -438,11 +430,10 @@ export class LiveRelay {
 
         case "focus_frame": {
           // High-resolution single frame requested by AI for detailed analysis
-          const focusCtxRef = this.useFunctionCalling ? "context() tool" : "[CONTEXT]";
           this.awaitingModelResponse = true;
           this.provider!.sendFrameWithPrompt(
             msg.data,
-            `[FOCUS FRAME] This is a HIGH-RESOLUTION single frame captured at your request. Analyze the image carefully for fine details, text, labels, faces, or objects you couldn't identify before. Report findings via ${focusCtxRef} and update the board if needed.`,
+            `[FOCUS FRAME] This is a HIGH-RESOLUTION single frame captured at your request. Analyze the image carefully for fine details, text, labels, faces, or objects you couldn't identify before. Report findings via context() tool and update the board if needed.`,
           );
           console.log("[LiveRelay] Focus frame sent to Gemini");
           break;
@@ -558,9 +549,8 @@ export class LiveRelay {
           this.lastUserInputAt = Date.now();
           this.consecutiveModelTurns = 0;
           this.awaitingModelResponse = true;
-          const rbAppRef = this.useFunctionCalling ? "rebuild_board()" : "[REBUILD_BOARD]";
           this.provider!.sendMessage(
-            `[APP CLOSED] The user closed the "${msg.appId}" app and returned to the AAC board. Comment briefly on what they were doing in the app, then use ${rbAppRef} to create a fresh set of communication buttons for the current context.`,
+            `[APP CLOSED] The user closed the "${msg.appId}" app and returned to the AAC board. Comment briefly on what they were doing in the app, then use rebuild_board() to create a fresh set of communication buttons for the current context.`,
             "user",
           );
           logDualAgent("LiveRelay.appDismissed", { sessionId: this.sessionId, appId: msg.appId });
@@ -589,7 +579,7 @@ export class LiveRelay {
     try {
       // -----------------------------------------------------------------------
       // Provider selection: read from aac_chat LLM settings FIRST
-      // (determines useFunctionCalling before prompt is built)
+      // (determines provider before prompt is built)
       // -----------------------------------------------------------------------
       const aacChatConfig = await settingsRepository.getLLMConfig('aac_chat');
 
@@ -609,20 +599,11 @@ export class LiveRelay {
       this.providerKey = aacChatConfig.provider;
 
       // Look up the model in the catalog to determine capabilities
-      const modelInfo = getModelOption(aacChatConfig.provider, aacChatConfig.model);
-      const isOpenAIRealtime = this.providerKey === "openai" && !!modelInfo?.supportsLive;
       const isGeminiLive = this.providerKey === "gemini";
       // GA native-audio model (gemini-live-*): supports TEXT + function calling (ideal)
       const isGeminiLiveGA = isGeminiLive && aacChatConfig.model.startsWith("gemini-live-");
       // Preview native-audio model: only supports AUDIO + function calling
-      const isGeminiNativeAudioPreview = isGeminiLive && !isGeminiLiveGA && !aacChatConfig.model.includes("image-generation") && /native-audio/i.test(aacChatConfig.model);
-      // Any Gemini model that uses function calling
-      const isGeminiNativeAudio = isGeminiLiveGA || isGeminiNativeAudioPreview;
-      // Text-only fallback (image-generation model with prefix tokens)
-      const isGeminiText = isGeminiLive && !isGeminiNativeAudio;
-
-      // Function calling: OpenAI + Gemini native audio (both GA and preview). Text tokens: Gemini text.
-      const useFunctionCallingForProvider = isOpenAIRealtime || isGeminiNativeAudio;
+      const isGeminiNativeAudioPreview = isGeminiLive && !isGeminiLiveGA && /native-audio/i.test(aacChatConfig.model);
 
       // Use existing dual-agent service to get/create session + resolve prompt + voices
       const state = await dualAgentService.initializeSession(
@@ -630,8 +611,6 @@ export class LiveRelay {
         msg.userId,
         msg.sessionId,
         this.interactionMode,
-        true, // isLiveMode — unified prompt with contextual rules for different input types
-        useFunctionCallingForProvider, // Gemini=false (text tokens), OpenAI=true (function calling)
       );
       this.sessionId = state.sessionId;
 
@@ -673,47 +652,19 @@ export class LiveRelay {
       // Close any existing provider (for forceNewSession re-init)
       this.provider?.close();
 
-      // Create the appropriate provider + tools
+      // Create the Gemini Live provider + tools
       const callbacks = this.buildProviderCallbacks();
-      let tools: any[] = [];
+      const tools = buildToolDeclarations(toolConfig);
       let providerConfig: LiveProviderConfig;
 
-      if (isOpenAIRealtime) {
-        this.useFunctionCalling = true;
-        this.useToolResponseScheduling = false;
-        this.provider = new OpenAILiveProvider(callbacks);
-        tools = buildOpenAIToolDeclarations(toolConfig);
-        providerConfig = {
-          model: aacChatConfig.model,
-          temperature: 0.7,
-          tools,
-        };
-      } else if (isGeminiLiveGA) {
+      if (isGeminiLiveGA) {
         // GA Gemini Live model via Vertex AI: AUDIO modality + function calling
         // Native audio models ONLY support AUDIO output (TEXT gives 1007 error).
         // Audio output is discarded — ElevenLabs TTS is used instead.
         // proactiveAudio: false — prevents the model from autonomously starting new
         // turns after completing one, which causes repeated tool calls.
-        this.useFunctionCalling = true;
         this.useToolResponseScheduling = false;
         this.provider = new GeminiLiveProvider(callbacks, true /* useVertexAI */);
-        tools = buildToolDeclarations(toolConfig);
-        providerConfig = {
-          model: aacChatConfig.model,
-          temperature: 0.7,
-          tools,
-          compressionTriggerTokens: 100_000,
-          compressionTargetTokens: 50_000,
-          responseModality: "AUDIO",
-          proactiveAudio: false,
-        };
-      } else if (isGeminiNativeAudioPreview) {
-        // Preview native-audio model: AUDIO modality + function calling
-        // proactiveAudio: false — same as GA path
-        this.useFunctionCalling = true;
-        this.useToolResponseScheduling = false;
-        this.provider = new GeminiLiveProvider(callbacks);
-        tools = buildToolDeclarations(toolConfig);
         providerConfig = {
           model: aacChatConfig.model,
           temperature: 0.7,
@@ -724,29 +675,23 @@ export class LiveRelay {
           proactiveAudio: false,
         };
       } else {
-        // Gemini TEXT mode: prefix tokens, no tools
-        this.useFunctionCalling = false;
+        // Preview native-audio model: AUDIO modality + function calling
+        // proactiveAudio: false — same as GA path
         this.useToolResponseScheduling = false;
         this.provider = new GeminiLiveProvider(callbacks);
-        // No tools — Gemini responds with text prefix tokens parsed by StreamingPrefixParser
-        // TEXT modality: model outputs text, not audio (audio comes from ElevenLabs TTS)
-        // Native-audio models only support AUDIO modality, so swap to the text-compatible variant
-        const textModel = this.resolveGeminiTextModel(aacChatConfig.model);
         providerConfig = {
-          model: textModel,
+          model: aacChatConfig.model,
           temperature: 0.7,
+          tools,
           compressionTriggerTokens: 100_000,
           compressionTargetTokens: 50_000,
-          responseModality: "TEXT",
+          responseModality: "AUDIO",
+          proactiveAudio: false,
         };
       }
 
-      // Build system prompt with provider-specific echo awareness appendix
-      const echoAwareness = isOpenAIRealtime
-        ? this.buildOpenAIEchoAwareness()
-        : this.useFunctionCalling
-          ? this.buildGeminiNativeAudioEchoAwareness()
-          : this.buildGeminiEchoAwareness();
+      // Build system prompt with echo awareness appendix
+      const echoAwareness = this.buildGeminiNativeAudioEchoAwareness();
       const systemPrompt = state.interactivePrompt + "\n\n" + echoAwareness;
 
       // Resolve voices for TTS via the monitor agent's student info
@@ -765,13 +710,12 @@ export class LiveRelay {
       await this.provider.connect(systemPrompt, providerConfig);
 
       // Log full prompt + tools to dedicated session log for debugging
-      const providerLabel = isOpenAIRealtime ? "openai-realtime" : isGeminiLiveGA ? "gemini-live-ga" : isGeminiNativeAudioPreview ? "gemini-native-audio-preview" : "gemini-text";
+      const providerLabel = isGeminiLiveGA ? "gemini-live-ga" : "gemini-native-audio-preview";
       logLiveSession("SESSION START", [
         `Session: ${state.sessionId}`,
         `Student: ${msg.studentId}`,
         `Provider: ${providerLabel}`,
         `Model: ${providerConfig.model}`,
-        `Mode: ${this.useFunctionCalling ? "function-calling" : "text-tokens"}`,
         `Response Modality: ${providerConfig.responseModality || "default"}`,
         `Interaction: ${this.interactionMode}`,
         `Response: ${this.responseMode}`,
@@ -780,10 +724,8 @@ export class LiveRelay {
 
       logLiveSession("SYSTEM PROMPT", systemPrompt);
 
-      if (tools && tools.length > 0) {
+      if (tools.length > 0) {
         logLiveSession("TOOL DECLARATIONS", JSON.stringify(tools, null, 2));
-      } else {
-        logLiveSession("TOOL DECLARATIONS", "(none — text token mode)");
       }
 
       // Start periodic reminders
@@ -798,7 +740,6 @@ export class LiveRelay {
         studentId: msg.studentId,
         provider: providerLabel,
         model: providerConfig.model,
-        mode: this.useFunctionCalling ? "function-calling" : "text-tokens",
         responseModality: providerConfig.responseModality || "default",
         interactionMode: this.interactionMode,
         responseMode: this.responseMode,
@@ -811,18 +752,12 @@ export class LiveRelay {
         ? `\nThe student is ${student.name}. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs.`
         : "";
       const imageHint = msg.initialFrame ? "\nUse the camera image to observe the environment and make the buttons contextually relevant." : "";
-      const setBoardRef = this.useFunctionCalling ? "set_board()" : "[SET_BOARD]";
-      const rebuildBoardRef = this.useFunctionCalling ? "rebuild_board()" : "[REBUILD_BOARD]";
-      const speakGreetRef = this.useFunctionCalling ? "speak()" : "[SPEAK]";
       const boardHint = state.availableBoards && state.availableBoards.length > 0
-        ? ` If a custom board from the Available Custom Boards list is appropriate for this student, use ${setBoardRef} instead of ${rebuildBoardRef}.`
+        ? ` If a custom board from the Available Custom Boards list is appropriate for this student, use set_board() instead of rebuild_board().`
         : "";
       const greetingPrompt = isSilent
-        ? `Generate 4-12 contextual utterance buttons — complete phrases the user might want to say. Use the student's profile and interests from the system prompt to make them relevant.${imageHint} Use ${rebuildBoardRef} to create the initial board.${boardHint}${personaHint}`
-        : this.useFunctionCalling
-          // FC mode: ask for board first, then speak greeting via tool calls.
-          ? `IMPORTANT: You communicate ONLY through function calls. Call ${rebuildBoardRef} with 4-12 initial communication buttons, then call ${speakGreetRef} to greet the user. Both must be function calls — do NOT output plain text.${imageHint}${boardHint}${personaHint}`
-          : `Greet the user with a short, friendly greeting (1-2 sentences) and provide 4-12 initial communication buttons that reflect the student's interests, needs, and communication level from the system prompt. The buttons should be appropriate responses to your greeting.${imageHint} Use ${speakGreetRef} for your greeting and ${rebuildBoardRef} for the buttons.${boardHint}${personaHint}`;
+        ? `Generate 4-12 contextual utterance buttons — complete phrases the user might want to say. Use the student's profile and interests from the system prompt to make them relevant.${imageHint} Use rebuild_board() to create the initial board.${boardHint}${personaHint}`
+        : `IMPORTANT: You communicate ONLY through function calls. Call rebuild_board() with 4-12 initial communication buttons, then call speak() to greet the user. Both must be function calls — do NOT output plain text.${imageHint}${boardHint}${personaHint}`;
 
       this.initialConnectionDone = true;
       this.hasGreeted = false;
@@ -831,7 +766,7 @@ export class LiveRelay {
       // Native audio AUDIO-modality models produce garbage audio tokens during warmup.
       // TEXT modality doesn't have this issue, so only delay for AUDIO mode.
       const isAudioModality = providerConfig.responseModality === "AUDIO";
-      const greetingDelay = (isAudioModality && this.useFunctionCalling) ? 3000 : 0;
+      const greetingDelay = isAudioModality ? 3000 : 0;
       const sendGreeting = () => {
         if (!this.provider) return;
         this.awaitingModelResponse = true;
@@ -848,7 +783,7 @@ export class LiveRelay {
         sendGreeting();
       }
 
-      console.log(`[LiveRelay] Initialized session ${state.sessionId} for student ${msg.studentId} (provider: ${providerLabel}, mode: ${this.useFunctionCalling ? "function-calling" : "text-tokens"}, modality: ${providerConfig.responseModality || "default"}, model: ${providerConfig.model})`);
+      console.log(`[LiveRelay] Initialized session ${state.sessionId} for student ${msg.studentId} (provider: ${providerLabel}, modality: ${providerConfig.responseModality || "default"}, model: ${providerConfig.model})`);
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       console.error("[LiveRelay] Initialize failed:", error.message);
@@ -860,52 +795,12 @@ export class LiveRelay {
   // Provider-specific echo awareness prompts
   // -------------------------------------------------------------------------
 
-  private buildGeminiEchoAwareness(): string {
-    return `CRITICAL — AUDIO ECHO AWARENESS:
-You receive continuous microphone audio. Because your [SPEAK] and [INTERPRET] text output is converted to speech (TTS) and played through speakers near the microphone, you WILL hear echoes of your own output in the audio stream shortly after you generate it.
-- Your [INTERPRET] text (if present) is spoken aloud in one voice (student voice)
-- Your [SPEAK] text (if present) is spoken aloud in a different voice (AI voice)
-[INTERPRET] is always spoken first (student voice), then [SPEAK] (AI voice).
-Both play through speakers and are picked up by the microphone within seconds.
-
-You MUST:
-- Recognize BOTH of these echoes as YOUR OWN output, not new user speech
-- NEVER transcribe your own echoed speech with [TRANSCRIPT]
-- NEVER respond to or build upon your own echoed speech
-- Do not treat your own echoed speech as interruptions
-- Only treat audio input as genuine user speech if it clearly does NOT match something you recently said via [SPEAK] or [INTERPRET]
-
-If you hear speech that resembles text you recently produced, it is your echo. Ignore it completely and produce no output.
-
-CRITICAL — AUDIO OUTPUT:
-Your audio responses are NOT played to the user — a separate TTS system voices the text from your [SPEAK] and [INTERPRET] prefix tokens instead.
-Therefore, keep your audio output minimal. When you have nothing to communicate, remain silent. Focus on outputting [SPEAK] and [INTERPRET] tokens with the text you want voiced.`;
-  }
-
   private buildGeminiNativeAudioEchoAwareness(): string {
     return `CRITICAL — OUTPUT RULES:
 You communicate ONLY through function calls (tool calls). Do NOT produce speech or audio output — your audio is discarded. A separate TTS system voices the text from your speak() and interpret() calls instead.
 
 AUDIO ECHO AWARENESS:
 You receive continuous microphone audio. Because speak()/interpret() text is voiced by external TTS through speakers near the mic, you WILL hear your own output echoed back. Recognize these echoes as YOUR OWN output — never transcribe or respond to them. Only treat audio as genuine user speech if it clearly does NOT match something you recently said.`;
-  }
-
-  private buildOpenAIEchoAwareness(): string {
-    return `CRITICAL — AUDIO ECHO AWARENESS:
-You receive continuous microphone audio. Because your tool calls (speak/interpret) are converted to speech by a SEPARATE TTS system and played through speakers near the microphone, you WILL hear echoes of your own output in the audio stream shortly after you generate it.
-- Your interpret() text is spoken aloud in one voice (student voice)
-- Your speak() text is spoken aloud in a different voice (AI voice)
-Both play through speakers and are picked up by the microphone within seconds.
-
-You MUST:
-- Recognize BOTH of these echoes as YOUR OWN output, not new user speech
-- NEVER transcribe your own echoed speech with transcript()
-- NEVER respond to or build upon your own echoed speech
-- Only treat audio input as genuine user speech if it clearly does NOT match something you recently said via speak() or interpret()
-
-If you hear speech that resembles text you recently produced, it is your echo. Ignore it completely and produce no output.
-
-Your text output from speak()/interpret() is synthesized by a separate TTS system — you do NOT generate audio directly.`;
   }
 
   // -------------------------------------------------------------------------
@@ -925,11 +820,9 @@ Your text output from speak()/interpret() is synthesized by a separate TTS syste
       }).catch(err => console.error("[LiveRelay] Failed to persist button press:", err));
     }
 
-    const rbRef = this.useFunctionCalling ? "rebuild_board()" : "[REBUILD_BOARD]";
-    const sbRef = this.useFunctionCalling ? "set_board()" : "[SET_BOARD]";
     this.provider!.sendMessage(`[BUTTON PRESS] ${buttonList}
     The user pressed the above button(s). Interpret this as a user message and respond accordingly.
-    IMPORTANT: Use ${rbRef} (or ${sbRef}, if relevant) NOW to update the board with new buttons or content.
+    IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the board with new buttons or content.
     `, "user");
   }
 
@@ -939,8 +832,7 @@ Your text output from speak()/interpret() is synthesized by a separate TTS syste
 
   /**
    * Handle text from the provider.
-   * In function calling mode: stray text (log only — real output comes through tool calls).
-   * In text token mode: feed into StreamingPrefixParser and process segments.
+   * Stray text (log only — real output comes through tool calls).
    */
   private handleProviderText(text: string): void {
     if (this.turnStartTime === 0) {
@@ -949,234 +841,8 @@ Your text output from speak()/interpret() is synthesized by a separate TTS syste
       this.consecutiveSafetyBlocks = 0;
     }
 
-    if (this.useFunctionCalling) {
-      // Function calling mode — stray text, just log
-      if (text.trim()) {
-        logDualAgent("LiveRelay.strayText", { sessionId: this.sessionId, text: text.substring(0, 200) });
-      }
-      return;
-    }
-
-    // Text prefix token mode: feed into parser
-    this.turnTextBuffer += text;
-    const segments = this.parser.addChunk(text);
-    for (const seg of segments) {
-      this.processTextSegment(seg);
-    }
-  }
-
-  /**
-   * Process a single streaming segment from the text prefix token parser.
-   * Mirrors handleSingleToolCall but for text tokens — populates turnAccum
-   * and sends real-time messages to the client.
-   */
-  private processTextSegment(seg: StreamingSegment): void {
-    const isSilent = this.interactionMode === "silent";
-    const state = this.sessionCache?.state;
-
-    switch (seg.type) {
-      case "speak": {
-        if (seg.data && !isSilent) {
-          this.send({ type: "text", data: seg.data });
-        }
-        this.turnAccum.speakText += (this.turnAccum.speakText ? " " : "") + seg.data;
-        break;
-      }
-
-      case "interpret": {
-        if (seg.data) {
-          this.send({ type: "interpret", text: seg.data, confidence: seg.confidence });
-        }
-        this.turnAccum.interpretText += (this.turnAccum.interpretText ? " " : "") + seg.data;
-        if (seg.confidence) {
-          this.turnAccum.interpretConfidence = seg.confidence;
-        }
-        break;
-      }
-
-      case "transcript": {
-        const speaker = seg.speaker || "Unknown";
-        if (seg.data) {
-          this.send({ type: "transcript", data: seg.data, speaker, confidence: seg.confidence });
-        }
-        this.turnAccum.transcriptText += `[${speaker}] ${seg.data} `;
-        this.turnAccum.transcriptSpeaker = speaker;
-        break;
-      }
-
-      case "context": {
-        if (seg.data) {
-          this.send({ type: "context", data: seg.data });
-        }
-        this.turnAccum.contextText += (this.turnAccum.contextText ? " " : "") + seg.data;
-        break;
-      }
-
-      case "add_buttons": {
-        const buttons = parseBoardButtons(seg.data);
-        if (buttons.length === 0) break;
-
-        const maxSlots = state?.maxBoardItems || 12;
-
-        // Enforce button limit
-        if (state) {
-          if (state.loadedBoardId) {
-            const nativeLabels = this.getNativePageButtonLabels(state);
-            const blankSlots = maxSlots - nativeLabels.length;
-            const newAiCount = state.aiAddedButtonLabels.length + buttons.length;
-            if (newAiCount > blankSlots) {
-              const available = blankSlots - state.aiAddedButtonLabels.length;
-              logDualAgent("LiveRelay.textBoardPatchRejected", { sessionId: this.sessionId, attempted: buttons.length, current: state.aiAddedButtonLabels.length, max: blankSlots });
-              this.provider?.sendContextInjection(`[BOARD ERROR] Cannot add ${buttons.length} button(s) — would exceed ${blankSlots} blank slots. ${available} slot(s) available. Use [REMOVE_BUTTONS] first.`);
-              break;
-            }
-            state.aiAddedButtonLabels = [...state.aiAddedButtonLabels, ...buttons.map(b => b.label)];
-          } else {
-            const newCount = state.boardButtonLabels.length + buttons.length;
-            if (newCount > maxSlots) {
-              const available = maxSlots - state.boardButtonLabels.length;
-              logDualAgent("LiveRelay.textBoardPatchRejected", { sessionId: this.sessionId, attempted: buttons.length, current: state.boardButtonLabels.length, max: maxSlots });
-              this.provider?.sendContextInjection(`[BOARD ERROR] Cannot add ${buttons.length} button(s) — would exceed the ${maxSlots}-button limit. ${available} slot(s) available. Use [REMOVE_BUTTONS] first.`);
-              break;
-            }
-          }
-          state.boardButtonLabels = [...state.boardButtonLabels, ...buttons.map(b => b.label)];
-        }
-
-        this.lastBoardUpdateTime = Date.now();
-        this.send({ type: "board_patch", data: { add: buttons, remove: [] } });
-        this.turnAccum.boardChanged = true;
-        this.turnAccum.boardAddLabels.push(...buttons.map(b => b.label));
-        break;
-      }
-
-      case "remove_buttons": {
-        const labels = seg.data.split(",").map(l => l.trim()).filter(Boolean);
-        if (labels.length === 0) break;
-
-        const maxSlots = state?.maxBoardItems || 12;
-        let effectiveRemoves = labels;
-
-        if (state) {
-          if (state.loadedBoardId) {
-            const nativeSet = new Set(this.getNativePageButtonLabels(state).map(l => l.toLowerCase()));
-            effectiveRemoves = labels.filter(l => !nativeSet.has(l.toLowerCase()));
-            if (effectiveRemoves.length === 0) {
-              this.provider?.sendContextInjection(`[BOARD ERROR] Cannot remove fixed board buttons. Only AI-added buttons can be removed.`);
-              break;
-            }
-            const removeSet = new Set(effectiveRemoves.map(l => l.toLowerCase()));
-            state.aiAddedButtonLabels = state.aiAddedButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
-            state.boardButtonLabels = state.boardButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
-          } else {
-            const removeSet = new Set(labels.map(l => l.toLowerCase()));
-            state.boardButtonLabels = state.boardButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
-          }
-        }
-
-        this.lastBoardUpdateTime = Date.now();
-        this.send({ type: "board_patch", data: { add: [], remove: effectiveRemoves } });
-        this.turnAccum.boardChanged = true;
-        this.turnAccum.boardRemoveLabels.push(...effectiveRemoves);
-        break;
-      }
-
-      case "rebuild_board": {
-        const buttons = parseBoardButtons(seg.data);
-        if (buttons.length === 0) break;
-
-        if (state) {
-          state.loadedBoardId = null;
-          state.loadedBoardData = undefined;
-          state.currentPageId = null;
-          state.pageHistory = [];
-          state.maxBoardItems = 12;
-          state.aiAddedButtonLabels = [];
-          state.boardButtonLabels = buttons.slice(0, 12).map(b => b.label);
-        }
-
-        this.lastBoardUpdateTime = Date.now();
-        this.send({ type: "board", data: this.buildBoardFromButtons(buttons) });
-        this.turnAccum.boardChanged = true;
-        this.turnAccum.boardRebuilt = true;
-        this.turnAccum.boardAddLabels.push(...buttons.map(b => b.label));
-        break;
-      }
-
-      case "set_board": {
-        this.turnAccum.setBoardName = seg.data.trim();
-        break;
-      }
-
-      case "press_button": {
-        this.turnAccum.pressButtonLabel = seg.data.trim();
-        break;
-      }
-
-      case "emote": {
-        const emotion = seg.data.trim().toLowerCase();
-        if (state && (emotion === "happy" || emotion === "sad" || emotion === "neutral")) {
-          state.currentEmote = emotion;
-        }
-        this.send({ type: "emote", data: emotion });
-        this.turnAccum.emote = (emotion as any) || null;
-        break;
-      }
-
-      case "open_app": {
-        // Format: "appId data" or just "appId"
-        const parts = seg.data.trim().split(/\s+/);
-        const appId = parts[0] || "";
-        const data = parts.slice(1).join(" ") || undefined;
-        this.turnAccum.openAppData = { appId, data };
-        if (appId && appId !== "youtube") {
-          this.send({ type: "app_open", data: { appId, data } });
-        }
-        break;
-      }
-
-      case "close_app": {
-        this.turnAccum.closeApp = true;
-        this.send({ type: "app_close", data: {} });
-        break;
-      }
-
-      case "learn_face": {
-        // Format: "name | relationship | description"
-        const faceParts = seg.data.split("|").map(s => s.trim());
-        const faceName = faceParts[0] || "";
-        const relationship = faceParts[1] || undefined;
-        const description = faceParts[2] || undefined;
-        if (faceName) {
-          this.turnAccum.learnFaceData = { name: faceName, relationship, description };
-        }
-        break;
-      }
-
-      case "call_monitor": {
-        this.turnAccum.callMonitorReason = seg.data.trim() || "unspecified";
-        break;
-      }
-
-      case "yes_no": {
-        this.send({ type: "yes_no", data: {} });
-        break;
-      }
-
-      case "ask_yes_no": {
-        this.send({ type: "ask_yes_no", data: {} });
-        break;
-      }
-
-      case "request_focus": {
-        this.turnAccum.focusReason = seg.data.trim() || "detail analysis";
-        this.send({ type: "focus_request", data: { reason: this.turnAccum.focusReason } });
-        break;
-      }
-
-      default:
-        logDualAgent("LiveRelay.unknownTextSegment", { sessionId: this.sessionId, type: seg.type, data: seg.data.substring(0, 100) });
-        break;
+    if (text.trim()) {
+      logDualAgent("LiveRelay.strayText", { sessionId: this.sessionId, text: text.substring(0, 200) });
     }
   }
 
@@ -1257,7 +923,7 @@ Your text output from speak()/interpret() is synthesized by a separate TTS syste
     // it likely generated the greeting as audio (which we discard). Remind it once.
     // Uses sendContextInjection (turnComplete=false) to avoid triggering a new turn
     // that could cause repeated tool calls. The model will see this context on its next turn.
-    if (this.useFunctionCalling && !this.hasGreeted && !this.greetingReminderSent && this.interactionMode === "interact") {
+    if (!this.hasGreeted && !this.greetingReminderSent && this.interactionMode === "interact") {
       this.greetingReminderSent = true;
       setTimeout(() => {
         if (!this.hasGreeted && this.provider) {
@@ -1791,7 +1457,7 @@ Your text output from speak()/interpret() is synthesized by a separate TTS syste
 
     // Skip empty turns — native audio models generate audio-only turns between
     // tool calls. Only process turns that had actual tool calls or text content.
-    if (this.useFunctionCalling && this.turnStartTime === 0) {
+    if (this.turnStartTime === 0) {
       // turnStartTime is set when the first tool call or text arrives.
       // If it's still 0, this was an audio-only turn with no tool calls — skip it.
       this.awaitingModelResponse = false;
@@ -1802,14 +1468,6 @@ Your text output from speak()/interpret() is synthesized by a separate TTS syste
     this.turnProcessingBusy = true;
 
     try {
-      // Flush remaining text from parser in text token mode
-      if (!this.useFunctionCalling) {
-        const remaining = this.parser.flush();
-        for (const seg of remaining) {
-          this.processTextSegment(seg);
-        }
-      }
-
       const turnEndPromise = this.processTurnEnd();
       const timeoutPromise = new Promise<void>((_, reject) =>
         setTimeout(() => reject(new Error("processTurnEnd timed out after 60s")), 60_000)
@@ -1835,9 +1493,6 @@ Your text output from speak()/interpret() is synthesized by a separate TTS syste
       this.lastTurnCompleteAt = Date.now();
       this.consecutiveModelTurns++;
       logLiveSession(`RELAY #${seq} turnComplete DONE`, `consecutiveModelTurns now=${this.consecutiveModelTurns}`);
-      // Reset text mode state for next turn
-      this.turnTextBuffer = "";
-      this.parser = new StreamingPrefixParser();
     }
   }
 
@@ -1845,21 +1500,10 @@ Your text output from speak()/interpret() is synthesized by a separate TTS syste
    * Handle interruption (model was cut off by new input).
    */
   private handleProviderInterrupted(): void {
-    // Flush remaining text from parser in text token mode
-    if (!this.useFunctionCalling) {
-      const remaining = this.parser.flush();
-      for (const seg of remaining) {
-        this.processTextSegment(seg);
-      }
-    }
-
     this.send({ type: "audio_interrupt" });
     this.turnAccum = createEmptyAccumulator();
     this.turnStartTime = 0;
     this.awaitingModelResponse = false;
-    // Reset text mode state
-    this.turnTextBuffer = "";
-    this.parser = new StreamingPrefixParser();
     console.log("[LiveRelay] Model interrupted by new input");
   }
 
@@ -2088,51 +1732,6 @@ Your text output from speak()/interpret() is synthesized by a separate TTS syste
     }
     // close_app is sent immediately in handleSingleToolCall
 
-    // set_board and press_button: In function calling mode, these are BLOCKING tool calls.
-    // In text token mode, they are deferred to here.
-    if (!this.useFunctionCalling && accum.setBoardName && state) {
-      const boardKey = accum.setBoardName.toLowerCase().replace(/ /g, '_');
-      const match = state.availableBoards?.find(b => b.key === boardKey);
-      if (match) {
-        try {
-          const fullBoard = await boardRepository.getBoard(match.id);
-          if (fullBoard?.irData) {
-            const boardData = fullBoard.irData as any;
-            state.loadedBoardId = match.id;
-            state.loadedBoardData = boardData;
-            state.currentPageId = boardData.pages?.[0]?.id || null;
-            state.pageHistory = [];
-            state.maxBoardItems = (boardData.grid?.rows || 3) * (boardData.grid?.cols || 4);
-            state.aiAddedButtonLabels = [];
-            const nativeLabels = this.getNativePageButtonLabels(state);
-            state.boardButtonLabels = [...nativeLabels];
-
-            this.send({ type: "set_board", data: { board: boardData, name: match.name, boardId: match.id } });
-            this.lastBoardUpdateTime = Date.now();
-            logDualAgent("LiveRelay.textSetBoard", { sessionId: this.sessionId, boardName: match.name, boardId: match.id });
-          }
-        } catch (err) {
-          console.error("[LiveRelay] Text mode set_board failed:", (err as Error).message);
-        }
-      } else {
-        logDualAgent("LiveRelay.textSetBoardNotFound", { sessionId: this.sessionId, boardKey, available: state.availableBoards?.map(b => b.key).join(", ") });
-      }
-    }
-
-    if (!this.useFunctionCalling && accum.pressButtonLabel && state?.loadedBoardData) {
-      const label = accum.pressButtonLabel;
-      const currentPage = state.loadedBoardData.pages?.find((p: any) => p.id === state.currentPageId)
-        || state.loadedBoardData.pages?.[0];
-      if (currentPage?.buttons) {
-        const btn = currentPage.buttons.find((b: any) =>
-          b.label.toLowerCase().trim() === label.toLowerCase().trim()
-        );
-        if (btn?.action) {
-          this.executeButtonNavigation(btn, state);
-        }
-      }
-    }
-
     // -----------------------------------------------------------------------
     // Contact enrollment via [LEARN_FACE]
     // -----------------------------------------------------------------------
@@ -2298,21 +1897,6 @@ Your text output from speak()/interpret() is synthesized by a separate TTS syste
     }
   }
 
-  /**
-   * Resolve a Gemini model to one that supports TEXT modality in the Live API.
-   * Native-audio models only support AUDIO modality and bidiGenerateContent.
-   * For text token mode, we need a model that supports bidiGenerateContent + TEXT modality.
-   * Currently only gemini-2.0-flash-exp-image-generation supports both.
-   */
-  private resolveGeminiTextModel(configuredModel: string): string {
-    // Native-audio models → swap to the text-compatible live model
-    if (/native-audio/i.test(configuredModel)) {
-      return "gemini-2.0-flash-exp-image-generation";
-    }
-    // Already a text-compatible model — use as-is
-    return configuredModel || "gemini-2.0-flash-exp-image-generation";
-  }
-
   private buildBoardFromButtons(buttons: Array<{ label: string; iconRef: string; symbolPath?: string }>): any {
     const pageId = `page-${Date.now()}`;
     const cols = 4;
@@ -2439,7 +2023,7 @@ Your text output from speak()/interpret() is synthesized by a separate TTS syste
       header,
       ...parts,
       `IMPORTANT: Continue the conversation naturally from where you left off.`,
-      `Do NOT greet the user again. Do NOT use ${this.useFunctionCalling ? "rebuild_board()" : "[REBUILD_BOARD]"} — the board is already displayed correctly on the client.`,
+      `Do NOT greet the user again. Do NOT use rebuild_board() — the board is already displayed correctly on the client.`,
     ].join("\n");
 
     this.provider!.sendContextInjection(contextText);
@@ -2577,14 +2161,13 @@ Your text output from speak()/interpret() is synthesized by a separate TTS syste
 
     const level = state.interpretationLevel ?? 1;
     const isSilent = this.interactionMode === "silent";
-    const fc = this.useFunctionCalling;
 
-    // Mode-aware tool references
-    const iRef = fc ? "interpret()" : "[INTERPRET]";
-    const sRef = fc ? "speak()" : "[SPEAK]";
-    const abRef = fc ? "add_buttons()" : "[ADD_BUTTONS]";
-    const rbRef = fc ? "remove_buttons()" : "[REMOVE_BUTTONS]";
-    const sbRef = fc ? "set_board()" : "[SET_BOARD]";
+    // Tool references
+    const iRef = "interpret()";
+    const sRef = "speak()";
+    const abRef = "add_buttons()";
+    const rbRef = "remove_buttons()";
+    const sbRef = "set_board()";
 
     // Interpretation level rules — the most critical source of drift
     let interpretRule: string;

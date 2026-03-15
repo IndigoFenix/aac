@@ -277,6 +277,20 @@ export default function LandingPage() {
 
       <footer className="landing-footer">
         <p>{t("landing.footer.text")}</p>
+        <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap', fontSize: '0.8rem' }}>
+          <a href="/terms-of-service" style={{ color: 'inherit', textDecoration: 'none' }} className="hover:underline">
+            {t("landing.footer.terms")}
+          </a>
+          <a href="/privacy-policy" style={{ color: 'inherit', textDecoration: 'none' }} className="hover:underline">
+            {t("landing.footer.privacy")}
+          </a>
+          <a href="/cookie-policy" style={{ color: 'inherit', textDecoration: 'none' }} className="hover:underline">
+            {t("landing.footer.cookies")}
+          </a>
+          <a href="/accessibility" style={{ color: 'inherit', textDecoration: 'none' }} className="hover:underline">
+            {t("landing.footer.accessibility")}
+          </a>
+        </div>
       </footer>
     </div>
   );

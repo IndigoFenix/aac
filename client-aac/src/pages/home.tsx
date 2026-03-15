@@ -1186,7 +1186,6 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
         <DualAgentProvider
           studentId={studentId}
           language={currentLanguage}
-          useLiveApi={true}
           captureFrame={async () => {
             // Try multiCamera first
             const userCamera = getUserCamera();

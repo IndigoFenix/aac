@@ -48,6 +48,7 @@ import { dualAgentController } from "./controllers/dualAgentController";
 import { biometricController } from "./controllers/biometricController";
 import { customSymbolController } from "./controllers/customSymbolController";
 import { contactController } from "./controllers/contactController";
+import { registerDropboxRoutes } from "./services/dropboxRoutes";
 
 // Configure multer for image uploads
 const upload = multer({
@@ -883,27 +884,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     voiceController.voiceChat(req, res)
   );
 
-  // ============= DUAL-AGENT AAC ROUTES =============
-  // Initialize or resume a dual-agent session
-  app.post("/api/aac/dual/initialize", optionalAuth, requireOnboardingComplete, aacUpload.single("image"), (req, res) =>
-    dualAgentController.initialize(req, res)
-  );
-  // Send text message (SSE streaming response)
-  app.post("/api/aac/dual/message", optionalAuth, requireOnboardingComplete, aacUpload.single("image"), (req, res) =>
-    dualAgentController.message(req, res)
-  );
-  // Send voice input (SSE streaming response)
-  app.post("/api/aac/dual/voice", optionalAuth, requireOnboardingComplete, aacUpload.single("audio"), (req, res) =>
-    dualAgentController.voice(req, res)
-  );
-  // Interpret button presses into a spoken sentence (SSE streaming response)
-  app.post("/api/aac/dual/interpret", optionalAuth, requireOnboardingComplete, (req, res) =>
-    dualAgentController.interpret(req, res)
-  );
-  // Continuous detection — camera frame + ambient audio in, board diff out (JSON, not SSE)
-  app.post("/api/aac/dual/detect", optionalAuth, requireOnboardingComplete, aacUpload.fields([{ name: "image", maxCount: 1 }, { name: "audio", maxCount: 1 }, { name: "appCanvas", maxCount: 1 }]), (req, res) =>
-    dualAgentController.detect(req, res)
-  );
+  // ============= DUAL-AGENT AAC SESSION ROUTE =============
   // Get session state
   app.get("/api/aac/dual/session/:sessionId", optionalAuth, requireOnboardingComplete, (req, res) =>
     dualAgentController.getSession(req, res)
@@ -1179,6 +1160,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/admin/credit-packages/:id", requireAdmin, (req, res) =>
     creditPackageController.deleteCreditPackage(req, res)
   );
+
+  // ============= DROPBOX INTEGRATION =============
+  registerDropboxRoutes(app);
 
   // ============= STATIC FILES =============
   app.get("/purchase-credits.html", (req, res) => {

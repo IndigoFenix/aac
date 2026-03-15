@@ -16,7 +16,7 @@ The board is stored at /Context_Board with this structure:
 - currentPageId: Which page is active
 - pages: Array of pages, each containing:
   - id, name
-  - buttons: Array of buttons with id, row, col, label, spokenText, color, iconRef, symbolPath (optional), action
+  - buttons: Array of buttons with id, row, col, label, spokenText, color, iconRef, rebusKey, symbolPath (optional), action
 
 ## Operations
 
@@ -30,7 +30,7 @@ manageMemory({ ops: [{ action: "set", path: "/Context_Board", value: {
     id: "page-main",
     name: "Main",
     buttons: [
-      { id: "btn-1", row: 0, col: 0, label: "Hello", spokenText: "Hello!", color: "#3B82F6", iconRef: "fas fa-hand-wave", action: { type: "speak", text: "Hello!" } }
+      { id: "btn-1", row: 0, col: 0, label: "Hello", spokenText: "Hello!", color: "#3B82F6", iconRef: "👋", rebusKey: "hello", action: { type: "speak", text: "Hello!" } }
     ]
   }]
 }}]})
@@ -56,7 +56,7 @@ manageMemory({ ops: [{ action: "delete", path: "/Context_Board/pages/0/buttons/0
 ### Add a button (set at next index):
 \`\`\`
 manageMemory({ ops: [{ action: "set", path: "/Context_Board/pages/0/buttons/2", value: {
-  id: "btn-new", row: 1, col: 0, label: "New", spokenText: "New button", color: "#F59E0B", iconRef: "fas fa-plus", action: { type: "speak", text: "New button" }
+  id: "btn-new", row: 1, col: 0, label: "New", spokenText: "New button", color: "#F59E0B", iconRef: "✨", rebusKey: "new", action: { type: "speak", text: "New button" }
 }}]})
 \`\`\`
 
@@ -67,6 +67,14 @@ manageMemory({ ops: [{ action: "set", path: "/Context_Board/pages/0/buttons/2", 
 **Colors:** Blue #3B82F6 (needs), Amber #F59E0B (emotions), Pink #EC4899 (people), Yellow #EAB308 (activities), Gray #6B7280 (objects), Green #059669 (yes), Red #DC2626 (no)
 
 **Icons:** A single emoji (e.g., "🏠") in the iconRef field. Required for every button. If custom symbols are available (listed below), also set symbolPath to use the custom image.
+
+**Rebus Key:** The rebusKey field maps to Widgit Rebus symbols for Grid3 AAC software export. Required for every content button.
+- Use a single lowercase British English concept word or short phrase: "colour" not "color", "mum" not "mom", "aeroplane" not "airplane"
+- Multi-word concepts use spaces: "ice cream", "thank you", "brush teeth"
+- Use the verb form for actions: "eat", "drink", "play", "sleep", "listen"
+- Use the most specific concept: "hungry" not "I am hungry", "toilet" not "bathroom"
+- For "more", use "more 1"
+- Omit rebusKey for navigation/utility buttons (Back, Home)
 
 **Actions:** { type: "speak", text: "..." } or { type: "link", toPageId: "page-id" }
 

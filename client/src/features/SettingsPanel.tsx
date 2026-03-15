@@ -2,6 +2,7 @@
 // Settings panel for the application
 
 import { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/hooks/useAuth';
@@ -19,19 +20,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { 
-  Globe, 
-  Moon, 
-  Sun, 
-  Settings2, 
-  User, 
-  Bell, 
+import {
+  Globe,
+  Moon,
+  Sun,
+  Settings2,
+  User,
+  Bell,
   Shield,
   Palette,
   Languages,
   Building2,
+  CloudCog,
+  Check,
+  Loader2,
+  Unlink,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { apiRequest } from '@/lib/queryClient';
 import { BiometricEnrollment } from '@/components/BiometricEnrollment';
 
 type SystemType = 'tala' | 'us_iep';
@@ -40,16 +46,44 @@ export function SettingsPanel() {
   const { language, setLanguage, isRTL } = useLanguage();
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
   // System type state (affects workflow and default language)
   const [systemType, setSystemType] = useState<SystemType>('us_iep');
-  
+
   // Notification settings
   const [notifications, setNotifications] = useState({
     email: true,
     push: false,
     deadlineReminders: true,
     progressUpdates: true,
+  });
+
+  // Dropbox connection
+  const { data: dropboxStatus, isLoading: isDropboxLoading } = useQuery<{
+    connected: boolean;
+    email?: string;
+    folderPath?: string;
+  }>({
+    queryKey: ['/api/integrations/dropbox/status'],
+    enabled: !!user,
+  });
+
+  const connectDropbox = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest('POST', '/api/integrations/dropbox/oauth/start');
+      const { redirectUrl } = await res.json();
+      window.location.href = redirectUrl;
+    },
+  });
+
+  const disconnectDropbox = useMutation({
+    mutationFn: async () => {
+      await apiRequest('DELETE', '/api/integrations/dropbox/connection');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/dropbox/status'] });
+    },
   });
 
   // Handle system type change
@@ -339,6 +373,91 @@ export function SettingsPanel() {
             </CardContent>
           </Card>
 
+          {/* Dropbox Integration */}
+          <Card>
+            <CardHeader>
+              <CardTitle className={cn(
+                "flex items-center gap-2",
+                isRTL && "flex-row-reverse"
+              )}>
+                <CloudCog className="w-5 h-5" />
+                {t('settings.dropbox')}
+              </CardTitle>
+              <CardDescription>{t('settings.dropboxDesc')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {isDropboxLoading ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : dropboxStatus?.connected ? (
+                <>
+                  <div className={cn(
+                    "flex items-center justify-between",
+                    isRTL && "flex-row-reverse"
+                  )}>
+                    <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                      <div className={cn(
+                        "flex items-center gap-2",
+                        isRTL && "flex-row-reverse"
+                      )}>
+                        <Check className="w-4 h-4 text-emerald-500" />
+                        <Label className="text-base font-medium">
+                          {t('settings.dropboxConnected')}
+                        </Label>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {dropboxStatus.email}
+                      </p>
+                      {dropboxStatus.folderPath && (
+                        <p className="text-xs text-muted-foreground">
+                          {t('settings.dropboxFolder')}: {dropboxStatus.folderPath}
+                        </p>
+                      )}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => disconnectDropbox.mutate()}
+                      disabled={disconnectDropbox.isPending}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      {disconnectDropbox.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                      ) : (
+                        <Unlink className="w-4 h-4 mr-1" />
+                      )}
+                      {t('settings.dropboxDisconnect')}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <div className={cn(
+                  "flex items-center justify-between",
+                  isRTL && "flex-row-reverse"
+                )}>
+                  <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                    <Label className="text-base font-medium">
+                      {t('settings.dropboxNotConnected')}
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      {t('settings.dropboxConnectDesc')}
+                    </p>
+                  </div>
+                  <Button
+                    onClick={() => connectDropbox.mutate()}
+                    disabled={connectDropbox.isPending}
+                  >
+                    {connectDropbox.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    ) : null}
+                    {t('settings.dropboxConnect')}
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Security */}
           <Card>
             <CardHeader>
@@ -361,9 +480,29 @@ export function SettingsPanel() {
             </CardContent>
           </Card>
 
+          {/* Legal Links */}
+          <div className={cn(
+            "text-center text-sm text-muted-foreground pt-4 space-y-1",
+          )}>
+            <div className="flex flex-wrap justify-center gap-x-3 gap-y-1">
+              <a href="/terms-of-service" target="_blank" className="hover:underline hover:text-primary transition-colors">
+                {isRTL ? 'תנאי שימוש' : 'Terms of Service'}
+              </a>
+              <a href="/privacy-policy" target="_blank" className="hover:underline hover:text-primary transition-colors">
+                {isRTL ? 'מדיניות פרטיות' : 'Privacy Policy'}
+              </a>
+              <a href="/cookie-policy" target="_blank" className="hover:underline hover:text-primary transition-colors">
+                {isRTL ? 'מדיניות עוגיות' : 'Cookie Policy'}
+              </a>
+              <a href="/accessibility" target="_blank" className="hover:underline hover:text-primary transition-colors">
+                {isRTL ? 'הצהרת נגישות' : 'Accessibility'}
+              </a>
+            </div>
+          </div>
+
           {/* Version Info */}
           <div className={cn(
-            "text-center text-sm text-muted-foreground pt-4",
+            "text-center text-sm text-muted-foreground pt-2",
             isRTL && "text-center"
           )}>
             <p>CliniAACian v1.0.0</p>

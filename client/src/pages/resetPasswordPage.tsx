@@ -396,9 +396,21 @@ export default function ResetPasswordPage() {
         </Card>
       </main>
 
-      <footer className="p-4 text-center text-sm text-muted-foreground">
+      <footer className="p-4 text-center text-sm text-muted-foreground space-x-2 rtl:space-x-reverse">
         <a href="/terms-of-service" className="hover:underline">
           {language === 'he' ? 'תנאי שימוש' : 'Terms of Service'}
+        </a>
+        <span>|</span>
+        <a href="/privacy-policy" className="hover:underline">
+          {language === 'he' ? 'מדיניות פרטיות' : 'Privacy Policy'}
+        </a>
+        <span>|</span>
+        <a href="/cookie-policy" className="hover:underline">
+          {language === 'he' ? 'מדיניות עוגיות' : 'Cookie Policy'}
+        </a>
+        <span>|</span>
+        <a href="/accessibility" className="hover:underline">
+          {language === 'he' ? 'הצהרת נגישות' : 'Accessibility'}
         </a>
       </footer>
     </div>
