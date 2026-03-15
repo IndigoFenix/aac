@@ -849,6 +849,14 @@ export const ChatProvider = ({
               content: data?.message?.content || { md: mdAccumulated || '' },
               timestamp: Date.now(),
             };
+            // Ensure contextData (board updates, etc.) is still processed
+            try {
+              if (data?.contextData) {
+                handleContextData(data.contextData);
+              }
+            } catch (ctxErr) {
+              console.error('[useChat] Error processing contextData in fallback:', ctxErr);
+            }
           }
         },
         onError: (errorMsg) => {

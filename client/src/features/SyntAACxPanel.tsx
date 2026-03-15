@@ -1,11 +1,19 @@
 // src/features/SyntAACxPanel.tsx
 // This is the sliding panel version of SyntAACx that contains the board canvas and export bar
 
-import { useEffect, useCallback } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useState, useEffect, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
-import { Cloud, Loader2 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Cloud, CloudDownload, Check, AlertCircle, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { BoardCanvas } from '@/components/syntAACx/board-canvas';
@@ -17,6 +25,20 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { cn } from '@/lib/utils';
 
+interface DropboxFile {
+  name: string;
+  path: string;
+  size: number;
+  modified: string;
+}
+
+interface BoardExportStatus {
+  exported: boolean;
+  lastExportedAt?: string;
+  fileName?: string;
+  shareableUrl?: string;
+}
+
 interface SyntAACxPanelProps {
   isOpen: boolean;
   onClose?: () => void;
@@ -26,12 +48,17 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
   const { t, isRTL } = useLanguage();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
-  
+
   const { user } = useAuth();
-  const { board, currentPageId, validation, isEditMode } = useBoardStore();
+  const { board, currentPageId, validation, isEditMode, setBoard } = useBoardStore();
   const { toast } = useToast();
   const { sharedState, setSharedState } = useSharedState();
   const { registerMetadataBuilder, unregisterMetadataBuilder } = useFeaturePanel();
+  const queryClient = useQueryClient();
+
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [selectedImportFile, setSelectedImportFile] = useState<DropboxFile | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
 
   // Check if board is currently loading (set by BoardSelector)
   const isBoardLoading = sharedState.isBoardLoading === true;
@@ -73,7 +100,7 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
         currentPageName: board.pages?.find((p: any) => p.id === currentPageId)?.name,
       } : undefined,
       currentPageId: currentPageId,
-      
+
       // New featureContext for backend processing
       featureContext,
     };
@@ -82,15 +109,11 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
   // Register/unregister metadata builder
   useEffect(() => {
     registerMetadataBuilder('boards', buildBoardsMetadata);
-    
+
     return () => {
       unregisterMetadataBuilder('boards');
     };
   }, [registerMetadataBuilder, unregisterMetadataBuilder, buildBoardsMetadata]);
-
-  // NOTE: Board data from chat responses is now handled by BoardSelector
-  // This prevents duplicate processing and the issue of creating new boards
-  // instead of updating existing ones.
 
   // Sync board state with shared state (for other components that need it)
   useEffect(() => {
@@ -103,6 +126,23 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
   const { data: dropboxConnection } = useQuery<{ connected: boolean }>({
     queryKey: ['/api/integrations/dropbox/status'],
     enabled: !!user,
+  });
+
+  // Check export status for current board
+  const { data: exportStatus } = useQuery<BoardExportStatus>({
+    queryKey: ['/api/integrations/dropbox/board-status', board?.name],
+    queryFn: async () => {
+      if (!board?.name) return { exported: false };
+      const res = await apiRequest('GET', `/api/integrations/dropbox/board-status/${encodeURIComponent(board.name)}`);
+      return res.json();
+    },
+    enabled: !!user && !!board?.name && !!dropboxConnection?.connected,
+  });
+
+  // List files from Dropbox for import
+  const { data: dropboxFiles, isLoading: isLoadingFiles } = useQuery<{ files: DropboxFile[] }>({
+    queryKey: ['/api/integrations/dropbox/files'],
+    enabled: importModalOpen && !!dropboxConnection?.connected,
   });
 
   // Helper function to convert blob to base64
@@ -170,6 +210,10 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
         title: t('export.uploadSuccess'),
         description: t('export.uploadSuccessDesc'),
       });
+      // Refresh export status
+      if (board?.name) {
+        queryClient.invalidateQueries({ queryKey: ['/api/integrations/dropbox/board-status', board.name] });
+      }
     },
     onError: (error) => {
       toast({
@@ -205,6 +249,55 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
       console.error('Upload failed:', error);
     }
   };
+
+  // Import from Dropbox
+  const handleImport = async () => {
+    if (!selectedImportFile) return;
+    setIsImporting(true);
+
+    try {
+      const res = await apiRequest('POST', '/api/integrations/dropbox/download', {
+        filePath: selectedImportFile.path,
+      });
+      const { fileData } = await res.json();
+
+      // Decode base64 to ArrayBuffer
+      const binary = atob(fileData);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+
+      const { GridsetImporter } = await import('@/lib/packagers');
+      const importedBoard = await GridsetImporter.import(bytes.buffer);
+
+      setBoard(importedBoard);
+      setImportModalOpen(false);
+      setSelectedImportFile(null);
+
+      toast({
+        title: t('export.importSuccess'),
+        description: t('export.importSuccessDesc', { name: importedBoard.name }),
+      });
+    } catch (error) {
+      console.error('Import failed:', error);
+      toast({
+        title: t('export.importFailed'),
+        description: (error as Error).message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  // Board-was-updated-since-export indicator
+  const boardUpdatedSinceExport = (() => {
+    if (!exportStatus?.exported || !exportStatus.lastExportedAt) return false;
+    // We can't precisely know when the board was last edited client-side,
+    // but we mark the board as "dirty" if it has unsaved changes
+    return (board as any)?.isDirty === true;
+  })();
 
   if (!isOpen) return null;
 
@@ -313,10 +406,51 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
             ) || 0}{' '}
             {t('board.buttons')}
           </div>
+
+          {/* Dropbox export status */}
+          {dropboxConnection?.connected && exportStatus?.exported && (
+            <div className={cn(
+              'flex items-center gap-1 text-xs',
+              boardUpdatedSinceExport
+                ? (isDark ? 'text-amber-400' : 'text-amber-600')
+                : (isDark ? 'text-emerald-400' : 'text-emerald-600'),
+              isRTL && 'flex-row-reverse'
+            )}>
+              {boardUpdatedSinceExport ? (
+                <AlertCircle size={12} />
+              ) : (
+                <Check size={12} />
+              )}
+              <span>
+                {boardUpdatedSinceExport
+                  ? t('export.updatedSinceExport')
+                  : t('export.synced')}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Export Buttons */}
         <div className={cn('flex items-center gap-2', isRTL && 'flex-row-reverse')}>
+          {/* Import from Dropbox */}
+          {dropboxConnection?.connected && (
+            <Button
+              onClick={() => setImportModalOpen(true)}
+              disabled={isBoardLoading}
+              size="sm"
+              variant="outline"
+              className={cn(
+                'h-7 text-xs gap-1',
+                isDark
+                  ? 'border-slate-700 text-slate-300 hover:bg-slate-800'
+                  : 'border-gray-300 text-gray-600 hover:bg-gray-100'
+              )}
+            >
+              <CloudDownload size={12} />
+              {t('export.importFromDropbox')}
+            </Button>
+          )}
+
           {/* Grid3 */}
           <div className={cn('flex items-center gap-0.5', isRTL && 'flex-row-reverse')}>
             <Button
@@ -335,12 +469,16 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
                 variant="outline"
                 className={cn(
                   'h-7 w-7',
-                  isDark 
+                  isDark
                     ? 'border-slate-700 text-slate-400 hover:bg-slate-800'
                     : 'border-gray-300 text-gray-500 hover:bg-gray-100'
                 )}
               >
-                <Cloud size={12} />
+                {uploadToDropbox.isPending ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <Cloud size={12} />
+                )}
               </Button>
             )}
           </div>
@@ -363,17 +501,91 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
                 variant="outline"
                 className={cn(
                   'h-7 w-7',
-                  isDark 
+                  isDark
                     ? 'border-slate-700 text-slate-400 hover:bg-slate-800'
                     : 'border-gray-300 text-gray-500 hover:bg-gray-100'
                 )}
               >
-                <Cloud size={12} />
+                {uploadToDropbox.isPending ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <Cloud size={12} />
+                )}
               </Button>
             )}
           </div>
         </div>
       </footer>
+
+      {/* Import from Dropbox modal */}
+      <Dialog open={importModalOpen} onOpenChange={setImportModalOpen}>
+        <DialogContent className={cn(
+          'max-w-md',
+          isDark ? 'bg-slate-900 border-slate-700' : ''
+        )}>
+          <DialogHeader>
+            <DialogTitle>{t('export.importFromDropbox')}</DialogTitle>
+            <DialogDescription>{t('export.importDesc')}</DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-64 overflow-y-auto space-y-1">
+            {isLoadingFiles ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : !dropboxFiles?.files?.length ? (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                {t('export.noFilesFound')}
+              </p>
+            ) : (
+              dropboxFiles.files.map((file) => (
+                <button
+                  key={file.path}
+                  onClick={() => setSelectedImportFile(file)}
+                  className={cn(
+                    'w-full text-left px-3 py-2 rounded-md text-sm transition-colors',
+                    selectedImportFile?.path === file.path
+                      ? (isDark ? 'bg-blue-900/50 text-blue-300' : 'bg-blue-50 text-blue-700')
+                      : (isDark ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-gray-100 text-gray-700'),
+                    isRTL && 'text-right'
+                  )}
+                >
+                  <div className="font-medium">{file.name}</div>
+                  <div className={cn(
+                    'text-xs mt-0.5',
+                    isDark ? 'text-slate-500' : 'text-gray-500'
+                  )}>
+                    {(file.size / 1024).toFixed(1)} KB
+                    {file.modified && ` · ${new Date(file.modified).toLocaleDateString()}`}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+
+          <div className={cn(
+            'text-xs p-2 rounded',
+            isDark ? 'bg-amber-900/30 text-amber-300' : 'bg-amber-50 text-amber-700'
+          )}>
+            {t('export.importWarning')}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportModalOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              onClick={handleImport}
+              disabled={!selectedImportFile || isImporting}
+            >
+              {isImporting ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : null}
+              {t('export.importButton')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

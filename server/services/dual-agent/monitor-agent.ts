@@ -1,7 +1,7 @@
 // server/services/dual-agent/monitor-agent.ts
 // Monitor Agent for thorough processing, memory management, and database access
 
-import { onMessage, onMessageStreaming } from "../sessionService";
+import { onMessage } from "../sessionService";
 import type { ChatMessage, ParsedBoardData, ChatPersona } from "@shared/schema";
 import type {
   MonitorMessage,
@@ -9,13 +9,11 @@ import type {
   PendingMessage,
   DualAgentConfig,
 } from "./types";
-import { MONITOR_COMMANDS } from "./types";
 import { studentRepository } from "../../repositories";
 import type { StudentWithAacSettings } from "@shared/schema";
 import type { AACInteractionMode, AACAppDefinition } from "./types";
 import {
   AAC_DEFAULT_PERSONA_PROMPT,
-  buildInteractiveSystemPrompt,
   buildMonitorSystemPrompt,
   preloadAllStudentContext,
 } from "../memory-schema/aac-memory-schema";
@@ -69,7 +67,6 @@ export class MonitorAgent {
    * This is called when starting a new dual-agent session
    */
   async initializeSession(interactionMode: AACInteractionMode = 'interact', enabledApps: AACAppDefinition[] = []): Promise<{
-    interactivePrompt: string;
     sessionId: string;
     initialContext?: string;
   }> {
@@ -102,48 +99,12 @@ export class MonitorAgent {
       ? await this.longInitializeContext(student)
       : await this.fastInitializeContext(student);
 
-    // Build the Interactive Agent's prompt using the helper
-    // Compute age from birthDate
-    const age = student.birthDate ? (() => {
-      const bd = new Date(student.birthDate!);
-      if (isNaN(bd.getTime())) return undefined;
-      const now = new Date();
-      let a = now.getFullYear() - bd.getFullYear();
-      const m = now.getMonth() - bd.getMonth();
-      if (m < 0 || (m === 0 && now.getDate() < bd.getDate())) a--;
-      return a >= 0 ? String(a) : undefined;
-    })() : undefined;
-
-    const basePrompt = buildInteractiveSystemPrompt(
-      student.name,
-      personaPrompt,
-      student.primaryLanguage || undefined,
-      contextResult.additionalContext,
-      interactionMode,
-      age,
-      student.gender || undefined,
-      undefined, // diagnosis loaded later in dual-agent-service
-      false,
-      enabledApps,
-      null, // activeApp
-      "happy", // currentEmote - monitor init always starts happy
-      'analyze', // responseMode
-      undefined, // knownContacts
-      undefined, // availableBoards
-      undefined, // loadedBoardName
-      undefined, // loadedPageName
-      12, // maxBoardItems
-      undefined, // loadedPageNavButtons
-      aac?.interpretationLevel ?? 2
-    );
-
     // Store the session ID if we created one
     this.sessionId = contextResult.sessionId;
 
     console.log("[MonitorAgent] Session initialized:", this.sessionId);
 
     return {
-      interactivePrompt: basePrompt,
       sessionId: contextResult.sessionId,
       initialContext: contextResult.additionalContext,
     };
@@ -264,7 +225,8 @@ Be direct and practical. Skip sections with no data. Do not use the memory tool 
   async processPendingMessages(
     pendingMessages: PendingMessage[],
     currentBoard?: ParsedBoardData,
-    interactionMode: AACInteractionMode = 'interact'
+    interactionMode: AACInteractionMode = 'interact',
+    interactivePrompt?: string,
   ): Promise<MonitorResponse> {
     if (pendingMessages.length === 0) {
       return {};
@@ -298,7 +260,7 @@ Be direct and practical. Skip sections with no data. Do not use the memory tool 
     try {
       // Build monitor prompt for dual mode
       const systemPromptOverride = this.student
-        ? buildMonitorSystemPrompt('dual', this.student, this.framework, interactionMode)
+        ? buildMonitorSystemPrompt(this.student, this.framework, interactionMode, interactivePrompt)
         : undefined;
 
       // Process through sessionService for memory updates
@@ -347,93 +309,6 @@ Be direct and practical. Skip sections with no data. Do not use the memory tool 
     } catch (error) {
       console.error("[MonitorAgent] Error processing pending messages:", error);
       return {};
-    }
-  }
-
-  /**
-   * Handle thinking mode - Monitor responds directly to the user
-   * Uses streaming for real-time response
-   */
-  async *respondInThinkingMode(
-    userMessage: string,
-    messages: ChatMessage[],
-    currentBoard?: ParsedBoardData
-  ): AsyncGenerator<{
-    type: "text" | "board" | "complete";
-    data: any;
-  }> {
-    console.log("[MonitorAgent] Responding in thinking mode, student:", this.student?.name || "NOT LOADED", "sessionId:", this.sessionId);
-
-    // Build feature context
-    const featureContext: any = {};
-    if (currentBoard) {
-      featureContext.board = {
-        data: currentBoard,
-        currentPageId: currentBoard.currentPageId,
-      };
-    }
-
-    // Add the user message
-    const inputMessages: ChatMessage[] = [
-      ...messages,
-      {
-        role: "user",
-        content: userMessage,
-        timestamp: Date.now(),
-      },
-    ];
-
-    try {
-      let fullText = "";
-      let finalBoard: ParsedBoardData | undefined;
-
-      // Build monitor prompt for thinking mode
-      const systemPromptOverride = this.student
-        ? buildMonitorSystemPrompt('thinking', this.student, this.framework)
-        : undefined;
-
-      // Use streaming session service
-      const streamResult = await onMessageStreaming({
-        userId: this.userId,
-        studentId: this.studentId,
-        sessionId: this.sessionId || undefined,
-        activeFeature: "aac",
-        persona: "aac-assistant" as ChatPersona,
-        messages: inputMessages,
-        featureContext,
-        replyType: "text",
-        onThinkingUpdate: (status: string) => {
-          console.log("[MonitorAgent] Thinking:", status);
-        },
-        systemPromptOverride,
-      });
-
-      // Extract text from the streaming result
-      if (streamResult?.message?.content) {
-        const content = streamResult.message.content;
-        fullText = typeof content === "string" ? content : (content as any)?.text || "";
-      }
-
-      // Yield the collected text
-      if (fullText) {
-        yield { type: "text", data: fullText };
-      }
-
-      // Check if we should exit thinking mode
-      if (fullText.includes(MONITOR_COMMANDS.RESUME)) {
-        yield {
-          type: "complete",
-          data: { exitThinkingMode: true },
-        };
-      } else {
-        yield {
-          type: "complete",
-          data: { exitThinkingMode: false },
-        };
-      }
-    } catch (error) {
-      console.error("[MonitorAgent] Error in thinking mode:", error);
-      throw error;
     }
   }
 

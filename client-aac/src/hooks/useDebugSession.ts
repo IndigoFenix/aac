@@ -12,7 +12,6 @@ export interface DebugSessionMessage {
 
 export interface DebugSessionData {
   sessionId: string;
-  thinkingMode: boolean;
   monitorBusy: boolean;
   messageCount: number;
   pendingCount: number;

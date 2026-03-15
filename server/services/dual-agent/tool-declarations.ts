@@ -1,12 +1,11 @@
 // server/services/dual-agent/tool-declarations.ts
 // Function declarations for live API native function calling.
-// Supports both Gemini (FunctionDeclaration) and OpenAI (RealtimeFunctionTool) formats.
+// Uses Gemini FunctionDeclaration format.
 //
 // Tool descriptions contain the behavioral rules for each tool. Keep descriptions
 // concise but complete — include the key rules the model needs to follow.
 
 import { Behavior, type FunctionDeclaration, type Tool } from "@google/genai";
-import type { RealtimeFunctionTool } from "openai/resources/realtime/realtime";
 import type { AACAppDefinition } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -369,27 +368,3 @@ export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
   return [{ functionDeclarations: declarations }];
 }
 
-// ---------------------------------------------------------------------------
-// OpenAI Realtime API tool format converter
-// ---------------------------------------------------------------------------
-
-/** Convert a Gemini FunctionDeclaration to OpenAI RealtimeFunctionTool format */
-function toOpenAITool(decl: FunctionDeclaration): RealtimeFunctionTool {
-  return {
-    type: "function",
-    name: decl.name,
-    description: decl.description || "",
-    parameters: decl.parametersJsonSchema as unknown || { type: "object", properties: {} },
-  };
-}
-
-/**
- * Build tool declarations in OpenAI Realtime API format.
- * Same conditional logic as buildToolDeclarations, but output is RealtimeFunctionTool[].
- */
-export function buildOpenAIToolDeclarations(config: ToolDeclarationConfig): RealtimeFunctionTool[] {
-  // Reuse the Gemini builder and convert
-  const geminiTools = buildToolDeclarations(config);
-  const declarations = geminiTools[0]?.functionDeclarations || [];
-  return declarations.map(toOpenAITool);
-}

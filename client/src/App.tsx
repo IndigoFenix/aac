@@ -13,6 +13,9 @@ import { StudentProvider, useStudent } from "@/hooks/useStudent";
 import NotFound from "@/pages/not-found";
 import PurchaseCredits from "@/pages/purchase-credits";
 import TermsOfService from "@/pages/terms-of-service";
+import PrivacyPolicy from "@/pages/privacy-policy";
+import CookiePolicy from "@/pages/cookie-policy";
+import AccessibilityStatement from "@/pages/accessibility-statement";
 import OnboardingFlow from "@/pages/OnboardingFlow";
 import LoginPage from "@/pages/LoginPage";
 import Dashboard from "./pages/Dashboard";
@@ -155,6 +158,9 @@ function Router() {
         </InviteRoute>
       </Route>
       <Route path="/terms-of-service" component={TermsOfService} />
+      <Route path="/privacy-policy" component={PrivacyPolicy} />
+      <Route path="/cookie-policy" component={CookiePolicy} />
+      <Route path="/accessibility" component={AccessibilityStatement} />
 
       {/* MFA Recovery routes */}
       <Route path="/mfa-recovery">

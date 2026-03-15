@@ -60,15 +60,28 @@ export interface UseChatStreamResult {
 }
 
 /**
- * Parse SSE events from a text buffer.
- * Returns the parsed events and any remaining incomplete data.
+ * Persistent state for the SSE parser across chunk boundaries.
+ * When TCP or CloudFront splits an SSE event across chunks (e.g. the
+ * "event:" line arrives in one chunk and the "data:" line in the next),
+ * this state preserves the partial event so it can be completed later.
  */
-function parseSSEEvents(buffer: string): { events: Array<{ event: string; data: string }>; remaining: string } {
+interface SSEParserState {
+  currentEvent: string;
+  currentData: string;
+}
+
+/**
+ * Parse SSE events from a text buffer.
+ * Accepts and returns parser state to handle event/data lines split across chunks.
+ */
+function parseSSEEvents(
+  buffer: string,
+  state: SSEParserState = { currentEvent: '', currentData: '' },
+): { events: Array<{ event: string; data: string }>; remaining: string; state: SSEParserState } {
   const events: Array<{ event: string; data: string }> = [];
   const lines = buffer.split('\n');
 
-  let currentEvent = '';
-  let currentData = '';
+  let { currentEvent, currentData } = state;
   let remaining = '';
 
   for (let i = 0; i < lines.length; i++) {
@@ -93,7 +106,7 @@ function parseSSEEvents(buffer: string): { events: Array<{ event: string; data: 
     }
   }
 
-  return { events, remaining };
+  return { events, remaining, state: { currentEvent, currentData } };
 }
 
 /**
@@ -139,6 +152,7 @@ export function useChatStream(): UseChatStreamResult {
       const decoder = new TextDecoder();
       let buffer = '';
       let completed = false;
+      let parserState: SSEParserState = { currentEvent: '', currentData: '' };
 
       while (true) {
         const { done, value } = await reader.read();
@@ -150,9 +164,10 @@ export function useChatStream(): UseChatStreamResult {
         // Decode the chunk and add to buffer
         buffer += decoder.decode(value, { stream: true });
 
-        // Parse SSE events from buffer
-        const { events, remaining } = parseSSEEvents(buffer);
+        // Parse SSE events from buffer (state preserves partial events across chunks)
+        const { events, remaining, state: newState } = parseSSEEvents(buffer, parserState);
         buffer = remaining;
+        parserState = newState;
 
         // Process each event
         for (const { event, data } of events) {

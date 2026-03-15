@@ -1,6 +1,6 @@
 // server/services/dual-agent/live-provider.ts
 // Provider-agnostic interface for live/realtime API sessions.
-// Implementations: GeminiLiveProvider, OpenAILiveProvider
+// Implementations: GeminiLiveProvider
 
 // ---------------------------------------------------------------------------
 // Provider-agnostic types
@@ -61,7 +61,7 @@ export interface LiveProviderCallbacks {
 export interface LiveProviderConfig {
   model: string;
   temperature?: number;
-  /** Provider-specific tool declarations (Gemini Tool[] or OpenAI RealtimeFunctionTool[]) */
+  /** Provider-specific tool declarations (Gemini Tool[]) */
   tools?: any[];
   /** Token threshold that triggers context window compression (Gemini only) */
   compressionTriggerTokens?: number;

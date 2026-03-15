@@ -1,8 +1,6 @@
 import { encrypt, decrypt } from './encryption';
 import { db } from '../db';
-// Tables `dropboxConnections` and `dropboxBackups` have been deleted from @shared/schema. Stubs keep this dead-code file compiling.
-const dropboxConnections = null as any;
-const dropboxBackups = null as any;
+import { dropboxConnections, dropboxBackups } from '@shared/schema';
 import { eq } from 'drizzle-orm';
 
 export interface DropboxTokens {
@@ -192,16 +190,19 @@ export class DropboxService {
    * Upload file to Dropbox
    */
   async uploadFile(
-    accessToken: string, 
-    filePath: string, 
+    accessToken: string,
+    filePath: string,
     fileData: Buffer,
-    options: { autorename?: boolean } = {}
+    options: { overwrite?: boolean; autorename?: boolean } = {}
   ): Promise<DropboxUploadResult> {
     const fileSize = fileData.length;
-    
+
     if (fileSize > this.maxFileSize) {
       throw new Error(`File size ${fileSize} bytes exceeds maximum allowed size of ${this.maxFileSize} bytes`);
     }
+
+    // Use overwrite mode so re-exporting the same board replaces the existing file
+    const mode = options.overwrite ? 'overwrite' : 'add';
 
     // For files under 150MB, use simple upload
     const response = await fetch('https://content.dropboxapi.com/2/files/upload', {
@@ -211,8 +212,8 @@ export class DropboxService {
         'Content-Type': 'application/octet-stream',
         'Dropbox-API-Arg': JSON.stringify({
           path: filePath,
-          mode: 'add',
-          autorename: options.autorename || true,
+          mode,
+          autorename: options.autorename ?? false,
           mute: false,
           strict_conflict: false
         })
@@ -226,7 +227,7 @@ export class DropboxService {
     }
 
     const result = await response.json();
-    
+
     return {
       path: result.path_lower,
       rev: result.rev,
@@ -401,13 +402,78 @@ export class DropboxService {
   }
 
   /**
-   * Generate build path for file based on folder structure and date
+   * Generate file path — flat structure under the backup folder (no date subfolders)
+   * so that re-uploading the same board name overwrites the previous file.
    */
   generateFilePath(baseFolderPath: string, fileName: string): string {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    
-    return `${baseFolderPath}/${year}/${month}/${fileName}`;
+    return `${baseFolderPath}/${fileName}`;
+  }
+
+  /**
+   * List .gridset files in the user's Dropbox backup folder
+   */
+  async listFiles(
+    accessToken: string,
+    folderPath: string,
+    extensions?: string[]
+  ): Promise<{ name: string; path: string; size: number; modified: string }[]> {
+    const response = await fetch('https://api.dropboxapi.com/2/files/list_folder', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        path: folderPath,
+        recursive: true,
+        limit: 200
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      // If folder doesn't exist, return empty list
+      if (error.includes('path/not_found')) {
+        return [];
+      }
+      throw new Error(`List files failed: ${error}`);
+    }
+
+    const data = await response.json();
+    const entries: any[] = data.entries || [];
+
+    return entries
+      .filter((e: any) => {
+        if (e['.tag'] !== 'file') return false;
+        if (!extensions || extensions.length === 0) return true;
+        return extensions.some(ext => e.name.toLowerCase().endsWith(`.${ext}`));
+      })
+      .map((e: any) => ({
+        name: e.name,
+        path: e.path_lower,
+        size: e.size,
+        modified: e.client_modified || e.server_modified
+      }));
+  }
+
+  /**
+   * Download a file from Dropbox and return the raw buffer
+   */
+  async downloadFile(accessToken: string, filePath: string): Promise<Buffer> {
+    const response = await fetch('https://content.dropboxapi.com/2/files/download', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Dropbox-API-Arg': JSON.stringify({ path: filePath })
+      }
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Download failed: ${error}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
   }
 }

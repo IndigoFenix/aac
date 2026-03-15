@@ -68,18 +68,12 @@ import {
 import { AgentMemoryFieldWithDB } from "./chat/memory-types";
 import { 
   createDBMemoryProcessor, 
-  MemoryProcessor,
   LoopDetectionConfig,
-  DEFAULT_LOOP_DETECTION_CONFIG 
 } from "./chat/tool-router";
 import {
   AAC_SYSTEM_PROMPT,
   AAC_DEFAULT_PERSONA_PROMPT,
   getAACMemoryFields,
-  AAC_CHAT_PROMPT,
-  AAC_BUTTON_PROMPT,
-  buildInteractiveSystemPrompt,
-  buildMonitorSystemPrompt,
 } from "./memory-schema/aac-memory-schema";
 import {
   LIBRARY_TOPICS_FIELD,
@@ -436,6 +430,7 @@ const BOARD_MEMORY_FIELD: AgentMemoryField = {
                 color: { id: "color", type: "string", title: "Color" },
                 iconRef: { id: "iconRef", type: "string", title: "Icon" },
                 symbolPath: { id: "symbolPath", type: "string", title: "Symbol Path" },
+                rebusKey: { id: "rebusKey", type: "string", title: "Rebus Key", description: "Widgit Rebus concept name for Grid3 export (e.g. happy, mum, ice cream)" },
                 selfClosing: { id: "selfClosing", type: "boolean", title: "Self Closing" },
                 action: {
                   id: "action",

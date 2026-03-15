@@ -11,14 +11,14 @@ import type { ComposedGrid } from "@/lib/composeFrameGrid";
 import type { UnknownFaceDescriptor } from "./usePersonIdentification";
 import { useDebugRequestCache, type CachedRequest } from "./useDebugRequestCache";
 
-// Re-export types from useDualAgent for compatibility
+// Re-export shared types
 export type {
   DualAgentMessage,
   IdentifiedPerson,
   ActiveAppData,
   BoardPatch,
   CachedAudioClip,
-} from "./useDualAgent";
+} from "./dual-agent-types";
 import type {
   DualAgentMessage,
   IdentifiedPerson,
@@ -26,7 +26,7 @@ import type {
   BoardPatch,
   CachedAudioClip,
   UseDualAgentReturn,
-} from "./useDualAgent";
+} from "./dual-agent-types";
 
 export interface UseLiveSessionOptions {
   studentId: string;
@@ -87,7 +87,6 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   const [isInitialized, setIsInitialized] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [thinkingMode, setThinkingMode] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const [safetyBlocked, setSafetyBlocked] = useState(false);
   const rateLimitedRef = useRef(false);
@@ -726,7 +725,6 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     isInitialized,
     isLoading,
     error,
-    thinkingMode,
 
     // Messages
     currentMessage,

@@ -225,6 +225,13 @@
       "when": 1773172930543,
       "tag": "0031_fuzzy_sphinx",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1773584212259,
+      "tag": "0032_gorgeous_major_mapleleaf",
+      "breakpoints": true
     }
   ]
 }

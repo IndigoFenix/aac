@@ -121,7 +121,6 @@ export function DualAgentConversationBox({
     isLoading,
     isInitialized,
     error,
-    thinkingMode,
     audioEnabled,
     isPlaying,
     voiceEnabled,
@@ -257,7 +256,7 @@ export function DualAgentConversationBox({
         exit={{ y: "-100%" }}
         transition={{ type: "spring", damping: 25, stiffness: 200 }}
         className={`fixed top-0 left-0 right-0 z-50 shadow-lg ${
-          thinkingMode ? "bg-purple-700" : "bg-primary"
+          "bg-primary"
         } text-white`}
       >
         <div className="px-4 py-2">
@@ -472,7 +471,7 @@ export function DualAgentConversationBox({
                         style={{ animationDelay: "0.2s" }}
                       />
                       <span className="ml-2 text-sm">
-                        {thinkingMode ? "Thinking carefully..." : "Processing..."}
+                        {"Processing..."}
                       </span>
                     </div>
                   ) : reconnecting ? (

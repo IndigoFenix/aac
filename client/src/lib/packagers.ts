@@ -566,6 +566,214 @@ export class OBZPackager {
   }
 }
 
+/**
+ * GridsetImporter — converts a .gridset ZIP back into a BoardIR
+ *
+ * Limitations:
+ *  - Symbol references are not fully reversible (Widgit paths → rebusKey only)
+ *  - YouTube embeds are imported where detectable
+ *  - Color alpha channel is stripped to 6-char hex
+ *  - Grid3 features without a BoardIR equivalent are dropped silently
+ */
+export class GridsetImporter {
+  static async import(data: ArrayBuffer | Blob): Promise<BoardIR> {
+    const zip = await JSZip.loadAsync(data);
+
+    // Parse settings to get the start grid name
+    const settingsFile = zip.file('Settings0/settings.xml');
+    let startGrid = '';
+    let boardName = 'Imported Board';
+    if (settingsFile) {
+      const settingsXml = await settingsFile.async('text');
+      startGrid = this.extractTag(settingsXml, 'StartGrid');
+      boardName = startGrid || boardName;
+    }
+
+    // Find all grid.xml files
+    const gridFiles: { name: string; path: string; content: string }[] = [];
+    const gridEntries = zip.file(/Grids\/.*\/grid\.xml$/i);
+    for (const entry of gridEntries) {
+      const content = await entry.async('text');
+      // Extract folder name as page name
+      const parts = entry.name.split('/');
+      const pageName = parts.length >= 2 ? parts[parts.length - 2] : 'Page';
+      gridFiles.push({ name: pageName, path: entry.name, content });
+    }
+
+    // Sort so start grid comes first
+    gridFiles.sort((a, b) => {
+      if (a.name === startGrid) return -1;
+      if (b.name === startGrid) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    // Build a name → id map
+    const nameToId = new Map<string, string>();
+    for (const gf of gridFiles) {
+      nameToId.set(gf.name, this.generateId());
+    }
+
+    // Parse each grid into a PageIR
+    let maxCols = 0;
+    let maxRows = 0;
+    const pages: PageIR[] = [];
+
+    for (const gf of gridFiles) {
+      const page = this.parseGridXml(gf.content, gf.name, nameToId.get(gf.name)!, nameToId);
+      pages.push(page);
+      const layout = page.layout || { rows: 0, cols: 0 };
+      if (layout.cols > maxCols) maxCols = layout.cols;
+      if (layout.rows > maxRows) maxRows = layout.rows;
+    }
+
+    return {
+      name: boardName,
+      grid: { rows: maxRows, cols: maxCols },
+      pages,
+    };
+  }
+
+  private static parseGridXml(
+    xml: string,
+    pageName: string,
+    pageId: string,
+    nameToId: Map<string, string>,
+  ): PageIR {
+    const cols = (xml.match(/<ColumnDefinition/g) || []).length;
+    const rows = (xml.match(/<RowDefinition/g) || []).length;
+
+    const buttons: ButtonIR[] = [];
+    const videoPlayers: VideoPlayerIR[] = [];
+
+    // Parse each <Cell>
+    const cellRegex = /<Cell\b[^>]*>([\s\S]*?)<\/Cell>/g;
+    let cellMatch: RegExpExecArray | null;
+
+    while ((cellMatch = cellRegex.exec(xml)) !== null) {
+      const cellTag = cellMatch[0];
+      const cellContent = cellMatch[1];
+
+      const col = parseInt(this.extractAttr(cellTag, 'X') || '0');
+      const row = parseInt(this.extractAttr(cellTag, 'Y') || '0');
+      const colSpan = parseInt(this.extractAttr(cellTag, 'ColumnSpan') || '1');
+      const rowSpan = parseInt(this.extractAttr(cellTag, 'RowSpan') || '1');
+
+      const caption = this.extractTag(cellContent, 'Caption');
+      if (!caption) continue; // empty/default cell
+
+      // Determine action from commands
+      const action = this.parseAction(cellContent, nameToId);
+
+      // Check for YouTube video
+      const youtubeMatch = cellContent.match(/youtube\.sensorysoftware\.com\/play\.html\?([^"<]+)/);
+      if (youtubeMatch) {
+        if (colSpan > 1 || rowSpan > 1) {
+          videoPlayers.push({
+            id: this.generateId(),
+            row, col, rowSpan, colSpan,
+            videoId: youtubeMatch[1],
+            title: caption,
+          });
+          continue;
+        }
+      }
+
+      // Parse color
+      const style = this.extractBlock(cellContent, 'Style');
+      const color = this.convertGrid3ColorToHex(this.extractTag(style, 'BackColour'));
+
+      buttons.push({
+        id: this.generateId(),
+        row, col,
+        label: caption,
+        color,
+        action: action || undefined,
+      });
+    }
+
+    return {
+      id: pageId,
+      name: pageName,
+      buttons,
+      videoPlayers: videoPlayers.length > 0 ? videoPlayers : undefined,
+      layout: { rows, cols },
+    };
+  }
+
+  private static parseAction(
+    cellContent: string,
+    nameToId: Map<string, string>,
+  ): ActionIR | null {
+    // Check Jump.Back
+    if (cellContent.includes('Jump.Back')) {
+      return { type: 'back' };
+    }
+
+    // Check Jump.To
+    const jumpToMatch = cellContent.match(/<Command ID="Jump\.To">\s*<Parameter Key="grid">([^<]+)<\/Parameter>/);
+    if (jumpToMatch) {
+      const targetName = this.unescapeXml(jumpToMatch[1]);
+      const targetId = nameToId.get(targetName);
+      if (targetId) {
+        return { type: 'navigate', toPageId: targetId };
+      }
+    }
+
+    // Check YouTube
+    const youtubeMatch = cellContent.match(/youtube\.sensorysoftware\.com\/play\.html\?([^"<]+)/);
+    if (youtubeMatch) {
+      const caption = this.extractTag(cellContent, 'Caption');
+      return { type: 'youtube', videoId: youtubeMatch[1], title: caption || 'Video' };
+    }
+
+    // Default: speak (no explicit action needed — BoardIR default)
+    return null;
+  }
+
+  private static convertGrid3ColorToHex(color: string): string | undefined {
+    if (!color) return undefined;
+    // Grid3 uses #RRGGBBAA — we strip the alpha
+    if (color.startsWith('#') && color.length === 9) {
+      return color.substring(0, 7);
+    }
+    if (color.startsWith('#') && color.length === 7) {
+      return color;
+    }
+    return undefined;
+  }
+
+  private static extractTag(xml: string, tag: string): string {
+    const regex = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i');
+    const match = xml.match(regex);
+    return match ? match[1].trim() : '';
+  }
+
+  private static extractBlock(xml: string, tag: string): string {
+    const regex = new RegExp(`<${tag}[^>]*>[\\s\\S]*?<\\/${tag}>`, 'i');
+    const match = xml.match(regex);
+    return match ? match[0] : '';
+  }
+
+  private static extractAttr(tag: string, attr: string): string | null {
+    const regex = new RegExp(`${attr}="([^"]*)"`, 'i');
+    const match = tag.match(regex);
+    return match ? match[1] : null;
+  }
+
+  private static unescapeXml(text: string): string {
+    return text
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'");
+  }
+
+  private static generateId(): string {
+    return 'xxxxxxxx'.replace(/x/g, () => Math.floor(Math.random() * 16).toString(16));
+  }
+}
+
 export async function downloadFile(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

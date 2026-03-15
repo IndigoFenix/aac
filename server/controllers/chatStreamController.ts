@@ -126,7 +126,15 @@ export class ChatStreamController {
 
           for await (const event of stream) {
             if (res.writableEnded) break;
-            sendSSEEvent(res, event.type, event);
+            if (event.type === "complete") {
+              // Strip memoryValues from the SSE payload — it's redundant with
+              // contextData and can be very large (full board + student data),
+              // causing chunk-boundary issues with proxies like CloudFront.
+              const { memoryValues, ...slimEvent } = event as any;
+              sendSSEEvent(res, event.type, slimEvent);
+            } else {
+              sendSSEEvent(res, event.type, event);
+            }
           }
 
           if (!res.writableEnded) {
@@ -154,8 +162,9 @@ export class ChatStreamController {
           onSelectStudent,
         });
 
-        // Send final response
-        sendSSEEvent(res, "complete", response);
+        // Send final response (strip memoryValues to reduce payload size)
+        const { memoryValues, ...slimResponse } = response as any;
+        sendSSEEvent(res, "complete", slimResponse);
 
         // Send close event and end connection
         sendSSEEvent(res, "close", {});

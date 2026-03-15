@@ -1125,6 +1125,45 @@ export const boards = pgTable("boards", {
   loadedAt: timestamp("loaded_at").defaultNow().notNull(),
 });
 
+// Dropbox Connections table
+export const dropboxConnections = pgTable("dropbox_connections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull().unique(),
+  dropboxAccountId: text("dropbox_account_id"),
+  dropboxEmail: text("dropbox_email"),
+  encryptedAccessToken: text("encrypted_access_token"),
+  encryptedRefreshToken: text("encrypted_refresh_token"),
+  tokenExpiresAt: timestamp("token_expires_at"),
+  backupFolderPath: text("backup_folder_path").default("/Apps/CliniAACian/Boards"),
+  autoBackupEnabled: boolean("auto_backup_enabled").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_dropbox_connections_user_id").on(table.userId),
+]);
+
+// Dropbox Backups table — tracks each board export to Dropbox
+export const dropboxBackups = pgTable("dropbox_backups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  boardId: varchar("board_id").references(() => boards.id),
+  boardName: text("board_name").notNull(),
+  fileType: text("file_type").notNull(), // gridset, obz, etc.
+  fileName: text("file_name").notNull(),
+  dropboxPath: text("dropbox_path"),
+  dropboxFileId: text("dropbox_file_id"),
+  fileSizeBytes: integer("file_size_bytes"),
+  status: text("status").default("pending").notNull(), // pending, uploading, completed, failed
+  shareableUrl: text("shareable_url"),
+  errorMessage: text("error_message"),
+  uploadDurationMs: integer("upload_duration_ms"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_dropbox_backups_user_id").on(table.userId),
+  index("idx_dropbox_backups_board_id").on(table.boardId),
+]);
+
 // Invite Codes table
 export const inviteCodes = pgTable("invite_codes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

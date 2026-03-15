@@ -2,13 +2,8 @@ import type { Express, Request } from "express";
 import { DropboxService } from './dropboxService';
 import { generatePKCEVerifier, createPKCEChallenge } from './encryption';
 import { db } from '../db';
-// Tables `dropboxConnections` and `dropboxBackups` have been deleted from @shared/schema. Stubs keep this dead-code file compiling.
-import { boards, User } from '@shared/schema';
-const dropboxConnections = null as any;
-const dropboxBackups = null as any;
+import { boards, dropboxConnections, dropboxBackups, User } from '@shared/schema';
 import { eq, and, desc } from 'drizzle-orm';
-// Note: Import packagers dynamically to avoid asset import issues on server-side
-import { BoardIR } from '../../client/src/types/board-ir';
 
 interface AuthenticatedRequest extends Request {
   user?: User;
@@ -43,7 +38,7 @@ export function registerDropboxRoutes(app: Express): void {
       const verifier = generatePKCEVerifier();
       const challenge = await createPKCEChallenge(verifier);
       const state = generatePKCEVerifier(); // Use as state parameter
-      
+
       // Store PKCE state
       pkceStates.set(state, {
         verifier,
@@ -53,15 +48,7 @@ export function registerDropboxRoutes(app: Express): void {
 
       const clientId = process.env.DROPBOX_CLIENT_ID;
       const redirectUri = `${req.protocol}://${req.get('host')}/api/integrations/dropbox/oauth/callback`;
-      
-      // Log the exact parameters being sent to Dropbox
-      console.log('Dropbox OAuth Parameters:', {
-        clientId: clientId ? `${clientId.substring(0, 8)}...` : 'MISSING',
-        redirectUri,
-        protocol: req.protocol,
-        host: req.get('host')
-      });
-      
+
       const authUrl = new URL('https://www.dropbox.com/oauth2/authorize');
       authUrl.searchParams.append('client_id', clientId || '');
       authUrl.searchParams.append('redirect_uri', redirectUri);
@@ -71,7 +58,6 @@ export function registerDropboxRoutes(app: Express): void {
       authUrl.searchParams.append('state', state);
       authUrl.searchParams.append('scope', 'files.content.write files.content.read sharing.write account_info.read');
 
-      console.log('Generated OAuth URL:', authUrl.toString());
       res.json({ redirectUrl: authUrl.toString() });
     } catch (error) {
       console.error('OAuth start error:', error);
@@ -104,7 +90,7 @@ export function registerDropboxRoutes(app: Express): void {
       pkceStates.delete(state as string);
 
       const redirectUri = `${req.protocol}://${req.get('host')}/api/integrations/dropbox/oauth/callback`;
-      
+
       // Exchange code for tokens
       const tokens = await dropboxService.exchangeCodeForTokens(
         code as string,
@@ -202,7 +188,7 @@ export function registerDropboxRoutes(app: Express): void {
   });
 
   /**
-   * Upload board to Dropbox
+   * Upload board to Dropbox — uses overwrite mode so re-exporting replaces the file
    */
   app.post("/api/integrations/dropbox/upload", async (req: AuthenticatedRequest, res) => {
     if (!req.user) {
@@ -230,13 +216,10 @@ export function registerDropboxRoutes(app: Express): void {
 
       const { accessToken, connection } = userTokenResult;
 
-      // For manual uploads, we don't need to validate board exists in database
-      // since generated boards are temporary and not saved to DB
-
       // Convert base64 data to buffer
       const fileBuffer = Buffer.from(fileData, 'base64');
 
-      // Generate full path
+      // Generate full path (flat, so overwrite works by filename)
       const filePath = dropboxService.generateFilePath(connection.backupFolderPath, fileName);
 
       // Create backup record
@@ -244,7 +227,7 @@ export function registerDropboxRoutes(app: Express): void {
         .insert(dropboxBackups)
         .values({
           userId: req.user.id,
-          boardName: boardId, // Use boardId as boardName for compatibility
+          boardName: boardId,
           fileType,
           fileName,
           dropboxPath: filePath,
@@ -259,8 +242,8 @@ export function registerDropboxRoutes(app: Express): void {
         // Ensure folder exists
         await dropboxService.ensureFolderExists(accessToken, connection.backupFolderPath);
 
-        // Upload file
-        const uploadResult = await dropboxService.uploadFile(accessToken, filePath, fileBuffer);
+        // Upload file with overwrite mode
+        const uploadResult = await dropboxService.uploadFile(accessToken, filePath, fileBuffer, { overwrite: true });
 
         // Create shareable link
         const shareableUrl = await dropboxService.createShareableLink(accessToken, uploadResult.path);
@@ -306,6 +289,98 @@ export function registerDropboxRoutes(app: Express): void {
   });
 
   /**
+   * List .gridset files available in the user's Dropbox backup folder
+   */
+  app.get("/api/integrations/dropbox/files", async (req: AuthenticatedRequest, res) => {
+    if (!req.user) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    try {
+      const userTokenResult = await dropboxService.getUserTokens(req.user.id);
+      if (!userTokenResult) {
+        return res.status(400).json({ error: "Dropbox not connected" });
+      }
+
+      const { accessToken, connection } = userTokenResult;
+      const files = await dropboxService.listFiles(accessToken, connection.backupFolderPath, ['gridset', 'obz']);
+
+      res.json({ files });
+    } catch (error) {
+      console.error('List files error:', error);
+      res.status(500).json({ error: (error as Error).message || "Failed to list files" });
+    }
+  });
+
+  /**
+   * Download a file from Dropbox (returns base64 data)
+   */
+  app.post("/api/integrations/dropbox/download", async (req: AuthenticatedRequest, res) => {
+    if (!req.user) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    try {
+      const { filePath } = req.body;
+      if (!filePath) {
+        return res.status(400).json({ error: "filePath required" });
+      }
+
+      const userTokenResult = await dropboxService.getUserTokens(req.user.id);
+      if (!userTokenResult) {
+        return res.status(400).json({ error: "Dropbox not connected" });
+      }
+
+      const { accessToken } = userTokenResult;
+      const fileBuffer = await dropboxService.downloadFile(accessToken, filePath);
+
+      res.json({ fileData: fileBuffer.toString('base64') });
+    } catch (error) {
+      console.error('Download error:', error);
+      res.status(500).json({ error: (error as Error).message || "Download failed" });
+    }
+  });
+
+  /**
+   * Get last backup info for a specific board (by name)
+   */
+  app.get("/api/integrations/dropbox/board-status/:boardName", async (req: AuthenticatedRequest, res) => {
+    if (!req.user) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    try {
+      const { boardName } = req.params;
+      const [lastBackup] = await db
+        .select()
+        .from(dropboxBackups)
+        .where(
+          and(
+            eq(dropboxBackups.userId, req.user.id),
+            eq(dropboxBackups.boardName, boardName),
+            eq(dropboxBackups.status, 'completed')
+          )
+        )
+        .orderBy(desc(dropboxBackups.createdAt))
+        .limit(1);
+
+      if (!lastBackup) {
+        return res.json({ exported: false });
+      }
+
+      res.json({
+        exported: true,
+        lastExportedAt: lastBackup.completedAt || lastBackup.createdAt,
+        fileName: lastBackup.fileName,
+        shareableUrl: lastBackup.shareableUrl
+      });
+    } catch (error) {
+      console.error('Board status error:', error);
+      res.status(500).json({ error: "Failed to get board status" });
+    }
+  });
+
+  /**
    * Disconnect Dropbox
    */
   app.delete("/api/integrations/dropbox/connection", async (req: AuthenticatedRequest, res) => {
@@ -341,7 +416,7 @@ export function registerDropboxRoutes(app: Express): void {
           shareableUrl: dropboxBackups.shareableUrl,
           createdAt: dropboxBackups.createdAt,
           completedAt: dropboxBackups.completedAt,
-          boardName: dropboxBackups.boardName // Now a direct field, not a join
+          boardName: dropboxBackups.boardName
         })
         .from(dropboxBackups)
         .where(eq(dropboxBackups.userId, req.user.id))
