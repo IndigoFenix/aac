@@ -38,7 +38,7 @@ export default function InitializationLoadingScreen() {
             }}
           />
           <div className="absolute inset-2 bg-white dark:bg-gray-900 rounded-full flex items-center justify-center">
-            <img src={axolotlLogo} alt="Xahaph" className="w-12 h-12 object-contain" />
+            <img src={axolotlLogo} alt="Aivota" className="w-12 h-12 object-contain" />
           </div>
         </motion.div>
 
@@ -50,7 +50,7 @@ export default function InitializationLoadingScreen() {
           className="space-y-4"
         >
           <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-            Xahaph
+            Aivota
           </h1>
           <p className="text-lg text-gray-600 dark:text-gray-300">
             Advanced Communication Platform

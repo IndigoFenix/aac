@@ -88,7 +88,7 @@ export async function setupUserAuth(app: Express) {
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     // Use production domain or fallback to Replit URL for development
     const callbackURL = process.env.GOOGLE_OAUTH_CALLBACK_URL || 
-                        "https://communiaacte.xahaph.com/auth/google/callback";
+                        "https://aivota.ai/auth/google/callback";
     console.log('Setting up Google OAuth strategy with callback URL:', callbackURL);
     passport.use(new GoogleStrategy({
         clientID: process.env.GOOGLE_CLIENT_ID,

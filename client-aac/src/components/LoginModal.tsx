@@ -63,7 +63,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
     onSuccess: (data) => {
       localStorage.removeItem('aac_signed_out');
       toast({
-        title: "Welcome to Xahaph!",
+        title: "Welcome to Aivota!",
         description: "Your account has been created successfully.",
       });
       // Set query data directly to avoid race condition between invalidateQueries and refetch
@@ -112,7 +112,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
           <DialogDescription>
             {isLogin 
               ? "Sign in to access your communication profile and continue your journey."
-              : "Join Xahaph and create your personalized communication experience."
+              : "Join Aivota and create your personalized communication experience."
             }
           </DialogDescription>
         </DialogHeader>

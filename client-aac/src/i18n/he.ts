@@ -5,7 +5,7 @@ import type { Translations } from "./en";
 
 export const he: Translations = {
   app: {
-    name: "Xahaph",
+    name: "Aivota AAC",
     loading: "טוען...",
   },
 
@@ -279,10 +279,16 @@ export const he: Translations = {
     stop: "עצור",
     thanks: "תודה",
     speak: "דבר",
+    skip: "דלג",
   },
 
   silentMode: {
     placeholder: "לחץ על כפתורים כדי לבנות משפט...",
+  },
+
+  pause: {
+    pause: "השהיה",
+    resume: "המשך",
   },
 
   labels: {

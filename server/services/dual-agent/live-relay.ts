@@ -107,7 +107,8 @@ export type ClientMessage =
   | { type: "page_navigate"; pageId: string; pageName: string; buttons: string[] }
   | { type: "app_dismissed"; appId: string }
   | { type: "app_canvas"; data: string }                     // base64 PNG — app canvas (e.g. drawing)
-  | { type: "focus_frame"; data: string };                   // base64 JPEG — high-res focus frame
+  | { type: "focus_frame"; data: string }                    // base64 JPEG — high-res focus frame
+  | { type: "set_paused"; paused: boolean };
 
 /** Messages from server → client */
 export type ServerMessage =
@@ -159,6 +160,7 @@ export class LiveRelay {
   private sessionCache: SessionCache | null = null;
   private interactionMode: AACInteractionMode = "interact";
   private responseMode: AACResponseMode = "fast";
+  private paused = false;
   private debugMode = false;
   private hasLoggedInitialSession = false;
 
@@ -378,6 +380,8 @@ export class LiveRelay {
           break;
 
         case "frame_grid": {
+          // Block all input while paused
+          if (this.paused) break;
           // Suppress frames while the model is processing tool calls, or we're already
           // waiting for a model response (prevents overlapping turnComplete=true signals
           // that cause duplicate model turns).
@@ -413,6 +417,8 @@ export class LiveRelay {
         }
 
         case "pcm_audio": {
+          // Block all input while paused
+          if (this.paused) break;
           // Raw PCM Int16 16kHz — stream directly to Gemini via sendRealtimeInput.
           // Gate audio during ALL active processing states to prevent VAD from
           // triggering new model turns that cause repeated tool calls.
@@ -539,6 +545,22 @@ export class LiveRelay {
         case "app_canvas":
           // Cache latest app canvas snapshot — will be included with next frame_grid
           this.latestAppCanvas = msg.data;
+          break;
+
+        case "set_paused":
+          this.paused = msg.paused;
+          if (msg.paused) {
+            // Notify the model that the session is paused so it doesn't get confused
+            this.provider!.sendContextInjection(
+              `[SYSTEM] Session PAUSED by caretaker. The student cannot see or interact with the device. Do NOT speak, update the board, or respond to any input until resumed. Ignore all silence or lack of activity — this is expected.`,
+            );
+            logLiveSession("SESSION_PAUSED", `sessionId=${this.sessionId}`);
+          } else {
+            this.provider!.sendContextInjection(
+              `[SYSTEM] Session RESUMED. The student can see and interact with the device again. Continue normally.`,
+            );
+            logLiveSession("SESSION_RESUMED", `sessionId=${this.sessionId}`);
+          }
           break;
 
         case "app_dismissed": {

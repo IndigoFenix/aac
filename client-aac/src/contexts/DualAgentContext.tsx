@@ -110,6 +110,10 @@ interface DualAgentContextType {
     ringBufferSamples: number;
   };
 
+  // Pause state
+  paused: boolean;
+  setPaused: (paused: boolean) => void;
+
   // Reconnection state (Live API only)
   reconnecting: boolean;
   /** Transient safety block indicator (auto-clears after 5s) */
@@ -333,6 +337,8 @@ function DualAgentProviderInner({
   const [pcmDebug, setPcmDebug] = useState({ audioBusy: false, isPlaying: false, sentCount: 0, gatedCount: 0 });
 
   const handlePcmChunk = useCallback((int16Base64: string) => {
+    // Block all audio when paused
+    if (liveAgent.paused) return;
     // PCM gating disabled — relying on Gemini echo awareness prompt instead.
     // Keeping counters for debug visibility.
     if (liveAgent.isBusyRef?.current) {
@@ -342,7 +348,7 @@ function DualAgentProviderInner({
     }
     // Always send — let Gemini handle echo recognition
     sendPcmAudioRef.current?.(int16Base64);
-  }, [liveAgent.isBusyRef]);
+  }, [liveAgent.isBusyRef, liveAgent.paused]);
 
   // Poll isBusyRef + counters into state every 200ms for the debug panel
   useEffect(() => {
@@ -358,7 +364,7 @@ function DualAgentProviderInner({
   }, [liveAgent.isBusyRef, liveAgent.isPlaying]);
 
   const activityMonitor = useActivityMonitor({
-    enabled: (liveAgent.videoCaptureEnabled || liveAgent.voiceEnabled) && liveAgent.isInitialized && !!liveAgent.sessionId,
+    enabled: (liveAgent.videoCaptureEnabled || liveAgent.voiceEnabled) && liveAgent.isInitialized && !!liveAgent.sessionId && !liveAgent.paused,
     videoEnabled: liveAgent.videoCaptureEnabled,
     audioEnabled: liveAgent.voiceEnabled,
     micStream,
@@ -547,6 +553,9 @@ function ProviderShell({
       lastTriggerReason: activityMonitor.lastTriggerReason,
       ringBufferSamples: activityMonitor.ringBufferSamples,
     },
+
+    paused: agent.paused,
+    setPaused: agent.setPaused,
 
     reconnecting: agent.reconnecting ?? false,
     safetyBlocked: agent.safetyBlocked ?? false,

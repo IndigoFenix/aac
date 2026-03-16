@@ -1,5 +1,5 @@
-appId: com.xahaph.aac
-productName: Xahaph AAC
+appId: com.aivota.aac
+productName: Aivota AAC
 
 directories:
   output: release
@@ -27,4 +27,4 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
   createStartMenuShortcut: true
-  shortcutName: Xahaph AAC
+  shortcutName: Aivota AAC
