@@ -153,6 +153,8 @@ export function DualAgentConversationBox({
     reconnecting,
     safetyBlocked,
     focusActive,
+    paused,
+    setPaused,
   } = useDualAgentContext();
   const { t } = useLanguage();
   const { theme, toggleTheme } = useTheme();
@@ -264,6 +266,7 @@ export function DualAgentConversationBox({
           <div className="flex items-stretch gap-3">
             {/* Animated Avatar — spans both rows, click to toggle silent/interact mode */}
             <button
+              data-dwell
               onClick={handleToggleMode}
               className="relative shrink-0 w-20 self-center cursor-pointer hover:opacity-90 transition-opacity select-none"
               title={interactionMode === 'silent' ? "Switch to interact mode (device talks back)" : "Switch to silent mode (buttons only)"}
@@ -575,14 +578,20 @@ export function DualAgentConversationBox({
               )}
             </div>
 
-            {/* Face Mirror — opposite the avatar, only when tracking data exists */}
-            {((rawFaces && rawFaces.length > 0) || (rawHands && rawHands.length > 0)) && (
+            {/* Face Mirror — always reserves space; click/dwell to toggle pause */}
+            <button
+              data-dwell
+              onClick={() => setPaused(!paused)}
+              className={`shrink-0 self-center rounded-lg cursor-pointer transition-opacity ${paused ? 'ring-2 ring-red-400 opacity-80' : 'hover:opacity-90'}`}
+              title={paused ? t('pause.resume') : t('pause.pause')}
+              style={{ width: 80, height: 80 }}
+            >
               <FaceMirror
                 faces={rawFaces ?? []}
                 hands={rawHands ?? []}
                 size={80}
               />
-            )}
+            </button>
           </div>
         </div>
       </motion.div>

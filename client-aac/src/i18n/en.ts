@@ -3,7 +3,7 @@
  */
 export const en = {
   app: {
-    name: "Xahaph",
+    name: "Aivota AAC",
     loading: "Loading...",
   },
 
@@ -277,10 +277,16 @@ export const en = {
     stop: "Stop",
     thanks: "Thanks",
     speak: "Speak",
+    skip: "Skip",
   },
 
   silentMode: {
     placeholder: "Tap buttons to build a phrase...",
+  },
+
+  pause: {
+    pause: "Pause",
+    resume: "Resume",
   },
 
   labels: {

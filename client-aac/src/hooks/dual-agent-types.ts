@@ -135,6 +135,10 @@ export interface UseDualAgentReturn {
   /** True while a focus frame is being captured/sent (briefly shows glasses overlay) */
   focusActive: boolean;
 
+  // Pause state
+  paused: boolean;
+  setPaused: (paused: boolean) => void;
+
   // Reconnection state (Live API only)
   /** Whether the server is currently reconnecting to Gemini */
   reconnecting?: boolean;

@@ -112,6 +112,9 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Video capture state
   const [videoCaptureEnabled, setVideoCaptureEnabled] = useState(true);
 
+  // Pause state
+  const [paused, setPausedState] = useState(false);
+
   // Active app state
   const [activeApp, setActiveApp] = useState<ActiveAppData | null>(null);
 
@@ -671,6 +674,16 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     wsSend({ type: "set_response_mode", mode });
   }, [wsSend]);
 
+  // Pause setter — also notify server
+  const setPaused = useCallback((p: boolean) => {
+    setPausedState(p);
+    wsSend({ type: "set_paused", paused: p });
+    if (p) {
+      // Stop any playing audio when pausing
+      audioPlayer.clear();
+    }
+  }, [wsSend, audioPlayer]);
+
   const dismissApp = useCallback(() => {
     const closedApp = activeApp;
     setActiveApp(null);
@@ -796,6 +809,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // Live API only
     sendPcmAudio,
     isBusyRef: audioPlayer.isBusyRef,
+
+    // Pause state
+    paused,
+    setPaused,
 
     // Reconnection state
     reconnecting,

@@ -1,5 +1,5 @@
 {
-  "name": "xahaph-aac",
+  "name": "aivota-aac",
   "version": "1.0.0",
   "type": "module",
   "main": "dist-electron/main.js",

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { UserX, Eye, EyeOff } from "lucide-react";
+import { UserX, Eye, EyeOff, Play } from "lucide-react";
 import DynamicBoard from "@/components/DynamicBoard";
 import PrebuiltBoardSection from "@/components/PrebuiltBoardSection";
 import QuickActions from "@/components/QuickActions";
@@ -57,7 +57,7 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for interpret/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, onBoardPatchChange, onAiButtonPressChange, onSendMessageReady, onInitializedChange, onYesNoChange, onRestartSessionReady }: {
+function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, onBoardPatchChange, onAiButtonPressChange, onSendMessageReady, onInitializedChange, onYesNoChange, onRestartSessionReady, onPausedChange }: {
   onModeChange: (mode: 'interact' | 'silent') => void;
   onInterpretReady: (fn: ((buttons: string[]) => Promise<void>) | null) => void;
   onDetectionChange?: (enabled: boolean) => void;
@@ -67,8 +67,9 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
   onInitializedChange?: (initialized: boolean) => void;
   onYesNoChange?: (active: boolean, dismiss: () => void) => void;
   onRestartSessionReady?: (fn: (() => void) | null) => void;
+  onPausedChange?: (paused: boolean, setPaused: (p: boolean) => void) => void;
 }) {
-  const { interactionMode, interpretButtons, videoCaptureEnabled, voiceEnabled, boardPatch, aiButtonPress, sendMessage, isInitialized, yesNoActive, dismissYesNo, clearSession, initialize } = useDualAgentContext();
+  const { interactionMode, interpretButtons, videoCaptureEnabled, voiceEnabled, boardPatch, aiButtonPress, sendMessage, isInitialized, yesNoActive, dismissYesNo, clearSession, initialize, paused, setPaused } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(interactionMode);
@@ -112,6 +113,10 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
     });
     return () => onRestartSessionReady?.(null);
   }, [clearSession, initialize, onRestartSessionReady]);
+
+  useEffect(() => {
+    onPausedChange?.(paused, setPaused);
+  }, [paused, setPaused, onPausedChange]);
 
   return null;
 }
@@ -234,6 +239,10 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const interpretFnRef = useRef<((buttons: string[]) => Promise<void>) | null>(null);
   const sendMessageFnRef = useRef<((msg: string) => Promise<void>) | null>(null);
   const restartSessionFnRef = useRef<(() => void) | null>(null);
+
+  // Pause state (bridged from DualAgentContext)
+  const [isPaused, setIsPaused] = useState(false);
+  const setPausedFnRef = useRef<((p: boolean) => void) | null>(null);
 
   // Get authenticated user
   const { data: authUser, isLoading: isAuthLoading } = useQuery({
@@ -453,7 +462,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
 
   // System startup - initialization is now managed by AppInitializationContext
   useEffect(() => {
-    console.log('Xahaph System - Initializing...');
+    console.log('Aivota System - Initializing...');
     // Language is now managed by LanguageContext (loaded from localStorage automatically)
     // Camera, Boards, and Conversation initialization is handled by their respective contexts
   }, []);
@@ -1099,6 +1108,32 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           boardMode={boardMode}
         />
 
+        {/* Pause Overlay — covers board and quick actions when paused */}
+        <AnimatePresence>
+          {isPaused && (
+            <motion.div
+              key="pause-overlay"
+              data-dwell-trap
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            >
+              <button
+                data-dwell
+                onClick={() => setPausedFnRef.current?.(false)}
+                className="flex flex-col items-center gap-4 p-8 rounded-3xl bg-white/90 dark:bg-gray-800/90 shadow-2xl hover:scale-105 active:scale-95 transition-transform"
+              >
+                <Play className="w-16 h-16 text-primary" />
+                <span className="text-2xl font-bold text-gray-800 dark:text-gray-100">
+                  {t('pause.resume')}
+                </span>
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
       </main>
 
       {/* Text-to-Speech Output Display */}
@@ -1256,6 +1291,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             onInitializedChange={setAiSessionActive}
             onYesNoChange={(active, dismiss) => { setYesNoActive(active); dismissYesNoRef.current = dismiss; }}
             onRestartSessionReady={(fn) => { restartSessionFnRef.current = fn; }}
+            onPausedChange={(paused, setPausedFn) => { setIsPaused(paused); setPausedFnRef.current = setPausedFn; }}
           />
           <AppOverlayBridge />
           <DualAgentConversationBox
