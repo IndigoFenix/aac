@@ -57,11 +57,12 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for interpret/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, onBoardPatchChange, onAiButtonPressChange, onSendMessageReady, onInitializedChange, onYesNoChange, onRestartSessionReady, onPausedChange }: {
+function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onInitializedChange, onYesNoChange, onRestartSessionReady, onPausedChange }: {
   onModeChange: (mode: 'interact' | 'silent') => void;
   onInterpretReady: (fn: ((buttons: string[]) => Promise<void>) | null) => void;
   onDetectionChange?: (enabled: boolean) => void;
   onBoardPatchChange?: (patch: import("@/hooks/useDualAgent").BoardPatch | null) => void;
+  onSymbolUpdateChange?: (data: { buttonLabel: string; symbolPath: string } | null) => void;
   onAiButtonPressChange?: (data: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] } | null) => void;
   onSendMessageReady?: (fn: ((msg: string) => Promise<void>) | null) => void;
   onInitializedChange?: (initialized: boolean) => void;
@@ -69,7 +70,7 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
   onRestartSessionReady?: (fn: (() => void) | null) => void;
   onPausedChange?: (paused: boolean, setPaused: (p: boolean) => void) => void;
 }) {
-  const { interactionMode, interpretButtons, videoCaptureEnabled, voiceEnabled, boardPatch, aiButtonPress, sendMessage, isInitialized, yesNoActive, dismissYesNo, clearSession, initialize, paused, setPaused } = useDualAgentContext();
+  const { interactionMode, interpretButtons, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, isInitialized, yesNoActive, dismissYesNo, clearSession, initialize, paused, setPaused } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(interactionMode);
@@ -87,6 +88,10 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
   useEffect(() => {
     onBoardPatchChange?.(boardPatch);
   }, [boardPatch, onBoardPatchChange]);
+
+  useEffect(() => {
+    onSymbolUpdateChange?.(symbolUpdate);
+  }, [symbolUpdate, onSymbolUpdateChange]);
 
   useEffect(() => {
     onAiButtonPressChange?.(aiButtonPress);
@@ -206,6 +211,9 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
 
   // Board patch state — from detection (incremental add/remove)
   const [boardPatchData, setBoardPatchData] = useState<import("@/hooks/useDualAgent").BoardPatch | null>(null);
+
+  // Symbol update — auto-generated symbol ready
+  const [symbolUpdateData, setSymbolUpdateData] = useState<{ buttonLabel: string; symbolPath: string } | null>(null);
 
   // AI button press — AI navigated within a loaded board
   const [aiButtonPressData, setAiButtonPressData] = useState<{ label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] } | null>(null);
@@ -1060,6 +1068,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             <DynamicBoard
               board={boardData}
               boardPatch={boardPatchData}
+              symbolUpdate={symbolUpdateData}
               aiButtonPress={aiButtonPressData}
               onButtonClick={handleBoardButtonClick}
               onBack={boardHistoryRef.current.length > 0 ? handleBoardBack : undefined}
@@ -1286,6 +1295,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             onModeChange={setDualAgentMode}
             onInterpretReady={(fn) => { interpretFnRef.current = fn; }}
             onBoardPatchChange={setBoardPatchData}
+            onSymbolUpdateChange={setSymbolUpdateData}
             onAiButtonPressChange={setAiButtonPressData}
             onSendMessageReady={(fn) => { sendMessageFnRef.current = fn; }}
             onInitializedChange={setAiSessionActive}

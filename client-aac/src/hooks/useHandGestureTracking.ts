@@ -44,31 +44,43 @@ async function loadGestureRecognizer(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
       );
 
-      const options: any = {
-        baseOptions: {
-          modelAssetPath:
-            "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
-          delegate: "GPU",
-        },
-        runningMode: "VIDEO",
-        numHands: maxHands,
+      const buildOptions = (delegate: "GPU" | "CPU") => {
+        const opts: any = {
+          baseOptions: {
+            modelAssetPath:
+              "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
+            delegate,
+          },
+          runningMode: "VIDEO",
+          numHands: maxHands,
+        };
+
+        if (signLanguageModelUrl) {
+          opts.customGesturesClassifierOptions = {
+            modelAssetPath: signLanguageModelUrl,
+          };
+          console.log("[HandGesture] Loading with sign language model:", signLanguageModelUrl);
+        }
+
+        return opts;
       };
 
-      // If a sign language model URL is provided, add custom gesture classifier
-      if (signLanguageModelUrl) {
-        options.customGesturesClassifierOptions = {
-          modelAssetPath: signLanguageModelUrl,
-        };
-        console.log("[HandGesture] Loading with sign language model:", signLanguageModelUrl);
+      try {
+        gestureRecognizerInstance = await GestureRecognizer.createFromOptions(
+          filesetResolver,
+          buildOptions("GPU")
+        );
+        console.log("[HandGesture] GestureRecognizer initialized (GPU)");
+      } catch (gpuErr) {
+        console.warn("[HandGesture] GPU delegate failed, falling back to CPU:", gpuErr);
+        gestureRecognizerInstance = await GestureRecognizer.createFromOptions(
+          filesetResolver,
+          buildOptions("CPU")
+        );
+        console.log("[HandGesture] GestureRecognizer initialized (CPU fallback)");
       }
 
-      gestureRecognizerInstance = await GestureRecognizer.createFromOptions(
-        filesetResolver,
-        options
-      );
       currentSignLanguageModelUrl = signLanguageModelUrl;
-
-      console.log("[HandGesture] GestureRecognizer initialized");
       return gestureRecognizerInstance;
     } catch (err) {
       gestureRecognizerError = err as Error;

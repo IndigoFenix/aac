@@ -33,6 +33,7 @@ export const en = {
     yes: "Yes",
     no: "No",
     ok: "OK",
+    loadMore: "Load More",
     send: "Send",
     retry: "Retry",
     refresh: "Refresh",
@@ -1584,6 +1585,8 @@ export const en = {
     addStudent: "Add to Student",
     unnamed: "(unnamed)",
     alreadyAdded: "Already added",
+    pending: "Pending",
+    approve: "Approve",
   },
 
   // ============================================================================
@@ -1684,6 +1687,15 @@ export const en = {
     allowReadReportsDesc: "When disabled, the AI cannot view medical, educational, or functional records",
     allowNotes: "Allow Notes",
     allowNotesDesc: "When disabled, the AI cannot read or write session notes (no memory stored outside message logs)",
+    // Symbol generation
+    symbolGeneration: "Symbol Generation",
+    symbolGenerationDesc: "Automatically generate icon images for AAC buttons using AI",
+    generateSymbols: "Generate Symbols",
+    generateSymbolsDesc: "When enabled, the AI generates symbol images for buttons that don't have one",
+    useApprovedSymbols: "Use Approved Symbols",
+    useApprovedSymbolsDesc: "Show approved generated symbols on AAC buttons",
+    useUnapprovedSymbols: "Use Unapproved Symbols",
+    useUnapprovedSymbolsDesc: "Also show newly generated symbols before they are reviewed and approved",
     // Actions
     saveChanges: "Save Changes",
     discard: "Discard",

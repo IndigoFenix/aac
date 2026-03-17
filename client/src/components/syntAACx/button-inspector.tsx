@@ -173,7 +173,7 @@ export function ButtonInspector() {
             >
               {selectedBtn.symbolPath ? (
                 <img
-                  src={selectedBtn.symbolPath}
+                  src={selectedBtn.symbolPath.startsWith("/api/") ? apiUrl(selectedBtn.symbolPath) : selectedBtn.symbolPath}
                   alt={selectedBtn.label}
                   className="w-8 h-8 object-contain mb-1"
                 />
@@ -280,7 +280,7 @@ export function ButtonInspector() {
                 isDark ? "border-slate-700 bg-slate-800" : "border-gray-300 bg-gray-50"
               )}>
                 <img
-                  src={selectedBtn.symbolPath}
+                  src={selectedBtn.symbolPath.startsWith("/api/") ? apiUrl(selectedBtn.symbolPath) : selectedBtn.symbolPath}
                   alt="Custom symbol"
                   className="w-8 h-8 object-contain rounded"
                 />
@@ -288,7 +288,7 @@ export function ButtonInspector() {
                   "flex-1 text-xs truncate",
                   isDark ? "text-slate-300" : "text-gray-700"
                 )}>
-                  Custom symbol
+                  {(selectedBtn as any).imageKey || "Custom symbol"}
                 </span>
                 <Button
                   variant="ghost"

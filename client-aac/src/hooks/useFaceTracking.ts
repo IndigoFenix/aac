@@ -27,18 +27,32 @@ async function loadFaceLandmarker(maxFaces: number): Promise<any> {
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
       );
 
-      faceLandmarkerInstance = await FaceLandmarker.createFromOptions(filesetResolver, {
+      const createOptions = (delegate: "GPU" | "CPU") => ({
         baseOptions: {
           modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-          delegate: "GPU",
+          delegate,
         },
-        runningMode: "VIDEO",
+        runningMode: "VIDEO" as const,
         numFaces: maxFaces,
         outputFaceBlendshapes: true,
         outputFacialTransformationMatrixes: false,
       });
 
-      console.log("[FaceTracking] FaceLandmarker initialized");
+      try {
+        faceLandmarkerInstance = await FaceLandmarker.createFromOptions(
+          filesetResolver,
+          createOptions("GPU")
+        );
+        console.log("[FaceTracking] FaceLandmarker initialized (GPU)");
+      } catch (gpuErr) {
+        console.warn("[FaceTracking] GPU delegate failed, falling back to CPU:", gpuErr);
+        faceLandmarkerInstance = await FaceLandmarker.createFromOptions(
+          filesetResolver,
+          createOptions("CPU")
+        );
+        console.log("[FaceTracking] FaceLandmarker initialized (CPU fallback)");
+      }
+
       return faceLandmarkerInstance;
     } catch (err) {
       faceLandmarkerError = err as Error;

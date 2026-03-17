@@ -8,6 +8,7 @@ export interface CreateSymbolOptions {
   key?: string;
   description?: string;
   isPublic?: boolean;
+  isApproved?: boolean;
   createdByUserId?: string;
 }
 
@@ -32,7 +33,7 @@ export const customSymbolService = {
       key: options.key || null,
       description: options.description || null,
       isPublic: options.isPublic || false,
-      isApproved: true,
+      isApproved: options.isApproved ?? true,
       createdByUserId: options.createdByUserId || null,
       width: 256,
       height: 256,

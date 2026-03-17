@@ -910,6 +910,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/custom-symbols/public", requireAuth, (req, res) =>
     customSymbolController.getPublicSymbols(req, res)
   );
+  app.get("/api/custom-symbols/unapproved", requireAuth, (req, res) =>
+    customSymbolController.getUnapprovedSymbols(req, res)
+  );
+  app.get("/api/custom-symbols/by-key/:key", requireAuth, (req, res) =>
+    customSymbolController.getSymbolByKey(req, res)
+  );
   app.get("/api/custom-symbols/available/:studentId", requireAuth, (req, res) =>
     customSymbolController.getAvailableSymbols(req, res)
   );

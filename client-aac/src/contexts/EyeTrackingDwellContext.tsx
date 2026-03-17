@@ -88,9 +88,13 @@ export function EyeTrackingDwellProvider({
   // Dwell tracking refs
   const currentElementRef = useRef<HTMLElement | null>(null);
   const dwellStartRef = useRef<number>(0);
-  const cooldownElementRef = useRef<HTMLElement | null>(null);
-  // Position-based cooldown: prevents reselection when board patches replace buttons at same position
-  const cooldownPositionRef = useRef<{ x: number; y: number } | null>(null);
+  // Entry-gating: when an element appears under a stationary cursor (rather than the cursor
+  // moving onto it), we require a threshold of cumulative movement within the element before
+  // starting the dwell timer. This prevents accidental selection when buttons appear under
+  // the cursor, while still allowing selection without having to exit and re-enter.
+  const lastPointRef = useRef<GazePoint | null>(null);
+  const entryGateRef = useRef<{ rect: DOMRect; accumulated: number } | null>(null);
+  const ENTRY_MOVEMENT_PX = 40;
 
   // Mouse position ref (updated by mousemove listener, read by dwell interval)
   const mousePosRef = useRef<GazePoint | null>(null);
@@ -165,6 +169,9 @@ export function EyeTrackingDwellProvider({
 
   // ── Shared dwell hit-test logic ──
   const runDwellHitTest = useCallback((point: GazePoint) => {
+    const prevPoint = lastPointRef.current;
+    lastPointRef.current = point;
+
     const elements = document.elementsFromPoint(point.x, point.y);
     let dwellEl: HTMLElement | null = null;
     for (const el of elements) {
@@ -184,43 +191,68 @@ export function EyeTrackingDwellProvider({
       }
     }
 
+    // Movement delta from previous tick
+    const dx = prevPoint ? point.x - prevPoint.x : 0;
+    const dy = prevPoint ? point.y - prevPoint.y : 0;
+    const moved = Math.sqrt(dx * dx + dy * dy);
+
     if (!dwellEl) {
       currentElementRef.current = null;
-      cooldownElementRef.current = null;
-      cooldownPositionRef.current = null;
       setDwellTarget(null);
-      return;
-    }
-
-    // Position-based cooldown: reject targets near the cooldown position
-    // (handles board patch replacing buttons at the same position)
-    if (cooldownPositionRef.current) {
-      const elRect = dwellEl.getBoundingClientRect();
-      const elCenter = { x: elRect.left + elRect.width / 2, y: elRect.top + elRect.height / 2 };
-      const dx = elCenter.x - cooldownPositionRef.current.x;
-      const dy = elCenter.y - cooldownPositionRef.current.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 100) {
-        // Still near the cooldown position — reject
-        setDwellTarget(null);
-        return;
+      // Clear entry-gate if cursor moved outside the gated rect
+      if (entryGateRef.current) {
+        const r = entryGateRef.current.rect;
+        if (point.x < r.left || point.x > r.right || point.y < r.top || point.y > r.bottom) {
+          entryGateRef.current = null;
+        }
       }
-      // Gaze moved away from cooldown position — clear it
-      cooldownPositionRef.current = null;
-      cooldownElementRef.current = null;
+      return;
     }
 
-    if (dwellEl === cooldownElementRef.current) {
-      setDwellTarget(null);
-      return;
+    // Entry-gate: accumulate movement while cursor is inside a rect that appeared under it
+    if (entryGateRef.current) {
+      const r = entryGateRef.current.rect;
+      const inside = point.x >= r.left && point.x <= r.right &&
+                     point.y >= r.top && point.y <= r.bottom;
+      if (inside) {
+        entryGateRef.current.accumulated += moved;
+        if (entryGateRef.current.accumulated < ENTRY_MOVEMENT_PX) {
+          // Not enough movement yet — don't start dwell
+          currentElementRef.current = null;
+          setDwellTarget(null);
+          return;
+        }
+        // Enough intentional movement — clear gate and fall through to normal dwell
+        entryGateRef.current = null;
+      } else {
+        // Cursor moved outside — gate cleared
+        entryGateRef.current = null;
+      }
     }
 
     const now = Date.now();
 
     if (dwellEl !== currentElementRef.current) {
+      // New element under cursor — check if cursor actually entered from outside
+      const rect = dwellEl.getBoundingClientRect();
+      const wasOutside = prevPoint
+        ? prevPoint.x < rect.left || prevPoint.x > rect.right ||
+          prevPoint.y < rect.top || prevPoint.y > rect.bottom
+        : false; // No previous point (first tick) — treat as stationary
+
+      if (!wasOutside) {
+        // Previous point was already inside this rect — element appeared under the cursor.
+        // Require cumulative movement before allowing dwell.
+        entryGateRef.current = { rect, accumulated: 0 };
+        currentElementRef.current = null;
+        setDwellTarget(null);
+        return;
+      }
+
+      // Legitimate entry from outside — start dwell timer
       currentElementRef.current = dwellEl;
       dwellStartRef.current = now;
-      setDwellTarget({ element: dwellEl, rect: dwellEl.getBoundingClientRect(), progress: 0 });
+      setDwellTarget({ element: dwellEl, rect, progress: 0 });
       return;
     }
 
@@ -229,13 +261,9 @@ export function EyeTrackingDwellProvider({
 
     if (progress >= 1) {
       dwellEl.click();
-      // Store cooldown position (center of clicked element) for position-based cooldown
+      // After click, gate the clicked position so replacement buttons don't auto-select
       const clickedRect = dwellEl.getBoundingClientRect();
-      cooldownPositionRef.current = {
-        x: clickedRect.left + clickedRect.width / 2,
-        y: clickedRect.top + clickedRect.height / 2,
-      };
-      cooldownElementRef.current = dwellEl;
+      entryGateRef.current = { rect: clickedRect, accumulated: 0 };
       currentElementRef.current = null;
       setDwellTarget(null);
     } else {

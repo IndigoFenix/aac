@@ -150,6 +150,9 @@ export interface DualAgentSessionState {
   // Live API hook: called when monitor injects context, so relay can forward to Gemini session
   onContextInjection?: (text: string) => void;
 
+  // Storage control — when false, session data is not persisted to the database
+  remoteStorageEnabled: boolean;
+
   // Pending message DB lock: true while atomic move (pending → history) is in progress
   pendingDbLocked?: boolean;
   // Buffer for messages arriving during the pendingDbLocked window

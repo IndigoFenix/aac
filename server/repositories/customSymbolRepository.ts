@@ -173,6 +173,32 @@ class CustomSymbolRepository {
       .offset(offset);
   }
 
+  /**
+   * Find a symbol by its exact key. Optionally filter by approval status.
+   */
+  async getSymbolByKey(key: string, options?: { approvedOnly?: boolean }): Promise<CustomSymbol | undefined> {
+    const conditions = [eq(customSymbols.key, key), eq(customSymbols.isPublic, true)];
+    if (options?.approvedOnly) {
+      conditions.push(eq(customSymbols.isApproved, true));
+    }
+    const [symbol] = await db.select().from(customSymbols)
+      .where(and(...conditions))
+      .orderBy(desc(customSymbols.createdAt))
+      .limit(1);
+    return symbol;
+  }
+
+  /**
+   * Get all unapproved public symbols (for admin review).
+   */
+  async getUnapprovedSymbols(limit = 50, offset = 0): Promise<CustomSymbol[]> {
+    return db.select().from(customSymbols)
+      .where(and(eq(customSymbols.isPublic, true), eq(customSymbols.isApproved, false)))
+      .orderBy(desc(customSymbols.createdAt))
+      .limit(limit)
+      .offset(offset);
+  }
+
   async searchSymbols(query: string, limit = 20): Promise<CustomSymbol[]> {
     const pattern = `%${query}%`;
     return db.select().from(customSymbols)

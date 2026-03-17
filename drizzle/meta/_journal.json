@@ -232,6 +232,20 @@
       "when": 1773584212259,
       "tag": "0032_gorgeous_major_mapleleaf",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1773734809723,
+      "tag": "0033_jazzy_warlock",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1773754807974,
+      "tag": "0034_flaky_energizer",
+      "breakpoints": true
     }
   ]
 }

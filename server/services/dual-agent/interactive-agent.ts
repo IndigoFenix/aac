@@ -9,22 +9,25 @@ import type {
 } from "../providers/streaming-provider";
 
 /**
- * Parse board button format: "label|icon, label|icon, ..."
+ * Parse board button format: "label|icon, label|icon, ..." or "label|icon|image_key, ..."
  * If no icon is provided, defaults to comment icon.
+ * The optional third pipe-delimited field is an image_key for auto-generated symbols.
  */
-export function parseBoardButtons(content: string): Array<{ label: string; iconRef: string; symbolPath?: string }> {
-  const buttons: Array<{ label: string; iconRef: string; symbolPath?: string }> = [];
+export function parseBoardButtons(content: string): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string }> {
+  const buttons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string }> = [];
   const items = content.split(',');
 
   for (const item of items) {
     const trimmed = item.trim();
     if (!trimmed) continue;
 
-    // Check for label|icon format
+    // Check for label|icon or label|icon|image_key format
     const pipeIndex = trimmed.indexOf('|');
     if (pipeIndex > 0) {
-      const label = trimmed.substring(0, pipeIndex).trim();
-      let iconRef = trimmed.substring(pipeIndex + 1).trim();
+      const parts = trimmed.split('|');
+      const label = parts[0].trim();
+      let iconRef = parts[1].trim();
+      const imageKey = parts[2]?.trim() || undefined;
       let symbolPath: string | undefined;
 
       // Handle face:contactId references
@@ -35,7 +38,7 @@ export function parseBoardButtons(content: string): Array<{ label: string; iconR
         console.log(`[InteractiveAgent] Parsed face button: "${label}" → face:${contactId}`);
       }
 
-      // Handle symbol:symbolId references
+      // Handle symbol:symbolId references — skip image_key when custom symbol is used
       if (iconRef.startsWith("symbol:")) {
         const symbolId = iconRef.substring(7).trim();
         symbolPath = `__SYMBOL__:${symbolId}`;
@@ -44,7 +47,13 @@ export function parseBoardButtons(content: string): Array<{ label: string; iconR
       }
 
       if (label) {
-        buttons.push({ label, iconRef: iconRef || "fas fa-comment", symbolPath });
+        buttons.push({
+          label,
+          iconRef: iconRef || "fas fa-comment",
+          symbolPath,
+          // Only include imageKey if no custom symbol is already set
+          imageKey: symbolPath ? undefined : imageKey,
+        });
       }
     } else {
       // Just a label, use default icon
