@@ -109,7 +109,10 @@ resource "aws_iam_role_policy" "lambda_secrets" {
       },
       {
         Effect   = "Allow"
-        Action   = ["kms:Decrypt"]
+        Action   = [
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ]
         Resource = [aws_kms_key.main.arn]
       }
     ]

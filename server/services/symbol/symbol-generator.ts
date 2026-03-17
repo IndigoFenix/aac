@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 
-const GENERATION_MODEL = "gemini-2.0-flash-preview-image-generation";
+const GENERATION_MODEL = "gemini-2.5-flash-image";
 
 const SYMBOL_PROMPT_PREFIX = `Generate a clean AAC (Augmentative and Alternative Communication) symbol icon.
 Requirements:
@@ -21,7 +21,7 @@ export async function generateSymbolImage(
   description: string,
   options?: { styleGuideBase64?: string }
 ): Promise<Buffer> {
-  const apiKey = process.env.GEMINI_API_KEY_2 || process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY is not set");
   }

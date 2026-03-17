@@ -339,6 +339,11 @@ export const aacSettings = pgTable("aac_settings", {
   iconTextRatio: integer("icon_text_ratio").default(3), // Icon-to-text size ratio 1–5 (1=mostly icon, 5=mostly text)
   usePcsSymbols: boolean("use_pcs_symbols").default(false), // PCS vs emoji preference
 
+  // Auto-generated symbol settings
+  generateSymbols: boolean("generate_symbols").default(false).notNull(), // Generate symbol images on-the-fly via Gemini
+  useApprovedSymbols: boolean("use_approved_symbols").default(false).notNull(), // Show approved generated symbols on buttons
+  useUnapprovedSymbols: boolean("use_unapproved_symbols").default(false).notNull(), // Also show unapproved (newly generated) symbols
+
   // Input settings
   signLanguageReading: boolean("sign_language_reading").default(false), // Sign language detection enabled
   multiCameraMode: boolean("multi_camera_mode").default(false), // Multi-camera support
@@ -350,6 +355,11 @@ export const aacSettings = pgTable("aac_settings", {
 
   // AI identity
   aiName: text("ai_name"), // Custom AI name (e.g. "Buddy", "Sam")
+
+  // Storage settings — local (device) and remote (database) independently toggleable
+  localStorageEnabled: boolean("local_storage_enabled").default(true).notNull(),
+  remoteStorageEnabled: boolean("remote_storage_enabled").default(true).notNull(),
+  localStorageEncryptionKey: text("local_storage_encryption_key"), // 256-bit AES key (base64), null = generate on first use
 
   // Privacy — gate monitor agent access to sensitive student data
   allowReadProgress: boolean("allow_read_progress").default(true).notNull(),

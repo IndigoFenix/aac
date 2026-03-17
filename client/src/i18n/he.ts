@@ -33,6 +33,7 @@ export const he = {
     yes: "כן",
     no: "לא",
     ok: "אישור",
+    loadMore: "טען עוד",
     send: "שלח",
     retry: "נסה שוב",
     refresh: "רענן",
@@ -1777,6 +1778,8 @@ export const he = {
     addStudent: "+ תלמיד",
     unnamed: "(ללא שם)",
     alreadyAdded: "כבר נוסף",
+    pending: "ממתין",
+    approve: "אשר",
   },
 
   // ============================================================================
@@ -1877,6 +1880,15 @@ export const he = {
     allowReadReportsDesc: "כאשר מושבת, הבינה המלאכותית לא תוכל לצפות בתיקים רפואיים, חינוכיים או תפקודיים",
     allowNotes: "אפשר הערות",
     allowNotesDesc: "כאשר מושבת, הבינה המלאכותית לא תוכל לקרוא או לכתוב הערות מפגש (לא נשמר זיכרון מחוץ ליומני הודעות)",
+    // Symbol generation
+    symbolGeneration: "יצירת סמלים",
+    symbolGenerationDesc: "יצירת תמונות סמלים אוטומטית עבור כפתורי AAC באמצעות בינה מלאכותית",
+    generateSymbols: "צור סמלים",
+    generateSymbolsDesc: "כאשר מופעל, הבינה המלאכותית מייצרת תמונות סמלים עבור כפתורים שאין להם",
+    useApprovedSymbols: "השתמש בסמלים מאושרים",
+    useApprovedSymbolsDesc: "הצג סמלים מאושרים שנוצרו על כפתורי AAC",
+    useUnapprovedSymbols: "השתמש בסמלים לא מאושרים",
+    useUnapprovedSymbolsDesc: "הצג גם סמלים שנוצרו לאחרונה לפני שנבדקו ואושרו",
     // Actions
     saveChanges: "שמור שינויים",
     discard: "בטל",

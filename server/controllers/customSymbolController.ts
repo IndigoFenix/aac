@@ -115,6 +115,32 @@ class CustomSymbolController {
     }
   }
 
+  /** GET /api/custom-symbols/by-key/:key — look up a symbol by its imageKey */
+  async getSymbolByKey(req: Request, res: Response) {
+    try {
+      const { key } = req.params;
+      const symbol = await customSymbolRepository.getSymbolByKey(key);
+      if (!symbol) return res.status(404).json({ message: "Symbol not found" });
+      res.json(symbol);
+    } catch (error: any) {
+      console.error("[CustomSymbolController] getSymbolByKey error:", error);
+      res.status(500).json({ message: "Failed to get symbol by key" });
+    }
+  }
+
+  /** GET /api/custom-symbols/unapproved — list unapproved auto-generated symbols (admin review) */
+  async getUnapprovedSymbols(req: Request, res: Response) {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const offset = parseInt(req.query.offset as string) || 0;
+      const symbols = await customSymbolRepository.getUnapprovedSymbols(limit, offset);
+      res.json(symbols);
+    } catch (error: any) {
+      console.error("[CustomSymbolController] getUnapprovedSymbols error:", error);
+      res.status(500).json({ message: "Failed to get unapproved symbols" });
+    }
+  }
+
   /** GET /api/custom-symbols/available/:studentId — resolved symbols for student */
   async getAvailableSymbols(req: Request, res: Response) {
     try {

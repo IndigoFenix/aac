@@ -1022,6 +1022,8 @@ export interface BoardButton {
   color?: string;
   iconRef?: string;
   symbolPath?: string;
+  rebusKey?: string;
+  imageKey?: string;
   selfClosing?: boolean;
   action?: BoardButtonAction;
 }

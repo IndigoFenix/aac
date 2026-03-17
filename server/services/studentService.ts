@@ -19,6 +19,7 @@ const AAC_SETTINGS_FIELDS = new Set([
   "usePcsSymbols", "signLanguageReading", "multiCameraMode",
   "eyegazeEnabled", "eyegazeTimeout", "eyegazeProvider", "aiName", "knownPeople",
   "allowReadProgress", "allowReadReports", "allowNotes",
+  "generateSymbols", "useApprovedSymbols", "useUnapprovedSymbols",
 ]);
 
 /**

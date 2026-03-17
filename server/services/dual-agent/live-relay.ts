@@ -4,6 +4,7 @@
 // Provider-agnostic: works with GeminiLiveProvider.
 
 import type { IncomingMessage } from "http";
+import { randomBytes } from "crypto";
 import { WebSocket, WebSocketServer } from "ws";
 import type {
   LiveProvider,
@@ -37,7 +38,7 @@ function extractStringArg(args: Record<string, any>, declaredName: string, fallb
  *  - String (preferred):  "Play|🎮, Water|💧, Help|face:abc123"  (parseBoardButtons format)
  *  - Array of strings:    ["Play|🎮", "Water|💧"]  (fallback — join and parse)
  *  - Object array:        [{label, icon}]  (OpenAI / legacy) */
-function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string; symbolPath?: string }> {
+function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string }> {
   // String — the expected format from native audio models: "label|icon, label|icon"
   if (typeof raw === "string") {
     return parseBoardButtons(raw as string);
@@ -56,6 +57,7 @@ function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string
     const label = (typeof b?.label === "string" ? b.label : String(b?.label ?? "")).trim() || "?";
     let iconRef = (typeof b?.icon === "string" ? b.icon : "").trim() || "💬";
     let symbolPath: string | undefined;
+    const imageKey = (typeof b?.image_key === "string" ? b.image_key : "").trim() || undefined;
     if (iconRef.startsWith("face:")) {
       symbolPath = `__FACE__:${iconRef.substring(5).trim()}`;
       iconRef = "👤";
@@ -63,7 +65,7 @@ function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string
       symbolPath = `__SYMBOL__:${iconRef.substring(7).trim()}`;
       iconRef = "🖼️";
     }
-    return { label, iconRef, symbolPath };
+    return { label, iconRef, symbolPath, imageKey: symbolPath ? undefined : imageKey };
   });
 }
 import type {
@@ -83,6 +85,10 @@ import { logDualAgent, logLiveSession } from "./dual-agent-logger";
 import { dualAgentService, type SessionCache } from "./dual-agent-service";
 import { boardRepository } from "../../repositories/boardRepository";
 import { settingsRepository } from "../../repositories/settingsRepository";
+import { aacSettingsRepository } from "../../repositories/aacSettingsRepository";
+import { customSymbolRepository } from "../../repositories/customSymbolRepository";
+import { customSymbolService } from "../symbol/custom-symbol-service";
+import { generateSymbolImage } from "../symbol/symbol-generator";
 import { MODEL_OPTIONS, type LLMProviderKey } from "@shared/llm-options";
 
 // ---------------------------------------------------------------------------
@@ -108,7 +114,8 @@ export type ClientMessage =
   | { type: "app_dismissed"; appId: string }
   | { type: "app_canvas"; data: string }                     // base64 PNG — app canvas (e.g. drawing)
   | { type: "focus_frame"; data: string }                    // base64 JPEG — high-res focus frame
-  | { type: "set_paused"; paused: boolean };
+  | { type: "set_paused"; paused: boolean }
+  | { type: "local_state"; snapshot: import("@shared/aac-local-storage").AacSessionSnapshot };
 
 /** Messages from server → client */
 export type ServerMessage =
@@ -142,6 +149,8 @@ export type ServerMessage =
   | { type: "rate_limited"; data: string }               // Rate limited — client should NOT auto-reconnect
   | { type: "safety_blocked"; data: string }             // Safety/policy block — transient indicator
   | { type: "focus_request"; data: { reason: string } }  // AI requests a high-res focus frame
+  | { type: "session_snapshot"; snapshot: import("@shared/aac-local-storage").AacSessionSnapshot; config: import("@shared/aac-local-storage").AacLocalStorageConfig }
+  | { type: "symbol_update"; data: { buttonLabel: string; symbolPath: string } }  // Auto-generated symbol ready — update button
   | { type: "complete"; data?: any };
 
 // ---------------------------------------------------------------------------
@@ -247,6 +256,22 @@ export class LiveRelay {
 
   // Sequence counter for debug logging — monotonically increasing per relay instance
   private seqCounter = 0;
+
+  // Auto-generated symbol settings — resolved during init from aacSettings
+  private symbolSettings: { generateSymbols: boolean; useApprovedSymbols: boolean; useUnapprovedSymbols: boolean } = {
+    generateSymbols: false, useApprovedSymbols: false, useUnapprovedSymbols: false,
+  };
+  // Sequential symbol generation queue (avoids quota exhaustion from parallel requests)
+  private symbolGenQueue: Array<{ imageKey: string; buttonLabel: string }> = [];
+  private symbolGenBusy = false;
+
+  // Local storage config — resolved during init from aacSettings
+  private localStorageConfig: import("@shared/aac-local-storage").AacLocalStorageConfig | null = null;
+  // Periodic snapshot timer
+  private snapshotTimer: ReturnType<typeof setInterval> | null = null;
+  private static readonly SNAPSHOT_INTERVAL_MS = 30_000; // 30s
+  // Cached local state from client (sent before initialize for session rebuild)
+  private pendingLocalState: import("@shared/aac-local-storage").AacSessionSnapshot | null = null;
 
   constructor(ws: WebSocket) {
     this.ws = ws;
@@ -578,6 +603,11 @@ export class LiveRelay {
           logDualAgent("LiveRelay.appDismissed", { sessionId: this.sessionId, appId: msg.appId });
           break;
         }
+
+        case "local_state":
+          // Client sending cached local state for session rebuild — store on the pending init
+          this.pendingLocalState = msg.snapshot;
+          break;
       }
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
@@ -627,13 +657,16 @@ export class LiveRelay {
       // Preview native-audio model: only supports AUDIO + function calling
       const isGeminiNativeAudioPreview = isGeminiLive && !isGeminiLiveGA && /native-audio/i.test(aacChatConfig.model);
 
-      // Use existing dual-agent service to get/create session + resolve prompt + voices
+      // Use existing dual-agent service to get/create session + resolve prompt + voices.
+      // Pass any cached local state from the client for session rebuild.
       const state = await dualAgentService.initializeSession(
         msg.studentId,
         msg.userId,
         msg.sessionId,
         this.interactionMode,
+        this.pendingLocalState || undefined,
       );
+      this.pendingLocalState = null;
       this.sessionId = state.sessionId;
 
       // Get session cache (contains state, agents, mutex)
@@ -669,6 +702,7 @@ export class LiveRelay {
         loadedBoardName: cached.state.loadedBoardData?.name || null,
         currentEmote: cached.state.currentEmote,
         activeApp: cached.state.appState?.activeApp || null,
+        autoSymbolsEnabled: this.symbolSettings.generateSymbols || this.symbolSettings.useApprovedSymbols || this.symbolSettings.useUnapprovedSymbols,
       };
 
       // Close any existing provider (for forceNewSession re-init)
@@ -754,8 +788,33 @@ export class LiveRelay {
       this.startBoardReminder();
       this.startBehavioralReminder();
 
-      // Send initialization confirmation to client
+      // Resolve local storage config from AAC settings.
+      // Lazily generate encryption key if local storage is enabled but no key exists.
+      const aacStudentSettings = cached.monitorAgent.getStudent?.()?.aacSettings;
+      let encryptionKey = aacStudentSettings?.localStorageEncryptionKey ?? null;
+      if (aacStudentSettings?.localStorageEnabled && !encryptionKey) {
+        encryptionKey = randomBytes(32).toString("base64");
+        // Persist the generated key (fire-and-forget)
+        aacSettingsRepository.upsert(msg.studentId, { localStorageEncryptionKey: encryptionKey }).catch(err =>
+          console.error("[LiveRelay] Failed to persist encryption key:", err)
+        );
+      }
+      this.localStorageConfig = {
+        localStorageEnabled: aacStudentSettings?.localStorageEnabled ?? true,
+        remoteStorageEnabled: aacStudentSettings?.remoteStorageEnabled ?? true,
+        encryptionKey,
+      };
+      this.symbolSettings = {
+        generateSymbols: aacStudentSettings?.generateSymbols ?? false,
+        useApprovedSymbols: aacStudentSettings?.useApprovedSymbols ?? false,
+        useUnapprovedSymbols: aacStudentSettings?.useUnapprovedSymbols ?? false,
+      };
+      console.log(`[LiveRelay] Symbol settings loaded:`, JSON.stringify(this.symbolSettings));
+      this.startSnapshotTimer();
+
+      // Send initialization confirmation to client + initial snapshot for local storage
       this.send({ type: "initialized", sessionId: state.sessionId });
+      this.sendSessionSnapshot();
 
       logDualAgent("LiveRelay.initialize", {
         sessionId: state.sessionId,
@@ -1038,7 +1097,15 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
       }
 
       case "add_buttons": {
+        console.log(`[LiveRelay] add_buttons raw args:`, JSON.stringify(args));
         const buttons = toolArgsToButtons(args.buttons);
+        // Zip image_keys from separate parameter onto buttons
+        if (typeof args.image_keys === "string") {
+          const keys = args.image_keys.split(",").map((k: string) => k.trim());
+          for (let i = 0; i < Math.min(keys.length, buttons.length); i++) {
+            if (keys[i] && !buttons[i].symbolPath) buttons[i].imageKey = keys[i];
+          }
+        }
         const maxSlots = state?.maxBoardItems || 12;
 
         // Enforce button limit
@@ -1071,6 +1138,9 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
           }
           state.boardButtonLabels = [...state.boardButtonLabels, ...buttons.map(b => b.label)];
         }
+
+        // Resolve image_keys → symbolPaths (existing symbols immediately, generation async)
+        await this.processImageKeys(buttons);
 
         this.lastBoardUpdateTime = Date.now();
         this.send({ type: "board_patch", data: { add: buttons, remove: [] } });
@@ -1149,7 +1219,15 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
       }
 
       case "rebuild_board": {
+        console.log(`[LiveRelay] rebuild_board raw args:`, JSON.stringify(args));
         const buttons = toolArgsToButtons(args.buttons);
+        // Zip image_keys from separate parameter onto buttons
+        if (typeof args.image_keys === "string") {
+          const keys = args.image_keys.split(",").map((k: string) => k.trim());
+          for (let i = 0; i < Math.min(keys.length, buttons.length); i++) {
+            if (keys[i] && !buttons[i].symbolPath) buttons[i].imageKey = keys[i];
+          }
+        }
 
         if (state) {
           state.loadedBoardId = null;
@@ -1160,6 +1238,9 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
           state.aiAddedButtonLabels = [];
           state.boardButtonLabels = buttons.slice(0, 12).map(b => b.label);
         }
+
+        // Resolve image_keys → symbolPaths (existing symbols immediately, generation async)
+        await this.processImageKeys(buttons);
 
         this.lastBoardUpdateTime = Date.now();
         this.send({ type: "board", data: this.buildBoardFromButtons(buttons) });
@@ -1840,6 +1921,9 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
       }
     }
 
+    // Send updated snapshot to client for local persistence
+    this.sendSessionSnapshot();
+
     // Signal turn complete to client
     this.send({ type: "complete", data: {} });
   }
@@ -1917,6 +2001,107 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
     } finally {
       if (timer) clearTimeout(timer);
     }
+  }
+
+  /**
+   * Process image_keys on buttons: resolve existing symbols or generate new ones.
+   * Mutates buttons in-place to set symbolPath for immediately available symbols.
+   * Queues async generation for missing keys (sends symbol_update when ready).
+   */
+  private async processImageKeys(
+    buttons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string }>,
+  ): Promise<void> {
+    const { generateSymbols, useApprovedSymbols, useUnapprovedSymbols } = this.symbolSettings;
+    console.log(`[LiveRelay.processImageKeys] settings: generate=${generateSymbols}, approved=${useApprovedSymbols}, unapproved=${useUnapprovedSymbols}`);
+    console.log(`[LiveRelay.processImageKeys] buttons: ${buttons.map(b => `${b.label}|${b.iconRef}|imageKey=${b.imageKey ?? 'none'}|symbolPath=${b.symbolPath ?? 'none'}`).join(', ')}`);
+    if (!generateSymbols && !useApprovedSymbols && !useUnapprovedSymbols) return;
+
+    for (const button of buttons) {
+      if (!button.imageKey || button.symbolPath) continue;
+
+      try {
+        // Look up existing symbol by key
+        const existing = await customSymbolRepository.getSymbolByKey(button.imageKey);
+        if (existing) {
+          const canUse = existing.isApproved ? useApprovedSymbols : useUnapprovedSymbols;
+          if (canUse) {
+            button.symbolPath = `__SYMBOL__:${existing.id}`;
+            button.iconRef = "🖼️";
+          }
+          continue;
+        }
+
+        // No existing symbol — queue for sequential background generation
+        if (generateSymbols) {
+          this.queueSymbolGeneration(button.imageKey, button.label);
+        }
+      } catch (err) {
+        console.error(`[LiveRelay] Image key lookup failed for "${button.imageKey}":`, err);
+      }
+    }
+  }
+
+  /**
+   * Queue a symbol for sequential background generation.
+   */
+  private queueSymbolGeneration(imageKey: string, buttonLabel: string): void {
+    this.symbolGenQueue.push({ imageKey, buttonLabel });
+    if (!this.symbolGenBusy) {
+      this.processSymbolGenQueue().catch(err =>
+        console.error(`[LiveRelay] Symbol generation queue error:`, err)
+      );
+    }
+  }
+
+  /**
+   * Process the symbol generation queue sequentially with rate limiting.
+   */
+  private async processSymbolGenQueue(): Promise<void> {
+    this.symbolGenBusy = true;
+    let generated = 0;
+    while (this.symbolGenQueue.length > 0) {
+      const { imageKey, buttonLabel } = this.symbolGenQueue.shift()!;
+
+      // Rate limit: pause between requests
+      if (generated > 0) {
+        await new Promise(r => setTimeout(r, 4000));
+      }
+
+      try {
+        // Double-check not already generated
+        const existing = await customSymbolRepository.getSymbolByKey(imageKey);
+        if (existing) {
+          if (this.symbolSettings.useUnapprovedSymbols || existing.isApproved) {
+            this.send({ type: "symbol_update", data: { buttonLabel, symbolPath: `__SYMBOL__:${existing.id}` } });
+          }
+          continue;
+        }
+
+        logDualAgent("LiveRelay.generateSymbol", { sessionId: this.sessionId, imageKey });
+        const imageBuffer = await generateSymbolImage(imageKey);
+        const symbol = await customSymbolService.createSymbol(imageBuffer, {
+          key: imageKey,
+          description: imageKey.replace(/_/g, " "),
+          isPublic: true,
+          isApproved: false,
+        });
+        generated++;
+        logDualAgent("LiveRelay.symbolGenerated", { sessionId: this.sessionId, imageKey, symbolId: symbol.id });
+
+        if (this.symbolSettings.useUnapprovedSymbols) {
+          this.send({ type: "symbol_update", data: { buttonLabel, symbolPath: `__SYMBOL__:${symbol.id}` } });
+        }
+      } catch (err: any) {
+        const isQuota = err?.status === 429 || err?.message?.includes("quota") || err?.message?.includes("RESOURCE_EXHAUSTED");
+        if (isQuota) {
+          logDualAgent("LiveRelay.symbolQuotaExhausted", { sessionId: this.sessionId, generated, remaining: this.symbolGenQueue.length });
+          this.symbolGenQueue.length = 0; // clear remaining
+          break;
+        }
+        console.error(`[LiveRelay] Symbol generation failed for "${imageKey}":`, err);
+      }
+    }
+    this.symbolGenBusy = false;
   }
 
   private buildBoardFromButtons(buttons: Array<{ label: string; iconRef: string; symbolPath?: string }>): any {
@@ -2131,6 +2316,61 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Session snapshot — periodic local storage sync
+  // -------------------------------------------------------------------------
+
+  private startSnapshotTimer(): void {
+    this.stopSnapshotTimer();
+    this.snapshotTimer = setInterval(() => {
+      this.sendSessionSnapshot();
+    }, LiveRelay.SNAPSHOT_INTERVAL_MS);
+  }
+
+  private stopSnapshotTimer(): void {
+    if (this.snapshotTimer) {
+      clearInterval(this.snapshotTimer);
+      this.snapshotTimer = null;
+    }
+  }
+
+  /** Build and send a session_snapshot message to the client for local persistence. */
+  sendSessionSnapshot(): void {
+    if (!this.localStorageConfig || !this.sessionCache?.state) return;
+
+    const state = this.sessionCache.state;
+    const student = this.sessionCache.monitorAgent.getStudent?.();
+    const memory = (student?.chatMemory as Record<string, any>) || {};
+
+    const snapshot: import("@shared/aac-local-storage").AacSessionSnapshot = {
+      sessionId: state.sessionId,
+      studentId: state.studentId,
+      userId: state.userId,
+      messages: state.messages,
+      pendingMessages: state.pendingMessages.map(pm => ({
+        role: pm.role,
+        content: pm.content,
+        timestamp: pm.timestamp,
+      })),
+      interactionMode: state.interactionMode,
+      responseMode: this.responseMode,
+      interpretationLevel: state.interpretationLevel,
+      currentBoard: state.currentBoard || null,
+      boardButtonLabels: state.boardButtonLabels,
+      aiAddedButtonLabels: state.aiAddedButtonLabels,
+      loadedBoardId: state.loadedBoardId,
+      currentPageId: state.currentPageId,
+      monitorNotes: memory.Student_Notes || undefined,
+      timestamp: Date.now(),
+    };
+
+    this.send({
+      type: "session_snapshot",
+      snapshot,
+      config: this.localStorageConfig,
+    });
+  }
+
   /**
    * Build a compact model-role summary of what the model did during this turn.
    * Injected via sendClientContent(role="model", turnComplete=false) after each turn
@@ -2327,6 +2567,7 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
     this.stopPingTimer();
     this.stopBoardReminder();
     this.stopBehavioralReminder();
+    this.stopSnapshotTimer();
 
     // Remove context injection callback to prevent leaks
     if (this.sessionCache?.state) {

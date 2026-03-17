@@ -16,7 +16,7 @@ The board is stored at /Context_Board with this structure:
 - currentPageId: Which page is active
 - pages: Array of pages, each containing:
   - id, name
-  - buttons: Array of buttons with id, row, col, label, spokenText, color, iconRef, rebusKey, symbolPath (optional), action
+  - buttons: Array of buttons with id, row, col, label, spokenText, color, iconRef, rebusKey, imageKey, symbolPath (optional), action
 
 ## Operations
 
@@ -30,7 +30,7 @@ manageMemory({ ops: [{ action: "set", path: "/Context_Board", value: {
     id: "page-main",
     name: "Main",
     buttons: [
-      { id: "btn-1", row: 0, col: 0, label: "Hello", spokenText: "Hello!", color: "#3B82F6", iconRef: "👋", rebusKey: "hello", action: { type: "speak", text: "Hello!" } }
+      { id: "btn-1", row: 0, col: 0, label: "Hello", spokenText: "Hello!", color: "#3B82F6", iconRef: "👋", rebusKey: "hello", imageKey: "greeting_hello", action: { type: "speak", text: "Hello!" } }
     ]
   }]
 }}]})
@@ -56,7 +56,7 @@ manageMemory({ ops: [{ action: "delete", path: "/Context_Board/pages/0/buttons/0
 ### Add a button (set at next index):
 \`\`\`
 manageMemory({ ops: [{ action: "set", path: "/Context_Board/pages/0/buttons/2", value: {
-  id: "btn-new", row: 1, col: 0, label: "New", spokenText: "New button", color: "#F59E0B", iconRef: "✨", rebusKey: "new", action: { type: "speak", text: "New button" }
+  id: "btn-new", row: 1, col: 0, label: "New", spokenText: "New button", color: "#F59E0B", iconRef: "✨", rebusKey: "new", imageKey: "new_item", action: { type: "speak", text: "New button" }
 }}]})
 \`\`\`
 
@@ -75,6 +75,13 @@ manageMemory({ ops: [{ action: "set", path: "/Context_Board/pages/0/buttons/2", 
 - Use the most specific concept: "hungry" not "I am hungry", "toilet" not "bathroom"
 - For "more", use "more 1"
 - Omit rebusKey for navigation/utility buttons (Back, Home)
+
+**Image Key:** The imageKey field is used to look up or auto-generate symbol images. Required for every content button.
+- Always in English, unambiguous single concept
+- Clarify ambiguous words with underscores: "bat_animal" not "bat", "drinking_water" not "water"
+- No proper nouns except globally known concepts (countries, etc.)
+- Use lowercase with underscores: "play_activity", "feeling_tired", "pet_dog"
+- Omit imageKey for navigation/utility buttons (Back, Home)
 
 **Actions:** { type: "speak", text: "..." } or { type: "link", toPageId: "page-id" }
 

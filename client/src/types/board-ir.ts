@@ -20,8 +20,9 @@ export interface ButtonIR {
   spokenText?: string;
   color?: string;
   iconRef?: string;
-  symbolPath?: string; // Path to Mulberry symbol SVG
+  symbolPath?: string; // Path to Mulberry symbol SVG or custom symbol API URL
   rebusKey?: string;   // Widgit Rebus concept name for Grid3 export (e.g. "happy", "mum", "ice cream")
+  imageKey?: string;   // Auto-generated symbol key (e.g. "drinking_water") — used to look up or generate symbol images
 
   /**
    * When true, this button will automatically "jump back"

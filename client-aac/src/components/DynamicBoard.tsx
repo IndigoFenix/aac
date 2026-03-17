@@ -14,6 +14,8 @@ export interface BoardPatch {
 interface DynamicBoardProps {
   board: ParsedBoardData | null;
   boardPatch?: BoardPatch | null;
+  /** Auto-generated symbol ready — update the button's image */
+  symbolUpdate?: { buttonLabel: string; symbolPath: string } | null;
   /** AI pressed a navigation button — navigate to target page */
   aiButtonPress?: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: BoardButton[] } | null;
   onButtonClick: (button: BoardButton, spokenText: string) => void;
@@ -116,6 +118,7 @@ function makeBoardButton(entry: { label: string; iconRef: string; symbolPath?: s
 export default function DynamicBoard({
   board,
   boardPatch,
+  symbolUpdate,
   aiButtonPress,
   onButtonClick,
   onBack,
@@ -275,6 +278,19 @@ export default function DynamicBoard({
       }, 1500);
     }
   }, [boardPatch]);
+
+  // Symbol update — auto-generated symbol is ready, update the button's image
+  useEffect(() => {
+    if (!symbolUpdate) return;
+    const { buttonLabel, symbolPath } = symbolUpdate;
+    setSlots((prev) =>
+      prev.map((slot) => {
+        if (slot.type !== "occupied" && slot.type !== "fading") return slot;
+        if (slot.button.label.toLowerCase() !== buttonLabel.toLowerCase()) return slot;
+        return { ...slot, button: { ...slot.button, symbolPath } };
+      })
+    );
+  }, [symbolUpdate]);
 
   // Cleanup timer on unmount
   useEffect(() => {
@@ -460,6 +476,16 @@ export default function DynamicBoard({
     }
     if (button.symbolPath) {
       return <img src={button.symbolPath} alt={button.label} style={imgStyle} />;
+    }
+    // Show emoji with loading spinner while symbol is being generated
+    if ((button as any).imageKey && !(button.symbolPath)) {
+      const emoji = button.iconRef && isEmoji(button.iconRef) ? button.iconRef : getEmojiForLabel(button.label);
+      return (
+        <span style={{ ...emojiStyle, position: "relative" as const }}>
+          {emoji}
+          <span style={{ position: "absolute", top: -2, right: -6, width: 10, height: 10, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.5)", borderTopColor: "transparent", animation: "spin 1s linear infinite" }} />
+        </span>
+      );
     }
     if (button.iconRef && isEmoji(button.iconRef)) {
       return <span style={emojiStyle}>{button.iconRef}</span>;

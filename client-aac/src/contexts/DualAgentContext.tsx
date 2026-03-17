@@ -68,6 +68,9 @@ interface DualAgentContextType {
   // Board patch (from detection)
   boardPatch: BoardPatch | null;
 
+  // Symbol update (auto-generated symbol ready)
+  symbolUpdate: { buttonLabel: string; symbolPath: string } | null;
+
   // AI button press (AI navigated within a loaded board)
   aiButtonPress: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] } | null;
 
@@ -177,6 +180,7 @@ function DualAgentProviderInner({
 }: DualAgentProviderProps) {
   const [currentBoard, setCurrentBoard] = React.useState<ParsedBoardData | null>(null);
   const [boardPatch, setBoardPatch] = React.useState<BoardPatch | null>(null);
+  const [symbolUpdate, setSymbolUpdate] = React.useState<{ buttonLabel: string; symbolPath: string } | null>(null);
   const [aiButtonPress, setAiButtonPress] = React.useState<{ label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] } | null>(null);
   const onBoardUpdateRef = useRef<((board: ParsedBoardData) => void) | null>(null);
 
@@ -261,6 +265,10 @@ function DualAgentProviderInner({
     console.log(`[DualAgentContext] AI_BUTTON_PRESS: "${data.label}" → page "${data.targetPageName}"`);
   }, []);
 
+  const handleSymbolUpdate = useCallback((data: { buttonLabel: string; symbolPath: string }) => {
+    setSymbolUpdate(data);
+  }, []);
+
   const liveAgent = useLiveSession({
     studentId,
     language,
@@ -268,6 +276,7 @@ function DualAgentProviderInner({
     onBoardPatch: handleBoardPatch,
     onSetBoard: handleSetBoard,
     onAiButtonPress: handleAiButtonPress,
+    onSymbolUpdate: handleSymbolUpdate,
     autoPlayAudio: true,
     debugMode,
     captureFrame,
@@ -412,6 +421,7 @@ function DualAgentProviderInner({
       currentBoard={currentBoard}
       setCurrentBoard={setCurrentBoard}
       boardPatch={boardPatch}
+      symbolUpdate={symbolUpdate}
       aiButtonPress={aiButtonPress}
       setOnBoardUpdate={setOnBoardUpdate}
       sendMessage={sendMessage}
@@ -437,6 +447,7 @@ interface ProviderShellProps {
   currentBoard: ParsedBoardData | null;
   setCurrentBoard: (board: ParsedBoardData | null) => void;
   boardPatch: BoardPatch | null;
+  symbolUpdate: { buttonLabel: string; symbolPath: string } | null;
   aiButtonPress: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] } | null;
   setOnBoardUpdate: (callback: ((board: ParsedBoardData) => void) | null) => void;
   sendMessage: (message: string) => Promise<void>;
@@ -466,6 +477,7 @@ function ProviderShell({
   currentBoard,
   setCurrentBoard,
   boardPatch,
+  symbolUpdate,
   aiButtonPress,
   setOnBoardUpdate,
   sendMessage,
@@ -522,6 +534,7 @@ function ProviderShell({
     setOnBoardUpdate,
 
     boardPatch,
+    symbolUpdate,
     aiButtonPress,
 
     debugData: agent.debugData,

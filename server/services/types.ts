@@ -27,6 +27,7 @@ export interface ParsedBoardData {
       iconRef?: string;
       symbolPath?: string;
       rebusKey?: string;
+      imageKey?: string;
       selfClosing?: boolean;
       action?: {
         type: string;
@@ -57,6 +58,7 @@ export interface GeneratedButtonSpec {
   color?: string;
   iconRef?: string;
   rebusKey?: string;       // Widgit Rebus concept name for Grid3 export
+  imageKey?: string;       // Auto-generated symbol key (e.g. "drinking_water")
   row?: number;
   col?: number;
   pageId: string;          // Which page this button goes on
@@ -85,6 +87,7 @@ export interface EditedButtonSpec {
   color?: string;
   iconRef?: string;
   rebusKey?: string;                // Widgit Rebus concept name for Grid3 export
+  imageKey?: string;                // Auto-generated symbol key
   row?: number;
   col?: number;
   pageId?: string;                  // Move to different page

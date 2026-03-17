@@ -35,6 +35,7 @@ import {
   Crosshair,
   Play,
   Shield,
+  ImageIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -94,6 +95,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [allowReadProgress, setAllowReadProgress] = useState(true);
   const [allowReadReports, setAllowReadReports] = useState(true);
   const [allowNotes, setAllowNotes] = useState(true);
+  const [generateSymbols, setGenerateSymbols] = useState(false);
+  const [useApprovedSymbols, setUseApprovedSymbols] = useState(false);
+  const [useUnapprovedSymbols, setUseUnapprovedSymbols] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
 
   // Fetch ElevenLabs voices when API key is present
@@ -171,6 +175,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAllowReadProgress(aac?.allowReadProgress ?? true);
       setAllowReadReports(aac?.allowReadReports ?? true);
       setAllowNotes(aac?.allowNotes ?? true);
+      setGenerateSymbols(aac?.generateSymbols ?? false);
+      setUseApprovedSymbols(aac?.useApprovedSymbols ?? false);
+      setUseUnapprovedSymbols(aac?.useUnapprovedSymbols ?? false);
       setHasChanges(false);
     }
   }, [student]);
@@ -196,6 +203,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalAllowReadProgress = aac?.allowReadProgress ?? true;
       const originalAllowReadReports = aac?.allowReadReports ?? true;
       const originalAllowNotes = aac?.allowNotes ?? true;
+      const originalGenerateSymbols = aac?.generateSymbols ?? false;
+      const originalUseApprovedSymbols = aac?.useApprovedSymbols ?? false;
+      const originalUseUnapprovedSymbols = aac?.useUnapprovedSymbols ?? false;
       setHasChanges(
         aiName !== originalAiName ||
         chatAgentPrompt !== originalPrompt ||
@@ -213,10 +223,13 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         eyegazeTimeout !== originalEyegazeTimeout ||
         allowReadProgress !== originalAllowReadProgress ||
         allowReadReports !== originalAllowReadReports ||
-        allowNotes !== originalAllowNotes
+        allowNotes !== originalAllowNotes ||
+        generateSymbols !== originalGenerateSymbols ||
+        useApprovedSymbols !== originalUseApprovedSymbols ||
+        useUnapprovedSymbols !== originalUseUnapprovedSymbols
       );
     }
-  }, [aiName, chatAgentPrompt, voiceType, studentVoiceType, customVoiceId, customStudentVoiceId, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, allowReadProgress, allowReadReports, allowNotes, student]);
+  }, [aiName, chatAgentPrompt, voiceType, studentVoiceType, customVoiceId, customStudentVoiceId, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, allowReadProgress, allowReadReports, allowNotes, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -238,6 +251,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       allowReadProgress: boolean;
       allowReadReports: boolean;
       allowNotes: boolean;
+      generateSymbols: boolean;
+      useApprovedSymbols: boolean;
+      useUnapprovedSymbols: boolean;
     }) => {
       const response = await apiRequest('PATCH', `/api/students/${student?.id}`, data);
       return response.json();
@@ -280,6 +296,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       allowReadProgress,
       allowReadReports,
       allowNotes,
+      generateSymbols,
+      useApprovedSymbols,
+      useUnapprovedSymbols,
     });
   };
 
@@ -303,6 +322,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAllowReadProgress(aac?.allowReadProgress ?? true);
       setAllowReadReports(aac?.allowReadReports ?? true);
       setAllowNotes(aac?.allowNotes ?? true);
+      setGenerateSymbols(aac?.generateSymbols ?? false);
+      setUseApprovedSymbols(aac?.useApprovedSymbols ?? false);
+      setUseUnapprovedSymbols(aac?.useUnapprovedSymbols ?? false);
     }
   };
 
@@ -976,6 +998,75 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 <Switch
                   checked={allowNotes}
                   onCheckedChange={setAllowNotes}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Symbol Generation Settings */}
+          <Card>
+            <CardHeader>
+              <CardTitle className={cn(
+                "flex items-center gap-2",
+                isRTL && "flex-row-reverse"
+              )}>
+                <ImageIcon className="w-5 h-5" />
+                {t('aacSettings.symbolGeneration')}
+              </CardTitle>
+              <CardDescription>
+                {t('aacSettings.symbolGenerationDesc')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className={cn(
+                "flex flex-col gap-2 md:flex-row md:items-center md:justify-between",
+                isRTL && "md:flex-row-reverse"
+              )}>
+                <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                  <Label className="text-base font-medium">
+                    {t('aacSettings.generateSymbols')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.generateSymbolsDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={generateSymbols}
+                  onCheckedChange={setGenerateSymbols}
+                />
+              </div>
+              <div className={cn(
+                "flex flex-col gap-2 md:flex-row md:items-center md:justify-between",
+                isRTL && "md:flex-row-reverse"
+              )}>
+                <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                  <Label className="text-base font-medium">
+                    {t('aacSettings.useApprovedSymbols')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.useApprovedSymbolsDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={useApprovedSymbols}
+                  onCheckedChange={setUseApprovedSymbols}
+                />
+              </div>
+              <div className={cn(
+                "flex flex-col gap-2 md:flex-row md:items-center md:justify-between",
+                isRTL && "md:flex-row-reverse"
+              )}>
+                <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                  <Label className="text-base font-medium">
+                    {t('aacSettings.useUnapprovedSymbols')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.useUnapprovedSymbolsDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={useUnapprovedSymbols}
+                  onCheckedChange={setUseUnapprovedSymbols}
                 />
               </div>
             </CardContent>

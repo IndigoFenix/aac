@@ -27,6 +27,15 @@ import type {
   CachedAudioClip,
   UseDualAgentReturn,
 } from "./dual-agent-types";
+import {
+  saveSessionSnapshot,
+  loadLatestSnapshot,
+  cleanupOldSessions,
+} from "@/services/aac-local-storage";
+import type {
+  AacLocalStorageConfig,
+  AacSessionSnapshot,
+} from "@shared/aac-local-storage";
 
 export interface UseLiveSessionOptions {
   studentId: string;
@@ -35,6 +44,7 @@ export interface UseLiveSessionOptions {
   onBoardPatch?: (patch: BoardPatch) => void;
   onSetBoard?: (data: { board: ParsedBoardData; name: string; boardId: string }) => void;
   onAiButtonPress?: (data: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] }) => void;
+  onSymbolUpdate?: (data: { buttonLabel: string; symbolPath: string }) => void;
   onThinkingModeChange?: (thinking: boolean) => void;
   autoPlayAudio?: boolean;
   debugMode?: boolean;
@@ -52,6 +62,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     onBoardPatch,
     onSetBoard,
     onAiButtonPress,
+    onSymbolUpdate,
     onThinkingModeChange,
     autoPlayAudio = true,
     debugMode = false,
@@ -135,6 +146,16 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Deferred ask_yes_no: show overlay after TTS playback completes
   const pendingAskYesNoRef = useRef(false);
 
+  // Local storage config (from server) — stored as ref to avoid re-renders
+  const localStorageConfigRef = useRef<AacLocalStorageConfig | null>(null);
+
+  // Clean up old local sessions on mount (fire-and-forget)
+  useEffect(() => {
+    cleanupOldSessions().then(count => {
+      if (count > 0) console.log(`[useLiveSession] Cleaned up ${count} old local session(s)`);
+    }).catch(() => {});
+  }, []);
+
   // Promise chain for client-side TTS — preserves ordering between consecutive calls
   const clientTtsChainRef = useRef(Promise.resolve());
 
@@ -162,6 +183,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   onSetBoardRef.current = onSetBoard;
   const onAiButtonPressRef = useRef(onAiButtonPress);
   onAiButtonPressRef.current = onAiButtonPress;
+  const onSymbolUpdateRef = useRef(onSymbolUpdate);
+  onSymbolUpdateRef.current = onSymbolUpdate;
   const onThinkingModeChangeRef = useRef(onThinkingModeChange);
   onThinkingModeChangeRef.current = onThinkingModeChange;
 
@@ -260,6 +283,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           }
           break;
         }
+
+        case "symbol_update":
+          // Auto-generated symbol is ready — update the button's image
+          onSymbolUpdateRef.current?.(msg.data);
+          break;
 
         case "set_board":
           // AI selected a pre-built board — update board and notify parent
@@ -418,6 +446,16 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           setIsLoading(false);
           break;
 
+        case "session_snapshot":
+          // Save session snapshot to local IndexedDB for persistence across sessions
+          localStorageConfigRef.current = msg.config;
+          if (msg.config?.localStorageEnabled) {
+            saveSessionSnapshot(msg.snapshot, msg.config).catch(err =>
+              console.warn("[useLiveSession] Failed to save local snapshot:", err)
+            );
+          }
+          break;
+
         case "complete":
           // Turn complete — reset accumulator, finalize audio
           textAccumRef.current = "";
@@ -489,7 +527,19 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         // Send initialize message (include userId for session/memory access)
         // useAuth().user is the full API response: { success, user: { id, ... } }
         // Read from ref in case auth loaded after callback was created
-        const sendInit = () => {
+        const sendInit = async () => {
+          // Send cached local state first (if any) for session rebuild
+          try {
+            const encryptionKey = localStorageConfigRef.current?.encryptionKey ?? null;
+            const cachedSnapshot = await loadLatestSnapshot(studentId, encryptionKey);
+            if (cachedSnapshot) {
+              wsSend({ type: "local_state", snapshot: cachedSnapshot });
+              console.log("[useLiveSession] Sent cached local state for session:", cachedSnapshot.sessionId);
+            }
+          } catch (err) {
+            console.warn("[useLiveSession] Failed to load local state:", err);
+          }
+
           wsSend({
             type: "initialize",
             studentId,

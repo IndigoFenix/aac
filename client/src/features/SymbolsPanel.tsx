@@ -1,18 +1,16 @@
-import { useState, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest, apiUrl } from '@/lib/queryClient';
 import { useStudent } from '@/hooks/useStudent';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Search, Trash2, Edit, Wand2, Upload, Loader2, Image as ImageIcon } from 'lucide-react';
+import { Plus, Search, Trash2, Edit, Wand2, Upload, Loader2, Image as ImageIcon, ChevronDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useTheme } from '@/contexts/ThemeContext';
 import { cn } from '@/lib/utils';
@@ -20,14 +18,13 @@ import { cn } from '@/lib/utils';
 /** Extract message from apiRequest errors (format: "STATUS: JSON_BODY") */
 function extractErrorMessage(err: any, fallback: string): string {
   const raw = err?.message || '';
-  // apiRequest throws "STATUS: body" — try to parse JSON body
   const colonIdx = raw.indexOf(': ');
   if (colonIdx > 0) {
     const body = raw.substring(colonIdx + 2);
     try {
       const parsed = JSON.parse(body);
       if (parsed.message) return parsed.message;
-    } catch { /* not JSON, use raw body */ }
+    } catch { /* not JSON */ }
     return body || fallback;
   }
   return raw || fallback;
@@ -46,19 +43,29 @@ interface SymbolData {
   assocId?: string;
 }
 
-function SymbolCard({ symbol, onEdit, onDelete }: {
+const PAGE_SIZE = 24;
+
+function SymbolCard({ symbol, onEdit, onDelete, showApproval, onApprove }: {
   symbol: SymbolData;
   onEdit?: () => void;
   onDelete?: () => void;
+  showApproval?: boolean;
+  onApprove?: () => void;
 }) {
   const { t } = useLanguage();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   return (
     <div className={cn(
-      "border rounded-lg p-3 flex flex-col items-center gap-2 hover:shadow-md transition-shadow",
-      isDark ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200"
+      "border rounded-lg p-3 flex flex-col items-center gap-2 hover:shadow-md transition-shadow relative",
+      isDark ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200",
+      showApproval && !symbol.isApproved && (isDark ? "border-yellow-600/50" : "border-yellow-400"),
     )}>
+      {showApproval && !symbol.isApproved && (
+        <span className="absolute top-1 right-1 text-[9px] px-1.5 py-0.5 rounded-full bg-yellow-500/20 text-yellow-600 font-medium">
+          {t('symbols.pending')}
+        </span>
+      )}
       <img
         src={apiUrl(`/api/custom-symbols/${symbol.id}/image`)}
         alt={symbol.assocKey || symbol.key || t('symbols.title')}
@@ -74,6 +81,11 @@ function SymbolCard({ symbol, onEdit, onDelete }: {
         </span>
       )}
       <div className="flex gap-1">
+        {onApprove && (
+          <Button variant="ghost" size="sm" onClick={onApprove} className="text-green-600 hover:text-green-700" title={t('symbols.approve')}>
+            <span className="text-xs">&#10003;</span>
+          </Button>
+        )}
         {onEdit && (
           <Button variant="ghost" size="sm" onClick={onEdit}>
             <Edit className="w-3 h-3" />
@@ -89,6 +101,18 @@ function SymbolCard({ symbol, onEdit, onDelete }: {
   );
 }
 
+/** Client-side filter helper */
+function filterSymbols(symbols: SymbolData[], query: string): SymbolData[] {
+  if (!query.trim()) return symbols;
+  const q = query.toLowerCase();
+  return symbols.filter(s =>
+    (s.key?.toLowerCase().includes(q)) ||
+    (s.description?.toLowerCase().includes(q)) ||
+    (s.assocKey?.toLowerCase().includes(q)) ||
+    (s.assocDescription?.toLowerCase().includes(q))
+  );
+}
+
 export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
   const { student } = useStudent();
   const { user } = useAuth();
@@ -98,10 +122,23 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('my');
   const [showCreate, setShowCreate] = useState(false);
-  const [showSearch, setShowSearch] = useState(false);
   const [editAssoc, setEditAssoc] = useState<{ assocId: string; type: string; key: string; description: string } | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // Queries — keys use ['custom-symbols', ...] so invalidateQueries(['custom-symbols']) matches all
+  // Pagination state per tab
+  const [myPage, setMyPage] = useState(1);
+  const [studentPage, setStudentPage] = useState(1);
+  const [publicPage, setPublicPage] = useState(1);
+
+  // Reset pagination when search changes
+  const handleSearchChange = (q: string) => {
+    setSearchQuery(q);
+    setMyPage(1);
+    setStudentPage(1);
+    setPublicPage(1);
+  };
+
+  // Queries
   const { data: mySymbols = [] } = useQuery<SymbolData[]>({
     queryKey: ['custom-symbols', 'my'],
     queryFn: () => apiRequest('GET', '/api/custom-symbols/my').then(r => r.json()),
@@ -114,26 +151,42 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
     enabled: isOpen && !!student,
   });
 
-  const { data: publicSymbols = [] } = useQuery<SymbolData[]>({
+  const { data: approvedPublicSymbols = [] } = useQuery<SymbolData[]>({
     queryKey: ['custom-symbols', 'public'],
-    queryFn: () => apiRequest('GET', '/api/custom-symbols/public').then(r => r.json()),
+    queryFn: () => apiRequest('GET', '/api/custom-symbols/public?limit=200').then(r => r.json()),
     enabled: isOpen && activeTab === 'public',
   });
+
+  const { data: unapprovedSymbols = [] } = useQuery<SymbolData[]>({
+    queryKey: ['custom-symbols', 'unapproved'],
+    queryFn: () => apiRequest('GET', '/api/custom-symbols/unapproved?limit=200').then(r => r.json()),
+    enabled: isOpen && activeTab === 'public',
+  });
+
+  // Filtered + paginated lists
+  const filteredMy = useMemo(() => filterSymbols(mySymbols, searchQuery), [mySymbols, searchQuery]);
+  const filteredStudent = useMemo(() => filterSymbols(studentSymbols, searchQuery), [studentSymbols, searchQuery]);
+  const allPublic = useMemo(() => filterSymbols([...unapprovedSymbols, ...approvedPublicSymbols], searchQuery), [unapprovedSymbols, approvedPublicSymbols, searchQuery]);
+
+  const paginatedMy = filteredMy.slice(0, myPage * PAGE_SIZE);
+  const paginatedStudent = filteredStudent.slice(0, studentPage * PAGE_SIZE);
+  const paginatedPublic = allPublic.slice(0, publicPage * PAGE_SIZE);
 
   // Mutations
   const deleteSymbolMutation = useMutation({
     mutationFn: (id: string) => apiRequest('DELETE', `/api/custom-symbols/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['custom-symbols'] });
-    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['custom-symbols'] }); },
+  });
+
+  const approveSymbolMutation = useMutation({
+    mutationFn: (id: string) => apiRequest('PATCH', `/api/custom-symbols/${id}`, { isApproved: true }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['custom-symbols'] }); },
   });
 
   const deleteAssocMutation = useMutation({
     mutationFn: ({ assocId, type }: { assocId: string; type: string }) =>
       apiRequest('DELETE', `/api/custom-symbols/${type}-associations/${assocId}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['custom-symbols'] });
-    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['custom-symbols'] }); },
   });
 
   const updateAssocMutation = useMutation({
@@ -147,77 +200,112 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
 
   if (!isOpen) return null;
 
+  const renderGrid = (symbols: SymbolData[], opts: {
+    showApproval?: boolean;
+    onEdit?: (s: SymbolData) => void;
+    onDelete?: (s: SymbolData) => void;
+    onApprove?: (s: SymbolData) => void;
+    emptyMessage: string;
+    total: number;
+    page: number;
+    onLoadMore: () => void;
+  }) => (
+    <>
+      {symbols.length === 0 ? (
+        <p className={cn("text-sm text-center py-8", isDark ? "text-slate-400" : "text-gray-500")}>{opts.emptyMessage}</p>
+      ) : (
+        <div className="grid grid-cols-3 gap-3">
+          {symbols.map(s => (
+            <SymbolCard
+              key={s.id}
+              symbol={s}
+              showApproval={opts.showApproval}
+              onApprove={opts.onApprove && !s.isApproved ? () => opts.onApprove!(s) : undefined}
+              onEdit={opts.onEdit ? () => opts.onEdit!(s) : undefined}
+              onDelete={opts.onDelete ? () => opts.onDelete!(s) : undefined}
+            />
+          ))}
+        </div>
+      )}
+      {symbols.length < opts.total && (
+        <div className="flex justify-center pt-4">
+          <Button variant="outline" size="sm" onClick={opts.onLoadMore}>
+            <ChevronDown className="w-4 h-4 mr-1" /> {t('common.loadMore')}
+          </Button>
+        </div>
+      )}
+    </>
+  );
+
   return (
     <div className="h-full flex flex-col">
-      <div className="p-4 border-b flex items-center justify-between">
+      {/* Header */}
+      <div className="p-4 border-b flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
           <ImageIcon className="w-5 h-5" />
           <h2 className="text-lg font-semibold">{t('symbols.title')}</h2>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setShowSearch(true)}>
-            <Search className="w-4 h-4 mr-1" /> {t('symbols.search')}
-          </Button>
-          <Button size="sm" onClick={() => setShowCreate(true)}>
-            <Plus className="w-4 h-4 mr-1" /> {t('symbols.create')}
-          </Button>
-        </div>
+        <Button size="sm" onClick={() => setShowCreate(true)}>
+          <Plus className="w-4 h-4 mr-1" /> {t('symbols.create')}
+        </Button>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-        <TabsList className="mx-4 mt-2">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
+        <TabsList className="mx-4 mt-2 shrink-0">
           <TabsTrigger value="my">{t('symbols.mySymbols')}</TabsTrigger>
           {student && <TabsTrigger value="student">{t('symbols.student')}</TabsTrigger>}
           <TabsTrigger value="public">{t('symbols.public')}</TabsTrigger>
         </TabsList>
 
-        <ScrollArea className="flex-1">
-          <TabsContent value="my" className="p-4">
-            {mySymbols.length === 0 ? (
-              <p className={cn("text-sm text-center py-8", isDark ? "text-slate-400" : "text-gray-500")}>{t('symbols.noSymbols')}</p>
-            ) : (
-              <div className="grid grid-cols-3 gap-3">
-                {mySymbols.map(s => (
-                  <SymbolCard
-                    key={s.id}
-                    symbol={s}
-                    onEdit={() => setEditAssoc({ assocId: s.assocId!, type: 'user', key: s.assocKey || s.key || '', description: s.assocDescription || s.description || '' })}
-                    onDelete={() => s.assocId && deleteAssocMutation.mutate({ assocId: s.assocId, type: 'user' })}
-                  />
-                ))}
-              </div>
-            )}
+        {/* Search bar */}
+        <div className="px-4 pt-3 pb-1 shrink-0">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              value={searchQuery}
+              onChange={e => handleSearchChange(e.target.value)}
+              placeholder={t('symbols.searchPlaceholder')}
+              className="pl-8 h-9"
+            />
+          </div>
+        </div>
+
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <TabsContent value="my" className="p-4 mt-0">
+            {renderGrid(paginatedMy, {
+              onEdit: (s) => s.assocId && setEditAssoc({ assocId: s.assocId, type: 'user', key: s.assocKey || s.key || '', description: s.assocDescription || s.description || '' }),
+              onDelete: (s) => s.assocId && deleteAssocMutation.mutate({ assocId: s.assocId, type: 'user' }),
+              emptyMessage: searchQuery ? t('symbols.noResults') : t('symbols.noSymbols'),
+              total: filteredMy.length,
+              page: myPage,
+              onLoadMore: () => setMyPage(p => p + 1),
+            })}
           </TabsContent>
 
-          <TabsContent value="student" className="p-4">
-            {studentSymbols.length === 0 ? (
-              <p className={cn("text-sm text-center py-8", isDark ? "text-slate-400" : "text-gray-500")}>{t('symbols.noStudentSymbols').replace('{name}', student?.name || '')}</p>
-            ) : (
-              <div className="grid grid-cols-3 gap-3">
-                {studentSymbols.map(s => (
-                  <SymbolCard
-                    key={s.id}
-                    symbol={s}
-                    onEdit={() => setEditAssoc({ assocId: s.assocId!, type: 'student', key: s.assocKey || s.key || '', description: s.assocDescription || s.description || '' })}
-                    onDelete={() => s.assocId && deleteAssocMutation.mutate({ assocId: s.assocId, type: 'student' })}
-                  />
-                ))}
-              </div>
-            )}
+          <TabsContent value="student" className="p-4 mt-0">
+            {renderGrid(paginatedStudent, {
+              onEdit: (s) => s.assocId && setEditAssoc({ assocId: s.assocId, type: 'student', key: s.assocKey || s.key || '', description: s.assocDescription || s.description || '' }),
+              onDelete: (s) => s.assocId && deleteAssocMutation.mutate({ assocId: s.assocId, type: 'student' }),
+              emptyMessage: searchQuery ? t('symbols.noResults') : t('symbols.noStudentSymbols').replace('{name}', student?.name || ''),
+              total: filteredStudent.length,
+              page: studentPage,
+              onLoadMore: () => setStudentPage(p => p + 1),
+            })}
           </TabsContent>
 
-          <TabsContent value="public" className="p-4">
-            {publicSymbols.length === 0 ? (
-              <p className={cn("text-sm text-center py-8", isDark ? "text-slate-400" : "text-gray-500")}>{t('symbols.noPublicSymbols')}</p>
-            ) : (
-              <div className="grid grid-cols-3 gap-3">
-                {publicSymbols.map(s => (
-                  <SymbolCard key={s.id} symbol={s} />
-                ))}
-              </div>
-            )}
+          <TabsContent value="public" className="p-4 mt-0">
+            {renderGrid(paginatedPublic, {
+              showApproval: true,
+              onApprove: (s) => approveSymbolMutation.mutate(s.id),
+              onDelete: (s) => deleteSymbolMutation.mutate(s.id),
+              emptyMessage: searchQuery ? t('symbols.noResults') : t('symbols.noPublicSymbols'),
+              total: allPublic.length,
+              page: publicPage,
+              onLoadMore: () => setPublicPage(p => p + 1),
+            })}
           </TabsContent>
-        </ScrollArea>
+        </div>
       </Tabs>
 
       {/* Create Symbol Dialog */}
@@ -228,18 +316,6 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
         onCreated={() => {
           queryClient.invalidateQueries({ queryKey: ['custom-symbols'] });
           setShowCreate(false);
-        }}
-      />
-
-      {/* Search Symbol Dialog */}
-      <SearchSymbolDialog
-        open={showSearch}
-        onClose={() => setShowSearch(false)}
-        studentId={student?.id}
-        existingMyIds={new Set(mySymbols.map(s => s.id))}
-        existingStudentIds={new Set(studentSymbols.map(s => s.id))}
-        onAdded={() => {
-          queryClient.invalidateQueries({ queryKey: ['custom-symbols'] });
         }}
       />
 
@@ -354,10 +430,8 @@ function CreateSymbolDialog({ open, onClose, studentId, onCreated }: {
       const createRes = await apiRequest('POST', '/api/custom-symbols', formData);
       const symbol = await createRes.json();
 
-      // Auto-associate with user
       await apiRequest('POST', `/api/custom-symbols/${symbol.id}/user-associate`, { key: key || null, description: description || null });
 
-      // Auto-associate with student if selected
       if (studentId) {
         await apiRequest('POST', `/api/custom-symbols/${symbol.id}/student-associate`, { studentId, key: key || null, description: description || null });
       }
@@ -427,113 +501,6 @@ function CreateSymbolDialog({ open, onClose, studentId, onCreated }: {
             {t('symbols.saveSymbol')}
           </Button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function SearchSymbolDialog({ open, onClose, studentId, existingMyIds, existingStudentIds, onAdded }: {
-  open: boolean;
-  onClose: () => void;
-  studentId?: string;
-  existingMyIds: Set<string>;
-  existingStudentIds: Set<string>;
-  onAdded: () => void;
-}) {
-  const { t } = useLanguage();
-  const { toast } = useToast();
-  const { theme } = useTheme();
-  const isDark = theme === 'dark';
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<SymbolData[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  const handleSearch = async () => {
-    if (!query.trim()) return;
-    setLoading(true);
-    try {
-      const res = await apiRequest('GET', `/api/custom-symbols/search?q=${encodeURIComponent(query)}`);
-      setResults(await res.json());
-    } catch (err: any) {
-      toast({ title: 'Search failed', description: extractErrorMessage(err, 'Search failed'), variant: 'destructive' });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAdd = async (symbolId: string, target: 'user' | 'student') => {
-    try {
-      if (target === 'user') {
-        await apiRequest('POST', `/api/custom-symbols/${symbolId}/user-associate`, {});
-      } else if (target === 'student' && studentId) {
-        await apiRequest('POST', `/api/custom-symbols/${symbolId}/student-associate`, { studentId });
-      }
-      onAdded();
-    } catch (err: any) {
-      if (err?.status === 409) {
-        toast({ title: 'Already added', description: 'This symbol is already associated.' });
-      } else {
-        toast({ title: 'Error', description: extractErrorMessage(err, 'Failed to add symbol'), variant: 'destructive' });
-      }
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{t('symbols.searchSymbols')}</DialogTitle>
-        </DialogHeader>
-        <div className="flex gap-2">
-          <Input
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder={t('symbols.searchPlaceholder')}
-            onKeyDown={e => e.key === 'Enter' && handleSearch()}
-          />
-          <Button onClick={handleSearch} disabled={loading}>
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-          </Button>
-        </div>
-        <ScrollArea className="max-h-[400px]">
-          {results.length === 0 ? (
-            <p className={cn("text-sm text-center py-4", isDark ? "text-slate-400" : "text-gray-500")}>
-              {query ? t('symbols.noResults') : t('symbols.searchPrompt')}
-            </p>
-          ) : (
-            <div className="grid grid-cols-3 gap-3 p-2">
-              {results.map(s => (
-                <div key={s.id} className={cn(
-                  "border rounded-lg p-3 flex flex-col items-center gap-2",
-                  isDark ? "border-slate-700 bg-slate-800" : "border-gray-200 bg-white"
-                )}>
-                  <img
-                    src={apiUrl(`/api/custom-symbols/${s.id}/image`)}
-                    alt={s.key || t('symbols.title')}
-                    className={cn("w-12 h-12 object-contain rounded", isDark ? "bg-slate-700" : "bg-gray-50")}
-                    loading="lazy"
-                  />
-                  <span className={cn("text-xs font-medium text-center", isDark ? "text-slate-200" : "text-gray-900")}>{s.key || t('symbols.unnamed')}</span>
-                  <div className="flex gap-1">
-                    {!existingMyIds.has(s.id) && (
-                      <Button size="sm" variant="outline" onClick={() => handleAdd(s.id, 'user')}>
-                        {t('symbols.addMy')}
-                      </Button>
-                    )}
-                    {studentId && !existingStudentIds.has(s.id) && (
-                      <Button size="sm" variant="outline" onClick={() => handleAdd(s.id, 'student')}>
-                        {t('symbols.addStudent')}
-                      </Button>
-                    )}
-                    {existingMyIds.has(s.id) && (!studentId || existingStudentIds.has(s.id)) && (
-                      <span className={cn("text-xs", isDark ? "text-slate-500" : "text-gray-400")}>{t('symbols.alreadyAdded')}</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </ScrollArea>
       </DialogContent>
     </Dialog>
   );

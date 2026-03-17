@@ -22,8 +22,9 @@ import {
   Volume2,
   Play,
 } from "lucide-react";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { apiUrl, apiRequest } from "@/lib/queryClient";
 import { CoverImageSelector } from "./cover-image-selector";
 import { YouTubePlayer } from "./youtube-player";
 import { BoardIR } from "@/types/board-ir";
@@ -71,6 +72,71 @@ export function BoardCanvas() {
   const [spokenText, setSpokenText] = useState<string | null>(null);
   
   const canvasRef = useRef<HTMLDivElement>(null);
+
+  // Track which imageKeys are currently being generated (pending)
+  const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Poll for symbols that are being generated in the background
+  useEffect(() => {
+    if (!board) return;
+
+    // Find buttons with imageKey but no symbolPath (pending generation)
+    const allButtons = board.pages.flatMap(p => p.buttons);
+    const pending = allButtons.filter(b => b.imageKey && !b.symbolPath?.includes('/api/custom-symbols/'));
+    const pendingKeySet = new Set(pending.map(b => b.imageKey!));
+
+    if (pendingKeySet.size === 0) {
+      setPendingKeys(new Set());
+      if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
+      return;
+    }
+
+    setPendingKeys(pendingKeySet);
+
+    // Poll every 5 seconds for newly generated symbols
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    pollTimerRef.current = setInterval(async () => {
+      let resolved = false;
+      for (const key of Array.from(pendingKeySet)) {
+        try {
+          // Use raw fetch — apiRequest throws on 404 which is expected for pending symbols
+          const res = await fetch(apiUrl(`/api/custom-symbols/by-key/${encodeURIComponent(key)}`), { credentials: "include" });
+          if (res.ok) {
+            const symbol = await res.json();
+            for (const page of board.pages) {
+              for (const btn of page.buttons) {
+                if (btn.imageKey === key && !btn.symbolPath?.includes('/api/custom-symbols/')) {
+                  btn.symbolPath = apiUrl(`/api/custom-symbols/${symbol.id}/image`);
+                  resolved = true;
+                }
+              }
+            }
+            pendingKeySet.delete(key);
+          }
+        } catch { /* not ready yet */ }
+      }
+
+      if (resolved) {
+        updateBoard({ ...board });
+        setPendingKeys(new Set(pendingKeySet));
+      }
+
+      if (pendingKeySet.size === 0) {
+        if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
+      }
+    }, 5000);
+
+    return () => {
+      if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
+    };
+  }, [board?.pages?.flatMap(p => p.buttons).filter(b => b.imageKey && !b.symbolPath?.includes('/api/custom-symbols/')).length]);
+
+  // Resolve symbol path URLs — API paths need base URL prefix
+  const resolveSymbolSrc = useCallback((symbolPath: string): string => {
+    if (symbolPath.startsWith("/api/")) return apiUrl(symbolPath);
+    return symbolPath;
+  }, []);
 
   if (!board) {
     return (
@@ -612,7 +678,7 @@ export function BoardCanvas() {
                       >
                         {button.symbolPath ? (
                           <img
-                            src={button.symbolPath}
+                            src={resolveSymbolSrc(button.symbolPath)}
                             alt={button.label}
                             className="w-8 h-8 object-contain mb-1"
                             style={{
@@ -623,6 +689,11 @@ export function BoardCanvas() {
                               target.style.display = "none";
                             }}
                           />
+                        ) : button.imageKey && pendingKeys.has(button.imageKey) ? (
+                          <span className="relative text-2xl mb-1 leading-none">
+                            {button.iconRef && isEmoji(button.iconRef) ? button.iconRef : getEmojiForLabel(button.label)}
+                            <span className="absolute -top-1 -right-2 w-3 h-3 rounded-full border-2 border-white/50 border-t-transparent animate-spin" />
+                          </span>
                         ) : button.iconRef && isEmoji(button.iconRef) ? (
                           <span className="text-2xl mb-1 leading-none">{button.iconRef}</span>
                         ) : button.iconRef ? (

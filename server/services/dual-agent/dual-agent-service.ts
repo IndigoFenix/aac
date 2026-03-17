@@ -288,6 +288,7 @@ export class DualAgentService {
     userId?: string,
     existingSessionId?: string,
     interactionMode: AACInteractionMode = 'interact',
+    localState?: import("@shared/aac-local-storage").AacSessionSnapshot,
   ): Promise<DualAgentSessionState> {
     // Check cache first
     if (existingSessionId && sessionCache.has(existingSessionId)) {
@@ -304,6 +305,12 @@ export class DualAgentService {
         console.log("[DualAgentService] Resuming session from DB:", existingSessionId);
         return dbSession;
       }
+    }
+
+    // Try to rebuild from client-provided local state (fallback when DB is empty/stale)
+    if (localState && localState.studentId === studentId) {
+      console.log("[DualAgentService] Rebuilding session from client local state:", localState.sessionId);
+      return this.rebuildFromLocalState(studentId, userId, localState);
     }
 
     // Create new session
@@ -405,6 +412,11 @@ export class DualAgentService {
       chatProvider
     );
 
+    // Determine whether to persist session data to the database.
+    // Disabled when remoteStorageEnabled is false OR notes are disabled.
+    const aacSt = monitorAgent.getStudent?.()?.aacSettings;
+    const remoteStorageEnabled = (aacSt?.remoteStorageEnabled ?? true) && (aacSt?.allowNotes ?? true);
+
     // Create session state
     const state: DualAgentSessionState = {
       sessionId: initResult.sessionId,
@@ -415,7 +427,7 @@ export class DualAgentService {
       messages: [],
       pendingMessages: [],
       interactionMode,
-      interpretationLevel: (monitorAgent.getStudent?.()?.aacSettings?.interpretationLevel ?? 2) as import("./types").AACInterpretationLevel,
+      interpretationLevel: (aacSt?.interpretationLevel ?? 2) as import("./types").AACInterpretationLevel,
       appState: { enabledApps: getDefaultEnabledApps(), activeApp: null },
       currentEmote: "happy",
       boardButtonLabels: [],
@@ -428,10 +440,13 @@ export class DualAgentService {
       availableBoards,
       cachedDiagnosis,
       privacyOptions: monitorAgent.getPrivacyOptions(),
+      remoteStorageEnabled,
     };
 
-    // Save to database
-    await this.saveSessionToDB(state);
+    // Save to database (only if remote storage is enabled)
+    if (remoteStorageEnabled) {
+      await this.saveSessionToDB(state);
+    }
 
     // Cache the session
     sessionCache.set(state.sessionId, {
@@ -441,6 +456,59 @@ export class DualAgentService {
       lastAccess: Date.now(),
       monitorMutex: new SessionMutex(),
     });
+
+    return state;
+  }
+
+  /**
+   * Rebuild a session from client-provided local state.
+   * Used when the database session is missing/stale but the client has a cached snapshot.
+   * Creates a fresh session seeded with the local state's messages and board data.
+   */
+  private async rebuildFromLocalState(
+    studentId: string,
+    userId: string | undefined,
+    localState: import("@shared/aac-local-storage").AacSessionSnapshot,
+  ): Promise<DualAgentSessionState> {
+    // Create a new session like normal, but seed it with local state data
+    const state = await this.createNewSession(
+      studentId,
+      userId,
+      localState.interactionMode || 'interact',
+    );
+
+    // Overlay messages and board state from local snapshot
+    if (localState.messages?.length) {
+      state.messages = localState.messages;
+    }
+    if (localState.pendingMessages?.length) {
+      state.pendingMessages = localState.pendingMessages.map(pm => ({
+        role: pm.role,
+        content: pm.content,
+        timestamp: pm.timestamp,
+      }));
+    }
+    if (localState.currentBoard) {
+      state.currentBoard = localState.currentBoard;
+    }
+    if (localState.boardButtonLabels?.length) {
+      state.boardButtonLabels = localState.boardButtonLabels;
+    }
+    if (localState.aiAddedButtonLabels?.length) {
+      state.aiAddedButtonLabels = localState.aiAddedButtonLabels;
+    }
+    if (localState.loadedBoardId) {
+      state.loadedBoardId = localState.loadedBoardId;
+    }
+    if (localState.currentPageId) {
+      state.currentPageId = localState.currentPageId;
+    }
+
+    // Re-save the session with the local state data
+    await this.saveSessionToDB(state);
+
+    console.log("[DualAgentService] Session rebuilt from local state:",
+      state.sessionId, "messages:", state.messages.length);
 
     return state;
   }
@@ -496,6 +564,7 @@ export class DualAgentService {
         lastInteractiveActivity: Date.now(),
         lastMonitorActivity: Date.now(),
         monitorConsecutiveFailures: 0,
+        remoteStorageEnabled: true, // If loaded from DB, storage was enabled
       };
 
       // Fetch AAC chat LLM config from DB
@@ -515,8 +584,14 @@ export class DualAgentService {
       // Ensure monitor has student data (since initializeSession wasn't called)
       await monitorAgent.ensureStudentLoaded();
 
-      // Rebuild prompt with correct enabledApps (the stored prompt may have stale app info)
+      // Update remote storage flag from current settings
       const student = monitorAgent.getStudent();
+      if (student) {
+        const aacSt = student.aacSettings;
+        state.remoteStorageEnabled = (aacSt?.remoteStorageEnabled ?? true) && (aacSt?.allowNotes ?? true);
+      }
+
+      // Rebuild prompt with correct enabledApps (the stored prompt may have stale app info)
       if (student) {
         const personaPrompt = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
         const enabledApps = APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id));
@@ -600,9 +675,11 @@ export class DualAgentService {
   }
 
   /**
-   * Save session state to database
+   * Save session state to database.
+   * No-op when remote storage is disabled for this session.
    */
   private async saveSessionToDB(state: DualAgentSessionState): Promise<void> {
+    if (!state.remoteStorageEnabled) return;
     try {
       const existingSession = await db
         .select({ id: chatSessions.id })
@@ -815,95 +892,136 @@ export class DualAgentService {
       // ------------------------------------------------------------------
       state.pendingDbLocked = true;
 
-      // ------------------------------------------------------------------
-      // 2. Load authoritative state from DB
-      // ------------------------------------------------------------------
-      const dbRow = await db
-        .select({
-          state: chatSessions.state,
-          log: chatSessions.log,
-          pendingMessages: chatSessions.pendingMessages,
-        })
-        .from(chatSessions)
-        .where(eq(chatSessions.id, state.sessionId))
-        .limit(1);
+      let pendingSnapshot: PendingMessage[];
+      let dbLog: ChatMessage[];
 
-      const dbState = dbRow[0]?.state as any;
-      const dbLog = (dbRow[0]?.log || []) as ChatMessage[];
-      const dbPending = (dbRow[0]?.pendingMessages || []) as PendingMessage[];
+      if (!state.remoteStorageEnabled) {
+        // -------------------------------------------------------------------
+        // In-memory-only path: no DB reads/writes, work purely from state
+        // -------------------------------------------------------------------
+        if (state.pendingMessages.length === 0) {
+          state.pendingDbLocked = false;
+          if (state.pendingBuffer?.length) {
+            state.pendingMessages.push(...state.pendingBuffer);
+            state.pendingBuffer = [];
+          }
+          state.monitorBusy = false;
+          state.monitorBusySince = undefined;
+          return;
+        }
 
-      // ------------------------------------------------------------------
-      // 3. If DB has no pending messages, unlock and check rerun
-      // ------------------------------------------------------------------
-      if (dbPending.length === 0) {
+        pendingSnapshot = [...state.pendingMessages];
+        dbLog = [...state.messages];
+
+        for (const pending of pendingSnapshot) {
+          state.messages.push({
+            role: pending.role,
+            content: pending.content,
+            timestamp: pending.timestamp,
+          });
+        }
+        state.pendingMessages = [];
+
         state.pendingDbLocked = false;
-        // Flush any buffer that accumulated during the brief lock
+        if (state.pendingBuffer?.length) {
+          state.pendingMessages.push(...state.pendingBuffer);
+          state.pendingBuffer = [];
+        }
+      } else {
+        // -------------------------------------------------------------------
+        // DB-backed path (existing logic)
+        // -------------------------------------------------------------------
+
+        // ------------------------------------------------------------------
+        // 2. Load authoritative state from DB
+        // ------------------------------------------------------------------
+        const dbRow = await db
+          .select({
+            state: chatSessions.state,
+            log: chatSessions.log,
+            pendingMessages: chatSessions.pendingMessages,
+          })
+          .from(chatSessions)
+          .where(eq(chatSessions.id, state.sessionId))
+          .limit(1);
+
+        const dbState = dbRow[0]?.state as any;
+        dbLog = (dbRow[0]?.log || []) as ChatMessage[];
+        const dbPending = (dbRow[0]?.pendingMessages || []) as PendingMessage[];
+
+        // ------------------------------------------------------------------
+        // 3. If DB has no pending messages, unlock and check rerun
+        // ------------------------------------------------------------------
+        if (dbPending.length === 0) {
+          state.pendingDbLocked = false;
+          // Flush any buffer that accumulated during the brief lock
+          if (state.pendingBuffer?.length) {
+            state.pendingMessages.push(...state.pendingBuffer);
+            state.pendingBuffer = [];
+            await this.updatePendingMessages(state.sessionId, state.pendingMessages).catch(console.error);
+          }
+          state.monitorBusy = false;
+          state.monitorBusySince = undefined;
+          await this.updateMonitorBusy(state.sessionId, false, null);
+          return;
+        }
+
+        console.log("[DualAgentService] doMonitorProcessing: starting with", dbPending.length, "pending messages (from DB)");
+
+        // ------------------------------------------------------------------
+        // 4. Append pending messages to history + log (local vars)
+        // ------------------------------------------------------------------
+        const dbHistory = (dbState?.history || []) as ChatMessage[];
+        pendingSnapshot = [...dbPending];
+
+        for (const pending of pendingSnapshot) {
+          const chatMsg: ChatMessage = {
+            role: pending.role,
+            content: pending.content,
+            timestamp: pending.timestamp,
+          };
+          dbHistory.push(chatMsg);
+          dbLog.push(chatMsg);
+        }
+
+        // Also update in-memory state.messages to match
+        state.messages = dbHistory;
+
+        // ------------------------------------------------------------------
+        // 5. Atomic DB write: save history+log, clear pendingMessages
+        // ------------------------------------------------------------------
+        const updatedChatState = {
+          history: dbHistory,
+          conversationSummary: dbState?.conversationSummary || "",
+          openedTopics: dbState?.openedTopics || [],
+          memoryState: dbState?.memoryState || {},
+          interactionMode: state.interactionMode,
+        };
+
+        await db
+          .update(chatSessions)
+          .set({
+            state: updatedChatState,
+            log: dbLog,
+            last: dbHistory.slice(-2),
+            pendingMessages: [],
+            updatedAt: new Date(),
+          })
+          .where(eq(chatSessions.id, state.sessionId));
+
+        // Clear in-memory pending (only the snapshot — buffer handled below)
+        state.pendingMessages = [];
+
+        // ------------------------------------------------------------------
+        // 6. Unlock + flush buffer
+        // ------------------------------------------------------------------
+        state.pendingDbLocked = false;
         if (state.pendingBuffer?.length) {
           state.pendingMessages.push(...state.pendingBuffer);
           state.pendingBuffer = [];
           await this.updatePendingMessages(state.sessionId, state.pendingMessages).catch(console.error);
         }
-        state.monitorBusy = false;
-        state.monitorBusySince = undefined;
-        await this.updateMonitorBusy(state.sessionId, false, null);
-        return;
-      }
-
-      console.log("[DualAgentService] doMonitorProcessing: starting with", dbPending.length, "pending messages (from DB)");
-
-      // ------------------------------------------------------------------
-      // 4. Append pending messages to history + log (local vars)
-      // ------------------------------------------------------------------
-      const dbHistory = (dbState?.history || []) as ChatMessage[];
-      const pendingSnapshot = [...dbPending];
-
-      for (const pending of pendingSnapshot) {
-        const chatMsg: ChatMessage = {
-          role: pending.role,
-          content: pending.content,
-          timestamp: pending.timestamp,
-        };
-        dbHistory.push(chatMsg);
-        dbLog.push(chatMsg);
-      }
-
-      // Also update in-memory state.messages to match
-      state.messages = dbHistory;
-
-      // ------------------------------------------------------------------
-      // 5. Atomic DB write: save history+log, clear pendingMessages
-      // ------------------------------------------------------------------
-      const updatedChatState = {
-        history: dbHistory,
-        conversationSummary: dbState?.conversationSummary || "",
-        openedTopics: dbState?.openedTopics || [],
-        memoryState: dbState?.memoryState || {},
-        interactionMode: state.interactionMode,
-      };
-
-      await db
-        .update(chatSessions)
-        .set({
-          state: updatedChatState,
-          log: dbLog,
-          last: dbHistory.slice(-2),
-          pendingMessages: [],
-          updatedAt: new Date(),
-        })
-        .where(eq(chatSessions.id, state.sessionId));
-
-      // Clear in-memory pending (only the snapshot — buffer handled below)
-      state.pendingMessages = [];
-
-      // ------------------------------------------------------------------
-      // 6. Unlock + flush buffer
-      // ------------------------------------------------------------------
-      state.pendingDbLocked = false;
-      if (state.pendingBuffer?.length) {
-        state.pendingMessages.push(...state.pendingBuffer);
-        state.pendingBuffer = [];
-        await this.updatePendingMessages(state.sessionId, state.pendingMessages).catch(console.error);
-      }
+      } // end DB-backed path
 
       // ------------------------------------------------------------------
       // 7. Run monitor agent with the snapshot
@@ -998,12 +1116,15 @@ export class DualAgentService {
   }
 
   /**
-   * Update pending messages in database
+   * Update pending messages in database.
+   * No-op when remote storage is disabled.
    */
   private async updatePendingMessages(
     sessionId: string,
     pendingMessages: PendingMessage[]
   ): Promise<void> {
+    const cached = sessionCache.get(sessionId);
+    if (cached && !cached.state.remoteStorageEnabled) return;
     await db
       .update(chatSessions)
       .set({
@@ -1014,13 +1135,16 @@ export class DualAgentService {
   }
 
   /**
-   * Update monitor busy flag in database
+   * Update monitor busy flag in database.
+   * No-op when remote storage is disabled.
    */
   private async updateMonitorBusy(
     sessionId: string,
     monitorBusy: boolean,
     monitorBusySince: number | null
   ): Promise<void> {
+    const cached = sessionCache.get(sessionId);
+    if (cached && !cached.state.remoteStorageEnabled) return;
     await db
       .update(chatSessions)
       .set({
@@ -1107,20 +1231,30 @@ export class DualAgentService {
    */
   async loadHistoryForReconnect(sessionId: string, excludeSafetyMessages = false): Promise<Array<{ role: "user" | "model"; text: string }>> {
     try {
-      const dbRow = await db
-        .select({
-          state: chatSessions.state,
-          pendingMessages: chatSessions.pendingMessages,
-        })
-        .from(chatSessions)
-        .where(eq(chatSessions.id, sessionId))
-        .limit(1);
+      // When remote storage is disabled, read from in-memory state
+      const cached = sessionCache.get(sessionId);
+      let history: ChatMessage[];
+      let pending: PendingMessage[];
 
-      if (!dbRow[0]) return [];
+      if (cached && !cached.state.remoteStorageEnabled) {
+        history = cached.state.messages;
+        pending = cached.state.pendingMessages;
+      } else {
+        const dbRow = await db
+          .select({
+            state: chatSessions.state,
+            pendingMessages: chatSessions.pendingMessages,
+          })
+          .from(chatSessions)
+          .where(eq(chatSessions.id, sessionId))
+          .limit(1);
 
-      const dbState = dbRow[0].state as any;
-      const history = (dbState?.history || []) as ChatMessage[];
-      const pending = (dbRow[0].pendingMessages || []) as PendingMessage[];
+        if (!dbRow[0]) return [];
+
+        const dbState = dbRow[0].state as any;
+        history = (dbState?.history || []) as ChatMessage[];
+        pending = (dbRow[0].pendingMessages || []) as PendingMessage[];
+      }
 
       const turns: Array<{ role: "user" | "model"; text: string }> = [];
 
