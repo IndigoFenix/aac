@@ -86,9 +86,7 @@ import { dualAgentService, type SessionCache } from "./dual-agent-service";
 import { boardRepository } from "../../repositories/boardRepository";
 import { settingsRepository } from "../../repositories/settingsRepository";
 import { aacSettingsRepository } from "../../repositories/aacSettingsRepository";
-import { customSymbolRepository } from "../../repositories/customSymbolRepository";
-import { customSymbolService } from "../symbol/custom-symbol-service";
-import { generateSymbolImage } from "../symbol/symbol-generator";
+import { resolveImageKeys, queueSymbolGeneration } from "../symbol/auto-symbol-service";
 import { MODEL_OPTIONS, type LLMProviderKey } from "@shared/llm-options";
 
 // ---------------------------------------------------------------------------
@@ -261,9 +259,6 @@ export class LiveRelay {
   private symbolSettings: { generateSymbols: boolean; useApprovedSymbols: boolean; useUnapprovedSymbols: boolean } = {
     generateSymbols: false, useApprovedSymbols: false, useUnapprovedSymbols: false,
   };
-  // Sequential symbol generation queue (avoids quota exhaustion from parallel requests)
-  private symbolGenQueue: Array<{ imageKey: string; buttonLabel: string }> = [];
-  private symbolGenBusy = false;
 
   // Local storage config — resolved during init from aacSettings
   private localStorageConfig: import("@shared/aac-local-storage").AacLocalStorageConfig | null = null;
@@ -702,7 +697,6 @@ export class LiveRelay {
         loadedBoardName: cached.state.loadedBoardData?.name || null,
         currentEmote: cached.state.currentEmote,
         activeApp: cached.state.appState?.activeApp || null,
-        autoSymbolsEnabled: this.symbolSettings.generateSymbols || this.symbolSettings.useApprovedSymbols || this.symbolSettings.useUnapprovedSymbols,
       };
 
       // Close any existing provider (for forceNewSession re-init)
@@ -1097,15 +1091,7 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
       }
 
       case "add_buttons": {
-        console.log(`[LiveRelay] add_buttons raw args:`, JSON.stringify(args));
         const buttons = toolArgsToButtons(args.buttons);
-        // Zip image_keys from separate parameter onto buttons
-        if (typeof args.image_keys === "string") {
-          const keys = args.image_keys.split(",").map((k: string) => k.trim());
-          for (let i = 0; i < Math.min(keys.length, buttons.length); i++) {
-            if (keys[i] && !buttons[i].symbolPath) buttons[i].imageKey = keys[i];
-          }
-        }
         const maxSlots = state?.maxBoardItems || 12;
 
         // Enforce button limit
@@ -1139,8 +1125,10 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
           state.boardButtonLabels = [...state.boardButtonLabels, ...buttons.map(b => b.label)];
         }
 
-        // Resolve image_keys → symbolPaths (existing symbols immediately, generation async)
-        await this.processImageKeys(buttons);
+        // Resolve existing symbols from DB (fast, awaited so board includes them)
+        const unresolvedKeys = await this.resolveExistingSymbols(buttons);
+        // Queue generation for missing symbols (fire-and-forget, notifies via symbol_update WS)
+        this.queueMissingSymbolGeneration(buttons, unresolvedKeys);
 
         this.lastBoardUpdateTime = Date.now();
         this.send({ type: "board_patch", data: { add: buttons, remove: [] } });
@@ -1219,15 +1207,7 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
       }
 
       case "rebuild_board": {
-        console.log(`[LiveRelay] rebuild_board raw args:`, JSON.stringify(args));
         const buttons = toolArgsToButtons(args.buttons);
-        // Zip image_keys from separate parameter onto buttons
-        if (typeof args.image_keys === "string") {
-          const keys = args.image_keys.split(",").map((k: string) => k.trim());
-          for (let i = 0; i < Math.min(keys.length, buttons.length); i++) {
-            if (keys[i] && !buttons[i].symbolPath) buttons[i].imageKey = keys[i];
-          }
-        }
 
         if (state) {
           state.loadedBoardId = null;
@@ -1239,8 +1219,10 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
           state.boardButtonLabels = buttons.slice(0, 12).map(b => b.label);
         }
 
-        // Resolve image_keys → symbolPaths (existing symbols immediately, generation async)
-        await this.processImageKeys(buttons);
+        // Resolve existing symbols from DB (fast, awaited so board includes them)
+        const unresolvedKeys = await this.resolveExistingSymbols(buttons);
+        // Queue generation for missing symbols (fire-and-forget, notifies via symbol_update WS)
+        this.queueMissingSymbolGeneration(buttons, unresolvedKeys);
 
         this.lastBoardUpdateTime = Date.now();
         this.send({ type: "board", data: this.buildBoardFromButtons(buttons) });
@@ -2004,104 +1986,46 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
   }
 
   /**
-   * Process image_keys on buttons: resolve existing symbols or generate new ones.
-   * Mutates buttons in-place to set symbolPath for immediately available symbols.
-   * Queues async generation for missing keys (sends symbol_update when ready).
+   * Resolve existing symbols from DB (fast). Must be awaited before sending the board.
+   * Mutates buttons in-place to set symbolPath for already-generated symbols.
+   * Returns the list of unresolved image keys.
    */
-  private async processImageKeys(
+  private async resolveExistingSymbols(
     buttons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string }>,
-  ): Promise<void> {
-    const { generateSymbols, useApprovedSymbols, useUnapprovedSymbols } = this.symbolSettings;
-    console.log(`[LiveRelay.processImageKeys] settings: generate=${generateSymbols}, approved=${useApprovedSymbols}, unapproved=${useUnapprovedSymbols}`);
-    console.log(`[LiveRelay.processImageKeys] buttons: ${buttons.map(b => `${b.label}|${b.iconRef}|imageKey=${b.imageKey ?? 'none'}|symbolPath=${b.symbolPath ?? 'none'}`).join(', ')}`);
-    if (!generateSymbols && !useApprovedSymbols && !useUnapprovedSymbols) return;
-
-    for (const button of buttons) {
-      if (!button.imageKey || button.symbolPath) continue;
-
-      try {
-        // Look up existing symbol by key
-        const existing = await customSymbolRepository.getSymbolByKey(button.imageKey);
-        if (existing) {
-          const canUse = existing.isApproved ? useApprovedSymbols : useUnapprovedSymbols;
-          if (canUse) {
-            button.symbolPath = `__SYMBOL__:${existing.id}`;
-            button.iconRef = "🖼️";
-          }
-          continue;
-        }
-
-        // No existing symbol — queue for sequential background generation
-        if (generateSymbols) {
-          this.queueSymbolGeneration(button.imageKey, button.label);
-        }
-      } catch (err) {
-        console.error(`[LiveRelay] Image key lookup failed for "${button.imageKey}":`, err);
-      }
+  ): Promise<string[]> {
+    const { useApprovedSymbols, useUnapprovedSymbols } = this.symbolSettings;
+    if (!useApprovedSymbols && !useUnapprovedSymbols) {
+      return buttons.filter(b => b.imageKey && !b.symbolPath).map(b => b.imageKey!);
     }
+
+    return resolveImageKeys(buttons, {
+      symbolPathFormat: "internal",
+      useUnapproved: useUnapprovedSymbols,
+    });
   }
 
   /**
-   * Queue a symbol for sequential background generation.
+   * Queue background generation for unresolved image keys (fire-and-forget).
+   * Sends symbol_update WS messages as symbols are generated.
    */
-  private queueSymbolGeneration(imageKey: string, buttonLabel: string): void {
-    this.symbolGenQueue.push({ imageKey, buttonLabel });
-    if (!this.symbolGenBusy) {
-      this.processSymbolGenQueue().catch(err =>
-        console.error(`[LiveRelay] Symbol generation queue error:`, err)
-      );
+  private queueMissingSymbolGeneration(
+    buttons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string }>,
+    unresolvedKeys: string[],
+  ): void {
+    const { generateSymbols, useUnapprovedSymbols } = this.symbolSettings;
+    if (!generateSymbols || unresolvedKeys.length === 0) return;
+
+    const keyToLabel = new Map<string, string>();
+    for (const btn of buttons) {
+      if (btn.imageKey && !btn.symbolPath) keyToLabel.set(btn.imageKey, btn.label);
     }
-  }
 
-  /**
-   * Process the symbol generation queue sequentially with rate limiting.
-   */
-  private async processSymbolGenQueue(): Promise<void> {
-    this.symbolGenBusy = true;
-    let generated = 0;
-    while (this.symbolGenQueue.length > 0) {
-      const { imageKey, buttonLabel } = this.symbolGenQueue.shift()!;
-
-      // Rate limit: pause between requests
-      if (generated > 0) {
-        await new Promise(r => setTimeout(r, 4000));
+    queueSymbolGeneration(unresolvedKeys, (imageKey, symbol) => {
+      if (useUnapprovedSymbols || symbol.isApproved) {
+        const label = keyToLabel.get(imageKey) || imageKey;
+        this.send({ type: "symbol_update", data: { buttonLabel: label, symbolPath: `__SYMBOL__:${symbol.id}` } });
       }
-
-      try {
-        // Double-check not already generated
-        const existing = await customSymbolRepository.getSymbolByKey(imageKey);
-        if (existing) {
-          if (this.symbolSettings.useUnapprovedSymbols || existing.isApproved) {
-            this.send({ type: "symbol_update", data: { buttonLabel, symbolPath: `__SYMBOL__:${existing.id}` } });
-          }
-          continue;
-        }
-
-        logDualAgent("LiveRelay.generateSymbol", { sessionId: this.sessionId, imageKey });
-        const imageBuffer = await generateSymbolImage(imageKey);
-        const symbol = await customSymbolService.createSymbol(imageBuffer, {
-          key: imageKey,
-          description: imageKey.replace(/_/g, " "),
-          isPublic: true,
-          isApproved: false,
-        });
-        generated++;
-        logDualAgent("LiveRelay.symbolGenerated", { sessionId: this.sessionId, imageKey, symbolId: symbol.id });
-
-        if (this.symbolSettings.useUnapprovedSymbols) {
-          this.send({ type: "symbol_update", data: { buttonLabel, symbolPath: `__SYMBOL__:${symbol.id}` } });
-        }
-      } catch (err: any) {
-        const isQuota = err?.status === 429 || err?.message?.includes("quota") || err?.message?.includes("RESOURCE_EXHAUSTED");
-        if (isQuota) {
-          logDualAgent("LiveRelay.symbolQuotaExhausted", { sessionId: this.sessionId, generated, remaining: this.symbolGenQueue.length });
-          this.symbolGenQueue.length = 0; // clear remaining
-          break;
-        }
-        console.error(`[LiveRelay] Symbol generation failed for "${imageKey}":`, err);
-      }
-    }
-    this.symbolGenBusy = false;
+    });
   }
 
   private buildBoardFromButtons(buttons: Array<{ label: string; iconRef: string; symbolPath?: string }>): any {

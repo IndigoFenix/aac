@@ -412,13 +412,13 @@ export default function DynamicBoard({
           initial={{ opacity: 1, scale: 1 }}
           animate={{ opacity: 0, scale: 0.9 }}
           transition={{ duration: 1.5 }}
-          className="flex flex-col items-center justify-center p-2 rounded-xl shadow-sm border border-gray-200 pointer-events-none min-h-0 overflow-hidden"
+          className="flex flex-col items-center justify-center p-1 rounded-xl shadow-sm border border-gray-200 pointer-events-none min-h-0 min-w-0 overflow-hidden"
           style={{ backgroundColor: getButtonColor(button.color) }}
         >
-          <div className="flex items-center justify-center min-h-0 w-full overflow-hidden" style={{ flex: level.iconFlex }}>
+          <div className="flex items-center justify-center min-h-0 w-full overflow-hidden" style={{ flex: `${level.iconFlex} 1 0px` }}>
             {renderIcon(button)}
           </div>
-          <div className="flex items-center justify-center w-full overflow-hidden" style={{ flex: level.textFlex }}>
+          <div className="flex items-center justify-center w-full overflow-hidden" style={{ flex: `${level.textFlex} 1 0px` }}>
             <span className="font-medium text-center text-gray-800 leading-tight" style={{ fontSize: textFontSize }}>
               {button.label}
             </span>
@@ -440,15 +440,15 @@ export default function DynamicBoard({
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: isEntering ? 0.3 : 0.15 }}
         onClick={() => handleButtonClick(button)}
-        className={`flex flex-col items-center justify-center p-2 rounded-xl shadow-sm border min-h-0 overflow-hidden ${isLinkButton ? "border-blue-300 ring-1 ring-blue-200" : "border-gray-200"}`}
+        className={`flex flex-col items-center justify-center p-1 rounded-xl shadow-sm border min-h-0 min-w-0 overflow-hidden ${isLinkButton ? "border-blue-300 ring-1 ring-blue-200" : "border-gray-200"}`}
         style={{ backgroundColor: getButtonColor(button.color) }}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
       >
-        <div className="flex items-center justify-center min-h-0 w-full overflow-hidden" style={{ flex: level.iconFlex }}>
+        <div className="flex items-center justify-center min-h-0 w-full overflow-hidden" style={{ flex: `${level.iconFlex} 1 0px` }}>
           {renderIcon(button)}
         </div>
-        <div className="flex items-center justify-center w-full overflow-hidden" style={{ flex: level.textFlex }}>
+        <div className="flex items-center justify-center w-full overflow-hidden" style={{ flex: `${level.textFlex} 1 0px` }}>
           <span className="font-medium text-center text-gray-800 leading-tight line-clamp-2" style={{ fontSize: textFontSize }}>
             {button.label}
           </span>
@@ -458,8 +458,22 @@ export default function DynamicBoard({
   };
 
   const renderIcon = (button: BoardButton) => {
-    const imgStyle = { width: level.imgSize, height: level.imgSize, maxHeight: "100%", objectFit: "contain" as const };
+    // Images constrained to the icon area: height fills the flex-basis:0 container, width scales proportionally
+    const imgStyle = { maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", objectFit: "contain" as const };
     const emojiStyle = { fontSize: iconFontSize, lineHeight: 1 };
+
+    const renderLoadingOverlay = (emoji: string) => (
+      <span style={{ ...emojiStyle, position: "relative" as const, display: "inline-block" }}>
+        {emoji}
+        <span style={{
+          position: "absolute", top: -2, right: -6, width: 10, height: 10, borderRadius: "50%",
+          border: "2px solid rgba(255,255,255,0.5)", borderTopColor: "transparent",
+          display: "inline-block",
+          animation: "dynamic-board-spin 1s linear infinite",
+        }} />
+      </span>
+    );
+
     // Resolve __FACE__:contactId to cached face image
     if (button.symbolPath?.startsWith("__FACE__:")) {
       const contactId = button.symbolPath.substring(9);
@@ -478,14 +492,9 @@ export default function DynamicBoard({
       return <img src={button.symbolPath} alt={button.label} style={imgStyle} />;
     }
     // Show emoji with loading spinner while symbol is being generated
-    if ((button as any).imageKey && !(button.symbolPath)) {
+    if ((button as any).imageKey) {
       const emoji = button.iconRef && isEmoji(button.iconRef) ? button.iconRef : getEmojiForLabel(button.label);
-      return (
-        <span style={{ ...emojiStyle, position: "relative" as const }}>
-          {emoji}
-          <span style={{ position: "absolute", top: -2, right: -6, width: 10, height: 10, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.5)", borderTopColor: "transparent", animation: "spin 1s linear infinite" }} />
-        </span>
-      );
+      return renderLoadingOverlay(emoji);
     }
     if (button.iconRef && isEmoji(button.iconRef)) {
       return <span style={emojiStyle}>{button.iconRef}</span>;
@@ -498,6 +507,7 @@ export default function DynamicBoard({
 
   return (
     <div className="h-full p-2 flex flex-col">
+      <style>{`@keyframes dynamic-board-spin { to { transform: rotate(360deg); } }`}</style>
       {/* Navigation header — only shown for multi-page boards */}
       {isMultiPage && canGoBack && (
         <div className="flex items-center gap-2 mb-1 px-1 flex-shrink-0">
@@ -515,11 +525,11 @@ export default function DynamicBoard({
       )}
 
       {/* Grid */}
-      <div className="flex-1 flex items-center justify-center min-h-0">
+      <div className="flex-1 min-h-0 overflow-hidden">
         <div
           className="grid gap-2 w-full h-full"
           style={{
-            gridTemplateColumns: `repeat(${gridCols}, 1fr)`,
+            gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
             gridTemplateRows: `repeat(${gridRows}, minmax(0, 1fr))`,
           }}
         >
