@@ -1,4 +1,5 @@
 import { ChatPersona } from "@shared/schema";
+import { IMAGE_KEY_BOARD_PROMPT } from "./symbol/auto-symbol-service";
 
 export enum Framework {
   us_iep = "us_iep",
@@ -76,12 +77,7 @@ manageMemory({ ops: [{ action: "set", path: "/Context_Board/pages/0/buttons/2", 
 - For "more", use "more 1"
 - Omit rebusKey for navigation/utility buttons (Back, Home)
 
-**Image Key:** The imageKey field is used to look up or auto-generate symbol images. Required for every content button.
-- Always in English, unambiguous single concept
-- Clarify ambiguous words with underscores: "bat_animal" not "bat", "drinking_water" not "water"
-- No proper nouns except globally known concepts (countries, etc.)
-- Use lowercase with underscores: "play_activity", "feeling_tired", "pet_dog"
-- Omit imageKey for navigation/utility buttons (Back, Home)
+${IMAGE_KEY_BOARD_PROMPT}
 
 **Actions:** { type: "speak", text: "..." } or { type: "link", toPageId: "page-id" }
 

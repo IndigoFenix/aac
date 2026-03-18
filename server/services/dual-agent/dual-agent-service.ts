@@ -402,6 +402,7 @@ export class DualAgentService {
         availableBoards: availableBoards.length > 0 ? availableBoards : undefined,
         cachedSymbols: cachedSymbols.length > 0 ? cachedSymbols : undefined,
         interpretationLevel: student.aacSettings?.interpretationLevel ?? 2,
+        autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
       });
     }
 
@@ -647,6 +648,7 @@ export class DualAgentService {
           currentEmote: state.currentEmote,
           activeApp: state.appState.activeApp,
           interpretationLevel: state.interpretationLevel,
+          autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
         });
       }
 

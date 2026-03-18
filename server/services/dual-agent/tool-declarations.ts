@@ -31,8 +31,6 @@ export interface ToolDeclarationConfig {
   currentEmote?: string;
   activeApp?: string | null;
 
-  // Auto-generated symbol settings
-  autoSymbolsEnabled?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -112,26 +110,16 @@ function buildContextTool(_config: ToolDeclarationConfig): FunctionDeclaration {
 
 function buildAddButtonsTool(config: ToolDeclarationConfig): FunctionDeclaration {
   const max = config.maxBoardItems || 12;
-  const props: Record<string, any> = {
-    buttons: { type: "string", description: "Comma-separated buttons: label|icon. Icon is an emoji, face:contactId, or symbol:symbolId. Example: \"Water|💧, Play|🎮, Go outside|🚪\"" },
-  };
-  const required = ["buttons"];
-  let extraDesc = "";
-
-  if (config.autoSymbolsEnabled) {
-    props.image_keys = { type: "string", description: "Comma-separated image keys matching the buttons, in the same order. Each key is an unambiguous lowercase English concept with underscores. Clarify ambiguous words (e.g. \"bat_animal\" not \"bat\"). Example: \"drinking_water, play_activity, go_outside\"" };
-    required.push("image_keys");
-    extraDesc = " IMPORTANT: Also provide image_keys for symbol generation.";
-  }
-
   return {
     name: "add_buttons",
-    description: `Add communication buttons to the AAC board. Max ${max} buttons total — call remove_buttons() first if full. Do not duplicate existing buttons or include Yes/No/Help/More (automatic).${extraDesc}`,
+    description: `Add communication buttons to the AAC board. Max ${max} buttons total — call remove_buttons() first if full. Do not duplicate existing buttons or include Yes/No/Help/More (automatic).`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
-      properties: props,
-      required,
+      properties: {
+        buttons: { type: "string", description: "Comma-separated buttons: label|icon. Icon is an emoji, face:contactId, or symbol:symbolId. Example: \"Water|💧, Play|🎮, Go outside|🚪\"" },
+      },
+      required: ["buttons"],
     },
   };
 }
@@ -157,26 +145,16 @@ function buildRemoveButtonsTool(config: ToolDeclarationConfig): FunctionDeclarat
 
 function buildRebuildBoardTool(config: ToolDeclarationConfig): FunctionDeclaration {
   const max = config.maxBoardItems || 12;
-  const props: Record<string, any> = {
-    buttons: { type: "string", description: "Comma-separated buttons: label|icon. Icon is an emoji, face:contactId, or symbol:symbolId. Example: \"Play|🎮, Music|🎵, Draw|✏️, Tired|😴\"" },
-  };
-  const required = ["buttons"];
-  let extraDesc = "";
-
-  if (config.autoSymbolsEnabled) {
-    props.image_keys = { type: "string", description: "Comma-separated image keys matching the buttons, in the same order. Each key is an unambiguous lowercase English concept with underscores. Example: \"play_activity, listen_to_music, draw_picture, feeling_tired\"" };
-    required.push("image_keys");
-    extraDesc = " Also provide image_keys for symbol generation.";
-  }
-
   return {
     name: "rebuild_board",
-    description: `Replace the entire AAC board. Use after [BUTTON PRESS] inputs, major context shifts, or to create the initial board. Only call this once per turn. For minor changes, prefer add_buttons/remove_buttons. Max ${max} buttons, aim for ~${Math.min(8, max)}.${extraDesc}`,
+    description: `Replace the entire AAC board. Use after [BUTTON PRESS] inputs, major context shifts, or to create the initial board. Only call this once per turn. For minor changes, prefer add_buttons/remove_buttons. Max ${max} buttons, aim for ~${Math.min(8, max)}.`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
-      properties: props,
-      required,
+      properties: {
+        buttons: { type: "string", description: "Comma-separated buttons: label|icon. Icon is an emoji, face:contactId, or symbol:symbolId. Example: \"Play|🎮, Music|🎵, Draw|✏️, Tired|😴\"" },
+      },
+      required: ["buttons"],
     },
   };
 }

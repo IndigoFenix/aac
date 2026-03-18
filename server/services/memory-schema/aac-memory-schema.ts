@@ -11,6 +11,7 @@
 
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "../../db";
+import { IMAGE_KEY_LIVE_PROMPT } from "../symbol/auto-symbol-service";
 import {
   institutes,
   instituteStudents,
@@ -135,6 +136,7 @@ This helps the Interactive Agent know when your guidance is needed, without requ
 // ============================================================================
 
 /** Backward-compatible alias: AAC_CHAT_PROMPT + AAC_BUTTON_PROMPT */
+// This might be dead code. If the Monitor Agent is now always using the unified prompt, we can remove this and update any references to use AAC_UNIFIED_MONITOR_PROMPT instead.
 export const AAC_SYSTEM_PROMPT = AAC_CHAT_PROMPT + AAC_MEMORY_PROMPT + AAC_BUTTON_PROMPT;
 
 // ============================================================================
@@ -165,12 +167,14 @@ export function buildFunctionCallingPrompt(params: {
   currentEmote?: string;
   activeApp?: string | null;
   interpretationLevel?: number;
+  autoSymbolsEnabled?: boolean;
 }): string {
   const {
     studentName, persona, language, memoryContext, mode,
     studentAge, studentGender, studentDiagnosis, aiName,
     knownContacts, availableBoards, loadedBoardName, loadedPageName,
     cachedSymbols, activeApp, interpretationLevel = 1,
+    autoSymbolsEnabled = false,
   } = params;
 
   const genderStr = studentGender === 'male' ? 'boy' : studentGender === 'female' ? 'girl' : '';
@@ -212,6 +216,11 @@ ${mode === 'silent' ? `MODE: SILENT — You do NOT talk to the user. Never call 
   // Language
   if (language) {
     prompt += `\n\nLanguage: ${language}. All button labels, speak(), and interpret() output must be in this language unless translating for someone.`;
+  }
+
+  // Auto-generated symbol image keys
+  if (autoSymbolsEnabled) {
+    prompt += `\n\n${IMAGE_KEY_LIVE_PROMPT}`;
   }
 
   // User not present rule
