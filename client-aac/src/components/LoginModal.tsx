@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import aivotaLogo from "@assets/aivota_logo.png";
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -106,6 +107,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
     <Dialog open={isOpen} onOpenChange={() => !isLoading && onClose()}>
       <DialogContent className="sm:max-w-[500px]" onPointerDownOutside={(e) => e.preventDefault()}>
         <DialogHeader>
+          <img src={aivotaLogo} alt="Aivota" className="mx-auto h-14 mb-2 object-contain" />
           <DialogTitle>
             {isLogin ? "Welcome Back" : "Create Your Account"}
           </DialogTitle>

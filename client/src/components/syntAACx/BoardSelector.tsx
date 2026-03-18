@@ -31,6 +31,7 @@ import {
   AlertTriangle,
   Zap,
   HelpCircle,
+  Trash2,
 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -56,6 +57,7 @@ export function BoardSelector() {
   const [mode, setMode] = useState<BoardMode>('generate');
   const [pendingSwitchBoardId, setPendingSwitchBoardId] = useState<string | null>(null);
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+  const [showClearUnsavedDialog, setShowClearUnsavedDialog] = useState(false);
   const [isLoadingBoard, setIsLoadingBoard] = useState(false);
   
   const { t, isRTL } = useLanguage();
@@ -310,6 +312,58 @@ export function BoardSelector() {
   }, []);
 
   // ============================================================================
+  // CLEAR BOARD
+  // ============================================================================
+
+  const handleClearBoard = useCallback(() => {
+    if (!board) return;
+    if (board.isDirty) {
+      setShowClearUnsavedDialog(true);
+      return;
+    }
+    // No unsaved changes, clear immediately
+    useBoardStore.setState({
+      board: null,
+      activeBoardId: null,
+      currentPageId: null,
+      selectedButtonId: null,
+      navHistory: [],
+      bookmarkPageId: null,
+      validation: { isValid: false, errors: [] },
+    });
+  }, [board]);
+
+  const handleConfirmClear = useCallback(() => {
+    useBoardStore.setState({
+      board: null,
+      activeBoardId: null,
+      currentPageId: null,
+      selectedButtonId: null,
+      navHistory: [],
+      bookmarkPageId: null,
+      validation: { isValid: false, errors: [] },
+    });
+    setShowClearUnsavedDialog(false);
+  }, []);
+
+  const handleSaveAndClear = useCallback(async () => {
+    try {
+      await saveBoardMutation.mutateAsync();
+      useBoardStore.setState({
+        board: null,
+        activeBoardId: null,
+        currentPageId: null,
+        selectedButtonId: null,
+        navHistory: [],
+        bookmarkPageId: null,
+        validation: { isValid: false, errors: [] },
+      });
+    } finally {
+      setShowClearUnsavedDialog(false);
+    }
+  }, [saveBoardMutation]);
+
+  // ============================================================================
   // RENDER
   // ============================================================================
 
@@ -481,8 +535,8 @@ export function BoardSelector() {
             size="sm"
             className={cn(
               'h-7 text-xs gap-1.5',
-              isDark 
-                ? 'border-slate-700 hover:bg-slate-800' 
+              isDark
+                ? 'border-slate-700 hover:bg-slate-800'
                 : 'border-gray-300 hover:bg-gray-100',
               board?.isDirty && 'border-amber-500/50 bg-amber-500/10'
             )}
@@ -495,6 +549,23 @@ export function BoardSelector() {
               <Save className="w-3 h-3" />
             )}
             <span className="hidden sm:inline">{t('board.save')}</span>
+          </Button>
+
+          {/* Clear Board Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            className={cn(
+              'h-7 text-xs gap-1.5',
+              isDark
+                ? 'border-slate-700 text-slate-400 hover:bg-red-950 hover:text-red-400 hover:border-red-800'
+                : 'border-gray-300 text-gray-500 hover:bg-red-50 hover:text-red-600 hover:border-red-300'
+            )}
+            onClick={handleClearBoard}
+            disabled={!board || isLoadingBoard}
+          >
+            <Trash2 className="w-3 h-3" />
+            <span className="hidden sm:inline">{t('board.clear')}</span>
           </Button>
           
           {/* Edit/Preview Toggle */}
@@ -622,7 +693,7 @@ export function BoardSelector() {
         </div>
       )}
 
-      {/* Unsaved Changes Dialog */}
+      {/* Unsaved Changes Dialog (board switch) */}
       <Dialog open={showUnsavedDialog} onOpenChange={setShowUnsavedDialog}>
         <DialogContent className={cn(
           'max-w-md',
@@ -640,7 +711,7 @@ export function BoardSelector() {
               {t('board.unsavedChangesDesc')}
             </DialogDescription>
           </DialogHeader>
-          
+
           <DialogFooter className={cn(
             'flex gap-2 mt-4',
             isRTL && 'flex-row-reverse'
@@ -648,8 +719,8 @@ export function BoardSelector() {
             <Button
               variant="outline"
               onClick={handleCancelSwitch}
-              className={isDark 
-                ? 'border-slate-700 text-slate-300 hover:bg-slate-800' 
+              className={isDark
+                ? 'border-slate-700 text-slate-300 hover:bg-slate-800'
                 : 'border-gray-300 text-gray-700 hover:bg-gray-100'
               }
             >
@@ -672,6 +743,61 @@ export function BoardSelector() {
                 <Save className="w-4 h-4 mr-2" />
               )}
               {t('board.saveAndSwitch')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Unsaved Changes Dialog (clear board) */}
+      <Dialog open={showClearUnsavedDialog} onOpenChange={setShowClearUnsavedDialog}>
+        <DialogContent className={cn(
+          'max-w-md',
+          isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200'
+        )}>
+          <DialogHeader>
+            <DialogTitle className={cn(
+              'flex items-center gap-2',
+              isDark ? 'text-slate-100' : 'text-gray-900'
+            )}>
+              <AlertTriangle className="w-5 h-5 text-amber-500" />
+              {t('board.unsavedChanges')}
+            </DialogTitle>
+            <DialogDescription className={isDark ? 'text-slate-400' : 'text-gray-500'}>
+              {t('board.clearUnsavedDesc')}
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className={cn(
+            'flex gap-2 mt-4',
+            isRTL && 'flex-row-reverse'
+          )}>
+            <Button
+              variant="outline"
+              onClick={() => setShowClearUnsavedDialog(false)}
+              className={isDark
+                ? 'border-slate-700 text-slate-300 hover:bg-slate-800'
+                : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+              }
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmClear}
+            >
+              {t('board.discardAndClear')}
+            </Button>
+            <Button
+              onClick={handleSaveAndClear}
+              disabled={saveBoardMutation.isPending}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {saveBoardMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : (
+                <Save className="w-4 h-4 mr-2" />
+              )}
+              {t('board.saveAndClear')}
             </Button>
           </DialogFooter>
         </DialogContent>

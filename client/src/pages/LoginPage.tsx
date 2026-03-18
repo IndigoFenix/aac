@@ -30,6 +30,7 @@ import {
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { type LoginResult } from '@/hooks/useAuth';
 import { passwordPolicy } from '@shared/schema';
+import aivotaLogo from '@assets/aivota_logo.png';
 
 // Types
 interface InviteData {
@@ -867,9 +868,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
           // Login Form
           <>
             <CardHeader className="space-y-1 text-center">
-              <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-                <LogIn className="w-6 h-6 text-primary" />
-              </div>
+              <img src={aivotaLogo} alt="Aivota" className="mx-auto h-16 mb-4 object-contain" />
               <CardTitle className="text-2xl font-bold">
                 {t('auth.loginTitle')}
               </CardTitle>
@@ -1011,9 +1010,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
               ) : (
                 // Regular registration header
                 <>
-                  <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-                    <UserPlus className="w-6 h-6 text-primary" />
-                  </div>
+                  <img src={aivotaLogo} alt="Aivota" className="mx-auto h-16 mb-4 object-contain" />
                   <CardTitle className="text-2xl font-bold">
                     {t('auth.registerTitle')}
                   </CardTitle>
