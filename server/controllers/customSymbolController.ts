@@ -128,6 +128,31 @@ class CustomSymbolController {
     }
   }
 
+  /** POST /api/custom-symbols/resolve-keys — batch resolve multiple imageKeys at once */
+  async resolveKeys(req: Request, res: Response) {
+    try {
+      const { keys } = req.body;
+      if (!Array.isArray(keys) || keys.length === 0) {
+        return res.status(400).json({ message: "keys array required" });
+      }
+      // Cap at 100 keys per request
+      const lookupKeys = keys.slice(0, 100) as string[];
+      const resolved: Record<string, { id: string; symbolPath: string }> = {};
+      for (const key of lookupKeys) {
+        try {
+          const symbol = await customSymbolRepository.getSymbolByKey(key);
+          if (symbol) {
+            resolved[key] = { id: symbol.id, symbolPath: `/api/custom-symbols/${symbol.id}/image` };
+          }
+        } catch { /* skip individual failures */ }
+      }
+      res.json(resolved);
+    } catch (error: any) {
+      console.error("[CustomSymbolController] resolveKeys error:", error);
+      res.status(500).json({ message: "Failed to resolve keys" });
+    }
+  }
+
   /** GET /api/custom-symbols/unapproved — list unapproved auto-generated symbols (admin review) */
   async getUnapprovedSymbols(req: Request, res: Response) {
     try {

@@ -77,54 +77,64 @@ export function BoardCanvas() {
   const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Poll for symbols that are being generated in the background
+  // Poll for symbols that are being generated in the background.
+  // Uses a single batch POST instead of per-key GETs.
   useEffect(() => {
     if (!board) return;
 
     // Find buttons with imageKey but no symbolPath (pending generation)
     const allButtons = board.pages.flatMap(p => p.buttons);
     const pending = allButtons.filter(b => b.imageKey && !b.symbolPath?.includes('/api/custom-symbols/'));
-    const pendingKeySet = new Set(pending.map(b => b.imageKey!));
+    const pendingKeyList = [...new Set(pending.map(b => b.imageKey!))];
 
-    if (pendingKeySet.size === 0) {
+    if (pendingKeyList.length === 0) {
       setPendingKeys(new Set());
       if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
       return;
     }
 
-    setPendingKeys(pendingKeySet);
+    setPendingKeys(new Set(pendingKeyList));
 
-    // Poll every 5 seconds for newly generated symbols
+    // Poll every 5 seconds with a single batch request
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     pollTimerRef.current = setInterval(async () => {
-      let resolved = false;
-      for (const key of Array.from(pendingKeySet)) {
-        try {
-          // Use raw fetch — apiRequest throws on 404 which is expected for pending symbols
-          const res = await fetch(apiUrl(`/api/custom-symbols/by-key/${encodeURIComponent(key)}`), { credentials: "include" });
-          if (res.ok) {
-            const symbol = await res.json();
-            for (const page of board.pages) {
-              for (const btn of page.buttons) {
-                if (btn.imageKey === key && !btn.symbolPath?.includes('/api/custom-symbols/')) {
-                  btn.symbolPath = apiUrl(`/api/custom-symbols/${symbol.id}/image`);
-                  resolved = true;
-                }
+      try {
+        const res = await fetch(apiUrl("/api/custom-symbols/resolve-keys"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ keys: pendingKeyList }),
+        });
+        if (!res.ok) return;
+
+        const resolved: Record<string, { id: string; symbolPath: string }> = await res.json();
+        const resolvedKeys = Object.keys(resolved);
+        if (resolvedKeys.length === 0) return;
+
+        // Mutate buttons in-place and update the board
+        for (const key of resolvedKeys) {
+          const fullPath = apiUrl(resolved[key].symbolPath);
+          for (const page of board.pages) {
+            for (const btn of page.buttons) {
+              if (btn.imageKey === key && !btn.symbolPath?.includes('/api/custom-symbols/')) {
+                btn.symbolPath = fullPath;
               }
             }
-            pendingKeySet.delete(key);
           }
-        } catch { /* not ready yet */ }
-      }
+        }
 
-      if (resolved) {
         updateBoard({ ...board });
-        setPendingKeys(new Set(pendingKeySet));
-      }
 
-      if (pendingKeySet.size === 0) {
-        if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
-      }
+        // Update pending set
+        const remaining = pendingKeyList.filter(k => !resolved[k]);
+        pendingKeyList.length = 0;
+        pendingKeyList.push(...remaining);
+        setPendingKeys(new Set(remaining));
+
+        if (remaining.length === 0) {
+          if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
+        }
+      } catch { /* retry next cycle */ }
     }, 5000);
 
     return () => {

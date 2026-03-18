@@ -1993,15 +1993,32 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
   private async resolveExistingSymbols(
     buttons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string }>,
   ): Promise<string[]> {
-    const { useApprovedSymbols, useUnapprovedSymbols } = this.symbolSettings;
+    const { generateSymbols, useApprovedSymbols, useUnapprovedSymbols } = this.symbolSettings;
+
+    // If no symbol features are enabled, strip imageKeys so client doesn't show spinners
+    if (!generateSymbols && !useApprovedSymbols && !useUnapprovedSymbols) {
+      for (const btn of buttons) { delete btn.imageKey; }
+      return [];
+    }
+
     if (!useApprovedSymbols && !useUnapprovedSymbols) {
       return buttons.filter(b => b.imageKey && !b.symbolPath).map(b => b.imageKey!);
     }
 
-    return resolveImageKeys(buttons, {
+    const unresolved = await resolveImageKeys(buttons, {
       symbolPathFormat: "internal",
       useUnapproved: useUnapprovedSymbols,
     });
+
+    // Strip imageKey from unresolved buttons when generation is disabled (they'll never resolve)
+    if (!generateSymbols) {
+      for (const btn of buttons) {
+        if (btn.imageKey && !btn.symbolPath) delete btn.imageKey;
+      }
+      return [];
+    }
+
+    return unresolved;
   }
 
   /**
@@ -2021,10 +2038,11 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
     }
 
     queueSymbolGeneration(unresolvedKeys, (imageKey, symbol) => {
-      if (useUnapprovedSymbols || symbol.isApproved) {
-        const label = keyToLabel.get(imageKey) || imageKey;
-        this.send({ type: "symbol_update", data: { buttonLabel: label, symbolPath: `__SYMBOL__:${symbol.id}` } });
-      }
+      // Always notify the client when a symbol is ready — the generateSymbols
+      // flag already gates entry to this function, so any symbol that makes it
+      // here should be shown (auto-generated symbols are unapproved by default)
+      const label = keyToLabel.get(imageKey) || imageKey;
+      this.send({ type: "symbol_update", data: { buttonLabel: label, symbolPath: `__SYMBOL__:${symbol.id}` } });
     });
   }
 
