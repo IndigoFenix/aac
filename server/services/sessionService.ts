@@ -68,23 +68,40 @@ import { resolveImageKeys, queueSymbolGeneration } from "./symbol/auto-symbol-se
 async function resolveImageKeysOnBoard(board: any, studentId?: string): Promise<void> {
   if (!board?.pages || !studentId) return;
 
-  // Check if student has symbol generation enabled
+  // Check student symbol settings
   let generateEnabled = false;
+  let useSymbols = false;
   try {
     const settings = await aacSettingsRepository.getByStudentId(studentId);
     generateEnabled = settings?.generateSymbols ?? false;
+    useSymbols = generateEnabled || !!(settings?.useApprovedSymbols) || !!(settings?.useUnapprovedSymbols);
   } catch { /* ignore — treat as disabled */ }
 
   const allButtons = (board.pages as any[]).flatMap((p: any) => p.buttons || []);
   const buttonsWithKeys = allButtons.filter((b: any) => b.imageKey && !b.symbolPath?.includes('/api/custom-symbols/'));
   if (buttonsWithKeys.length === 0) return;
 
+  // If no symbol features are enabled, strip imageKeys so client doesn't show spinners
+  if (!useSymbols) {
+    for (const btn of buttonsWithKeys) { delete btn.imageKey; }
+    return;
+  }
+
   // Phase 1 (fast): DB lookups — resolve existing symbols immediately
-  const unresolved = await resolveImageKeys(buttonsWithKeys);
+  // Use unapproved symbols too since auto-generated symbols start as unapproved
+  const unresolved = await resolveImageKeys(buttonsWithKeys, { useUnapproved: true });
 
   // Phase 2 (background): queue generation for missing symbols
   if (generateEnabled && unresolved.length > 0) {
     queueSymbolGeneration(unresolved);
+  }
+
+  // Strip imageKey from buttons that were resolved (no spinner needed) and
+  // from unresolved buttons when generation is disabled (they'll never resolve)
+  if (!generateEnabled) {
+    for (const btn of buttonsWithKeys) {
+      if (!btn.symbolPath) delete btn.imageKey;
+    }
   }
 }
 

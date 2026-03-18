@@ -83,6 +83,10 @@ export async function resolveImageKeys(
           button.symbolPath = format === "internal"
             ? `__SYMBOL__:${existing.id}`
             : `/api/custom-symbols/${existing.id}/image`;
+        } else {
+          // Symbol exists but can't be used (e.g., unapproved) — still mark
+          // as unresolved so it can be re-queued for generation notification
+          unresolved.push(button.imageKey);
         }
       } else {
         unresolved.push(button.imageKey);

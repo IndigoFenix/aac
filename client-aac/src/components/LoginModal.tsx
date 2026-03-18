@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,8 @@ interface LoginModalProps {
 
 export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
   const [isLogin, setIsLogin] = useState(true);
+  const [impersonateEmail, setImpersonateEmail] = useState('');
+  const [isImpersonating, setIsImpersonating] = useState(false);
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -99,6 +101,28 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleImpersonate = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!impersonateEmail.trim()) return;
+    setIsImpersonating(true);
+    try {
+      const response = await apiRequest('POST', '/auth/impersonate', { email: impersonateEmail });
+      const data = await response.json();
+      if (data.success && data.user) {
+        localStorage.removeItem('aac_signed_out');
+        toast({ title: 'Impersonation', description: `Logged in as ${data.user.email}` });
+        queryClient.setQueryData(["/auth/user"], { success: true, user: data.user });
+        onClose(data.user);
+      } else {
+        toast({ title: 'Impersonation failed', description: data.message, variant: 'destructive' });
+      }
+    } catch (err: any) {
+      toast({ title: 'Impersonation failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setIsImpersonating(false);
+    }
   };
 
   const isLoading = loginMutation.isPending || registerMutation.isPending;
@@ -226,18 +250,46 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
           )}
 
           <div className="flex flex-col gap-3 pt-4">
-            <Button 
-              type="submit" 
+            <Button
+              type="submit"
               disabled={isLoading}
               className="w-full bg-purple-600 hover:bg-purple-700"
             >
-              {isLoading 
-                ? (isLogin ? "Signing in..." : "Creating Account...") 
+              {isLoading
+                ? (isLogin ? "Signing in..." : "Creating Account...")
                 : (isLogin ? "Sign In" : "Create Account")
               }
             </Button>
           </div>
         </form>
+
+        {/* Dev-only impersonation */}
+        {import.meta.env.DEV && (
+          <form onSubmit={handleImpersonate} className="pt-2">
+            <div className="border-t pt-3 space-y-2">
+              <p className="text-xs font-medium text-orange-600">Dev: Login as user</p>
+              <div className="flex gap-2">
+                <Input
+                  type="email"
+                  placeholder="user@example.com"
+                  value={impersonateEmail}
+                  onChange={(e) => setImpersonateEmail(e.target.value)}
+                  required
+                  className="text-sm"
+                />
+                <Button
+                  type="submit"
+                  variant="outline"
+                  size="sm"
+                  disabled={isImpersonating}
+                  className="shrink-0 border-orange-300 text-orange-600 hover:bg-orange-50"
+                >
+                  {isImpersonating ? "..." : "Go"}
+                </Button>
+              </div>
+            </div>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
   );

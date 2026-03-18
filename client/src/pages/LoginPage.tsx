@@ -133,14 +133,18 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
   const params = useParams<{ token?: string }>();
   const inviteToken = propToken || params.token;
   const isInviteMode = !!inviteToken;
-  
+
   const { isAuthenticated, isLoading: authLoading, login, logoutQuietly, refetchUser, user } = useAuth();
   const { t, language, direction } = useLanguage();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
-  
+
   // View state
   const [showRegister, setShowRegister] = useState(isInviteMode);
+
+  // Dev impersonation state
+  const [impersonateEmail, setImpersonateEmail] = useState('');
+  const [isImpersonating, setIsImpersonating] = useState(false);
   
   // Login form state
   const [loginData, setLoginData] = useState({ email: '', password: '' });
@@ -325,6 +329,27 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
       });
     } finally {
       setIsLoggingIn(false);
+    }
+  };
+
+  const handleImpersonate = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!impersonateEmail.trim()) return;
+    setIsImpersonating(true);
+    try {
+      const response = await apiRequest('POST', '/auth/impersonate', { email: impersonateEmail });
+      const data = await response.json();
+      if (data.success && data.user) {
+        await refetchUser();
+        toast({ title: 'Impersonation', description: `Logged in as ${data.user.email}` });
+        setLocation('/home');
+      } else {
+        toast({ title: 'Impersonation failed', description: data.message, variant: 'destructive' });
+      }
+    } catch (err: any) {
+      toast({ title: 'Impersonation failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setIsImpersonating(false);
     }
   };
 
@@ -977,6 +1002,35 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
                 </button>
               </CardFooter>
             </form>
+
+            {/* Dev-only impersonation */}
+            {import.meta.env.DEV && (
+              <form onSubmit={handleImpersonate} className="px-6 pb-6">
+                <div className="border-t pt-4 space-y-2">
+                  <p className="text-xs font-medium text-orange-600">Dev: Login as user</p>
+                  <div className="flex gap-2">
+                    <Input
+                      type="email"
+                      placeholder="user@example.com"
+                      value={impersonateEmail}
+                      onChange={(e) => setImpersonateEmail(e.target.value)}
+                      required
+                      dir="ltr"
+                      className="text-sm"
+                    />
+                    <Button
+                      type="submit"
+                      variant="outline"
+                      size="sm"
+                      disabled={isImpersonating}
+                      className="shrink-0 border-orange-300 text-orange-600 hover:bg-orange-50"
+                    >
+                      {isImpersonating ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
+                    </Button>
+                  </div>
+                </div>
+              </form>
+            )}
           </>
         )}
 

@@ -134,6 +134,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   }
 
+  // ============= DEV-ONLY ROUTES =============
+  if (process.env.NODE_ENV !== "production") {
+    app.post("/auth/impersonate", (req, res) =>
+      authController.impersonate(req, res)
+    );
+  }
+
   // ============= MFA ROUTES =============
   // MFA status (requires auth)
   app.get("/auth/mfa/status", requireAuth, (req, res) =>
@@ -915,6 +922,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.get("/api/custom-symbols/by-key/:key", requireAuth, (req, res) =>
     customSymbolController.getSymbolByKey(req, res)
+  );
+  app.post("/api/custom-symbols/resolve-keys", requireAuth, (req, res) =>
+    customSymbolController.resolveKeys(req, res)
   );
   app.get("/api/custom-symbols/available/:studentId", requireAuth, (req, res) =>
     customSymbolController.getAvailableSymbols(req, res)

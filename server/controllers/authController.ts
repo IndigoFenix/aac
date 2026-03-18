@@ -847,6 +847,56 @@ export class AuthController {
   }
 
   /**
+   * POST /auth/impersonate
+   * Log in as another user without password (dev/test only)
+   */
+  async impersonate(req: Request, res: Response): Promise<void> {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        res.status(400).json({
+          success: false,
+          message: "Email is required",
+        });
+        return;
+      }
+
+      const user = await userService.getUserByEmail(email);
+      if (!user) {
+        res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+        return;
+      }
+
+      req.login(user, (err) => {
+        if (err) {
+          return res.status(500).json({
+            success: false,
+            message: "Impersonation login failed",
+          });
+        }
+
+        req.session.cookie.maxAge = 24 * 60 * 60 * 1000;
+
+        res.json({
+          success: true,
+          message: `Now logged in as ${user.email}`,
+          user: userService.formatUserForResponse(user),
+        });
+      });
+    } catch (error: any) {
+      console.error("Impersonate error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Impersonation failed",
+      });
+    }
+  }
+
+  /**
    * GET /auth/mfa/status
    * Get current user's MFA status
    */
