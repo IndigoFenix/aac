@@ -280,7 +280,9 @@ export const he = {
     enableTts: "הפעל קריאה אוטומטית של תגובות",
     disableTts: "בטל קריאה אוטומטית של תגובות",
     speakMessage: "קרא בקול",
-    
+    copyMessage: "העתק",
+    copied: "הועתק!",
+
     sendMessage: "שלח הודעה",
     suggestions: {
       communicationPrefs: "העדפות תקשורת",
@@ -670,7 +672,13 @@ export const he = {
     saveAndSwitch: "שמור והחלף",
     loadingBoard: "טוען לוח...",
     loadingBoardDesc: "טוען את הלוח שנבחר. זה עשוי לקחת כמה רגעים.",
-    loaded: "הלוח נטען בהצלחה"
+    loaded: "הלוח נטען בהצלחה",
+    loadFailed: "טעינה נכשלה",
+    loadFailedDesc: "לא ניתן לטעון את נתוני הלוח",
+    clear: "נקה",
+    clearUnsavedDesc: "יש שינויים שלא נשמרו. האם תרצה לשמור לפני ניקוי הלוח?",
+    discardAndClear: "התעלם ונקה",
+    saveAndClear: "שמור ונקה",
   },
 
   // ============================================================================
@@ -2022,6 +2030,7 @@ export const he = {
       privacy: "מדיניות פרטיות",
       cookies: "מדיניות עוגיות",
       accessibility: "הצהרת נגישות",
+      rights: `© ${new Date().getFullYear()} Aivota. כל הזכויות שמורות.`,
     },
   },
 };

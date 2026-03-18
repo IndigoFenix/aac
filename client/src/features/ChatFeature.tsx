@@ -39,6 +39,8 @@ import {
   Loader2,
   Volume2,
   VolumeX,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useChat, type AttachedFile } from '@/hooks/useChat';
@@ -60,6 +62,7 @@ marked.setOptions({ async: false });
 export function ChatFeature() {
   const [prompt, setPrompt] = useState('');
   const [ttsEnabled, setTtsEnabled] = useState(false);
+  const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -298,6 +301,18 @@ export function ChatFeature() {
       } else {
         speak(plainText);
       }
+    }
+  };
+
+  const handleCopyMessage = async (message: ChatMessage, index: number) => {
+    const content = getMessageContent(message);
+    const plainText = containsHtmlTags(content) ? htmlToPlainText(content) : content;
+    try {
+      await navigator.clipboard.writeText(plainText);
+      setCopiedMessageIndex(index);
+      setTimeout(() => setCopiedMessageIndex(null), 2000);
+    } catch {
+      // fallback silently
     }
   };
 
@@ -828,6 +843,29 @@ export function ChatFeature() {
                           </TooltipTrigger>
                           <TooltipContent>
                             {t('chat.speakMessage')}
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      {/* Copy button for assistant messages */}
+                      {message.role === 'assistant' && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-5 w-5 opacity-50 hover:opacity-100"
+                              onClick={() => handleCopyMessage(message, index)}
+                              aria-label={t('chat.copyMessage')}
+                            >
+                              {copiedMessageIndex === index ? (
+                                <Check className="w-3 h-3 text-green-500" />
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {copiedMessageIndex === index ? t('chat.copied') : t('chat.copyMessage')}
                           </TooltipContent>
                         </Tooltip>
                       )}

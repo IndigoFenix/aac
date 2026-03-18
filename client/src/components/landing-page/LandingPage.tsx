@@ -291,6 +291,9 @@ export default function LandingPage() {
             {t("landing.footer.accessibility")}
           </a>
         </div>
+        <p style={{ marginTop: '0.75rem', fontSize: '0.75rem', opacity: 0.7 }}>
+          {t("landing.footer.rights")}
+        </p>
       </footer>
     </div>
   );

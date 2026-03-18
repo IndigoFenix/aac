@@ -280,6 +280,8 @@ export const en = {
     enableTts: "Enable auto-read responses",
     disableTts: "Disable auto-read responses",
     speakMessage: "Read aloud",
+    copyMessage: "Copy",
+    copied: "Copied!",
 
     sendMessage: "Send message",
     suggestions: {
@@ -477,6 +479,12 @@ export const en = {
     loadingBoard: "Loading board",
     loadingBoardDesc: "Loading your board. Please wait a moment.",
     loaded: "Board Loaded",
+    loadFailed: "Load Failed",
+    loadFailedDesc: "Failed to load board data",
+    clear: "Clear",
+    clearUnsavedDesc: "You have unsaved changes. Would you like to save before clearing the board?",
+    discardAndClear: "Discard & Clear",
+    saveAndClear: "Save & Clear",
   },
 
   // ============================================================================
@@ -1829,6 +1837,7 @@ export const en = {
       privacy: "Privacy Policy",
       cookies: "Cookie Policy",
       accessibility: "Accessibility",
+      rights: `© ${new Date().getFullYear()} Aivota. All rights reserved.`,
     },
   },
 

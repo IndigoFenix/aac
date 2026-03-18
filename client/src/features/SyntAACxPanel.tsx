@@ -380,53 +380,57 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
       >
         {/* Status */}
         <div className={cn('flex items-center gap-4', isRTL && 'flex-row-reverse')}>
-          <div className={cn('flex items-center gap-2', isRTL && 'flex-row-reverse')}>
-            <div
-              className={cn(
-                'w-2 h-2 rounded-full',
-                validation.isValid ? 'bg-emerald-500' : 'bg-red-500'
-              )}
-            />
-            <span className={cn(
-              'text-xs',
-              isDark ? 'text-slate-400' : 'text-gray-600'
-            )}>
-              {validation.isValid ? t('board.valid') : t('board.hasErrors')}
-            </span>
-          </div>
+          {board && (
+            <>
+              <div className={cn('flex items-center gap-2', isRTL && 'flex-row-reverse')}>
+                <div
+                  className={cn(
+                    'w-2 h-2 rounded-full',
+                    validation.isValid ? 'bg-emerald-500' : 'bg-red-500'
+                  )}
+                />
+                <span className={cn(
+                  'text-xs',
+                  isDark ? 'text-slate-400' : 'text-gray-600'
+                )}>
+                  {validation.isValid ? t('board.valid') : t('board.hasErrors')}
+                </span>
+              </div>
 
-          <div className={cn(
-            'text-xs',
-            isDark ? 'text-slate-500' : 'text-gray-500'
-          )}>
-            {board?.pages.length || 0} {t('board.pages')} •{' '}
-            {board?.pages.reduce(
-              (total: number, page: any) => total + page.buttons.length,
-              0
-            ) || 0}{' '}
-            {t('board.buttons')}
-          </div>
+              <div className={cn(
+                'text-xs',
+                isDark ? 'text-slate-500' : 'text-gray-500'
+              )}>
+                {board.pages.length || 0} {t('board.pages')} •{' '}
+                {board.pages.reduce(
+                  (total: number, page: any) => total + page.buttons.length,
+                  0
+                ) || 0}{' '}
+                {t('board.buttons')}
+              </div>
 
-          {/* Dropbox export status */}
-          {dropboxConnection?.connected && exportStatus?.exported && (
-            <div className={cn(
-              'flex items-center gap-1 text-xs',
-              boardUpdatedSinceExport
-                ? (isDark ? 'text-amber-400' : 'text-amber-600')
-                : (isDark ? 'text-emerald-400' : 'text-emerald-600'),
-              isRTL && 'flex-row-reverse'
-            )}>
-              {boardUpdatedSinceExport ? (
-                <AlertCircle size={12} />
-              ) : (
-                <Check size={12} />
+              {/* Dropbox export status */}
+              {dropboxConnection?.connected && exportStatus?.exported && (
+                <div className={cn(
+                  'flex items-center gap-1 text-xs',
+                  boardUpdatedSinceExport
+                    ? (isDark ? 'text-amber-400' : 'text-amber-600')
+                    : (isDark ? 'text-emerald-400' : 'text-emerald-600'),
+                  isRTL && 'flex-row-reverse'
+                )}>
+                  {boardUpdatedSinceExport ? (
+                    <AlertCircle size={12} />
+                  ) : (
+                    <Check size={12} />
+                  )}
+                  <span>
+                    {boardUpdatedSinceExport
+                      ? t('export.updatedSinceExport')
+                      : t('export.synced')}
+                  </span>
+                </div>
               )}
-              <span>
-                {boardUpdatedSinceExport
-                  ? t('export.updatedSinceExport')
-                  : t('export.synced')}
-              </span>
-            </div>
+            </>
           )}
         </div>
 
@@ -451,7 +455,7 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
             </Button>
           )}
 
-          {/* Grid3 */}
+          {/* Export as .gridset */}
           <div className={cn('flex items-center gap-0.5', isRTL && 'flex-row-reverse')}>
             <Button
               onClick={handleExportGridset}
@@ -459,43 +463,11 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
               size="sm"
               className="h-7 text-xs bg-blue-600 hover:bg-blue-700"
             >
-              .gridset
+              {t('export.title')}
             </Button>
             {dropboxConnection?.connected && (
               <Button
                 onClick={handleUploadGridset}
-                disabled={!board || !validation.isValid || uploadToDropbox.isPending || isBoardLoading}
-                size="icon"
-                variant="outline"
-                className={cn(
-                  'h-7 w-7',
-                  isDark
-                    ? 'border-slate-700 text-slate-400 hover:bg-slate-800'
-                    : 'border-gray-300 text-gray-500 hover:bg-gray-100'
-                )}
-              >
-                {uploadToDropbox.isPending ? (
-                  <Loader2 size={12} className="animate-spin" />
-                ) : (
-                  <Cloud size={12} />
-                )}
-              </Button>
-            )}
-          </div>
-
-          {/* OBZ */}
-          <div className={cn('flex items-center gap-0.5', isRTL && 'flex-row-reverse')}>
-            <Button
-              onClick={handleExportOBZ}
-              disabled={!board || !validation.isValid || isBoardLoading}
-              size="sm"
-              className="h-7 text-xs bg-orange-600 hover:bg-orange-700"
-            >
-              .obz
-            </Button>
-            {dropboxConnection?.connected && (
-              <Button
-                onClick={handleUploadOBZ}
                 disabled={!board || !validation.isValid || uploadToDropbox.isPending || isBoardLoading}
                 size="icon"
                 variant="outline"

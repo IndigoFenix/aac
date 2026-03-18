@@ -5,7 +5,7 @@ const GENERATION_MODEL = "gemini-2.5-flash-image";
 const SYMBOL_PROMPT_PREFIX = `Generate a clean AAC (Augmentative and Alternative Communication) symbol icon.
 Requirements:
 - Simple, bold line art style suitable for communication boards
-- Bold black outlines on a white/transparent background
+- Bold black outlines on a white background
 - 256x256 pixels
 - No text or letters in the image
 - Minimal detail — the icon must be instantly recognizable at small sizes
