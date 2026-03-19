@@ -167,17 +167,17 @@ class LicenseService {
   }
 
   /**
-   * Resolve the effective permissions for a user.
+   * Resolve the effective license info for a user.
    * Checks: direct user license first, then institute licenses.
-   * System admins get MAX permissions.
+   * System admins get MAX permissions with "enterprise" type.
    */
-  async getUserPermissions(userId: string, isSystemAdmin?: boolean): Promise<LicensePermissions> {
-    if (isSystemAdmin) return { ...MAX_LICENSE_PERMISSIONS };
+  async getUserLicenseInfo(userId: string, isSystemAdmin?: boolean): Promise<{ permissions: LicensePermissions; licenseType: string }> {
+    if (isSystemAdmin) return { permissions: { ...MAX_LICENSE_PERMISSIONS }, licenseType: "enterprise" };
 
     // 1. Check direct user license
     const directLicense = await licenseRepository.getLicenseByUserId(userId);
     if (directLicense?.isActive && directLicense.permissions) {
-      return resolvePermissions(directLicense.permissions);
+      return { permissions: resolvePermissions(directLicense.permissions), licenseType: directLicense.licenseType };
     }
 
     // 2. Check institute licenses
@@ -186,12 +186,18 @@ class LicenseService {
       const instituteLicenses = await licenseRepository.getLicensesByInstituteId(inst.id);
       const activeLicense = instituteLicenses.find((l) => l.isActive && l.permissions);
       if (activeLicense) {
-        return resolvePermissions(activeLicense.permissions);
+        return { permissions: resolvePermissions(activeLicense.permissions), licenseType: activeLicense.licenseType };
       }
     }
 
     // 3. No license found — return defaults (all disabled)
-    return resolvePermissions(null);
+    return { permissions: resolvePermissions(null), licenseType: "none" };
+  }
+
+  /** Convenience: just the permissions */
+  async getUserPermissions(userId: string, isSystemAdmin?: boolean): Promise<LicensePermissions> {
+    const { permissions } = await this.getUserLicenseInfo(userId, isSystemAdmin);
+    return permissions;
   }
 
   /**

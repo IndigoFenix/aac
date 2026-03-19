@@ -1878,6 +1878,7 @@ export const en = {
       licenseInfo: "License Info",
       licenseType: "License Type",
       subscriptionType: "Subscription Type",
+      trial: "Trial",
       standard: "Standard",
       premium: "Premium",
       enterprise: "Enterprise",

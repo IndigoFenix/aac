@@ -319,6 +319,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="trial">{t('admin.licenses.trial')}</SelectItem>
                       <SelectItem value="standard">{t('admin.licenses.standard')}</SelectItem>
                       <SelectItem value="premium">{t('admin.licenses.premium')}</SelectItem>
                       <SelectItem value="enterprise">{t('admin.licenses.enterprise')}</SelectItem>

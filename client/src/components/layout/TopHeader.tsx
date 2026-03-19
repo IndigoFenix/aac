@@ -134,11 +134,12 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
           </select>
         </div>
 
-        {/* Credits - hidden on mobile */}
-        <div className="hidden md:flex items-center gap-1 text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">{user.credits}</span>
-          <span>{t('header.credits')}</span>
-        </div>
+        {/* License type badge - hidden on mobile */}
+        {user.licenseType && user.licenseType !== 'none' && (
+          <div className="hidden md:flex items-center gap-1 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground capitalize">{user.licenseType}</span>
+          </div>
+        )}
 
         {/* System Admin portal */}
         {user.isSystemAdmin && (
