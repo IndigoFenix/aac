@@ -1,2268 +1,1591 @@
 
 ================================================================================
-[2026-03-18T11:02:14.495Z] SESSION START
+[2026-03-19T09:21:58.318Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-Session: aac-1773831731914
-Student: 02bebb37-498a-4c14-b296-ab8d98dff060
-Provider: gemini-live-ga
-Model: gemini-live-2.5-flash-native-audio
-Response Modality: AUDIO
-Interaction: interact
-Response: fast
+timeSinceUpdate=13621530ms
 
 ================================================================================
-[2026-03-18T11:02:14.497Z] SYSTEM PROMPT
+[2026-03-19T09:21:58.320Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-You are Axon, a companion AI for Gal, a 5 year old with Obsessive-Compulsive Disorder (OCD) ("your user").
-You observe the environment through a camera and listen to ambient audio.
-You communicate ONLY by calling tools. Never produce speech or audio directly — your audio output is discarded. All speech goes through speak() and interpret() tools which are voiced by a separate TTS system.
-
-MODE: INTERACTIVE — You can talk to the user via speak() and interpret their button presses via interpret().
-
-Custom boards: "programming_activities" (Programming Activities — When discussing programming)
-
-Custom symbols (use symbol:ID as icon): axolotl — The AI's avatar, a friendly axolotl (ID: dd78f03d-6849-43d9-95c6-0fa0d6ac68dd), Daniel — Gal's teacher (ID: 8e500062-eb0a-44f5-bd1b-31d76da0e40c)
-
-Language: en. All button labels, speak(), and interpret() output must be in this language unless translating for someone.
-
-IMPORTANT — Button format: label|icon|image_key (e.g., "Water|💧|water_drop", "Play|🎮|game_controller").
-The image_key is an unambiguous English key used to generate symbol images.
-Image keys must follow these rules:
-- Always in English, unambiguous single concept
-- Use lowercase with underscores for spaces
-- Symbols should describe clear physical objects representing the button's meaning. For example, "person_running", "man_petting_dog".
-- When describing feelings or abstract concepts, use a concrete metaphor: "feeling_tired" → "person_yawning", "play_activity" → "child_playing_with_toy".
-- Clarify ambiguous words with underscores: "bat_animal" not "bat", "musical_note" not "note"
-- No proper nouns except globally known concepts (countries, etc.)
-- Omit imageKey for navigation/utility buttons (Back, Home)
-Image keys are used to auto-generate AAC symbol images. Emojis are used as a fallback option when image generation is unavailable, but the imageKey is the primary source for symbol generation.
-
-If your user is not present but someone else is, you may respond if addressed directly. Never reveal sensitive information about your user.
-
-## Custom Instructions
-DEVELOPER TESTING MODE: The man in the glasses is your developer. Treat him as though he is Gal.
-
-You are an advanced conversational AI designed to assist AAC (Augmentative and Alternative Communication) users.
-You should:
-- Respond in a friendly, supportive manner
-- Keep responses concise and clear
-- Help expand on the user's symbol selections to form complete thoughts
-- Ask clarifying questions when needed
-- Be patient and encouraging
-
-## Memory
-Date: 18/03/2026 Time: 13:02:11
-Previous notes: Gal shared feeling tired today.,Gal frequently asks for help.,Gal mentioned wanting to explore or play today.,Gal is interested in choosing an activity from the board.,Gal's board options include playing, listening to music, exploring, and problem-solving.,Checked in on Gal's mood and activity choices.,Gal showed interest in listening to stories, indicating progress in imaginative play.,Gal is present and ready to engage - environment scans detected, waiting for activity selection,Gal is present and engaged - multiple environment detection scans indicate active participation and readiness for communication,Gal is actively present and engaged - multiple environment detection scans show he's ready for interaction and communication support,Gal performed an environment detection scan, showing active engagement and readiness for communication,Gal is actively engaged with multiple environment detection scans, showing sustained attention and readiness for communication support,Gal continues to show sustained engagement and attention through repeated environment scans, indicating he is actively present and ready for interaction,Gal is showing very high engagement with multiple consecutive environment detection scans, indicating strong attention and active participation,Gal performed environment detection scan showing active engagement and readiness for communication,Gal performed environment detection scan showing active engagement and readiness for communication,Gal is engaging with exploration activities and showing interest in environmental objects like scissors and people around him,Gal is engaging with exploration activities and showing interest in environmental objects like wrenches and people around him,Gal is present and ready to engage - automatic board update detected with environment interaction buttons showing active participation,Gal expressed interest in cutting a string but decided not to proceed.,Gal expressed interest in cutting a string but did not proceed.,Gal regularly expresses interest in using tools like scissors.,Performed system update, revising memory management.,Gal expressed interest in cutting a string but decided not to proceed.,Gal showed interest in exploring, which can support imaginative play development.,Gal showed progress in creative exploration by drawing with a variety of colors.,Gal expressed feeling tired and wanted to explore to relax. He chose drawing as a relaxing activity.,Gal expressed feeling tired and wanted a relaxing activity like drawing.,User requested creation of an AAC board specifically for AI personality interactions when alone - focusing on communication preferences, feedback, and personalized interaction styles.,Gal declined quesadilla option and is ready to explore instead of eating lunch.,Session ended. Gal was presented with a rebuilt activity board (Play, Explore, Draw, Music, Tired, Help). Developer was present during the session with camera view becoming partially to mostly obscured.,Gal is actively engaging with picture exploration—selected dogs from animal category. Showing sustained interest in browsing and selecting visual content.,Session resumed. Gal presented with activity board (Play, Explore, Draw, Music, Tired, Help). Ready to engage with new activity selection.,Gal requested help and identified needing support with feelings. Presented with emotion identification options (Happy, Sad, Angry, Scared, Tired, Confused, Excited, Okay).,Session ended. Summary of session activities: Gal engaged in exploration activities, showed interest in visual content (particularly animals/dogs), and worked with activity selection board. Demonstrated sustained engagement through multiple interactions and communication attempts. Session involved help-seeking behavior and emotion identification support.,Session resumed. Gal presented with activity board (Play, Explore, Draw, Music, Tired, Help). Ready to engage with new activity selection.
-Interests: exploring pictures, drawing, and listening to music
-Communication style: {"PrimaryMethod":"nonverbal","PreferredModality":"symbols"}
-Preferences: {"FavoriteActivities":["exploring pictures","playing games","drawing"]}
-
-Time: 1:02 PM
-
-CRITICAL — OUTPUT RULES:
-You communicate ONLY through function calls (tool calls). Do NOT produce speech or audio output — your audio is discarded. A separate TTS system voices the text from your speak() and interpret() calls instead.
-
-AUDIO ECHO AWARENESS:
-You receive continuous microphone audio. Because speak()/interpret() text is voiced by external TTS through speakers near the mic, you WILL hear your own output echoed back. Recognize these echoes as YOUR OWN output — never transcribe or respond to them. Only treat audio as genuine user speech if it clearly does NOT match something you recently said.
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:02:14.498Z] TOOL DECLARATIONS
+[2026-03-19T09:22:43.296Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-[
-  {
-    "functionDeclarations": [
-      {
-        "name": "speak",
-        "description": "Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.",
-        "behavior": "BLOCKING",
-        "parametersJsonSchema": {
-          "type": "object",
-          "properties": {
-            "text": {
-              "type": "string",
-              "description": "The text to speak aloud."
-            }
-          },
-          "required": [
-            "text"
-          ]
-        }
-      },
-      {
-        "name": "interpret",
-        "description": "Speak on behalf of the user (student voice). TTS voices this in the student's own voice. ONLY use after a [BUTTON PRESS] — expand button labels into natural phrases. Never interpret from gestures or context alone. Call interpret() BEFORE speak() when using both in the same turn. Do not interpret statements that the user has spoken clearly out loud. Only call this ONCE per observation/button press.",
-        "behavior": "BLOCKING",
-        "parametersJsonSchema": {
-          "type": "object",
-          "properties": {
-            "text": {
-              "type": "string",
-              "description": "The interpreted message to speak in the student's voice."
-            },
-            "confidence": {
-              "type": "string",
-              "enum": [
-                "high",
-                "medium",
-                "low"
-              ],
-              "description": "Confidence in this interpretation."
-            }
-          },
-          "required": [
-            "text",
-            "confidence"
-          ]
-        }
-      },
-      {
-        "name": "transcript",
-        "description": "Record clear speech you heard from a person nearby. Only transcribe when you can confidently identify words — ignore silence, ambient noise, unintelligible audio, and background conversations. CRITICAL: If you recently called speak() or interpret(), you WILL hear those words echoed back through the microphone — that is YOUR OWN echo, not new speech. Never transcribe your own echoes.",
-        "behavior": "BLOCKING",
-        "parametersJsonSchema": {
-          "type": "object",
-          "properties": {
-            "text": {
-              "type": "string",
-              "description": "The transcribed speech."
-            },
-            "speaker": {
-              "type": "string",
-              "description": "Who spoke (e.g. 'Mom', 'Teacher', 'Unknown')."
-            },
-            "confidence": {
-              "type": "string",
-              "enum": [
-                "high",
-                "medium",
-                "low"
-              ],
-              "description": "Transcription confidence."
-            }
-          },
-          "required": [
-            "text",
-            "speaker"
-          ]
-        }
-      },
-      {
-        "name": "context",
-        "description": "Record environmental observations and context changes. Call when you notice new objects, people arriving/leaving, gestures, sounds, or changes in the user's attention. Do NOT call if nothing meaningful changed. Do NOT narrate your own actions.",
-        "behavior": "BLOCKING",
-        "parametersJsonSchema": {
-          "type": "object",
-          "properties": {
-            "text": {
-              "type": "string",
-              "description": "What changed or what you observe."
-            }
-          },
-          "required": [
-            "text"
-          ]
-        }
-      },
-      {
-        "name": "add_buttons",
-        "description": "Add communication buttons to the AAC board. Max 12 buttons total — call remove_buttons() first if full. Do not duplicate existing buttons or include Yes/No/Help/More (automatic).",
-        "behavior": "NON_BLOCKING",
-        "parametersJsonSchema": {
-          "type": "object",
-          "properties": {
-            "buttons": {
-              "type": "string",
-              "description": "Comma-separated buttons: label|icon. Icon is an emoji, face:contactId, or symbol:symbolId. Example: \"Water|💧, Play|🎮, Go outside|🚪\""
-            }
-          },
-          "required": [
-            "buttons"
-          ]
-        }
-      },
-      {
-        "name": "remove_buttons",
-        "description": "Remove buttons from the AAC board by label. Use when items are no longer relevant or you need to make room for new ones.",
-        "behavior": "NON_BLOCKING",
-        "parametersJsonSchema": {
-          "type": "object",
-          "properties": {
-            "labels": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "Labels of buttons to remove."
-            }
-          },
-          "required": [
-            "labels"
-          ]
-        }
-      },
-      {
-        "name": "rebuild_board",
-        "description": "Replace the entire AAC board. Use after [BUTTON PRESS] inputs, major context shifts, or to create the initial board. Only call this once per turn. For minor changes, prefer add_buttons/remove_buttons. Max 12 buttons, aim for ~8.",
-        "behavior": "NON_BLOCKING",
-        "parametersJsonSchema": {
-          "type": "object",
-          "properties": {
-            "buttons": {
-              "type": "string",
-              "description": "Comma-separated buttons: label|icon. Icon is an emoji, face:contactId, or symbol:symbolId. Example: \"Play|🎮, Music|🎵, Draw|✏️, Tired|😴\""
-            }
-          },
-          "required": [
-            "buttons"
-          ]
-        }
-      },
-      {
-        "name": "set_board",
-        "description": "Switch to a pre-built custom board. Available: \"programming_activities\" (Programming Activities). Prefer this over rebuild_board() when a custom board fits the current activity.",
-        "behavior": "BLOCKING",
-        "parametersJsonSchema": {
-          "type": "object",
-          "properties": {
-            "board_key": {
-              "type": "string",
-              "description": "Board key to load. One of: \"programming_activities\"."
-            }
-          },
-          "required": [
-            "board_key"
-          ]
-        }
-      },
-      {
-        "name": "emote",
-        "description": "Set avatar emotion: happy (encouraging), sad (empathizing), or neutral (calm/serious). Current: happy. Only call when the emotional tone changes.",
-        "behavior": "NON_BLOCKING",
-        "parametersJsonSchema": {
-          "type": "object",
-          "properties": {
-            "emotion": {
-              "type": "string",
-              "enum": [
-                "happy",
-                "sad",
-                "neutral"
-              ],
-              "description": "The emotion to display."
-            }
-          },
-          "required": [
-            "emotion"
-          ]
-        }
-      },
-      {
-        "name": "call_monitor",
-        "description": "Alert the monitor agent to check in. Use for goal progress/setbacks, guidance needs, or significant context shifts (new person, new activity). Do NOT call repeatedly for the same event.",
-        "behavior": "NON_BLOCKING",
-        "parametersJsonSchema": {
-          "type": "object",
-          "properties": {
-            "reason": {
-              "type": "string",
-              "description": "Why the monitor should check in."
-            }
-          },
-          "required": [
-            "reason"
-          ]
-        }
-      },
-      {
-        "name": "yes_no",
-        "description": "Show large Yes/No overlay buttons IMMEDIATELY. Use when someone ELSE asks the user a yes/no question. Auto-dismisses after 5 seconds.",
-        "behavior": "NON_BLOCKING",
-        "parametersJsonSchema": {
-          "type": "object",
-          "properties": {}
-        }
-      },
-      {
-        "name": "ask_yes_no",
-        "description": "Show Yes/No overlay AFTER your speech finishes. Use when YOU ask the user a yes/no question with speak(). Auto-dismisses after 5 seconds.",
-        "behavior": "NON_BLOCKING",
-        "parametersJsonSchema": {
-          "type": "object",
-          "properties": {}
-        }
-      },
-      {
-        "name": "request_focus",
-        "description": "Request a high-resolution close-up frame. Use when you need to read text, identify small/distant objects, or see faces/details clearly. Only request once per observation.",
-        "behavior": "NON_BLOCKING",
-        "parametersJsonSchema": {
-          "type": "object",
-          "properties": {
-            "reason": {
-              "type": "string",
-              "description": "What you want to see more clearly."
-            }
-          },
-          "required": [
-            "reason"
-          ]
-        }
-      }
-    ]
-  }
-]
-
-============================================================
-[2026-03-18T11:02:14.504Z] LiveRelay.initialize
-----------------------------------------
-{
-  "sessionId": "aac-1773831731914",
-  "studentId": "02bebb37-498a-4c14-b296-ab8d98dff060",
-  "provider": "gemini-live-ga",
-  "model": "gemini-live-2.5-flash-native-audio",
-  "responseModality": "AUDIO",
-  "interactionMode": "interact",
-  "responseMode": "fast"
-}
+timeSinceUpdate=13666540ms
 
 ================================================================================
-[2026-03-18T11:02:14.778Z] CLIENT → sendContextInjection
+[2026-03-19T09:22:43.299Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
-Interaction mode: interact
-Current e"
-
-============================================================
-[2026-03-18T11:02:14.781Z] LiveRelay.reconnectionContext
-----------------------------------------
-{
-  "sessionId": "aac-1773831731914",
-  "boardButtons": 0,
-  "recentMessages": 0
-}
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:02:14.786Z] CLIENT → sendContextInjection
+[2026-03-19T09:23:26.247Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
 turnComplete=false text="[BEHAVIORAL REMINDER]
 Interpretation Level: 1 (Minimal)
 - ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
 
 ============================================================
-[2026-03-18T11:02:14.793Z] LiveRelay.behavioralReminder
+[2026-03-19T09:23:26.250Z] LiveRelay.behavioralReminder
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T09:23:28.300Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=13711543ms
+
+================================================================================
+[2026-03-19T09:23:28.302Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T09:24:13.306Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=13756550ms
+
+================================================================================
+[2026-03-19T09:24:13.309Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T09:24:55.040Z] ADAPTED TOOLS (sent to API)
+────────────────────────────────────────────────────────────────────────────────
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
+
+================================================================================
+[2026-03-19T09:24:55.210Z] CONNECTION CLOSED
+────────────────────────────────────────────────────────────────────────────────
+code=1000 reason=(none)
+
+================================================================================
+[2026-03-19T09:24:55.956Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
+
+============================================================
+[2026-03-19T09:24:55.958Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
+}
+
+================================================================================
+[2026-03-19T09:24:55.960Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T09:24:55.961Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
   "trigger": "reconnect"
 }
 
 ================================================================================
-[2026-03-18T11:02:17.516Z] GREETING PROMPT
+[2026-03-19T09:24:58.306Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-IMPORTANT: You communicate ONLY through function calls. Call rebuild_board() with 4-12 initial communication buttons, then call speak() to greet the user. Both must be function calls — do NOT output plain text.
-Use the camera image to observe the environment and make the buttons contextually relevant. If a custom board from the Available Custom Boards list is appropriate for this student, use set_board() instead of rebuild_board().
-The student is Gal. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs.
+timeSinceUpdate=13801550ms
 
 ================================================================================
-[2026-03-18T11:02:17.519Z] CLIENT → sendFrameWithPrompt
+[2026-03-19T09:24:58.308Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-prompt="IMPORTANT: You communicate ONLY through function calls. Call rebuild_board() wit" extraImages=0 turnComplete=true
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:02:17.956Z] FRAME_GRID SUPPRESSED
+[2026-03-19T09:25:43.319Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=0 awaitingModelResponse=true
+timeSinceUpdate=13846563ms
 
 ================================================================================
-[2026-03-18T11:02:18.768Z] SERVER → toolCall
+[2026-03-19T09:25:43.321Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-functions=[rebuild_board] ids=[8720cb72-0e2a-4710-b969-48698fb5f23e]
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:02:18.769Z] RAW FUNCTION CALL: rebuild_board
+[2026-03-19T09:26:26.251Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "buttons": "Play|🎮|child_playing_with_toy, Explore|🔎|person_exploring, Draw|✏️|person_drawing, Music|🎵|listening_to_music, Tired|😴|person_yawning, Help|🆘|person_asking_for_help"
-}
-
-================================================================================
-[2026-03-18T11:02:18.771Z] RELAY #1 handleToolCalls
-────────────────────────────────────────────────────────────────────────────────
-calls=[rebuild_board] turnStartTime=0 consecutiveModelTurns=0 turnProcessingBusy=false awaitingModelResponse=true
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
 
 ============================================================
-[2026-03-18T11:02:18.772Z] LiveRelay.toolCall
+[2026-03-19T09:26:26.252Z] LiveRelay.behavioralReminder
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "name": "rebuild_board",
-  "args": {
-    "buttons": "Play|🎮|child_playing_with_toy, Explore|🔎|person_exploring, Draw|✏️|person_drawing, Music|🎵|listening_to_music, Tired|😴|person_yawning, Help|🆘|person_asking_for_help"
-  }
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
 }
 
 ================================================================================
-[2026-03-18T11:02:18.773Z] TOOL CALL: rebuild_board
+[2026-03-19T09:26:28.320Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "id": "8720cb72-0e2a-4710-b969-48698fb5f23e",
-  "args": {
-    "buttons": "Play|🎮|child_playing_with_toy, Explore|🔎|person_exploring, Draw|✏️|person_drawing, Music|🎵|listening_to_music, Tired|😴|person_yawning, Help|🆘|person_asking_for_help"
-  }
-}
+timeSinceUpdate=13891565ms
 
 ================================================================================
-[2026-03-18T11:02:18.994Z] SERVER → toolCall
+[2026-03-19T09:26:28.321Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-functions=[speak] ids=[3132ce81-e185-4f6a-b4c6-d25b321607d6]
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:02:18.995Z] RAW FUNCTION CALL: speak
+[2026-03-19T09:27:13.327Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "text": "Welcome back! Your activity board is ready when you are. What would you like to do?"
-}
+timeSinceUpdate=13936570ms
 
 ================================================================================
-[2026-03-18T11:02:18.996Z] RELAY #2 handleToolCalls
+[2026-03-19T09:27:13.332Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-calls=[speak] turnStartTime=1773831738771 consecutiveModelTurns=0 turnProcessingBusy=false awaitingModelResponse=false
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T09:27:58.335Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=13981579ms
+
+================================================================================
+[2026-03-19T09:27:58.339Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T09:28:43.342Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=14026586ms
+
+================================================================================
+[2026-03-19T09:28:43.344Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T09:29:26.267Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
 
 ============================================================
-[2026-03-18T11:02:18.998Z] LiveRelay.toolCall
+[2026-03-19T09:29:26.269Z] LiveRelay.behavioralReminder
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "name": "speak",
-  "args": {
-    "text": "Welcome back! Your activity board is ready when you are. What would you like to do?"
-  }
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
 }
 
 ================================================================================
-[2026-03-18T11:02:18.999Z] TOOL CALL: speak
+[2026-03-19T09:29:28.354Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "id": "3132ce81-e185-4f6a-b4c6-d25b321607d6",
-  "args": {
-    "text": "Welcome back! Your activity board is ready when you are. What would you like to do?"
-  }
-}
+timeSinceUpdate=14071597ms
 
 ================================================================================
-[2026-03-18T11:02:19.002Z] TOOL RESPONSE: speak
+[2026-03-19T09:29:28.363Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "output": "ok"
-}
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:02:19.003Z] RELAY #2 sending tool responses
+[2026-03-19T09:30:13.362Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-count=1 scheduling=default names=[speak]
+timeSinceUpdate=14116605ms
 
 ================================================================================
-[2026-03-18T11:02:19.005Z] CLIENT → sendToolResponse
+[2026-03-19T09:30:13.366Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-speak(default): {"output":"ok"}
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:02:19.009Z] SERVER → serverContent
+[2026-03-19T09:30:58.364Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-generationComplete
+timeSinceUpdate=14161606ms
 
 ================================================================================
-[2026-03-18T11:02:19.012Z] SERVER → serverContent
+[2026-03-19T09:30:58.368Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:02:19.014Z] SERVER → TURN_COMPLETE
+[2026-03-19T09:31:43.375Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
+timeSinceUpdate=14206619ms
 
 ================================================================================
-[2026-03-18T11:02:19.016Z] RELAY #3 handleProviderTurnComplete
+[2026-03-19T09:31:43.376Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=1773831738771 consecutiveModelTurns=0 accum=[speak=true, interpret=false, board=false]
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T09:32:26.273Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
 
 ============================================================
-[2026-03-18T11:02:19.019Z] LiveRelay.turnComplete
+[2026-03-19T09:32:26.275Z] LiveRelay.behavioralReminder
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "elapsed": "246ms",
-  "toolCalls": "speak",
-  "speak": "Welcome back! Your activity board is ready when you are. What would you like to do?",
-  "interpret": "(none)",
-  "transcript": "(none)",
-  "context": "(none)",
-  "board": "(no changes)",
-  "callMonitor": false,
-  "learnFace": false,
-  "setBoard": false,
-  "pressButton": false,
-  "openApp": false,
-  "closeApp": false,
-  "speechSuppressed": false
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
 }
 
 ================================================================================
-[2026-03-18T11:02:19.290Z] SERVER → serverContent
+[2026-03-19T09:32:28.375Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-generationComplete
+timeSinceUpdate=14251619ms
 
 ================================================================================
-[2026-03-18T11:02:19.292Z] SERVER → serverContent
+[2026-03-19T09:32:28.376Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:02:19.293Z] SERVER → TURN_COMPLETE
+[2026-03-19T09:33:13.376Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
+timeSinceUpdate=14296619ms
 
 ================================================================================
-[2026-03-18T11:02:19.294Z] RELAY #4 handleProviderTurnComplete
+[2026-03-19T09:33:13.378Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=true turnStartTime=1773831738771 consecutiveModelTurns=0 accum=[speak=true, interpret=false, board=false]
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:02:19.295Z] RELAY #4 SKIPPED
+[2026-03-19T09:33:25.679Z] ADAPTED TOOLS (sent to API)
 ────────────────────────────────────────────────────────────────────────────────
-already processing
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
 
 ================================================================================
-[2026-03-18T11:02:19.709Z] TOOL RESPONSE: rebuild_board
+[2026-03-19T09:33:25.838Z] CONNECTION CLOSED
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "output": "ok",
-  "board_state": "Board rebuilt. 6/12 buttons (6 available): Play, Explore, Draw, Music, Tired, Help"
-}
+code=1000 reason=(none)
 
 ================================================================================
-[2026-03-18T11:02:19.711Z] RELAY #1 sending tool responses
+[2026-03-19T09:33:27.021Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-count=1 scheduling=default names=[rebuild_board]
-
-================================================================================
-[2026-03-18T11:02:19.713Z] CLIENT → sendToolResponse
-────────────────────────────────────────────────────────────────────────────────
-rebuild_board(default): {"output":"ok","board_state":"Board rebuilt. 6/12 buttons (6 available): Play, E
-
-================================================================================
-[2026-03-18T11:02:20.226Z] SERVER → toolCall
-────────────────────────────────────────────────────────────────────────────────
-functions=[context] ids=[fe29469d-6352-480e-bbae-6b20eecb7c70]
-
-================================================================================
-[2026-03-18T11:02:20.227Z] RAW FUNCTION CALL: context
-────────────────────────────────────────────────────────────────────────────────
-{
-  "text": "The user is present and the activity board has been initialized."
-}
-
-================================================================================
-[2026-03-18T11:02:20.229Z] RELAY #5 handleToolCalls
-────────────────────────────────────────────────────────────────────────────────
-calls=[context] turnStartTime=1773831738771 consecutiveModelTurns=0 turnProcessingBusy=true awaitingModelResponse=false
-
-================================================================================
-[2026-03-18T11:02:20.230Z] RELAY #5 DUPLICATE TURN
-────────────────────────────────────────────────────────────────────────────────
-Suppressed context — turnProcessingBusy=true
-
-================================================================================
-[2026-03-18T11:02:20.231Z] CLIENT → sendToolResponse
-────────────────────────────────────────────────────────────────────────────────
-context(default): {"output":"already handled"}
-
-================================================================================
-[2026-03-18T11:02:20.233Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-generationComplete
-
-================================================================================
-[2026-03-18T11:02:20.235Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
-
-================================================================================
-[2026-03-18T11:02:20.236Z] SERVER → TURN_COMPLETE
-────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
-
-================================================================================
-[2026-03-18T11:02:20.237Z] RELAY #6 handleProviderTurnComplete
-────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=true turnStartTime=1773831738771 consecutiveModelTurns=0 accum=[speak=true, interpret=false, board=true]
-
-================================================================================
-[2026-03-18T11:02:20.239Z] RELAY #6 SKIPPED
-────────────────────────────────────────────────────────────────────────────────
-already processing
-
-================================================================================
-[2026-03-18T11:02:20.552Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-generationComplete
-
-================================================================================
-[2026-03-18T11:02:20.554Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
-
-================================================================================
-[2026-03-18T11:02:20.555Z] SERVER → TURN_COMPLETE
-────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
-
-================================================================================
-[2026-03-18T11:02:20.556Z] RELAY #7 handleProviderTurnComplete
-────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=true turnStartTime=1773831738771 consecutiveModelTurns=0 accum=[speak=true, interpret=false, board=true]
-
-================================================================================
-[2026-03-18T11:02:20.557Z] RELAY #7 SKIPPED
-────────────────────────────────────────────────────────────────────────────────
-already processing
-
-================================================================================
-[2026-03-18T11:02:24.887Z] CLIENT → sendMessage
-────────────────────────────────────────────────────────────────────────────────
-role=model turnComplete=false text="[I just called: rebuild_board(Play, Explore, Draw, Music, Tired, Help), speak("Welcome back! Your activity board is read"
-
-================================================================================
-[2026-03-18T11:02:24.895Z] RELAY #3 TURN SUMMARY
-────────────────────────────────────────────────────────────────────────────────
-[I just called: rebuild_board(Play, Explore, Draw, Music, Tired, Help), speak("Welcome back! Your activity board is ready when you are. What would you like to do?")]
-
-================================================================================
-[2026-03-18T11:02:24.902Z] RELAY #3 turnComplete DONE
-────────────────────────────────────────────────────────────────────────────────
-consecutiveModelTurns now=1
-
-================================================================================
-[2026-03-18T11:02:32.107Z] CLIENT → sendMessage
-────────────────────────────────────────────────────────────────────────────────
-role=user turnComplete=true text="[BUTTON PRESS] Draw
-    The user pressed the above button(s). Interpret this as a user message and respond accordingly.
-"
-
-================================================================================
-[2026-03-18T11:02:32.598Z] SERVER → toolCall
-────────────────────────────────────────────────────────────────────────────────
-functions=[interpret] ids=[a1456024-be87-4fde-8b28-84c913e21c08]
-
-================================================================================
-[2026-03-18T11:02:32.603Z] RAW FUNCTION CALL: interpret
-────────────────────────────────────────────────────────────────────────────────
-{
-  "confidence": "high",
-  "text": "I want to draw."
-}
-
-================================================================================
-[2026-03-18T11:02:32.608Z] RELAY #8 handleToolCalls
-────────────────────────────────────────────────────────────────────────────────
-calls=[interpret] turnStartTime=0 consecutiveModelTurns=0 turnProcessingBusy=false awaitingModelResponse=true
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
 
 ============================================================
-[2026-03-18T11:02:32.616Z] LiveRelay.toolCall
+[2026-03-19T09:33:27.023Z] LiveRelay.reconnectionContext
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "name": "interpret",
-  "args": {
-    "confidence": "high",
-    "text": "I want to draw."
-  }
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
 }
 
 ================================================================================
-[2026-03-18T11:02:32.621Z] TOOL CALL: interpret
+[2026-03-19T09:33:27.024Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "id": "a1456024-be87-4fde-8b28-84c913e21c08",
-  "args": {
-    "confidence": "high",
-    "text": "I want to draw."
-  }
-}
-
-================================================================================
-[2026-03-18T11:02:32.628Z] TOOL RESPONSE: interpret
-────────────────────────────────────────────────────────────────────────────────
-{
-  "output": "ok"
-}
-
-================================================================================
-[2026-03-18T11:02:32.633Z] RELAY #8 sending tool responses
-────────────────────────────────────────────────────────────────────────────────
-count=1 scheduling=default names=[interpret]
-
-================================================================================
-[2026-03-18T11:02:32.639Z] CLIENT → sendToolResponse
-────────────────────────────────────────────────────────────────────────────────
-interpret(default): {"output":"ok"}
-
-================================================================================
-[2026-03-18T11:02:33.077Z] SERVER → toolCall
-────────────────────────────────────────────────────────────────────────────────
-functions=[rebuild_board] ids=[578c7220-f4b5-4530-9fea-ee7e31194d9f]
-
-================================================================================
-[2026-03-18T11:02:33.082Z] RAW FUNCTION CALL: rebuild_board
-────────────────────────────────────────────────────────────────────────────────
-{
-  "buttons": "Paper|📄|blank_paper, Pencils|✏️|colored_pencils, Markers|🖍️|markers, Paint|🎨|paint_palette, Colors|🌈|rainbow, Done|✅|check_mark"
-}
-
-================================================================================
-[2026-03-18T11:02:33.089Z] RELAY #9 handleToolCalls
-────────────────────────────────────────────────────────────────────────────────
-calls=[rebuild_board] turnStartTime=1773831752611 consecutiveModelTurns=0 turnProcessingBusy=false awaitingModelResponse=false
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
 
 ============================================================
-[2026-03-18T11:02:33.095Z] LiveRelay.toolCall
+[2026-03-19T09:33:27.026Z] LiveRelay.behavioralReminder
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "name": "rebuild_board",
-  "args": {
-    "buttons": "Paper|📄|blank_paper, Pencils|✏️|colored_pencils, Markers|🖍️|markers, Paint|🎨|paint_palette, Colors|🌈|rainbow, Done|✅|check_mark"
-  }
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
 }
 
 ================================================================================
-[2026-03-18T11:02:33.106Z] TOOL CALL: rebuild_board
+[2026-03-19T09:33:58.381Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "id": "578c7220-f4b5-4530-9fea-ee7e31194d9f",
-  "args": {
-    "buttons": "Paper|📄|blank_paper, Pencils|✏️|colored_pencils, Markers|🖍️|markers, Paint|🎨|paint_palette, Colors|🌈|rainbow, Done|✅|check_mark"
-  }
-}
+timeSinceUpdate=14341623ms
 
 ================================================================================
-[2026-03-18T11:02:33.233Z] SERVER → toolCall
+[2026-03-19T09:33:58.384Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-functions=[speak] ids=[b69afaa7-2b96-4ad8-b69a-26ffecf6cb73]
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:02:33.237Z] RAW FUNCTION CALL: speak
+[2026-03-19T09:34:43.392Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "text": "Sounds good! What drawing materials do you want to use?"
-}
+timeSinceUpdate=14386635ms
 
 ================================================================================
-[2026-03-18T11:02:33.242Z] RELAY #10 handleToolCalls
+[2026-03-19T09:34:43.395Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-calls=[speak] turnStartTime=1773831752611 consecutiveModelTurns=0 turnProcessingBusy=false awaitingModelResponse=false
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T09:35:26.278Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
 
 ============================================================
-[2026-03-18T11:02:33.248Z] LiveRelay.toolCall
+[2026-03-19T09:35:26.282Z] LiveRelay.behavioralReminder
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "name": "speak",
-  "args": {
-    "text": "Sounds good! What drawing materials do you want to use?"
-  }
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
 }
 
 ================================================================================
-[2026-03-18T11:02:33.253Z] TOOL CALL: speak
+[2026-03-19T09:35:28.406Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "id": "b69afaa7-2b96-4ad8-b69a-26ffecf6cb73",
-  "args": {
-    "text": "Sounds good! What drawing materials do you want to use?"
-  }
-}
+timeSinceUpdate=14431650ms
 
 ================================================================================
-[2026-03-18T11:02:33.258Z] TOOL RESPONSE: speak
+[2026-03-19T09:35:28.407Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "output": "ok"
-}
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:02:33.267Z] RELAY #10 sending tool responses
+[2026-03-19T09:36:13.421Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-count=1 scheduling=default names=[speak]
+timeSinceUpdate=14476664ms
 
 ================================================================================
-[2026-03-18T11:02:33.277Z] CLIENT → sendToolResponse
+[2026-03-19T09:36:13.426Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-speak(default): {"output":"ok"}
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:02:33.284Z] SERVER → serverContent
+[2026-03-19T09:36:58.420Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-generationComplete
+timeSinceUpdate=14521664ms
 
 ================================================================================
-[2026-03-18T11:02:33.297Z] SERVER → serverContent
+[2026-03-19T09:36:58.422Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:02:33.303Z] SERVER → TURN_COMPLETE
+[2026-03-19T09:37:43.423Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
+timeSinceUpdate=14566667ms
 
 ================================================================================
-[2026-03-18T11:02:33.315Z] RELAY #11 handleProviderTurnComplete
+[2026-03-19T09:37:43.425Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=1773831752611 consecutiveModelTurns=0 accum=[speak=true, interpret=true, board=false]
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T09:38:26.290Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
 
 ============================================================
-[2026-03-18T11:02:33.325Z] LiveRelay.turnComplete
+[2026-03-19T09:38:26.322Z] LiveRelay.behavioralReminder
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "elapsed": "710ms",
-  "toolCalls": "speak, interpret",
-  "speak": "Sounds good! What drawing materials do you want to use?",
-  "interpret": "I want to draw.",
-  "transcript": "(none)",
-  "context": "(none)",
-  "board": "(no changes)",
-  "callMonitor": false,
-  "learnFace": false,
-  "setBoard": false,
-  "pressButton": false,
-  "openApp": false,
-  "closeApp": false,
-  "speechSuppressed": false
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
 }
 
 ================================================================================
-[2026-03-18T11:02:33.606Z] SERVER → toolCall
+[2026-03-19T09:38:28.425Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-functions=[speak] ids=[c91b3e90-5c17-4a5f-84a9-fe2e3ad77204]
+timeSinceUpdate=14611667ms
 
 ================================================================================
-[2026-03-18T11:02:33.611Z] RAW FUNCTION CALL: speak
+[2026-03-19T09:38:28.430Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "text": "Sounds like a great plan! What would you like to use to draw?"
-}
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:02:33.617Z] RELAY #12 handleToolCalls
+[2026-03-19T09:39:13.436Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-calls=[speak] turnStartTime=1773831752611 consecutiveModelTurns=0 turnProcessingBusy=true awaitingModelResponse=false
+timeSinceUpdate=14656680ms
 
 ================================================================================
-[2026-03-18T11:02:33.622Z] RELAY #12 DUPLICATE TURN
+[2026-03-19T09:39:13.438Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-Suppressed speak — turnProcessingBusy=true
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:02:33.628Z] CLIENT → sendToolResponse
+[2026-03-19T09:39:58.441Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-speak(default): {"output":"already handled"}
+timeSinceUpdate=14701685ms
 
 ================================================================================
-[2026-03-18T11:02:33.905Z] SERVER → toolCall
+[2026-03-19T09:39:58.444Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-functions=[add_buttons] ids=[e17f1b80-49b7-4149-a60d-73a165546b60]
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:02:33.912Z] RAW FUNCTION CALL: add_buttons
+[2026-03-19T09:40:43.449Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "buttons": "Crayons|🖍️|crayons, Markers|🖊️|markers, Pencils|✏️|pencils"
-}
+timeSinceUpdate=14746692ms
 
 ================================================================================
-[2026-03-18T11:02:33.930Z] RELAY #13 handleToolCalls
+[2026-03-19T09:40:43.450Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-calls=[add_buttons] turnStartTime=1773831752611 consecutiveModelTurns=0 turnProcessingBusy=true awaitingModelResponse=false
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:02:33.937Z] RELAY #13 DUPLICATE TURN
+[2026-03-19T09:41:26.299Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-Suppressed add_buttons — turnProcessingBusy=true
-
-================================================================================
-[2026-03-18T11:02:33.945Z] CLIENT → sendToolResponse
-────────────────────────────────────────────────────────────────────────────────
-add_buttons(default): {"output":"already handled"}
-
-================================================================================
-[2026-03-18T11:02:33.952Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-generationComplete
-
-================================================================================
-[2026-03-18T11:02:33.963Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
-
-================================================================================
-[2026-03-18T11:02:33.972Z] SERVER → TURN_COMPLETE
-────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
-
-================================================================================
-[2026-03-18T11:02:33.982Z] RELAY #14 handleProviderTurnComplete
-────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=true turnStartTime=1773831752611 consecutiveModelTurns=0 accum=[speak=true, interpret=true, board=false]
-
-================================================================================
-[2026-03-18T11:02:33.987Z] RELAY #14 SKIPPED
-────────────────────────────────────────────────────────────────────────────────
-already processing
-
-================================================================================
-[2026-03-18T11:02:34.083Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-generationComplete
-
-================================================================================
-[2026-03-18T11:02:34.093Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
-
-================================================================================
-[2026-03-18T11:02:34.102Z] SERVER → TURN_COMPLETE
-────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
-
-================================================================================
-[2026-03-18T11:02:34.107Z] RELAY #15 handleProviderTurnComplete
-────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=true turnStartTime=1773831752611 consecutiveModelTurns=0 accum=[speak=true, interpret=true, board=false]
-
-================================================================================
-[2026-03-18T11:02:34.112Z] RELAY #15 SKIPPED
-────────────────────────────────────────────────────────────────────────────────
-already processing
-
-================================================================================
-[2026-03-18T11:02:34.607Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-generationComplete
-
-================================================================================
-[2026-03-18T11:02:34.632Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
-
-================================================================================
-[2026-03-18T11:02:34.638Z] SERVER → TURN_COMPLETE
-────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
-
-================================================================================
-[2026-03-18T11:02:34.647Z] RELAY #16 handleProviderTurnComplete
-────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=true turnStartTime=1773831752611 consecutiveModelTurns=0 accum=[speak=true, interpret=true, board=false]
-
-================================================================================
-[2026-03-18T11:02:34.651Z] RELAY #16 SKIPPED
-────────────────────────────────────────────────────────────────────────────────
-already processing
-
-================================================================================
-[2026-03-18T11:02:34.758Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-generationComplete
-
-================================================================================
-[2026-03-18T11:02:34.771Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
-
-================================================================================
-[2026-03-18T11:02:34.779Z] SERVER → TURN_COMPLETE
-────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
-
-================================================================================
-[2026-03-18T11:02:34.785Z] RELAY #17 handleProviderTurnComplete
-────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=true turnStartTime=1773831752611 consecutiveModelTurns=0 accum=[speak=true, interpret=true, board=false]
-
-================================================================================
-[2026-03-18T11:02:34.791Z] RELAY #17 SKIPPED
-────────────────────────────────────────────────────────────────────────────────
-already processing
-
-================================================================================
-[2026-03-18T11:02:35.661Z] TOOL RESPONSE: rebuild_board
-────────────────────────────────────────────────────────────────────────────────
-{
-  "output": "ok",
-  "board_state": "Board rebuilt. 6/12 buttons (6 available): Paper, Pencils, Markers, Paint, Colors, Done"
-}
-
-================================================================================
-[2026-03-18T11:02:35.665Z] RELAY #9 sending tool responses
-────────────────────────────────────────────────────────────────────────────────
-count=1 scheduling=default names=[rebuild_board]
-
-================================================================================
-[2026-03-18T11:02:35.670Z] CLIENT → sendToolResponse
-────────────────────────────────────────────────────────────────────────────────
-rebuild_board(default): {"output":"ok","board_state":"Board rebuilt. 6/12 buttons (6 available): Paper, 
-
-================================================================================
-[2026-03-18T11:02:35.992Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-generationComplete
-
-================================================================================
-[2026-03-18T11:02:36.003Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
-
-================================================================================
-[2026-03-18T11:02:36.009Z] SERVER → TURN_COMPLETE
-────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
-
-================================================================================
-[2026-03-18T11:02:36.018Z] RELAY #18 handleProviderTurnComplete
-────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=true turnStartTime=1773831752611 consecutiveModelTurns=0 accum=[speak=true, interpret=true, board=true]
-
-================================================================================
-[2026-03-18T11:02:36.034Z] RELAY #18 SKIPPED
-────────────────────────────────────────────────────────────────────────────────
-already processing
-
-================================================================================
-[2026-03-18T11:02:36.806Z] FRAME_GRID SUPPRESSED
-────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=true turnStartTime=1773831752611 awaitingModelResponse=false
-
-================================================================================
-[2026-03-18T11:02:39.631Z] CLIENT → sendMessage
-────────────────────────────────────────────────────────────────────────────────
-role=model turnComplete=false text="[I just called: interpret("I want to draw."), rebuild_board(Paper, Pencils, Markers, Paint, Colors, Done), speak("Sounds"
-
-================================================================================
-[2026-03-18T11:02:39.636Z] RELAY #11 TURN SUMMARY
-────────────────────────────────────────────────────────────────────────────────
-[I just called: interpret("I want to draw."), rebuild_board(Paper, Pencils, Markers, Paint, Colors, Done), speak("Sounds good! What drawing materials do you want to use?")]
-
-================================================================================
-[2026-03-18T11:02:39.641Z] RELAY #11 turnComplete DONE
-────────────────────────────────────────────────────────────────────────────────
-consecutiveModelTurns now=1
-
-================================================================================
-[2026-03-18T11:02:51.946Z] CLIENT → sendFrameWithPrompt
-────────────────────────────────────────────────────────────────────────────────
-prompt="[VISUAL CHECK] Observe the scene. Update the AAC board if you see new objects, a" extraImages=0 turnComplete=true
-
-================================================================================
-[2026-03-18T11:02:52.851Z] SERVER → toolCall
-────────────────────────────────────────────────────────────────────────────────
-functions=[context] ids=[48dd77b8-8155-40ac-a6f7-5571d624dd56]
-
-================================================================================
-[2026-03-18T11:02:52.853Z] RAW FUNCTION CALL: context
-────────────────────────────────────────────────────────────────────────────────
-{
-  "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-}
-
-================================================================================
-[2026-03-18T11:02:52.854Z] RELAY #19 handleToolCalls
-────────────────────────────────────────────────────────────────────────────────
-calls=[context] turnStartTime=0 consecutiveModelTurns=0 turnProcessingBusy=false awaitingModelResponse=true
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
 
 ============================================================
-[2026-03-18T11:02:52.856Z] LiveRelay.toolCall
+[2026-03-19T09:41:26.301Z] LiveRelay.behavioralReminder
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "name": "context",
-  "args": {
-    "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-  }
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
 }
 
 ================================================================================
-[2026-03-18T11:02:52.857Z] TOOL CALL: context
+[2026-03-19T09:41:28.463Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "id": "48dd77b8-8155-40ac-a6f7-5571d624dd56",
-  "args": {
-    "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-  }
-}
+timeSinceUpdate=14791707ms
 
 ================================================================================
-[2026-03-18T11:02:52.858Z] TOOL RESPONSE: context
+[2026-03-19T09:41:28.464Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "output": "ok"
-}
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:02:52.859Z] RELAY #19 sending tool responses
+[2026-03-19T09:41:56.746Z] ADAPTED TOOLS (sent to API)
 ────────────────────────────────────────────────────────────────────────────────
-count=1 scheduling=default names=[context]
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
 
 ================================================================================
-[2026-03-18T11:02:52.861Z] CLIENT → sendToolResponse
+[2026-03-19T09:41:56.903Z] CONNECTION CLOSED
 ────────────────────────────────────────────────────────────────────────────────
-context(default): {"output":"ok"}
+code=1000 reason=(none)
 
 ================================================================================
-[2026-03-18T11:02:52.862Z] SERVER → serverContent
+[2026-03-19T09:41:58.153Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-generationComplete
-
-================================================================================
-[2026-03-18T11:02:52.864Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
-
-================================================================================
-[2026-03-18T11:02:52.865Z] SERVER → TURN_COMPLETE
-────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
-
-================================================================================
-[2026-03-18T11:02:52.866Z] RELAY #20 handleProviderTurnComplete
-────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=1773831772854 consecutiveModelTurns=0 accum=[speak=false, interpret=false, board=false]
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
 
 ============================================================
-[2026-03-18T11:02:52.868Z] LiveRelay.turnComplete
+[2026-03-19T09:41:58.154Z] LiveRelay.reconnectionContext
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "elapsed": "13ms",
-  "toolCalls": "context",
-  "speak": "(none)",
-  "interpret": "(none)",
-  "transcript": "(none)",
-  "context": "The user is sitting and looking at the camera. No new objects or activities are observed.",
-  "board": "(no changes)",
-  "callMonitor": false,
-  "learnFace": false,
-  "setBoard": false,
-  "pressButton": false,
-  "openApp": false,
-  "closeApp": false,
-  "speechSuppressed": false
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
 }
 
 ================================================================================
-[2026-03-18T11:02:52.872Z] RELAY #20 turnComplete DONE
+[2026-03-19T09:41:58.156Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-consecutiveModelTurns now=1
-
-================================================================================
-[2026-03-18T11:02:53.172Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-generationComplete
-
-================================================================================
-[2026-03-18T11:02:53.174Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
-
-================================================================================
-[2026-03-18T11:02:53.175Z] SERVER → TURN_COMPLETE
-────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
-
-================================================================================
-[2026-03-18T11:02:53.176Z] RELAY #21 handleProviderTurnComplete
-────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=0 consecutiveModelTurns=1 accum=[speak=false, interpret=false, board=false]
-
-================================================================================
-[2026-03-18T11:02:53.177Z] RELAY #21 SKIPPED
-────────────────────────────────────────────────────────────────────────────────
-empty turn (no tool calls or text)
-
-================================================================================
-[2026-03-18T11:02:59.510Z] BOARD REMINDER SKIPPED
-────────────────────────────────────────────────────────────────────────────────
-timeSinceUpdate=23854ms < 45000ms
-
-================================================================================
-[2026-03-18T11:03:07.002Z] CLIENT → sendFrameWithPrompt
-────────────────────────────────────────────────────────────────────────────────
-prompt="[VISUAL CHECK] Observe the scene. Update the AAC board if you see new objects, a" extraImages=0 turnComplete=true
-
-================================================================================
-[2026-03-18T11:03:07.730Z] SERVER → toolCall
-────────────────────────────────────────────────────────────────────────────────
-functions=[context] ids=[15573a87-1ca8-448f-a766-be1c997e7adb]
-
-================================================================================
-[2026-03-18T11:03:07.731Z] RAW FUNCTION CALL: context
-────────────────────────────────────────────────────────────────────────────────
-{
-  "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-}
-
-================================================================================
-[2026-03-18T11:03:07.734Z] RELAY #22 handleToolCalls
-────────────────────────────────────────────────────────────────────────────────
-calls=[context] turnStartTime=0 consecutiveModelTurns=0 turnProcessingBusy=false awaitingModelResponse=true
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
 
 ============================================================
-[2026-03-18T11:03:07.736Z] LiveRelay.toolCall
+[2026-03-19T09:41:58.157Z] LiveRelay.behavioralReminder
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "name": "context",
-  "args": {
-    "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-  }
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
 }
 
 ================================================================================
-[2026-03-18T11:03:07.738Z] TOOL CALL: context
+[2026-03-19T09:42:13.477Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "id": "15573a87-1ca8-448f-a766-be1c997e7adb",
-  "args": {
-    "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-  }
-}
+timeSinceUpdate=14836721ms
 
 ================================================================================
-[2026-03-18T11:03:07.739Z] TOOL RESPONSE: context
+[2026-03-19T09:42:13.480Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "output": "ok"
-}
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:03:07.741Z] RELAY #22 sending tool responses
+[2026-03-19T09:42:58.483Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-count=1 scheduling=default names=[context]
+timeSinceUpdate=14881726ms
 
 ================================================================================
-[2026-03-18T11:03:07.744Z] CLIENT → sendToolResponse
+[2026-03-19T09:42:58.485Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-context(default): {"output":"ok"}
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:03:07.747Z] SERVER → serverContent
+[2026-03-19T09:43:43.496Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-generationComplete
+timeSinceUpdate=14926740ms
 
 ================================================================================
-[2026-03-18T11:03:07.751Z] SERVER → serverContent
+[2026-03-19T09:43:43.498Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:03:07.752Z] SERVER → TURN_COMPLETE
+[2026-03-19T09:44:26.302Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
-
-================================================================================
-[2026-03-18T11:03:07.753Z] RELAY #23 handleProviderTurnComplete
-────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=1773831787735 consecutiveModelTurns=0 accum=[speak=false, interpret=false, board=false]
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
 
 ============================================================
-[2026-03-18T11:03:07.754Z] LiveRelay.turnComplete
+[2026-03-19T09:44:26.306Z] LiveRelay.behavioralReminder
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "elapsed": "18ms",
-  "toolCalls": "context",
-  "speak": "(none)",
-  "interpret": "(none)",
-  "transcript": "(none)",
-  "context": "The user is sitting and looking at the camera. No new objects or activities are observed.",
-  "board": "(no changes)",
-  "callMonitor": false,
-  "learnFace": false,
-  "setBoard": false,
-  "pressButton": false,
-  "openApp": false,
-  "closeApp": false,
-  "speechSuppressed": false
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
 }
 
 ================================================================================
-[2026-03-18T11:03:07.757Z] RELAY #23 turnComplete DONE
+[2026-03-19T09:44:28.498Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-consecutiveModelTurns now=1
+timeSinceUpdate=14971742ms
 
 ================================================================================
-[2026-03-18T11:03:08.068Z] SERVER → serverContent
+[2026-03-19T09:44:28.500Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-generationComplete
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:03:08.069Z] SERVER → serverContent
+[2026-03-19T09:45:13.511Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
+timeSinceUpdate=15016754ms
 
 ================================================================================
-[2026-03-18T11:03:08.071Z] SERVER → TURN_COMPLETE
+[2026-03-19T09:45:13.513Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:03:08.072Z] RELAY #24 handleProviderTurnComplete
+[2026-03-19T09:45:58.516Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=0 consecutiveModelTurns=1 accum=[speak=false, interpret=false, board=false]
+timeSinceUpdate=15061759ms
 
 ================================================================================
-[2026-03-18T11:03:08.073Z] RELAY #24 SKIPPED
+[2026-03-19T09:45:58.518Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-empty turn (no tool calls or text)
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:03:22.449Z] CLIENT → sendFrameWithPrompt
+[2026-03-19T09:46:43.517Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-prompt="[VISUAL CHECK] Observe the scene. Update the AAC board if you see new objects, a" extraImages=0 turnComplete=true
+timeSinceUpdate=15106760ms
 
 ================================================================================
-[2026-03-18T11:03:23.260Z] SERVER → toolCall
+[2026-03-19T09:46:43.520Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-functions=[context] ids=[b042d20e-559d-48dd-9d4b-67e61f3d29ae]
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:03:23.261Z] RAW FUNCTION CALL: context
+[2026-03-19T09:47:26.311Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-}
-
-================================================================================
-[2026-03-18T11:03:23.262Z] RELAY #25 handleToolCalls
-────────────────────────────────────────────────────────────────────────────────
-calls=[context] turnStartTime=0 consecutiveModelTurns=0 turnProcessingBusy=false awaitingModelResponse=true
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
 
 ============================================================
-[2026-03-18T11:03:23.263Z] LiveRelay.toolCall
+[2026-03-19T09:47:26.315Z] LiveRelay.behavioralReminder
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "name": "context",
-  "args": {
-    "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-  }
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
 }
 
 ================================================================================
-[2026-03-18T11:03:23.264Z] TOOL CALL: context
+[2026-03-19T09:47:28.533Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "id": "b042d20e-559d-48dd-9d4b-67e61f3d29ae",
-  "args": {
-    "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-  }
-}
+timeSinceUpdate=15151775ms
 
 ================================================================================
-[2026-03-18T11:03:23.266Z] TOOL RESPONSE: context
+[2026-03-19T09:47:28.536Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "output": "ok"
-}
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:03:23.268Z] RELAY #25 sending tool responses
+[2026-03-19T09:48:13.534Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-count=1 scheduling=default names=[context]
+timeSinceUpdate=15196777ms
 
 ================================================================================
-[2026-03-18T11:03:23.270Z] CLIENT → sendToolResponse
+[2026-03-19T09:48:13.536Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-context(default): {"output":"ok"}
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:03:23.272Z] SERVER → serverContent
+[2026-03-19T09:48:58.540Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-generationComplete
+timeSinceUpdate=15241783ms
 
 ================================================================================
-[2026-03-18T11:03:23.274Z] SERVER → serverContent
+[2026-03-19T09:48:58.544Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:03:23.275Z] SERVER → TURN_COMPLETE
+[2026-03-19T09:49:43.540Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
+timeSinceUpdate=15286784ms
 
 ================================================================================
-[2026-03-18T11:03:23.276Z] RELAY #26 handleProviderTurnComplete
+[2026-03-19T09:49:43.542Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=1773831803263 consecutiveModelTurns=0 accum=[speak=false, interpret=false, board=false]
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T09:50:26.320Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
 
 ============================================================
-[2026-03-18T11:03:23.277Z] LiveRelay.turnComplete
+[2026-03-19T09:50:26.324Z] LiveRelay.behavioralReminder
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "elapsed": "14ms",
-  "toolCalls": "context",
-  "speak": "(none)",
-  "interpret": "(none)",
-  "transcript": "(none)",
-  "context": "The user is sitting and looking at the camera. No new objects or activities are observed.",
-  "board": "(no changes)",
-  "callMonitor": false,
-  "learnFace": false,
-  "setBoard": false,
-  "pressButton": false,
-  "openApp": false,
-  "closeApp": false,
-  "speechSuppressed": false
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
 }
 
 ================================================================================
-[2026-03-18T11:03:23.281Z] RELAY #26 turnComplete DONE
+[2026-03-19T09:50:27.863Z] ADAPTED TOOLS (sent to API)
 ────────────────────────────────────────────────────────────────────────────────
-consecutiveModelTurns now=1
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
 
 ================================================================================
-[2026-03-18T11:03:23.599Z] SERVER → serverContent
+[2026-03-19T09:50:28.022Z] CONNECTION CLOSED
 ────────────────────────────────────────────────────────────────────────────────
-generationComplete
+code=1000 reason=(none)
 
 ================================================================================
-[2026-03-18T11:03:23.601Z] SERVER → serverContent
+[2026-03-19T09:50:28.481Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
-
-================================================================================
-[2026-03-18T11:03:23.603Z] SERVER → TURN_COMPLETE
-────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
-
-================================================================================
-[2026-03-18T11:03:23.604Z] RELAY #27 handleProviderTurnComplete
-────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=0 consecutiveModelTurns=1 accum=[speak=false, interpret=false, board=false]
-
-================================================================================
-[2026-03-18T11:03:23.607Z] RELAY #27 SKIPPED
-────────────────────────────────────────────────────────────────────────────────
-empty turn (no tool calls or text)
-
-================================================================================
-[2026-03-18T11:03:37.960Z] CLIENT → sendFrameWithPrompt
-────────────────────────────────────────────────────────────────────────────────
-prompt="[VISUAL CHECK] Observe the scene. Update the AAC board if you see new objects, a" extraImages=0 turnComplete=true
-
-================================================================================
-[2026-03-18T11:03:38.697Z] SERVER → toolCall
-────────────────────────────────────────────────────────────────────────────────
-functions=[context] ids=[50767917-b996-4071-afff-cca835c395fc]
-
-================================================================================
-[2026-03-18T11:03:38.699Z] RAW FUNCTION CALL: context
-────────────────────────────────────────────────────────────────────────────────
-{
-  "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-}
-
-================================================================================
-[2026-03-18T11:03:38.701Z] RELAY #28 handleToolCalls
-────────────────────────────────────────────────────────────────────────────────
-calls=[context] turnStartTime=0 consecutiveModelTurns=0 turnProcessingBusy=false awaitingModelResponse=true
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
 
 ============================================================
-[2026-03-18T11:03:38.702Z] LiveRelay.toolCall
+[2026-03-19T09:50:28.487Z] LiveRelay.reconnectionContext
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "name": "context",
-  "args": {
-    "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-  }
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
 }
 
 ================================================================================
-[2026-03-18T11:03:38.704Z] TOOL CALL: context
+[2026-03-19T09:50:28.490Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "id": "50767917-b996-4071-afff-cca835c395fc",
-  "args": {
-    "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-  }
-}
-
-================================================================================
-[2026-03-18T11:03:38.705Z] TOOL RESPONSE: context
-────────────────────────────────────────────────────────────────────────────────
-{
-  "output": "ok"
-}
-
-================================================================================
-[2026-03-18T11:03:38.706Z] RELAY #28 sending tool responses
-────────────────────────────────────────────────────────────────────────────────
-count=1 scheduling=default names=[context]
-
-================================================================================
-[2026-03-18T11:03:38.708Z] CLIENT → sendToolResponse
-────────────────────────────────────────────────────────────────────────────────
-context(default): {"output":"ok"}
-
-================================================================================
-[2026-03-18T11:03:38.710Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-generationComplete
-
-================================================================================
-[2026-03-18T11:03:38.713Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
-
-================================================================================
-[2026-03-18T11:03:38.716Z] SERVER → TURN_COMPLETE
-────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
-
-================================================================================
-[2026-03-18T11:03:38.719Z] RELAY #29 handleProviderTurnComplete
-────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=1773831818702 consecutiveModelTurns=0 accum=[speak=false, interpret=false, board=false]
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
 
 ============================================================
-[2026-03-18T11:03:38.721Z] LiveRelay.turnComplete
+[2026-03-19T09:50:28.494Z] LiveRelay.behavioralReminder
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "elapsed": "18ms",
-  "toolCalls": "context",
-  "speak": "(none)",
-  "interpret": "(none)",
-  "transcript": "(none)",
-  "context": "The user is sitting and looking at the camera. No new objects or activities are observed.",
-  "board": "(no changes)",
-  "callMonitor": false,
-  "learnFace": false,
-  "setBoard": false,
-  "pressButton": false,
-  "openApp": false,
-  "closeApp": false,
-  "speechSuppressed": false
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
 }
 
 ================================================================================
-[2026-03-18T11:03:38.725Z] RELAY #29 turnComplete DONE
+[2026-03-19T09:50:28.540Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-consecutiveModelTurns now=1
+timeSinceUpdate=15331784ms
 
 ================================================================================
-[2026-03-18T11:03:39.039Z] SERVER → serverContent
+[2026-03-19T09:50:28.541Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-generationComplete
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:03:39.041Z] SERVER → serverContent
+[2026-03-19T09:51:13.557Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
+timeSinceUpdate=15376801ms
 
 ================================================================================
-[2026-03-18T11:03:39.042Z] SERVER → TURN_COMPLETE
+[2026-03-19T09:51:13.559Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:03:39.044Z] RELAY #30 handleProviderTurnComplete
+[2026-03-19T09:51:58.559Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=0 consecutiveModelTurns=1 accum=[speak=false, interpret=false, board=false]
+timeSinceUpdate=15421802ms
 
 ================================================================================
-[2026-03-18T11:03:39.046Z] RELAY #30 SKIPPED
+[2026-03-19T09:51:58.562Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-empty turn (no tool calls or text)
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:03:44.513Z] BOARD REMINDER FIRING
+[2026-03-19T09:52:43.576Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-timeSinceUpdate=68856ms
+timeSinceUpdate=15466818ms
 
 ================================================================================
-[2026-03-18T11:03:44.515Z] CLIENT → sendContextInjection
+[2026-03-19T09:52:43.579Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Paper, Pencils, Markers, Paint, Colors, Done"
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:03:46.070Z] CLIENT → sendFrameWithPrompt
+[2026-03-19T09:53:26.334Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-prompt="[VISUAL CHECK] Observe the scene. Update the AAC board if you see new objects, a" extraImages=0 turnComplete=true
-
-================================================================================
-[2026-03-18T11:03:46.869Z] SERVER → toolCall
-────────────────────────────────────────────────────────────────────────────────
-functions=[context] ids=[e64990ac-23ba-4522-bb74-9c5c81025c76]
-
-================================================================================
-[2026-03-18T11:03:46.875Z] RAW FUNCTION CALL: context
-────────────────────────────────────────────────────────────────────────────────
-{
-  "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-}
-
-================================================================================
-[2026-03-18T11:03:46.881Z] RELAY #31 handleToolCalls
-────────────────────────────────────────────────────────────────────────────────
-calls=[context] turnStartTime=0 consecutiveModelTurns=0 turnProcessingBusy=false awaitingModelResponse=true
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
 
 ============================================================
-[2026-03-18T11:03:46.886Z] LiveRelay.toolCall
+[2026-03-19T09:53:26.338Z] LiveRelay.behavioralReminder
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "name": "context",
-  "args": {
-    "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-  }
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
 }
 
 ================================================================================
-[2026-03-18T11:03:46.891Z] TOOL CALL: context
+[2026-03-19T09:53:28.576Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "id": "e64990ac-23ba-4522-bb74-9c5c81025c76",
-  "args": {
-    "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-  }
-}
+timeSinceUpdate=15511819ms
 
 ================================================================================
-[2026-03-18T11:03:46.899Z] TOOL RESPONSE: context
+[2026-03-19T09:53:28.578Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "output": "ok"
-}
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:03:46.904Z] RELAY #31 sending tool responses
+[2026-03-19T09:54:13.578Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-count=1 scheduling=default names=[context]
+timeSinceUpdate=15556821ms
 
 ================================================================================
-[2026-03-18T11:03:46.911Z] CLIENT → sendToolResponse
+[2026-03-19T09:54:13.579Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-context(default): {"output":"ok"}
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:03:46.920Z] SERVER → serverContent
+[2026-03-19T09:54:58.579Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-generationComplete
+timeSinceUpdate=15601822ms
 
 ================================================================================
-[2026-03-18T11:03:46.931Z] SERVER → serverContent
+[2026-03-19T09:54:58.582Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:03:46.937Z] SERVER → TURN_COMPLETE
+[2026-03-19T09:55:43.593Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
+timeSinceUpdate=15646837ms
 
 ================================================================================
-[2026-03-18T11:03:46.943Z] RELAY #32 handleProviderTurnComplete
+[2026-03-19T09:55:43.595Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=1773831826883 consecutiveModelTurns=0 accum=[speak=false, interpret=false, board=false]
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T09:56:26.339Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
 
 ============================================================
-[2026-03-18T11:03:46.953Z] LiveRelay.turnComplete
+[2026-03-19T09:56:26.341Z] LiveRelay.behavioralReminder
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "elapsed": "62ms",
-  "toolCalls": "context",
-  "speak": "(none)",
-  "interpret": "(none)",
-  "transcript": "(none)",
-  "context": "The user is sitting and looking at the camera. No new objects or activities are observed.",
-  "board": "(no changes)",
-  "callMonitor": false,
-  "learnFace": false,
-  "setBoard": false,
-  "pressButton": false,
-  "openApp": false,
-  "closeApp": false,
-  "speechSuppressed": false
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
 }
 
 ================================================================================
-[2026-03-18T11:03:47.041Z] RELAY #32 turnComplete DONE
+[2026-03-19T09:56:28.594Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-consecutiveModelTurns now=1
+timeSinceUpdate=15691837ms
 
 ================================================================================
-[2026-03-18T11:03:47.269Z] SERVER → serverContent
+[2026-03-19T09:56:28.597Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-generationComplete
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:03:47.281Z] SERVER → serverContent
+[2026-03-19T09:57:13.595Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
+timeSinceUpdate=15736839ms
 
 ================================================================================
-[2026-03-18T11:03:47.286Z] SERVER → TURN_COMPLETE
+[2026-03-19T09:57:13.598Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:03:47.292Z] RELAY #33 handleProviderTurnComplete
+[2026-03-19T09:57:58.604Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=0 consecutiveModelTurns=1 accum=[speak=false, interpret=false, board=false]
+timeSinceUpdate=15781846ms
 
 ================================================================================
-[2026-03-18T11:03:47.300Z] RELAY #33 SKIPPED
+[2026-03-19T09:57:58.608Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-empty turn (no tool calls or text)
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:03:50.198Z] FRAME_GRID SUPPRESSED
+[2026-03-19T09:58:43.618Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-postTurnCooldown (3173ms < 4000ms)
+timeSinceUpdate=15826861ms
 
 ================================================================================
-[2026-03-18T11:04:07.010Z] CLIENT → sendFrameWithPrompt
+[2026-03-19T09:58:43.620Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-prompt="[VISUAL CHECK] Observe the scene. Update the AAC board if you see new objects, a" extraImages=0 turnComplete=true
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:04:08.320Z] SERVER → toolCall
+[2026-03-19T09:58:58.199Z] ADAPTED TOOLS (sent to API)
 ────────────────────────────────────────────────────────────────────────────────
-functions=[context] ids=[690caf63-c7f8-4f2b-84ba-858852ef9237]
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
 
 ================================================================================
-[2026-03-18T11:04:08.325Z] RAW FUNCTION CALL: context
+[2026-03-19T09:58:58.360Z] CONNECTION CLOSED
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-}
+code=1000 reason=(none)
 
 ================================================================================
-[2026-03-18T11:04:08.334Z] RELAY #34 handleToolCalls
+[2026-03-19T09:58:58.809Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-calls=[context] turnStartTime=0 consecutiveModelTurns=0 turnProcessingBusy=false awaitingModelResponse=true
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
 
 ============================================================
-[2026-03-18T11:04:08.338Z] LiveRelay.toolCall
+[2026-03-19T09:58:58.820Z] LiveRelay.reconnectionContext
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "name": "context",
-  "args": {
-    "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-  }
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
 }
 
 ================================================================================
-[2026-03-18T11:04:08.345Z] TOOL CALL: context
+[2026-03-19T09:58:58.822Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "id": "690caf63-c7f8-4f2b-84ba-858852ef9237",
-  "args": {
-    "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-  }
-}
-
-================================================================================
-[2026-03-18T11:04:08.354Z] TOOL RESPONSE: context
-────────────────────────────────────────────────────────────────────────────────
-{
-  "output": "ok"
-}
-
-================================================================================
-[2026-03-18T11:04:08.358Z] RELAY #34 sending tool responses
-────────────────────────────────────────────────────────────────────────────────
-count=1 scheduling=default names=[context]
-
-================================================================================
-[2026-03-18T11:04:08.364Z] CLIENT → sendToolResponse
-────────────────────────────────────────────────────────────────────────────────
-context(default): {"output":"ok"}
-
-================================================================================
-[2026-03-18T11:04:08.372Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-generationComplete
-
-================================================================================
-[2026-03-18T11:04:08.672Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
-
-================================================================================
-[2026-03-18T11:04:08.676Z] SERVER → TURN_COMPLETE
-────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
-
-================================================================================
-[2026-03-18T11:04:08.744Z] RELAY #35 handleProviderTurnComplete
-────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=1773831848336 consecutiveModelTurns=0 accum=[speak=false, interpret=false, board=false]
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
 
 ============================================================
-[2026-03-18T11:04:08.752Z] LiveRelay.turnComplete
+[2026-03-19T09:58:58.825Z] LiveRelay.behavioralReminder
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "elapsed": "413ms",
-  "toolCalls": "context",
-  "speak": "(none)",
-  "interpret": "(none)",
-  "transcript": "(none)",
-  "context": "The user is sitting and looking at the camera. No new objects or activities are observed.",
-  "board": "(no changes)",
-  "callMonitor": false,
-  "learnFace": false,
-  "setBoard": false,
-  "pressButton": false,
-  "openApp": false,
-  "closeApp": false,
-  "speechSuppressed": false
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
 }
 
 ================================================================================
-[2026-03-18T11:04:09.005Z] RELAY #35 turnComplete DONE
+[2026-03-19T09:59:26.342Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-consecutiveModelTurns now=1
-
-================================================================================
-[2026-03-18T11:04:09.016Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-generationComplete
-
-================================================================================
-[2026-03-18T11:04:09.031Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
-
-================================================================================
-[2026-03-18T11:04:09.035Z] SERVER → TURN_COMPLETE
-────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
-
-================================================================================
-[2026-03-18T11:04:09.048Z] RELAY #36 handleProviderTurnComplete
-────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=0 consecutiveModelTurns=1 accum=[speak=false, interpret=false, board=false]
-
-================================================================================
-[2026-03-18T11:04:09.053Z] RELAY #36 SKIPPED
-────────────────────────────────────────────────────────────────────────────────
-empty turn (no tool calls or text)
-
-================================================================================
-[2026-03-18T11:04:19.362Z] CLIENT → sendFrameWithPrompt
-────────────────────────────────────────────────────────────────────────────────
-prompt="[VISUAL CHECK] Observe the scene. Update the AAC board if you see new objects, a" extraImages=0 turnComplete=true
-
-================================================================================
-[2026-03-18T11:04:20.165Z] SERVER → toolCall
-────────────────────────────────────────────────────────────────────────────────
-functions=[context] ids=[5b4451ba-45be-4d44-88a0-eca053bf8bb0]
-
-================================================================================
-[2026-03-18T11:04:20.171Z] RAW FUNCTION CALL: context
-────────────────────────────────────────────────────────────────────────────────
-{
-  "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-}
-
-================================================================================
-[2026-03-18T11:04:20.178Z] RELAY #37 handleToolCalls
-────────────────────────────────────────────────────────────────────────────────
-calls=[context] turnStartTime=0 consecutiveModelTurns=0 turnProcessingBusy=false awaitingModelResponse=true
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
 
 ============================================================
-[2026-03-18T11:04:20.184Z] LiveRelay.toolCall
+[2026-03-19T09:59:26.344Z] LiveRelay.behavioralReminder
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "name": "context",
-  "args": {
-    "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-  }
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
 }
 
 ================================================================================
-[2026-03-18T11:04:20.189Z] TOOL CALL: context
+[2026-03-19T09:59:28.618Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "id": "5b4451ba-45be-4d44-88a0-eca053bf8bb0",
-  "args": {
-    "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-  }
-}
+timeSinceUpdate=15871862ms
 
 ================================================================================
-[2026-03-18T11:04:20.196Z] TOOL RESPONSE: context
+[2026-03-19T09:59:28.619Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "output": "ok"
-}
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:04:20.201Z] RELAY #37 sending tool responses
+[2026-03-19T10:00:13.619Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-count=1 scheduling=default names=[context]
+timeSinceUpdate=15916863ms
 
 ================================================================================
-[2026-03-18T11:04:20.209Z] CLIENT → sendToolResponse
+[2026-03-19T10:00:13.622Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-context(default): {"output":"ok"}
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:04:20.215Z] SERVER → serverContent
+[2026-03-19T10:00:58.622Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-generationComplete
+timeSinceUpdate=15961864ms
 
 ================================================================================
-[2026-03-18T11:04:20.222Z] SERVER → serverContent
+[2026-03-19T10:00:58.625Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:04:20.229Z] SERVER → TURN_COMPLETE
+[2026-03-19T10:01:43.623Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
+timeSinceUpdate=16006866ms
 
 ================================================================================
-[2026-03-18T11:04:20.302Z] RELAY #38 handleProviderTurnComplete
+[2026-03-19T10:01:43.625Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=1773831860180 consecutiveModelTurns=0 accum=[speak=false, interpret=false, board=false]
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:02:26.349Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
 
 ============================================================
-[2026-03-18T11:04:20.338Z] LiveRelay.turnComplete
+[2026-03-19T10:02:26.353Z] LiveRelay.behavioralReminder
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "elapsed": "126ms",
-  "toolCalls": "context",
-  "speak": "(none)",
-  "interpret": "(none)",
-  "transcript": "(none)",
-  "context": "The user is sitting and looking at the camera. No new objects or activities are observed.",
-  "board": "(no changes)",
-  "callMonitor": false,
-  "learnFace": false,
-  "setBoard": false,
-  "pressButton": false,
-  "openApp": false,
-  "closeApp": false,
-  "speechSuppressed": false
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
 }
 
 ================================================================================
-[2026-03-18T11:04:20.366Z] RELAY #38 turnComplete DONE
+[2026-03-19T10:02:28.622Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-consecutiveModelTurns now=1
+timeSinceUpdate=16051866ms
 
 ================================================================================
-[2026-03-18T11:04:20.644Z] SERVER → serverContent
+[2026-03-19T10:02:28.624Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-generationComplete
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:04:20.722Z] SERVER → serverContent
+[2026-03-19T10:03:13.624Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
+timeSinceUpdate=16096867ms
 
 ================================================================================
-[2026-03-18T11:04:20.729Z] SERVER → TURN_COMPLETE
+[2026-03-19T10:03:13.628Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:04:20.734Z] RELAY #39 handleProviderTurnComplete
+[2026-03-19T10:03:58.624Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=0 consecutiveModelTurns=1 accum=[speak=false, interpret=false, board=false]
+timeSinceUpdate=16141866ms
 
 ================================================================================
-[2026-03-18T11:04:20.740Z] RELAY #39 SKIPPED
+[2026-03-19T10:03:58.627Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-empty turn (no tool calls or text)
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:04:28.995Z] CLIENT → sendFrameWithPrompt
+[2026-03-19T10:04:43.639Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-prompt="[VISUAL CHECK] Observe the scene. Update the AAC board if you see new objects, a" extraImages=0 turnComplete=true
+timeSinceUpdate=16186882ms
 
 ================================================================================
-[2026-03-18T11:04:29.521Z] BOARD REMINDER FIRING
+[2026-03-19T10:04:43.643Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-timeSinceUpdate=113864ms
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:04:29.523Z] CLIENT → sendContextInjection
+[2026-03-19T10:05:26.356Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Paper, Pencils, Markers, Paint, Colors, Done"
-
-================================================================================
-[2026-03-18T11:04:29.771Z] SERVER → toolCall
-────────────────────────────────────────────────────────────────────────────────
-functions=[context] ids=[2693977a-db1d-42d9-9119-f629722cfc62]
-
-================================================================================
-[2026-03-18T11:04:29.772Z] RAW FUNCTION CALL: context
-────────────────────────────────────────────────────────────────────────────────
-{
-  "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-}
-
-================================================================================
-[2026-03-18T11:04:29.774Z] RELAY #40 handleToolCalls
-────────────────────────────────────────────────────────────────────────────────
-calls=[context] turnStartTime=0 consecutiveModelTurns=0 turnProcessingBusy=false awaitingModelResponse=true
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
 
 ============================================================
-[2026-03-18T11:04:29.776Z] LiveRelay.toolCall
+[2026-03-19T10:05:26.358Z] LiveRelay.behavioralReminder
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "name": "context",
-  "args": {
-    "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-  }
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
 }
 
 ================================================================================
-[2026-03-18T11:04:29.778Z] TOOL CALL: context
+[2026-03-19T10:05:28.641Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "id": "2693977a-db1d-42d9-9119-f629722cfc62",
-  "args": {
-    "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-  }
-}
+timeSinceUpdate=16231884ms
 
 ================================================================================
-[2026-03-18T11:04:29.779Z] TOOL RESPONSE: context
+[2026-03-19T10:05:28.645Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "output": "ok"
-}
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:04:29.781Z] RELAY #40 sending tool responses
+[2026-03-19T10:06:13.659Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-count=1 scheduling=default names=[context]
+timeSinceUpdate=16276901ms
 
 ================================================================================
-[2026-03-18T11:04:29.782Z] CLIENT → sendToolResponse
+[2026-03-19T10:06:13.663Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-context(default): {"output":"ok"}
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:04:29.783Z] SERVER → serverContent
+[2026-03-19T10:06:58.669Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-generationComplete
+timeSinceUpdate=16321912ms
 
 ================================================================================
-[2026-03-18T11:04:29.785Z] SERVER → serverContent
+[2026-03-19T10:06:58.672Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:04:29.787Z] SERVER → TURN_COMPLETE
+[2026-03-19T10:07:28.535Z] ADAPTED TOOLS (sent to API)
 ────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
 
 ================================================================================
-[2026-03-18T11:04:29.788Z] RELAY #41 handleProviderTurnComplete
+[2026-03-19T10:07:28.693Z] CONNECTION CLOSED
 ────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=1773831869775 consecutiveModelTurns=0 accum=[speak=false, interpret=false, board=false]
+code=1000 reason=(none)
+
+================================================================================
+[2026-03-19T10:07:29.960Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
 
 ============================================================
-[2026-03-18T11:04:29.789Z] LiveRelay.turnComplete
+[2026-03-19T10:07:29.962Z] LiveRelay.reconnectionContext
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "elapsed": "14ms",
-  "toolCalls": "context",
-  "speak": "(none)",
-  "interpret": "(none)",
-  "transcript": "(none)",
-  "context": "The user is sitting and looking at the camera. No new objects or activities are observed.",
-  "board": "(no changes)",
-  "callMonitor": false,
-  "learnFace": false,
-  "setBoard": false,
-  "pressButton": false,
-  "openApp": false,
-  "closeApp": false,
-  "speechSuppressed": false
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
 }
 
 ================================================================================
-[2026-03-18T11:04:29.791Z] RELAY #41 turnComplete DONE
+[2026-03-19T10:07:29.964Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-consecutiveModelTurns now=1
-
-================================================================================
-[2026-03-18T11:04:30.127Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-generationComplete
-
-================================================================================
-[2026-03-18T11:04:30.128Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
-
-================================================================================
-[2026-03-18T11:04:30.129Z] SERVER → TURN_COMPLETE
-────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
-
-================================================================================
-[2026-03-18T11:04:30.130Z] RELAY #42 handleProviderTurnComplete
-────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=0 consecutiveModelTurns=1 accum=[speak=false, interpret=false, board=false]
-
-================================================================================
-[2026-03-18T11:04:30.130Z] RELAY #42 SKIPPED
-────────────────────────────────────────────────────────────────────────────────
-empty turn (no tool calls or text)
-
-================================================================================
-[2026-03-18T11:04:44.449Z] CLIENT → sendFrameWithPrompt
-────────────────────────────────────────────────────────────────────────────────
-prompt="[VISUAL CHECK] Observe the scene. Update the AAC board if you see new objects, a" extraImages=0 turnComplete=true
-
-================================================================================
-[2026-03-18T11:04:45.254Z] SERVER → toolCall
-────────────────────────────────────────────────────────────────────────────────
-functions=[context] ids=[ad82db1c-7820-4965-b303-613e9ce6434f]
-
-================================================================================
-[2026-03-18T11:04:45.257Z] RAW FUNCTION CALL: context
-────────────────────────────────────────────────────────────────────────────────
-{
-  "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-}
-
-================================================================================
-[2026-03-18T11:04:45.260Z] RELAY #43 handleToolCalls
-────────────────────────────────────────────────────────────────────────────────
-calls=[context] turnStartTime=0 consecutiveModelTurns=0 turnProcessingBusy=false awaitingModelResponse=true
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
 
 ============================================================
-[2026-03-18T11:04:45.262Z] LiveRelay.toolCall
+[2026-03-19T10:07:29.967Z] LiveRelay.behavioralReminder
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "name": "context",
-  "args": {
-    "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-  }
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
 }
 
 ================================================================================
-[2026-03-18T11:04:45.264Z] TOOL CALL: context
+[2026-03-19T10:07:43.681Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "id": "ad82db1c-7820-4965-b303-613e9ce6434f",
-  "args": {
-    "text": "The user is sitting and looking at the camera. No new objects or activities are observed."
-  }
-}
+timeSinceUpdate=16366924ms
 
 ================================================================================
-[2026-03-18T11:04:45.267Z] TOOL RESPONSE: context
+[2026-03-19T10:07:43.684Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-{
-  "output": "ok"
-}
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:04:45.269Z] RELAY #43 sending tool responses
+[2026-03-19T10:08:26.360Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-count=1 scheduling=default names=[context]
-
-================================================================================
-[2026-03-18T11:04:45.271Z] CLIENT → sendToolResponse
-────────────────────────────────────────────────────────────────────────────────
-context(default): {"output":"ok"}
-
-================================================================================
-[2026-03-18T11:04:45.274Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-generationComplete
-
-================================================================================
-[2026-03-18T11:04:45.277Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
-
-================================================================================
-[2026-03-18T11:04:45.278Z] SERVER → TURN_COMPLETE
-────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
-
-================================================================================
-[2026-03-18T11:04:45.280Z] RELAY #44 handleProviderTurnComplete
-────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=1773831885262 consecutiveModelTurns=0 accum=[speak=false, interpret=false, board=false]
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
 
 ============================================================
-[2026-03-18T11:04:45.282Z] LiveRelay.turnComplete
+[2026-03-19T10:08:26.364Z] LiveRelay.behavioralReminder
 ----------------------------------------
 {
-  "sessionId": "aac-1773831731914",
-  "elapsed": "19ms",
-  "toolCalls": "context",
-  "speak": "(none)",
-  "interpret": "(none)",
-  "transcript": "(none)",
-  "context": "The user is sitting and looking at the camera. No new objects or activities are observed.",
-  "board": "(no changes)",
-  "callMonitor": false,
-  "learnFace": false,
-  "setBoard": false,
-  "pressButton": false,
-  "openApp": false,
-  "closeApp": false,
-  "speechSuppressed": false
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
 }
 
 ================================================================================
-[2026-03-18T11:04:45.287Z] RELAY #44 turnComplete DONE
+[2026-03-19T10:08:28.681Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-consecutiveModelTurns now=1
+timeSinceUpdate=16411924ms
 
 ================================================================================
-[2026-03-18T11:04:45.639Z] SERVER → serverContent
+[2026-03-19T10:08:28.683Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-generationComplete
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:04:45.642Z] SERVER → serverContent
+[2026-03-19T10:09:13.695Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
+timeSinceUpdate=16456939ms
 
 ================================================================================
-[2026-03-18T11:04:45.643Z] SERVER → TURN_COMPLETE
+[2026-03-19T10:09:13.698Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
 
 ================================================================================
-[2026-03-18T11:04:45.645Z] RELAY #45 handleProviderTurnComplete
+[2026-03-19T10:09:58.715Z] BOARD REMINDER FIRING
 ────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=0 consecutiveModelTurns=1 accum=[speak=false, interpret=false, board=false]
+timeSinceUpdate=16501959ms
 
 ================================================================================
-[2026-03-18T11:04:45.646Z] RELAY #45 SKIPPED
+[2026-03-19T10:09:58.718Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
-empty turn (no tool calls or text)
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:10:43.721Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=16546965ms
+
+================================================================================
+[2026-03-19T10:10:43.725Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:11:26.363Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:11:26.365Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T10:11:28.738Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=16591982ms
+
+================================================================================
+[2026-03-19T10:11:28.739Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:12:13.757Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=16636995ms
+
+================================================================================
+[2026-03-19T10:12:13.762Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:12:58.763Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=16682006ms
+
+================================================================================
+[2026-03-19T10:12:58.765Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:13:43.775Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=16727020ms
+
+================================================================================
+[2026-03-19T10:13:43.776Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:14:26.368Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:14:26.373Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T10:14:28.790Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=16772032ms
+
+================================================================================
+[2026-03-19T10:14:28.792Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:15:13.796Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=16817038ms
+
+================================================================================
+[2026-03-19T10:15:13.799Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:15:58.801Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=16862044ms
+
+================================================================================
+[2026-03-19T10:15:58.803Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:15:59.712Z] ADAPTED TOOLS (sent to API)
+────────────────────────────────────────────────────────────────────────────────
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
+
+================================================================================
+[2026-03-19T10:15:59.880Z] CONNECTION CLOSED
+────────────────────────────────────────────────────────────────────────────────
+code=1000 reason=(none)
+
+================================================================================
+[2026-03-19T10:16:00.488Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
+
+============================================================
+[2026-03-19T10:16:00.492Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
+}
+
+================================================================================
+[2026-03-19T10:16:00.495Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:16:00.499Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
+}
+
+================================================================================
+[2026-03-19T10:16:43.810Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=16907054ms
+
+================================================================================
+[2026-03-19T10:16:43.811Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:17:26.372Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:17:26.374Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T10:17:28.812Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=16952055ms
+
+================================================================================
+[2026-03-19T10:17:28.816Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:18:13.827Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=16997069ms
+
+================================================================================
+[2026-03-19T10:18:13.831Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:18:58.839Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=17042080ms
+
+================================================================================
+[2026-03-19T10:18:58.843Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:19:43.848Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=17087092ms
+
+================================================================================
+[2026-03-19T10:19:43.852Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:20:26.380Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:20:26.382Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T10:20:28.848Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=17132092ms
+
+================================================================================
+[2026-03-19T10:20:28.849Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:21:13.861Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=17177105ms
+
+================================================================================
+[2026-03-19T10:21:13.862Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:21:58.872Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=17222114ms
+
+================================================================================
+[2026-03-19T10:21:58.875Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:22:43.871Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=17267115ms
+
+================================================================================
+[2026-03-19T10:22:43.875Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:23:26.391Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:23:26.395Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T10:23:28.882Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=17312125ms
+
+================================================================================
+[2026-03-19T10:23:28.885Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:24:13.882Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=17357126ms
+
+================================================================================
+[2026-03-19T10:24:13.884Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:24:30.214Z] ADAPTED TOOLS (sent to API)
+────────────────────────────────────────────────────────────────────────────────
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
+
+================================================================================
+[2026-03-19T10:24:30.371Z] CONNECTION CLOSED
+────────────────────────────────────────────────────────────────────────────────
+code=1000 reason=(none)
+
+================================================================================
+[2026-03-19T10:24:31.893Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
+
+============================================================
+[2026-03-19T10:24:31.895Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
+}
+
+================================================================================
+[2026-03-19T10:24:31.896Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:24:31.898Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
+}
+
+================================================================================
+[2026-03-19T10:24:58.893Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=17402136ms
+
+================================================================================
+[2026-03-19T10:24:58.895Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:25:43.893Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=17447137ms
+
+================================================================================
+[2026-03-19T10:25:43.895Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:26:26.415Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:26:26.419Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T10:26:28.897Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=17492141ms
+
+================================================================================
+[2026-03-19T10:26:28.898Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:27:13.896Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=17537139ms
+
+================================================================================
+[2026-03-19T10:27:13.899Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:27:58.908Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=17582153ms
+
+================================================================================
+[2026-03-19T10:27:58.910Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:28:43.911Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=17627155ms
+
+================================================================================
+[2026-03-19T10:28:43.913Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:29:26.421Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:29:26.422Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T10:29:28.925Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=17672169ms
+
+================================================================================
+[2026-03-19T10:29:28.927Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"

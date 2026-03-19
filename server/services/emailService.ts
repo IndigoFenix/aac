@@ -62,14 +62,23 @@ class EmailService {
     }
 
     try {
+      const port = parseInt(SMTP_PORT, 10);
       this.transporter = nodemailer.createTransport({
         host: SMTP_HOST,
-        port: parseInt(SMTP_PORT, 10),
-        secure: parseInt(SMTP_PORT, 10) === 465, // true for 465, false for other ports
+        port,
+        secure: port === 465, // true for 465, false for other ports
         auth: {
           user: SMTP_USER,
           pass: SMTP_PASS,
         },
+        connectionTimeout: 10000, // 10s to establish connection
+        greetingTimeout: 10000,   // 10s for SMTP greeting
+        socketTimeout: 15000,     // 15s for socket inactivity
+      });
+
+      // Prevent unhandled error events from crashing the process
+      this.transporter.on("error", (err) => {
+        console.error("Email service: Transporter error:", err.message);
       });
 
       this.isConfigured = true;
@@ -122,8 +131,9 @@ class EmailService {
       console.log(`Email sent successfully to ${options.to}, messageId: ${result.messageId}`);
       return { success: true, messageId: result.messageId };
     } catch (error: any) {
-      console.error(`Email service: Failed to send email to ${options.to}:`, error);
-      return { success: false, error: error.message };
+      const errorMsg = error?.message || String(error);
+      console.error(`Email service: Failed to send email to ${options.to}: ${errorMsg}`);
+      return { success: false, error: errorMsg };
     }
   }
 
