@@ -30,6 +30,7 @@ interface User {
   mfaEnabled?: boolean;
   mfaEnforcedByAdmin?: boolean;
   licensePermissions?: LicensePermissions;
+  licenseType?: string;
 }
 
 export interface LoginResult {

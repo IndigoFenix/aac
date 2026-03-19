@@ -2070,6 +2070,7 @@ export const he = {
       licenseInfo: "פרטי רישיון",
       licenseType: "סוג רישיון",
       subscriptionType: "סוג מנוי",
+      trial: "ניסיון",
       standard: "רגיל",
       premium: "פרימיום",
       enterprise: "ארגוני",
