@@ -28,6 +28,7 @@ import {
   Building2,
   MessageSquare,
   Image,
+  CalendarDays,
 } from 'lucide-react';
 import logoImage from '@assets/aivota_icon.png';
 import { useAuth } from '@/hooks/useAuth';
@@ -51,14 +52,19 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
   const { t, isRTL } = useLanguage();
   const { activeFeature, setActiveFeature } = useFeaturePanel();
   const { student, students } = useStudent();
-  const { currentInstitute } = useInstitute();
+  const { currentInstitute, institutes } = useInstitute();
 
   // Use institution logo if available, otherwise default CliniAACian logo
   const displayLogo = currentInstitute?.logoUrl || logoImage;
   const displayName = currentInstitute?.name || 'CliniAACian';
 
-  // Core workspace items (original features)
-  const coreWorkspaceItems = [
+  const perms = user?.licensePermissions;
+  const hasInstitute = institutes.length > 0;
+  const maxStudents = perms?.maxStudents ?? 0;
+  const hasStudentAccess = maxStudents === -1 || maxStudents > 0;
+
+  // ── Section 1: Workspace ──
+  const workspaceItems = [
     {
       icon: BarChart3,
       labelKey: 'nav.overview',
@@ -66,12 +72,14 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
       testId: 'nav-overview',
       badge: undefined as string | undefined,
     },
-    {
+    // Institute — only if user belongs to at least one
+    ...(hasInstitute ? [{
       icon: Building2,
       labelKey: 'nav.institute',
       feature: 'institute' as FeatureType,
       testId: 'nav-institute',
-    },
+      badge: undefined as string | undefined,
+    }] : []),
     {
       icon: Users,
       labelKey: 'nav.students',
@@ -79,51 +87,78 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
       testId: 'nav-students',
       badge: students.length > 0 ? students.length.toString() : undefined,
     },
+    ...(perms?.calendar ? [{
+      icon: CalendarDays,
+      labelKey: 'nav.calendar',
+      feature: 'calendar' as FeatureType,
+      testId: 'nav-calendar',
+      badge: undefined as string | undefined,
+    }] : []),
   ];
+  // Hide Workspace entirely if user has no institutes AND maxStudents=0
+  const showWorkspace = hasInstitute || hasStudentAccess;
 
-  // Student management items
-  const studentManagementItems = [
-    {
+  // ── Section 2: AAC Boards ──
+  const boardsEnabled = !!perms?.boardMakerEnabled;
+  const aacEnabled = !!perms?.aacEnabled;
+  const showAacSection = boardsEnabled || aacEnabled;
+
+  const aacBoardItems = [
+    // Generate AAC Boards — requires boardMakerEnabled
+    ...(boardsEnabled ? [{
       icon: LayoutGrid,
       labelKey: 'nav.boards',
       feature: 'boards' as FeatureType,
       testId: 'nav-boards',
-      disabled: !student, // Only enabled when a student is selected
-    },
-    {
-      icon: MessageSquare,
-      labelKey: 'nav.aacSettings',
-      feature: 'aacsettings' as FeatureType,
-      testId: 'nav-aacsettings',
-      disabled: !student, // Only enabled when a student is selected
-    },
-    {
+      badge: undefined as string | undefined,
+    }] : []),
+    // Symbol Library — requires boardMakerEnabled OR aacEnabled
+    ...((boardsEnabled || aacEnabled) ? [{
       icon: Image,
       labelKey: 'nav.symbols',
       feature: 'symbols' as FeatureType,
       testId: 'nav-symbols',
-    },
+      badge: undefined as string | undefined,
+    }] : []),
+    // AAC Settings — requires aacEnabled AND maxStudents > 0
+    ...(aacEnabled && hasStudentAccess ? [{
+      icon: MessageSquare,
+      labelKey: 'nav.aacSettings',
+      feature: 'aacsettings' as FeatureType,
+      testId: 'nav-aacsettings',
+      disabled: !student,
+      badge: undefined as string | undefined,
+    }] : []),
+  ];
+
+  // ── Section 3: Student Management ──
+  const dashboardLevel = perms?.dashboardLevel ?? 0;
+  const showStudentMgmt = (dashboardLevel === -1 || dashboardLevel > 0) && hasStudentAccess;
+
+  const studentMgmtItems = [
     {
       icon: ClipboardList,
       labelKey: 'nav.progress',
       feature: 'progress' as FeatureType,
       testId: 'nav-progress',
-      disabled: !student, // Only enabled when a student is selected
+      disabled: !student,
+      badge: undefined as string | undefined,
     },
     {
       icon: ClipboardList,
       labelKey: 'nav.reports',
       feature: 'reports' as FeatureType,
       testId: 'nav-reports',
-      disabled: !student, // Only enabled when a student is selected
-    }
+      disabled: !student,
+      badge: undefined as string | undefined,
+    },
   ];
 
   const positionClasses = position === 'right' 
     ? 'right-0 border-l' 
     : 'left-0 border-r';
 
-  const renderNavItem = (item: typeof coreWorkspaceItems[0] & { badge?: string; disabled?: boolean }) => {
+  const renderNavItem = (item: typeof workspaceItems[0] & { badge?: string; disabled?: boolean }) => {
     const isActive = activeFeature === item.feature;
     const isDisabled = 'disabled' in item && item.disabled;
     
@@ -203,79 +238,105 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
       </div>
 
       {/* Current Student Context */}
-      {!isCollapsed && (
-        <div className="px-6 pb-4">
-          <div 
-            className={cn(
-              "bg-primary/5 border border-primary/20 rounded-md p-3 cursor-pointer hover:bg-primary/10 transition-colors",
-              "group"
+      {hasStudentAccess && (
+        !isCollapsed && (
+          <div className="px-6 pb-4">
+            <div 
+              className={cn(
+                "bg-primary/5 border border-primary/20 rounded-md p-3 cursor-pointer hover:bg-primary/10 transition-colors",
+                "group"
+              )}
+              onClick={() => { if (student) { setActiveFeature('progress'); onNavigate?.(); } }}
+              data-testid="card-student-context"
+            > {student ? (
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center">
+                  <GraduationCap className="w-4 h-4 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-primary">
+                    {student.name}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {t('nav.currentStudent')}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center">
+                  <GraduationCap className="w-4 h-4 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-primary">
+                    {t('nav.noStudentSelected')}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    ---
+                  </p>
+                </div>
+              </div>
             )}
-            onClick={() => { if (student) { setActiveFeature('progress'); onNavigate?.(); } }}
-            data-testid="card-student-context"
-          > {student ? (
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center">
-                <GraduationCap className="w-4 h-4 text-primary" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-medium text-primary">
-                  {student.name}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {t('nav.currentStudent')}
-                </p>
-              </div>
             </div>
-          ) : (
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center">
-                <GraduationCap className="w-4 h-4 text-primary" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-medium text-primary">
-                  {t('nav.noStudentSelected')}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  ---
-                </p>
-              </div>
-            </div>
-          )}
           </div>
-        </div>
+        )
       )}
 
       <Separator className="" />
 
-      {/* Core Navigation */}
-      <div className={cn("py-4 space-y-3 flex-shrink-0", isCollapsed ? "px-2" : "px-6")}>
-        {!isCollapsed && (
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
-            {t('nav.workspace')}
-          </p>
-        )}
-        
-        <div className="space-y-1">
-          {coreWorkspaceItems.map(renderNavItem)}
-        </div>
-      </div>
+      {/* Workspace */}
+      {showWorkspace && (
+        <>
+          <div className={cn("py-4 space-y-3 flex-shrink-0", isCollapsed ? "px-2" : "px-6")}>
+            {!isCollapsed && (
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
+                {t('nav.workspace')}
+              </p>
+            )}
+            <div className="space-y-1">
+              {workspaceItems.map(renderNavItem)}
+            </div>
+          </div>
+          <Separator className="" />
+        </>
+      )}
 
-      <Separator className="" />
+      {/* AAC Boards */}
+      {showAacSection && (
+        <>
+          <div className={cn("py-4 space-y-3 flex-shrink-0", isCollapsed ? "px-2" : "px-6")}>
+            {!isCollapsed && (
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
+                {t('nav.aacBoards')}
+              </p>
+            )}
+            <div className="space-y-1">
+              {aacBoardItems.map(renderNavItem)}
+            </div>
+          </div>
+          <Separator className="" />
+        </>
+      )}
 
-      {/* Student Management Navigation */}
-      <div className={cn("py-4 space-y-3 flex-1", isCollapsed ? "px-2" : "px-6")}>
-        {!isCollapsed && (
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
-            {t('nav.studentManagement')}
-          </p>
-        )}
-        
-        <div className="space-y-1">
-          {studentManagementItems.map(renderNavItem)}
-        </div>
-      </div>
+      {/* Student Management */}
+      {showStudentMgmt && (
+        <>
+          <div className={cn("py-4 space-y-3 flex-shrink-0", isCollapsed ? "px-2" : "px-6")}>
+            {!isCollapsed && (
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
+                {t('nav.studentManagement')}
+              </p>
+            )}
+            <div className="space-y-1">
+              {studentMgmtItems.map(renderNavItem)}
+            </div>
+          </div>
+          <Separator className="" />
+        </>
+      )}
 
-      <Separator className="" />
+      {/* Spacer to push bottom section down */}
+      <div className="flex-1" />
 
       {/* Bottom section */}
       <div className={cn("py-6 space-y-3", isCollapsed ? "px-2" : "px-6")}>

@@ -241,8 +241,9 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
       }
       return data as {
         invite: InviteData;
-        institute: InstituteData;
+        institute: InstituteData | null;
         invitedBy: InviterData | null;
+        licenseInvite?: boolean;
       };
     },
     enabled: isInviteMode,
@@ -541,7 +542,9 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
       if (isInviteMode && inviteData) {
         toast({ 
           title: t('invite.registered') || 'Welcome!',
-          description: (t('invite.registeredDesc') || 'Your account has been created and you have joined {institute}').replace('{institute}', inviteData.institute.name)
+          description: inviteData.institute
+            ? (t('invite.registeredDesc') || 'Your account has been created and you have joined {institute}').replace('{institute}', inviteData.institute.name)
+            : (t('invite.licenseActivated') || 'Your account has been created and your license is active.')
         });
       } else {
         toast({ 
@@ -575,7 +578,9 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
 
       toast({
         title: t('invite.accepted') || 'Invite Accepted',
-        description: (t('invite.acceptedDesc') || 'You have joined {institute}').replace('{institute}', inviteData?.institute.name || ''),
+        description: inviteData?.institute
+          ? (t('invite.acceptedDesc') || 'You have joined {institute}').replace('{institute}', inviteData.institute.name)
+          : (t('invite.licenseActivated') || 'Your license has been activated.'),
       });
 
       setLocation('/home');
@@ -634,48 +639,59 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
   // Authenticated user with invite - show accept invite UI
   if (isInviteMode && isAuthenticated && inviteData) {
     const { invite, institute, invitedBy } = inviteData;
-    
+
     return (
       <AuthPageLayout direction={direction}>
         <Card className="w-full max-w-md shadow-lg">
           <CardHeader className="space-y-1 text-center">
-            <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-              {institute.type === 'hospital' ? (
-                <Hospital className="w-8 h-8 text-primary" />
-              ) : (
-                <School className="w-8 h-8 text-primary" />
-              )}
-            </div>
+            {institute ? (
+              <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                {institute.type === 'hospital' ? (
+                  <Hospital className="w-8 h-8 text-primary" />
+                ) : (
+                  <School className="w-8 h-8 text-primary" />
+                )}
+              </div>
+            ) : (
+              <img src={aivotaLogo} alt="Aivota" className="mx-auto h-16 mb-4 object-contain" />
+            )}
             <CardTitle className="text-2xl font-bold">
-              {(t('invite.joinTitle') || 'Welcome to {institute}').replace('{institute}', institute.name)}
+              {institute
+                ? (t('invite.joinTitle') || 'Welcome to {institute}').replace('{institute}', institute.name)
+                : (t('invite.activateLicense') || 'Activate Your License')}
             </CardTitle>
             <CardDescription>
-              {invitedBy?.fullName 
-                ? (t('invite.invitedBy') || 'You have been invited by {name}').replace('{name}', invitedBy.fullName)
-                : (t('invite.invitedToJoin') || 'You have been invited to join')
-              }
+              {institute
+                ? (invitedBy?.fullName
+                    ? (t('invite.invitedBy') || 'You have been invited by {name}').replace('{name}', invitedBy.fullName)
+                    : (t('invite.invitedToJoin') || 'You have been invited to join'))
+                : (t('invite.licenseInviteDesc') || 'Click below to activate your license')}
             </CardDescription>
           </CardHeader>
 
           <CardContent className="space-y-4">
             {/* Institute Info */}
-            <div className="bg-muted rounded-lg p-4 text-center">
-              <h3 className="text-lg font-semibold">{institute.name}</h3>
-              <p className="text-sm text-muted-foreground">
-                {t(`institute.type.${institute.type}`) || institute.type}
-              </p>
-            </div>
+            {institute && (
+              <div className="bg-muted rounded-lg p-4 text-center">
+                <h3 className="text-lg font-semibold">{institute.name}</h3>
+                <p className="text-sm text-muted-foreground">
+                  {t(`institute.type.${institute.type}`) || institute.type}
+                </p>
+              </div>
+            )}
 
             {/* Role Info */}
-            <div className="flex items-center justify-center gap-2">
-              <span className="text-sm text-muted-foreground">
-                {t('invite.yourRole') || 'Your role:'}
-              </span>
-              <Badge variant="secondary">{invite.role}</Badge>
-              {invite.grantAdmin && (
-                <Badge variant="outline">{t('invite.admin') || 'Admin'}</Badge>
-              )}
-            </div>
+            {institute && (
+              <div className="flex items-center justify-center gap-2">
+                <span className="text-sm text-muted-foreground">
+                  {t('invite.yourRole') || 'Your role:'}
+                </span>
+                <Badge variant="secondary">{invite.role}</Badge>
+                {invite.grantAdmin && (
+                  <Badge variant="outline">{t('invite.admin') || 'Admin'}</Badge>
+                )}
+              </div>
+            )}
 
             {/* Message */}
             {invite.message && (
@@ -1041,23 +1057,29 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
               {isInviteMode && inviteData ? (
                 // Invite mode header
                 <>
-                  <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-                    {inviteData.institute.type === 'hospital' ? (
-                      <Hospital className="w-8 h-8 text-primary" />
-                    ) : (
-                      <School className="w-8 h-8 text-primary" />
-                    )}
-                  </div>
+                  {inviteData.institute ? (
+                    <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                      {inviteData.institute.type === 'hospital' ? (
+                        <Hospital className="w-8 h-8 text-primary" />
+                      ) : (
+                        <School className="w-8 h-8 text-primary" />
+                      )}
+                    </div>
+                  ) : (
+                    <img src={aivotaLogo} alt="Aivota" className="mx-auto h-16 mb-4 object-contain" />
+                  )}
                   <CardTitle className="text-2xl font-bold">
                     {t('invite.createAccount') || 'Create Your Account'}
                   </CardTitle>
                   <CardDescription>
-                    {inviteData.invitedBy?.fullName 
-                      ? (t('invite.invitedByToJoin') || '{name} invited you to join {institute}')
-                          .replace('{name}', inviteData.invitedBy.fullName)
-                          .replace('{institute}', inviteData.institute.name)
-                      : (t('invite.invitedToJoinInstitute') || 'You have been invited to join {institute}')
-                          .replace('{institute}', inviteData.institute.name)
+                    {inviteData.institute
+                      ? (inviteData.invitedBy?.fullName
+                          ? (t('invite.invitedByToJoin') || '{name} invited you to join {institute}')
+                              .replace('{name}', inviteData.invitedBy.fullName)
+                              .replace('{institute}', inviteData.institute.name)
+                          : (t('invite.invitedToJoinInstitute') || 'You have been invited to join {institute}')
+                              .replace('{institute}', inviteData.institute.name))
+                      : (t('invite.licenseInviteDesc') || 'You have been invited to join CliniAACian')
                     }
                   </CardDescription>
                 </>
@@ -1080,7 +1102,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
             <form onSubmit={handleRegister}>
               <CardContent className="space-y-4">
                 {/* Institute Info for invite mode */}
-                {isInviteMode && inviteData && (
+                {isInviteMode && inviteData && inviteData.institute && (
                   <div className="bg-muted rounded-lg p-3 flex items-center gap-3">
                     <Building2 className="w-5 h-5 text-muted-foreground" />
                     <div>

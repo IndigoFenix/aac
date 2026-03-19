@@ -16,6 +16,8 @@ export { medicalRecordRepository } from "./medicalRecordRepository";
 export { functionalReportRepository } from "./functionalReportRepository";
 export { educationalReportRepository } from "./educationalReportRepository";
 export { voiceRecordRepository, VoiceRecordRepository } from "./voiceRecordRepository";
+export { licenseRepository, LicenseRepository } from "./licenseRepository";
+export { calendarRepository, CalendarRepository } from "./calendarRepository";
 
 // Re-export types
 export type { SecurityContext } from "./medicalRecordRepository";

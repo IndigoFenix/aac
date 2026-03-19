@@ -2,6 +2,17 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 
+export interface LicensePermissions {
+  all?: boolean;
+  maxStudents: number;
+  aacEnabled: boolean;
+  boardMakerEnabled: boolean;
+  unrestrictedAI: boolean;
+  calendar: boolean;
+  dashboardLevel: 0 | 1 | 2 | -1;
+  expertAgentsCount: number;
+}
+
 interface User {
   id: string;
   email: string;
@@ -18,6 +29,7 @@ interface User {
   referralCode?: string;
   mfaEnabled?: boolean;
   mfaEnforcedByAdmin?: boolean;
+  licensePermissions?: LicensePermissions;
 }
 
 export interface LoginResult {

@@ -19,6 +19,7 @@ import { ReportsPanel } from '@/features/ReportsPanel';
 import { SettingsPanel } from '@/features/SettingsPanel';
 import { AACSettingsPanel } from '@/features/AACSettingsPanel';
 import { SymbolsPanel } from '@/features/SymbolsPanel';
+import { CalendarPanel } from '@/features/CalendarPanel';
 import { Button } from '@/components/ui/button';
 import { MessageCircle, Maximize2, Minimize2, X } from 'lucide-react';
 
@@ -133,6 +134,8 @@ export function MainLayout() {
         return <AACSettingsPanel isOpen={isPanelOpen} />;
       case 'symbols':
         return <SymbolsPanel isOpen={isPanelOpen} />;
+      case 'calendar':
+        return <CalendarPanel isOpen={isPanelOpen} />;
       default:
         return null;
     }

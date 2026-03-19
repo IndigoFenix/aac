@@ -457,3 +457,132 @@ export function useAllInstitutes() {
     },
   });
 }
+
+// =============================================================================
+// LICENSE HOOKS (admin)
+// =============================================================================
+
+export interface AdminLicense {
+  id: string;
+  name: string | null;
+  licenseType: string;
+  subscriptionType: string | null;
+  permissions: any | null;
+  inviteEmail: string | null;
+  instituteId: string | null;
+  userId: string | null;
+  isActive: boolean;
+  activatedAt: string | null;
+  suspendedAt: string | null;
+  suspensionReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  // Joined fields
+  userName: string | null;
+  userEmail: string | null;
+  instituteName: string | null;
+}
+
+export interface CreateLicenseData {
+  name?: string;
+  licenseType?: string;
+  subscriptionType?: string;
+  permissions?: any;
+  inviteEmail: string;
+  firstName?: string;
+  lastName?: string;
+  createInstitute?: boolean;
+  instituteName?: string;
+  instituteType?: 'school' | 'hospital';
+}
+
+export interface UpdateLicenseData {
+  name?: string;
+  licenseType?: string;
+  subscriptionType?: string;
+  permissions?: any | null;
+  isActive?: boolean;
+  inviteEmail?: string | null;
+}
+
+/**
+ * Hook to fetch all licenses (admin)
+ */
+export function useLicenses() {
+  return useQuery({
+    queryKey: ['/api/admin/licenses'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', '/api/admin/licenses');
+      const data = await res.json();
+      return data.licenses as AdminLicense[];
+    },
+  });
+}
+
+/**
+ * Hook to fetch a single license
+ */
+export function useLicense(id: string | undefined) {
+  return useQuery({
+    queryKey: ['/api/admin/licenses', id],
+    queryFn: async () => {
+      if (!id) return null;
+      const res = await apiRequest('GET', `/api/admin/licenses/${id}`);
+      const data = await res.json();
+      return data.license as AdminLicense;
+    },
+    enabled: !!id,
+  });
+}
+
+/**
+ * Hook for license mutations
+ */
+export function useLicenseMutations() {
+  const queryClient = useQueryClient();
+
+  const createLicense = useMutation({
+    mutationFn: async (data: CreateLicenseData) => {
+      const res = await apiRequest('POST', '/api/admin/licenses', data);
+      const result = await res.json();
+      return result.license as AdminLicense;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/licenses'] });
+    },
+  });
+
+  const updateLicense = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: UpdateLicenseData }) => {
+      const res = await apiRequest('PATCH', `/api/admin/licenses/${id}`, data);
+      const result = await res.json();
+      return result.license as AdminLicense;
+    },
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/licenses'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/licenses', id] });
+    },
+  });
+
+  const deleteLicense = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest('DELETE', `/api/admin/licenses/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/licenses'] });
+    },
+  });
+
+  const resendInvite = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest('POST', `/api/admin/licenses/${id}/resend-invite`);
+    },
+  });
+
+  return {
+    createLicense,
+    updateLicense,
+    deleteLicense,
+    resendInvite,
+  };
+}

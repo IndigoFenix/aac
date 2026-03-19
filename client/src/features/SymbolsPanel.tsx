@@ -254,7 +254,7 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
         <TabsList className="mx-4 mt-2 shrink-0">
           <TabsTrigger value="my">{t('symbols.mySymbols')}</TabsTrigger>
           {student && <TabsTrigger value="student">{t('symbols.student')}</TabsTrigger>}
-          <TabsTrigger value="public">{t('symbols.public')}</TabsTrigger>
+          {user?.isSystemAdmin && <TabsTrigger value="public">{t('symbols.public')}</TabsTrigger>}
         </TabsList>
 
         {/* Search bar */}

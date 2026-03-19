@@ -29,6 +29,15 @@ interface WelcomeEmailData {
   instituteName?: string;
 }
 
+interface LicenseInviteEmailData {
+  inviteeEmail: string;
+  licenseName: string;
+  licenseType: string;
+  instituteName?: string;
+  inviteLink: string;
+  expiresAt: Date;
+}
+
 interface PasswordResetEmailData {
   email: string;
   firstName?: string;
@@ -538,6 +547,129 @@ CliniAACian - AAC Tools for Healthcare & Education
 
     return this.sendEmail({
       to: email,
+      subject,
+      text,
+      html,
+    });
+  }
+  // ==================== License Invite Email ====================
+
+  /**
+   * Send a license invite email
+   */
+  async sendLicenseInvite(data: LicenseInviteEmailData): Promise<{ success: boolean; error?: string }> {
+    const { inviteeEmail, licenseName, licenseType, instituteName, inviteLink, expiresAt } = data;
+
+    const expiryDate = expiresAt.toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+
+    const subject = `Your CliniAACian License is Ready`;
+
+    const instituteText = instituteName ? ` for ${instituteName}` : "";
+
+    const text = `
+Your CliniAACian License is Ready!
+
+A ${licenseType} license${instituteText} has been created for you.
+
+License: ${licenseName}
+
+Click the link below to get started:
+${inviteLink}
+
+This invitation expires on ${expiryDate}.
+
+If you didn't expect this, you can safely ignore this email.
+
+---
+CliniAACian - AAC Tools for Healthcare & Education
+    `.trim();
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>License Invitation</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f5;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 600px; margin: 0 auto; padding: 20px;">
+    <tr>
+      <td>
+        <!-- Header -->
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #6366f1; border-radius: 12px 12px 0 0; padding: 30px; text-align: center;">
+          <tr>
+            <td>
+              <h1 style="color: #ffffff; margin: 0; font-size: 24px;">CliniAACian</h1>
+              <p style="color: #e0e7ff; margin: 10px 0 0 0; font-size: 14px;">Your License is Ready</p>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Content -->
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #ffffff; padding: 40px 30px;">
+          <tr>
+            <td>
+              <p style="color: #3f3f46; font-size: 16px; line-height: 1.6; margin: 0 0 20px 0;">
+                A <strong>${licenseType}</strong> license${instituteText} has been created for you on CliniAACian.
+              </p>
+
+              <!-- License Card -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f4f4f5; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                <tr>
+                  <td>
+                    <p style="margin: 0; font-weight: 600; color: #18181b; font-size: 16px;">${licenseName}</p>
+                    <p style="margin: 4px 0 0 0; color: #71717a; font-size: 14px;">${licenseType} license</p>
+                    ${instituteName ? `<p style="margin: 4px 0 0 0; color: #71717a; font-size: 14px;">Institute: ${instituteName}</p>` : ""}
+                  </td>
+                </tr>
+              </table>
+
+              <!-- CTA Button -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 30px 0;">
+                <tr>
+                  <td align="center">
+                    <a href="${inviteLink}" style="display: inline-block; background-color: #6366f1; color: #ffffff; text-decoration: none; font-weight: 600; padding: 14px 32px; border-radius: 8px; font-size: 16px;">
+                      Get Started
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="color: #71717a; font-size: 14px; text-align: center; margin: 20px 0 0 0;">
+                This invitation expires on <strong>${expiryDate}</strong>
+              </p>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Footer -->
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f4f4f5; border-radius: 0 0 12px 12px; padding: 20px 30px; text-align: center;">
+          <tr>
+            <td>
+              <p style="color: #71717a; font-size: 12px; margin: 0;">
+                If you didn't expect this invitation, you can safely ignore this email.
+              </p>
+              <p style="color: #a1a1aa; font-size: 11px; margin: 10px 0 0 0;">
+                &copy; ${new Date().getFullYear()} CliniAACian. All rights reserved.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `.trim();
+
+    return this.sendEmail({
+      to: inviteeEmail,
       subject,
       text,
       html,

@@ -165,6 +165,21 @@ export class UserService {
       mfaEnforcedByAdmin: user.mfaEnforcedByAdmin,
     };
   }
+
+  /**
+   * Format user for response with license permissions included.
+   */
+  async formatUserWithPermissions(user: User) {
+    const base = this.formatUserForResponse(user);
+    try {
+      const { licenseService } = await import("./licenseService");
+      const licensePermissions = await licenseService.getUserPermissions(user.id, user.isSystemAdmin);
+      return { ...base, licensePermissions };
+    } catch (err) {
+      console.error("Failed to fetch license permissions:", err);
+      return base;
+    }
+  }
 }
 
 export const userService = new UserService();

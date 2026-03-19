@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import { userRepository, studentRepository } from "../repositories";
+import type { LicensePermissions } from "@shared/license-permissions";
 
 /**
  * Middleware that requires user to be authenticated
@@ -224,3 +225,57 @@ export const validateCSRF: RequestHandler = (
     message: "CSRF protection: Missing origin/referer headers",
   });
 };
+
+/**
+ * Middleware factory that checks a specific license permission.
+ * System admins bypass all checks.
+ * Usage: requireLicensePermission('aacEnabled')
+ */
+export function requireLicensePermission(
+  permKey: keyof LicensePermissions,
+): RequestHandler {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    if (!req.isAuthenticated() || !req.user) {
+      res.status(401).json({ success: false, message: "Authentication required" });
+      return;
+    }
+
+    const user = req.user as any;
+
+    // System admins bypass license checks
+    if (user.isSystemAdmin) {
+      next();
+      return;
+    }
+
+    try {
+      // Lazy import to avoid circular deps
+      const { licenseService } = await import("../services/licenseService");
+      const perms = await licenseService.getUserPermissions(user.id, user.isSystemAdmin);
+
+      const value = perms[permKey];
+      // For boolean permissions, check truthy
+      // For numeric permissions (maxStudents, expertAgentsCount), check > 0 or -1 (unlimited)
+      const granted =
+        typeof value === "boolean"
+          ? value
+          : typeof value === "number"
+            ? value === -1 || value > 0
+            : !!value;
+
+      if (!granted) {
+        res.status(403).json({
+          success: false,
+          message: `License does not include this feature`,
+          code: "LICENSE_REQUIRED",
+        });
+        return;
+      }
+
+      next();
+    } catch (error: any) {
+      console.error("License permission check error:", error);
+      res.status(500).json({ success: false, message: "Server error" });
+    }
+  };
+}

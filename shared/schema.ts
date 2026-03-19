@@ -9,8 +9,10 @@ import { z } from "zod";
 // =============================================================================
 
 export * from "./schema-private";
+export * from "./license-permissions";
 
 // Import private tables/enums needed by public tables and relations
+import { type LicensePermissions, licensePermissionsSchema } from "./license-permissions";
 import {
   // Enums needed by public tables
   instituteTypeEnum,
@@ -238,6 +240,15 @@ export const licenses = pgTable("licenses", {
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
 
+  // Permissions
+  permissions: jsonb("permissions").$type<LicensePermissions>(),
+
+  // Email of invited user (for linking license when user registers)
+  inviteEmail: text("invite_email"),
+
+  // Invite token for direct registration (non-institute licenses)
+  inviteToken: text("invite_token"),
+
   // Status
   isActive: boolean("is_active").default(true).notNull(),
   activatedAt: timestamp("activated_at"),
@@ -250,6 +261,8 @@ export const licenses = pgTable("licenses", {
   index("idx_licenses_institute_id").on(table.instituteId),
   index("idx_licenses_user_id").on(table.userId),
   index("idx_licenses_is_active").on(table.isActive),
+  index("idx_licenses_invite_email").on(table.inviteEmail),
+  uniqueIndex("idx_licenses_invite_token").on(table.inviteToken),
 ]);
 
 // Credits transactions table for tracking credit usage
@@ -548,14 +561,18 @@ export const insertClassroomUserSchema = createInsertSchema(classroomUsers).omit
 export const updateClassroomSchema = insertClassroomSchema.partial();
 export const updateClassroomUserSchema = insertClassroomUserSchema.partial();
 
-// License schemas
-export const insertLicenseSchema = createInsertSchema(licenses).omit({
+// License schemas — override `permissions` with the typed Zod schema
+export const insertLicenseSchema = createInsertSchema(licenses, {
+  permissions: licensePermissionsSchema.nullable().optional(),
+}).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 });
 
-export const updateLicenseSchema = createInsertSchema(licenses).omit({
+export const updateLicenseSchema = createInsertSchema(licenses, {
+  permissions: licensePermissionsSchema.nullable().optional(),
+}).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
@@ -842,7 +859,7 @@ export type InsertApiProvider = z.infer<typeof insertApiProviderSchema>;
 export type ApiProviderPricing = typeof apiProviderPricing.$inferSelect;
 export type InsertApiProviderPricing = z.infer<typeof insertApiProviderPricingSchema>;
 
-export type FeatureType = "chat" | "boards" | "interpret" | 'docuslp' | 'overview' | 'students' | 'institute' | 'progress' | 'reports' | 'settings' | 'aacsettings' | 'aac' | 'symbols';
+export type FeatureType = "chat" | "boards" | "interpret" | 'docuslp' | 'overview' | 'students' | 'institute' | 'progress' | 'reports' | 'settings' | 'aacsettings' | 'aac' | 'symbols' | 'calendar';
 
 export type ChatPersona = 'assistant' | 'coach' | 'clinical' | 'teacher' | 'pediatric_physical_therapist' | 'speech_language_pathologist' | 'occupational_therapist' | 'behavioral_specialist';
 
@@ -1624,6 +1641,95 @@ export const insertContactInquirySchema = createInsertSchema(contactInquiries).p
 
 export type ContactInquiry = typeof contactInquiries.$inferSelect;
 export type InsertContactInquiry = z.infer<typeof insertContactInquirySchema>;
+
+// =============================================================================
+// PUBLIC TABLES — Calendar
+// =============================================================================
+
+export const eventRepeatEnum = pgEnum("event_repeat", ["none", "daily", "weekly"]);
+export const eventAttendeeTypeEnum = pgEnum("event_attendee_type", ["user", "student", "classroom", "institute"]);
+
+export const calendarEvents = pgTable("calendar_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  description: text("description"),
+  startTime: timestamp("start_time").notNull(),
+  endTime: timestamp("end_time").notNull(),
+  allDay: boolean("all_day").default(false).notNull(),
+
+  // Recurrence
+  repeatType: eventRepeatEnum("repeat_type").default("none").notNull(),
+  repeatDays: jsonb("repeat_days").$type<number[]>(), // 0=Sun..6=Sat for weekly repeats
+  repeatEndDate: timestamp("repeat_end_date"), // when recurrence stops
+
+  createdByUserId: varchar("created_by_user_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_calendar_events_start_time").on(table.startTime),
+  index("idx_calendar_events_end_time").on(table.endTime),
+  index("idx_calendar_events_created_by").on(table.createdByUserId),
+]);
+
+export const calendarEventAttendees = pgTable("calendar_event_attendees", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  eventId: varchar("event_id").references(() => calendarEvents.id, { onDelete: "cascade" }).notNull(),
+  attendeeType: eventAttendeeTypeEnum("attendee_type").notNull(),
+  attendeeId: varchar("attendee_id").notNull(), // FK to users/students/classrooms/institutes
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_event_attendees_event_id").on(table.eventId),
+  index("idx_event_attendees_type_id").on(table.attendeeType, table.attendeeId),
+]);
+
+// Calendar insert/update schemas
+export const insertCalendarEventSchema = createInsertSchema(calendarEvents).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  createdByUserId: true, // set by server
+});
+
+export const updateCalendarEventSchema = createInsertSchema(calendarEvents).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  createdByUserId: true,
+}).partial();
+
+export const insertEventAttendeeSchema = createInsertSchema(calendarEventAttendees).omit({
+  id: true,
+  createdAt: true,
+});
+
+// Calendar types
+export type CalendarEvent = typeof calendarEvents.$inferSelect;
+export type InsertCalendarEvent = z.infer<typeof insertCalendarEventSchema>;
+export type UpdateCalendarEvent = z.infer<typeof updateCalendarEventSchema>;
+export type CalendarEventAttendee = typeof calendarEventAttendees.$inferSelect;
+export type InsertEventAttendee = z.infer<typeof insertEventAttendeeSchema>;
+
+/** Event with its attendees loaded */
+export interface CalendarEventWithAttendees {
+  event: CalendarEvent;
+  attendees: CalendarEventAttendee[];
+}
+
+// Calendar relations
+export const calendarEventsRelations = relations(calendarEvents, ({ one, many }) => ({
+  createdBy: one(users, {
+    fields: [calendarEvents.createdByUserId],
+    references: [users.id],
+  }),
+  attendees: many(calendarEventAttendees),
+}));
+
+export const calendarEventAttendeesRelations = relations(calendarEventAttendees, ({ one }) => ({
+  event: one(calendarEvents, {
+    fields: [calendarEventAttendees.eventId],
+    references: [calendarEvents.id],
+  }),
+}));
 
 // Board relations
 export const boardsRelations = relations(boards, ({ one }) => ({
