@@ -187,5 +187,14 @@ async function startServer(): Promise<void> {
   }
 }
 
+// Prevent unhandled errors from crashing the server
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled promise rejection:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception:", err);
+});
+
 // Start the server
 startServer();
