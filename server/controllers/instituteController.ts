@@ -666,37 +666,60 @@ export class InstituteController {
     try {
       const { token } = req.params;
 
+      // 1. Try institute invite first
       const result = await instituteService.getInviteByToken(token);
 
-      if (!result.success) {
-        res.status(404).json({
-          success: false,
-          message: result.error,
+      if (result.success) {
+        res.json({
+          success: true,
+          invite: {
+            id: result.invite!.id,
+            email: result.invite!.inviteeEmail,
+            role: result.invite!.role,
+            grantAdmin: result.invite!.grantAdmin,
+            message: result.invite!.message,
+            expiresAt: result.invite!.expiresAt,
+          },
+          institute: {
+            id: result.institute!.id,
+            name: result.institute!.name,
+            type: result.institute!.type,
+            logoUrl: result.institute!.logoUrl,
+          },
+          invitedBy: result.invitedBy
+            ? {
+                fullName: result.invitedBy.fullName,
+              }
+            : null,
         });
         return;
       }
 
-      res.json({
-        success: true,
-        invite: {
-          id: result.invite!.id,
-          email: result.invite!.inviteeEmail,
-          role: result.invite!.role,
-          grantAdmin: result.invite!.grantAdmin,
-          message: result.invite!.message,
-          expiresAt: result.invite!.expiresAt,
-        },
-        institute: {
-          id: result.institute!.id,
-          name: result.institute!.name,
-          type: result.institute!.type,
-          logoUrl: result.institute!.logoUrl,
-        },
-        invitedBy: result.invitedBy
-          ? {
-              fullName: result.invitedBy.fullName,
-            }
-          : null,
+      // 2. Fall through: check license invite token
+      const { licenseRepository } = await import("../repositories/licenseRepository");
+      const license = await licenseRepository.getLicenseByInviteToken(token);
+
+      if (license && license.isActive && license.inviteEmail) {
+        res.json({
+          success: true,
+          invite: {
+            id: license.id,
+            email: license.inviteEmail,
+            role: "user",
+            grantAdmin: false,
+            message: null,
+            expiresAt: null, // license invites don't expire
+          },
+          institute: null,
+          invitedBy: null,
+          licenseInvite: true, // signal to client this is a license-only invite
+        });
+        return;
+      }
+
+      res.status(404).json({
+        success: false,
+        message: "Invite not found",
       });
     } catch (error: any) {
       console.error("Error fetching invite:", error);
@@ -716,24 +739,42 @@ export class InstituteController {
       const currentUser = req.user as any;
       const { token } = req.params;
 
+      // 1. Try institute invite
       const result = await instituteService.acceptInviteByToken(
         token,
         currentUser.id
       );
 
-      if (!result.success) {
-        res.status(400).json({
-          success: false,
-          message: result.error,
+      if (result.success) {
+        res.json({
+          success: true,
+          message: "You have joined the institute",
+          membership: result.membership,
+          institute: result.institute,
         });
         return;
       }
 
-      res.json({
-        success: true,
-        message: "You have joined the institute",
-        membership: result.membership,
-        institute: result.institute,
+      // 2. Fall through: try license invite token for existing user
+      const { licenseRepository } = await import("../repositories/licenseRepository");
+      const { licenseService } = await import("../services/licenseService");
+      const license = await licenseRepository.getLicenseByInviteToken(token);
+
+      if (license && license.isActive && license.inviteEmail) {
+        // Link the license to the current user
+        await licenseService.linkLicenseToUser(license.inviteEmail, currentUser.id);
+        await licenseRepository.updateLicense(license.id, { inviteToken: null });
+
+        res.json({
+          success: true,
+          message: "License activated successfully",
+        });
+        return;
+      }
+
+      res.status(400).json({
+        success: false,
+        message: result.error || "Invalid invite",
       });
     } catch (error: any) {
       console.error("Error accepting invite:", error);
@@ -752,17 +793,77 @@ export class InstituteController {
     try {
       const { token } = req.params;
       const { firstName, lastName, password, userType } = req.body;
-  
-      // Validate invite
+
+      // Try institute invite first
       const inviteResult = await instituteService.getInviteByToken(token);
+
+      // If not an institute invite, try license invite token
       if (!inviteResult.success || !inviteResult.invite) {
+        const { licenseRepository } = await import("../repositories/licenseRepository");
+        const { licenseService } = await import("../services/licenseService");
+        const license = await licenseRepository.getLicenseByInviteToken(token);
+
+        if (license && license.isActive && license.inviteEmail) {
+          // Handle license-only registration
+          const existingUser = await userService.getUserByEmail(license.inviteEmail);
+          if (existingUser) {
+            res.status(400).json({
+              success: false,
+              message: "An account with this email already exists. Please log in instead.",
+            });
+            return;
+          }
+
+          const newUserResult = await userService.registerUser({
+            email: license.inviteEmail,
+            firstName,
+            lastName,
+            password,
+            userType: userType || "Caregiver",
+          });
+          const newUser = newUserResult.user;
+
+          // Link the license to the new user
+          await licenseService.linkLicenseToUser(license.inviteEmail, newUser.id);
+
+          // Clear the invite token (it's been used)
+          await licenseRepository.updateLicense(license.id, { inviteToken: null });
+
+          try {
+            await emailService.sendWelcomeEmail({
+              email: newUser.email,
+              firstName: newUser.firstName || firstName,
+            });
+          } catch (emailError) {
+            console.error("Error sending welcome email:", emailError);
+          }
+
+          req.login(newUser, (err) => {
+            if (err) {
+              console.error("Login after license registration failed:", err);
+              res.json({
+                success: true,
+                message: "Account created successfully. Please log in.",
+                user: { id: newUser.id, email: newUser.email, firstName: newUser.firstName, lastName: newUser.lastName },
+              });
+              return;
+            }
+            res.json({
+              success: true,
+              message: "Welcome! Your account has been created.",
+              user: { id: newUser.id, email: newUser.email, firstName: newUser.firstName, lastName: newUser.lastName },
+            });
+          });
+          return;
+        }
+
         res.status(400).json({
           success: false,
-          message: inviteResult.error || "Invalid invite",
+          message: "Invalid invite",
         });
         return;
       }
-  
+
       const { invite, institute } = inviteResult;
   
       // Check if user already exists

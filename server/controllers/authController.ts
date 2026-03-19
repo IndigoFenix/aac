@@ -262,12 +262,13 @@ export class AuthController {
     }
   }
 
-  getCurrentUser(req: Request, res: Response): void {
+  async getCurrentUser(req: Request, res: Response): Promise<void> {
     if (req.isAuthenticated() && req.user) {
       const user = req.user as any;
+      const userData = await userService.formatUserWithPermissions(user);
       res.json({
         success: true,
-        user: userService.formatUserForResponse(user),
+        user: userData,
       });
     } else {
       res.json({

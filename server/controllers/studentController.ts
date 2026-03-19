@@ -78,6 +78,18 @@ export class StudentController {
         return;
       }
 
+      // Check maxStudents license limit
+      const { licenseService } = await import("../services/licenseService");
+      const check = await licenseService.checkMaxStudents(currentUser.id, currentUser.isSystemAdmin);
+      if (!check.allowed) {
+        res.status(403).json({
+          success: false,
+          message: check.reason,
+          code: "STUDENT_LIMIT_REACHED",
+        });
+        return;
+      }
+
       const student = await studentService.createStudent(
         { ...req.body, isActive: true },
         currentUser.id,

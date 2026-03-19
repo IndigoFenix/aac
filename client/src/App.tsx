@@ -200,6 +200,7 @@ function Router() {
       <Route path="/progress" component={ProtectedDashboard} />
       <Route path="/institute" component={ProtectedDashboard} />
       <Route path="/reports" component={ProtectedDashboard} />
+      <Route path="/calendar" component={ProtectedDashboard} />
       
       {/* Settings */}
       <Route path="/settings" component={ProtectedDashboard} />
@@ -236,6 +237,11 @@ function Router() {
         </SystemAdminRoute>
       </Route>
       <Route path="/admin/contacts">
+        <SystemAdminRoute>
+          <AdminDashboard />
+        </SystemAdminRoute>
+      </Route>
+      <Route path="/admin/licenses">
         <SystemAdminRoute>
           <AdminDashboard />
         </SystemAdminRoute>

@@ -48,6 +48,8 @@ import { dualAgentController } from "./controllers/dualAgentController";
 import { biometricController } from "./controllers/biometricController";
 import { customSymbolController } from "./controllers/customSymbolController";
 import { contactController } from "./controllers/contactController";
+import { licenseController } from "./controllers/licenseController";
+import { calendarController } from "./controllers/calendarController";
 import { registerDropboxRoutes } from "./services/dropboxRoutes";
 
 // Configure multer for image uploads
@@ -1056,6 +1058,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     biometricController.enrollContactFace(req, res)
   );
 
+  // ============= CALENDAR ROUTES =============
+  app.get("/api/calendar/events", requireAuth, (req, res) =>
+    calendarController.getEvents(req, res)
+  );
+  app.get("/api/calendar/events/:id", requireAuth, (req, res) =>
+    calendarController.getEvent(req, res)
+  );
+  app.post("/api/calendar/events", requireAuth, (req, res) =>
+    calendarController.createEvent(req, res)
+  );
+  app.patch("/api/calendar/events/:id", requireAuth, (req, res) =>
+    calendarController.updateEvent(req, res)
+  );
+  app.delete("/api/calendar/events/:id", requireAuth, (req, res) =>
+    calendarController.deleteEvent(req, res)
+  );
+  app.post("/api/calendar/events/:id/attendees", requireAuth, (req, res) =>
+    calendarController.addAttendee(req, res)
+  );
+  app.delete("/api/calendar/events/:id/attendees/:attendeeType/:attendeeId", requireAuth, (req, res) =>
+    calendarController.removeAttendee(req, res)
+  );
+
   // ============= ADMIN ROUTES =============
   // Institutes (admin lookup)
   app.get("/api/admin/institutes", requireAuth, requireSystemAdmin, (req, res) =>
@@ -1153,6 +1178,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.get("/api/admin/sessions/chat/:id/log", requireAdmin, (req, res) =>
     sessionHistoryController.getChatSessionLog(req, res)
+  );
+
+  // Licenses (admin)
+  app.get("/api/admin/licenses", requireAuth, requireSystemAdmin, (req, res) =>
+    licenseController.listLicenses(req, res)
+  );
+  app.get("/api/admin/licenses/:id", requireAuth, requireSystemAdmin, (req, res) =>
+    licenseController.getLicense(req, res)
+  );
+  app.post("/api/admin/licenses", requireAuth, requireSystemAdmin, (req, res) =>
+    licenseController.createLicense(req, res)
+  );
+  app.patch("/api/admin/licenses/:id", requireAuth, requireSystemAdmin, (req, res) =>
+    licenseController.updateLicense(req, res)
+  );
+  app.delete("/api/admin/licenses/:id", requireAuth, requireSystemAdmin, (req, res) =>
+    licenseController.deleteLicense(req, res)
+  );
+  app.post("/api/admin/licenses/:id/resend-invite", requireAuth, requireSystemAdmin, (req, res) =>
+    licenseController.resendInvite(req, res)
   );
 
   // Contact inquiries (admin)

@@ -6,4 +6,5 @@ export {
   requireSLPPlan,
   requireOnboardingComplete,
   validateCSRF,
+  requireLicensePermission,
 } from "./auth";

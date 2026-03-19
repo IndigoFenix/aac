@@ -1589,3 +1589,3579 @@ timeSinceUpdate=17672169ms
 [2026-03-19T10:29:28.927Z] CLIENT → sendContextInjection
 ────────────────────────────────────────────────────────────────────────────────
 turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:30:13.933Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=17717177ms
+
+================================================================================
+[2026-03-19T10:30:13.937Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:30:58.946Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=17762190ms
+
+================================================================================
+[2026-03-19T10:30:58.947Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:31:43.964Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=17807208ms
+
+================================================================================
+[2026-03-19T10:31:43.966Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:32:26.429Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:32:26.436Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T10:32:28.970Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=17852212ms
+
+================================================================================
+[2026-03-19T10:32:28.973Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:33:01.664Z] ADAPTED TOOLS (sent to API)
+────────────────────────────────────────────────────────────────────────────────
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
+
+================================================================================
+[2026-03-19T10:33:01.819Z] CONNECTION CLOSED
+────────────────────────────────────────────────────────────────────────────────
+code=1000 reason=(none)
+
+================================================================================
+[2026-03-19T10:33:02.355Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
+
+============================================================
+[2026-03-19T10:33:02.360Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
+}
+
+================================================================================
+[2026-03-19T10:33:02.365Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:33:02.370Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
+}
+
+================================================================================
+[2026-03-19T10:33:13.976Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=17897220ms
+
+================================================================================
+[2026-03-19T10:33:13.977Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:33:58.988Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=17942231ms
+
+================================================================================
+[2026-03-19T10:33:58.991Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:34:43.987Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=17987230ms
+
+================================================================================
+[2026-03-19T10:34:43.988Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:35:26.432Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:35:26.435Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T10:35:28.999Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=18032243ms
+
+================================================================================
+[2026-03-19T10:35:29.000Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:36:14.011Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=18077254ms
+
+================================================================================
+[2026-03-19T10:36:14.012Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:36:59.021Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=18122264ms
+
+================================================================================
+[2026-03-19T10:36:59.025Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:37:44.038Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=18167282ms
+
+================================================================================
+[2026-03-19T10:37:44.040Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:38:26.431Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:38:26.441Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T10:38:29.050Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=18212294ms
+
+================================================================================
+[2026-03-19T10:38:29.051Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:39:14.060Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=18257303ms
+
+================================================================================
+[2026-03-19T10:39:14.063Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:39:59.071Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=18302306ms
+
+================================================================================
+[2026-03-19T10:39:59.072Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:40:44.064Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=18347306ms
+
+================================================================================
+[2026-03-19T10:40:44.068Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:41:26.439Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:41:26.443Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T10:41:29.071Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=18392315ms
+
+================================================================================
+[2026-03-19T10:41:29.073Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:41:32.052Z] ADAPTED TOOLS (sent to API)
+────────────────────────────────────────────────────────────────────────────────
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
+
+================================================================================
+[2026-03-19T10:41:32.222Z] CONNECTION CLOSED
+────────────────────────────────────────────────────────────────────────────────
+code=1000 reason=(none)
+
+================================================================================
+[2026-03-19T10:41:33.477Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
+
+============================================================
+[2026-03-19T10:41:33.479Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
+}
+
+================================================================================
+[2026-03-19T10:41:33.481Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:41:33.483Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
+}
+
+================================================================================
+[2026-03-19T10:42:14.074Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=18437318ms
+
+================================================================================
+[2026-03-19T10:42:14.075Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:42:59.081Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=18482324ms
+
+================================================================================
+[2026-03-19T10:42:59.085Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:43:44.098Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=18527341ms
+
+================================================================================
+[2026-03-19T10:43:44.100Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:44:26.441Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:44:26.450Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T10:44:29.103Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=18572347ms
+
+================================================================================
+[2026-03-19T10:44:29.105Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:45:14.115Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=18617358ms
+
+================================================================================
+[2026-03-19T10:45:14.119Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:45:59.117Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=18662360ms
+
+================================================================================
+[2026-03-19T10:45:59.118Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:46:44.127Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=18707369ms
+
+================================================================================
+[2026-03-19T10:46:44.130Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:47:26.443Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:47:26.445Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T10:47:29.129Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=18752372ms
+
+================================================================================
+[2026-03-19T10:47:29.130Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:48:14.138Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=18797381ms
+
+================================================================================
+[2026-03-19T10:48:14.140Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:48:59.139Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=18842383ms
+
+================================================================================
+[2026-03-19T10:48:59.140Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:49:44.151Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=18887394ms
+
+================================================================================
+[2026-03-19T10:49:44.153Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:50:03.176Z] ADAPTED TOOLS (sent to API)
+────────────────────────────────────────────────────────────────────────────────
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
+
+================================================================================
+[2026-03-19T10:50:03.331Z] CONNECTION CLOSED
+────────────────────────────────────────────────────────────────────────────────
+code=1000 reason=(none)
+
+================================================================================
+[2026-03-19T10:50:04.528Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
+
+============================================================
+[2026-03-19T10:50:04.533Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
+}
+
+================================================================================
+[2026-03-19T10:50:04.535Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:50:04.537Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
+}
+
+================================================================================
+[2026-03-19T10:50:26.450Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:50:26.453Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T10:50:29.153Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=18932394ms
+
+================================================================================
+[2026-03-19T10:50:29.158Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:51:14.162Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=18977406ms
+
+================================================================================
+[2026-03-19T10:51:14.164Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:51:59.167Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=19022408ms
+
+================================================================================
+[2026-03-19T10:51:59.170Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:52:44.176Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=19067418ms
+
+================================================================================
+[2026-03-19T10:52:44.179Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:53:26.454Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:53:26.457Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T10:53:29.187Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=19112431ms
+
+================================================================================
+[2026-03-19T10:53:29.188Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:54:14.196Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=19157441ms
+
+================================================================================
+[2026-03-19T10:54:14.201Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:54:59.213Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=19202456ms
+
+================================================================================
+[2026-03-19T10:54:59.215Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:55:44.225Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=19247468ms
+
+================================================================================
+[2026-03-19T10:55:44.228Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:56:26.458Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:56:26.461Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T10:56:29.232Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=19292476ms
+
+================================================================================
+[2026-03-19T10:56:29.235Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:57:14.246Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=19337489ms
+
+================================================================================
+[2026-03-19T10:57:14.249Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:57:59.248Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=19382492ms
+
+================================================================================
+[2026-03-19T10:57:59.249Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:58:34.259Z] ADAPTED TOOLS (sent to API)
+────────────────────────────────────────────────────────────────────────────────
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
+
+================================================================================
+[2026-03-19T10:58:34.430Z] CONNECTION CLOSED
+────────────────────────────────────────────────────────────────────────────────
+code=1000 reason=(none)
+
+================================================================================
+[2026-03-19T10:58:35.685Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
+
+============================================================
+[2026-03-19T10:58:35.686Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
+}
+
+================================================================================
+[2026-03-19T10:58:35.688Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:58:35.689Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
+}
+
+================================================================================
+[2026-03-19T10:58:44.261Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=19427505ms
+
+================================================================================
+[2026-03-19T10:58:44.263Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T10:59:26.475Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T10:59:26.479Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T10:59:29.276Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=19472519ms
+
+================================================================================
+[2026-03-19T10:59:29.277Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:00:14.292Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=19517534ms
+
+================================================================================
+[2026-03-19T11:00:14.294Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:00:59.303Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=19562547ms
+
+================================================================================
+[2026-03-19T11:00:59.305Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:01:44.316Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=19607558ms
+
+================================================================================
+[2026-03-19T11:01:44.319Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:02:26.493Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:02:26.496Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T11:02:29.339Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=19652582ms
+
+================================================================================
+[2026-03-19T11:02:29.344Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:03:14.346Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=19697589ms
+
+================================================================================
+[2026-03-19T11:03:14.348Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:03:59.348Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=19742593ms
+
+================================================================================
+[2026-03-19T11:03:59.350Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:04:44.359Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=19787603ms
+
+================================================================================
+[2026-03-19T11:04:44.362Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:05:26.501Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:05:26.504Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T11:05:29.368Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=19832612ms
+
+================================================================================
+[2026-03-19T11:05:29.369Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:06:14.378Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=19877622ms
+
+================================================================================
+[2026-03-19T11:06:14.380Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:06:59.380Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=19922623ms
+
+================================================================================
+[2026-03-19T11:06:59.381Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:07:05.417Z] ADAPTED TOOLS (sent to API)
+────────────────────────────────────────────────────────────────────────────────
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
+
+================================================================================
+[2026-03-19T11:07:05.583Z] CONNECTION CLOSED
+────────────────────────────────────────────────────────────────────────────────
+code=1000 reason=(none)
+
+================================================================================
+[2026-03-19T11:07:06.796Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
+
+============================================================
+[2026-03-19T11:07:06.798Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
+}
+
+================================================================================
+[2026-03-19T11:07:06.800Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:07:06.802Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
+}
+
+================================================================================
+[2026-03-19T11:07:44.393Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=19967637ms
+
+================================================================================
+[2026-03-19T11:07:44.394Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:08:26.502Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:08:26.508Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T11:08:29.402Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=20012646ms
+
+================================================================================
+[2026-03-19T11:08:29.403Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:09:14.411Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=20057648ms
+
+================================================================================
+[2026-03-19T11:09:14.414Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:09:59.417Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=20102659ms
+
+================================================================================
+[2026-03-19T11:09:59.421Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:10:44.425Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=20147669ms
+
+================================================================================
+[2026-03-19T11:10:44.428Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:11:26.513Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:11:26.517Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T11:11:29.431Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=20192672ms
+
+================================================================================
+[2026-03-19T11:11:29.433Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:12:14.443Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=20237684ms
+
+================================================================================
+[2026-03-19T11:12:14.448Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:12:59.449Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=20282691ms
+
+================================================================================
+[2026-03-19T11:12:59.454Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:13:44.450Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=20327694ms
+
+================================================================================
+[2026-03-19T11:13:44.451Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:14:26.515Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:14:26.529Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T11:14:29.463Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=20372707ms
+
+================================================================================
+[2026-03-19T11:14:29.464Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:15:14.463Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=20417707ms
+
+================================================================================
+[2026-03-19T11:15:14.465Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:15:36.514Z] ADAPTED TOOLS (sent to API)
+────────────────────────────────────────────────────────────────────────────────
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
+
+================================================================================
+[2026-03-19T11:15:36.671Z] CONNECTION CLOSED
+────────────────────────────────────────────────────────────────────────────────
+code=1000 reason=(none)
+
+================================================================================
+[2026-03-19T11:15:37.812Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
+
+============================================================
+[2026-03-19T11:15:37.814Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
+}
+
+================================================================================
+[2026-03-19T11:15:37.815Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:15:37.817Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
+}
+
+================================================================================
+[2026-03-19T11:15:59.471Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=20462714ms
+
+================================================================================
+[2026-03-19T11:15:59.473Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:16:44.480Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=20507714ms
+
+================================================================================
+[2026-03-19T11:16:44.483Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:17:26.535Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:17:26.537Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T11:17:29.486Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=20552729ms
+
+================================================================================
+[2026-03-19T11:17:29.487Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:18:14.498Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=20597740ms
+
+================================================================================
+[2026-03-19T11:18:14.503Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:18:59.509Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=20642753ms
+
+================================================================================
+[2026-03-19T11:18:59.513Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:19:44.530Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=20687772ms
+
+================================================================================
+[2026-03-19T11:19:44.535Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:20:26.542Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:20:26.546Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T11:20:29.540Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=20732783ms
+
+================================================================================
+[2026-03-19T11:20:29.541Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:21:14.553Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=20777797ms
+
+================================================================================
+[2026-03-19T11:21:14.556Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:21:59.556Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=20822798ms
+
+================================================================================
+[2026-03-19T11:21:59.559Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:22:44.556Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=20867799ms
+
+================================================================================
+[2026-03-19T11:22:44.560Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:23:26.556Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:23:26.559Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T11:23:29.558Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=20912800ms
+
+================================================================================
+[2026-03-19T11:23:29.562Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:24:07.546Z] ADAPTED TOOLS (sent to API)
+────────────────────────────────────────────────────────────────────────────────
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
+
+================================================================================
+[2026-03-19T11:24:07.709Z] CONNECTION CLOSED
+────────────────────────────────────────────────────────────────────────────────
+code=1000 reason=(none)
+
+================================================================================
+[2026-03-19T11:24:09.279Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
+
+============================================================
+[2026-03-19T11:24:09.280Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
+}
+
+================================================================================
+[2026-03-19T11:24:09.281Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:24:09.282Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
+}
+
+================================================================================
+[2026-03-19T11:24:14.579Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=20957823ms
+
+================================================================================
+[2026-03-19T11:24:14.582Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:24:59.595Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21002838ms
+
+================================================================================
+[2026-03-19T11:24:59.599Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:25:44.595Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21047838ms
+
+================================================================================
+[2026-03-19T11:25:44.597Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:26:26.561Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:26:26.564Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T11:26:29.610Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21092853ms
+
+================================================================================
+[2026-03-19T11:26:29.616Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:27:14.627Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21137868ms
+
+================================================================================
+[2026-03-19T11:27:14.628Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:27:59.639Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21182882ms
+
+================================================================================
+[2026-03-19T11:27:59.642Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:28:44.649Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21227893ms
+
+================================================================================
+[2026-03-19T11:28:44.652Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:29:26.566Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:29:26.571Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T11:29:29.652Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21272894ms
+
+================================================================================
+[2026-03-19T11:29:29.654Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:30:14.650Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21317895ms
+
+================================================================================
+[2026-03-19T11:30:14.652Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:30:59.664Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21362908ms
+
+================================================================================
+[2026-03-19T11:30:59.670Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:31:44.679Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21407921ms
+
+================================================================================
+[2026-03-19T11:31:44.681Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:32:26.569Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:32:26.571Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T11:32:29.678Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21452921ms
+
+================================================================================
+[2026-03-19T11:32:29.678Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:32:38.968Z] ADAPTED TOOLS (sent to API)
+────────────────────────────────────────────────────────────────────────────────
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
+
+================================================================================
+[2026-03-19T11:32:39.181Z] CONNECTION CLOSED
+────────────────────────────────────────────────────────────────────────────────
+code=1000 reason=(none)
+
+================================================================================
+[2026-03-19T11:32:40.518Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
+
+============================================================
+[2026-03-19T11:32:40.520Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
+}
+
+================================================================================
+[2026-03-19T11:32:40.522Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:32:40.523Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
+}
+
+================================================================================
+[2026-03-19T11:33:14.692Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21497935ms
+
+================================================================================
+[2026-03-19T11:33:14.693Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:33:59.699Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21542941ms
+
+================================================================================
+[2026-03-19T11:33:59.707Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:34:44.704Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21587947ms
+
+================================================================================
+[2026-03-19T11:34:44.706Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:35:26.580Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:35:26.715Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T11:35:29.715Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21632957ms
+
+================================================================================
+[2026-03-19T11:35:29.718Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:36:14.722Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21677966ms
+
+================================================================================
+[2026-03-19T11:36:14.725Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:36:59.734Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21722977ms
+
+================================================================================
+[2026-03-19T11:36:59.738Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:37:44.736Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21767980ms
+
+================================================================================
+[2026-03-19T11:37:44.737Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:38:26.593Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:38:26.599Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T11:38:29.741Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21812983ms
+
+================================================================================
+[2026-03-19T11:38:29.745Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:39:14.750Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21857993ms
+
+================================================================================
+[2026-03-19T11:39:14.754Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:39:59.755Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21902997ms
+
+================================================================================
+[2026-03-19T11:39:59.756Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:40:44.759Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21948002ms
+
+================================================================================
+[2026-03-19T11:40:44.762Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:41:10.245Z] ADAPTED TOOLS (sent to API)
+────────────────────────────────────────────────────────────────────────────────
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
+
+================================================================================
+[2026-03-19T11:41:10.401Z] CONNECTION CLOSED
+────────────────────────────────────────────────────────────────────────────────
+code=1000 reason=(none)
+
+================================================================================
+[2026-03-19T11:41:11.562Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
+
+============================================================
+[2026-03-19T11:41:11.564Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
+}
+
+================================================================================
+[2026-03-19T11:41:11.566Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:41:11.569Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
+}
+
+================================================================================
+[2026-03-19T11:41:26.605Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:41:26.611Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T11:41:29.768Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=21993013ms
+
+================================================================================
+[2026-03-19T11:41:29.769Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:42:14.777Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=22038020ms
+
+================================================================================
+[2026-03-19T11:42:14.783Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:42:59.783Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=22083026ms
+
+================================================================================
+[2026-03-19T11:42:59.787Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:43:44.786Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=22128030ms
+
+================================================================================
+[2026-03-19T11:43:44.788Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:44:26.619Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:44:26.623Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T11:44:29.799Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=22173043ms
+
+================================================================================
+[2026-03-19T11:44:29.800Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:45:14.813Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=22218057ms
+
+================================================================================
+[2026-03-19T11:45:14.814Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:45:59.820Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=22263064ms
+
+================================================================================
+[2026-03-19T11:45:59.822Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:46:44.827Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=22308071ms
+
+================================================================================
+[2026-03-19T11:46:44.829Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:47:26.619Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:47:26.627Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T11:47:29.841Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=22353083ms
+
+================================================================================
+[2026-03-19T11:47:29.846Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:48:14.848Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=22398092ms
+
+================================================================================
+[2026-03-19T11:48:14.851Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:48:59.861Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=22443103ms
+
+================================================================================
+[2026-03-19T11:48:59.865Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:49:41.278Z] ADAPTED TOOLS (sent to API)
+────────────────────────────────────────────────────────────────────────────────
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
+
+================================================================================
+[2026-03-19T11:49:41.431Z] CONNECTION CLOSED
+────────────────────────────────────────────────────────────────────────────────
+code=1000 reason=(none)
+
+================================================================================
+[2026-03-19T11:49:42.632Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
+
+============================================================
+[2026-03-19T11:49:42.634Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
+}
+
+================================================================================
+[2026-03-19T11:49:42.636Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:49:42.639Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
+}
+
+================================================================================
+[2026-03-19T11:49:44.865Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=22488109ms
+
+================================================================================
+[2026-03-19T11:49:44.867Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:50:26.623Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:50:26.625Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T11:50:29.870Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=22533113ms
+
+================================================================================
+[2026-03-19T11:50:29.873Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:51:14.872Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=22578116ms
+
+================================================================================
+[2026-03-19T11:51:14.875Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:51:59.883Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=22623127ms
+
+================================================================================
+[2026-03-19T11:51:59.884Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:52:44.891Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=22668132ms
+
+================================================================================
+[2026-03-19T11:52:44.897Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:53:26.633Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:53:26.634Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T11:53:29.891Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=22713134ms
+
+================================================================================
+[2026-03-19T11:53:29.893Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:54:14.900Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=22758145ms
+
+================================================================================
+[2026-03-19T11:54:14.902Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:54:59.915Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=22803158ms
+
+================================================================================
+[2026-03-19T11:54:59.917Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:55:44.928Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=22848172ms
+
+================================================================================
+[2026-03-19T11:55:44.930Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:56:26.647Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:56:26.653Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T11:56:29.944Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=22893188ms
+
+================================================================================
+[2026-03-19T11:56:29.945Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:57:14.954Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=22938189ms
+
+================================================================================
+[2026-03-19T11:57:14.959Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:57:59.957Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=22983199ms
+
+================================================================================
+[2026-03-19T11:57:59.961Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:58:12.361Z] ADAPTED TOOLS (sent to API)
+────────────────────────────────────────────────────────────────────────────────
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
+
+================================================================================
+[2026-03-19T11:58:12.518Z] CONNECTION CLOSED
+────────────────────────────────────────────────────────────────────────────────
+code=1000 reason=(none)
+
+================================================================================
+[2026-03-19T11:58:13.261Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
+
+============================================================
+[2026-03-19T11:58:13.263Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
+}
+
+================================================================================
+[2026-03-19T11:58:13.264Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:58:13.267Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
+}
+
+================================================================================
+[2026-03-19T11:58:44.958Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=23028202ms
+
+================================================================================
+[2026-03-19T11:58:44.959Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T11:59:26.646Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T11:59:26.652Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T11:59:29.970Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=23073213ms
+
+================================================================================
+[2026-03-19T11:59:29.972Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:00:14.981Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=23118225ms
+
+================================================================================
+[2026-03-19T12:00:14.983Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:00:59.992Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=23163236ms
+
+================================================================================
+[2026-03-19T12:00:59.993Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:01:45.008Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=23208251ms
+
+================================================================================
+[2026-03-19T12:01:45.137Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:02:26.655Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:02:26.659Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T12:02:30.020Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=23253264ms
+
+================================================================================
+[2026-03-19T12:02:30.022Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:03:15.050Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=23298291ms
+
+================================================================================
+[2026-03-19T12:03:15.052Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:04:00.060Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=23343304ms
+
+================================================================================
+[2026-03-19T12:04:00.062Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:04:45.075Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=23388318ms
+
+================================================================================
+[2026-03-19T12:04:45.078Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:05:26.656Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:05:26.669Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T12:05:30.085Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=23433328ms
+
+================================================================================
+[2026-03-19T12:05:30.088Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:06:15.112Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=23478328ms
+
+================================================================================
+[2026-03-19T12:06:15.185Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:06:42.978Z] ADAPTED TOOLS (sent to API)
+────────────────────────────────────────────────────────────────────────────────
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
+
+================================================================================
+[2026-03-19T12:06:43.133Z] CONNECTION CLOSED
+────────────────────────────────────────────────────────────────────────────────
+code=1000 reason=(none)
+
+================================================================================
+[2026-03-19T12:06:44.486Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
+
+============================================================
+[2026-03-19T12:06:44.488Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
+}
+
+================================================================================
+[2026-03-19T12:06:44.491Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:06:44.493Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
+}
+
+================================================================================
+[2026-03-19T12:07:00.093Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=23523338ms
+
+================================================================================
+[2026-03-19T12:07:00.094Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:07:45.102Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=23568346ms
+
+================================================================================
+[2026-03-19T12:07:45.104Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:08:26.668Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:08:26.671Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T12:08:30.104Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=23613348ms
+
+================================================================================
+[2026-03-19T12:08:30.106Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:09:15.111Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=23658354ms
+
+================================================================================
+[2026-03-19T12:09:15.112Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:10:00.131Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=23703375ms
+
+================================================================================
+[2026-03-19T12:10:00.132Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:10:45.139Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=23748383ms
+
+================================================================================
+[2026-03-19T12:10:45.141Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:11:26.671Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:11:26.681Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T12:11:30.148Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=23793389ms
+
+================================================================================
+[2026-03-19T12:11:30.153Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:12:15.153Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=23838396ms
+
+================================================================================
+[2026-03-19T12:12:15.157Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:13:00.156Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=23883399ms
+
+================================================================================
+[2026-03-19T12:13:00.158Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:13:45.171Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=23928413ms
+
+================================================================================
+[2026-03-19T12:13:45.173Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:14:26.684Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:14:26.697Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T12:14:30.181Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=23973425ms
+
+================================================================================
+[2026-03-19T12:14:30.186Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:15:14.178Z] ADAPTED TOOLS (sent to API)
+────────────────────────────────────────────────────────────────────────────────
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
+
+================================================================================
+[2026-03-19T12:15:14.334Z] CONNECTION CLOSED
+────────────────────────────────────────────────────────────────────────────────
+code=1000 reason=(none)
+
+================================================================================
+[2026-03-19T12:15:15.191Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=24018435ms
+
+================================================================================
+[2026-03-19T12:15:15.601Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
+
+============================================================
+[2026-03-19T12:15:15.604Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
+}
+
+================================================================================
+[2026-03-19T12:15:15.605Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:15:15.608Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
+}
+
+================================================================================
+[2026-03-19T12:16:00.196Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=24063439ms
+
+================================================================================
+[2026-03-19T12:16:00.199Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:16:45.203Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=24108446ms
+
+================================================================================
+[2026-03-19T12:16:45.206Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:17:26.689Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:17:26.694Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T12:17:30.213Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=24153456ms
+
+================================================================================
+[2026-03-19T12:17:30.215Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:18:15.216Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=24198459ms
+
+================================================================================
+[2026-03-19T12:18:15.219Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:19:00.227Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=24243470ms
+
+================================================================================
+[2026-03-19T12:19:00.228Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:19:45.232Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=24288475ms
+
+================================================================================
+[2026-03-19T12:19:45.234Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:20:26.687Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:20:26.688Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T12:20:30.238Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=24333480ms
+
+================================================================================
+[2026-03-19T12:20:30.252Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:21:15.249Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=24378493ms
+
+================================================================================
+[2026-03-19T12:21:15.252Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:22:00.262Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=24423506ms
+
+================================================================================
+[2026-03-19T12:22:00.263Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:22:45.277Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=24468521ms
+
+================================================================================
+[2026-03-19T12:22:45.279Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:23:26.691Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:23:26.697Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T12:23:30.290Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=24513533ms
+
+================================================================================
+[2026-03-19T12:23:30.295Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:23:45.320Z] ADAPTED TOOLS (sent to API)
+────────────────────────────────────────────────────────────────────────────────
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
+
+================================================================================
+[2026-03-19T12:23:45.477Z] CONNECTION CLOSED
+────────────────────────────────────────────────────────────────────────────────
+code=1000 reason=(none)
+
+================================================================================
+[2026-03-19T12:23:47.064Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
+
+============================================================
+[2026-03-19T12:23:47.067Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
+}
+
+================================================================================
+[2026-03-19T12:23:47.070Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:23:47.073Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
+}
+
+================================================================================
+[2026-03-19T12:24:15.292Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=24558535ms
+
+================================================================================
+[2026-03-19T12:24:15.307Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:25:00.305Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=24603548ms
+
+================================================================================
+[2026-03-19T12:25:00.309Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:25:45.313Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=24648554ms
+
+================================================================================
+[2026-03-19T12:25:45.318Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:26:26.693Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:26:26.694Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T12:26:30.322Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=24693566ms
+
+================================================================================
+[2026-03-19T12:26:30.323Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:27:15.332Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=24738576ms
+
+================================================================================
+[2026-03-19T12:27:15.333Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:28:00.353Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=24783584ms
+
+================================================================================
+[2026-03-19T12:28:00.356Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:28:45.354Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=24828596ms
+
+================================================================================
+[2026-03-19T12:28:45.355Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:29:26.703Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:29:26.715Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T12:29:30.372Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=24873607ms
+
+================================================================================
+[2026-03-19T12:29:30.374Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:30:15.373Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=24918611ms
+
+================================================================================
+[2026-03-19T12:30:15.378Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:31:00.373Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=24963618ms
+
+================================================================================
+[2026-03-19T12:31:00.374Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:31:45.376Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25008619ms
+
+================================================================================
+[2026-03-19T12:31:45.378Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:32:16.777Z] ADAPTED TOOLS (sent to API)
+────────────────────────────────────────────────────────────────────────────────
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
+
+================================================================================
+[2026-03-19T12:32:16.938Z] CONNECTION CLOSED
+────────────────────────────────────────────────────────────────────────────────
+code=1000 reason=(none)
+
+================================================================================
+[2026-03-19T12:32:18.196Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
+
+============================================================
+[2026-03-19T12:32:18.199Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
+}
+
+================================================================================
+[2026-03-19T12:32:18.201Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:32:18.203Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
+}
+
+================================================================================
+[2026-03-19T12:32:26.705Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:32:26.716Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T12:32:30.389Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25053632ms
+
+================================================================================
+[2026-03-19T12:32:30.390Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:33:15.411Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25098645ms
+
+================================================================================
+[2026-03-19T12:33:15.415Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:34:00.402Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25143646ms
+
+================================================================================
+[2026-03-19T12:34:00.407Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:34:45.408Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25188650ms
+
+================================================================================
+[2026-03-19T12:34:45.410Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:35:26.707Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:35:26.714Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T12:35:30.406Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25233650ms
+
+================================================================================
+[2026-03-19T12:35:30.408Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:36:15.415Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25278658ms
+
+================================================================================
+[2026-03-19T12:36:15.417Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:37:00.453Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25323673ms
+
+================================================================================
+[2026-03-19T12:37:00.455Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:37:45.431Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25368674ms
+
+================================================================================
+[2026-03-19T12:37:45.432Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:38:26.720Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:38:26.725Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T12:38:30.443Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25413687ms
+
+================================================================================
+[2026-03-19T12:38:30.443Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:39:15.455Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25458699ms
+
+================================================================================
+[2026-03-19T12:39:15.456Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:40:00.457Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25503702ms
+
+================================================================================
+[2026-03-19T12:40:00.460Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:40:45.466Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25548710ms
+
+================================================================================
+[2026-03-19T12:40:45.467Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:40:47.928Z] ADAPTED TOOLS (sent to API)
+────────────────────────────────────────────────────────────────────────────────
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
+
+================================================================================
+[2026-03-19T12:40:48.108Z] CONNECTION CLOSED
+────────────────────────────────────────────────────────────────────────────────
+code=1000 reason=(none)
+
+================================================================================
+[2026-03-19T12:40:49.424Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
+
+============================================================
+[2026-03-19T12:40:49.425Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
+}
+
+================================================================================
+[2026-03-19T12:40:49.426Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:40:49.427Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
+}
+
+================================================================================
+[2026-03-19T12:41:26.730Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:41:26.733Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T12:41:30.478Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25593722ms
+
+================================================================================
+[2026-03-19T12:41:30.480Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:42:15.485Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25638729ms
+
+================================================================================
+[2026-03-19T12:42:15.486Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:43:00.494Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25683737ms
+
+================================================================================
+[2026-03-19T12:43:00.496Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:43:45.505Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25728749ms
+
+================================================================================
+[2026-03-19T12:43:45.508Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:44:26.731Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:44:26.734Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T12:44:30.518Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25773761ms
+
+================================================================================
+[2026-03-19T12:44:30.522Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:45:15.529Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25818772ms
+
+================================================================================
+[2026-03-19T12:45:15.531Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:46:00.532Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25863773ms
+
+================================================================================
+[2026-03-19T12:46:00.535Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:46:45.538Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25908781ms
+
+================================================================================
+[2026-03-19T12:46:45.540Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:47:26.742Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:47:26.745Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T12:47:30.540Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25953784ms
+
+================================================================================
+[2026-03-19T12:47:30.541Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:48:15.542Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=25998786ms
+
+================================================================================
+[2026-03-19T12:48:15.543Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:49:00.556Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=26043799ms
+
+================================================================================
+[2026-03-19T12:49:00.559Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:49:19.158Z] ADAPTED TOOLS (sent to API)
+────────────────────────────────────────────────────────────────────────────────
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
+
+================================================================================
+[2026-03-19T12:49:19.353Z] CONNECTION CLOSED
+────────────────────────────────────────────────────────────────────────────────
+code=1000 reason=(none)
+
+================================================================================
+[2026-03-19T12:49:20.589Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
+
+============================================================
+[2026-03-19T12:49:20.594Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
+}
+
+================================================================================
+[2026-03-19T12:49:20.598Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:49:20.599Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
+}
+
+================================================================================
+[2026-03-19T12:49:45.564Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=26088808ms
+
+================================================================================
+[2026-03-19T12:49:45.568Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:50:26.756Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:50:26.758Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T12:50:30.575Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=26133818ms
+
+================================================================================
+[2026-03-19T12:50:30.581Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:51:15.578Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=26178821ms
+
+================================================================================
+[2026-03-19T12:51:15.583Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:52:00.580Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=26223823ms
+
+================================================================================
+[2026-03-19T12:52:00.581Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:52:45.582Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=26268826ms
+
+================================================================================
+[2026-03-19T12:52:45.584Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:53:26.780Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:53:26.786Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T12:53:30.582Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=26313827ms
+
+================================================================================
+[2026-03-19T12:53:30.583Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:54:15.608Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=26358848ms
+
+================================================================================
+[2026-03-19T12:54:15.613Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:55:00.608Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=26403851ms
+
+================================================================================
+[2026-03-19T12:55:00.609Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:55:45.620Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=26448863ms
+
+================================================================================
+[2026-03-19T12:55:45.623Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:56:26.796Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:56:26.803Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T12:56:30.629Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=26493873ms
+
+================================================================================
+[2026-03-19T12:56:30.630Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:57:15.642Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=26538876ms
+
+================================================================================
+[2026-03-19T12:57:15.647Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:57:50.295Z] ADAPTED TOOLS (sent to API)
+────────────────────────────────────────────────────────────────────────────────
+Tool count: 12, vertexAI: true
+Tool[0] schema fields: hasParameters=false, hasParametersJsonSchema=true, hasBehavior=false
+Tool[0] full: {"name":"speak","description":"Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.","parametersJsonSchema":{"type":"object","properties":{"text":{"type":"string","description":"The text to speak aloud."}},"required":["text"]}}
+
+================================================================================
+[2026-03-19T12:57:50.452Z] CONNECTION CLOSED
+────────────────────────────────────────────────────────────────────────────────
+code=1000 reason=(none)
+
+================================================================================
+[2026-03-19T12:57:51.593Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[SESSION RECONNECTED] The connection was briefly interrupted but has been restored.
+Current AAC board buttons (6/12): Pl"
+
+============================================================
+[2026-03-19T12:57:51.603Z] LiveRelay.reconnectionContext
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "boardButtons": 6,
+  "recentMessages": 17
+}
+
+================================================================================
+[2026-03-19T12:57:51.604Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:57:51.605Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "reconnect"
+}
+
+================================================================================
+[2026-03-19T12:58:00.633Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=26583877ms
+
+================================================================================
+[2026-03-19T12:58:00.635Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:58:45.643Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=26628886ms
+
+================================================================================
+[2026-03-19T12:58:45.646Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T12:59:26.800Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T12:59:26.803Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T12:59:30.649Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=26673892ms
+
+================================================================================
+[2026-03-19T12:59:30.652Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T13:00:15.647Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=26718892ms
+
+================================================================================
+[2026-03-19T13:00:15.648Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T13:01:00.649Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=26763893ms
+
+================================================================================
+[2026-03-19T13:01:00.652Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T13:01:45.669Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=26808902ms
+
+================================================================================
+[2026-03-19T13:01:45.670Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T13:02:26.815Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BEHAVIORAL REMINDER]
+Interpretation Level: 1 (Minimal)
+- ONLY use interpret() immediately after [BUTTON PRESS]. Never f"
+
+============================================================
+[2026-03-19T13:02:26.818Z] LiveRelay.behavioralReminder
+----------------------------------------
+{
+  "sessionId": "aac-1773897981697",
+  "trigger": "periodic"
+}
+
+================================================================================
+[2026-03-19T13:02:30.663Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=26853906ms
+
+================================================================================
+[2026-03-19T13:02:30.666Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T13:03:15.669Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=26898913ms
+
+================================================================================
+[2026-03-19T13:03:15.672Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"
+
+================================================================================
+[2026-03-19T13:04:00.670Z] BOARD REMINDER FIRING
+────────────────────────────────────────────────────────────────────────────────
+timeSinceUpdate=26943913ms
+
+================================================================================
+[2026-03-19T13:04:00.674Z] CLIENT → sendContextInjection
+────────────────────────────────────────────────────────────────────────────────
+turnComplete=false text="[BOARD STATE REMINDER] Current buttons (6/12, 6 slots available): Play, Explore, Draw, Music, Tired, Help"

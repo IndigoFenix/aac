@@ -15,12 +15,13 @@ import {
   Moon,
   Sun,
   Mail,
+  KeyRound,
 } from 'lucide-react';
 import logoImage from '@assets/aivota_icon.png';
 import { cn } from '@/lib/utils';
 import { useLocation } from 'wouter';
 
-type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts';
+type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts' | 'licenses';
 
 type AdminSidebarProps = {
   activeSection: AdminSection;
@@ -68,6 +69,12 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
       label: 'Contacts',
       section: 'contacts' as AdminSection,
       testId: 'admin-nav-contacts',
+    },
+    {
+      icon: KeyRound,
+      label: 'Licenses',
+      section: 'licenses' as AdminSection,
+      testId: 'admin-nav-licenses',
     },
   ];
 

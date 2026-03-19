@@ -246,6 +246,27 @@
       "when": 1773754807974,
       "tag": "0034_flaky_energizer",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1773919759734,
+      "tag": "0035_clear_magdalene",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1773924010241,
+      "tag": "0036_normal_squadron_sinister",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1773930885166,
+      "tag": "0037_gifted_starhawk",
+      "breakpoints": true
     }
   ]
 }

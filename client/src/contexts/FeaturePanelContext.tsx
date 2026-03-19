@@ -36,6 +36,7 @@ export const PATH_TO_FEATURE: Record<string, FeatureType> = {
   '/settings': 'settings',
   '/aacsettings': 'aacsettings',
   '/symbols': 'symbols',
+  '/calendar': 'calendar',
 };
 
 // Feature to URL path mapping
@@ -53,6 +54,7 @@ export const FEATURE_TO_PATH: Record<FeatureType, string> = {
   aacsettings: '/aacsettings',
   aac: '/aac',
   symbols: '/symbols',
+  calendar: '/calendar',
 };
 
 // Feature configurations
@@ -168,6 +170,14 @@ export const FEATURE_CONFIG: Record<FeatureType, FeatureConfig> = {
     hasBottomBar: false,
     isFullScreen: false,
     path: '/symbols',
+  },
+  calendar: {
+    id: 'calendar',
+    defaultSize: 100,
+    minSize: 100,
+    maxSize: 100,
+    isFullScreen: true,
+    path: '/calendar',
   },
 };
 

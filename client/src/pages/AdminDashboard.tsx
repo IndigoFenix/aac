@@ -11,9 +11,10 @@ import { VoiceList } from '@/components/admin/VoiceList';
 import { ModelSettings } from '@/components/admin/ModelSettings';
 import { SessionHistory } from '@/components/admin/SessionHistory';
 import { ContactInquiries } from '@/components/admin/ContactInquiries';
+import { LicenseList } from '@/components/admin/LicenseList';
 import { cn } from '@/lib/utils';
 
-type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts';
+type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts' | 'licenses';
 
 export function AdminDashboard() {
   const [location, navigate] = useLocation();
@@ -26,6 +27,7 @@ export function AdminDashboard() {
     if (location.startsWith('/admin/models')) return 'models';
     if (location.startsWith('/admin/sessions')) return 'sessions';
     if (location.startsWith('/admin/contacts')) return 'contacts';
+    if (location.startsWith('/admin/licenses')) return 'licenses';
     if (location.startsWith('/admin/personas')) return 'personas';
     return 'personas'; // default
   };
@@ -51,6 +53,8 @@ export function AdminDashboard() {
       navigate('/admin/sessions');
     } else if (section === 'contacts') {
       navigate('/admin/contacts');
+    } else if (section === 'licenses') {
+      navigate('/admin/licenses');
     }
   };
 
@@ -83,6 +87,10 @@ export function AdminDashboard() {
 
     if (activeSection === 'contacts') {
       return <ContactInquiries />;
+    }
+
+    if (activeSection === 'licenses') {
+      return <LicenseList />;
     }
 
     return null;
