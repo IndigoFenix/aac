@@ -1395,7 +1395,7 @@ import {
       type: {
         id: "type",
         type: "string",
-        enum: ["school", "hospital"],
+        enum: ["school", "clinic"],
         description: "Type of institute. Classrooms are only available for schools.",
       },
       description: { id: "description", type: "string" },
@@ -1487,7 +1487,7 @@ import {
         properties: {
           id: { id: "id", type: "string" },
           name: { id: "name", type: "string" },
-          type: { id: "type", type: "string", enum: ["school", "hospital"] },
+          type: { id: "type", type: "string", enum: ["school", "clinic"] },
         },
       },
       enrollment: {
@@ -1700,7 +1700,7 @@ import {
     id: "Context_Institutes",
     type: "map",
     title: "Institutes",
-    description: "Organizations (schools or hospitals) that the user is a member of. Target entries by name.",
+    description: "Organizations (schools or clinics) that the user is a member of. Target entries by name.",
     opened: true,
     displayKey: "name",
     values: instituteSchema,
@@ -1728,7 +1728,7 @@ import {
   export const INSTITUTE_SYSTEM_PROMPT = `
   You can manage educational organizations and students:
   
-  **Institutes (Schools & Hospitals)**
+  **Organizations (Schools & Clinics)**
   - Create, update, and delete institutes
   - Manage institute members and their roles
   - Send invitations to new users via email
@@ -1748,7 +1748,7 @@ import {
   **Important Rules**
   - Students can only be enrolled in ONE active school at a time
   - When enrolling a student in a new school, they are automatically transferred from their previous school
-  - Students can be enrolled in multiple hospitals simultaneously
+  - Students can be enrolled in multiple clinics simultaneously
   - Classrooms are only available for institutes of type "school"
   - Only institute admins can invite new members or remove existing ones
   `;

@@ -267,6 +267,13 @@
       "when": 1773930885166,
       "tag": "0037_gifted_starhawk",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1774012917897,
+      "tag": "0038_young_mastermind",
+      "breakpoints": true
     }
   ]
 }

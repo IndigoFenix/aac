@@ -196,7 +196,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
   // Form state - Institute create with role selection
   const [createForm, setCreateForm] = useState({
     name: '',
-    type: 'school' as 'school' | 'hospital',
+    type: 'school' as 'school' | 'clinic',
     description: '',
     address: '',
     phone: '',
@@ -1190,7 +1190,7 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                 <Label htmlFor="type">{t('institute.typeLabel') || 'Type'}</Label>
                 <Select
                   value={createForm.type}
-                  onValueChange={(value: 'school' | 'hospital') => setCreateForm({ ...createForm, type: value })}
+                  onValueChange={(value: 'school' | 'clinic') => setCreateForm({ ...createForm, type: value })}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -1202,10 +1202,10 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                         {t('institute.type.school') || 'School'}
                       </span>
                     </SelectItem>
-                    <SelectItem value="hospital">
+                    <SelectItem value="clinic">
                       <span className="flex items-center gap-2">
                         <Hospital className="w-4 h-4" />
-                        {t('institute.type.hospital') || 'Hospital'}
+                        {t('institute.type.clinic') || 'Clinic'}
                       </span>
                     </SelectItem>
                   </SelectContent>

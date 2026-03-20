@@ -35,7 +35,7 @@ describe('Institute Memory Schema', () => {
   describe('Institutes', () => {
     it('should load institutes from database', async () => {
       mockDb.createInstitute({ name: 'Lincoln Elementary', type: 'school', address: '123 Main St' });
-      mockDb.createInstitute({ name: 'City Hospital', type: 'hospital', address: '456 Medical Ave' });
+      mockDb.createInstitute({ name: 'City Clinic', type: 'clinic', address: '456 Medical Ave' });
 
       await handler.loadContext('institutes');
 
@@ -61,17 +61,17 @@ describe('Institute Memory Schema', () => {
       expect(institutes[0].type).toBe('school');
     });
 
-    it('should add a hospital to the database', async () => {
+    it('should add a clinic to the database', async () => {
       await handler.loadContext('institutes');
 
       await handler.executeOperation({
         action: 'add',
         path: '/Context_Institutes/institutes',
-        value: { name: 'Regional Medical Center', type: 'hospital', isActive: true },
+        value: { name: 'Regional Medical Center', type: 'clinic', isActive: true },
       });
 
       const institutes = Array.from(mockDb.institutes.values());
-      expect(institutes[0].type).toBe('hospital');
+      expect(institutes[0].type).toBe('clinic');
     });
 
     it('should add institute with full details', async () => {
@@ -213,7 +213,7 @@ describe('Institute Memory Schema', () => {
 
     it('should not include classrooms from other institutes', async () => {
       const school = mockDb.createInstitute({ name: 'School', type: 'school' });
-      const hospital = mockDb.createInstitute({ name: 'Hospital', type: 'hospital' });
+      const clinic = mockDb.createInstitute({ name: 'Clinic', type: 'clinic' });
 
       mockDb.createClassroom(school.id, { name: 'Classroom 1' });
       mockDb.createClassroom(school.id, { name: 'Classroom 2' });
@@ -222,10 +222,10 @@ describe('Institute Memory Schema', () => {
 
       const data = handler.getMemoryValue('Context_Institutes');
       const schoolInst = data.institutes.find((i: any) => i.type === 'school');
-      const hospitalInst = data.institutes.find((i: any) => i.type === 'hospital');
+      const clinicInst = data.institutes.find((i: any) => i.type === 'clinic');
 
       expect(schoolInst.classrooms).toHaveLength(2);
-      expect(hospitalInst.classrooms).toHaveLength(0);
+      expect(clinicInst.classrooms).toHaveLength(0);
     });
   });
 
@@ -267,7 +267,7 @@ describe('Institute Memory Schema', () => {
       await handler.executeBatch([
         { action: 'add', path: '/Context_Institutes/institutes', value: { name: 'School A', type: 'school', isActive: true } },
         { action: 'add', path: '/Context_Institutes/institutes', value: { name: 'School B', type: 'school', isActive: true } },
-        { action: 'add', path: '/Context_Institutes/institutes', value: { name: 'Hospital A', type: 'hospital', isActive: true } },
+        { action: 'add', path: '/Context_Institutes/institutes', value: { name: 'Clinic A', type: 'clinic', isActive: true } },
       ]);
 
       expect(Array.from(mockDb.institutes.values())).toHaveLength(3);

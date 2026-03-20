@@ -112,7 +112,7 @@ export interface ChatContext {
   studentId?: string;
   userId?: string;
   programId?: string; // Optional - if not provided, will load current program
-  instituteId?: string; // Optional - for filtering medical records by hospital
+  instituteId?: string; // Optional - for filtering medical records by clinic
   reportPermissions?: AccessPermissions; // Optional - defaults to all hidden
 }
 

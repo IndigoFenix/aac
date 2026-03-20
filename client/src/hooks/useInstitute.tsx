@@ -13,7 +13,7 @@ import { useAuth } from '@/hooks/useAuth';
 export interface Institute {
   id: string;
   name: string;
-  type: 'school' | 'hospital';
+  type: 'school' | 'clinic';
   description?: string;
   address?: string;
   phone?: string;
@@ -60,7 +60,7 @@ export interface PendingInvite {
   institute: {
     id: string;
     name: string;
-    type: 'school' | 'hospital';
+    type: 'school' | 'clinic';
     logoUrl?: string;
   };
   invitedBy: {
@@ -146,7 +146,7 @@ export interface InstituteStudent {
 export interface StudentInstitute {
   id: string;
   name: string;
-  type: 'school' | 'hospital';
+  type: 'school' | 'clinic';
   logoUrl?: string;
   idNumber?: string;
   grade?: string;

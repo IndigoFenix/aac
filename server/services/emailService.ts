@@ -14,7 +14,7 @@ interface EmailOptions {
 interface InstituteInviteEmailData {
   inviteeEmail: string;
   instituteName: string;
-  instituteType: "school" | "hospital";
+  instituteType: "school" | "clinic";
   inviterName?: string;
   role: string;
   isAdmin: boolean;
@@ -154,7 +154,7 @@ class EmailService {
   async sendInstituteInvite(data: InstituteInviteEmailData): Promise<{ success: boolean; error?: string }> {
     const { inviteeEmail, instituteName, instituteType, inviterName, role, isAdmin, message, inviteLink, expiresAt } = data;
 
-    const instituteTypeLabel = instituteType === "hospital" ? "Hospital" : "School";
+    const instituteTypeLabel = instituteType === "clinic" ? "Clinic" : "School";
     const adminLabel = isAdmin ? " with admin privileges" : "";
     const expiryDate = expiresAt.toLocaleDateString("en-US", {
       weekday: "long",
@@ -224,7 +224,7 @@ CliniAACian - AAC Tools for Healthcare & Education
                       <tr>
                         <td style="vertical-align: top; padding-right: 15px;">
                           <div style="width: 48px; height: 48px; background-color: #e0e7ff; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
-                            <span style="font-size: 24px;">${instituteType === "hospital" ? "🏥" : "🏫"}</span>
+                            <span style="font-size: 24px;">${instituteType === "clinic" ? "🏥" : "🏫"}</span>
                           </div>
                         </td>
                         <td style="vertical-align: top;">

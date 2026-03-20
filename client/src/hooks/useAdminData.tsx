@@ -493,7 +493,7 @@ export interface CreateLicenseData {
   lastName?: string;
   createInstitute?: boolean;
   instituteName?: string;
-  instituteType?: 'school' | 'hospital';
+  instituteType?: 'school' | 'clinic';
 }
 
 export interface UpdateLicenseData {

@@ -14,7 +14,7 @@ export const apiTypeEnum = pgEnum("api_type", [
 
 export const chatSessionStatusEnum = pgEnum("chat_session_status", ["open", "paused", "closed"]);
 
-export const instituteTypeEnum = pgEnum("institute_type", ["school", "hospital"]);
+export const instituteTypeEnum = pgEnum("institute_type", ["school", "clinic"]);
 
 // IEP/TALA specific enums
 export const programFrameworkEnum = pgEnum("program_framework", ["tala", "us_iep"]);
@@ -475,7 +475,7 @@ export const medicalRecords = pgTable("medical_records", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   studentId: varchar("student_id").notNull(),
   userId: varchar("user_id"), // Who created/owns this record
-  instituteId: varchar("institute_id"), // Should be a hospital that the student is linked to
+  instituteId: varchar("institute_id"), // Should be a clinic that the student is linked to
 
   birthDate: date("birth_date"),
 
@@ -1733,4 +1733,4 @@ export type MeetingType = 'initial_evaluation' | 'annual_review' | 'reevaluation
 export type ConsentType = 'initial_evaluation' | 'reevaluation' | 'placement' | 'release_of_information' | 'service_provision';
 export type TransitionArea = 'education' | 'employment' | 'independent_living' | 'community';
 export type TeamMemberRole = 'parent_guardian' | 'student' | 'homeroom_teacher' | 'special_education_teacher' | 'general_education_teacher' | 'speech_language_pathologist' | 'occupational_therapist' | 'physical_therapist' | 'psychologist' | 'administrator' | 'case_manager' | 'external_provider' | 'other';
-export type InstituteType = 'school' | 'hospital';
+export type InstituteType = 'school' | 'clinic';

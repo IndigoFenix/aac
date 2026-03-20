@@ -376,7 +376,7 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
   };
 
   const schoolInstitutes = institutes.filter(i => i.type === 'school');
-  const hospitalInstitutes = institutes.filter(i => i.type === 'hospital');
+  const clinicInstitutes = institutes.filter(i => i.type === 'clinic');
   const isLoading = createStudentMutation.isPending || updateStudentMutation.isPending;
 
   // ==========================================================================
@@ -614,12 +614,12 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
                             ))}
                           </>
                         )}
-                        {hospitalInstitutes.length > 0 && (
+                        {clinicInstitutes.length > 0 && (
                           <>
                             <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-1">
-                              {t('institute.type.hospital') || 'Hospitals'}
+                              {t('institute.type.clinic') || 'Clinics'}
                             </div>
-                            {hospitalInstitutes.map((institute) => (
+                            {clinicInstitutes.map((institute) => (
                               <SelectItem key={institute.id} value={institute.id}>
                                 <span className="flex items-center gap-2">
                                   <Hospital className="w-4 h-4" />
