@@ -2037,6 +2037,7 @@ export const he = {
       privacy: "מדיניות פרטיות",
       cookies: "מדיניות עוגיות",
       accessibility: "הצהרת נגישות",
+      aiPolicy: "מדיניות AI",
       rights: `© ${new Date().getFullYear()} Aivota. כל הזכויות שמורות.`,
     },
   },

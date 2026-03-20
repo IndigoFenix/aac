@@ -497,6 +497,9 @@ export function SettingsPanel() {
               <a href="/accessibility" target="_blank" className="hover:underline hover:text-primary transition-colors">
                 {isRTL ? 'הצהרת נגישות' : 'Accessibility'}
               </a>
+              <a href="/ai-policy" target="_blank" className="hover:underline hover:text-primary transition-colors">
+                {isRTL ? 'מדיניות AI' : 'AI Policy'}
+              </a>
             </div>
           </div>
 

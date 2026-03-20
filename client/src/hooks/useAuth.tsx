@@ -154,11 +154,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // Clear all queries to be safe
       queryClient.clear();
 
-      // Also clear the currently selected AAC user
-      if (typeof window !== 'undefined') {
-        window.localStorage.removeItem('aac.currentUserId');
-      }
-
       // Clear user state
       setUser(null);
 
@@ -172,8 +167,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       await apiRequest("POST", "/auth/logout", {});
     } catch {}
     queryClient.clear();
-    localStorage.removeItem('aac.currentUserId');
-    localStorage.removeItem('cliniaacian.currentInstituteId');
     setUser(null);
   };
   

@@ -290,6 +290,9 @@ export default function LandingPage() {
           <a href="/accessibility" style={{ color: 'inherit', textDecoration: 'none' }} className="hover:underline">
             {t("landing.footer.accessibility")}
           </a>
+          <a href="/ai-policy" style={{ color: 'inherit', textDecoration: 'none' }} className="hover:underline">
+            {t("landing.footer.aiPolicy")}
+          </a>
         </div>
         <p style={{ marginTop: '0.75rem', fontSize: '0.75rem', opacity: 0.7 }}>
           {t("landing.footer.rights")}

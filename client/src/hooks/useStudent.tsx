@@ -58,13 +58,16 @@ export const StudentProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  // localStorage key scoped to the current user
+  const storageKey = user ? `aac.${user.id}.currentStudentId` : null;
+
   // Main “switch” function: use cache for instant switching, then refresh from API
   const selectStudent = async (studentId?: string | null): Promise<boolean> => {
     // Allow clearing the current selection
     if (!studentId) {
       setStudent(null);
-      if (typeof window !== 'undefined') {
-        window.localStorage.removeItem('aac.currentUserId');
+      if (typeof window !== 'undefined' && storageKey) {
+        window.localStorage.removeItem(storageKey);
       }
       return true;
     }
@@ -80,8 +83,8 @@ export const StudentProvider = ({ children }: { children: ReactNode }) => {
       setStudent(optimisticUser);
     }
 
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('aac.currentUserId', studentId);
+    if (typeof window !== 'undefined' && storageKey) {
+      window.localStorage.setItem(storageKey, studentId);
     }
 
     // Always hit the API to refresh on selection
@@ -139,18 +142,18 @@ export const StudentProvider = ({ children }: { children: ReactNode }) => {
       }
 
       let storedId: string | null = null;
-      if (typeof window !== 'undefined') {
-        storedId = window.localStorage.getItem('aac.currentUserId');
+      if (typeof window !== 'undefined' && storageKey) {
+        storedId = window.localStorage.getItem(storageKey);
       }
 
-      if (storedId) {
+      if (storedId && users.some((u) => u.id === storedId)) {
         await selectStudent(storedId);
       } else {
         const initial = users.find((u) => u.isActive) ?? users[0];
         setStudent(initial ?? null);
 
-        if (initial && typeof window !== 'undefined') {
-          window.localStorage.setItem('aac.currentUserId', initial.id);
+        if (initial && typeof window !== 'undefined' && storageKey) {
+          window.localStorage.setItem(storageKey, initial.id);
         }
       }
     } catch (error) {

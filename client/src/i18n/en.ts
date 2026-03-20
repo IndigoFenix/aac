@@ -1844,6 +1844,7 @@ export const en = {
       privacy: "Privacy Policy",
       cookies: "Cookie Policy",
       accessibility: "Accessibility",
+      aiPolicy: "AI Policy",
       rights: `© ${new Date().getFullYear()} Aivota. All rights reserved.`,
     },
   },
