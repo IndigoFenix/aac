@@ -254,6 +254,9 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
   const [currentInstitute, setCurrentInstitute] = useState<Institute | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // localStorage key scoped to the current user
+  const storageKey = user ? `cliniaacian.${user.id}.currentInstituteId` : null;
+
   // Fetch institutes
   const { data: institutesData, isLoading, refetch: refetchInstitutes } = useQuery({
     queryKey: INSTITUTES_QUERY_KEY,
@@ -282,8 +285,8 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
 
   // Restore selected institute from localStorage, or auto-set if only one
   useEffect(() => {
-    if (institutes.length > 0 && !currentInstitute) {
-      const storedId = localStorage.getItem('cliniaacian.currentInstituteId');
+    if (institutes.length > 0 && !currentInstitute && storageKey) {
+      const storedId = localStorage.getItem(storageKey);
       if (storedId) {
         const found = institutes.find((i) => i.id === storedId);
         if (found) {
@@ -294,10 +297,10 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
       // Auto-select if user belongs to exactly one institute
       if (institutes.length === 1) {
         setCurrentInstitute(institutes[0]);
-        localStorage.setItem('cliniaacian.currentInstituteId', institutes[0].id);
+        localStorage.setItem(storageKey, institutes[0].id);
       }
     }
-  }, [institutes, currentInstitute]);
+  }, [institutes, currentInstitute, storageKey]);
 
   // =============================================================================
   // INSTITUTE OPERATIONS
@@ -306,16 +309,16 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
   const selectInstitute = useCallback((instituteId: string | null) => {
     if (!instituteId) {
       setCurrentInstitute(null);
-      localStorage.removeItem('cliniaacian.currentInstituteId');
+      if (storageKey) localStorage.removeItem(storageKey);
       return;
     }
 
     const found = institutes.find((i) => i.id === instituteId);
     if (found) {
       setCurrentInstitute(found);
-      localStorage.setItem('cliniaacian.currentInstituteId', instituteId);
+      if (storageKey) localStorage.setItem(storageKey, instituteId);
     }
-  }, [institutes]);
+  }, [institutes, storageKey]);
 
   const createInstitute = useCallback(async (data: Partial<Institute> & { creatorRole?: string }): Promise<Institute> => {
     const { creatorRole, ...instituteData } = data;
@@ -375,7 +378,7 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
 
     if (currentInstitute?.id === id) {
       setCurrentInstitute(null);
-      localStorage.removeItem('cliniaacian.currentInstituteId');
+      if (storageKey) localStorage.removeItem(storageKey);
     }
   }, [queryClient, currentInstitute]);
 
@@ -391,7 +394,7 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
 
     if (currentInstitute?.id === id) {
       setCurrentInstitute(null);
-      localStorage.removeItem('cliniaacian.currentInstituteId');
+      if (storageKey) localStorage.removeItem(storageKey);
     }
   }, [queryClient, currentInstitute]);
 

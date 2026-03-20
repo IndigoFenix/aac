@@ -118,6 +118,10 @@ function AuthPageLayout({
         <a href="/accessibility" className="hover:underline">
           {language === 'he' ? 'הצהרת נגישות' : 'Accessibility'}
         </a>
+        <span>|</span>
+        <a href="/ai-policy" className="hover:underline">
+          {language === 'he' ? 'מדיניות AI' : 'AI Policy'}
+        </a>
       </footer>
     </div>
   );
