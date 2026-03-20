@@ -19,6 +19,10 @@ interface CreateLicenseInput {
   firstName?: string;
   lastName?: string;
 
+  // Trial
+  isTrial?: boolean;
+  trialExpiresAt?: string;
+
   // Optional institute creation
   createInstitute?: boolean;
   instituteName?: string;
@@ -48,8 +52,10 @@ class LicenseService {
     const licenseData: InsertLicense = {
       name: data.name || `License for ${data.inviteEmail}`,
       licenseType: data.licenseType || "standard",
-      subscriptionType: data.subscriptionType || "free",
+      subscriptionType: data.subscriptionType || "monthly",
       permissions: data.permissions || null,
+      isTrial: data.isTrial || false,
+      trialExpiresAt: data.trialExpiresAt ? new Date(data.trialExpiresAt) : null,
       inviteEmail: data.inviteEmail,
       inviteToken: inviteToken || null,
       instituteId: instituteId || null,
@@ -171,13 +177,13 @@ class LicenseService {
    * Checks: direct user license first, then institute licenses.
    * System admins get MAX permissions with "enterprise" type.
    */
-  async getUserLicenseInfo(userId: string, isSystemAdmin?: boolean): Promise<{ permissions: LicensePermissions; licenseType: string }> {
-    if (isSystemAdmin) return { permissions: { ...MAX_LICENSE_PERMISSIONS }, licenseType: "enterprise" };
+  async getUserLicenseInfo(userId: string, isSystemAdmin?: boolean): Promise<{ permissions: LicensePermissions; licenseType: string; isTrial: boolean; trialExpiresAt: Date | null }> {
+    if (isSystemAdmin) return { permissions: { ...MAX_LICENSE_PERMISSIONS }, licenseType: "enterprise", isTrial: false, trialExpiresAt: null };
 
     // 1. Check direct user license
     const directLicense = await licenseRepository.getLicenseByUserId(userId);
     if (directLicense?.isActive && directLicense.permissions) {
-      return { permissions: resolvePermissions(directLicense.permissions), licenseType: directLicense.licenseType };
+      return { permissions: resolvePermissions(directLicense.permissions), licenseType: directLicense.licenseType, isTrial: directLicense.isTrial, trialExpiresAt: directLicense.trialExpiresAt };
     }
 
     // 2. Check institute licenses
@@ -186,12 +192,12 @@ class LicenseService {
       const instituteLicenses = await licenseRepository.getLicensesByInstituteId(inst.id);
       const activeLicense = instituteLicenses.find((l) => l.isActive && l.permissions);
       if (activeLicense) {
-        return { permissions: resolvePermissions(activeLicense.permissions), licenseType: activeLicense.licenseType };
+        return { permissions: resolvePermissions(activeLicense.permissions), licenseType: activeLicense.licenseType, isTrial: activeLicense.isTrial, trialExpiresAt: activeLicense.trialExpiresAt };
       }
     }
 
     // 3. No license found — return defaults (all disabled)
-    return { permissions: resolvePermissions(null), licenseType: "none" };
+    return { permissions: resolvePermissions(null), licenseType: "none", isTrial: false, trialExpiresAt: null };
   }
 
   /** Convenience: just the permissions */

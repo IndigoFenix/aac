@@ -232,8 +232,10 @@ export const licenses = pgTable("licenses", {
   licenseType: text("license_type").notNull().default("standard"), // 'standard', 'premium', 'enterprise'
 
   // Payment & subscription info
-  subscriptionType: text("subscription_type").default("free"), // 'free', 'monthly', 'yearly'
+  subscriptionType: text("subscription_type").default("monthly"), // 'monthly', 'yearly'
   subscriptionExpiresAt: timestamp("subscription_expires_at"),
+  isTrial: boolean("is_trial").default(false).notNull(),
+  trialExpiresAt: timestamp("trial_expires_at"),
   credits: integer("credits").default(0).notNull(),
 
   // Stripe/payment integration

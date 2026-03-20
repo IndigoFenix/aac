@@ -2075,9 +2075,11 @@ export const he = {
       standard: "רגיל",
       premium: "פרימיום",
       enterprise: "ארגוני",
-      free: "חינם",
       monthly: "חודשי",
       yearly: "שנתי",
+      isTrial: "רישיון ניסיון",
+      trialExpiresAt: "תפוגת ניסיון",
+      trialExpired: "ניסיון פג תוקף",
       // Recipient
       recipient: "נמען",
       email: 'דוא"ל',

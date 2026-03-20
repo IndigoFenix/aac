@@ -173,8 +173,8 @@ export class UserService {
     const base = this.formatUserForResponse(user);
     try {
       const { licenseService } = await import("./licenseService");
-      const { permissions, licenseType } = await licenseService.getUserLicenseInfo(user.id, user.isSystemAdmin);
-      return { ...base, licensePermissions: permissions, licenseType };
+      const { permissions, licenseType, isTrial, trialExpiresAt } = await licenseService.getUserLicenseInfo(user.id, user.isSystemAdmin);
+      return { ...base, licensePermissions: permissions, licenseType, isTrial, trialExpiresAt };
     } catch (err) {
       console.error("Failed to fetch license permissions:", err);
       return base;

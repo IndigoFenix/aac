@@ -65,7 +65,9 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
   // License fields
   const [name, setName] = useState('');
   const [licenseType, setLicenseType] = useState('standard');
-  const [subscriptionType, setSubscriptionType] = useState('free');
+  const [subscriptionType, setSubscriptionType] = useState('monthly');
+  const [isTrial, setIsTrial] = useState(false);
+  const [trialExpiresAt, setTrialExpiresAt] = useState('');
 
   // Permissions
   const [grantAll, setGrantAll] = useState(false);
@@ -85,7 +87,9 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
       if (license) {
         setName(license.name || '');
         setLicenseType(license.licenseType || 'standard');
-        setSubscriptionType(license.subscriptionType || 'free');
+        setSubscriptionType(license.subscriptionType || 'monthly');
+        setIsTrial(license.isTrial || false);
+        setTrialExpiresAt(license.trialExpiresAt ? license.trialExpiresAt.split('T')[0] : '');
 
         const perms = license.permissions;
         if (perms) {
@@ -130,7 +134,9 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
     setInstituteType('school');
     setName('');
     setLicenseType('standard');
-    setSubscriptionType('free');
+    setSubscriptionType('monthly');
+    setIsTrial(false);
+    setTrialExpiresAt('');
     resetPermissions();
   }
 
@@ -166,6 +172,8 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
           name: name || undefined,
           licenseType,
           subscriptionType,
+          isTrial,
+          trialExpiresAt: isTrial && trialExpiresAt ? trialExpiresAt : undefined,
           permissions: buildPermissions(),
         };
         await updateLicense.mutateAsync({ id: license!.id, data });
@@ -179,6 +187,8 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
           name: name || undefined,
           licenseType,
           subscriptionType,
+          isTrial,
+          trialExpiresAt: isTrial && trialExpiresAt ? trialExpiresAt : undefined,
           permissions: buildPermissions(),
           inviteEmail,
           firstName: firstName || undefined,
@@ -319,7 +329,6 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="trial">{t('admin.licenses.trial')}</SelectItem>
                       <SelectItem value="standard">{t('admin.licenses.standard')}</SelectItem>
                       <SelectItem value="premium">{t('admin.licenses.premium')}</SelectItem>
                       <SelectItem value="enterprise">{t('admin.licenses.enterprise')}</SelectItem>
@@ -333,13 +342,31 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="free">{t('admin.licenses.free')}</SelectItem>
                       <SelectItem value="monthly">{t('admin.licenses.monthly')}</SelectItem>
                       <SelectItem value="yearly">{t('admin.licenses.yearly')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
+            </div>
+
+            {/* Trial */}
+            <div className="flex items-center justify-between mt-3">
+              <div className="flex items-center gap-2">
+                <Switch checked={isTrial} onCheckedChange={setIsTrial} />
+                <Label>{t('admin.licenses.isTrial')}</Label>
+              </div>
+              {isTrial && (
+                <div className="flex items-center gap-2">
+                  <Label>{t('admin.licenses.trialExpiresAt')}</Label>
+                  <Input
+                    type="date"
+                    className="w-44"
+                    value={trialExpiresAt}
+                    onChange={(e) => setTrialExpiresAt(e.target.value)}
+                  />
+                </div>
+              )}
             </div>
           </div>
 

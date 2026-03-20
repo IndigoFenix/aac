@@ -467,6 +467,8 @@ export interface AdminLicense {
   name: string | null;
   licenseType: string;
   subscriptionType: string | null;
+  isTrial: boolean;
+  trialExpiresAt: string | null;
   permissions: any | null;
   inviteEmail: string | null;
   instituteId: string | null;
@@ -487,6 +489,8 @@ export interface CreateLicenseData {
   name?: string;
   licenseType?: string;
   subscriptionType?: string;
+  isTrial?: boolean;
+  trialExpiresAt?: string;
   permissions?: any;
   inviteEmail: string;
   firstName?: string;
@@ -500,6 +504,8 @@ export interface UpdateLicenseData {
   name?: string;
   licenseType?: string;
   subscriptionType?: string;
+  isTrial?: boolean;
+  trialExpiresAt?: string | null;
   permissions?: any | null;
   isActive?: boolean;
   inviteEmail?: string | null;

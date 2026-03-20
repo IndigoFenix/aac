@@ -186,9 +186,16 @@ export function LicenseList() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="capitalize">
-                        {license.licenseType}
-                      </Badge>
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="outline" className="capitalize">
+                          {license.licenseType}
+                        </Badge>
+                        {license.isTrial && (
+                          <Badge variant="secondary" className="text-amber-600">
+                            {t('admin.licenses.trial')}
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <Badge variant={status.variant}>{status.label}</Badge>
