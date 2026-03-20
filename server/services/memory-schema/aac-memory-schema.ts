@@ -777,7 +777,7 @@ export function getAACMemoryFields(options?: {
     createReadOnlyArrayField(
       'Context_StudentInstitutes',
       'Student Institutes',
-      'Schools and hospitals the student attends',
+      'Schools and clinics the student attends',
       false,
       async (ctx) => {
         const studentId = ctx.all.studentId;

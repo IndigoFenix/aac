@@ -184,7 +184,7 @@ export default function PendingInvitesPage() {
                         'w-12 h-12 rounded-lg flex items-center justify-center shrink-0',
                         isDark ? 'bg-slate-800' : 'bg-secondary'
                       )}>
-                        {invite.institute.type === 'hospital' ? (
+                        {invite.institute.type === 'clinic' ? (
                           <Hospital className="w-6 h-6 text-primary" />
                         ) : (
                           <School className="w-6 h-6 text-primary" />

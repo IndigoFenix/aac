@@ -166,7 +166,7 @@ export interface MockDataPoint {
 export interface MockInstitute {
   id: string;
   name: string;
-  type: 'school' | 'hospital';
+  type: 'school' | 'clinic';
   description?: string;
   address?: string;
   phone?: string;

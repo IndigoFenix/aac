@@ -60,7 +60,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
   // Institute fields (create only)
   const [createInstitute, setCreateInstitute] = useState(false);
   const [instituteName, setInstituteName] = useState('');
-  const [instituteType, setInstituteType] = useState<'school' | 'hospital'>('school');
+  const [instituteType, setInstituteType] = useState<'school' | 'clinic'>('school');
 
   // License fields
   const [name, setName] = useState('');
@@ -280,13 +280,13 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
                     </div>
                     <div>
                       <Label>{t('admin.licenses.instituteType')}</Label>
-                      <Select value={instituteType} onValueChange={(v) => setInstituteType(v as 'school' | 'hospital')}>
+                      <Select value={instituteType} onValueChange={(v) => setInstituteType(v as 'school' | 'clinic')}>
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="school">{t('admin.licenses.school')}</SelectItem>
-                          <SelectItem value="hospital">{t('admin.licenses.hospital')}</SelectItem>
+                          <SelectItem value="clinic">{t('admin.licenses.clinic')}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>

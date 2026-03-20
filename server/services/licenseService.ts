@@ -22,7 +22,7 @@ interface CreateLicenseInput {
   // Optional institute creation
   createInstitute?: boolean;
   instituteName?: string;
-  instituteType?: "school" | "hospital";
+  instituteType?: "school" | "clinic";
 }
 
 class LicenseService {

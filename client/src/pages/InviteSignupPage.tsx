@@ -39,7 +39,7 @@ interface InviteData {
 interface InstituteData {
   id: string;
   name: string;
-  type: 'school' | 'hospital';
+  type: 'school' | 'clinic';
   logoUrl?: string;
 }
 
@@ -245,7 +245,7 @@ export default function InviteSignupPage() {
           <Card className="w-full max-w-md shadow-lg">
             <CardHeader className="space-y-1 text-center">
               <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-                {institute.type === 'hospital' ? (
+                {institute.type === 'clinic' ? (
                   <Hospital className="w-8 h-8 text-primary" />
                 ) : (
                   <School className="w-8 h-8 text-primary" />
@@ -333,7 +333,7 @@ export default function InviteSignupPage() {
         <Card className="w-full max-w-md shadow-lg">
           <CardHeader className="space-y-1 text-center">
             <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-              {institute.type === 'hospital' ? (
+              {institute.type === 'clinic' ? (
                 <Hospital className="w-8 h-8 text-primary" />
               ) : (
                 <School className="w-8 h-8 text-primary" />

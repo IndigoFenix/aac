@@ -91,18 +91,18 @@ export const adminUsers = pgTable("admin_users", {
 // PUBLIC TABLES — Organization
 // =============================================================================
 
-// Institutes table - Schools or Hospitals that can own licenses
+// Institutes table - Schools or Clinics that can own licenses
 export const institutes = pgTable("institutes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
-  type: instituteTypeEnum("type").notNull(), // 'school' or 'hospital'
+  type: instituteTypeEnum("type").notNull(), // 'school' or 'clinic'
   description: text("description"),
   address: text("address"),
   phone: text("phone"),
   email: text("email"),
   website: text("website"),
   logoUrl: text("logo_url"),
-  instituteIdNumber: text("institute_id_number"), // Official ID number (e.g. school code, hospital license)
+  instituteIdNumber: text("institute_id_number"), // Official ID number (e.g. school code, clinic license)
   instituteIdType: text("institute_id_type"), // Type of ID (e.g. 'MOE' for Ministry of Education, 'MOH' for Ministry of Health)
   // External storage — when set, sensitive fields for this institute's students are stored in the named backend
   externalStorage: varchar("external_storage"),

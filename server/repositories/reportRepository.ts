@@ -66,7 +66,7 @@ export class ReportRepository {
 
   /**
    * Get the current (active/draft) medical record for a student and institute.
-   * There should only be one active medical record per hospital per student.
+   * There should only be one active medical record per clinic per student.
    */
   async getCurrentMedicalRecord(
     studentId: string,
