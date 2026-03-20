@@ -138,6 +138,9 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
         {user.licenseType && user.licenseType !== 'none' && (
           <div className="hidden md:flex items-center gap-1 text-xs text-muted-foreground">
             <span className="font-medium text-foreground capitalize">{user.licenseType}</span>
+            {user.isTrial && (
+              <span className="text-amber-600 font-medium">({t('admin.licenses.trial')})</span>
+            )}
           </div>
         )}
 

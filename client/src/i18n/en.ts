@@ -1883,9 +1883,11 @@ export const en = {
       standard: "Standard",
       premium: "Premium",
       enterprise: "Enterprise",
-      free: "Free",
       monthly: "Monthly",
       yearly: "Yearly",
+      isTrial: "Trial License",
+      trialExpiresAt: "Trial Expires",
+      trialExpired: "Trial Expired",
       // Recipient
       recipient: "Recipient",
       email: "Email",

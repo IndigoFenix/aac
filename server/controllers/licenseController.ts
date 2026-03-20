@@ -11,6 +11,8 @@ const createLicenseSchema = z.object({
   licenseType: z.string().optional(),
   subscriptionType: z.string().optional(),
   permissions: licensePermissionsSchema.optional(),
+  isTrial: z.boolean().optional(),
+  trialExpiresAt: z.string().optional(),
   inviteEmail: z.string().email(),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
@@ -25,6 +27,8 @@ const updateLicenseSchema = z.object({
   subscriptionType: z.string().optional(),
   permissions: licensePermissionsSchema.optional().nullable(),
   isActive: z.boolean().optional(),
+  isTrial: z.boolean().optional(),
+  trialExpiresAt: z.string().nullable().optional(),
   inviteEmail: z.string().email().optional().nullable(),
 });
 

@@ -31,6 +31,8 @@ interface User {
   mfaEnforcedByAdmin?: boolean;
   licensePermissions?: LicensePermissions;
   licenseType?: string;
+  isTrial?: boolean;
+  trialExpiresAt?: string;
 }
 
 export interface LoginResult {
