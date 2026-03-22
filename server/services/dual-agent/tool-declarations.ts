@@ -38,9 +38,13 @@ export interface ToolDeclarationConfig {
 // ---------------------------------------------------------------------------
 
 function buildSpeakTool(config: ToolDeclarationConfig): FunctionDeclaration {
+  const hasInterpretTool = config.interpretationLevel >= 2;
+  const interpretNote = hasInterpretTool
+    ? "Call interpret() BEFORE speak() when using both."
+    : "When a [BUTTON PRESS] occurs, the student's sentence is voiced automatically — do NOT repeat or paraphrase what the student said. Just respond naturally.";
   return {
     name: "speak",
-    description: `Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. Call interpret() BEFORE speak() when using both. Only call speak() once per turn.`,
+    description: `Say something to the user or people nearby (AI voice). A separate TTS system voices this — do NOT produce audio yourself. Use to greet, ask questions, comment on observations, or suggest activities. When you ask a question, ALWAYS also call add_buttons() or rebuild_board() with answer buttons — the user cannot respond without them. Do NOT announce board changes or repeat yourself. ${interpretNote} Only call speak() once per turn.`,
     behavior: Behavior.BLOCKING,
     parametersJsonSchema: {
       type: "object",
@@ -110,6 +114,10 @@ function buildContextTool(_config: ToolDeclarationConfig): FunctionDeclaration {
 
 function buildAddButtonsTool(config: ToolDeclarationConfig): FunctionDeclaration {
   const max = config.maxBoardItems || 12;
+  const needsSentences = config.interpretationLevel <= 1;
+  const formatDesc = needsSentences
+    ? "Comma-separated buttons: label|icon|imageKey|sentence. The sentence is a natural phrase the student means when pressing this button — keep it short and comma-free. imageKey is an unambiguous English key for symbol generation (leave empty if not needed). Icon is an emoji, face:contactId, or symbol:symbolId. Example: \"Water|💧|water_glass|I would like some water, Play|🎮|game_controller|I want to play, Go outside|🚪|door_outside|Can we go outside\""
+    : "Comma-separated buttons: label|icon. Icon is an emoji, face:contactId, or symbol:symbolId. Example: \"Water|💧, Play|🎮, Go outside|🚪\"";
   return {
     name: "add_buttons",
     description: `Add communication buttons to the AAC board. Max ${max} buttons total — call remove_buttons() first if full. Do not duplicate existing buttons or include Yes/No/Help/More (automatic).`,
@@ -117,7 +125,7 @@ function buildAddButtonsTool(config: ToolDeclarationConfig): FunctionDeclaration
     parametersJsonSchema: {
       type: "object",
       properties: {
-        buttons: { type: "string", description: "Comma-separated buttons: label|icon. Icon is an emoji, face:contactId, or symbol:symbolId. Example: \"Water|💧, Play|🎮, Go outside|🚪\"" },
+        buttons: { type: "string", description: formatDesc },
       },
       required: ["buttons"],
     },
@@ -145,6 +153,10 @@ function buildRemoveButtonsTool(config: ToolDeclarationConfig): FunctionDeclarat
 
 function buildRebuildBoardTool(config: ToolDeclarationConfig): FunctionDeclaration {
   const max = config.maxBoardItems || 12;
+  const needsSentences = config.interpretationLevel <= 1;
+  const formatDesc = needsSentences
+    ? "Comma-separated buttons: label|icon|imageKey|sentence. The sentence is a natural phrase the student means when pressing this button — keep it short and comma-free. imageKey is an unambiguous English key for symbol generation (leave empty if not needed). Icon is an emoji, face:contactId, or symbol:symbolId. Example: \"Play|🎮|game_controller|I want to play, Music|🎵|music_notes|Put on some music, Draw|✏️|pencil_drawing|I want to draw, Tired|😴|sleepy_face|I am tired\""
+    : "Comma-separated buttons: label|icon. Icon is an emoji, face:contactId, or symbol:symbolId. Example: \"Play|🎮, Music|🎵, Draw|✏️, Tired|😴\"";
   return {
     name: "rebuild_board",
     description: `Replace the entire AAC board. Use after [BUTTON PRESS] inputs, major context shifts, or to create the initial board. Only call this once per turn. For minor changes, prefer add_buttons/remove_buttons. Max ${max} buttons, aim for ~${Math.min(8, max)}.`,
@@ -152,7 +164,7 @@ function buildRebuildBoardTool(config: ToolDeclarationConfig): FunctionDeclarati
     parametersJsonSchema: {
       type: "object",
       properties: {
-        buttons: { type: "string", description: "Comma-separated buttons: label|icon. Icon is an emoji, face:contactId, or symbol:symbolId. Example: \"Play|🎮, Music|🎵, Draw|✏️, Tired|😴\"" },
+        buttons: { type: "string", description: formatDesc },
       },
       required: ["buttons"],
     },
@@ -326,7 +338,7 @@ export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
     declarations.push(buildSpeakTool(config));
   }
 
-  if (config.interpretationLevel > 0) {
+  if (config.interpretationLevel >= 2) {
     declarations.push(buildInterpretTool(config));
   }
 

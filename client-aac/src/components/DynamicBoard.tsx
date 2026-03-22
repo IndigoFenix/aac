@@ -102,11 +102,12 @@ function getButtonColor(color?: string): string {
 }
 
 /** Create a BoardButton from a patch add entry */
-function makeBoardButton(entry: { label: string; iconRef: string; symbolPath?: string }, index: number): BoardButton {
+function makeBoardButton(entry: { label: string; iconRef: string; symbolPath?: string; sentence?: string }, index: number): BoardButton {
   return {
     id: `btn-patch-${Date.now()}-${index}`,
     label: entry.label,
     spokenText: entry.label,
+    ...(entry.sentence ? { sentence: entry.sentence } : {}),
     row: 0,
     col: 0,
     iconRef: entry.iconRef,
@@ -435,6 +436,7 @@ export default function DynamicBoard({
     return (
       <motion.button
         data-dwell
+        data-dwell-cell={`grid-${index}`}
         key={`btn-${button.label}-${index}`}
         initial={isEntering ? { opacity: 0, scale: 0.8 } : { opacity: 1, scale: 1 }}
         animate={{ opacity: 1, scale: 1 }}

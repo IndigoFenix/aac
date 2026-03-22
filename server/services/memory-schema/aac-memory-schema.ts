@@ -184,11 +184,14 @@ export function buildFunctionCallingPrompt(params: {
   const diagnosisStr = studentDiagnosis ? ` with ${studentDiagnosis}` : '';
   const aiIdentity = aiName ? `You are ${aiName}, a companion AI` : `You are a companion AI`;
 
+  const hasInterpretTool = (interpretationLevel ?? 1) >= 2;
+
   let prompt = `${aiIdentity} for ${studentName}, ${ageStr}${diagnosisStr} ("your user").
 You observe the environment through a camera and listen to ambient audio.
-You communicate ONLY by calling tools. Never produce speech or audio directly — your audio output is discarded. All speech goes through speak() and interpret() tools which are voiced by a separate TTS system.
+You communicate ONLY by calling tools. Never produce speech or audio directly — your audio output is discarded. All speech goes through speak()${hasInterpretTool ? ' and interpret()' : ''} tools which are voiced by a separate TTS system.
 
-${mode === 'silent' ? `MODE: SILENT — You do NOT talk to the user. Never call speak(). Observe and provide utterance buttons the user can press to communicate.` : `MODE: INTERACTIVE — You can talk to the user via speak() and interpret their button presses via interpret().`}`;
+${mode === 'silent' ? `MODE: SILENT — You do NOT talk to the user. Never call speak(). Observe and provide utterance buttons the user can press to communicate.` : hasInterpretTool ? `MODE: INTERACTIVE — You can talk to the user via speak() and interpret their button presses via interpret().` : `MODE: INTERACTIVE — You can talk to the user via speak(). When the user presses a button, the pre-generated sentence on that button is automatically voiced in the student's voice — you do NOT need to interpret it. You will hear the student's sentence through the microphone — do NOT transcribe it (it is a TTS echo, not new speech). Just respond naturally via speak() and update the board.`}`;
+
 
   // Known contacts
   if (knownContacts && knownContacts.length > 0) {
@@ -215,7 +218,7 @@ ${mode === 'silent' ? `MODE: SILENT — You do NOT talk to the user. Never call 
 
   // Language
   if (language) {
-    prompt += `\n\nLanguage: ${language}. All button labels, speak(), and interpret() output must be in this language unless translating for someone.`;
+    prompt += `\n\nLanguage: ${language}. All button labels${hasInterpretTool ? ', speak(), and interpret()' : ' and speak()'} output must be in this language unless translating for someone.`;
   }
 
   // Auto-generated symbol image keys
