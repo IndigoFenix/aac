@@ -289,8 +289,11 @@ export class ChatRepository {
     return result?.total ?? 0;
   }
 
-  async getAACSessionsAdmin(opts: ChatAdminSessionFilters) {
+  async getAACSessionsAdmin(opts: ChatAdminSessionFilters & { studentId?: string }) {
     const conditions = [isNull(chatSessions.deletedAt), eq(chatSessions.chatMode, "aac")];
+    if (opts.studentId) {
+      conditions.push(eq(chatSessions.studentId, opts.studentId));
+    }
     if (opts.startDate) {
       conditions.push(gte(chatSessions.started, new Date(opts.startDate)));
     }
@@ -321,8 +324,11 @@ export class ChatRepository {
       .offset(opts.offset);
   }
 
-  async getAACSessionsAdminCount(opts: ChatAdminSessionFilters): Promise<number> {
+  async getAACSessionsAdminCount(opts: ChatAdminSessionFilters & { studentId?: string }): Promise<number> {
     const conditions = [isNull(chatSessions.deletedAt), eq(chatSessions.chatMode, "aac")];
+    if (opts.studentId) {
+      conditions.push(eq(chatSessions.studentId, opts.studentId));
+    }
     if (opts.startDate) {
       conditions.push(gte(chatSessions.started, new Date(opts.startDate)));
     }

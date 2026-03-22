@@ -1,7 +1,7 @@
 // server/services/voice/tts-facade.ts
 // Routes TTS requests to the correct provider (OpenAI fallback or ElevenLabs custom)
 
-import { openaiTtsService, type VoiceType } from "./openai-tts-service";
+import { googleTtsService, type VoiceType } from "./google-tts-service";
 import { elevenlabsTtsService } from "./elevenlabs-tts-service";
 import type { Voice } from "@shared/schema";
 
@@ -53,7 +53,7 @@ export async function synthesize(
     }
   }
 
-  return await openaiTtsService.synthesize(text, voice.language, {
+  return await googleTtsService.synthesize(text, voice.language, {
     voiceType: voice.fallbackType,
   });
 }
@@ -100,7 +100,7 @@ export async function* synthesizeStream(
     }
   }
 
-  yield* openaiTtsService.synthesizeStream(text, voice.language, {
+  yield* googleTtsService.synthesizeStream(text, voice.language, {
     voiceType: voice.fallbackType,
   });
 }

@@ -719,7 +719,10 @@ export class LiveRelay {
         // Audio output is discarded — ElevenLabs TTS is used instead.
         // proactiveAudio: false — prevents the model from autonomously starting new
         // turns after completing one, which causes repeated tool calls.
-        this.useToolResponseScheduling = false;
+        // SILENT scheduling on tool responses prevents the model from generating
+        // new turns after receiving late async tool results (e.g. rebuild_board
+        // with symbol resolution completing after TURN_COMPLETE).
+        this.useToolResponseScheduling = true;
         this.provider = new GeminiLiveProvider(callbacks, true /* useVertexAI */);
         providerConfig = {
           model: aacChatConfig.model,
@@ -733,7 +736,7 @@ export class LiveRelay {
       } else {
         // Preview native-audio model: AUDIO modality + function calling
         // proactiveAudio: false — same as GA path
-        this.useToolResponseScheduling = false;
+        this.useToolResponseScheduling = true;
         this.provider = new GeminiLiveProvider(callbacks);
         providerConfig = {
           model: aacChatConfig.model,
