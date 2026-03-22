@@ -1038,6 +1038,8 @@ export interface BoardButton {
   col: number;
   label: string;
   spokenText?: string;
+  /** Pre-generated interpreted sentence for this button (e.g. "I want some water" for a "Water" button) */
+  sentence?: string;
   color?: string;
   iconRef?: string;
   symbolPath?: string;

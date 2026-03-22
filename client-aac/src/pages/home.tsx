@@ -59,7 +59,7 @@ interface HomeProps {
  */
 function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onInitializedChange, onYesNoChange, onRestartSessionReady, onPausedChange }: {
   onModeChange: (mode: 'interact' | 'silent') => void;
-  onInterpretReady: (fn: ((buttons: string[]) => Promise<void>) | null) => void;
+  onInterpretReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
   onDetectionChange?: (enabled: boolean) => void;
   onBoardPatchChange?: (patch: import("@/hooks/useDualAgent").BoardPatch | null) => void;
   onSymbolUpdateChange?: (data: { buttonLabel: string; symbolPath: string } | null) => void;
@@ -77,7 +77,7 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
   }, [interactionMode, onModeChange]);
 
   useEffect(() => {
-    onInterpretReady((buttons: string[]) => interpretButtons(buttons));
+    onInterpretReady((buttons: string[], sentences?: Record<string, string>) => interpretButtons(buttons, sentences));
     return () => onInterpretReady(null);
   }, [interpretButtons, onInterpretReady]);
 
@@ -221,18 +221,6 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   // Recent button presses for Interpret feature (silent mode)
   const [recentButtonPresses, setRecentButtonPresses] = useState<string[]>([]);
 
-  // Button press buffering — accumulate presses before sending
-  const BUTTON_SEND_DELAY_MS = 2000;
-  const buttonBufferRef = useRef<string[]>([]);
-  const buttonSendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastButtonRef = useRef<string | null>(null);
-
-  // Clean up buffer timer on unmount
-  useEffect(() => {
-    return () => {
-      if (buttonSendTimerRef.current) clearTimeout(buttonSendTimerRef.current);
-    };
-  }, []);
 
   // Board mode: 'ai' shows DynamicBoard, 'db' shows PrebuiltBoardSection
   const [boardMode, setBoardMode] = useState<'ai' | 'db'>('ai');
@@ -244,7 +232,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   // Yes/No overlay state (bridged from DualAgentContext)
   const [yesNoActive, setYesNoActive] = useState(false);
   const dismissYesNoRef = useRef<(() => void) | null>(null);
-  const interpretFnRef = useRef<((buttons: string[]) => Promise<void>) | null>(null);
+  const interpretFnRef = useRef<((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null>(null);
   const sendMessageFnRef = useRef<((msg: string) => Promise<void>) | null>(null);
   const restartSessionFnRef = useRef<(() => void) | null>(null);
 
@@ -628,56 +616,24 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     }, 2000);
   };
 
-  // Flush the button buffer — send accumulated presses to AI for interpretation
-  const flushButtonBuffer = useCallback(() => {
-    if (buttonBufferRef.current.length === 0) return;
-    const buttons = [...buttonBufferRef.current];
-    buttonBufferRef.current = [];
-    lastButtonRef.current = null;
-    if (buttonSendTimerRef.current) {
-      clearTimeout(buttonSendTimerRef.current);
-      buttonSendTimerRef.current = null;
-    }
-    setTimeout(() => setCurrentSpeech(""), 2000);
 
-    // Send buffered buttons to AI via button_press WebSocket message.
-    // If the server isn't available, fall back to local TTS.
-    if (interpretFnRef.current) {
-      interpretFnRef.current(buttons);
-      setRecentButtonPresses([]);
-    } else {
-      const text = buttons.join(" ");
-      speak(text, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
-    }
-  }, [speak, currentLanguage, userProfile?.aacSettings?.studentVoiceType]);
-
-  // Handle AAC board button click — buffer presses, send after delay or on double-tap
+  // Handle AAC board button click — send immediately to server
   const handleBoardButtonClick = useCallback((button: BoardButton, spokenText: string) => {
     // Track for interpret feature (keep last 10)
     setRecentButtonPresses(prev => [...prev.slice(-9), spokenText]);
 
-    // Same button pressed twice in a row → send immediately
-    if (lastButtonRef.current === spokenText) {
-      // Add to buffer (it's a repeat, so it's already in there once)
-      buttonBufferRef.current.push(spokenText);
-      setCurrentSpeech(buttonBufferRef.current.join(" "));
-      flushButtonBuffer();
-      return;
-    }
+    setCurrentSpeech(spokenText);
+    setTimeout(() => setCurrentSpeech(""), 2000);
 
-    // Different button — accumulate and reset timer
-    buttonBufferRef.current.push(spokenText);
-    lastButtonRef.current = spokenText;
-    setCurrentSpeech(buttonBufferRef.current.join(" "));
+    const sentences = button.sentence ? { [spokenText]: button.sentence } : undefined;
 
-    // Reset the send timer
-    if (buttonSendTimerRef.current) {
-      clearTimeout(buttonSendTimerRef.current);
+    if (interpretFnRef.current) {
+      interpretFnRef.current([spokenText], sentences);
+      setRecentButtonPresses([]);
+    } else {
+      speak(spokenText, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
     }
-    buttonSendTimerRef.current = setTimeout(() => {
-      flushButtonBuffer();
-    }, BUTTON_SEND_DELAY_MS);
-  }, [flushButtonBuffer]);
+  }, [speak, currentLanguage, userProfile?.aacSettings?.studentVoiceType]);
 
   // Handle interpret: synthesize recent button presses into speech
   const handleInterpret = useCallback(() => {

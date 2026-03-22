@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { useDualAgentContext } from "@/contexts/DualAgentContext";
+import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
 import { useDebugSession, type DebugSessionMessage } from "@/hooks/useDebugSession";
 import type { LastCapturedFaceImage } from "@/hooks/usePersonIdentification";
 import { useCameraAttentivenessOptional } from "@/contexts/CameraAttentivenessContext";
@@ -240,6 +241,7 @@ export default function UnifiedDebugPanel({
   // Context data
   const ctx = useDualAgentContext();
   const attentiveness = useCameraAttentivenessOptional();
+  const { dwellDebug, enabled: dwellEnabled, mode: dwellMode } = useEyeTrackingDwell();
 
   // Session debug polling
   const { data: sessionData } = useDebugSession(ctx.sessionId, ctx.studentId, isOpen);
@@ -260,6 +262,7 @@ export default function UnifiedDebugPanel({
       interactive: stored.interactive ?? true,
       monitor: stored.monitor ?? true,
       sessionLog: stored.sessionLog ?? false,
+      dwell: stored.dwell ?? false,
     };
   });
 
@@ -942,6 +945,77 @@ export default function UnifiedDebugPanel({
               </div>
             )}
           </div>
+
+          {/* ===== Section: Dwell Selection ===== */}
+          {dwellEnabled && (
+          <div>
+            <SectionHeader
+              title="Dwell Selection"
+              icon={<Eye className="w-3.5 h-3.5" />}
+              isOpen={sections.dwell}
+              onClick={() => toggleSection("dwell")}
+              badge={
+                <Badge className={`text-[9px] px-1 ${dwellDebug.hoverEnabled ? "bg-green-500 text-white" : "bg-orange-500 text-white"}`}>
+                  {dwellDebug.hoverEnabled ? "Hover ON" : "Hover OFF"}
+                </Badge>
+              }
+            />
+            {sections.dwell && (
+              <div className="p-2 space-y-2 text-xs">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded">
+                    <div className="text-[10px] text-gray-500">Mode</div>
+                    <div className="text-[11px] font-medium">{dwellMode}</div>
+                  </div>
+                  <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded">
+                    <div className="text-[10px] text-gray-500">Hover</div>
+                    <div className={`text-[11px] font-medium ${dwellDebug.hoverEnabled ? "text-green-600" : "text-orange-600"}`}>
+                      {dwellDebug.hoverEnabled ? "Enabled" : "Disabled"}
+                    </div>
+                  </div>
+                </div>
+                {!dwellDebug.hoverEnabled && (
+                  <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded">
+                    <div className="text-[10px] text-gray-500">Movement from anchor</div>
+                    <div className="text-[11px] font-medium">
+                      {dwellDebug.movementFromAnchor.toFixed(0)} / {dwellDebug.movementThreshold}px
+                    </div>
+                    <div className="mt-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-500 rounded-full transition-all"
+                        style={{ width: `${Math.min(100, (dwellDebug.movementFromAnchor / dwellDebug.movementThreshold) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded">
+                    <div className="text-[10px] text-gray-500">Current cell</div>
+                    <div className="text-[11px] font-medium font-mono">{dwellDebug.currentCellId ?? "—"}</div>
+                  </div>
+                  <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded">
+                    <div className="text-[10px] text-gray-500">Disabled at cell</div>
+                    <div className="text-[11px] font-medium font-mono">{dwellDebug.disabledAtCellId ?? "—"}</div>
+                  </div>
+                </div>
+                {dwellDebug.dwellElementLabel && (
+                  <div className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded">
+                    <div className="text-[10px] text-gray-500">Dwelling on</div>
+                    <div className="text-[11px] font-medium">{dwellDebug.dwellElementLabel}</div>
+                    {dwellDebug.dwellProgress > 0 && (
+                      <div className="mt-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-blue-500 rounded-full transition-all"
+                          style={{ width: `${dwellDebug.dwellProgress * 100}%` }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          )}
 
           {/* ===== Section 5: Session Log ===== */}
           <div>

@@ -12,22 +12,26 @@ import type {
  * Parse board button format: "label|icon, label|icon, ..." or "label|icon|image_key, ..."
  * If no icon is provided, defaults to comment icon.
  * The optional third pipe-delimited field is an image_key for auto-generated symbols.
+ * The optional fourth pipe-delimited field is a pre-generated interpreted sentence:
+ *   "Water|💧|water_drop|I would like some water, Play|🎮|game_controller|Let's play"
+ *   "Water|💧||I would like some water"  (no image_key, but sentence)
  */
-export function parseBoardButtons(content: string): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string }> {
-  const buttons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string }> = [];
+export function parseBoardButtons(content: string): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string }> {
+  const buttons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string }> = [];
   const items = content.split(',');
 
   for (const item of items) {
     const trimmed = item.trim();
     if (!trimmed) continue;
 
-    // Check for label|icon or label|icon|image_key format
+    // Check for label|icon or label|icon|image_key or label|icon|image_key|sentence format
     const pipeIndex = trimmed.indexOf('|');
     if (pipeIndex > 0) {
       const parts = trimmed.split('|');
       const label = parts[0].trim();
       let iconRef = parts[1].trim();
       const imageKey = parts[2]?.trim() || undefined;
+      const sentence = parts[3]?.trim() || undefined;
       let symbolPath: string | undefined;
 
       // Handle face:contactId references
@@ -53,6 +57,7 @@ export function parseBoardButtons(content: string): Array<{ label: string; iconR
           symbolPath,
           // Only include imageKey if no custom symbol is already set
           imageKey: symbolPath ? undefined : imageKey,
+          sentence,
         });
       }
     } else {

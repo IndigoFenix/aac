@@ -112,7 +112,7 @@ export interface UseDualAgentReturn {
   initialize: () => Promise<void>;
   sendMessage: (message: string, board?: ParsedBoardData) => Promise<void>;
   sendVoice: (board?: ParsedBoardData) => Promise<void>;
-  interpretButtons: (recentButtons: string[], board?: ParsedBoardData) => Promise<void>;
+  interpretButtons: (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => Promise<void>;
   startRecording: () => Promise<void>;
   stopRecording: () => Promise<void>;
   cancelRecording: () => void;

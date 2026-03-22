@@ -1,6 +1,13 @@
 // client-aac/src/contexts/EyeTrackingDwellContext.tsx
-// Global provider for dwell selection via eye gaze (any source) or mouse position.
-// Hit-tests [data-dwell] elements at the gaze/mouse point and triggers click after dwell timeout.
+// Dwell selection for eye gaze or mouse/external-device cursor control.
+// Hit-tests [data-dwell] elements and triggers click after dwell timeout.
+//
+// After a selection, hovering is disabled until either:
+//   1. The cursor moves 40px (straight-line) from where it was disabled, OR
+//   2. The cursor enters a different grid cell (data-dwell-cell attribute).
+//
+// Uses requestAnimationFrame (throttled to ~20Hz) instead of setInterval so
+// external devices that move the cursor without firing mousemove still work.
 
 import { createContext, useContext, useEffect, useRef, useState, useCallback, type ReactNode } from "react";
 import type { CalibrationSample } from "@/lib/gazeEstimator";
@@ -15,6 +22,16 @@ export interface DwellTarget {
   progress: number; // 0-1
 }
 
+export interface DwellDebugInfo {
+  hoverEnabled: boolean;
+  movementFromAnchor: number;
+  movementThreshold: number;
+  currentCellId: string | null;
+  disabledAtCellId: string | null;
+  dwellElementLabel: string | null;
+  dwellProgress: number;
+}
+
 export interface EyeTrackingDwellContextValue {
   gazePosition: GazePoint | null;
   dwellTarget: DwellTarget | null;
@@ -25,11 +42,20 @@ export interface EyeTrackingDwellContextValue {
   startCalibration: () => void;
   cancelCalibration: () => void;
   clearCalibration: () => void;
-  /** Get the raw (uncalibrated) gaze point — used by calibration flow */
   getRawGaze: () => GazePoint | null;
-  /** Apply calibration from collected samples — used by calibration flow */
   applyCalibration: (samples: CalibrationSample[]) => void;
+  dwellDebug: DwellDebugInfo;
 }
+
+const DEFAULT_DEBUG: DwellDebugInfo = {
+  hoverEnabled: true,
+  movementFromAnchor: 0,
+  movementThreshold: 40,
+  currentCellId: null,
+  disabledAtCellId: null,
+  dwellElementLabel: null,
+  dwellProgress: 0,
+};
 
 const EyeTrackingDwellContext = createContext<EyeTrackingDwellContextValue>({
   gazePosition: null,
@@ -43,6 +69,7 @@ const EyeTrackingDwellContext = createContext<EyeTrackingDwellContextValue>({
   clearCalibration: () => {},
   getRawGaze: () => null,
   applyCalibration: () => {},
+  dwellDebug: DEFAULT_DEBUG,
 });
 
 export function useEyeTrackingDwell() {
@@ -53,9 +80,7 @@ export function useEyeTrackingDwell() {
 interface Props {
   mode: DwellMode;
   dwellTimeMs: number;
-  /** Unified gaze point from useEyeGaze hook (used in "eyegaze" mode) */
   gazePoint: GazePoint | null;
-  /** Calibration props from useEyeGaze (camera provider) */
   isCalibrated: boolean;
   supportsCalibration: boolean;
   getRawGaze: () => GazePoint | null;
@@ -64,7 +89,24 @@ interface Props {
   children: ReactNode;
 }
 
-const TICK_MS = 50;
+const REACTIVATION_PX = 40;
+const TICK_INTERVAL_MS = 50; // throttle rAF to ~20Hz
+
+/** Find the [data-dwell] element under a point, respecting [data-dwell-trap] boundaries. */
+function hitTestDwell(x: number, y: number): HTMLElement | null {
+  const elements = document.elementsFromPoint(x, y);
+  for (const el of elements) {
+    const htmlEl = el as HTMLElement;
+    const trap = htmlEl.closest("[data-dwell-trap]") as HTMLElement | null;
+    if (trap) {
+      const found = htmlEl.closest("[data-dwell]") as HTMLElement | null;
+      return found && trap.contains(found) ? found : null;
+    }
+    const found = htmlEl.closest("[data-dwell]") as HTMLElement | null;
+    if (found) return found;
+  }
+  return null;
+}
 
 export function EyeTrackingDwellProvider({
   mode,
@@ -78,45 +120,46 @@ export function EyeTrackingDwellProvider({
   children,
 }: Props) {
   const enabled = mode !== "off";
+
+  // ── React state (for rendering) ──
   const [gazePosition, setGazePosition] = useState<GazePoint | null>(null);
   const [dwellTarget, setDwellTarget] = useState<DwellTarget | null>(null);
   const [isCalibrated, setIsCalibrated] = useState(externalIsCalibrated);
-
-  // Calibration state (eyegaze mode only, when provider supports it)
   const [isCalibrating, setIsCalibrating] = useState(false);
+  const [dwellDebug, setDwellDebug] = useState<DwellDebugInfo>(DEFAULT_DEBUG);
 
-  // Dwell tracking refs
-  const currentElementRef = useRef<HTMLElement | null>(null);
-  const dwellStartRef = useRef<number>(0);
-  // Entry-gating: when an element appears under a stationary cursor (rather than the cursor
-  // moving onto it), we require a threshold of cumulative movement within the element before
-  // starting the dwell timer. This prevents accidental selection when buttons appear under
-  // the cursor, while still allowing selection without having to exit and re-enter.
-  const lastPointRef = useRef<GazePoint | null>(null);
-  const entryGateRef = useRef<{ rect: DOMRect; accumulated: number } | null>(null);
-  const ENTRY_MOVEMENT_PX = 40;
+  // ── Cursor position refs (written by events/prop, read by rAF loop) ──
+  const cursorPosRef = useRef<GazePoint | null>(null);  // mouse mode
+  const gazePointRef = useRef<GazePoint | null>(null);   // eyegaze mode
 
-  // Mouse position ref (updated by mousemove listener, read by dwell interval)
-  const mousePosRef = useRef<GazePoint | null>(null);
+  // ── Dwell state refs (mutated in rAF loop, never in deps) ──
+  const hoverEnabledRef = useRef(true);
+  const disableAnchorRef = useRef<GazePoint | null>(null);
+  const disabledCellIdRef = useRef<string | null>(null);
+  const currentDwellElRef = useRef<HTMLElement | null>(null);
+  const dwellStartRef = useRef(0);
 
-  // Sync calibrated state from external source
+  // ── Stable refs for props that change often ──
+  const isCalibratingRef = useRef(isCalibrating);
+  isCalibratingRef.current = isCalibrating;
+
+  // ── Sync props to refs ──
+  useEffect(() => { setIsCalibrated(externalIsCalibrated); }, [externalIsCalibrated]);
+  useEffect(() => { gazePointRef.current = externalGazePoint; }, [externalGazePoint]);
+
+  // ── Mouse/pointer tracking (mouse mode) ──
   useEffect(() => {
-    setIsCalibrated(externalIsCalibrated);
-  }, [externalIsCalibrated]);
-
-  // ── Mouse tracking (mouse mode) ──
-  useEffect(() => {
-    if (mode !== "mouse") {
-      mousePosRef.current = null;
-      return;
-    }
-
-    const handleMove = (e: MouseEvent) => {
-      mousePosRef.current = { x: e.clientX, y: e.clientY };
+    if (mode !== "mouse") { cursorPosRef.current = null; return; }
+    const handler = (e: PointerEvent | MouseEvent) => {
+      cursorPosRef.current = { x: e.clientX, y: e.clientY };
     };
-
-    window.addEventListener("mousemove", handleMove, { passive: true });
-    return () => window.removeEventListener("mousemove", handleMove);
+    // Listen to both — pointermove covers more input device types
+    window.addEventListener("pointermove", handler, { passive: true });
+    window.addEventListener("mousemove", handler, { passive: true });
+    return () => {
+      window.removeEventListener("pointermove", handler);
+      window.removeEventListener("mousemove", handler);
+    };
   }, [mode]);
 
   // ── Calibration controls ──
@@ -125,16 +168,13 @@ export function EyeTrackingDwellProvider({
     setIsCalibrating(true);
   }, [mode, supportsCalibration]);
 
-  const cancelCalibration = useCallback(() => {
-    setIsCalibrating(false);
-  }, []);
+  const cancelCalibration = useCallback(() => { setIsCalibrating(false); }, []);
 
   const clearCalibration = useCallback(() => {
     clearCalibrationData();
     setIsCalibrated(false);
   }, [clearCalibrationData]);
 
-  // Wrap applyCalibration to also update local calibrated state
   const applyCalibrationWrapped = useCallback((samples: CalibrationSample[]) => {
     externalApplyCalibration(samples);
     setIsCalibrated(true);
@@ -142,8 +182,6 @@ export function EyeTrackingDwellProvider({
   }, [externalApplyCalibration]);
 
   // ── Auto-trigger calibration on first eyegaze use ──
-  // Uses a longer delay (1.5s) to let provider auto-detection settle.
-  // supportsCalibration is only true after detection completes and camera is confirmed active.
   const autoCalibTriggeredRef = useRef(false);
   const supportsCalibrationRef = useRef(supportsCalibration);
   supportsCalibrationRef.current = supportsCalibration;
@@ -151,169 +189,127 @@ export function EyeTrackingDwellProvider({
     if (mode === "eyegaze" && supportsCalibration && !isCalibrated && !isCalibrating && !autoCalibTriggeredRef.current) {
       autoCalibTriggeredRef.current = true;
       const timer = setTimeout(() => {
-        // Re-check: provider detection may have switched away from camera
-        if (supportsCalibrationRef.current) {
-          startCalibration();
-        }
+        if (supportsCalibrationRef.current) startCalibration();
       }, 1500);
       return () => clearTimeout(timer);
     }
   }, [mode, supportsCalibration, isCalibrated, isCalibrating, startCalibration]);
 
-  // Reset auto-trigger flag when mode changes away from eyegaze
   useEffect(() => {
-    if (mode !== "eyegaze") {
-      autoCalibTriggeredRef.current = false;
-    }
+    if (mode !== "eyegaze") autoCalibTriggeredRef.current = false;
   }, [mode]);
 
-  // ── Shared dwell hit-test logic ──
-  const runDwellHitTest = useCallback((point: GazePoint) => {
-    const prevPoint = lastPointRef.current;
-    lastPointRef.current = point;
-
-    const elements = document.elementsFromPoint(point.x, point.y);
-    let dwellEl: HTMLElement | null = null;
-    for (const el of elements) {
-      const htmlEl = el as HTMLElement;
-      const trap = htmlEl.closest("[data-dwell-trap]") as HTMLElement | null;
-      if (trap) {
-        const found = htmlEl.closest("[data-dwell]") as HTMLElement | null;
-        if (found && trap.contains(found)) {
-          dwellEl = found;
-        }
-        break;
-      }
-      const found = htmlEl.closest("[data-dwell]") as HTMLElement | null;
-      if (found) {
-        dwellEl = found;
-        break;
-      }
-    }
-
-    // Movement delta from previous tick
-    const dx = prevPoint ? point.x - prevPoint.x : 0;
-    const dy = prevPoint ? point.y - prevPoint.y : 0;
-    const moved = Math.sqrt(dx * dx + dy * dy);
-
-    if (!dwellEl) {
-      currentElementRef.current = null;
-      setDwellTarget(null);
-      // Clear entry-gate if cursor moved outside the gated rect
-      if (entryGateRef.current) {
-        const r = entryGateRef.current.rect;
-        if (point.x < r.left || point.x > r.right || point.y < r.top || point.y > r.bottom) {
-          entryGateRef.current = null;
-        }
-      }
-      return;
-    }
-
-    // Entry-gate: accumulate movement while cursor is inside a rect that appeared under it
-    if (entryGateRef.current) {
-      const r = entryGateRef.current.rect;
-      const inside = point.x >= r.left && point.x <= r.right &&
-                     point.y >= r.top && point.y <= r.bottom;
-      if (inside) {
-        entryGateRef.current.accumulated += moved;
-        if (entryGateRef.current.accumulated < ENTRY_MOVEMENT_PX) {
-          // Not enough movement yet — don't start dwell
-          currentElementRef.current = null;
-          setDwellTarget(null);
-          return;
-        }
-        // Enough intentional movement — clear gate and fall through to normal dwell
-        entryGateRef.current = null;
-      } else {
-        // Cursor moved outside — gate cleared
-        entryGateRef.current = null;
-      }
-    }
-
-    const now = Date.now();
-
-    if (dwellEl !== currentElementRef.current) {
-      // New element under cursor — check if cursor actually entered from outside
-      const rect = dwellEl.getBoundingClientRect();
-      const wasOutside = prevPoint
-        ? prevPoint.x < rect.left || prevPoint.x > rect.right ||
-          prevPoint.y < rect.top || prevPoint.y > rect.bottom
-        : false; // No previous point (first tick) — treat as stationary
-
-      if (!wasOutside) {
-        // Previous point was already inside this rect — element appeared under the cursor.
-        // Require cumulative movement before allowing dwell.
-        entryGateRef.current = { rect, accumulated: 0 };
-        currentElementRef.current = null;
-        setDwellTarget(null);
-        return;
-      }
-
-      // Legitimate entry from outside — start dwell timer
-      currentElementRef.current = dwellEl;
-      dwellStartRef.current = now;
-      setDwellTarget({ element: dwellEl, rect, progress: 0 });
-      return;
-    }
-
-    const elapsed = now - dwellStartRef.current;
-    const progress = Math.min(1, elapsed / dwellTimeMs);
-
-    if (progress >= 1) {
-      dwellEl.click();
-      // After click, gate the clicked position so replacement buttons don't auto-select
-      const clickedRect = dwellEl.getBoundingClientRect();
-      entryGateRef.current = { rect: clickedRect, accumulated: 0 };
-      currentElementRef.current = null;
-      setDwellTarget(null);
-    } else {
-      setDwellTarget({ element: dwellEl, rect: dwellEl.getBoundingClientRect(), progress });
-    }
-  }, [dwellTimeMs]);
-
-  // ── Main loop ──
+  // ── Main rAF loop ──
   useEffect(() => {
     if (!enabled) {
       setGazePosition(null);
       setDwellTarget(null);
+      setDwellDebug(DEFAULT_DEBUG);
+      hoverEnabledRef.current = true;
       return;
     }
 
-    const interval = setInterval(() => {
-      // ── Mouse mode: use mouse position directly ──
-      if (mode === "mouse") {
-        const mp = mousePosRef.current;
-        if (!mp) {
-          setGazePosition(null);
-          setDwellTarget(null);
-          currentElementRef.current = null;
-          return;
+    let rafId: number;
+    let lastTickTime = 0;
+
+    const tick = (time: number) => {
+      rafId = requestAnimationFrame(tick);
+
+      // Throttle to ~20Hz
+      if (time - lastTickTime < TICK_INTERVAL_MS) return;
+      lastTickTime = time;
+
+      // Get current point
+      const point = mode === "mouse" ? cursorPosRef.current : gazePointRef.current;
+      if (!point || isCalibratingRef.current) {
+        setGazePosition(point ?? null);
+        setDwellTarget(null);
+        currentDwellElRef.current = null;
+        return;
+      }
+
+      setGazePosition(point);
+
+      // Hit test
+      const dwellEl = hitTestDwell(point.x, point.y);
+      const cellId = dwellEl?.getAttribute("data-dwell-cell") ?? null;
+
+      // ── Check hover re-activation ──
+      let distFromAnchor = 0;
+      if (!hoverEnabledRef.current) {
+        const anchor = disableAnchorRef.current;
+        if (anchor) {
+          const dx = point.x - anchor.x;
+          const dy = point.y - anchor.y;
+          distFromAnchor = Math.sqrt(dx * dx + dy * dy);
         }
-        setGazePosition(mp);
-        runDwellHitTest(mp);
-        return;
+        const movedEnough = distFromAnchor >= REACTIVATION_PX;
+        const differentCell = cellId !== null && cellId !== disabledCellIdRef.current;
+
+        if (movedEnough || differentCell) {
+          hoverEnabledRef.current = true;
+          disableAnchorRef.current = null;
+          disabledCellIdRef.current = null;
+        }
       }
 
-      // ── Eyegaze mode: use external gazePoint from useEyeGaze ──
-      if (!externalGazePoint) {
-        setGazePosition(null);
+      // ── Update debug ──
+      setDwellDebug({
+        hoverEnabled: hoverEnabledRef.current,
+        movementFromAnchor: distFromAnchor,
+        movementThreshold: REACTIVATION_PX,
+        currentCellId: cellId,
+        disabledAtCellId: disabledCellIdRef.current,
+        dwellElementLabel: currentDwellElRef.current?.textContent?.slice(0, 30) ?? null,
+        dwellProgress: 0, // updated below if dwelling
+      });
+
+      // ── Hover disabled → skip dwell ──
+      if (!hoverEnabledRef.current) {
+        currentDwellElRef.current = null;
         setDwellTarget(null);
-        currentElementRef.current = null;
         return;
       }
 
-      // During calibration, the hook polls getRawGaze() itself — just suspend dwell
-      if (isCalibrating) {
+      // ── No element → reset dwell ──
+      if (!dwellEl) {
+        currentDwellElRef.current = null;
         setDwellTarget(null);
         return;
       }
 
-      setGazePosition(externalGazePoint);
-      runDwellHitTest(externalGazePoint);
-    }, TICK_MS);
+      const now = Date.now();
 
-    return () => clearInterval(interval);
-  }, [enabled, mode, externalGazePoint, isCalibrating, runDwellHitTest]);
+      // ── Same element → advance timer ──
+      if (dwellEl === currentDwellElRef.current) {
+        const elapsed = now - dwellStartRef.current;
+        const progress = Math.min(1, elapsed / dwellTimeMs);
+
+        if (progress >= 1) {
+          // Select
+          dwellEl.click();
+          hoverEnabledRef.current = false;
+          disableAnchorRef.current = { x: point.x, y: point.y };
+          disabledCellIdRef.current = cellId;
+          currentDwellElRef.current = null;
+          setDwellTarget(null);
+          setDwellDebug(prev => ({ ...prev, hoverEnabled: false, dwellProgress: 1 }));
+        } else {
+          setDwellTarget({ element: dwellEl, rect: dwellEl.getBoundingClientRect(), progress });
+          setDwellDebug(prev => ({ ...prev, dwellProgress: progress }));
+        }
+        return;
+      }
+
+      // ── Different element → start new timer ──
+      currentDwellElRef.current = dwellEl;
+      dwellStartRef.current = now;
+      setDwellTarget({ element: dwellEl, rect: dwellEl.getBoundingClientRect(), progress: 0 });
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [enabled, mode, dwellTimeMs]);
 
   return (
     <EyeTrackingDwellContext.Provider
@@ -329,6 +325,7 @@ export function EyeTrackingDwellProvider({
         clearCalibration,
         getRawGaze,
         applyCalibration: applyCalibrationWrapped,
+        dwellDebug,
       }}
     >
       {children}

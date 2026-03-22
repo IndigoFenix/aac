@@ -225,7 +225,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
         case "text":
           // New speech arriving — stop any playing audio from a previous turn
-          audioPlayer.clear();
+          // (skip clear when pre-generated student TTS is still playing)
+          if (!msg.noAudioClear) audioPlayer.clear();
           // Accumulate streamed text from [SPEAK]
           textAccumRef.current += msg.data;
           setCurrentMessage({
@@ -238,7 +239,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
         case "interpret":
           // New interpretation arriving — stop any playing audio from a previous turn
-          audioPlayer.clear();
+          // (skip clear when pre-generated student TTS is already playing)
+          if (!msg.noAudioClear) audioPlayer.clear();
           setInterpretationText(prev => (prev || "") + (msg.text || ""));
           if (msg.confidence) setInterpretConfidence(msg.confidence);
           break;
@@ -639,8 +641,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     reader.readAsDataURL(audioBlob);
   }, [wsSend, audioRecorder]);
 
-  const interpretButtons = useCallback(async (recentButtons: string[], board?: ParsedBoardData) => {
-    wsSend({ type: "button_press", buttons: recentButtons, board });
+  const interpretButtons = useCallback(async (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => {
+    wsSend({ type: "button_press", buttons: recentButtons, sentences, board });
   }, [wsSend]);
 
   /**

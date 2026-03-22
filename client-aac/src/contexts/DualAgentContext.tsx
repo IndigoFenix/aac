@@ -52,7 +52,7 @@ interface DualAgentContextType {
   // Actions
   initialize: () => Promise<void>;
   sendMessage: (message: string) => Promise<void>;
-  interpretButtons: (recentButtons: string[], board?: ParsedBoardData) => Promise<void>;
+  interpretButtons: (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => Promise<void>;
   startVoiceRecording: () => Promise<void>;
   stopVoiceRecording: () => Promise<void>;
   cancelVoiceRecording: () => void;

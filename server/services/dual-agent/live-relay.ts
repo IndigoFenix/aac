@@ -38,7 +38,7 @@ function extractStringArg(args: Record<string, any>, declaredName: string, fallb
  *  - String (preferred):  "Play|🎮, Water|💧, Help|face:abc123"  (parseBoardButtons format)
  *  - Array of strings:    ["Play|🎮", "Water|💧"]  (fallback — join and parse)
  *  - Object array:        [{label, icon}]  (OpenAI / legacy) */
-function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string }> {
+function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string }> {
   // String — the expected format from native audio models: "label|icon, label|icon"
   if (typeof raw === "string") {
     return parseBoardButtons(raw as string);
@@ -58,6 +58,7 @@ function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string
     let iconRef = (typeof b?.icon === "string" ? b.icon : "").trim() || "💬";
     let symbolPath: string | undefined;
     const imageKey = (typeof b?.image_key === "string" ? b.image_key : "").trim() || undefined;
+    const sentence = (typeof b?.sentence === "string" ? b.sentence : "").trim() || undefined;
     if (iconRef.startsWith("face:")) {
       symbolPath = `__FACE__:${iconRef.substring(5).trim()}`;
       iconRef = "👤";
@@ -65,7 +66,7 @@ function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string
       symbolPath = `__SYMBOL__:${iconRef.substring(7).trim()}`;
       iconRef = "🖼️";
     }
-    return { label, iconRef, symbolPath, imageKey: symbolPath ? undefined : imageKey };
+    return { label, iconRef, symbolPath, imageKey: symbolPath ? undefined : imageKey, sentence };
   });
 }
 import type {
@@ -101,7 +102,7 @@ export type ClientMessage =
   | { type: "pcm_audio"; data: string }                            // base64 raw PCM Int16 16kHz — streamed directly to Gemini
   | { type: "user_message"; text: string }
   | { type: "voice_audio"; data: string; mimeType?: string }       // base64 webm (ignored in live mode — Gemini hears PCM directly)
-  | { type: "button_press"; buttons: string[]; board?: any }
+  | { type: "button_press"; buttons: string[]; sentences?: Record<string, string>; board?: any }
   | { type: "gesture_context"; data: string }
   | { type: "person_context"; data: any }
   | { type: "board_state"; data: any }
@@ -118,9 +119,9 @@ export type ClientMessage =
 /** Messages from server → client */
 export type ServerMessage =
   | { type: "initialized"; sessionId: string }
-  | { type: "text"; data: string }
+  | { type: "text"; data: string; noAudioClear?: boolean }
   | { type: "speak"; text: string; audio?: string }
-  | { type: "interpret"; text: string; audio?: string; confidence?: string }
+  | { type: "interpret"; text: string; audio?: string; confidence?: string; noAudioClear?: boolean }
   | { type: "board_patch"; data: any }
   | { type: "board"; data: any }
   | { type: "transcript"; data: string; speaker?: string; confidence?: string }
@@ -230,6 +231,11 @@ export class LiveRelay {
   // Accumulation for turn processing (both modes share this)
   private turnAccum: TurnToolAccumulator = createEmptyAccumulator();
   private turnStartTime = 0;
+
+  // Pre-generated student TTS: when interpretationLevel <= 1, TTS starts
+  // immediately on button press instead of waiting for Gemini's interpret() call.
+  private preGeneratedTtsPromise: Promise<void> | null = null;
+  private preGeneratedTtsActive = false;
 
   // Prevents sending overlapping turnComplete=true messages.
   // Set when we send ANY message with turnComplete=true to the provider.
@@ -512,7 +518,7 @@ export class LiveRelay {
           this.lastUserInputAt = Date.now();
           this.consecutiveModelTurns = 0;
           this.awaitingModelResponse = true;
-          this.handleInterpretButtons(msg.buttons, msg.board);
+          this.handleInterpretButtons(msg.buttons, msg.sentences, msg.board);
           break;
 
         case "gesture_context":
@@ -871,20 +877,55 @@ export class LiveRelay {
   // -------------------------------------------------------------------------
 
   private buildGeminiNativeAudioEchoAwareness(): string {
+    const level = this.sessionCache?.state?.interpretationLevel ?? 1;
+    const hasInterpret = level >= 2;
+    const toolList = hasInterpret ? "speak() and interpret()" : "speak()";
     return `CRITICAL — OUTPUT RULES:
-You communicate ONLY through function calls (tool calls). Do NOT produce speech or audio output — your audio is discarded. A separate TTS system voices the text from your speak() and interpret() calls instead.
+You communicate ONLY through function calls (tool calls). Do NOT produce speech or audio output — your audio is discarded. A separate TTS system voices the text from your ${toolList} calls instead.
 
 AUDIO ECHO AWARENESS:
-You receive continuous microphone audio. Because speak()/interpret() text is voiced by external TTS through speakers near the mic, you WILL hear your own output echoed back. Recognize these echoes as YOUR OWN output — never transcribe or respond to them. Only treat audio as genuine user speech if it clearly does NOT match something you recently said.`;
+You receive continuous microphone audio. Because ${toolList} text is voiced by external TTS through speakers near the mic, you WILL hear your own output echoed back. Recognize these echoes as YOUR OWN output — never transcribe or respond to them. Only treat audio as genuine user speech if it clearly does NOT match something you recently said.${!hasInterpret ? `\nWhen a button is pressed, the student's pre-generated sentence is also voiced via TTS — you will hear this echo too. Do NOT transcribe it.` : ''}`;
   }
 
   // -------------------------------------------------------------------------
   // Button interpretation (send interpretation prompt to provider)
   // -------------------------------------------------------------------------
 
-  private handleInterpretButtons(buttons: string[], board?: any): void {
+  private handleInterpretButtons(buttons: string[], sentences?: Record<string, string>, board?: any): void {
     const buttonList = buttons.join(", ");
     console.log(`[LiveRelay] Interpreting buttons: ${buttonList}`);
+
+    const state = this.sessionCache?.state;
+    const level = state?.interpretationLevel ?? 1;
+
+    // For a single button press at level 0-1, use the pre-generated sentence directly.
+    // Composite presses (multiple buttons) still go through Gemini for interpretation.
+    const singleSentence = (buttons.length === 1 && sentences?.[buttons[0]]) || "";
+
+    // For levels 0-1 with a single button's pre-generated sentence: voice immediately
+    // via TTS instead of waiting for Gemini's interpret() tool call.
+    if (level <= 1 && singleSentence && this.studentVoice) {
+      this.preGeneratedTtsActive = true;
+
+      // Send interpretation to client for UI display
+      this.send({ type: "interpret", text: singleSentence, confidence: "high", noAudioClear: false });
+
+      // Set turnAccum so processTurnEnd records the message and skips redundant TTS
+      this.turnAccum.interpretText = singleSentence;
+      this.turnAccum.interpretConfidence = "high";
+
+      // Start student voice TTS immediately (runs in parallel with Gemini)
+      this.preGeneratedTtsPromise = this.streamTtsWithTimeout(
+        singleSentence,
+        this.studentVoice,
+        "interpretation_audio",
+        "Student",
+      ).catch(err => {
+        console.error("[LiveRelay] Pre-generated student TTS error:", (err as Error).message);
+      });
+
+      console.log(`[LiveRelay] Pre-generated TTS started: "${singleSentence}"`);
+    }
 
     // Record button press as a user message in session log
     if (this.sessionId) {
@@ -895,10 +936,18 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
       }).catch(err => console.error("[LiveRelay] Failed to persist button press:", err));
     }
 
-    this.provider!.sendMessage(`[BUTTON PRESS] ${buttonList}
-    The user pressed the above button(s). Interpret this as a user message and respond accordingly.
-    IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the board with new buttons or content.
-    `, "user");
+    // Build the prompt for Gemini — adjust based on whether sentence was pre-voiced
+    if (level <= 1 && singleSentence) {
+      this.provider!.sendMessage(`[BUTTON PRESS] ${buttonList}
+The student said: "${singleSentence}" (already voiced via TTS — do NOT transcribe this when you hear it through the mic).
+Respond if relevant. IMPORTANT: Use rebuild_board() (or set_board()) NOW to update the board.
+`, "user");
+    } else {
+      this.provider!.sendMessage(`[BUTTON PRESS] ${buttonList}
+The user pressed the above button(s). Interpret this as a user message and respond accordingly.
+IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the board with new buttons or content.
+`, "user");
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -1038,7 +1087,9 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
           logLiveSession("EMPTY TOOL CALL", `speak() got empty text. Raw args: ${JSON.stringify(args)}`);
         }
         if (text && !isSilent) {
-          this.send({ type: "text", data: text });
+          // When pre-generated student TTS is active, don't clear client audio
+          // (student voice is already playing from the button press)
+          this.send({ type: "text", data: text, noAudioClear: this.preGeneratedTtsActive || undefined });
         }
         if (text) this.hasGreeted = true;
         this.turnAccum.speakText += (this.turnAccum.speakText ? " " : "") + text;
@@ -1575,6 +1626,8 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
       this.turnAccum = createEmptyAccumulator();
       this.turnStartTime = 0;
       this.turnProcessingBusy = false;
+      this.preGeneratedTtsActive = false;
+      this.preGeneratedTtsPromise = null;
       this.lastTurnCompleteAt = Date.now();
       this.consecutiveModelTurns++;
       logLiveSession(`RELAY #${seq} turnComplete DONE`, `consecutiveModelTurns now=${this.consecutiveModelTurns}`);
@@ -1589,6 +1642,8 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
     this.turnAccum = createEmptyAccumulator();
     this.turnStartTime = 0;
     this.awaitingModelResponse = false;
+    this.preGeneratedTtsActive = false;
+    this.preGeneratedTtsPromise = null;
     console.log("[LiveRelay] Model interrupted by new input");
   }
 
@@ -1851,8 +1906,19 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
     // -----------------------------------------------------------------------
     // TTS: student voice first (interpretation), then AI voice
     // Each TTS stream has a 15s timeout to prevent infinite hangs.
+    // When pre-generated TTS is active, student voice was already started in
+    // handleInterpretButtons — just await its completion instead of re-synthesizing.
     // -----------------------------------------------------------------------
-    if (fullInterpretText && this.studentVoice) {
+    if (this.preGeneratedTtsPromise) {
+      // Await the pre-generated student TTS that started on button press
+      try {
+        await this.preGeneratedTtsPromise;
+      } catch (err) {
+        // Error already logged in the catch handler of the original promise
+      }
+      this.preGeneratedTtsPromise = null;
+    } else if (fullInterpretText && this.studentVoice) {
+      // Normal path: Gemini called interpret() — synthesize student voice now
       try {
         await this.streamTtsWithTimeout(
           fullInterpretText,
@@ -1991,7 +2057,7 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
    * Returns the list of unresolved image keys.
    */
   private async resolveExistingSymbols(
-    buttons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string }>,
+    buttons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string }>,
   ): Promise<string[]> {
     const { generateSymbols, useApprovedSymbols, useUnapprovedSymbols } = this.symbolSettings;
 
@@ -2046,7 +2112,7 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
     });
   }
 
-  private buildBoardFromButtons(buttons: Array<{ label: string; iconRef: string; symbolPath?: string }>): any {
+  private buildBoardFromButtons(buttons: Array<{ label: string; iconRef: string; symbolPath?: string; sentence?: string }>): any {
     const pageId = `page-${Date.now()}`;
     const cols = 4;
     const rows = Math.max(3, Math.ceil(buttons.length / cols));
@@ -2060,6 +2126,7 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
           id: `btn-${Date.now()}-${i}`,
           label: b.label,
           spokenText: b.label,
+          ...(b.sentence ? { sentence: b.sentence } : {}),
           row: Math.floor(i / cols),
           col: i % cols,
           action: { type: "speak" as const, text: b.label },
@@ -2374,13 +2441,14 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
     const sbRef = "set_board()";
 
     // Interpretation level rules — the most critical source of drift
+    const hasInterpretTool = level >= 2;
     let interpretRule: string;
     switch (level) {
       case 0:
-        interpretRule = `Interpretation Level: 0 (Off)\n- Do NOT use ${iRef}. Button text is spoken directly by the system.`;
+        interpretRule = `Interpretation Level: 0 (Off)\n- Buttons have pre-generated sentences that are spoken automatically when pressed. Do NOT interpret or paraphrase them.`;
         break;
       case 1:
-        interpretRule = `Interpretation Level: 1 (Minimal)\n- ONLY use ${iRef} immediately after [BUTTON PRESS]. Never from gestures, gaze, or context alone.\n- Expand button labels into short natural phrases.`;
+        interpretRule = `Interpretation Level: 1 (Minimal)\n- Buttons have pre-generated sentences that are spoken automatically when pressed. Do NOT interpret or paraphrase them.\n- When you hear a student sentence after a [BUTTON PRESS], that is automatic TTS — do NOT transcribe it.`;
         break;
       case 2:
         interpretRule = `Interpretation Level: 2 (Moderate)\n- Use ${iRef} from button presses, clear gestures, or strong contextual cues.\n- Do NOT interpret weak or ambiguous signals — add a button instead.`;
@@ -2400,8 +2468,8 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
       interpretRule,
     ];
 
-    // Confidence requirement
-    if (level > 0 && level < 4) {
+    // Confidence requirement (only when interpret tool exists)
+    if (hasInterpretTool && level < 4) {
       parts.push(`Confidence: Always include confidence (high/medium/low) on ${iRef}. Only use ${sRef} or ${iRef} with HIGH CONFIDENCE from visual/audio input alone.`);
     }
 
@@ -2416,7 +2484,8 @@ You receive continuous microphone audio. Because speak()/interpret() text is voi
     }
 
     // Echo awareness (always critical for live sessions)
-    parts.push(`Echo: Speech you hear shortly after your own ${sRef} or ${iRef} output is YOUR echo — ignore it completely. Do NOT transcribe or respond to it.`);
+    const echoTools = hasInterpretTool ? `${sRef} or ${iRef}` : sRef;
+    parts.push(`Echo: Speech you hear shortly after your own ${echoTools} output is YOUR echo — ignore it completely. Do NOT transcribe or respond to it.`);
 
     // Board limit
     const maxSlots = state.maxBoardItems || 12;
