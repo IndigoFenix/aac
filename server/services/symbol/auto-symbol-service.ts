@@ -32,13 +32,13 @@ Image keys must follow these rules:
 Image keys are used to auto-generate AAC symbol images. Emojis are used as a fallback option when image generation is unavailable, but the imageKey is the primary source for symbol generation.`;
 
 /** Image key rules for inclusion in LLM system prompts */
-export const IMAGE_KEY_PROMPT_RULES = `The image_key is an unambiguous English key used to generate symbol images.${IMAGE_KEY_RULES}`;
+export const IMAGE_KEY_PROMPT_RULES = `The imageKey is an unambiguous English key used to generate symbol images.${IMAGE_KEY_RULES}`;
 
 /** Image key rules formatted for the SyntAACx board creator prompt */
 export const IMAGE_KEY_BOARD_PROMPT = `**Image Key:** The imageKey field is used to look up or auto-generate symbol images. Required for every content button.${IMAGE_KEY_RULES}`;
 
 /** Image key rules formatted for the AAC live button format instruction */
-export const IMAGE_KEY_LIVE_PROMPT = `IMPORTANT — Button format: label|icon|image_key (e.g., "Water|💧|water_drop", "Play|🎮|game_controller").
+export const IMAGE_KEY_LIVE_PROMPT = `IMPORTANT — Button format: label|icon|imageKey|sentence (e.g., "Water|💧|water_drop|I would like some water", "Play|🎮|I want to play").
 ${IMAGE_KEY_PROMPT_RULES}`;
 
 // ---------------------------------------------------------------------------

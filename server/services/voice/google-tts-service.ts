@@ -12,17 +12,17 @@ const VOICE_MAP: Record<string, { languageCode: string; name: string }> = {
   "en-boy": { languageCode: "en-US", name: "en-US-Neural2-A" },
   "en-girl": { languageCode: "en-US", name: "en-US-Neural2-E" },
 
-  // Hebrew voices (Standard voices - Neural2 not available for Hebrew)
-  "he-man": { languageCode: "he-IL", name: "he-IL-Standard-B" },
-  "he-woman": { languageCode: "he-IL", name: "he-IL-Standard-A" },
-  "he-boy": { languageCode: "he-IL", name: "he-IL-Standard-B" }, // Male voice for boy
-  "he-girl": { languageCode: "he-IL", name: "he-IL-Standard-A" }, // Female voice for girl
+  // Hebrew voices (Neural2)
+  "he-man": { languageCode: "he-IL", name: "he-IL-Neural2-D" },
+  "he-woman": { languageCode: "he-IL", name: "he-IL-Neural2-A" },
+  "he-boy": { languageCode: "he-IL", name: "he-IL-Neural2-D" },
+  "he-girl": { languageCode: "he-IL", name: "he-IL-Neural2-A" },
 
-  // Arabic voices
-  "ar-man": { languageCode: "ar-XA", name: "ar-XA-Standard-B" },
-  "ar-woman": { languageCode: "ar-XA", name: "ar-XA-Standard-A" },
-  "ar-boy": { languageCode: "ar-XA", name: "ar-XA-Standard-B" },
-  "ar-girl": { languageCode: "ar-XA", name: "ar-XA-Standard-A" },
+  // Arabic voices (Neural2)
+  "ar-man": { languageCode: "ar-XA", name: "ar-XA-Neural2-B" },
+  "ar-woman": { languageCode: "ar-XA", name: "ar-XA-Neural2-A" },
+  "ar-boy": { languageCode: "ar-XA", name: "ar-XA-Neural2-B" },
+  "ar-girl": { languageCode: "ar-XA", name: "ar-XA-Neural2-A" },
 
   // Spanish voices
   "es-man": { languageCode: "es-ES", name: "es-ES-Neural2-B" },

@@ -4,7 +4,7 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { whisperService } from "../services/voice/whisper-service";
-import { type VoiceType } from "../services/voice/openai-tts-service";
+import { type VoiceType } from "../services/voice/google-tts-service";
 import { ttsFacade, type ResolvedVoice } from "../services/voice/tts-facade";
 import { onMessage, FeatureType } from "../services/sessionService";
 import { studentRepository } from "../repositories";
