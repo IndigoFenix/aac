@@ -361,6 +361,34 @@ export function ButtonInspector() {
             </p>
           </div>
 
+          {/* Image Key (auto-generated symbol) */}
+          <div className="space-y-1.5">
+            <Label htmlFor="imageKey" className={cn(
+              "text-xs",
+              isDark ? "text-slate-400" : "text-gray-600"
+            )}>
+              {t("button.imageKey")}
+            </Label>
+            <Input
+              id="imageKey"
+              value={(selectedBtn as any).imageKey || ""}
+              onChange={(e) => handleUpdate("imageKey", e.target.value || undefined)}
+              placeholder={t("button.imageKeyPlaceholder")}
+              className={cn(
+                "h-8 text-xs font-mono",
+                isDark
+                  ? "bg-slate-800 border-slate-700 text-slate-200"
+                  : "bg-white border-gray-300 text-gray-800"
+              )}
+            />
+            <p className={cn(
+              "text-[10px]",
+              isDark ? "text-slate-500" : "text-gray-500"
+            )}>
+              {t("button.imageKeyHint")}
+            </p>
+          </div>
+
           {/* Action */}
           <div className="space-y-1.5">
             <Label className={cn(

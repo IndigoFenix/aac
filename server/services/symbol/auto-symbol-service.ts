@@ -11,10 +11,32 @@
  * - Notification callback: callers provide a function to be notified when a symbol is ready
  */
 
+import fs from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 import { customSymbolRepository } from "../../repositories/customSymbolRepository";
 import { customSymbolService } from "./custom-symbol-service";
 import { generateSymbolImage } from "./symbol-generator";
 import type { CustomSymbol } from "@shared/schema";
+
+// ---------------------------------------------------------------------------
+// Debug file logger — writes to server/symbol-generation-debug.log
+// ---------------------------------------------------------------------------
+
+const __filename_local = fileURLToPath(import.meta.url);
+const __dirname_local = dirname(__filename_local);
+const LOG_FILE = join(__dirname_local, "..", "..", "symbol-generation-debug.log");
+const MAX_LOG_SIZE = 2 * 1024 * 1024; // 2MB
+
+function debugLog(section: string, message: string): void {
+  try {
+    if (fs.existsSync(LOG_FILE) && fs.statSync(LOG_FILE).size > MAX_LOG_SIZE) {
+      fs.writeFileSync(LOG_FILE, "");
+    }
+    const ts = new Date().toISOString();
+    fs.appendFileSync(LOG_FILE, `[${ts}] [${section}] ${message}\n`);
+  } catch { /* ignore */ }
+}
 
 // ---------------------------------------------------------------------------
 // Prompt constants — single source of truth for image key rules
@@ -71,6 +93,8 @@ export async function resolveImageKeys(
 ): Promise<string[]> {
   const unresolved: string[] = [];
   const format = opts?.symbolPathFormat ?? "api-path";
+  const keysToResolve = buttons.filter(b => b.imageKey && !b.symbolPath).map(b => b.imageKey);
+  debugLog("resolveImageKeys", `Resolving ${keysToResolve.length} keys: ${keysToResolve.join(", ")} (format=${format}, useUnapproved=${opts?.useUnapproved})`);
 
   for (const button of buttons) {
     if (!button.imageKey || button.symbolPath) continue;
@@ -83,19 +107,22 @@ export async function resolveImageKeys(
           button.symbolPath = format === "internal"
             ? `__SYMBOL__:${existing.id}`
             : `/api/custom-symbols/${existing.id}/image`;
+          debugLog("resolveImageKeys", `Resolved "${button.imageKey}" → ${button.symbolPath}`);
         } else {
-          // Symbol exists but can't be used (e.g., unapproved) — still mark
-          // as unresolved so it can be re-queued for generation notification
           unresolved.push(button.imageKey);
+          debugLog("resolveImageKeys", `Found "${button.imageKey}" but cannot use (approved=${existing.isApproved})`);
         }
       } else {
         unresolved.push(button.imageKey);
+        debugLog("resolveImageKeys", `No symbol found for "${button.imageKey}"`);
       }
-    } catch {
+    } catch (err: any) {
       unresolved.push(button.imageKey);
+      debugLog("resolveImageKeys", `Error looking up "${button.imageKey}": ${err?.message}`);
     }
   }
 
+  debugLog("resolveImageKeys", `Done. Resolved ${keysToResolve.length - unresolved.length}, unresolved ${unresolved.length}: ${unresolved.join(", ")}`);
   return unresolved;
 }
 
@@ -120,6 +147,7 @@ export function queueSymbolGeneration(
   imageKeys: string[],
   onReady?: (imageKey: string, symbol: CustomSymbol) => void,
 ): void {
+  debugLog("queueGeneration", `Queuing ${imageKeys.length} keys: ${imageKeys.join(", ")} (hasCallback=${!!onReady})`);
   for (const imageKey of imageKeys) {
     queue.push({ imageKey, onReady });
   }
@@ -146,10 +174,12 @@ async function processQueue(): Promise<void> {
       // Double-check not already generated
       const existing = await customSymbolRepository.getSymbolByKey(job.imageKey);
       if (existing) {
+        debugLog("processQueue", `"${job.imageKey}" already exists → ${existing.id}`);
         job.onReady?.(job.imageKey, existing);
         continue;
       }
 
+      debugLog("processQueue", `Generating "${job.imageKey}"...`);
       const imageBuffer = await generateSymbolImage(job.imageKey.replace(/_/g, " "));
       const symbol = await customSymbolService.createSymbol(imageBuffer, {
         key: job.imageKey,
@@ -158,6 +188,7 @@ async function processQueue(): Promise<void> {
         isApproved: false,
       });
       generated++;
+      debugLog("processQueue", `Generated "${job.imageKey}" → ${symbol.id} (${generated} total)`);
       console.log(`[AutoSymbolService] Generated "${job.imageKey}" → ${symbol.id} (${generated} total)`);
       job.onReady?.(job.imageKey, symbol);
     } catch (err: any) {
@@ -165,10 +196,12 @@ async function processQueue(): Promise<void> {
         || err?.message?.includes("quota")
         || err?.message?.includes("RESOURCE_EXHAUSTED");
       if (isQuota) {
+        debugLog("processQueue", `Quota exhausted after ${generated} — clearing queue (${queue.length} remaining)`);
         console.warn(`[AutoSymbolService] Quota exhausted after ${generated} — clearing queue (${queue.length} remaining)`);
         queue = [];
         break;
       }
+      debugLog("processQueue", `Failed "${job.imageKey}": ${err?.message || err}`);
       console.error(`[AutoSymbolService] Failed to generate "${job.imageKey}":`, err?.message || err);
     }
   }

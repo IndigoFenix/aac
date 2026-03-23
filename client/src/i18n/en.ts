@@ -399,6 +399,9 @@ export const en = {
     rebusKey: "Rebus Symbol",
     rebusKeyPlaceholder: "e.g. happy, mum, ice cream",
     rebusKeyHint: "Widgit Rebus concept name for Grid3 export",
+    imageKey: "Image Key",
+    imageKeyPlaceholder: "e.g. drinking_water, person_yawning",
+    imageKeyHint: "Auto-generated symbol key for custom image generation",
   },
 
   // ============================================================================

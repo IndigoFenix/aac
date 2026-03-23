@@ -399,6 +399,9 @@ export const he = {
     rebusKey: "סמל Rebus",
     rebusKeyPlaceholder: "למשל happy, mum, ice cream",
     rebusKeyHint: "שם מושג Widgit Rebus לייצוא Grid3",
+    imageKey: "מפתח תמונה",
+    imageKeyPlaceholder: "למשל drinking_water, person_yawning",
+    imageKeyHint: "מפתח סמל ליצירת תמונה אוטומטית",
   },
 
   // ============================================================================
