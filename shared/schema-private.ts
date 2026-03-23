@@ -335,6 +335,10 @@ export const aacSettings = pgTable("aac_settings", {
   elevenlabsAiVoiceId: text("elevenlabs_ai_voice_id"), // ElevenLabs voice ID for AI voice
   elevenlabsStudentVoiceId: text("elevenlabs_student_voice_id"), // ElevenLabs voice ID for student voice
 
+  // Gemini TTS voice settings
+  geminiAiVoice: text("gemini_ai_voice"), // Gemini prebuilt voice for AI (e.g. "Kore", "Orus")
+  geminiStudentVoice: text("gemini_student_voice"), // Gemini prebuilt voice for student (e.g. "Puck", "Leda")
+
   // Display settings
   iconTextRatio: integer("icon_text_ratio").default(3), // Icon-to-text size ratio 1–5 (1=mostly icon, 5=mostly text)
   usePcsSymbols: boolean("use_pcs_symbols").default(false), // PCS vs emoji preference

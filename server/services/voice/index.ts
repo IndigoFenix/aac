@@ -7,6 +7,8 @@ export type { TranscriptionResult, TranscriptionOptions } from "./whisper-servic
 export { googleTtsService, synthesize, synthesizeStream } from "./google-tts-service";
 export type { VoiceType, TTSOptions } from "./google-tts-service";
 
+export { geminiTtsService, GEMINI_VOICES } from "./gemini-tts-service";
+
 export { elevenlabsTtsService } from "./elevenlabs-tts-service";
 export type { ElevenLabsTTSOptions } from "./elevenlabs-tts-service";
 

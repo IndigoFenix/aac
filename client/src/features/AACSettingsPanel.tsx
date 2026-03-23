@@ -87,6 +87,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [elevenlabsApiKey, setElevenlabsApiKey] = useState('');
   const [elevenlabsAiVoiceId, setElevenlabsAiVoiceId] = useState('');
   const [elevenlabsStudentVoiceId, setElevenlabsStudentVoiceId] = useState('');
+  const [geminiAiVoice, setGeminiAiVoice] = useState('');
+  const [geminiStudentVoice, setGeminiStudentVoice] = useState('');
   const [iconTextRatio, setIconTextRatio] = useState(3);
   const [interpretationLevel, setInterpretationLevel] = useState(2);
   const [startupMode, setStartupMode] = useState(0);
@@ -167,6 +169,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
       setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || '');
       setElevenlabsStudentVoiceId(aac?.elevenlabsStudentVoiceId || '');
+      setGeminiAiVoice(aac?.geminiAiVoice || '');
+      setGeminiStudentVoice(aac?.geminiStudentVoice || '');
       setIconTextRatio(aac?.iconTextRatio ?? 3);
       setInterpretationLevel(aac?.interpretationLevel ?? 2);
       setStartupMode(aac?.startupMode ?? 0);
@@ -243,6 +247,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       elevenlabsApiKey?: string;
       elevenlabsAiVoiceId?: string;
       elevenlabsStudentVoiceId?: string;
+      geminiAiVoice?: string;
+      geminiStudentVoice?: string;
       iconTextRatio: number;
       interpretationLevel: number;
       startupMode: number;
@@ -288,6 +294,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       elevenlabsApiKey: elevenlabsApiKey.trim() || undefined,
       elevenlabsAiVoiceId: elevenlabsAiVoiceId.trim() || undefined,
       elevenlabsStudentVoiceId: elevenlabsStudentVoiceId.trim() || undefined,
+      geminiAiVoice: geminiAiVoice || undefined,
+      geminiStudentVoice: geminiStudentVoice || undefined,
       iconTextRatio,
       interpretationLevel,
       startupMode,
@@ -314,6 +322,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
       setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || '');
       setElevenlabsStudentVoiceId(aac?.elevenlabsStudentVoiceId || '');
+      setGeminiAiVoice(aac?.geminiAiVoice || '');
+      setGeminiStudentVoice(aac?.geminiStudentVoice || '');
       setIconTextRatio(aac?.iconTextRatio ?? 3);
       setInterpretationLevel(aac?.interpretationLevel ?? 2);
       setStartupMode(aac?.startupMode ?? 0);
@@ -540,6 +550,56 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </Select>
                 </div>
               )}
+
+              {/* Gemini Voice Settings */}
+              <div className="pt-4 border-t space-y-4">
+                <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                  <Label className="text-base font-medium">Gemini Voice</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Select a Gemini AI voice for the AI and student. Used when ElevenLabs is not configured.
+                  </p>
+                </div>
+
+                <div className={cn("flex items-center justify-between", isRTL && "flex-row-reverse")}>
+                  <Label className="text-sm text-muted-foreground">AI Voice</Label>
+                  <Select value={geminiAiVoice} onValueChange={setGeminiAiVoice}>
+                    <SelectTrigger className="w-full md:w-[200px]">
+                      <SelectValue placeholder="Default" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Default</SelectItem>
+                      <SelectItem value="Puck">Puck — Young, energetic</SelectItem>
+                      <SelectItem value="Charon">Charon — Calm, mature male</SelectItem>
+                      <SelectItem value="Kore">Kore — Clear, friendly female</SelectItem>
+                      <SelectItem value="Fenrir">Fenrir — Deep, confident male</SelectItem>
+                      <SelectItem value="Aoede">Aoede — Warm, expressive female</SelectItem>
+                      <SelectItem value="Leda">Leda — Gentle, youthful female</SelectItem>
+                      <SelectItem value="Orus">Orus — Steady, reassuring male</SelectItem>
+                      <SelectItem value="Zephyr">Zephyr — Light, neutral</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className={cn("flex items-center justify-between", isRTL && "flex-row-reverse")}>
+                  <Label className="text-sm text-muted-foreground">Student Voice</Label>
+                  <Select value={geminiStudentVoice} onValueChange={setGeminiStudentVoice}>
+                    <SelectTrigger className="w-full md:w-[200px]">
+                      <SelectValue placeholder="Default" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Default</SelectItem>
+                      <SelectItem value="Puck">Puck — Young, energetic</SelectItem>
+                      <SelectItem value="Charon">Charon — Calm, mature male</SelectItem>
+                      <SelectItem value="Kore">Kore — Clear, friendly female</SelectItem>
+                      <SelectItem value="Fenrir">Fenrir — Deep, confident male</SelectItem>
+                      <SelectItem value="Aoede">Aoede — Warm, expressive female</SelectItem>
+                      <SelectItem value="Leda">Leda — Gentle, youthful female</SelectItem>
+                      <SelectItem value="Orus">Orus — Steady, reassuring male</SelectItem>
+                      <SelectItem value="Zephyr">Zephyr — Light, neutral</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
 
               {/* ElevenLabs Direct Voice Settings */}
               <div className="pt-4 border-t space-y-4">

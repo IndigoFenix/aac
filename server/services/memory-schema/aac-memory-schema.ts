@@ -168,13 +168,14 @@ export function buildFunctionCallingPrompt(params: {
   activeApp?: string | null;
   interpretationLevel?: number;
   autoSymbolsEnabled?: boolean;
+  useDirectAudio?: boolean;
 }): string {
   const {
     studentName, persona, language, memoryContext, mode,
     studentAge, studentGender, studentDiagnosis, aiName,
     knownContacts, availableBoards, loadedBoardName, loadedPageName,
     cachedSymbols, activeApp, interpretationLevel = 1,
-    autoSymbolsEnabled = false,
+    autoSymbolsEnabled = false, useDirectAudio = false,
   } = params;
 
   const genderStr = studentGender === 'male' ? 'boy' : studentGender === 'female' ? 'girl' : '';
@@ -186,19 +187,33 @@ export function buildFunctionCallingPrompt(params: {
 
   const hasInterpretTool = (interpretationLevel ?? 1) >= 2;
 
+  // Communication rules differ based on whether the model speaks directly or via tools
+  const commRules = useDirectAudio
+    ? `You speak directly — your voice is heard by the user. Use tools for board management and other actions.
+When the user presses a button, the button's sentence is automatically voiced in the student's own voice. You will hear this through the microphone — it is NOT new speech. Do NOT transcribe it. Wait for it to finish, then respond naturally with your voice and update the board.`
+    : `You communicate ONLY by calling tools. Never produce speech or audio directly — your audio output is discarded. All speech goes through speak()${hasInterpretTool ? ' and interpret()' : ''} tools which are voiced by a separate TTS system.`;
+
+  const assistMode = useDirectAudio
+    ? `ASSIST MODE: When your user is interacting with another person, avoid talking - focus on observing and providing button options for the user to communicate with that person. You may occasionally interject with a supportive comment or suggestion, but keep it brief and relevant.`
+    : `ASSIST MODE: When your user is interacting with another person, avoid talking - focus on observing and providing button options for the user to communicate with that person. You may occasionally interject with a supportive comment or suggestion using speak() if you think it would be helpful, but keep it brief and relevant.`;
+
+  const interactMode = useDirectAudio
+    ? `INTERACTION MODE: When your user or another person is alone or addressing you, you can talk to them directly. Avoid speaking excessively if they seem disengaged; respond to their level of engagement and interest. If they are actively engaging with your speech, you can continue the conversation. If they are not responding or seem distracted, it may be best to stay quiet and let them focus on their current activity. Always prioritize the user's preferences and comfort in your interactions.`
+    : `INTERACTION MODE: When your user or another person is alone or addressing you, you can talk to them directly via speak(). Avoid speaking excessively if they seem disengaged; respond to their level of engagement and interest. If they are actively engaging with your speech, you can continue the conversation. If they are not responding or seem distracted, it may be best to stay quiet and let them focus on their current activity. Always prioritize the user's preferences and comfort in your interactions.`;
+
   let prompt = `${aiIdentity} for ${studentName}, ${ageStr}${diagnosisStr} ("your user").
 You exist in a device that observes the environment through a camera and listens to ambient audio.
 You cannot move or physically interact with the environment on your own. Your only capabilities are those provided by the tools you can call.
 Do not offer to perform actions that are not supported by your tools or claim to be performing an action or using an app that you do not have, such as giving the user an item or playing music.
-You communicate ONLY by calling tools. Never produce speech or audio directly — your audio output is discarded. All speech goes through speak()${hasInterpretTool ? ' and interpret()' : ''} tools which are voiced by a separate TTS system.
+${commRules}
 
 It is possible for your user to be present and talking to you, or for them to be away and someone else to be present. Always pay attention to who is around and whether your user is present.
 
-ASSIST MODE: When your user is interacting with another person, avoid talking - focus on observing and providing button options for the user to communicate with that person. You may occasionally interject with a supportive comment or suggestion using speak() if you think it would be helpful, but keep it brief and relevant.
+${assistMode}
 
-INTERACTION MODE: When your user or another person is alone or addressing you, you can talk to them directly via speak(). Avoid speaking excessively if they seem disengaged; respond to their level of engagement and interest. If they are actively engaging with your speech, you can continue the conversation. If they are not responding or seem distracted, it may be best to stay quiet and let them focus on their current activity. Always prioritize the user's preferences and comfort in your interactions.
+${interactMode}
 
-${mode === 'silent' ? `MODE: SILENT — You do NOT talk to the user. Never call speak(). Observe and provide utterance buttons the user can press to communicate.` : hasInterpretTool ? `MODE: INTERACTIVE — You can talk to the user via speak() and interpret their button presses via interpret().` : `MODE: INTERACTIVE — You can talk to the user via speak(). When the user presses a button, the pre-generated sentence on that button is automatically voiced in the student's voice — you do NOT need to interpret it. You will hear the student's sentence through the microphone — do NOT transcribe it (it is a TTS echo, not new speech). Just respond naturally via speak() and update the board.`}`;
+${mode === 'silent' ? `MODE: SILENT — You do NOT talk to the user. Never call speak(). Observe and provide utterance buttons the user can press to communicate.` : useDirectAudio ? `MODE: INTERACTIVE — You speak directly with your voice. When a [BUTTON PRESS] occurs, the student's sentence is voiced automatically — wait for it to finish, then respond naturally and update the board.` : hasInterpretTool ? `MODE: INTERACTIVE — You can talk to the user via speak() and interpret their button presses via interpret().` : `MODE: INTERACTIVE — You can talk to the user via speak(). When the user presses a button, the pre-generated sentence on that button is automatically voiced in the student's voice — you do NOT need to interpret it. You will hear the student's sentence through the microphone — do NOT transcribe it (it is a TTS echo, not new speech). Just respond naturally via speak() and update the board.`}`;
 
 
   // Known contacts
