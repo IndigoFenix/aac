@@ -111,19 +111,22 @@ export function BoardCanvas() {
         const resolvedKeys = Object.keys(resolved);
         if (resolvedKeys.length === 0) return;
 
-        // Mutate buttons in-place and update the board
-        for (const key of resolvedKeys) {
-          const fullPath = apiUrl(resolved[key].symbolPath);
-          for (const page of board.pages) {
-            for (const btn of page.buttons) {
-              if (btn.imageKey === key && !btn.symbolPath?.includes('/api/custom-symbols/')) {
-                btn.symbolPath = fullPath;
+        // Use updateButton for each resolved symbol to properly update immutable state.
+        // Read current board from store (not the stale closure) to find matching buttons.
+        const { updateButton: storeUpdateButton } = useBoardStore.getState();
+        const currentBoard = useBoardStore.getState().board;
+        if (currentBoard) {
+          for (const key of resolvedKeys) {
+            const fullPath = apiUrl(resolved[key].symbolPath);
+            for (const page of currentBoard.pages) {
+              for (const btn of page.buttons) {
+                if (btn.imageKey === key && !btn.symbolPath?.includes('/api/custom-symbols/')) {
+                  storeUpdateButton(btn.id, { symbolPath: fullPath });
+                }
               }
             }
           }
         }
-
-        updateBoard({ ...board });
 
         // Update pending set
         const remaining = pendingKeyList.filter(k => !resolved[k]);

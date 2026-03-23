@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import { BoardIR, ButtonIR, VideoPlayerIR, PageIR, ActionIR } from '@/types/board-ir';
 import { resolveGrid3Path } from './rebus-cleanup';
 import { emojiToConcept } from './emoji-to-grid3';
+import { apiUrl } from './queryClient';
 
 export class GridsetPackager {
   static async package(board: BoardIR): Promise<Blob> {
@@ -13,8 +14,8 @@ export class GridsetPackager {
       pageNameMap.set(page.id, page.name);
     }
 
-    // Fetch embedded images for buttons with symbolPath (custom/auto-generated symbols)
-    const embeddedImages = await this.collectEmbeddedImages(board);
+    // Fetch embedded image blobs for buttons with symbolPath (custom/auto-generated symbols)
+    const imageBlobs = await this.collectImageBlobs(board);
 
     const firstPageName = board.pages[0].name;
     const coverBackground = board.coverImage?.backgroundColor || "#FFFFFFFF";
@@ -62,18 +63,23 @@ export class GridsetPackager {
     for (const page of board.pages) {
       const layout = page.layout || board.grid;
 
-      // Collect dynamic image files for this page
+      // Embed custom symbol images using Grid3's {col}-{row}.png naming convention.
+      // Grid3 constructs the filename by prepending "{col}-{row}" to the <Image> tag,
+      // so the tag must contain just ".png" — the extension suffix.
       const dynamicFiles: string[] = [];
+      const embeddedSymbolPaths = new Set<string>(); // symbolPaths that have embedded images
       for (const btn of page.buttons) {
-        const imgInfo = btn.symbolPath ? embeddedImages.get(btn.symbolPath) : undefined;
-        if (imgInfo) {
-          const imgPath = `Grids/${page.name}/${imgInfo.filename}`;
-          zip.file(imgPath, imgInfo.data);
-          dynamicFiles.push(`Grids\\${page.name}\\${imgInfo.filename}`);
+        if (!btn.symbolPath) continue;
+        const blob = imageBlobs.get(btn.symbolPath);
+        if (blob) {
+          const filename = `${btn.col}-${btn.row}.png`;
+          embeddedSymbolPaths.add(btn.symbolPath);
+          zip.file(`Grids/${page.name}/${filename}`, blob);
+          dynamicFiles.push(`Grids\\${page.name}\\${filename}`);
         }
       }
 
-      const gridXml = this.generateGridXml(layout, page, pageNameMap, embeddedImages);
+      const gridXml = this.generateGridXml(layout, page, pageNameMap, embeddedSymbolPaths);
       zip.file(`Grids/${page.name}/grid.xml`, gridXml);
 
       const dynamicXml = dynamicFiles.length > 0
@@ -105,7 +111,7 @@ ${fileMapEntries.join('\n')}
     layout: { rows: number; cols: number },
     page: PageIR,
     pageNameMap: Map<string, string>,
-    embeddedImages?: Map<string, { filename: string; data: Blob }>,
+    embeddedSymbolPaths?: Set<string>,
   ): string {
     const gridGuid = this.generateGuid();
     const columnDefs = Array(layout.cols).fill('    <ColumnDefinition />').join('\n');
@@ -118,7 +124,7 @@ ${fileMapEntries.join('\n')}
     // Regular buttons (1×1 cells)
     for (const btn of page.buttons) {
       occupied.add(`${btn.col},${btn.row}`);
-      cells.push(this.generateButtonCell(btn, pageNameMap, embeddedImages));
+      cells.push(this.generateButtonCell(btn, pageNameMap, embeddedSymbolPaths));
     }
 
     // Video players (spanning cells)
@@ -172,18 +178,19 @@ ${cells.join('\n')}
   private static generateButtonCell(
     button: ButtonIR,
     pageNameMap: Map<string, string>,
-    embeddedImages?: Map<string, { filename: string; data: Blob }>,
+    embeddedSymbolPaths?: Set<string>,
   ): string {
     const color = this.convertColorToGrid3Format(button.color || '#3B82F6');
     const text = button.label || 'Button';
     const action = button.action;
 
-    // Resolve image reference — prefer embedded custom symbol over Widgit path
+    // Resolve image reference — prefer embedded custom symbol over Widgit path.
+    // Grid3 constructs embedded image filenames as "{col}-{row}" + <Image> tag,
+    // so the tag must be just ".png" for embedded images.
     let imageRef: string;
-    const embeddedImg = button.symbolPath ? embeddedImages?.get(button.symbolPath) : undefined;
-    if (embeddedImg) {
-      // Use embedded image filename (relative to grid folder)
-      imageRef = embeddedImg.filename;
+    const hasEmbeddedImage = button.symbolPath && embeddedSymbolPaths?.has(button.symbolPath);
+    if (hasEmbeddedImage) {
+      imageRef = ".png";
     } else if (button.rebusKey) {
       imageRef = resolveGrid3Path(button.rebusKey, text);
     } else {
@@ -304,14 +311,14 @@ ${cells.join('\n')}
   // --------------- Embedded image collection ---------------
 
   /**
-   * Collect and fetch custom symbol images for embedding in the .gridset ZIP.
+   * Fetch custom symbol image blobs for embedding in the .gridset ZIP.
    * Only fetches images from API URLs (custom symbols), not Widgit references.
-   * Returns a map from symbolPath → { filename, data } for embedding.
+   * Returns a map from symbolPath → Blob.
    */
-  private static async collectEmbeddedImages(
+  private static async collectImageBlobs(
     board: BoardIR,
-  ): Promise<Map<string, { filename: string; data: Blob }>> {
-    const map = new Map<string, { filename: string; data: Blob }>();
+  ): Promise<Map<string, Blob>> {
+    const map = new Map<string, Blob>();
     const seen = new Set<string>();
     const fetches: Promise<void>[] = [];
 
@@ -323,17 +330,17 @@ ${cells.join('\n')}
         seen.add(btn.symbolPath);
 
         const symbolPath = btn.symbolPath;
-        // Use imageKey for filename if available, otherwise derive from URL
-        const baseName = btn.imageKey
-          || symbolPath.match(/custom-symbols\/([^/]+)\/image/)?.[1]
-          || `symbol_${seen.size}`;
-        const filename = `${baseName.replace(/[^a-zA-Z0-9_-]/g, '_')}.png`;
-
+        // Resolve relative API paths to full URLs (server sets relative, client polling sets full)
+        const fetchUrl = symbolPath.startsWith("/api/") ? apiUrl(symbolPath) : symbolPath;
         fetches.push(
-          this.fetchImage(symbolPath)
-            .then(result => {
-              if (result) map.set(symbolPath, { filename, data: result.blob });
+          fetch(fetchUrl, { credentials: "include" })
+            .then(res => {
+              if (!res.ok) return null;
+              const ct = res.headers.get("content-type") || "";
+              if (!ct.startsWith("image/")) return null; // reject HTML/JSON error pages
+              return res.blob();
             })
+            .then(blob => { if (blob) map.set(symbolPath, blob); })
             .catch(() => { /* skip unfetchable images */ }),
         );
       }
@@ -341,18 +348,6 @@ ${cells.join('\n')}
 
     await Promise.all(fetches);
     return map;
-  }
-
-  private static async fetchImage(
-    src: string,
-  ): Promise<{ blob: Blob } | null> {
-    try {
-      const res = await fetch(src.startsWith("http") ? src : src);
-      if (!res.ok) return null;
-      return { blob: await res.blob() };
-    } catch {
-      return null;
-    }
   }
 
   // --------------- Helpers ---------------
@@ -615,7 +610,8 @@ export class OBZPackager {
     src: string,
   ): Promise<{ blob: Blob; contentType: string } | null> {
     try {
-      const res = await fetch(src.startsWith("http") ? src : src);
+      const fetchUrl = src.startsWith("/api/") ? apiUrl(src) : src;
+      const res = await fetch(fetchUrl, { credentials: "include" });
       if (!res.ok) return null;
       const blob = await res.blob();
       return { blob, contentType: blob.type || "image/png" };

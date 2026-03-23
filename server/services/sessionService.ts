@@ -66,23 +66,39 @@ import { resolveImageKeys, queueSymbolGeneration } from "./symbol/auto-symbol-se
  * Mutates board buttons in-place to set symbolPath.
  */
 async function resolveImageKeysOnBoard(board: any, studentId?: string): Promise<void> {
-  if (!board?.pages || !studentId) return;
+  if (!board?.pages) {
+    console.log(`[resolveImageKeysOnBoard] Skipped: no board pages`);
+    return;
+  }
 
-  // Check student symbol settings
+  // Check student symbol settings — when no student, default to enabled
   let generateEnabled = false;
   let useSymbols = false;
-  try {
-    const settings = await aacSettingsRepository.getByStudentId(studentId);
-    generateEnabled = settings?.generateSymbols ?? false;
-    useSymbols = generateEnabled || !!(settings?.useApprovedSymbols) || !!(settings?.useUnapprovedSymbols);
-  } catch { /* ignore — treat as disabled */ }
+  if (!studentId) {
+    generateEnabled = true;
+    useSymbols = true;
+    console.log(`[resolveImageKeysOnBoard] No student — defaulting to generateSymbols=true, useUnapproved=true`);
+  } else {
+    try {
+      const settings = await aacSettingsRepository.getByStudentId(studentId);
+      generateEnabled = settings?.generateSymbols ?? false;
+      useSymbols = generateEnabled || !!(settings?.useApprovedSymbols) || !!(settings?.useUnapprovedSymbols);
+      console.log(`[resolveImageKeysOnBoard] Student ${studentId}: generateSymbols=${generateEnabled}, useSymbols=${useSymbols}`);
+    } catch { /* ignore — treat as disabled */ }
+  }
 
   const allButtons = (board.pages as any[]).flatMap((p: any) => p.buttons || []);
   const buttonsWithKeys = allButtons.filter((b: any) => b.imageKey && !b.symbolPath?.includes('/api/custom-symbols/'));
-  if (buttonsWithKeys.length === 0) return;
+  if (buttonsWithKeys.length === 0) {
+    console.log(`[resolveImageKeysOnBoard] No pending imageKeys found`);
+    return;
+  }
+
+  console.log(`[resolveImageKeysOnBoard] ${buttonsWithKeys.length} buttons with unresolved imageKeys: ${buttonsWithKeys.map((b: any) => b.imageKey).join(", ")}`);
 
   // If no symbol features are enabled, strip imageKeys so client doesn't show spinners
   if (!useSymbols) {
+    console.log(`[resolveImageKeysOnBoard] Symbol features disabled — stripping imageKeys`);
     for (const btn of buttonsWithKeys) { delete btn.imageKey; }
     return;
   }
@@ -93,7 +109,10 @@ async function resolveImageKeysOnBoard(board: any, studentId?: string): Promise<
 
   // Phase 2 (background): queue generation for missing symbols
   if (generateEnabled && unresolved.length > 0) {
+    console.log(`[resolveImageKeysOnBoard] Queuing ${unresolved.length} for generation: ${unresolved.join(", ")}`);
     queueSymbolGeneration(unresolved);
+  } else if (!generateEnabled && unresolved.length > 0) {
+    console.log(`[resolveImageKeysOnBoard] Generation disabled — ${unresolved.length} keys will not be generated`);
   }
 
   // Strip imageKey from buttons that were resolved (no spinner needed) and
