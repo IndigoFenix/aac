@@ -50,8 +50,10 @@ export interface LiveProviderCallbacks {
   onReconnectFailed?: () => Promise<void>;
   /** Reconnection is starting (before connect) */
   onReconnecting?: () => void;
-  /** Model generated audio data (Gemini native-audio — discarded) */
+  /** Model generated audio data (Gemini native-audio) */
   onAudioData?: (data: { mimeType: string; data: string }) => void;
+  /** Transcription of the model's audio output */
+  onOutputTranscription?: (text: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -74,6 +76,8 @@ export interface LiveProviderConfig {
   enableAffectiveDialog?: boolean;
   /** Enable proactive audio — model can stay silent when no response is needed (Gemini native audio) */
   proactiveAudio?: boolean;
+  /** Gemini voice name for native audio output (e.g. "Puck", "Kore", "Charon") */
+  voiceName?: string;
 }
 
 // ---------------------------------------------------------------------------

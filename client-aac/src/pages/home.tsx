@@ -1013,7 +1013,8 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             onSelect={(choice) => {
               dismissYesNoRef.current?.();
               setYesNoActive(false);
-              interpretFnRef.current?.([choice]);
+              // Voice the choice and send as button press
+              interpretFnRef.current?.([choice], { [choice]: choice });
             }}
             onDismiss={() => {
               dismissYesNoRef.current?.();
@@ -1039,11 +1040,16 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             <PrebuiltBoardSection
               studentId={studentId}
               onSpeakAction={(text) => {
-                // Send spoken text to AI conversation
-                setSelectedSymbols([text]);
+                if (interpretFnRef.current) {
+                  // Route through AI — voice the text and send as button press
+                  interpretFnRef.current([text], { [text]: text });
+                } else {
+                  setSelectedSymbols([text]);
+                }
               }}
               language={currentLanguage}
               voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
+              suppressLocalSpeech={aiSessionActive}
               onBack={() => {
                 // Handle back at root level - could show board selector
               }}
@@ -1054,13 +1060,19 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
         {/* Bottom Row: Quick Actions */}
         <QuickActions
           onAction={(action, text) => {
-            // Send quick action as button press (same as board buttons).
-            // Quick actions bypass the 2s buffer — send immediately.
-            if (interpretFnRef.current) {
-              interpretFnRef.current([text]);
+            if (action === "more") {
+              // "More" = user can't find the right button. Ask AI to add
+              // more options but NOT respond with speech.
+              if (interpretFnRef.current) {
+                interpretFnRef.current(["[MORE]"]);
+              }
             } else {
-              // Fallback: speak locally when server is unavailable
-              speak(text, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
+              // Yes/No/Help — voice the text and send as button press
+              if (interpretFnRef.current) {
+                interpretFnRef.current([text], { [text]: text });
+              } else {
+                speak(text, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
+              }
             }
           }}
           onBack={() => {

@@ -30,7 +30,8 @@ export interface ToolDeclarationConfig {
   customBoardAiAddedButtons?: string[];
   currentEmote?: string;
   activeApp?: string | null;
-
+  /** When true, the model speaks directly via native audio — speak() tool is omitted */
+  useDirectAudio?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -334,7 +335,7 @@ function buildRequestFocusTool(_config: ToolDeclarationConfig): FunctionDeclarat
 export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
   const declarations: FunctionDeclaration[] = [];
 
-  if (!config.isSilentMode) {
+  if (!config.isSilentMode && !config.useDirectAudio) {
     declarations.push(buildSpeakTool(config));
   }
 

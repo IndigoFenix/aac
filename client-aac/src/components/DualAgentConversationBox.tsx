@@ -507,10 +507,7 @@ export function DualAgentConversationBox({
                     </div>
                   ) : currentMessage ? (
                     <div className="flex items-center justify-between w-full">
-                      <motion.div
-                        key={currentMessage.id}
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
+                      <div
                         className="text-sm text-white font-medium leading-relaxed flex-1 mr-3"
                       >
                         {currentMessage.content}
@@ -527,7 +524,7 @@ export function DualAgentConversationBox({
                         {audioEnabled && isPlaying && (
                           <Volume2 className="w-3 h-3 inline ml-2 opacity-60 animate-pulse" />
                         )}
-                      </motion.div>
+                      </div>
 
                       <div className="flex items-center gap-2">
                         {isPlaying && (

@@ -227,14 +227,14 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           // New speech arriving — stop any playing audio from a previous turn
           // (skip clear when pre-generated student TTS is still playing)
           if (!msg.noAudioClear) audioPlayer.clear();
-          // Accumulate streamed text from [SPEAK]
+          // Accumulate streamed text — keep the same message ID to avoid re-triggering animations
           textAccumRef.current += msg.data;
-          setCurrentMessage({
-            id: `msg-${Date.now()}`,
+          setCurrentMessage(prev => ({
+            id: prev?.role === "assistant" ? prev.id : `msg-${Date.now()}`,
             role: "assistant",
             content: textAccumRef.current,
-            timestamp: new Date().toISOString(),
-          });
+            timestamp: prev?.role === "assistant" ? prev.timestamp : new Date().toISOString(),
+          }));
           break;
 
         case "interpret":
@@ -309,7 +309,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         case "avatar_audio":
           // AI voice audio chunk — tagged so avatar mouth animates
           if (audioEnabled) {
-            audioPlayer.queueChunk({ chunk: msg.data, format: "mp3", tag: "avatar" });
+            audioPlayer.queueChunk({ chunk: msg.data, format: msg.format || "mp3", tag: "avatar" });
           }
           break;
 

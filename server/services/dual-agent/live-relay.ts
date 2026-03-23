@@ -91,6 +91,38 @@ import { resolveImageKeys, queueSymbolGeneration } from "../symbol/auto-symbol-s
 import { MODEL_OPTIONS, type LLMProviderKey } from "@shared/llm-options";
 
 // ---------------------------------------------------------------------------
+// Gemini voice mapping for direct audio mode
+// ---------------------------------------------------------------------------
+
+/** Map VoiceType to Gemini prebuilt voice names */
+const GEMINI_VOICE_MAP: Record<string, string> = {
+  man:   "Orus",
+  woman: "Kore",
+  boy:   "Puck",
+  girl:  "Leda",
+};
+
+/** Convert raw PCM buffer (16-bit LE, mono) to a WAV buffer by prepending a 44-byte header */
+function pcmToWav(pcm: Buffer, sampleRate = 24000): Buffer {
+  const header = Buffer.alloc(44);
+  const dataSize = pcm.length;
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + dataSize, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);              // fmt chunk size
+  header.writeUInt16LE(1, 20);               // PCM format
+  header.writeUInt16LE(1, 22);               // mono
+  header.writeUInt32LE(sampleRate, 24);      // sample rate
+  header.writeUInt32LE(sampleRate * 2, 28);  // byte rate (16-bit mono)
+  header.writeUInt16LE(2, 32);               // block align
+  header.writeUInt16LE(16, 34);              // bits per sample
+  header.write("data", 36);
+  header.writeUInt32LE(dataSize, 40);
+  return Buffer.concat([header, pcm]);
+}
+
+// ---------------------------------------------------------------------------
 // Client ↔ Server Protocol
 // ---------------------------------------------------------------------------
 
@@ -135,7 +167,7 @@ export type ServerMessage =
   | { type: "debug"; data: any }
   | { type: "error"; data: string }
   | { type: "thinking"; active: boolean }
-  | { type: "avatar_audio"; data: string }              // base64 audio chunk (AI voice TTS — avatar mouth animates)
+  | { type: "avatar_audio"; data: string; format?: "mp3" | "wav" }  // base64 audio chunk (AI voice TTS — avatar mouth animates)
   | { type: "interpretation_audio"; data: string }     // base64 audio chunk (student voice TTS)
   | { type: "monitor_status"; data: any }
   | { type: "audio_interrupt" }                          // Stop client audio playback (model interrupted by user)
@@ -237,6 +269,13 @@ export class LiveRelay {
   private preGeneratedTtsPromise: Promise<void> | null = null;
   private preGeneratedTtsActive = false;
 
+  // Direct audio mode: when true, the model speaks directly via native audio
+  // output instead of through the speak() tool + external TTS. Enabled when
+  // no ElevenLabs AI voice is configured and interpretation level ≤ 1.
+  private useDirectAudio = false;
+  // Buffer for Gemini audio chunks received during a turn (raw PCM, base64)
+  private directAudioChunks: string[] = [];
+
   // Prevents sending overlapping turnComplete=true messages.
   // Set when we send ANY message with turnComplete=true to the provider.
   // Cleared when the model's first tool call or TURN_COMPLETE arrives.
@@ -319,7 +358,27 @@ export class LiveRelay {
       onToolCallCancellation: (ids) => {
         console.log(`[LiveRelay] Tool call cancellation for ids: ${ids.join(", ")}`);
       },
-      onAudioData: () => { /* Discard — we use ElevenLabs TTS */ },
+      onAudioData: (data) => {
+        if (this.useDirectAudio) {
+          // Buffer Gemini's native audio for this turn — sent in processTurnEnd
+          this.directAudioChunks.push(data.data);
+          this.hasGreeted = true;
+          // Mark turn as active so audio-only turns aren't skipped
+          if (this.turnStartTime === 0) {
+            this.turnStartTime = Date.now();
+          }
+        }
+        // else discard — external TTS is used
+      },
+      onOutputTranscription: (text) => {
+        if (this.useDirectAudio && text.trim()) {
+          // Accumulate the model's speech text (for logging, monitor, chat display)
+          this.turnAccum.speakText += (this.turnAccum.speakText ? " " : "") + text.trim();
+          // Send to client for chat display — noAudioClear prevents killing
+          // the model's own audio that's playing alongside these transcription fragments
+          this.send({ type: "text", data: text, noAudioClear: true });
+        }
+      },
       onUsage: (usage) => this.handleUsage(usage),
       onGoAway: () => {
         console.log("[LiveRelay] Provider session goAway — reconnecting");
@@ -685,9 +744,32 @@ export class LiveRelay {
         this.send({ type: "context", data: `[Monitor] ${text}` });
       };
 
+      // Resolve voices for TTS BEFORE building tools (determines direct audio mode)
+      try {
+        const student = cached.monitorAgent.getStudent?.();
+        if (student) {
+          const voices = await (dualAgentService as any).resolveVoices(cached);
+          this.aiVoice = voices?.aiVoice || null;
+          this.studentVoice = voices?.studentVoice || null;
+        }
+      } catch (err) {
+        console.warn("[LiveRelay] Voice resolution failed, using defaults:", err);
+      }
+
+      // Direct audio mode: model speaks directly when no ElevenLabs and interpretation is off.
+      // The AI voice would otherwise fall through to Google Cloud TTS — skip that
+      // and use Gemini's native audio output instead.
+      const level = cached.state.interpretationLevel ?? 1;
+      const aiVoiceHasElevenLabs = !!(this.aiVoice?.elevenlabsApiKey && this.aiVoice?.elevenlabsVoiceId)
+        || !!(this.aiVoice?.customVoice?.active);
+      this.useDirectAudio = !aiVoiceHasElevenLabs && level <= 1;
+      if (this.useDirectAudio) {
+        console.log("[LiveRelay] Direct audio mode enabled — model speaks directly, no external AI TTS");
+      }
+
       // Build tool declarations based on session configuration
       const toolConfig: ToolDeclarationConfig = {
-        interpretationLevel: cached.state.interpretationLevel ?? 1,
+        interpretationLevel: level,
         enabledApps: (cached.state.appState?.enabledApps || [])
           .map(id => {
             const appDefs = (dualAgentService as any).getAppDefinitions?.() || [];
@@ -703,6 +785,7 @@ export class LiveRelay {
         loadedBoardName: cached.state.loadedBoardData?.name || null,
         currentEmote: cached.state.currentEmote,
         activeApp: cached.state.appState?.activeApp || null,
+        useDirectAudio: this.useDirectAudio,
       };
 
       // Close any existing provider (for forceNewSession re-init)
@@ -722,8 +805,13 @@ export class LiveRelay {
         // SILENT scheduling on tool responses prevents the model from generating
         // new turns after receiving late async tool results (e.g. rebuild_board
         // with symbol resolution completing after TURN_COMPLETE).
+        // SILENT scheduling on tool responses prevents the model from generating
+        // new turns after receiving late async tool results. This applies to both
+        // modes — it doesn't suppress the model's initial speech, only prevents
+        // re-triggering from delayed tool responses (e.g. rebuild_board).
         this.useToolResponseScheduling = true;
         this.provider = new GeminiLiveProvider(callbacks, true /* useVertexAI */);
+        const geminiVoice = GEMINI_VOICE_MAP[this.aiVoice?.fallbackType || "woman"] || "Kore";
         providerConfig = {
           model: aacChatConfig.model,
           temperature: 0.7,
@@ -731,13 +819,17 @@ export class LiveRelay {
           compressionTriggerTokens: 100_000,
           compressionTargetTokens: 50_000,
           responseModality: "AUDIO",
-          proactiveAudio: false,
+          // proactiveAudio must be true in direct audio mode so the model can
+          // speak freely. false suppresses ALL output when speak() is absent.
+          proactiveAudio: this.useDirectAudio ? true : false,
+          voiceName: geminiVoice,
         };
       } else {
         // Preview native-audio model: AUDIO modality + function calling
         // proactiveAudio: false — same as GA path
-        this.useToolResponseScheduling = true;
+        this.useToolResponseScheduling = !this.useDirectAudio;
         this.provider = new GeminiLiveProvider(callbacks);
+        const geminiVoice = GEMINI_VOICE_MAP[this.aiVoice?.fallbackType || "woman"] || "Kore";
         providerConfig = {
           model: aacChatConfig.model,
           temperature: 0.7,
@@ -745,25 +837,45 @@ export class LiveRelay {
           compressionTriggerTokens: 100_000,
           compressionTargetTokens: 50_000,
           responseModality: "AUDIO",
-          proactiveAudio: false,
+          proactiveAudio: this.useDirectAudio ? true : false,
+          voiceName: geminiVoice,
         };
+      }
+
+      // If direct audio mode, rebuild the interactive prompt with useDirectAudio flag
+      // so it doesn't reference speak() tool or say audio is discarded.
+      if (this.useDirectAudio && cached.monitorAgent.getStudent) {
+        const student = cached.monitorAgent.getStudent();
+        if (student) {
+          const { buildFunctionCallingPrompt, AAC_DEFAULT_PERSONA_PROMPT } = await import("../memory-schema/aac-memory-schema");
+          const personaPrompt = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+          const computeAge = (bd: string | null | undefined) => {
+            if (!bd) return undefined;
+            const age = Math.floor((Date.now() - new Date(bd).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+            return age > 0 ? String(age) : undefined;
+          };
+          state.interactivePrompt = buildFunctionCallingPrompt({
+            studentName: student.name,
+            persona: personaPrompt,
+            language: student.primaryLanguage || undefined,
+            mode: this.interactionMode as 'interact' | 'silent',
+            studentAge: computeAge(student.birthDate),
+            studentGender: student.gender || undefined,
+            studentDiagnosis: state.cachedDiagnosis || undefined,
+            aiName: student.aacSettings?.aiName || undefined,
+            knownContacts: state.cachedContacts?.length ? state.cachedContacts : undefined,
+            availableBoards: state.availableBoards?.length ? state.availableBoards : undefined,
+            cachedSymbols: state.cachedSymbols?.length ? state.cachedSymbols : undefined,
+            interpretationLevel: state.interpretationLevel ?? 1,
+            autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
+            useDirectAudio: true,
+          });
+        }
       }
 
       // Build system prompt with echo awareness appendix
       const echoAwareness = this.buildGeminiNativeAudioEchoAwareness();
       const systemPrompt = state.interactivePrompt + "\n\n" + echoAwareness;
-
-      // Resolve voices for TTS via the monitor agent's student info
-      try {
-        const student = cached.monitorAgent.getStudent?.();
-        if (student) {
-          const voices = await (dualAgentService as any).resolveVoices(cached);
-          this.aiVoice = voices?.aiVoice || null;
-          this.studentVoice = voices?.studentVoice || null;
-        }
-      } catch (err) {
-        console.warn("[LiveRelay] Voice resolution failed, using defaults:", err);
-      }
 
       // Connect to the provider
       await this.provider.connect(systemPrompt, providerConfig);
@@ -841,6 +953,8 @@ export class LiveRelay {
         : "";
       const greetingPrompt = isSilent
         ? `Generate 4-12 contextual utterance buttons — complete phrases the user might want to say. Use the student's profile and interests from the system prompt to make them relevant.${imageHint} Use rebuild_board() to create the initial board.${boardHint}${personaHint}`
+        : this.useDirectAudio
+        ? `Call rebuild_board() with 4-12 initial communication buttons, then greet the user with your voice.${imageHint}${boardHint}${personaHint}`
         : `IMPORTANT: You communicate ONLY through function calls. Call rebuild_board() with 4-12 initial communication buttons, then call speak() to greet the user. Both must be function calls — do NOT output plain text.${imageHint}${boardHint}${personaHint}`;
 
       this.initialConnectionDone = true;
@@ -882,6 +996,26 @@ export class LiveRelay {
   private buildGeminiNativeAudioEchoAwareness(): string {
     const level = this.sessionCache?.state?.interpretationLevel ?? 1;
     const hasInterpret = level >= 2;
+
+    if (this.useDirectAudio) {
+      // Direct audio mode: model speaks directly, no speak() tool
+      return `CRITICAL — OUTPUT RULES:
+You speak directly — your voice is heard by the user. Do NOT narrate tool calls or board changes. Just talk naturally.
+Use your tools (rebuild_board, add_buttons, etc.) for board management, but your SPEECH is your natural audio output, not a tool call.
+
+BOARD-SPEECH COORDINATION:
+The AAC board is how the user responds to you. When you ask a question, the board buttons MUST be relevant answers to that specific question. Think about what you are going to say FIRST, then build the board to match. For example:
+- If you ask "What do you want to play?", the board should have play options (Blocks, Cars, Dolls...), NOT generic options (Help, Break, All done).
+- If you ask "How are you feeling?", the board should have emotions (Happy, Sad, Tired...).
+- Always include a few general-purpose options alongside the specific answers.
+
+BUTTON PRESS HANDLING:
+When you receive a [BUTTON PRESS] message, the student's sentence has already been voiced aloud via a separate TTS system. You will hear this through the microphone — it is NOT new speech from a person. Do NOT transcribe or repeat it. Wait a moment for the student's voice to finish, then respond naturally.
+
+AUDIO ECHO AWARENESS:
+You receive continuous microphone audio. You WILL hear your own voice echoed back through the speakers — never transcribe or respond to your own echoes. Also, button press sentences are voiced by a separate TTS system — those echoes are NOT new speech either.`;
+    }
+
     const toolList = hasInterpret ? "speak() and interpret()" : "speak()";
     return `CRITICAL — OUTPUT RULES:
 You communicate ONLY through function calls (tool calls). Do NOT produce speech or audio output — your audio is discarded. A separate TTS system voices the text from your ${toolList} calls instead.
@@ -900,6 +1034,20 @@ You receive continuous microphone audio. Because ${toolList} text is voiced by e
 
     const state = this.sessionCache?.state;
     const level = state?.interpretationLevel ?? 1;
+
+    // [MORE] — user wants more button options, NOT a spoken response
+    if (buttons.length === 1 && buttons[0] === "[MORE]") {
+      if (this.sessionId) {
+        dualAgentService.addPendingMessage(this.sessionId, {
+          role: "user",
+          content: "[MORE OPTIONS REQUESTED]",
+          timestamp: Date.now(),
+        }).catch(err => console.error("[LiveRelay] Failed to persist [MORE]:", err));
+      }
+      this.provider!.sendMessage(`[MORE OPTIONS REQUESTED]
+The user pressed "More" — they can't find the button they need on the current board. Use add_buttons() to add more relevant options to the board. Do NOT respond with speech — just silently add buttons.`, "user");
+      return;
+    }
 
     // For a single button press at level 0-1, use the pre-generated sentence directly.
     // Composite presses (multiple buttons) still go through Gemini for interpretation.
@@ -1042,15 +1190,27 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
       }
     }
 
-    // Send all responses back to the provider (with scheduling if applicable)
-    logLiveSession(`RELAY #${seq} sending tool responses`, `count=${responses.length} scheduling=${this.useToolResponseScheduling ? "SILENT" : "default"} names=[${responses.map(r => r.name).join(", ")}]`);
-    this.sendToolResponseWithScheduling(responses);
+    // In direct audio mode, only send responses for BLOCKING tools (the model waits
+    // for them). NON_BLOCKING tool responses arriving late trigger duplicate model
+    // turns even with SILENT scheduling. The model already processed these tools
+    // as fire-and-forget, so skipping the response is safe.
+    const responsesToSend = this.useDirectAudio
+      ? responses.filter(r => {
+          const isBlocking = ["speak", "interpret", "transcript", "context", "set_board", "press_button"].includes(r.name);
+          if (!isBlocking) logLiveSession(`RELAY #${seq} SKIPPED tool response`, `${r.name} (non-blocking, direct audio mode)`);
+          return isBlocking;
+        })
+      : responses;
+
+    if (responsesToSend.length > 0) {
+      logLiveSession(`RELAY #${seq} sending tool responses`, `count=${responsesToSend.length} scheduling=${this.useToolResponseScheduling ? "SILENT" : "default"} names=[${responsesToSend.map(r => r.name).join(", ")}]`);
+      this.sendToolResponseWithScheduling(responsesToSend);
+    }
 
     // Greeting nudge: if the model has processed tool calls but never used speak(),
     // it likely generated the greeting as audio (which we discard). Remind it once.
-    // Uses sendContextInjection (turnComplete=false) to avoid triggering a new turn
-    // that could cause repeated tool calls. The model will see this context on its next turn.
-    if (!this.hasGreeted && !this.greetingReminderSent && this.interactionMode === "interact") {
+    // Skip in direct audio mode — the model speaks directly, no speak() needed.
+    if (!this.useDirectAudio && !this.hasGreeted && !this.greetingReminderSent && this.interactionMode === "interact") {
       this.greetingReminderSent = true;
       setTimeout(() => {
         if (!this.hasGreeted && this.provider) {
@@ -1594,15 +1754,15 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
       return;
     }
 
-    // Skip empty turns — native audio models generate audio-only turns between
-    // tool calls. Only process turns that had actual tool calls or text content.
-    if (this.turnStartTime === 0) {
-      // turnStartTime is set when the first tool call or text arrives.
-      // If it's still 0, this was an audio-only turn with no tool calls — skip it.
+    // Skip empty turns — native audio models may generate turns with no content.
+    // In direct audio mode, audio-only turns (no tool calls) are valid and should be processed.
+    const hasDirectAudio = this.useDirectAudio && this.directAudioChunks.length > 0;
+    if (this.turnStartTime === 0 && !hasDirectAudio) {
       this.awaitingModelResponse = false;
-      logLiveSession(`RELAY #${seq} SKIPPED`, `empty turn (no tool calls or text)`);
+      logLiveSession(`RELAY #${seq} SKIPPED`, `empty turn (no tool calls, text, or audio)`);
       return;
     }
+
 
     this.turnProcessingBusy = true;
 
@@ -1617,19 +1777,23 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
       this.send({ type: "error", data: "error:TURN_FAILED" });
     } finally {
       // Inject model-role turn summary BEFORE resetting accumulator.
-      // Native audio models discard their audio output (we use ElevenLabs TTS),
-      // so without this text record the model has no memory of what it said/did
-      // and tends to repeat the same tool calls on the next turn.
-      const summary = this.buildTurnSummary(this.turnAccum);
-      if (summary && this.provider) {
-        this.provider.sendMessage(summary, "model", false);
-        logLiveSession(`RELAY #${seq} TURN SUMMARY`, summary);
+      // In external TTS mode, native audio models discard their audio output,
+      // so without this text record the model has no memory of what it said/did.
+      // In direct audio mode, the model already has its own audio context —
+      // skip the summary to avoid triggering a duplicate response.
+      if (!this.useDirectAudio) {
+        const summary = this.buildTurnSummary(this.turnAccum);
+        if (summary && this.provider) {
+          this.provider.sendMessage(summary, "model", false);
+          logLiveSession(`RELAY #${seq} TURN SUMMARY`, summary);
+        }
       }
 
       this.turnAccum = createEmptyAccumulator();
       this.turnStartTime = 0;
       this.turnProcessingBusy = false;
       this.preGeneratedTtsActive = false;
+      this.directAudioChunks = [];
       this.preGeneratedTtsPromise = null;
       this.lastTurnCompleteAt = Date.now();
       this.consecutiveModelTurns++;
@@ -1646,6 +1810,7 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
     this.turnStartTime = 0;
     this.awaitingModelResponse = false;
     this.preGeneratedTtsActive = false;
+    this.directAudioChunks = [];
     this.preGeneratedTtsPromise = null;
     console.log("[LiveRelay] Model interrupted by new input");
   }
@@ -1934,7 +2099,20 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
       }
     }
 
-    if (fullSpeakText && !isSilent && this.aiVoice) {
+    // AI voice: either send buffered Gemini audio (direct mode) or use external TTS
+    if (this.useDirectAudio && this.directAudioChunks.length > 0) {
+      // Decode each base64 PCM chunk to a Buffer, concatenate, then wrap in WAV header
+      try {
+        const pcmBuffers = this.directAudioChunks.map(b64 => Buffer.from(b64, "base64"));
+        const combinedPcm = Buffer.concat(pcmBuffers);
+        const wavBuffer = pcmToWav(combinedPcm);
+        this.send({ type: "avatar_audio", data: wavBuffer.toString("base64"), format: "wav" });
+        logLiveSession("DIRECT AUDIO SENT", `${this.directAudioChunks.length} chunks, ${combinedPcm.length} bytes PCM, ${wavBuffer.length} bytes WAV`);
+      } catch (err) {
+        console.error("[LiveRelay] Direct audio WAV conversion error:", (err as Error).message);
+      }
+      this.directAudioChunks = [];
+    } else if (fullSpeakText && !isSilent && this.aiVoice) {
       try {
         await this.streamTtsWithTimeout(
           fullSpeakText,
@@ -2392,7 +2570,7 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
    */
   private buildTurnSummary(accum: TurnToolAccumulator): string | null {
     const parts: string[] = [];
-    if (accum.interpretText.trim()) {
+    if (accum.interpretText.trim() && !this.useDirectAudio) {
       parts.push(`interpret("${accum.interpretText.trim()}")`);
     }
     if (accum.boardRebuilt) {
@@ -2406,7 +2584,9 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
         parts.push(`remove_buttons(${accum.boardRemoveLabels.join(", ")})`);
       }
     }
-    if (accum.speakText.trim()) {
+    if (accum.speakText.trim() && !this.useDirectAudio) {
+      // Only include speak() in summary when using external TTS.
+      // In direct audio mode the model already has its own audio context.
       parts.push(`speak("${accum.speakText.trim()}")`);
     }
     if (accum.setBoardName) {
@@ -2481,14 +2661,20 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
 
     // Mode
     if (isSilent) {
-      parts.push(`Mode: silent — You are INVISIBLE. NEVER use ${sRef}. Only use board tools.`);
+      parts.push(`Mode: silent — You are INVISIBLE. NEVER speak. Only use board tools.`);
+    } else if (this.useDirectAudio) {
+      parts.push(`Mode: interact — You speak directly with your voice. Do NOT narrate tool calls.`);
     } else {
-      parts.push(`Mode: interact — AI voice active.`);
+      parts.push(`Mode: interact — AI voice active via ${sRef}.`);
     }
 
     // Echo awareness (always critical for live sessions)
-    const echoTools = hasInterpretTool ? `${sRef} or ${iRef}` : sRef;
-    parts.push(`Echo: Speech you hear shortly after your own ${echoTools} output is YOUR echo — ignore it completely. Do NOT transcribe or respond to it.`);
+    if (this.useDirectAudio) {
+      parts.push(`Echo: You will hear your own voice echoed back through the mic — ignore it. Button press sentences are also echoed via TTS — ignore those too.`);
+    } else {
+      const echoTools = hasInterpretTool ? `${sRef} or ${iRef}` : sRef;
+      parts.push(`Echo: Speech you hear shortly after your own ${echoTools} output is YOUR echo — ignore it completely. Do NOT transcribe or respond to it.`);
+    }
 
     // Board limit
     const maxSlots = state.maxBoardItems || 12;
@@ -2500,7 +2686,7 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
         const hint = b.hint ? ` (${b.hint})` : '';
         return `${b.key}${hint}`;
       }).join(", ");
-      parts.push(`Custom boards available: ${boardKeys}. Use ${sbRef} silently when the context matches a board's purpose — do NOT announce board switches with ${sRef}.`);
+      parts.push(`Custom boards available: ${boardKeys}. Use ${sbRef} silently when the context matches a board's purpose${this.useDirectAudio ? '.' : ` — do NOT announce board switches with ${sRef}.`}`);
     }
 
     return parts.join("\n");

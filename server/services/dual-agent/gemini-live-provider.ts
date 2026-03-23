@@ -108,8 +108,8 @@ export class GeminiLiveProvider implements LiveProvider {
           sessionResumption: {
             ...(this.resumptionHandle ? { handle: this.resumptionHandle } : {}),
           },
-          // No built-in audio transcription — the model decides what to transcribe
-          // via the transcript() tool, which gives it control over echo filtering.
+          // Enable output audio transcription so we get text of what the model says
+          outputAudioTranscription: {},
           contextWindowCompression: {
             triggerTokens: String(triggerTokens),
             slidingWindow: {
@@ -130,6 +130,8 @@ export class GeminiLiveProvider implements LiveProvider {
           // Native audio features (from config)
           ...(config.enableAffectiveDialog ? { enableAffectiveDialog: true } : {}),
           ...(config.proactiveAudio !== undefined ? { proactivity: { proactiveAudio: config.proactiveAudio } } : {}),
+          // Voice selection for native audio output
+          ...(config.voiceName ? { speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: config.voiceName } } } } : {}),
         },
         callbacks: {
           onopen: () => {
@@ -439,7 +441,10 @@ export class GeminiLiveProvider implements LiveProvider {
       }
       if (content.turnComplete) events.push("TURN_COMPLETE");
       if (content.interrupted) events.push("INTERRUPTED");
-      if ((content as any).outputTranscription) events.push("outputTranscription");
+      if ((content as any).outputTranscription) {
+        const txText = (content as any).outputTranscription.text || "(empty)";
+        events.push(`outputTranscription("${txText.substring(0, 100)}")`);
+      }
       if ((content as any).generationComplete) events.push("generationComplete");
       if (events.length > 0) {
         logLiveSession(`SERVER → serverContent`, events.join(" | "));
@@ -457,10 +462,14 @@ export class GeminiLiveProvider implements LiveProvider {
             });
           }
         }
+      } else if (content.modelTurn) {
+        logLiveSession("SERVER → modelTurn", "modelTurn present but no parts");
       }
 
-      // Input/output transcription events are ignored — the model handles
-      // transcription via the transcript() tool for proper echo filtering.
+      // Output transcription — text of what the model said (for logging/display)
+      if ((content as any).outputTranscription?.text) {
+        this.callbacks.onOutputTranscription?.((content as any).outputTranscription.text);
+      }
 
       if (content.turnComplete) {
         logLiveSession("SERVER → TURN_COMPLETE", "(dispatching to relay)");

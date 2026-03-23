@@ -1,7 +1,8 @@
 // server/services/voice/tts-facade.ts
-// Routes TTS requests to the correct provider (OpenAI fallback or ElevenLabs custom)
+// Routes TTS requests to the correct provider: ElevenLabs > Gemini > Google Cloud TTS
 
 import { googleTtsService, type VoiceType } from "./google-tts-service";
+import { geminiTtsService } from "./gemini-tts-service";
 import { elevenlabsTtsService } from "./elevenlabs-tts-service";
 import type { Voice } from "@shared/schema";
 
@@ -11,6 +12,7 @@ export interface ResolvedVoice {
   language: string;
   elevenlabsApiKey?: string; // student-level ElevenLabs API key
   elevenlabsVoiceId?: string; // student-level ElevenLabs voice ID (direct, bypasses voices table)
+  geminiVoiceName?: string; // Gemini prebuilt voice name (e.g. "Puck", "Kore")
 }
 
 /**
@@ -50,6 +52,17 @@ export async function synthesize(
         error.message
       );
       // Fall through to OpenAI
+    }
+  }
+
+  // Gemini voice configured — use Gemini TTS
+  if (voice.geminiVoiceName) {
+    try {
+      return await geminiTtsService.synthesize(text, voice.language, {
+        voiceName: voice.geminiVoiceName,
+      });
+    } catch (error: any) {
+      console.error(`[TTSFacade] Gemini TTS failed (voice: ${voice.geminiVoiceName}), falling back to Google Cloud:`, error.message);
     }
   }
 
@@ -97,6 +110,18 @@ export async function* synthesizeStream(
         error.message
       );
       // Fall through to OpenAI
+    }
+  }
+
+  // Gemini voice configured — use Gemini TTS
+  if (voice.geminiVoiceName) {
+    try {
+      yield* geminiTtsService.synthesizeStream(text, voice.language, {
+        voiceName: voice.geminiVoiceName,
+      });
+      return;
+    } catch (error: any) {
+      console.error(`[TTSFacade] Gemini TTS streaming failed (voice: ${voice.geminiVoiceName}), falling back to Google Cloud:`, error.message);
     }
   }
 

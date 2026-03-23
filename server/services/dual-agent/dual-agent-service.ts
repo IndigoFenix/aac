@@ -229,6 +229,7 @@ export class DualAgentService {
         language: student?.primaryLanguage || "en",
         elevenlabsApiKey: aac?.elevenlabsApiKey || undefined,
         elevenlabsVoiceId: aac?.elevenlabsAiVoiceId || undefined,
+        geminiVoiceName: (aac as any)?.geminiAiVoice || undefined,
       },
       studentVoice: {
         fallbackType: (aac?.studentVoiceType as any) || "boy",
@@ -236,6 +237,7 @@ export class DualAgentService {
         language: student?.primaryLanguage || "en",
         elevenlabsApiKey: aac?.elevenlabsApiKey || undefined,
         elevenlabsVoiceId: aac?.elevenlabsStudentVoiceId || undefined,
+        geminiVoiceName: (aac as any)?.geminiStudentVoice || undefined,
       },
     };
   }

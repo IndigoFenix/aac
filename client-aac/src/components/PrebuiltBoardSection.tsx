@@ -12,6 +12,8 @@ interface PrebuiltBoardSectionProps {
   language?: string;
   voiceType?: string;
   onBack: () => void;
+  /** When true, skip local speechSynthesis — let the AI handle speech */
+  suppressLocalSpeech?: boolean;
 }
 
 // Get button background color
@@ -75,6 +77,7 @@ export default function PrebuiltBoardSection({
   language = "en",
   voiceType,
   onBack,
+  suppressLocalSpeech = false,
 }: PrebuiltBoardSectionProps) {
   const [selectedBoard, setSelectedBoard] = useState<BoardData | null>(null);
   const [currentPageId, setCurrentPageId] = useState<string | null>(null);
@@ -155,7 +158,9 @@ export default function PrebuiltBoardSection({
 
     // Speak the text and send to chat
     const textToSpeak = button.action?.text || button.spokenText || button.label;
-    speak(textToSpeak, language, voiceType as any);
+    if (!suppressLocalSpeech) {
+      speak(textToSpeak, language, voiceType as any);
+    }
     onSpeakAction(textToSpeak);
   };
 
