@@ -222,6 +222,13 @@ export class DualAgentService {
         ? voiceRecordRepository.getVoiceById(aac.customStudentVoiceId)
         : Promise.resolve(undefined),
     ]);
+
+    // Default Gemini voices based on student gender:
+    // Student gets a voice matching their gender, AI gets a different female voice.
+    const gender = (student as any)?.gender as string | undefined;
+    const defaultStudentGeminiVoice = gender === "female" ? "Leda" : "Puck";
+    const defaultAiGeminiVoice = defaultStudentGeminiVoice === "Leda" ? "Kore" : "Kore";
+
     return {
       aiVoice: {
         fallbackType: (aac?.voiceType as any) || "woman",
@@ -229,7 +236,7 @@ export class DualAgentService {
         language: student?.primaryLanguage || "en",
         elevenlabsApiKey: aac?.elevenlabsApiKey || undefined,
         elevenlabsVoiceId: aac?.elevenlabsAiVoiceId || undefined,
-        geminiVoiceName: (aac as any)?.geminiAiVoice || undefined,
+        geminiVoiceName: (aac as any)?.geminiAiVoice || defaultAiGeminiVoice,
       },
       studentVoice: {
         fallbackType: (aac?.studentVoiceType as any) || "boy",
@@ -237,7 +244,7 @@ export class DualAgentService {
         language: student?.primaryLanguage || "en",
         elevenlabsApiKey: aac?.elevenlabsApiKey || undefined,
         elevenlabsVoiceId: aac?.elevenlabsStudentVoiceId || undefined,
-        geminiVoiceName: (aac as any)?.geminiStudentVoice || undefined,
+        geminiVoiceName: (aac as any)?.geminiStudentVoice || defaultStudentGeminiVoice,
       },
     };
   }

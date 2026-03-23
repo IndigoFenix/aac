@@ -1627,6 +1627,7 @@ export const en = {
     // Voice
     voiceSettings: "Voice Settings",
     voiceSettingsDesc: "Configure separate voices for the student and the AI assistant",
+    geminiVoiceDesc: "Select voices for the AI and student. Defaults are based on student gender.",
     studentVoice: "Student Voice",
     studentVoiceDesc: "Voice used when speaking the student's words",
     aiVoice: "AI Assistant Voice",

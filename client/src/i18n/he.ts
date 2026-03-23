@@ -1820,6 +1820,7 @@ export const he = {
     // Voice
     voiceSettings: "הגדרות קול",
     voiceSettingsDesc: "הגדר קולות נפרדים לתלמיד ולעוזר הבינה המלאכותית",
+    geminiVoiceDesc: "בחר קולות עבור הבינה המלאכותית והתלמיד. ברירות המחדל מבוססות על מגדר התלמיד.",
     studentVoice: "קול התלמיד",
     studentVoiceDesc: "הקול המשמש לדיבור מילות התלמיד",
     aiVoice: "קול עוזר AI",
