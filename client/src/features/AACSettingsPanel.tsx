@@ -4,7 +4,6 @@ import { useStudent } from '@/hooks/useStudent';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { apiRequest } from '@/lib/queryClient';
-import { useActiveVoices } from '@/hooks/useAdminData';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -52,21 +51,6 @@ You should:
 - Ask clarifying questions when needed
 - Be patient and encouraging`;
 
-// Voice option keys — labels resolved via t() at render time
-const STUDENT_VOICE_KEYS = [
-  { value: 'boy', tKey: 'aacSettings.voiceBoy' },
-  { value: 'girl', tKey: 'aacSettings.voiceGirl' },
-  { value: 'man', tKey: 'aacSettings.voiceMan' },
-  { value: 'woman', tKey: 'aacSettings.voiceWoman' },
-] as const;
-
-const AI_VOICE_KEYS = [
-  { value: 'auto', tKey: 'aacSettings.voiceAuto' },
-  { value: 'man', tKey: 'aacSettings.voiceMan' },
-  { value: 'woman', tKey: 'aacSettings.voiceWoman' },
-  { value: 'boy', tKey: 'aacSettings.voiceBoy' },
-  { value: 'girl', tKey: 'aacSettings.voiceGirl' },
-] as const;
 
 export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelProps) {
   const { student, refetchStudent } = useStudent();
@@ -75,15 +59,11 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const isDark = theme === 'dark';
-  const { data: activeVoices } = useActiveVoices();
+
 
   // Form state
   const [aiName, setAiName] = useState('');
   const [chatAgentPrompt, setChatAgentPrompt] = useState('');
-  const [voiceType, setVoiceType] = useState('auto');
-  const [studentVoiceType, setStudentVoiceType] = useState('boy');
-  const [customVoiceId, setCustomVoiceId] = useState<string | null>(null);
-  const [customStudentVoiceId, setCustomStudentVoiceId] = useState<string | null>(null);
   const [elevenlabsApiKey, setElevenlabsApiKey] = useState('');
   const [elevenlabsAiVoiceId, setElevenlabsAiVoiceId] = useState('');
   const [elevenlabsStudentVoiceId, setElevenlabsStudentVoiceId] = useState('');
@@ -162,10 +142,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const aac = (student as any).aacSettings;
       setAiName(aac?.aiName || '');
       setChatAgentPrompt(aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT);
-      setVoiceType(aac?.voiceType || 'auto');
-      setStudentVoiceType(aac?.studentVoiceType || 'boy');
-      setCustomVoiceId(aac?.customVoiceId || null);
-      setCustomStudentVoiceId(aac?.customStudentVoiceId || null);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
       setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || '');
       setElevenlabsStudentVoiceId(aac?.elevenlabsStudentVoiceId || '');
@@ -192,13 +168,11 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const aac = (student as any).aacSettings;
       const originalAiName = aac?.aiName || '';
       const originalPrompt = aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT;
-      const originalVoice = aac?.voiceType || 'auto';
-      const originalStudentVoice = aac?.studentVoiceType || 'boy';
-      const originalCustomVoice = aac?.customVoiceId || null;
-      const originalCustomStudentVoice = aac?.customStudentVoiceId || null;
       const originalElevenlabsApiKey = aac?.elevenlabsApiKey || '';
       const originalElevenlabsAiVoiceId = aac?.elevenlabsAiVoiceId || '';
       const originalElevenlabsStudentVoiceId = aac?.elevenlabsStudentVoiceId || '';
+      const originalGeminiAiVoice = aac?.geminiAiVoice || '';
+      const originalGeminiStudentVoice = aac?.geminiStudentVoice || '';
       const originalIconTextRatio = aac?.iconTextRatio ?? 3;
       const originalInterpretationLevel = aac?.interpretationLevel ?? 2;
       const originalStartupMode = aac?.startupMode ?? 0;
@@ -213,13 +187,11 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setHasChanges(
         aiName !== originalAiName ||
         chatAgentPrompt !== originalPrompt ||
-        voiceType !== originalVoice ||
-        studentVoiceType !== originalStudentVoice ||
-        customVoiceId !== originalCustomVoice ||
-        customStudentVoiceId !== originalCustomStudentVoice ||
         elevenlabsApiKey !== originalElevenlabsApiKey ||
         elevenlabsAiVoiceId !== originalElevenlabsAiVoiceId ||
         elevenlabsStudentVoiceId !== originalElevenlabsStudentVoiceId ||
+        geminiAiVoice !== originalGeminiAiVoice ||
+        geminiStudentVoice !== originalGeminiStudentVoice ||
         iconTextRatio !== originalIconTextRatio ||
         interpretationLevel !== originalInterpretationLevel ||
         startupMode !== originalStartupMode ||
@@ -233,17 +205,17 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         useUnapprovedSymbols !== originalUseUnapprovedSymbols
       );
     }
-  }, [aiName, chatAgentPrompt, voiceType, studentVoiceType, customVoiceId, customStudentVoiceId, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, allowReadProgress, allowReadReports, allowNotes, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, student]);
+  }, [aiName, chatAgentPrompt, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, allowReadProgress, allowReadReports, allowNotes, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, student]);
 
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: async (data: {
       aiName?: string;
       chatAgentPrompt: string;
-      voiceType: string;
-      studentVoiceType: string;
-      customVoiceId: string | null;
-      customStudentVoiceId: string | null;
+      voiceType?: string;
+      studentVoiceType?: string;
+      customVoiceId?: string | null;
+      customStudentVoiceId?: string | null;
       elevenlabsApiKey?: string;
       elevenlabsAiVoiceId?: string;
       elevenlabsStudentVoiceId?: string;
@@ -287,10 +259,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
     updateMutation.mutate({
       aiName: aiName.trim() || undefined,
       chatAgentPrompt,
-      voiceType,
-      studentVoiceType,
-      customVoiceId,
-      customStudentVoiceId,
       elevenlabsApiKey: elevenlabsApiKey.trim() || undefined,
       elevenlabsAiVoiceId: elevenlabsAiVoiceId.trim() || undefined,
       elevenlabsStudentVoiceId: elevenlabsStudentVoiceId.trim() || undefined,
@@ -315,10 +283,6 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const aac = (student as any).aacSettings;
       setAiName(aac?.aiName || '');
       setChatAgentPrompt(aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT);
-      setVoiceType(aac?.voiceType || 'auto');
-      setStudentVoiceType(aac?.studentVoiceType || 'boy');
-      setCustomVoiceId(aac?.customVoiceId || null);
-      setCustomStudentVoiceId(aac?.customStudentVoiceId || null);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
       setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || '');
       setElevenlabsStudentVoiceId(aac?.elevenlabsStudentVoiceId || '');
@@ -442,132 +406,23 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className={cn(
-                "flex flex-col gap-2 md:flex-row md:items-center md:justify-between",
-                isRTL && "md:flex-row-reverse"
-              )}>
-                <div className={cn("space-y-0.5", isRTL && "text-right")}>
-                  <Label className="text-base font-medium">
-                    {t('aacSettings.studentVoice')}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    {t('aacSettings.studentVoiceDesc')}
-                  </p>
-                </div>
-                <Select value={studentVoiceType} onValueChange={setStudentVoiceType}>
-                  <SelectTrigger className="w-full md:w-[200px]">
-                    <SelectValue placeholder={t('aacSettings.selectVoice')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STUDENT_VOICE_KEYS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {t(option.tKey)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              {activeVoices && activeVoices.length > 0 && (
-                <div className={cn(
-                  "flex items-center justify-between",
-                  isRTL && "flex-row-reverse"
-                )}>
-                  <div className={cn("space-y-0.5", isRTL && "text-right")}>
-                    <Label className="text-sm text-muted-foreground">
-                      {t('aacSettings.customStudentVoice')}
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      {t('aacSettings.customStudentVoiceHint')}
-                    </p>
-                  </div>
-                  <Select
-                    value={customStudentVoiceId || "_none"}
-                    onValueChange={(v) => setCustomStudentVoiceId(v === "_none" ? null : v)}
-                  >
-                    <SelectTrigger className="w-full md:w-[200px]">
-                      <SelectValue placeholder={t('common.none')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="_none">{t('aacSettings.noneFallback')}</SelectItem>
-                      {activeVoices.map((v) => (
-                        <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-              <div className={cn(
-                "flex flex-col gap-2 md:flex-row md:items-center md:justify-between",
-                isRTL && "md:flex-row-reverse"
-              )}>
-                <div className={cn("space-y-0.5", isRTL && "text-right")}>
-                  <Label className="text-base font-medium">
-                    {t('aacSettings.aiVoice')}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    {t('aacSettings.aiVoiceDesc')}
-                  </p>
-                </div>
-                <Select value={voiceType} onValueChange={setVoiceType}>
-                  <SelectTrigger className="w-full md:w-[200px]">
-                    <SelectValue placeholder={t('aacSettings.selectVoice')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {AI_VOICE_KEYS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {t(option.tKey)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              {activeVoices && activeVoices.length > 0 && (
-                <div className={cn(
-                  "flex items-center justify-between",
-                  isRTL && "flex-row-reverse"
-                )}>
-                  <div className={cn("space-y-0.5", isRTL && "text-right")}>
-                    <Label className="text-sm text-muted-foreground">
-                      {t('aacSettings.customAiVoice')}
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      {t('aacSettings.customAiVoiceHint')}
-                    </p>
-                  </div>
-                  <Select
-                    value={customVoiceId || "_none"}
-                    onValueChange={(v) => setCustomVoiceId(v === "_none" ? null : v)}
-                  >
-                    <SelectTrigger className="w-full md:w-[200px]">
-                      <SelectValue placeholder={t('common.none')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="_none">{t('aacSettings.noneFallback')}</SelectItem>
-                      {activeVoices.map((v) => (
-                        <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
               {/* Gemini Voice Settings */}
-              <div className="pt-4 border-t space-y-4">
+              <div className="space-y-4">
                 <div className={cn("space-y-0.5", isRTL && "text-right")}>
-                  <Label className="text-base font-medium">Gemini Voice</Label>
+                  <Label className="text-base font-medium">{t('aacSettings.voiceSettings')}</Label>
                   <p className="text-sm text-muted-foreground">
-                    Select a Gemini AI voice for the AI and student. Used when ElevenLabs is not configured.
+                    {t('aacSettings.geminiVoiceDesc')}
                   </p>
                 </div>
 
                 <div className={cn("flex items-center justify-between", isRTL && "flex-row-reverse")}>
-                  <Label className="text-sm text-muted-foreground">AI Voice</Label>
-                  <Select value={geminiAiVoice} onValueChange={setGeminiAiVoice}>
+                  <Label className="text-sm text-muted-foreground">{t('aacSettings.aiVoice')}</Label>
+                  <Select value={geminiAiVoice || "_default"} onValueChange={(v) => setGeminiAiVoice(v === "_default" ? "" : v)}>
                     <SelectTrigger className="w-full md:w-[200px]">
                       <SelectValue placeholder="Default" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Default</SelectItem>
+                      <SelectItem value="_default">Default</SelectItem>
                       <SelectItem value="Puck">Puck — Young, energetic</SelectItem>
                       <SelectItem value="Charon">Charon — Calm, mature male</SelectItem>
                       <SelectItem value="Kore">Kore — Clear, friendly female</SelectItem>
@@ -581,13 +436,13 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 </div>
 
                 <div className={cn("flex items-center justify-between", isRTL && "flex-row-reverse")}>
-                  <Label className="text-sm text-muted-foreground">Student Voice</Label>
-                  <Select value={geminiStudentVoice} onValueChange={setGeminiStudentVoice}>
+                  <Label className="text-sm text-muted-foreground">{t('aacSettings.studentVoice')}</Label>
+                  <Select value={geminiStudentVoice || "_default"} onValueChange={(v) => setGeminiStudentVoice(v === "_default" ? "" : v)}>
                     <SelectTrigger className="w-full md:w-[200px]">
                       <SelectValue placeholder="Default" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Default</SelectItem>
+                      <SelectItem value="_default">Default</SelectItem>
                       <SelectItem value="Puck">Puck — Young, energetic</SelectItem>
                       <SelectItem value="Charon">Charon — Calm, mature male</SelectItem>
                       <SelectItem value="Kore">Kore — Clear, friendly female</SelectItem>

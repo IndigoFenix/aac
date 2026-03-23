@@ -811,7 +811,7 @@ export class LiveRelay {
         // re-triggering from delayed tool responses (e.g. rebuild_board).
         this.useToolResponseScheduling = true;
         this.provider = new GeminiLiveProvider(callbacks, true /* useVertexAI */);
-        const geminiVoice = GEMINI_VOICE_MAP[this.aiVoice?.fallbackType || "woman"] || "Kore";
+        const geminiVoice = this.aiVoice?.geminiVoiceName || GEMINI_VOICE_MAP[this.aiVoice?.fallbackType || "woman"] || "Kore";
         providerConfig = {
           model: aacChatConfig.model,
           temperature: 0.7,
@@ -829,7 +829,7 @@ export class LiveRelay {
         // proactiveAudio: false — same as GA path
         this.useToolResponseScheduling = !this.useDirectAudio;
         this.provider = new GeminiLiveProvider(callbacks);
-        const geminiVoice = GEMINI_VOICE_MAP[this.aiVoice?.fallbackType || "woman"] || "Kore";
+        const geminiVoice = this.aiVoice?.geminiVoiceName || GEMINI_VOICE_MAP[this.aiVoice?.fallbackType || "woman"] || "Kore";
         providerConfig = {
           model: aacChatConfig.model,
           temperature: 0.7,
