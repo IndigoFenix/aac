@@ -944,7 +944,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   return (
     <CameraAttentivenessWrapper autoStart={true} cameraType="user">
     <EyeTrackingDwellProvider
-      mode={!eyegazeSettings.enabled ? "off" : isCursorControlMode ? "mouse" : "eyegaze"}
+      mode={!eyegazeSettings.enabled ? "off" : rawFaces.length === 0 ? "off" : isCursorControlMode ? "mouse" : "eyegaze"}
       dwellTimeMs={eyegazeSettings.timeout}
       gazePoint={eyeGaze.gazePoint}
       isCalibrated={eyeGaze.isCalibrated}
