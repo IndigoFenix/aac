@@ -41,7 +41,7 @@ async function loadGestureRecognizer(
       const { GestureRecognizer, FilesetResolver } = vision;
 
       const filesetResolver = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm"
       );
 
       const buildOptions = (delegate: "GPU" | "CPU") => {

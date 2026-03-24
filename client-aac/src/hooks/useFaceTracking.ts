@@ -24,7 +24,7 @@ async function loadFaceLandmarker(maxFaces: number): Promise<any> {
       const { FaceLandmarker, FilesetResolver } = vision;
 
       const filesetResolver = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm"
       );
 
       const createOptions = (delegate: "GPU" | "CPU") => ({
