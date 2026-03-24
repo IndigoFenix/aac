@@ -229,21 +229,24 @@ export class DualAgentService {
     const defaultStudentGeminiVoice = gender === "female" ? "Leda" : "Puck";
     const defaultAiGeminiVoice = defaultStudentGeminiVoice === "Leda" ? "Kore" : "Kore";
 
+    // ElevenLabs can be toggled off without removing the stored config
+    const elEnabled = aac?.elevenlabsEnabled !== false;
+
     return {
       aiVoice: {
         fallbackType: (aac?.voiceType as any) || "woman",
         customVoice: aiCustom || null,
         language: student?.primaryLanguage || "en",
-        elevenlabsApiKey: aac?.elevenlabsApiKey || undefined,
-        elevenlabsVoiceId: aac?.elevenlabsAiVoiceId || undefined,
+        elevenlabsApiKey: elEnabled ? (aac?.elevenlabsApiKey || undefined) : undefined,
+        elevenlabsVoiceId: elEnabled ? (aac?.elevenlabsAiVoiceId || undefined) : undefined,
         geminiVoiceName: (aac as any)?.geminiAiVoice || defaultAiGeminiVoice,
       },
       studentVoice: {
         fallbackType: (aac?.studentVoiceType as any) || "boy",
         customVoice: studentCustom || null,
         language: student?.primaryLanguage || "en",
-        elevenlabsApiKey: aac?.elevenlabsApiKey || undefined,
-        elevenlabsVoiceId: aac?.elevenlabsStudentVoiceId || undefined,
+        elevenlabsApiKey: elEnabled ? (aac?.elevenlabsApiKey || undefined) : undefined,
+        elevenlabsVoiceId: elEnabled ? (aac?.elevenlabsStudentVoiceId || undefined) : undefined,
         geminiVoiceName: (aac as any)?.geminiStudentVoice || defaultStudentGeminiVoice,
       },
     };

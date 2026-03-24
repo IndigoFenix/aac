@@ -14,7 +14,7 @@ import {
 const AAC_SETTINGS_FIELDS = new Set([
   "enabled", "demoMode", "demoScenario", "chatAgentPrompt", "modelOverride",
   "interpretationLevel", "startupMode", "voiceType", "studentVoiceType",
-  "customVoiceId", "customStudentVoiceId", "elevenlabsApiKey",
+  "customVoiceId", "customStudentVoiceId", "elevenlabsEnabled", "elevenlabsApiKey",
   "elevenlabsAiVoiceId", "elevenlabsStudentVoiceId", "iconTextRatio",
   "usePcsSymbols", "signLanguageReading", "multiCameraMode",
   "eyegazeEnabled", "eyegazeTimeout", "eyegazeProvider", "aiName", "knownPeople",
