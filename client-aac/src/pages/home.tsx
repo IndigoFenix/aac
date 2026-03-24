@@ -61,7 +61,7 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
   onModeChange: (mode: 'interact' | 'silent') => void;
   onInterpretReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
   onDetectionChange?: (enabled: boolean) => void;
-  onBoardPatchChange?: (patch: import("@/hooks/useDualAgent").BoardPatch | null) => void;
+  onBoardPatchChange?: (patch: import("@/hooks/dual-agent-types").BoardPatch | null) => void;
   onSymbolUpdateChange?: (data: { buttonLabel: string; symbolPath: string } | null) => void;
   onAiButtonPressChange?: (data: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] } | null) => void;
   onSendMessageReady?: (fn: ((msg: string) => Promise<void>) | null) => void;
@@ -210,7 +210,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const [boardData, setBoardData] = useState<ParsedBoardData | null>(null);
 
   // Board patch state — from detection (incremental add/remove)
-  const [boardPatchData, setBoardPatchData] = useState<import("@/hooks/useDualAgent").BoardPatch | null>(null);
+  const [boardPatchData, setBoardPatchData] = useState<import("@/hooks/dual-agent-types").BoardPatch | null>(null);
 
   // Symbol update — auto-generated symbol ready
   const [symbolUpdateData, setSymbolUpdateData] = useState<{ buttonLabel: string; symbolPath: string } | null>(null);
