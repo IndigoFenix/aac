@@ -848,7 +848,8 @@ export class LiveRelay {
         const student = cached.monitorAgent.getStudent();
         if (student) {
           const { buildFunctionCallingPrompt, AAC_DEFAULT_PERSONA_PROMPT } = await import("../memory-schema/aac-memory-schema");
-          const personaPrompt = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+          const rawPersona = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+          const persona = state.enhancedPrompt || rawPersona;
           const computeAge = (bd: string | null | undefined) => {
             if (!bd) return undefined;
             const age = Math.floor((Date.now() - new Date(bd).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
@@ -856,8 +857,9 @@ export class LiveRelay {
           };
           state.interactivePrompt = buildFunctionCallingPrompt({
             studentName: student.name,
-            persona: personaPrompt,
+            persona,
             language: student.primaryLanguage || undefined,
+            memoryContext: state.enhancedPrompt ? undefined : state.memoryContext,
             mode: this.interactionMode as 'interact' | 'silent',
             studentAge: computeAge(student.birthDate),
             studentGender: student.gender || undefined,
@@ -890,6 +892,7 @@ export class LiveRelay {
         `Response Modality: ${providerConfig.responseModality || "default"}`,
         `Interaction: ${this.interactionMode}`,
         `Response: ${this.responseMode}`,
+        `Startup: ${state.enhancedPrompt ? "thorough" : "fast"}`,
       ].join("\n"), !this.hasLoggedInitialSession /* truncate only on first session, append on reconnects */);
       this.hasLoggedInitialSession = true;
 
@@ -2801,7 +2804,9 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
 
     await dualAgentService.addPendingMessage(this.sessionId, {
       role: "user",
-      content: "[SESSION_CLOSED] The AAC session has ended. Perform a final summary of the session.",
+      content: `[SESSION_CLOSED] The AAC session has ended. Perform these final tasks:
+1. Summarize the session — note anything significant that happened.
+2. Clean up Student_Notes: view the notes, then delete duplicate or redundant entries and consolidate related information where possible. The goal is a concise, non-repetitive set of notes.`,
       timestamp: Date.now(),
     });
 

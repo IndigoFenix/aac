@@ -1685,7 +1685,6 @@ export function processMemoryToolResponse(
                 displayRoots.add(normalizePath(t));
               }
             }
-            let message: string | undefined;
             try {
               const rendered = renderMemoryVisualization(memoryFields, values, state, {
                 onlyRenderPaths: Array.from(displayRoots),

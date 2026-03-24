@@ -66,3 +66,152 @@
 [2026-03-23T16:28:01.337Z] [processQueue] Generated "person_laughing" → c5e2e0e7-f393-46e4-aa4d-bf6e5ecaa150 (9 total)
 [2026-03-23T16:28:05.508Z] [processQueue] Generating "star_favorite"...
 [2026-03-23T16:28:10.578Z] [processQueue] Generated "star_favorite" → a192ec25-f84d-4986-b3ff-2f4343cd3c28 (10 total)
+[2026-03-24T08:13:56.068Z] [resolveImageKeys] Resolving 6 keys: stop_sign, finished_check, person_asking_for_help, person_looking, game_controller, speech_bubble (format=internal, useUnapproved=true)
+[2026-03-24T08:13:57.524Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
+[2026-03-24T08:13:57.689Z] [resolveImageKeys] No symbol found for "finished_check"
+[2026-03-24T08:13:57.857Z] [resolveImageKeys] Resolved "person_asking_for_help" → __SYMBOL__:c71a20d1-f43c-4577-a387-68686a252b92
+[2026-03-24T08:13:58.026Z] [resolveImageKeys] Resolved "person_looking" → __SYMBOL__:683af2f1-2e7c-45f9-bcbe-7581f475fa8c
+[2026-03-24T08:13:58.191Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-03-24T08:13:58.357Z] [resolveImageKeys] Resolved "speech_bubble" → __SYMBOL__:ffe8218a-0bbe-4048-b585-230108e079e4
+[2026-03-24T08:13:58.360Z] [resolveImageKeys] Done. Resolved 5, unresolved 1: finished_check
+[2026-03-24T08:13:58.362Z] [queueGeneration] Queuing 1 keys: finished_check (hasCallback=true)
+[2026-03-24T08:13:58.529Z] [processQueue] Generating "finished_check"...
+[2026-03-24T08:14:06.082Z] [processQueue] Generated "finished_check" → 25c8cf80-e2f5-4d83-a4a8-952d6cc30ce3 (1 total)
+[2026-03-24T08:30:28.581Z] [resolveImageKeys] Resolving 6 keys: game_controller, telescope, pencil_drawing, music_notes, sleepy_face, life_preserver (format=internal, useUnapproved=true)
+[2026-03-24T08:30:28.742Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-03-24T08:30:28.901Z] [resolveImageKeys] No symbol found for "telescope"
+[2026-03-24T08:30:29.063Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-24T08:30:29.223Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-24T08:30:29.384Z] [resolveImageKeys] Resolved "sleepy_face" → __SYMBOL__:166b84ee-44cb-432b-9202-8737511086d8
+[2026-03-24T08:30:29.544Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-24T08:30:29.544Z] [resolveImageKeys] Done. Resolved 5, unresolved 1: telescope
+[2026-03-24T08:30:29.546Z] [queueGeneration] Queuing 1 keys: telescope (hasCallback=true)
+[2026-03-24T08:30:29.712Z] [processQueue] Generating "telescope"...
+[2026-03-24T08:30:35.636Z] [processQueue] Generated "telescope" → ea304e0f-ba19-4f52-bb64-5647e781d076 (1 total)
+[2026-03-24T08:49:33.436Z] [resolveImageKeys] Resolving 4 keys: game_controller, pizza, pause_symbol, stop_sign (format=internal, useUnapproved=true)
+[2026-03-24T08:49:33.602Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-03-24T08:49:33.769Z] [resolveImageKeys] Resolved "pizza" → __SYMBOL__:8e675957-673c-4163-9c62-d23db64a64e8
+[2026-03-24T08:49:33.934Z] [resolveImageKeys] Resolved "pause_symbol" → __SYMBOL__:a5135144-1b9e-48d2-a919-b242f7d14a52
+[2026-03-24T08:49:34.096Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
+[2026-03-24T08:49:34.098Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-03-24T08:49:54.747Z] [resolveImageKeys] Resolving 4 keys: toy_blocks, car_toy, toy_train, outside_area (format=internal, useUnapproved=true)
+[2026-03-24T08:49:54.906Z] [resolveImageKeys] Resolved "toy_blocks" → __SYMBOL__:882d862d-8fe6-43bc-83b2-ed73d64fef2f
+[2026-03-24T08:49:55.063Z] [resolveImageKeys] No symbol found for "car_toy"
+[2026-03-24T08:49:55.239Z] [resolveImageKeys] Resolved "toy_train" → __SYMBOL__:b590d8cd-40a3-4014-8872-4b9a83c1ef1a
+[2026-03-24T08:49:55.397Z] [resolveImageKeys] Resolved "outside_area" → __SYMBOL__:30f3b016-6522-41f7-831d-311eacb8acff
+[2026-03-24T08:49:55.399Z] [resolveImageKeys] Done. Resolved 3, unresolved 1: car_toy
+[2026-03-24T08:49:55.401Z] [queueGeneration] Queuing 1 keys: car_toy (hasCallback=true)
+[2026-03-24T08:49:55.565Z] [processQueue] Generating "car_toy"...
+[2026-03-24T08:50:02.636Z] [processQueue] Generated "car_toy" → ce078ed9-7baf-43ea-bd6a-21c2d729084a (1 total)
+[2026-03-24T09:35:29.165Z] [resolveImageKeys] Resolving 6 keys: game_controller, pencil_drawing, music_notes, magnifying_glass, life_preserver, sleepy_face (format=internal, useUnapproved=true)
+[2026-03-24T09:35:29.333Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-03-24T09:35:29.492Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-24T09:35:29.652Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-24T09:35:29.812Z] [resolveImageKeys] Resolved "magnifying_glass" → __SYMBOL__:2db13cb9-f160-490a-812e-56aba42450f3
+[2026-03-24T09:35:29.976Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-24T09:35:30.138Z] [resolveImageKeys] Resolved "sleepy_face" → __SYMBOL__:166b84ee-44cb-432b-9202-8737511086d8
+[2026-03-24T09:35:30.139Z] [resolveImageKeys] Done. Resolved 6, unresolved 0: 
+[2026-03-24T09:36:32.470Z] [resolveImageKeys] Resolving 4 keys: picture_frame, tree_outside, teddy_bear, return_arrow (format=internal, useUnapproved=true)
+[2026-03-24T09:36:33.780Z] [resolveImageKeys] No symbol found for "picture_frame"
+[2026-03-24T09:36:33.941Z] [resolveImageKeys] Resolved "tree_outside" → __SYMBOL__:d8a4e84d-804b-4ccb-b220-115be8f3691a
+[2026-03-24T09:36:34.104Z] [resolveImageKeys] Resolved "teddy_bear" → __SYMBOL__:2baa7c42-75f1-4984-b54a-d80e0b156e56
+[2026-03-24T09:36:34.267Z] [resolveImageKeys] Resolved "return_arrow" → __SYMBOL__:9c893a9f-ca6e-4f2e-b6ac-aa2b4f6b9323
+[2026-03-24T09:36:34.268Z] [resolveImageKeys] Done. Resolved 3, unresolved 1: picture_frame
+[2026-03-24T09:36:34.271Z] [queueGeneration] Queuing 1 keys: picture_frame (hasCallback=true)
+[2026-03-24T09:36:34.440Z] [processQueue] Generating "picture_frame"...
+[2026-03-24T09:36:39.637Z] [processQueue] Generated "picture_frame" → 4376a162-6180-4357-b448-1a28a011f97b (1 total)
+[2026-03-24T09:36:45.478Z] [resolveImageKeys] Resolving 4 keys: dog_paw, family_group, nature_scene, return_arrow (format=internal, useUnapproved=true)
+[2026-03-24T09:36:45.640Z] [resolveImageKeys] No symbol found for "dog_paw"
+[2026-03-24T09:36:45.802Z] [resolveImageKeys] Resolved "family_group" → __SYMBOL__:3edb8a51-2e93-4586-8aa9-3e841afbe36b
+[2026-03-24T09:36:45.963Z] [resolveImageKeys] No symbol found for "nature_scene"
+[2026-03-24T09:36:46.123Z] [resolveImageKeys] Resolved "return_arrow" → __SYMBOL__:9c893a9f-ca6e-4f2e-b6ac-aa2b4f6b9323
+[2026-03-24T09:36:46.124Z] [resolveImageKeys] Done. Resolved 2, unresolved 2: dog_paw, nature_scene
+[2026-03-24T09:36:46.125Z] [queueGeneration] Queuing 2 keys: dog_paw, nature_scene (hasCallback=true)
+[2026-03-24T09:36:46.293Z] [processQueue] Generating "dog_paw"...
+[2026-03-24T09:36:53.689Z] [processQueue] Generated "dog_paw" → 0eb2bbe3-d3bb-4029-86d2-760e9e86fb71 (1 total)
+[2026-03-24T09:36:57.889Z] [processQueue] Generating "nature_scene"...
+[2026-03-24T09:37:04.725Z] [processQueue] Generated "nature_scene" → a121bec7-821d-4b15-bac4-0fd9b828297e (2 total)
+[2026-03-24T09:37:16.473Z] [resolveImageKeys] Resolving 3 keys: teddy_bear, hamburger, person_standing (format=internal, useUnapproved=true)
+[2026-03-24T09:37:17.857Z] [resolveImageKeys] Resolved "teddy_bear" → __SYMBOL__:2baa7c42-75f1-4984-b54a-d80e0b156e56
+[2026-03-24T09:37:18.027Z] [resolveImageKeys] Resolved "hamburger" → __SYMBOL__:414f8527-c93c-4c20-bc5c-931285fa22b4
+[2026-03-24T09:37:18.197Z] [resolveImageKeys] No symbol found for "person_standing"
+[2026-03-24T09:37:18.198Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: person_standing
+[2026-03-24T09:37:18.200Z] [queueGeneration] Queuing 1 keys: person_standing (hasCallback=true)
+[2026-03-24T09:37:18.379Z] [processQueue] Generating "person_standing"...
+[2026-03-24T09:37:24.959Z] [processQueue] Generated "person_standing" → 45ea3601-aa4c-4005-b23b-52cbc16bb6e3 (1 total)
+[2026-03-24T09:37:29.133Z] [resolveImageKeys] Resolving 7 keys: dog_paw, family_group, nature_scene, teddy_bear, hamburger, person_standing, return_arrow (format=internal, useUnapproved=true)
+[2026-03-24T09:37:29.303Z] [resolveImageKeys] Resolved "dog_paw" → __SYMBOL__:0eb2bbe3-d3bb-4029-86d2-760e9e86fb71
+[2026-03-24T09:37:29.473Z] [resolveImageKeys] Resolved "family_group" → __SYMBOL__:3edb8a51-2e93-4586-8aa9-3e841afbe36b
+[2026-03-24T09:37:29.644Z] [resolveImageKeys] Resolved "nature_scene" → __SYMBOL__:a121bec7-821d-4b15-bac4-0fd9b828297e
+[2026-03-24T09:37:29.814Z] [resolveImageKeys] Resolved "teddy_bear" → __SYMBOL__:2baa7c42-75f1-4984-b54a-d80e0b156e56
+[2026-03-24T09:37:29.985Z] [resolveImageKeys] Resolved "hamburger" → __SYMBOL__:414f8527-c93c-4c20-bc5c-931285fa22b4
+[2026-03-24T09:37:30.160Z] [resolveImageKeys] Resolved "person_standing" → __SYMBOL__:45ea3601-aa4c-4005-b23b-52cbc16bb6e3
+[2026-03-24T09:37:30.332Z] [resolveImageKeys] Resolved "return_arrow" → __SYMBOL__:9c893a9f-ca6e-4f2e-b6ac-aa2b4f6b9323
+[2026-03-24T09:37:30.334Z] [resolveImageKeys] Done. Resolved 7, unresolved 0: 
+[2026-03-24T09:37:37.384Z] [resolveImageKeys] Resolving 4 keys: building_blocks, car_side, tree_outside, return_arrow (format=internal, useUnapproved=true)
+[2026-03-24T09:37:37.546Z] [resolveImageKeys] Resolved "building_blocks" → __SYMBOL__:21ab8f1d-ea39-49df-b337-d32157e8d63c
+[2026-03-24T09:37:37.703Z] [resolveImageKeys] Resolved "car_side" → __SYMBOL__:61650331-cd95-4ed3-8a4b-d3319d7c4fc3
+[2026-03-24T09:37:37.861Z] [resolveImageKeys] Resolved "tree_outside" → __SYMBOL__:d8a4e84d-804b-4ccb-b220-115be8f3691a
+[2026-03-24T09:37:38.020Z] [resolveImageKeys] Resolved "return_arrow" → __SYMBOL__:9c893a9f-ca6e-4f2e-b6ac-aa2b4f6b9323
+[2026-03-24T09:37:38.022Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-03-24T10:00:04.009Z] [resolveImageKeys] Resolving 5 keys: game_controller, pencil_drawing, music_notes, person_looking, life_preserver (format=internal, useUnapproved=true)
+[2026-03-24T10:00:04.167Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-03-24T10:00:04.324Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-24T10:00:04.494Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-24T10:00:04.655Z] [resolveImageKeys] Resolved "person_looking" → __SYMBOL__:683af2f1-2e7c-45f9-bcbe-7581f475fa8c
+[2026-03-24T10:00:04.815Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-24T10:00:04.818Z] [resolveImageKeys] Done. Resolved 5, unresolved 0: 
+[2026-03-24T10:00:13.610Z] [resolveImageKeys] Resolving 5 keys: paper, pencil, markers, paint_palette, life_preserver (format=internal, useUnapproved=true)
+[2026-03-24T10:00:13.766Z] [resolveImageKeys] No symbol found for "paper"
+[2026-03-24T10:00:13.929Z] [resolveImageKeys] Resolved "pencil" → __SYMBOL__:e14d042f-581f-4d0c-b835-df5feb77130c
+[2026-03-24T10:00:14.085Z] [resolveImageKeys] Resolved "markers" → __SYMBOL__:cc7a29ca-4e0f-49cd-8f35-83ebf9657b4c
+[2026-03-24T10:00:14.250Z] [resolveImageKeys] Resolved "paint_palette" → __SYMBOL__:bf85af8a-3541-4e36-89c3-1664e6f4afe3
+[2026-03-24T10:00:14.411Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-24T10:00:14.412Z] [resolveImageKeys] Done. Resolved 4, unresolved 1: paper
+[2026-03-24T10:00:14.413Z] [queueGeneration] Queuing 1 keys: paper (hasCallback=true)
+[2026-03-24T10:00:14.579Z] [processQueue] Generating "paper"...
+[2026-03-24T10:00:20.314Z] [processQueue] Generated "paper" → 19490d89-7e98-40b2-a831-0b55d7507827 (1 total)
+[2026-03-24T10:00:29.411Z] [resolveImageKeys] Resolving 5 keys: paper, paint_palette, markers, pencil_drawing, life_preserver (format=internal, useUnapproved=true)
+[2026-03-24T10:00:29.576Z] [resolveImageKeys] Resolved "paper" → __SYMBOL__:19490d89-7e98-40b2-a831-0b55d7507827
+[2026-03-24T10:00:29.742Z] [resolveImageKeys] Resolved "paint_palette" → __SYMBOL__:bf85af8a-3541-4e36-89c3-1664e6f4afe3
+[2026-03-24T10:00:29.906Z] [resolveImageKeys] Resolved "markers" → __SYMBOL__:cc7a29ca-4e0f-49cd-8f35-83ebf9657b4c
+[2026-03-24T10:00:30.070Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-24T10:00:30.240Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-24T10:00:30.241Z] [resolveImageKeys] Done. Resolved 5, unresolved 0: 
+[2026-03-24T10:00:36.996Z] [resolveImageKeys] Resolving 4 keys: pencil_drawing, check_mark, pause_symbol, life_preserver (format=internal, useUnapproved=true)
+[2026-03-24T10:00:37.161Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-24T10:00:37.326Z] [resolveImageKeys] Resolved "check_mark" → __SYMBOL__:bd8bf1f6-a3c7-4a1c-a57c-3ed2744ae67e
+[2026-03-24T10:00:37.490Z] [resolveImageKeys] Resolved "pause_symbol" → __SYMBOL__:a5135144-1b9e-48d2-a919-b242f7d14a52
+[2026-03-24T10:00:37.657Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-24T10:00:37.658Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-03-24T10:00:48.032Z] [resolveImageKeys] Resolving 5 keys: car, lion, house, person, life_preserver (format=internal, useUnapproved=true)
+[2026-03-24T10:00:48.197Z] [resolveImageKeys] Resolved "car" → __SYMBOL__:97b06125-a0c9-4296-a540-4c5c9562d223
+[2026-03-24T10:00:48.359Z] [resolveImageKeys] Resolved "lion" → __SYMBOL__:c75b2306-b8ad-4117-84ad-2c6336569428
+[2026-03-24T10:00:48.523Z] [resolveImageKeys] Resolved "house" → __SYMBOL__:4e78c7c2-856d-47bc-ae70-41a92b0342b2
+[2026-03-24T10:00:48.683Z] [resolveImageKeys] Resolved "person" → __SYMBOL__:894ac537-d331-455e-8221-b1baf1e1b7e8
+[2026-03-24T10:00:48.843Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-24T10:00:48.844Z] [resolveImageKeys] Done. Resolved 5, unresolved 0: 
+[2026-03-24T10:00:59.250Z] [resolveImageKeys] Resolving 3 keys: hamburger, tree, teddy_bear (format=internal, useUnapproved=true)
+[2026-03-24T10:00:59.410Z] [resolveImageKeys] Resolved "hamburger" → __SYMBOL__:414f8527-c93c-4c20-bc5c-931285fa22b4
+[2026-03-24T10:00:59.567Z] [resolveImageKeys] Resolved "tree" → __SYMBOL__:df5f8bae-b41d-4559-9da1-cabaac1f5357
+[2026-03-24T10:00:59.724Z] [resolveImageKeys] Resolved "teddy_bear" → __SYMBOL__:2baa7c42-75f1-4984-b54a-d80e0b156e56
+[2026-03-24T10:00:59.725Z] [resolveImageKeys] Done. Resolved 3, unresolved 0: 
+[2026-03-24T10:01:06.228Z] [resolveImageKeys] Resolving 6 keys: dog, cat, fish, bird, paw_prints, life_preserver (format=internal, useUnapproved=true)
+[2026-03-24T10:01:06.386Z] [resolveImageKeys] No symbol found for "dog"
+[2026-03-24T10:01:06.545Z] [resolveImageKeys] Resolved "cat" → __SYMBOL__:f6d635b1-7edc-4e74-abfb-488eb5a82d5c
+[2026-03-24T10:01:06.704Z] [resolveImageKeys] Resolved "fish" → __SYMBOL__:5ce82ced-dcc0-4a63-8135-b84f918e838b
+[2026-03-24T10:01:06.868Z] [resolveImageKeys] Resolved "bird" → __SYMBOL__:8ea77dec-b91b-488d-9e65-e39ffdf5acfc
+[2026-03-24T10:01:07.031Z] [resolveImageKeys] No symbol found for "paw_prints"
+[2026-03-24T10:01:07.193Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-24T10:01:07.194Z] [resolveImageKeys] Done. Resolved 4, unresolved 2: dog, paw_prints
+[2026-03-24T10:01:07.196Z] [queueGeneration] Queuing 2 keys: dog, paw_prints (hasCallback=true)
+[2026-03-24T10:01:07.357Z] [processQueue] Generating "dog"...
+[2026-03-24T10:01:13.660Z] [processQueue] Generated "dog" → da281d42-5893-41e7-81ea-84ecb07db399 (1 total)
+[2026-03-24T10:01:17.822Z] [processQueue] Generating "paw_prints"...
+[2026-03-24T10:01:20.188Z] [resolveImageKeys] Resolving 4 keys: pencil_drawing, check_mark, pause_symbol, life_preserver (format=internal, useUnapproved=true)
+[2026-03-24T10:01:20.348Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-24T10:01:20.507Z] [resolveImageKeys] Resolved "check_mark" → __SYMBOL__:bd8bf1f6-a3c7-4a1c-a57c-3ed2744ae67e
+[2026-03-24T10:01:20.665Z] [resolveImageKeys] Resolved "pause_symbol" → __SYMBOL__:a5135144-1b9e-48d2-a919-b242f7d14a52
+[2026-03-24T10:01:20.823Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-24T10:01:20.824Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-03-24T10:01:24.557Z] [processQueue] Generated "paw_prints" → ea1fee48-4c8b-42bb-8225-7704522d91ed (2 total)

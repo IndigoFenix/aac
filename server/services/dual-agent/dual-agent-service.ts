@@ -392,16 +392,19 @@ export class DualAgentService {
       } catch { /* ignore */ }
     }
 
-    // Build the function-calling prompt with contacts + boards + symbols + demographics
+    // Build the function-calling prompt with contacts + boards + symbols + demographics.
+    // If thorough startup generated an enhanced prompt, use it as the persona instead
+    // of the raw custom prompt — the enhanced prompt already has student-specific context woven in.
     let interactivePrompt = "";
     const student = monitorAgent.getStudent?.();
     if (student) {
-      const personaPrompt = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+      const rawPersona = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+      const persona = initResult.enhancedPrompt || rawPersona;
       interactivePrompt = buildFunctionCallingPrompt({
         studentName: student.name,
-        persona: personaPrompt,
+        persona,
         language: student.primaryLanguage || undefined,
-        memoryContext: initResult.initialContext,
+        memoryContext: initResult.enhancedPrompt ? undefined : initResult.initialContext,
         mode: interactionMode,
         studentAge: computeAge(student.birthDate),
         studentGender: student.gender || undefined,
@@ -449,6 +452,8 @@ export class DualAgentService {
       cachedSymbols,
       availableBoards,
       cachedDiagnosis,
+      memoryContext: initResult.initialContext,
+      enhancedPrompt: initResult.enhancedPrompt,
       privacyOptions: monitorAgent.getPrivacyOptions(),
       remoteStorageEnabled,
     };
@@ -574,6 +579,8 @@ export class DualAgentService {
         lastInteractiveActivity: Date.now(),
         lastMonitorActivity: Date.now(),
         monitorConsecutiveFailures: 0,
+        memoryContext: chatState?.memoryContext,
+        enhancedPrompt: chatState?.enhancedPrompt,
         remoteStorageEnabled: true, // If loaded from DB, storage was enabled
       };
 
@@ -704,6 +711,8 @@ export class DualAgentService {
         openedTopics: [],
         memoryState: {},
         interactionMode: state.interactionMode,
+        memoryContext: state.memoryContext,
+        enhancedPrompt: state.enhancedPrompt,
       };
 
       if (existingSession.length > 0) {
