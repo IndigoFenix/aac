@@ -68,6 +68,7 @@ export default function UserSettings({
   const [studentVoiceType, setStudentVoiceType] = useState("boy");
   const [customVoiceId, setCustomVoiceId] = useState<string | null>(null);
   const [customStudentVoiceId, setCustomStudentVoiceId] = useState<string | null>(null);
+  const [elevenlabsEnabled, setElevenlabsEnabled] = useState(true);
   const [elevenlabsApiKey, setElevenlabsApiKey] = useState("");
   const [elevenlabsAiVoiceId, setElevenlabsAiVoiceId] = useState("");
   const [elevenlabsStudentVoiceId, setElevenlabsStudentVoiceId] = useState("");
@@ -176,6 +177,7 @@ export default function UserSettings({
       const svt = aac?.studentVoiceType || "boy";
       setCustomVoiceId(aac?.customVoiceId || null);
       setCustomStudentVoiceId(aac?.customStudentVoiceId || null);
+      setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || "");
       setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || "");
       setElevenlabsStudentVoiceId(aac?.elevenlabsStudentVoiceId || "");
@@ -279,6 +281,7 @@ export default function UserSettings({
       studentVoiceType,
       customVoiceId,
       customStudentVoiceId,
+      elevenlabsEnabled,
       elevenlabsApiKey: elevenlabsApiKey.trim() || undefined,
       elevenlabsAiVoiceId: elevenlabsAiVoiceId.trim() || undefined,
       elevenlabsStudentVoiceId: elevenlabsStudentVoiceId.trim() || undefined,
@@ -536,9 +539,17 @@ export default function UserSettings({
 
                 {/* ElevenLabs Direct Voice Settings */}
                 <div className="space-y-3 mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
-                  <Label className="text-sm font-semibold">{t("settings.elevenlabsTitle")}</Label>
-                  <p className="text-xs text-gray-500">{t("settings.elevenlabsDesc")}</p>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-sm font-semibold">{t("settings.elevenlabsTitle")}</Label>
+                      <p className="text-xs text-gray-500">{t("settings.elevenlabsDesc")}</p>
+                    </div>
+                    {(elevenlabsApiKey.trim() || elevenlabsAiVoiceId.trim() || elevenlabsStudentVoiceId.trim()) && (
+                      <Switch checked={elevenlabsEnabled} onCheckedChange={setElevenlabsEnabled} />
+                    )}
+                  </div>
 
+                  <div className={`space-y-3 ${!elevenlabsEnabled ? "opacity-50 pointer-events-none" : ""}`}>
                   <div className="space-y-2">
                     <Label className="text-xs font-medium text-gray-500">{t("settings.elevenlabsApiKey")}</Label>
                     <input
@@ -671,6 +682,7 @@ export default function UserSettings({
                       </div>
                     </>
                   )}
+                  </div>
                 </div>
               </div>
 

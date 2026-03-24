@@ -331,6 +331,7 @@ export const aacSettings = pgTable("aac_settings", {
   customStudentVoiceId: varchar("custom_student_voice_id"), // FK to voices table for custom student voice (ElevenLabs)
 
   // ElevenLabs voice settings (may be removed later)
+  elevenlabsEnabled: boolean("elevenlabs_enabled").default(true), // Toggle ElevenLabs on/off without removing config
   elevenlabsApiKey: text("elevenlabs_api_key"), // Student's own ElevenLabs API key
   elevenlabsAiVoiceId: text("elevenlabs_ai_voice_id"), // ElevenLabs voice ID for AI voice
   elevenlabsStudentVoiceId: text("elevenlabs_student_voice_id"), // ElevenLabs voice ID for student voice
