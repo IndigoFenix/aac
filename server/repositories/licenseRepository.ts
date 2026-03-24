@@ -95,11 +95,9 @@ export class LicenseRepository {
     return license || undefined;
   }
 
-  /** Soft delete — sets isActive=false */
   async deleteLicense(id: string): Promise<boolean> {
     const [result] = await db
-      .update(licenses)
-      .set({ isActive: false, updatedAt: new Date() })
+      .delete(licenses)
       .where(eq(licenses.id, id))
       .returning({ id: licenses.id });
     return !!result;

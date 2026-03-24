@@ -1,5 +1,5 @@
 // client-aac/src/components/DwellOverlay.tsx
-// Visual feedback for eye tracking: gaze cursor dot + dwell clock-border animation on active target.
+// Visual feedback for eye tracking: gaze cursor dot + dwell clock-border + circular ring timer.
 
 import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
 
@@ -7,6 +7,7 @@ const GAZE_DOT_SIZE = 16;
 const BORDER_WIDTH = 4;
 const BORDER_RADIUS = 12; // matches rounded-xl
 const ACCENT = "rgba(59, 130, 246, 0.8)"; // blue-500
+const RING_STROKE = 6;
 
 export default function DwellOverlay() {
   const { gazePosition, dwellTarget, enabled, mode } = useEyeTrackingDwell();
@@ -34,12 +35,12 @@ export default function DwellOverlay() {
         />
       )}
 
-      {/* Dwell clock-border on target element */}
+      {/* Dwell clock-border + circular ring on target element */}
       {dwellTarget && (
-        <DwellBorder
-          rect={dwellTarget.rect}
-          progress={dwellTarget.progress}
-        />
+        <>
+          <DwellBorder rect={dwellTarget.rect} progress={dwellTarget.progress} />
+          <DwellRing rect={dwellTarget.rect} progress={dwellTarget.progress} />
+        </>
       )}
     </div>
   );
@@ -80,6 +81,53 @@ function DwellBorder({ rect, progress }: { rect: DOMRect; progress: number }) {
         strokeDasharray={perimeter}
         strokeDashoffset={dashOffset}
         strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function DwellRing({ rect, progress }: { rect: DOMRect; progress: number }) {
+  // Size the ring to fit inside the button — use the smaller dimension with padding
+  const diameter = Math.min(rect.width, rect.height) * 0.6;
+  const radius = (diameter - RING_STROKE) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference * (1 - progress);
+
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const svgSize = diameter;
+
+  return (
+    <svg
+      style={{
+        position: "absolute",
+        left: cx - svgSize / 2,
+        top: cy - svgSize / 2,
+        width: svgSize,
+        height: svgSize,
+      }}
+    >
+      {/* Background track */}
+      <circle
+        cx={svgSize / 2}
+        cy={svgSize / 2}
+        r={radius}
+        fill="none"
+        stroke="rgba(255, 255, 255, 0.2)"
+        strokeWidth={RING_STROKE}
+      />
+      {/* Progress arc */}
+      <circle
+        cx={svgSize / 2}
+        cy={svgSize / 2}
+        r={radius}
+        fill="none"
+        stroke={ACCENT}
+        strokeWidth={RING_STROKE}
+        strokeDasharray={circumference}
+        strokeDashoffset={dashOffset}
+        strokeLinecap="round"
+        transform={`rotate(-90 ${svgSize / 2} ${svgSize / 2})`}
       />
     </svg>
   );
