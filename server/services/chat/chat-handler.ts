@@ -644,17 +644,14 @@ import {
       // toolRound tracks recursive depth — safety limit to prevent runaway tool loops
       private static readonly MAX_TOOL_ROUNDS = 20;
       async updateConversation(totalCreditsUsed: number = 0, responseType: 'text' | 'html' | 'md', apiValues?: { [key: string]: any }, toolRound: number = 0): Promise<ChatResponse> {
-          if (toolRound >= ChatMessageManager.MAX_TOOL_ROUNDS) {
-              console.warn(`[ChatMsgMgr] updateConversation hit max tool rounds (${ChatMessageManager.MAX_TOOL_ROUNDS}) — requesting text response`);
-              // Instead of forcing a fake response, add a system message nudging the LLM to wrap up,
-              // then do ONE final call with no tools available
+          const maxToolRoundsReached = toolRound >= ChatMessageManager.MAX_TOOL_ROUNDS;
+          if (maxToolRoundsReached) {
+              console.warn(`[ChatMsgMgr] updateConversation hit max tool rounds (${ChatMessageManager.MAX_TOOL_ROUNDS}) — forcing text-only response`);
               await this.addMessage({
                   role: 'system',
                   content: 'You have used the maximum number of tool calls for this turn. Please provide your final text response now without any further tool calls.',
                   timestamp: Date.now(),
               });
-              // Fall through to the normal LLM call below — it will naturally produce text
-              // since we've added the system nudge and it shouldn't loop further
           }
           await this.autoCompress();
           const inputItems = this.getConversationHistoryAsInputItems(this.chatState.history);
@@ -662,7 +659,7 @@ import {
           const lastContent = lastUserMessage?.content ? this.chatState.history[this.chatState.history.length - 1].content : undefined;
           const lastFormSchema = typeof lastContent === 'object' ? lastContent.formSchema : undefined;
           const lastFormValues = typeof lastContent === 'object' ? lastContent.formValues : undefined;
-  
+
           const promptBuild = this.buildPromptAndTools({
               lastFormSchema: lastFormSchema,
               lastFormValues: lastFormValues,
@@ -671,6 +668,9 @@ import {
 
           const instructionsText = promptBuild.instructions + (promptBuild.endInstructions ? ('\n' + promptBuild.endInstructions) : '');
 
+          // Strip tools when max rounds reached so the LLM cannot make more tool calls
+          const tools = maxToolRoundsReached ? [] : promptBuild.tools;
+
           const tokensAvailableForResponse = 15000;
           const temperature = 0.7;
           try {
@@ -678,7 +678,7 @@ import {
                   inputItems,
                   String(hashCode(JSON.stringify(promptBuild.schema ?? {}))),
                   promptBuild.schema,
-                  promptBuild.tools,
+                  tools,
                   tokensAvailableForResponse,
                   this.intelligenceLevel, {
                       temperature

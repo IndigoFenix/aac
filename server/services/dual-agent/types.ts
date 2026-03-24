@@ -144,6 +144,12 @@ export interface DualAgentSessionState {
   // Cached diagnosis from medicalRecords table (loaded once per session)
   cachedDiagnosis?: string | null;
 
+  // Memory context from fast startup (chatMemory fields)
+  memoryContext?: string;
+
+  // Enhanced prompt from thorough startup (LLM-generated, replaces raw persona)
+  enhancedPrompt?: string;
+
   // Privacy settings — gate monitor access to sensitive student data
   privacyOptions?: { allowReadProgress: boolean; allowReadReports: boolean; allowNotes: boolean };
 

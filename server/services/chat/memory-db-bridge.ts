@@ -1315,6 +1315,38 @@ export async function processMemoryToolWithDB(
     }
   }
 
+  // Pre-load lazy data for view operations BEFORE the in-memory processor runs.
+  // The in-memory processor expands wildcards (e.g., "/Context_MedicalInfo/*") by
+  // reading the current memoryValues. If a field is lazy-loaded and hasn't been
+  // populated yet, the wildcard expansion finds null and returns empty paths.
+  // Loading the data here ensures wildcards can expand correctly.
+  const preloadedPaths = new Set<string>();
+  for (const op of ops) {
+    if (op.action === 'view') {
+      const paths = op.paths ?? (op.path ? [op.path] : []);
+      for (const rawPath of paths) {
+        const containerPath = rawPath.replace(/\/\*$/, '');
+        if (preloadedPaths.has(containerPath)) continue;
+        preloadedPaths.add(containerPath);
+
+        if (needsLoading(loadState, containerPath)) {
+          const resolution = resolveSchemaWithContext(fields, memoryValues, containerPath, baseContext);
+          if (resolution.dbOps?.list || resolution.dbOps?.read) {
+            try {
+              await populateMemoryFromDB(
+                fields, memoryValues, memoryState,
+                loadState,
+                { baseContext, defaultLimit: op.page?.limit ?? 50, forceRefresh: false }
+              );
+            } catch (err) {
+              console.error(`[processMemoryToolWithDB] Pre-load failed for ${containerPath}:`, err);
+            }
+          }
+        }
+      }
+    }
+  }
+
   // Process in-memory updates using original processor
   const memResult = originalProcessor(fields as any[], memoryValues, memoryState, input);
 

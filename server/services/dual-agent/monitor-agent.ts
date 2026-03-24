@@ -14,8 +14,8 @@ import type { StudentWithAacSettings } from "@shared/schema";
 import type { AACInteractionMode, AACAppDefinition } from "./types";
 import {
   AAC_DEFAULT_PERSONA_PROMPT,
+  AAC_MEMORY_PROMPT,
   buildMonitorSystemPrompt,
-  preloadAllStudentContext,
 } from "../memory-schema/aac-memory-schema";
 
 /**
@@ -69,6 +69,7 @@ export class MonitorAgent {
   async initializeSession(interactionMode: AACInteractionMode = 'interact', enabledApps: AACAppDefinition[] = []): Promise<{
     sessionId: string;
     initialContext?: string;
+    enhancedPrompt?: string;
   }> {
     console.log("[MonitorAgent] Initializing session for student:", this.studentId);
 
@@ -83,7 +84,6 @@ export class MonitorAgent {
     this.framework = student.framework || null;
 
     const aac = student.aacSettings;
-    const personaPrompt = aac?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
 
     // Store privacy options from AAC settings
     this.privacyOptions = {
@@ -107,6 +107,7 @@ export class MonitorAgent {
     return {
       sessionId: contextResult.sessionId,
       initialContext: contextResult.additionalContext,
+      enhancedPrompt: contextResult.enhancedPrompt,
     };
   }
 
@@ -117,6 +118,7 @@ export class MonitorAgent {
   private async fastInitializeContext(student: any): Promise<{
     sessionId: string;
     additionalContext?: string;
+    enhancedPrompt?: string;
   }> {
     const sessionId = this.sessionId || `aac-${Date.now()}`;
     const memory = (student.chatMemory as Record<string, any>) || {};
@@ -145,73 +147,87 @@ export class MonitorAgent {
   }
 
   /**
-   * Thorough startup (mode 1): Preload all Context_ data in parallel,
-   * then make a single LLM call to compile concise actionable guidance.
-   * Falls back to fast mode on error.
+   * Thorough startup (mode 1): Use the monitor's memory system (with tool access
+   * to Context_ paths) to analyze the student's data and generate an enhanced
+   * custom prompt for the Interactive Agent. Falls back to fast mode on error.
    */
   private async longInitializeContext(student: any): Promise<{
     sessionId: string;
     additionalContext?: string;
+    enhancedPrompt?: string;
   }> {
     try {
-      // Load all context data in parallel (gated by privacy settings)
-      const allContext = await preloadAllStudentContext(this.studentId, {
-        allowReadProgress: this.privacyOptions.allowReadProgress,
-        allowReadReports: this.privacyOptions.allowReadReports,
-      });
+      const personaPrompt = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
 
-      // Also read chatMemory fields
-      const memory = (student.chatMemory as Record<string, any>) || {};
-      const memoryParts: string[] = [];
-      if (memory.Student_Notes) memoryParts.push(`Notes: ${memory.Student_Notes}`);
-      if (memory.Student_Interests) memoryParts.push(`Interests: ${memory.Student_Interests}`);
-      if (memory.Student_CommunicationStyle) memoryParts.push(`Communication style: ${JSON.stringify(memory.Student_CommunicationStyle)}`);
-      if (memory.Student_Preferences) memoryParts.push(`Preferences: ${JSON.stringify(memory.Student_Preferences)}`);
+      // Use the monitor's memory system — the LLM gets tool access to Context_ paths
+      // (medical, educational, progress, classmates, etc.) and Student_ memory fields.
+      const systemPromptOverride = `You are the Monitor Agent preparing for a new AAC session with ${student.name}.
 
-      const now = new Date();
-      const fullContext = [
-        `Date: ${now.toLocaleDateString()} Time: ${now.toLocaleTimeString()}`,
-        allContext,
-        memoryParts.length > 0 ? `## Session Memory\n${memoryParts.join('\n')}` : '',
-      ].filter(Boolean).join('\n\n');
+${AAC_MEMORY_PROMPT}
 
-      // Single LLM call: ask monitor to compile actionable guidance
-      const systemMessage: ChatMessage = {
-        role: "system",
-        content: `You are preparing a concise startup briefing for an AAC interactive agent about to begin a session with a student.
+## Your Task
+Prepare the Interactive Agent for this session by creating an enhanced custom prompt that incorporates the student's data.
 
-Here is everything we know about the student:
-${fullContext}
+Step 1: Explore the student's context using the memory system. View the relevant Context_ paths:
+- Context_MedicalInfo — safety alerts, medications, medical considerations
+- Context_EducationalInfo — communication mode, strategies, reinforcers
+- Context_Progress — current IEP/program goals and objectives
+- Context_Classmates — people the student interacts with
+- Context_FunctionalInfo — mobility, sensory profile, ADL status
+Also review any existing Student_ memory fields (notes, interests, preferences, communication style).
 
-Compile a concise, actionable briefing (max 500 words) for the interactive agent. Include:
-1. Key medical alerts or safety considerations (if any)
-2. Communication strategies based on the student's profile
-3. Current goals/objectives to support during the session
-4. Conversation starters based on interests
-5. Important people the student may mention
+Step 2: Based on what you find, generate an enhanced version of the current custom prompt shown below. The enhanced prompt should:
+- Preserve the intent and tone of the original
+- Weave in student-specific behavioral instructions (medical alerts, communication strategies, goals to support, interests, important people)
+- Be concise and actionable — no more than 500 words
+- Focus on what matters most for a live conversation
+- Skip areas where there's no meaningful data
+- Use plain text only — no markdown headers (#), no HTML tags, no bold/italic markup
+  (the output will be inserted into a larger prompt that already has its own structure)
+- Use dashes (-) for bullet points if needed
 
-Be direct and practical. Skip sections with no data. Do not use the memory tool — all data is provided above.`,
-        timestamp: Date.now(),
-      };
+Step 3: Output ONLY the enhanced prompt between [ENHANCED_PROMPT] and [/ENHANCED_PROMPT] tags. Nothing else outside the tags.
 
+## Current Custom Prompt
+${personaPrompt}`;
+
+      // Use "md" replyType to get raw text back (not JSON-wrapped html/text).
       const result = await onMessage({
         userId: this.userId,
         studentId: this.studentId,
         sessionId: this.sessionId,
         activeFeature: "aac",
         persona: "aac-assistant" as ChatPersona,
-        messages: [systemMessage],
+        messages: [{
+          role: "user",
+          content: "Prepare the session startup. View the student's context data and generate an enhanced prompt for the Interactive Agent.",
+          timestamp: Date.now(),
+        }],
         featureContext: {},
-        replyType: "text",
+        replyType: "md",
+        systemPromptOverride,
       });
 
-      const briefing = typeof result.message?.content === 'string' ? result.message.content : undefined;
+      // Extract text from response — content shape depends on replyType:
+      // "md" → { md: string }, "text"/"html" → { text?: string, html?: string }
+      const content = result.message?.content;
+      const responseText = typeof content === 'string'
+        ? content
+        : (content as any)?.md || (content as any)?.text || '';
       const sessionId = result.sessionId || this.sessionId || `aac-${Date.now()}`;
 
-      return {
-        sessionId,
-        additionalContext: briefing || fullContext,
-      };
+      // Extract enhanced prompt from response
+      const promptMatch = responseText.match(/\[ENHANCED_PROMPT\]([\s\S]*?)\[\/ENHANCED_PROMPT\]/);
+      const enhancedPrompt = promptMatch?.[1]?.trim();
+
+      if (enhancedPrompt) {
+        console.log("[MonitorAgent] Thorough startup generated enhanced prompt (" + enhancedPrompt.length + " chars)");
+        return { sessionId, enhancedPrompt };
+      }
+
+      // Fallback: no tags found — use the raw response as additional context
+      console.warn("[MonitorAgent] Thorough startup: no [ENHANCED_PROMPT] tags in response, using as context");
+      return { sessionId, additionalContext: responseText || undefined };
     } catch (error) {
       console.error("[MonitorAgent] Thorough startup failed, falling back to fast:", error);
       return this.fastInitializeContext(student);
