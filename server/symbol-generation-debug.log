@@ -417,3 +417,53 @@
 [2026-03-25T14:51:35.677Z] [processQueue] "musical_genre" already exists → c3284186-19b9-4eeb-9b25-7a4abb8546bc
 [2026-03-25T14:51:39.858Z] [processQueue] "volume_up" already exists → 3dc4d68f-1586-4a98-9f56-682e6beb53c6
 [2026-03-25T14:51:44.026Z] [processQueue] "volume_down" already exists → 2af3f3c2-e424-4652-8f72-47708b143bfa
+[2026-03-25T18:55:01.497Z] [resolveImageKeys] Resolving 17 keys: person_asking_question, ancient_egyptian_pyramid, medieval_castle, factory_building, artist_painting, world_war_two, modern_city, person_surprised, open_book, person_confused, repeat_symbol, turtle_slow, question_mark, clock_time, person_silhouette, gears_mechanism, map_location (format=api-path, useUnapproved=true)
+[2026-03-25T18:55:01.653Z] [resolveImageKeys] No symbol found for "person_asking_question"
+[2026-03-25T18:55:01.811Z] [resolveImageKeys] No symbol found for "ancient_egyptian_pyramid"
+[2026-03-25T18:55:01.966Z] [resolveImageKeys] No symbol found for "medieval_castle"
+[2026-03-25T18:55:02.121Z] [resolveImageKeys] No symbol found for "factory_building"
+[2026-03-25T18:55:02.278Z] [resolveImageKeys] No symbol found for "artist_painting"
+[2026-03-25T18:55:02.434Z] [resolveImageKeys] No symbol found for "world_war_two"
+[2026-03-25T18:55:02.590Z] [resolveImageKeys] No symbol found for "modern_city"
+[2026-03-25T18:55:02.746Z] [resolveImageKeys] No symbol found for "person_surprised"
+[2026-03-25T18:55:02.901Z] [resolveImageKeys] Resolved "open_book" → /api/custom-symbols/d9cf315a-494b-4f1b-b0f5-b3ed2f441ead/image
+[2026-03-25T18:55:03.061Z] [resolveImageKeys] No symbol found for "person_confused"
+[2026-03-25T18:55:03.218Z] [resolveImageKeys] No symbol found for "repeat_symbol"
+[2026-03-25T18:55:03.377Z] [resolveImageKeys] No symbol found for "turtle_slow"
+[2026-03-25T18:55:03.533Z] [resolveImageKeys] Resolved "question_mark" → /api/custom-symbols/999c8ea6-52c4-45ac-b408-f0212046149c/image
+[2026-03-25T18:55:03.690Z] [resolveImageKeys] No symbol found for "clock_time"
+[2026-03-25T18:55:03.845Z] [resolveImageKeys] No symbol found for "person_silhouette"
+[2026-03-25T18:55:04.004Z] [resolveImageKeys] No symbol found for "gears_mechanism"
+[2026-03-25T18:55:04.160Z] [resolveImageKeys] No symbol found for "map_location"
+[2026-03-25T18:55:04.163Z] [resolveImageKeys] Done. Resolved 2, unresolved 15: person_asking_question, ancient_egyptian_pyramid, medieval_castle, factory_building, artist_painting, world_war_two, modern_city, person_surprised, person_confused, repeat_symbol, turtle_slow, clock_time, person_silhouette, gears_mechanism, map_location
+[2026-03-25T18:55:04.168Z] [queueGeneration] Queuing 15 keys: person_asking_question, ancient_egyptian_pyramid, medieval_castle, factory_building, artist_painting, world_war_two, modern_city, person_surprised, person_confused, repeat_symbol, turtle_slow, clock_time, person_silhouette, gears_mechanism, map_location (hasCallback=false)
+[2026-03-25T18:55:04.336Z] [processQueue] Generating "person_asking_question"...
+[2026-03-25T18:55:11.330Z] [processQueue] Generated "person_asking_question" → 4e39a700-bac3-4e6a-a9de-fecf3f1ad092 (1 total)
+[2026-03-25T18:55:15.490Z] [processQueue] Generating "ancient_egyptian_pyramid"...
+[2026-03-25T18:55:21.132Z] [processQueue] Generated "ancient_egyptian_pyramid" → 5d13da2a-8a20-48cf-94f9-82bbd3134896 (2 total)
+[2026-03-25T18:55:26.511Z] [processQueue] Generating "medieval_castle"...
+[2026-03-25T18:55:32.319Z] [processQueue] Generated "medieval_castle" → 8bd63a7a-d1e2-44e2-b699-d3665cc8eb3b (3 total)
+[2026-03-25T18:55:36.487Z] [processQueue] Generating "factory_building"...
+[2026-03-25T18:55:42.292Z] [processQueue] Generated "factory_building" → 7e493d6e-5021-414d-924a-ddeee8787d23 (4 total)
+[2026-03-25T18:55:46.468Z] [processQueue] Generating "artist_painting"...
+[2026-03-25T18:55:54.200Z] [processQueue] Generated "artist_painting" → 50ecf492-55f0-41e6-8ac5-bb41a56bb232 (5 total)
+[2026-03-25T18:55:58.428Z] [processQueue] Generating "world_war_two"...
+[2026-03-25T18:56:06.025Z] [processQueue] Generated "world_war_two" → 0bdc8e93-698d-49e4-827d-5377f425ffc3 (6 total)
+[2026-03-25T18:56:10.197Z] [processQueue] Generating "modern_city"...
+[2026-03-25T18:56:16.290Z] [processQueue] Generated "modern_city" → 9c236ad2-f29e-4188-a882-06001e15ab97 (7 total)
+[2026-03-25T18:56:20.457Z] [processQueue] Generating "person_surprised"...
+[2026-03-25T18:56:26.470Z] [processQueue] Generated "person_surprised" → 6d62f68b-3ecb-454b-b2f2-b7031aee57c0 (8 total)
+[2026-03-25T18:56:30.636Z] [processQueue] Generating "person_confused"...
+[2026-03-25T18:56:36.053Z] [processQueue] Generated "person_confused" → 25106600-4d0a-4386-a55f-52a2f02bc3ab (9 total)
+[2026-03-25T18:56:40.216Z] [processQueue] Generating "repeat_symbol"...
+[2026-03-25T18:56:45.961Z] [processQueue] Generated "repeat_symbol" → ee2965e4-7596-4f5b-b666-4054f485e8e3 (10 total)
+[2026-03-25T18:56:50.132Z] [processQueue] Generating "turtle_slow"...
+[2026-03-25T18:56:56.667Z] [processQueue] Generated "turtle_slow" → 7d0e8388-6d3c-405d-97a3-bce6ff0906e8 (11 total)
+[2026-03-25T18:57:00.826Z] [processQueue] Generating "clock_time"...
+[2026-03-25T18:57:06.280Z] [processQueue] Generated "clock_time" → 9cd6db3c-eecf-4856-9ee3-cc7139c41e63 (12 total)
+[2026-03-25T18:57:10.440Z] [processQueue] Generating "person_silhouette"...
+[2026-03-25T18:57:15.957Z] [processQueue] Generated "person_silhouette" → 00345f40-97d3-4281-9244-b4ec781ab774 (13 total)
+[2026-03-25T18:57:20.126Z] [processQueue] Generating "gears_mechanism"...
+[2026-03-25T18:57:26.142Z] [processQueue] Generated "gears_mechanism" → e3570c28-9a0d-45fd-8c57-e1c46b550534 (14 total)
+[2026-03-25T18:57:30.322Z] [processQueue] Generating "map_location"...
+[2026-03-25T18:57:36.132Z] [processQueue] Generated "map_location" → 4e1b5211-5981-4513-98a5-f8a2be8e34bc (15 total)

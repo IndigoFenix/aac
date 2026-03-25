@@ -7,6 +7,7 @@ import logo from "@assets/aivota_icon.png";
 import raz from "@assets/landing-page/raz.png";
 import opher from "@assets/landing-page/opher.png";
 import screenshot from "@assets/landing-page/screenshot.png";
+import boardMakerDemo from "@assets/landing-page/demo-screens/board-maker-demo.png";
 import "./landing-page.css";
 
 const ROLE_OPTIONS = [

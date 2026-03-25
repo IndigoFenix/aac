@@ -684,6 +684,9 @@ export const he = {
     clearUnsavedDesc: "יש שינויים שלא נשמרו. האם תרצה לשמור לפני ניקוי הלוח?",
     discardAndClear: "התעלם ונקה",
     saveAndClear: "שמור ונקה",
+    generatingIcons: "מייצר אייקונים, נותרו: {{remaining}}",
+    iconsGenerated: "כל האייקונים נוצרו בהצלחה",
+    iconsFailed: "{{count}} אייקונים נכשלו ביצירה",
   },
 
   // ============================================================================

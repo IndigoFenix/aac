@@ -22,9 +22,10 @@ import {
   Volume2,
   Play,
 } from "lucide-react";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import { apiUrl, apiRequest } from "@/lib/queryClient";
+import { apiUrl } from "@/lib/queryClient";
+import { useSymbolStore } from "@/store/symbol-store";
 import { CoverImageSelector } from "./cover-image-selector";
 import { YouTubePlayer } from "./youtube-player";
 import { BoardIR } from "@/types/board-ir";
@@ -73,77 +74,9 @@ export function BoardCanvas() {
   
   const canvasRef = useRef<HTMLDivElement>(null);
 
-  // Track which imageKeys are currently being generated (pending)
-  const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // Poll for symbols that are being generated in the background.
-  // Uses a single batch POST instead of per-key GETs.
-  useEffect(() => {
-    if (!board) return;
-
-    // Find buttons with imageKey but no symbolPath (pending generation)
-    const allButtons = board.pages.flatMap(p => p.buttons);
-    const pending = allButtons.filter(b => b.imageKey && !b.symbolPath?.includes('/api/custom-symbols/'));
-    const pendingKeyList = [...new Set(pending.map(b => b.imageKey!))];
-
-    if (pendingKeyList.length === 0) {
-      setPendingKeys(new Set());
-      if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
-      return;
-    }
-
-    setPendingKeys(new Set(pendingKeyList));
-
-    // Poll every 5 seconds with a single batch request
-    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-    pollTimerRef.current = setInterval(async () => {
-      try {
-        const res = await fetch(apiUrl("/api/custom-symbols/resolve-keys"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ keys: pendingKeyList }),
-        });
-        if (!res.ok) return;
-
-        const resolved: Record<string, { id: string; symbolPath: string }> = await res.json();
-        const resolvedKeys = Object.keys(resolved);
-        if (resolvedKeys.length === 0) return;
-
-        // Use updateButton for each resolved symbol to properly update immutable state.
-        // Read current board from store (not the stale closure) to find matching buttons.
-        const { updateButton: storeUpdateButton } = useBoardStore.getState();
-        const currentBoard = useBoardStore.getState().board;
-        if (currentBoard) {
-          for (const key of resolvedKeys) {
-            const fullPath = apiUrl(resolved[key].symbolPath);
-            for (const page of currentBoard.pages) {
-              for (const btn of page.buttons) {
-                if (btn.imageKey === key && !btn.symbolPath?.includes('/api/custom-symbols/')) {
-                  storeUpdateButton(btn.id, { symbolPath: fullPath });
-                }
-              }
-            }
-          }
-        }
-
-        // Update pending set
-        const remaining = pendingKeyList.filter(k => !resolved[k]);
-        pendingKeyList.length = 0;
-        pendingKeyList.push(...remaining);
-        setPendingKeys(new Set(remaining));
-
-        if (remaining.length === 0) {
-          if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
-        }
-      } catch { /* retry next cycle */ }
-    }, 5000);
-
-    return () => {
-      if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
-    };
-  }, [board?.pages?.flatMap(p => p.buttons).filter(b => b.imageKey && !b.symbolPath?.includes('/api/custom-symbols/')).length]);
+  // Symbol resolution — reads from global store (populated via SSE, not polling)
+  const getSymbolPath = useSymbolStore((s) => s.getSymbolPath);
+  const isPendingSymbol = useSymbolStore((s) => s.isPending);
 
   // Resolve symbol path URLs — API paths need base URL prefix
   const resolveSymbolSrc = useCallback((symbolPath: string): string => {
@@ -689,31 +622,48 @@ export function BoardCanvas() {
                           backgroundColor: getButtonColor(button.color),
                         }}
                       >
-                        {button.symbolPath ? (
-                          <img
-                            src={resolveSymbolSrc(button.symbolPath)}
-                            alt={button.label}
-                            className="w-8 h-8 object-contain mb-1"
-                            style={{
-                              filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.8))",
-                            }}
-                            onError={(e) => {
-                              const target = e.target as HTMLImageElement;
-                              target.style.display = "none";
-                            }}
-                          />
-                        ) : button.imageKey && pendingKeys.has(button.imageKey) ? (
-                          <span className="relative text-2xl mb-1 leading-none">
-                            {button.iconRef && isEmoji(button.iconRef) ? button.iconRef : getEmojiForLabel(button.label)}
-                            <span className="absolute -top-1 -right-2 w-3 h-3 rounded-full border-2 border-white/50 border-t-transparent animate-spin" />
-                          </span>
-                        ) : button.iconRef && isEmoji(button.iconRef) ? (
-                          <span className="text-2xl mb-1 leading-none">{button.iconRef}</span>
-                        ) : button.iconRef ? (
-                          <i className={`${button.iconRef} text-xl mb-1`} />
-                        ) : (
-                          <span className="text-2xl mb-1 leading-none">{getEmojiForLabel(button.label)}</span>
-                        )}
+                        {(() => {
+                          // Icon priority: 1) button.symbolPath (server-resolved), 2) symbol store (SSE-resolved),
+                          // 3) pending spinner, 4) iconRef emoji/icon, 5) fallback emoji
+                          const resolvedPath = button.symbolPath
+                            ? resolveSymbolSrc(button.symbolPath)
+                            : button.imageKey
+                              ? getSymbolPath(button.imageKey)
+                              : undefined;
+
+                          if (resolvedPath) {
+                            return (
+                              <img
+                                src={resolvedPath}
+                                alt={button.label}
+                                className="w-8 h-8 object-contain mb-1"
+                                style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.8))" }}
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).style.display = "none";
+                                }}
+                              />
+                            );
+                          }
+
+                          if (button.imageKey && isPendingSymbol(button.imageKey)) {
+                            return (
+                              <span className="relative text-2xl mb-1 leading-none">
+                                {button.iconRef && isEmoji(button.iconRef) ? button.iconRef : getEmojiForLabel(button.label)}
+                                <span className="absolute -top-1 -right-2 w-3 h-3 rounded-full border-2 border-white/50 border-t-transparent animate-spin" />
+                              </span>
+                            );
+                          }
+
+                          if (button.iconRef && isEmoji(button.iconRef)) {
+                            return <span className="text-2xl mb-1 leading-none">{button.iconRef}</span>;
+                          }
+
+                          if (button.iconRef) {
+                            return <i className={`${button.iconRef} text-xl mb-1`} />;
+                          }
+
+                          return <span className="text-2xl mb-1 leading-none">{getEmojiForLabel(button.label)}</span>;
+                        })()}
                         <span className="text-xs leading-tight text-center">
                           {button.label}
                         </span>

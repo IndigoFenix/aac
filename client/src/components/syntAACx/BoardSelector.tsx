@@ -11,7 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
   DialogContent,
@@ -21,9 +20,6 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import {
-  FolderOpen,
-  History,
-  Sparkles,
   Edit,
   Eye,
   Save,
@@ -51,10 +47,7 @@ import { apiRequest } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
 import { BoardIR } from '@/types/board-ir';
 
-type BoardMode = 'generate' | 'select' | 'history';
-
 export function BoardSelector() {
-  const [mode, setMode] = useState<BoardMode>('generate');
   const [pendingSwitchBoardId, setPendingSwitchBoardId] = useState<string | null>(null);
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
   const [showClearUnsavedDialog, setShowClearUnsavedDialog] = useState(false);
@@ -373,115 +366,63 @@ export function BoardSelector() {
         'flex items-center justify-between gap-4 flex-wrap',
         isRTL && 'flex-row-reverse'
       )}>
-        {/* Left side: Mode selector and board picker */}
+        {/* Left side: Board picker */}
         <div className={cn(
           'flex items-center gap-3',
           isRTL && 'flex-row-reverse'
         )}>
-          {/* Mode Tabs */}
-          <Tabs value={mode} onValueChange={(v) => setMode(v as BoardMode)}>
-            <TabsList className={cn(
-              'h-8',
-              isDark ? 'bg-slate-800' : 'bg-gray-100'
+          <Select
+            value={board?._id || ''}
+            onValueChange={handleBoardSwitch}
+            disabled={isLoadingBoard}
+          >
+            <SelectTrigger className={cn(
+              'w-[200px] h-8 text-xs',
+              isDark
+                ? 'bg-slate-800 border-slate-700'
+                : 'bg-white border-gray-300'
             )}>
-              <TabsTrigger 
-                value="generate" 
-                className={cn(
-                  'h-7 px-3 text-xs gap-1.5',
-                  isRTL && 'flex-row-reverse'
-                )}
-              >
-                <Sparkles className="w-3 h-3" />
-                <span className="hidden sm:inline">{t('board.modes.generate')}</span>
-              </TabsTrigger>
-              <TabsTrigger 
-                value="select" 
-                className={cn(
-                  'h-7 px-3 text-xs gap-1.5',
-                  isRTL && 'flex-row-reverse'
-                )}
-              >
-                <FolderOpen className="w-3 h-3" />
-                <span className="hidden sm:inline">{t('board.modes.select')}</span>
-              </TabsTrigger>
-              <TabsTrigger 
-                value="history" 
-                className={cn(
-                  'h-7 px-3 text-xs gap-1.5',
-                  isRTL && 'flex-row-reverse'
-                )}
-              >
-                <History className="w-3 h-3" />
-                <span className="hidden sm:inline">{t('board.modes.history')}</span>
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-
-          {/* Board picker (when in select mode) */}
-          {mode === 'select' && (
-            <Select
-              value={board?._id || ''}
-              onValueChange={handleBoardSwitch}
-              disabled={isLoadingBoard}
-            >
-              <SelectTrigger className={cn(
-                'w-[180px] h-8 text-xs',
-                isDark 
-                  ? 'bg-slate-800 border-slate-700' 
-                  : 'bg-white border-gray-300'
-              )}>
-                {isLoadingBoard ? (
-                  <div className="flex items-center gap-2">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    <span>{t('common.loading')}</span>
-                  </div>
-                ) : (
-                  <SelectValue placeholder={t('board.selectBoard')} />
-                )}
-              </SelectTrigger>
-              <SelectContent>
-                {boards && boards.length > 0 ? (
-                  boards.map((b) => (
-                    <SelectItem key={b._id} value={b._id}>
-                      <div className="flex items-center gap-2">
-                        <span>{b.name}</span>
-                        {b.automaticSelection && (
-                          <Zap className="w-3 h-3 text-blue-500" />
-                        )}
-                        {b.isDirty && (
-                          <span className="text-[9px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-500">
-                            •
-                          </span>
-                        )}
-                        {!b.loadedFromServer && b.dbId && (
-                          <span className={cn(
-                            'text-[9px] px-1 py-0.5 rounded',
-                            isDark ? 'bg-slate-700 text-slate-400' : 'bg-gray-200 text-gray-500'
-                          )}>
-                            {t('board.notLoaded')}
-                          </span>
-                        )}
-                      </div>
-                    </SelectItem>
-                  ))
-                ) : (
-                  <div className="px-2 py-4 text-center text-xs text-muted-foreground">
-                    {t('board.noBoards')}
-                  </div>
-                )}
-              </SelectContent>
-            </Select>
-          )}
-
-          {/* Generate mode hint */}
-          {mode === 'generate' && (
-            <p className={cn(
-              'text-xs hidden md:block',
-              isDark ? 'text-slate-400' : 'text-gray-500'
-            )}>
-              {t('board.prompt.description')}
-            </p>
-          )}
+              {isLoadingBoard ? (
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>{t('common.loading')}</span>
+                </div>
+              ) : (
+                <SelectValue placeholder={t('board.selectBoard')} />
+              )}
+            </SelectTrigger>
+            <SelectContent>
+              {boards && boards.length > 0 ? (
+                boards.map((b) => (
+                  <SelectItem key={b._id} value={b._id}>
+                    <div className="flex items-center gap-2">
+                      <span>{b.name}</span>
+                      {b.automaticSelection && (
+                        <Zap className="w-3 h-3 text-blue-500" />
+                      )}
+                      {b.isDirty && (
+                        <span className="text-[9px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-500">
+                          •
+                        </span>
+                      )}
+                      {!b.loadedFromServer && b.dbId && (
+                        <span className={cn(
+                          'text-[9px] px-1 py-0.5 rounded',
+                          isDark ? 'bg-slate-700 text-slate-400' : 'bg-gray-200 text-gray-500'
+                        )}>
+                          {t('board.notLoaded')}
+                        </span>
+                      )}
+                    </div>
+                  </SelectItem>
+                ))
+              ) : (
+                <div className="px-2 py-4 text-center text-xs text-muted-foreground">
+                  {t('board.noBoards')}
+                </div>
+              )}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Right side: Board info, Save button, and Edit/Preview toggle */}

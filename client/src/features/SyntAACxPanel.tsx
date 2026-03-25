@@ -1,7 +1,7 @@
 // src/features/SyntAACxPanel.tsx
 // This is the sliding panel version of SyntAACx that contains the board canvas and export bar
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,7 @@ import { BoardCanvas } from '@/components/syntAACx/board-canvas';
 import { ButtonInspector } from '@/components/syntAACx/button-inspector';
 import { BoardSelector } from '@/components/syntAACx/BoardSelector';
 import { useBoardStore } from '@/store/board-store';
+import { useSymbolStore, useSymbolCounts } from '@/store/symbol-store';
 import { useSharedState, useFeaturePanel } from '@/contexts/FeaturePanelContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -62,6 +63,9 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
 
   // Check if board is currently loading (set by BoardSelector)
   const isBoardLoading = sharedState.isBoardLoading === true;
+
+  // Symbol generation progress
+  const symbolCounts = useSymbolCounts();
 
   // Register metadata builder for the boards feature
   // This sends the current board state with each chat message
@@ -121,6 +125,33 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
       setSharedState({ currentBoard: board });
     }
   }, [board, setSharedState]);
+
+  // Request symbol resolution for any buttons with unresolved imageKeys.
+  // The symbol store manages the SSE connection independently of component lifecycle.
+  // Use a stable fingerprint (sorted imageKeys) so this only re-fires when the actual
+  // set of unresolved keys changes, not on every board store update.
+  const unresolvedKeysFingerprint = useMemo(() => {
+    if (!board?.pages) return "";
+    const allButtons = board.pages.flatMap((p) => p.buttons);
+    return allButtons
+      .filter((b) => b.imageKey && !b.symbolPath?.includes("/api/custom-symbols/"))
+      .map((b) => b.imageKey!)
+      .sort()
+      .join(",");
+  }, [board?.pages]);
+
+  useEffect(() => {
+    if (!unresolvedKeysFingerprint) return;
+    const keys = unresolvedKeysFingerprint.split(",");
+    useSymbolStore.getState().requestResolution(keys);
+  }, [unresolvedKeysFingerprint]);
+
+  // Disconnect SSE when panel unmounts
+  useEffect(() => {
+    return () => {
+      useSymbolStore.getState().disconnect();
+    };
+  }, []);
 
   // Check Dropbox connection status
   const { data: dropboxConnection } = useQuery<{ connected: boolean }>({
@@ -433,6 +464,43 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
             </>
           )}
         </div>
+
+        {/* Symbol Generation Status */}
+        {board && symbolCounts.total > 0 && (
+          <div className={cn(
+            'flex items-center gap-2 text-xs',
+            isRTL && 'flex-row-reverse'
+          )}>
+            {symbolCounts.pending > 0 ? (
+              <>
+                <Loader2 className={cn(
+                  'w-3 h-3 animate-spin',
+                  isDark ? 'text-blue-400' : 'text-blue-500'
+                )} />
+                <span className={isDark ? 'text-slate-400' : 'text-gray-500'}>
+                  {t('board.generatingIcons', { remaining: symbolCounts.pending })}
+                </span>
+              </>
+            ) : symbolCounts.failed > 0 ? (
+              <>
+                <AlertCircle className="w-3 h-3 text-amber-500" />
+                <span className={isDark ? 'text-amber-400' : 'text-amber-600'}>
+                  {t('board.iconsFailed', { count: symbolCounts.failed })}
+                </span>
+              </>
+            ) : symbolCounts.resolved > 0 ? (
+              <>
+                <Check className={cn(
+                  'w-3 h-3',
+                  isDark ? 'text-emerald-400' : 'text-emerald-500'
+                )} />
+                <span className={isDark ? 'text-emerald-400' : 'text-emerald-600'}>
+                  {t('board.iconsGenerated')}
+                </span>
+              </>
+            ) : null}
+          </div>
+        )}
 
         {/* Export Buttons */}
         <div className={cn('flex items-center gap-2', isRTL && 'flex-row-reverse')}>

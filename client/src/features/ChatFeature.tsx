@@ -455,19 +455,18 @@ export function ChatFeature() {
   // Mode switch button component
   const ModeSwitchButton = showModeSwitch && (
     <Button
-      size="sm"
-      variant="outline"
+      size="icon"
+      variant="ghost"
       className={cn(
-        "absolute top-4 z-10 gap-2 rounded-full shadow-sm",
-        "bg-background/80 backdrop-blur-sm hover:bg-background",
-        "transition-all duration-200",
+        "absolute top-2 z-10 h-7 w-7 rounded-full opacity-50 hover:opacity-100",
+        "transition-opacity duration-200",
+        isRTL ? "left-2" : "right-2",
       )}
       onClick={handleSwitchToPopup}
       title={t('chat.switchToPopup')}
       data-testid="chat-mode-switch"
     >
-      <Minimize2 className="w-4 h-4" />
-      <span className="text-xs">{t('chat.popupMode')}</span>
+      <Minimize2 className="w-3.5 h-3.5" />
     </Button>
   );
 

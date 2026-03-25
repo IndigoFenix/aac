@@ -11,6 +11,7 @@
  * - Notification callback: callers provide a function to be notified when a symbol is ready
  */
 
+import { EventEmitter } from "events";
 import fs from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -18,6 +19,13 @@ import { customSymbolRepository } from "../../repositories/customSymbolRepositor
 import { customSymbolService } from "./custom-symbol-service";
 import { generateSymbolImage } from "./symbol-generator";
 import type { CustomSymbol } from "@shared/schema";
+
+// ---------------------------------------------------------------------------
+// Symbol event bus — notifies SSE connections when symbols are generated
+// ---------------------------------------------------------------------------
+
+export const symbolEvents = new EventEmitter();
+symbolEvents.setMaxListeners(50);
 
 // ---------------------------------------------------------------------------
 // Debug file logger — writes to server/symbol-generation-debug.log
@@ -57,7 +65,7 @@ Image keys are used to auto-generate AAC symbol images. Emojis are used as a fal
 export const IMAGE_KEY_PROMPT_RULES = `The imageKey is an unambiguous English key used to generate symbol images.${IMAGE_KEY_RULES}`;
 
 /** Image key rules formatted for the SyntAACx board creator prompt */
-export const IMAGE_KEY_BOARD_PROMPT = `**Image Key:** The imageKey field is used to look up or auto-generate symbol images. Required for every content button.${IMAGE_KEY_RULES}`;
+export const IMAGE_KEY_BOARD_PROMPT = `**Image Key:** The imageKey field is used to look up or auto-generate symbol images. REQUIRED for every content button — NEVER omit imageKey. Every content button MUST have both iconRef (emoji fallback) AND imageKey (symbol generation).${IMAGE_KEY_RULES}`;
 
 /** Image key rules formatted for the AAC live button format instruction */
 export const IMAGE_KEY_LIVE_PROMPT = `IMPORTANT — Button format: label|icon|imageKey|sentence (e.g., "Water|💧|water_drop|I would like some water", "Play|🎮|I want to play").
@@ -176,6 +184,11 @@ async function processQueue(): Promise<void> {
       if (existing) {
         debugLog("processQueue", `"${job.imageKey}" already exists → ${existing.id}`);
         job.onReady?.(job.imageKey, existing);
+        symbolEvents.emit("symbol:ready", {
+          imageKey: job.imageKey,
+          symbolId: existing.id,
+          symbolPath: `/api/custom-symbols/${existing.id}/image`,
+        });
         continue;
       }
 
@@ -191,6 +204,11 @@ async function processQueue(): Promise<void> {
       debugLog("processQueue", `Generated "${job.imageKey}" → ${symbol.id} (${generated} total)`);
       console.log(`[AutoSymbolService] Generated "${job.imageKey}" → ${symbol.id} (${generated} total)`);
       job.onReady?.(job.imageKey, symbol);
+      symbolEvents.emit("symbol:ready", {
+        imageKey: job.imageKey,
+        symbolId: symbol.id,
+        symbolPath: `/api/custom-symbols/${symbol.id}/image`,
+      });
     } catch (err: any) {
       const isQuota = err?.status === 429
         || err?.message?.includes("quota")
@@ -198,11 +216,16 @@ async function processQueue(): Promise<void> {
       if (isQuota) {
         debugLog("processQueue", `Quota exhausted after ${generated} — clearing queue (${queue.length} remaining)`);
         console.warn(`[AutoSymbolService] Quota exhausted after ${generated} — clearing queue (${queue.length} remaining)`);
+        symbolEvents.emit("symbol:failed", { imageKey: job.imageKey, error: "Quota exhausted", isQuota: true });
+        for (const remaining of queue) {
+          symbolEvents.emit("symbol:failed", { imageKey: remaining.imageKey, error: "Quota exhausted", isQuota: true });
+        }
         queue = [];
         break;
       }
       debugLog("processQueue", `Failed "${job.imageKey}": ${err?.message || err}`);
       console.error(`[AutoSymbolService] Failed to generate "${job.imageKey}":`, err?.message || err);
+      symbolEvents.emit("symbol:failed", { imageKey: job.imageKey, error: err?.message || "Generation failed", isQuota: false });
     }
   }
 

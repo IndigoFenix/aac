@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { customSymbolRepository } from "../repositories/customSymbolRepository";
 import { customSymbolService } from "../services/symbol/custom-symbol-service";
 import { generateSymbolImage } from "../services/symbol/symbol-generator";
+import { symbolEvents } from "../services/symbol/auto-symbol-service";
 
 class CustomSymbolController {
   // ==================== Symbol CRUD ====================
@@ -150,6 +151,113 @@ class CustomSymbolController {
     } catch (error: any) {
       console.error("[CustomSymbolController] resolveKeys error:", error);
       res.status(500).json({ message: "Failed to resolve keys" });
+    }
+  }
+
+  /** GET /api/custom-symbols/watch?keys=key1,key2,key3 — SSE stream for symbol resolution */
+  async watchSymbols(req: Request, res: Response) {
+    try {
+      // Parse keys from query
+      const keysParam = req.query.keys as string | undefined;
+      const watchedKeys = new Set(
+        keysParam ? keysParam.split(",").filter(Boolean).slice(0, 100) : []
+      );
+
+      if (watchedKeys.size === 0) {
+        return res.status(400).json({ message: "keys query parameter required" });
+      }
+
+      // Set up SSE headers
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("X-Accel-Buffering", "no");
+      res.flushHeaders();
+
+      const sendEvent = (event: string, data: Record<string, any>) => {
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+        if (typeof (res as any).flush === "function") (res as any).flush();
+      };
+
+      // Phase 1: Batch-resolve existing symbols immediately
+      for (const key of watchedKeys) {
+        try {
+          const symbol = await customSymbolRepository.getSymbolByKey(key);
+          if (symbol) {
+            sendEvent("symbol_resolved", {
+              imageKey: key,
+              symbolPath: `/api/custom-symbols/${symbol.id}/image`,
+            });
+            watchedKeys.delete(key);
+          } else {
+            sendEvent("symbol_pending", { imageKey: key });
+          }
+        } catch { /* skip individual failures */ }
+      }
+
+      // If all resolved immediately, close
+      if (watchedKeys.size === 0) {
+        sendEvent("all_resolved", {});
+        res.end();
+        return;
+      }
+
+      // Phase 2: Subscribe to symbol events for remaining keys
+      const onReady = (payload: { imageKey: string; symbolId: string; symbolPath: string }) => {
+        if (!watchedKeys.has(payload.imageKey)) return;
+        sendEvent("symbol_resolved", {
+          imageKey: payload.imageKey,
+          symbolPath: payload.symbolPath,
+        });
+        watchedKeys.delete(payload.imageKey);
+        if (watchedKeys.size === 0) {
+          sendEvent("all_resolved", {});
+          cleanup();
+          res.end();
+        }
+      };
+
+      const onFailed = (payload: { imageKey: string; error: string; isQuota: boolean }) => {
+        if (!watchedKeys.has(payload.imageKey)) return;
+        sendEvent("symbol_failed", {
+          imageKey: payload.imageKey,
+          error: payload.error,
+        });
+        watchedKeys.delete(payload.imageKey);
+        if (payload.isQuota) {
+          // Mark all remaining as failed too (quota affects the whole queue)
+          for (const key of watchedKeys) {
+            sendEvent("symbol_failed", { imageKey: key, error: "Quota exhausted" });
+          }
+          watchedKeys.clear();
+        }
+        if (watchedKeys.size === 0) {
+          sendEvent("all_resolved", {});
+          cleanup();
+          res.end();
+        }
+      };
+
+      symbolEvents.on("symbol:ready", onReady);
+      symbolEvents.on("symbol:failed", onFailed);
+
+      // Keepalive every 30s
+      const keepalive = setInterval(() => {
+        res.write(": keepalive\n\n");
+      }, 30000);
+
+      const cleanup = () => {
+        symbolEvents.off("symbol:ready", onReady);
+        symbolEvents.off("symbol:failed", onFailed);
+        clearInterval(keepalive);
+      };
+
+      req.on("close", cleanup);
+    } catch (error: any) {
+      console.error("[CustomSymbolController] watchSymbols error:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ message: "Failed to watch symbols" });
+      }
     }
   }
 
