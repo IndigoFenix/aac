@@ -44,6 +44,7 @@ import { topicController } from "./controllers/topicController";
 import { voiceController } from "./controllers/voiceController";
 import { voiceRecordController } from "./controllers/voiceRecordController";
 import { dualAgentController } from "./controllers/dualAgentController";
+import { spotifyController } from "./controllers/spotifyController";
 import { biometricController } from "./controllers/biometricController";
 import { customSymbolController } from "./controllers/customSymbolController";
 import { contactController } from "./controllers/contactController";
@@ -890,6 +891,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Full voice chat: audio in → transcription + AI response + audio out (streaming)
   app.post("/api/aac/voice/chat", optionalAuth, aacUpload.single("audio"), (req, res) =>
     voiceController.voiceChat(req, res)
+  );
+
+  // ============= SPOTIFY OAUTH ROUTES =============
+  app.get("/api/aac/spotify/auth-url", optionalAuth, (req, res) =>
+    spotifyController.getAuthUrl(req, res)
+  );
+  app.get("/api/aac/spotify/callback", (req, res) =>
+    spotifyController.callback(req, res)
+  );
+  app.get("/api/aac/spotify/token", optionalAuth, (req, res) =>
+    spotifyController.getToken(req, res)
+  );
+  app.delete("/api/aac/spotify/disconnect", optionalAuth, (req, res) =>
+    spotifyController.disconnect(req, res)
   );
 
   // ============= DUAL-AGENT AAC SESSION ROUTE =============

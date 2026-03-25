@@ -132,7 +132,7 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
  * Must be rendered inside DualAgentProvider.
  */
 function AppOverlayBridge() {
-  const { activeApp, dismissApp, registerAppCanvasCapture } = useDualAgentContext();
+  const { activeApp, dismissApp, registerAppCanvasCapture, studentId } = useDualAgentContext();
   return (
     <AnimatePresence>
       {activeApp?.appId === "youtube" && activeApp.appData?.videoId && (
@@ -156,6 +156,7 @@ function AppOverlayBridge() {
           trackId={activeApp.appData.trackId}
           title={activeApp.appData.title || "Track"}
           artist={activeApp.appData.artist || ""}
+          studentId={studentId}
           onClose={dismissApp}
         />
       )}

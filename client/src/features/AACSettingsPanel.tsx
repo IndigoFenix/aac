@@ -35,6 +35,9 @@ import {
   Play,
   Shield,
   ImageIcon,
+  AppWindow,
+  Link,
+  Unlink,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -80,6 +83,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [generateSymbols, setGenerateSymbols] = useState(false);
   const [useApprovedSymbols, setUseApprovedSymbols] = useState(false);
   const [useUnapprovedSymbols, setUseUnapprovedSymbols] = useState(false);
+  const [appConfig, setAppConfig] = useState<Record<string, any>>({});
   const [hasChanges, setHasChanges] = useState(false);
 
   // Fetch ElevenLabs voices when API key is present
@@ -136,6 +140,17 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
     }
   }, [previewingVoice, elevenlabsApiKey, t]);
 
+  // Listen for Spotify OAuth popup completion
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === 'spotify-connected') {
+        refetchStudent();
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [refetchStudent]);
+
   // Load student data into form (AAC settings are nested under aacSettings)
   useEffect(() => {
     if (student) {
@@ -158,6 +173,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setGenerateSymbols(aac?.generateSymbols ?? false);
       setUseApprovedSymbols(aac?.useApprovedSymbols ?? false);
       setUseUnapprovedSymbols(aac?.useUnapprovedSymbols ?? false);
+      setAppConfig(aac?.appConfig || {});
       setHasChanges(false);
     }
   }, [student]);
@@ -184,6 +200,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalGenerateSymbols = aac?.generateSymbols ?? false;
       const originalUseApprovedSymbols = aac?.useApprovedSymbols ?? false;
       const originalUseUnapprovedSymbols = aac?.useUnapprovedSymbols ?? false;
+      const originalAppConfig = aac?.appConfig || {};
       setHasChanges(
         aiName !== originalAiName ||
         chatAgentPrompt !== originalPrompt ||
@@ -202,10 +219,11 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         allowNotes !== originalAllowNotes ||
         generateSymbols !== originalGenerateSymbols ||
         useApprovedSymbols !== originalUseApprovedSymbols ||
-        useUnapprovedSymbols !== originalUseUnapprovedSymbols
+        useUnapprovedSymbols !== originalUseUnapprovedSymbols ||
+        JSON.stringify(appConfig) !== JSON.stringify(originalAppConfig)
       );
     }
-  }, [aiName, chatAgentPrompt, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, allowReadProgress, allowReadReports, allowNotes, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, student]);
+  }, [aiName, chatAgentPrompt, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, allowReadProgress, allowReadReports, allowNotes, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -232,6 +250,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       generateSymbols: boolean;
       useApprovedSymbols: boolean;
       useUnapprovedSymbols: boolean;
+      appConfig?: Record<string, any>;
     }) => {
       const response = await apiRequest('PATCH', `/api/students/${student?.id}`, data);
       return response.json();
@@ -275,6 +294,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       generateSymbols,
       useApprovedSymbols,
       useUnapprovedSymbols,
+      appConfig,
     });
   };
 
@@ -299,6 +319,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setGenerateSymbols(aac?.generateSymbols ?? false);
       setUseApprovedSymbols(aac?.useApprovedSymbols ?? false);
       setUseUnapprovedSymbols(aac?.useUnapprovedSymbols ?? false);
+      setAppConfig(aac?.appConfig || {});
     }
   };
 
@@ -1026,6 +1047,141 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 <RotateCcw className="w-3 h-3 mr-1" />
                 {t('aacSettings.resetToDefault')}
               </Button>
+            </CardContent>
+          </Card>
+
+          {/* Apps */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AppWindow className="w-5 h-5" />
+                {t('aacSettings.apps')}
+              </CardTitle>
+              <CardDescription>{t('aacSettings.appsDescription')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* YouTube */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">▶️</span>
+                  <div>
+                    <Label className="text-sm font-medium">YouTube</Label>
+                    <p className="text-xs text-muted-foreground">{t('aacSettings.appYoutubeDesc')}</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={appConfig.youtube?.enabled ?? false}
+                  onCheckedChange={(checked) =>
+                    setAppConfig(prev => ({ ...prev, youtube: { ...prev.youtube, enabled: checked } }))
+                  }
+                />
+              </div>
+
+              {/* Spotify */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🎧</span>
+                  <div>
+                    <Label className="text-sm font-medium">Spotify</Label>
+                    <p className="text-xs text-muted-foreground">{t('aacSettings.appSpotifyDesc')}</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={appConfig.spotify?.enabled ?? false}
+                  onCheckedChange={(checked) =>
+                    setAppConfig(prev => ({ ...prev, spotify: { ...prev.spotify, enabled: checked } }))
+                  }
+                />
+              </div>
+
+              {/* Spotify Account Connection — only visible when Spotify is enabled */}
+              {appConfig.spotify?.enabled && (
+                <div className={cn("ml-10 p-3 rounded-lg border", isDark ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-200")}>
+                  {appConfig.spotify?.connected ? (
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-green-600 dark:text-green-400">
+                          {t('aacSettings.spotifyConnected')}
+                        </p>
+                        {appConfig.spotify?.accountEmail && (
+                          <p className="text-xs text-muted-foreground">{appConfig.spotify.accountEmail}</p>
+                        )}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            await apiRequest('DELETE', `/api/aac/spotify/disconnect?studentId=${student?.id}`);
+                            setAppConfig(prev => ({
+                              ...prev,
+                              spotify: { ...prev.spotify, connected: false, accountEmail: undefined, refreshToken: undefined },
+                            }));
+                            await refetchStudent();
+                          } catch { /* ignore */ }
+                        }}
+                      >
+                        <Unlink className="w-3 h-3 mr-1" />
+                        {t('aacSettings.spotifyDisconnect')}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm text-muted-foreground">
+                        {t('aacSettings.spotifyConnectHint')}
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            const res = await apiRequest('GET', `/api/aac/spotify/auth-url?studentId=${student?.id}`);
+                            const { url } = await res.json();
+                            window.open(url, '_blank', 'width=500,height=700');
+                          } catch { /* ignore */ }
+                        }}
+                      >
+                        <Link className="w-3 h-3 mr-1" />
+                        {t('aacSettings.spotifyConnect')}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Drawing */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🎨</span>
+                  <div>
+                    <Label className="text-sm font-medium">{t('aacSettings.appDrawing')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('aacSettings.appDrawingDesc')}</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={appConfig.drawing?.enabled ?? true}
+                  onCheckedChange={(checked) =>
+                    setAppConfig(prev => ({ ...prev, drawing: { ...prev.drawing, enabled: checked } }))
+                  }
+                />
+              </div>
+
+              {/* Music Maker */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🎵</span>
+                  <div>
+                    <Label className="text-sm font-medium">{t('aacSettings.appMusic')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('aacSettings.appMusicDesc')}</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={appConfig.music?.enabled ?? true}
+                  onCheckedChange={(checked) =>
+                    setAppConfig(prev => ({ ...prev, music: { ...prev.music, enabled: checked } }))
+                  }
+                />
+              </div>
             </CardContent>
           </Card>
 

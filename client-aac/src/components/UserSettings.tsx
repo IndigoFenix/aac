@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, User, Save, Volume2, MessageSquare, LogOut, Sun, Moon, Crosshair, LayoutGrid, Brain, Zap, Search, RotateCcw, RefreshCw, Target, Play, Loader2, AppWindow } from "lucide-react";
+import { X, User, Save, Volume2, MessageSquare, LogOut, Sun, Moon, Crosshair, LayoutGrid, Brain, Zap, Search, RotateCcw, RefreshCw, Target, Play, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -118,9 +118,6 @@ export default function UserSettings({
   const [eyegazeTimeout, setEyegazeTimeout] = useState(2000);
   const [eyegazeProvider, setEyegazeProvider] = useState<EyeGazeProviderType | "auto">("auto");
 
-  // App configuration (stored as JSON in appConfig column)
-  const [appConfig, setAppConfig] = useState<Record<string, any>>({});
-
   // Track whether restart-required settings have changed since last save
   const [needsRestart, setNeedsRestart] = useState(false);
   const savedValuesRef = useRef<Record<string, any>>({});
@@ -201,7 +198,6 @@ export default function UserSettings({
       setEyegazeEnabled(ee);
       setEyegazeTimeout(et);
       setEyegazeProvider(ep);
-      setAppConfig(aac?.appConfig || {});
 
       // Store saved values for dirty detection
       savedValuesRef.current = { vt, svt, il, sm, cap };
@@ -296,7 +292,6 @@ export default function UserSettings({
       eyegazeEnabled,
       eyegazeTimeout,
       eyegazeProvider,
-      appConfig,
     });
   };
 
@@ -317,7 +312,6 @@ export default function UserSettings({
     setEyegazeEnabled(false);
     setEyegazeTimeout(2000);
     setEyegazeProvider("auto");
-    setAppConfig({});
   };
 
   const handleRestartConfirm = () => {
@@ -933,83 +927,6 @@ export default function UserSettings({
                     </p>
                   </div>
                 )}
-              </div>
-
-              {/* Apps */}
-              <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                <h3 className="text-lg font-semibold flex items-center gap-2">
-                  <AppWindow className="h-5 w-5" />
-                  {t("settings.apps")}
-                </h3>
-                <p className="text-xs text-gray-500">{t("settings.appsDescription")}</p>
-
-                {/* YouTube */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">▶️</span>
-                    <div>
-                      <Label className="text-sm font-medium">YouTube</Label>
-                      <p className="text-xs text-gray-500">{t("settings.appYoutubeDesc")}</p>
-                    </div>
-                  </div>
-                  <Switch
-                    checked={appConfig.youtube?.enabled ?? false}
-                    onCheckedChange={(checked) =>
-                      setAppConfig(prev => ({ ...prev, youtube: { ...prev.youtube, enabled: checked } }))
-                    }
-                  />
-                </div>
-
-                {/* Spotify */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">🎧</span>
-                    <div>
-                      <Label className="text-sm font-medium">Spotify</Label>
-                      <p className="text-xs text-gray-500">{t("settings.appSpotifyDesc")}</p>
-                    </div>
-                  </div>
-                  <Switch
-                    checked={appConfig.spotify?.enabled ?? false}
-                    onCheckedChange={(checked) =>
-                      setAppConfig(prev => ({ ...prev, spotify: { ...prev.spotify, enabled: checked } }))
-                    }
-                  />
-                </div>
-
-                {/* Drawing */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">🎨</span>
-                    <div>
-                      <Label className="text-sm font-medium">{t("settings.appDrawing")}</Label>
-                      <p className="text-xs text-gray-500">{t("settings.appDrawingDesc")}</p>
-                    </div>
-                  </div>
-                  <Switch
-                    checked={appConfig.drawing?.enabled ?? true}
-                    onCheckedChange={(checked) =>
-                      setAppConfig(prev => ({ ...prev, drawing: { ...prev.drawing, enabled: checked } }))
-                    }
-                  />
-                </div>
-
-                {/* Music Maker */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">🎵</span>
-                    <div>
-                      <Label className="text-sm font-medium">{t("settings.appMusic")}</Label>
-                      <p className="text-xs text-gray-500">{t("settings.appMusicDesc")}</p>
-                    </div>
-                  </div>
-                  <Switch
-                    checked={appConfig.music?.enabled ?? true}
-                    onCheckedChange={(checked) =>
-                      setAppConfig(prev => ({ ...prev, music: { ...prev.music, enabled: checked } }))
-                    }
-                  />
-                </div>
               </div>
 
               {/* Debug Mode */}
