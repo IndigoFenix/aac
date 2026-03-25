@@ -181,7 +181,7 @@ export const he = {
     title: "CliniAACian",
     student: "תלמיד",
     selectStudent: "בחר תלמיד",
-    noStudents: "אין משתמשי AAC",
+    noStudents: "אין תלמידים",
     loadingStudents: "טוען תלמידים...",
     credits: "קרדיטים",
     active: "פעיל",
