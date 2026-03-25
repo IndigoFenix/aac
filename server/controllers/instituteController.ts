@@ -750,6 +750,10 @@ export class InstituteController {
       );
 
       if (result.success) {
+        // Link any license associated with this invite email
+        const { licenseService } = await import("../services/licenseService");
+        await licenseService.linkLicenseToUser(currentUser.email, currentUser.id);
+
         res.json({
           success: true,
           message: "You have joined the institute",
@@ -895,6 +899,8 @@ export class InstituteController {
   
       // Accept the invite and mark onboarding complete — admin invited this user
       await userService.updateOnboardingStep(newUser.id, 3);
+      const { licenseService } = await import("../services/licenseService");
+      await licenseService.linkLicenseToUser(invite.inviteeEmail, newUser.id);
       const acceptResult = await instituteService.acceptInvite(invite.id, newUser.id);
       if (!acceptResult.success) {
         res.status(400).json({
