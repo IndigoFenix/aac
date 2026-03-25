@@ -137,6 +137,15 @@ export const en = {
     resetToDefault: "Reset to Default",
     defaultConversationBehavior: "Default conversation behavior",
 
+    apps: "Apps",
+    appsDescription: "Enable or disable add-on apps available during AAC sessions",
+    appYoutubeDesc: "Watch child-safe videos",
+    appSpotifyDesc: "Listen to music on Spotify",
+    appDrawing: "Drawing",
+    appDrawingDesc: "Draw on a canvas with colors",
+    appMusic: "Music Maker",
+    appMusicDesc: "Play musical notes on a piano",
+
     developerOptions: "Developer Options",
     debugMode: "Debug Mode",
     debugModeDescription: "Show debug windows and developer controls",

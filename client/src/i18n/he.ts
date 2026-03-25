@@ -2097,6 +2097,9 @@ export const he = {
       instituteType: "סוג ארגון",
       school: "בית ספר",
       clinic: "מרפאה",
+      instituteLogo: "לוגו ארגון",
+      uploadLogo: "העלאת לוגו",
+      userType: "סוג משתמש",
       // Permissions
       grantAll: "הענקת כל ההרשאות",
       maxStudents: "מקסימום תלמידים",

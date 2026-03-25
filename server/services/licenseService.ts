@@ -23,10 +23,14 @@ interface CreateLicenseInput {
   isTrial?: boolean;
   trialExpiresAt?: string;
 
+  // User type for invite form
+  userType?: string;
+
   // Optional institute creation
   createInstitute?: boolean;
   instituteName?: string;
   instituteType?: "school" | "clinic";
+  instituteLogo?: string; // base64 data URI
 }
 
 class LicenseService {
@@ -42,6 +46,7 @@ class LicenseService {
       const institute = await instituteRepository.createInstitute({
         name: data.instituteName,
         type: data.instituteType,
+        logoUrl: data.instituteLogo || null,
       });
       instituteId = institute.id;
     }
@@ -49,7 +54,12 @@ class LicenseService {
     // Step 2: Generate invite token for non-institute licenses
     const inviteToken = instituteId ? undefined : crypto.randomBytes(32).toString("hex");
 
-    // Step 3: Create the license
+    // Step 3: Build invite defaults from recipient info
+    const inviteDefaults = (data.firstName || data.lastName || data.userType)
+      ? { firstName: data.firstName, lastName: data.lastName, userType: data.userType }
+      : null;
+
+    // Step 4: Create the license
     const licenseData: InsertLicense = {
       name: data.name || `License for ${data.inviteEmail}`,
       licenseType: data.licenseType || "standard",
@@ -60,6 +70,7 @@ class LicenseService {
       inviteEmail: data.inviteEmail,
       inviteToken: inviteToken || null,
       instituteId: instituteId || null,
+      inviteDefaults,
       isActive: true,
     };
 

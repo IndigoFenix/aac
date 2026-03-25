@@ -668,6 +668,10 @@ export class InstituteController {
       const result = await instituteService.getInviteByToken(token);
 
       if (result.success) {
+        // Look up associated license for invite defaults
+        const { licenseRepository } = await import("../repositories/licenseRepository");
+        const license = await licenseRepository.getLicenseByInviteEmail(result.invite!.inviteeEmail);
+
         res.json({
           success: true,
           invite: {
@@ -689,6 +693,7 @@ export class InstituteController {
                 fullName: result.invitedBy.fullName,
               }
             : null,
+          inviteDefaults: license?.inviteDefaults || null,
         });
         return;
       }
@@ -711,6 +716,7 @@ export class InstituteController {
           institute: null,
           invitedBy: null,
           licenseInvite: true, // signal to client this is a license-only invite
+          inviteDefaults: license.inviteDefaults || null,
         });
         return;
       }
@@ -827,6 +833,9 @@ export class InstituteController {
           // Clear the invite token (it's been used)
           await licenseRepository.updateLicense(license.id, { inviteToken: null });
 
+          // Mark onboarding as complete — admin set up this user via license invite
+          await userService.updateOnboardingStep(newUser.id, 3);
+
           try {
             await emailService.sendWelcomeEmail({
               email: newUser.email,
@@ -884,7 +893,8 @@ export class InstituteController {
       });
       const newUser = newUserResult.user;
   
-      // Accept the invite
+      // Accept the invite and mark onboarding complete — admin invited this user
+      await userService.updateOnboardingStep(newUser.id, 3);
       const acceptResult = await instituteService.acceptInvite(invite.id, newUser.id);
       if (!acceptResult.success) {
         res.status(400).json({

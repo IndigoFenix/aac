@@ -371,6 +371,9 @@ export const aacSettings = pgTable("aac_settings", {
   allowReadReports: boolean("allow_read_reports").default(true).notNull(),
   allowNotes: boolean("allow_notes").default(true).notNull(),
 
+  // App configuration — per-app settings stored as JSON (e.g. { youtube: { enabled: true }, spotify: { enabled: true } })
+  appConfig: jsonb("app_config").default({}),
+
   // Recognition
   knownPeople: jsonb("known_people").default([]), // Array of known people for recognition
 

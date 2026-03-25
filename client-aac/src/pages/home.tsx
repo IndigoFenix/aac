@@ -28,6 +28,7 @@ import InitializationLoadingScreen from "@/components/InitializationLoadingScree
 import YouTubeApp from "@/components/apps/YouTubeApp";
 import DrawingApp from "@/components/apps/DrawingApp";
 import MusicApp from "@/components/apps/MusicApp";
+import SpotifyApp from "@/components/apps/SpotifyApp";
 import { CameraAttentivenessWrapper } from "@/components/CameraAttentivenessWrapper";
 import { CameraFrameCollector } from "@/lib/cameraFrameCollector";
 import { useFaceTracking } from "@/hooks/useFaceTracking";
@@ -149,6 +150,14 @@ function AppOverlayBridge() {
       )}
       {activeApp?.appId === "music" && (
         <MusicApp onClose={dismissApp} />
+      )}
+      {activeApp?.appId === "spotify" && activeApp.appData?.trackId && (
+        <SpotifyApp
+          trackId={activeApp.appData.trackId}
+          title={activeApp.appData.title || "Track"}
+          artist={activeApp.appData.artist || ""}
+          onClose={dismissApp}
+        />
       )}
     </AnimatePresence>
   );
@@ -1013,8 +1022,10 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             onSelect={(choice) => {
               dismissYesNoRef.current?.();
               setYesNoActive(false);
-              // Voice the choice and send as button press
-              interpretFnRef.current?.([choice], { [choice]: choice });
+              // Translate the choice and voice it in the student's language
+              const translatedChoice = t(choice === "Yes" ? "quickActions.yes" : "quickActions.no");
+              speak(translatedChoice, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
+              interpretFnRef.current?.([translatedChoice], { [translatedChoice]: translatedChoice });
             }}
             onDismiss={() => {
               dismissYesNoRef.current?.();
@@ -1067,11 +1078,10 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
                 interpretFnRef.current(["[MORE]"]);
               }
             } else {
-              // Yes/No/Help — voice the text and send as button press
+              // Yes/No/Help — voice the text in the student's language and send as button press
+              speak(text, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
               if (interpretFnRef.current) {
                 interpretFnRef.current([text], { [text]: text });
-              } else {
-                speak(text, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
               }
             }
           }}

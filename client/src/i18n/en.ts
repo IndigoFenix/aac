@@ -1905,6 +1905,9 @@ export const en = {
       instituteType: "Organization Type",
       school: "School",
       clinic: "Clinic",
+      instituteLogo: "Organization Logo",
+      uploadLogo: "Upload Logo",
+      userType: "User Type",
       // Permissions
       grantAll: "Grant All Permissions",
       maxStudents: "Max Students",

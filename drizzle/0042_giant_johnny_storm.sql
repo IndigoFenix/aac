@@ -1,0 +1,1 @@
+ALTER TABLE "licenses" ADD COLUMN "invite_defaults" jsonb;

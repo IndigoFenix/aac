@@ -1,7 +1,7 @@
 // src/components/admin/LicenseForm.tsx
 // Dialog form for creating and editing licenses
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Upload, X } from 'lucide-react';
 import {
   useLicenseMutations,
   type AdminLicense,
@@ -46,21 +46,32 @@ const DASHBOARD_LEVELS = [
   { value: '-1', label: 'Full Analysis' },
 ] as const;
 
+const USER_TYPES = [
+  { value: 'Caregiver', labelEn: 'Caregiver', labelHe: 'מטפל/ת' },
+  { value: 'Parent', labelEn: 'Parent', labelHe: 'הורה' },
+  { value: 'Teacher', labelEn: 'Teacher', labelHe: 'מורה' },
+  { value: 'SLP', labelEn: 'SLP', labelHe: 'קלינאי תקשורת' },
+] as const;
+
 export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
   const { toast } = useToast();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { createLicense, updateLicense } = useLicenseMutations();
   const isEdit = !!license;
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   // Recipient fields (create only)
   const [inviteEmail, setInviteEmail] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [userType, setUserType] = useState('Caregiver');
 
   // Institute fields (create only)
   const [createInstitute, setCreateInstitute] = useState(false);
   const [instituteName, setInstituteName] = useState('');
   const [instituteType, setInstituteType] = useState<'school' | 'clinic'>('school');
+  const [instituteLogo, setInstituteLogo] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
   // License fields
   const [name, setName] = useState('');
@@ -129,15 +140,33 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
     setInviteEmail('');
     setFirstName('');
     setLastName('');
+    setUserType('Caregiver');
     setCreateInstitute(false);
     setInstituteName('');
     setInstituteType('school');
+    setInstituteLogo(null);
+    setLogoPreview(null);
     setName('');
     setLicenseType('standard');
     setSubscriptionType('monthly');
     setIsTrial(false);
     setTrialExpiresAt('');
     resetPermissions();
+  }
+
+  function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setInstituteLogo(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setLogoPreview(reader.result as string);
+    reader.readAsDataURL(file);
+  }
+
+  function clearLogo() {
+    setInstituteLogo(null);
+    setLogoPreview(null);
+    if (logoInputRef.current) logoInputRef.current.value = '';
   }
 
   function buildPermissions() {
@@ -193,9 +222,11 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
           inviteEmail,
           firstName: firstName || undefined,
           lastName: lastName || undefined,
+          userType: userType || undefined,
           createInstitute: createInstitute || undefined,
           instituteName: createInstitute ? instituteName : undefined,
           instituteType: createInstitute ? instituteType : undefined,
+          instituteLogo: createInstitute && instituteLogo ? instituteLogo : undefined,
         };
         await createLicense.mutateAsync(data);
         toast({ title: t('admin.licenses.created') });
@@ -259,6 +290,21 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
                       />
                     </div>
                   </div>
+                  <div>
+                    <Label>{t('admin.licenses.userType')}</Label>
+                    <Select value={userType} onValueChange={setUserType}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {USER_TYPES.map((ut) => (
+                          <SelectItem key={ut.value} value={ut.value}>
+                            {language === 'he' ? ut.labelHe : ut.labelEn}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
 
@@ -299,6 +345,44 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
                           <SelectItem value="clinic">{t('admin.licenses.clinic')}</SelectItem>
                         </SelectContent>
                       </Select>
+                    </div>
+                    <div>
+                      <Label>{t('admin.licenses.instituteLogo')}</Label>
+                      <div className="flex items-center gap-3 mt-1">
+                        {logoPreview ? (
+                          <div className="relative">
+                            <img
+                              src={logoPreview}
+                              alt="Logo preview"
+                              className="w-16 h-16 rounded-lg object-cover border"
+                            />
+                            <button
+                              type="button"
+                              onClick={clearLogo}
+                              className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-0.5"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => logoInputRef.current?.click()}
+                          >
+                            <Upload className="w-4 h-4 me-2" />
+                            {t('admin.licenses.uploadLogo')}
+                          </Button>
+                        )}
+                        <input
+                          ref={logoInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleLogoChange}
+                          className="hidden"
+                        />
+                      </div>
                     </div>
                   </div>
                 )}

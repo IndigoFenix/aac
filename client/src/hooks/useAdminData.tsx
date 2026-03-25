@@ -495,9 +495,11 @@ export interface CreateLicenseData {
   inviteEmail: string;
   firstName?: string;
   lastName?: string;
+  userType?: string;
   createInstitute?: boolean;
   instituteName?: string;
   instituteType?: 'school' | 'clinic';
+  instituteLogo?: File;
 }
 
 export interface UpdateLicenseData {
@@ -549,7 +551,24 @@ export function useLicenseMutations() {
 
   const createLicense = useMutation({
     mutationFn: async (data: CreateLicenseData) => {
-      const res = await apiRequest('POST', '/api/admin/licenses', data);
+      let body: CreateLicenseData | FormData = data;
+
+      // Use FormData when uploading an institute logo
+      if (data.instituteLogo) {
+        const formData = new FormData();
+        formData.append('instituteLogo', data.instituteLogo);
+        for (const [key, value] of Object.entries(data)) {
+          if (key === 'instituteLogo' || value === undefined) continue;
+          if (typeof value === 'object' && value !== null) {
+            formData.append(key, JSON.stringify(value));
+          } else {
+            formData.append(key, String(value));
+          }
+        }
+        body = formData;
+      }
+
+      const res = await apiRequest('POST', '/api/admin/licenses', body);
       const result = await res.json();
       return result.license as AdminLicense;
     },

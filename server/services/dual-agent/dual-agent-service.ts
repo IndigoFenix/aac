@@ -26,7 +26,7 @@ import {
 } from "../memory-schema/aac-memory-schema";
 import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
 import { voiceRecordRepository } from "../../repositories/voiceRecordRepository";
-import { APP_REGISTRY, getDefaultEnabledApps } from "./app-registry";
+import { APP_REGISTRY, getDefaultEnabledApps, getEnabledAppsFromConfig, type AppConfig } from "./app-registry";
 import { getContactsByStudent } from "../biometric";
 import { boardRepository } from "../../repositories/boardRepository";
 import { customSymbolRepository } from "../../repositories/customSymbolRepository";
@@ -444,7 +444,7 @@ export class DualAgentService {
       pendingMessages: [],
       interactionMode,
       interpretationLevel: (aacSt?.interpretationLevel ?? 2) as import("./types").AACInterpretationLevel,
-      appState: { enabledApps: getDefaultEnabledApps(), activeApp: null },
+      appState: { enabledApps: getEnabledAppsFromConfig(aacSt?.appConfig as AppConfig | null), activeApp: null },
       currentEmote: "happy",
       boardButtonLabels: [],
       aiAddedButtonLabels: [],
@@ -575,7 +575,7 @@ export class DualAgentService {
         pendingMessages: (session.pendingMessages as PendingMessage[]) || [],
         interactionMode: chatState?.interactionMode || 'interact',
         interpretationLevel: chatState?.interpretationLevel ?? 2,
-        appState: { enabledApps: getDefaultEnabledApps(), activeApp: null },
+        appState: { enabledApps: getDefaultEnabledApps(), activeApp: null }, // Updated with appConfig below
         currentEmote: "neutral",
         boardButtonLabels: [],
         aiAddedButtonLabels: [],
@@ -604,11 +604,12 @@ export class DualAgentService {
       // Ensure monitor has student data (since initializeSession wasn't called)
       await monitorAgent.ensureStudentLoaded();
 
-      // Update remote storage flag from current settings
+      // Update remote storage flag and enabled apps from current settings
       const student = monitorAgent.getStudent();
       if (student) {
         const aacSt = student.aacSettings;
         state.remoteStorageEnabled = (aacSt?.remoteStorageEnabled ?? true) && (aacSt?.allowNotes ?? true);
+        state.appState.enabledApps = getEnabledAppsFromConfig(aacSt?.appConfig as AppConfig | null);
       }
 
       // Rebuild prompt with correct enabledApps (the stored prompt may have stale app info)
