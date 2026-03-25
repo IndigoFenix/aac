@@ -15,6 +15,7 @@ import type {
 } from "./live-provider";
 import { GeminiLiveProvider } from "./gemini-live-provider";
 import { parseBoardButtons } from "./interactive-agent";
+import { getAppDefinition } from "./app-registry";
 
 /** Extract a string argument from tool call args.
  *  Gemini's native function calling frequently uses wrong parameter names
@@ -79,6 +80,7 @@ import { createEmptyAccumulator } from "./types";
 import { buildToolDeclarations, type ToolDeclarationConfig } from "./tool-declarations";
 import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
 import { searchYouTube } from "../youtube/youtube-search";
+import { searchSpotify } from "../spotify/spotify-search";
 import { createContact, findSimilarContact, updateContact, getContactsByStudent } from "../biometric";
 import { logDualAgent, logLiveSession } from "./dual-agent-logger";
 
@@ -771,11 +773,8 @@ export class LiveRelay {
       const toolConfig: ToolDeclarationConfig = {
         interpretationLevel: level,
         enabledApps: (cached.state.appState?.enabledApps || [])
-          .map(id => {
-            const appDefs = (dualAgentService as any).getAppDefinitions?.() || [];
-            return appDefs.find((a: any) => a.id === id);
-          })
-          .filter(Boolean),
+          .map(id => getAppDefinition(id))
+          .filter((a): a is import("./types").AACAppDefinition => !!a),
         availableBoards: (cached.state.availableBoards || []).map(b => ({ key: b.key, name: b.name })),
         hasLoadedBoard: !!cached.state.loadedBoardId,
         youtubeEnabled: cached.state.appState?.enabledApps?.includes("youtube") || false,
@@ -1566,8 +1565,9 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
         const appId = extractStringArg(args, "app_id");
         const data = args.data as string | undefined;
         this.turnAccum.openAppData = { appId, data };
-        // For youtube, defer to processTurnEnd; for others, send immediately
-        if (appId !== "youtube") {
+        // Apps that need async search are deferred to processTurnEnd; others send immediately
+        const deferredApps = ["youtube", "spotify"];
+        if (!deferredApps.includes(appId)) {
           this.send({ type: "app_open", data: { appId, data } });
         }
         return ({
@@ -2028,18 +2028,29 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
     }
 
     // -----------------------------------------------------------------------
-    // App open/close (YouTube search is deferred to here for async)
+    // App open/close (YouTube/Spotify search is deferred to here for async)
     // -----------------------------------------------------------------------
     if (openAppData) {
       if (openAppData.appId === "youtube" && openAppData.data) {
         try {
           const results = await searchYouTube(openAppData.data);
-          this.send({ type: "video_play", data: { query: openAppData.data, results } });
+          if (results) {
+            this.send({ type: "video_play", data: { videoId: results.videoId, title: results.title } });
+          }
         } catch (err) {
           console.error("[LiveRelay] YouTube search failed:", err);
         }
+      } else if (openAppData.appId === "spotify" && openAppData.data) {
+        try {
+          const results = await searchSpotify(openAppData.data);
+          if (results) {
+            this.send({ type: "app_open", data: { appId: "spotify", appData: { trackId: results.trackId, title: results.title, artist: results.artist, albumArt: results.albumArt } } });
+          }
+        } catch (err) {
+          console.error("[LiveRelay] Spotify search failed:", err);
+        }
       }
-      // Non-youtube apps are sent immediately in handleSingleToolCall
+      // Non-deferred apps are sent immediately in handleSingleToolCall
     }
     // close_app is sent immediately in handleSingleToolCall
 

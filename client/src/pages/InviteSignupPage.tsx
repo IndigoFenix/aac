@@ -63,6 +63,7 @@ export default function InviteSignupPage() {
     userType: 'Caregiver' as 'Caregiver' | 'Teacher' | 'SLP' | 'Parent',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [defaultsApplied, setDefaultsApplied] = useState(false);
 
   // Fetch invite details
   const { data: inviteData, isLoading, error } = useQuery({
@@ -77,11 +78,26 @@ export default function InviteSignupPage() {
         invite: InviteData;
         institute: InstituteData;
         invitedBy: InviterData | null;
+        inviteDefaults?: { firstName?: string; lastName?: string; userType?: string } | null;
       };
     },
     enabled: !!token,
     retry: false,
   });
+
+  // Pre-populate form from invite defaults
+  useEffect(() => {
+    if (inviteData?.inviteDefaults && !defaultsApplied) {
+      const defaults = inviteData.inviteDefaults;
+      setFormData(prev => ({
+        ...prev,
+        firstName: defaults.firstName || prev.firstName,
+        lastName: defaults.lastName || prev.lastName,
+        userType: (defaults.userType as typeof prev.userType) || prev.userType,
+      }));
+      setDefaultsApplied(true);
+    }
+  }, [inviteData, defaultsApplied]);
 
   // Handle accepting invite for logged-in users
   const handleAcceptInvite = async () => {

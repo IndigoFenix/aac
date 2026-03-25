@@ -30,7 +30,6 @@ import {
   requireAdmin,
   requireSystemAdmin,
   requireSLPPlan,
-  requireOnboardingComplete,
   validateCSRF,
 } from "./middleware";
 
@@ -846,11 +845,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ============= CHAT ROUTES =============
   // Chat endpoint with optional image upload for multimodal context
-  app.post("/api/chat", optionalAuth, requireOnboardingComplete, aacUpload.single("image"), (req, res) =>
+  app.post("/api/chat", optionalAuth, aacUpload.single("image"), (req, res) =>
     chatController.onMessage(req, res)
   );
   // Streaming chat endpoint with real-time thinking updates (SSE)
-  app.post("/api/chat/stream", optionalAuth, requireOnboardingComplete, (req, res) =>
+  app.post("/api/chat/stream", optionalAuth, (req, res) =>
     chatStreamController.onMessage(req, res)
   );
 
@@ -877,25 +876,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ============= VOICE ROUTES (AAC) =============
   // Transcribe audio to text using Whisper
-  app.post("/api/aac/voice/transcribe", optionalAuth, requireOnboardingComplete, aacUpload.single("audio"), (req, res) =>
+  app.post("/api/aac/voice/transcribe", optionalAuth, aacUpload.single("audio"), (req, res) =>
     voiceController.transcribe(req, res)
   );
   // Text-to-speech using Google TTS (returns audio blob directly)
-  app.post("/api/aac/voice/synthesize", optionalAuth, requireOnboardingComplete, (req, res) =>
+  app.post("/api/aac/voice/synthesize", optionalAuth, (req, res) =>
     voiceController.synthesize(req, res)
   );
   // Text-to-speech using Google TTS (streaming via SSE)
-  app.post("/api/aac/voice/speak", optionalAuth, requireOnboardingComplete, (req, res) =>
+  app.post("/api/aac/voice/speak", optionalAuth, (req, res) =>
     voiceController.speak(req, res)
   );
   // Full voice chat: audio in → transcription + AI response + audio out (streaming)
-  app.post("/api/aac/voice/chat", optionalAuth, requireOnboardingComplete, aacUpload.single("audio"), (req, res) =>
+  app.post("/api/aac/voice/chat", optionalAuth, aacUpload.single("audio"), (req, res) =>
     voiceController.voiceChat(req, res)
   );
 
   // ============= DUAL-AGENT AAC SESSION ROUTE =============
   // Get session state
-  app.get("/api/aac/dual/session/:sessionId", optionalAuth, requireOnboardingComplete, (req, res) =>
+  app.get("/api/aac/dual/session/:sessionId", optionalAuth, (req, res) =>
     dualAgentController.getSession(req, res)
   );
 
@@ -1034,7 +1033,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
 
   // Known people for AAC frontend identification (uses optionalAuth for AAC client)
-  app.get("/api/aac/students/:studentId/known-people", optionalAuth, requireOnboardingComplete, (req, res) =>
+  app.get("/api/aac/students/:studentId/known-people", optionalAuth, (req, res) =>
     biometricController.getKnownPeople(req, res)
   );
 
@@ -1187,8 +1186,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/licenses/:id", requireAuth, requireSystemAdmin, (req, res) =>
     licenseController.getLicense(req, res)
   );
-  app.post("/api/admin/licenses", requireAuth, requireSystemAdmin, (req, res) =>
-    licenseController.createLicense(req, res)
+  app.post("/api/admin/licenses", requireAuth, requireSystemAdmin, (req, res, next) => {
+    if (req.is('multipart/form-data')) {
+      upload.single("instituteLogo")(req, res, next);
+    } else {
+      next();
+    }
+  }, (req, res) =>
+    licenseController.createLicense(req as any, res)
   );
   app.patch("/api/admin/licenses/:id", requireAuth, requireSystemAdmin, (req, res) =>
     licenseController.updateLicense(req, res)

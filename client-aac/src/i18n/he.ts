@@ -139,6 +139,15 @@ export const he: Translations = {
     resetToDefault: "איפוס לברירת מחדל",
     defaultConversationBehavior: "התנהגות שיחה ברירת מחדל",
 
+    apps: "אפליקציות",
+    appsDescription: "הפעל או השבת אפליקציות נוספות הזמינות במהלך מפגשי AAC",
+    appYoutubeDesc: "צפייה בסרטונים בטוחים לילדים",
+    appSpotifyDesc: "האזנה למוזיקה בספוטיפיי",
+    appDrawing: "ציור",
+    appDrawingDesc: "ציור על קנבס עם צבעים",
+    appMusic: "יוצר מוזיקה",
+    appMusicDesc: "נגינת תווים על פסנתר",
+
     developerOptions: "אפשרויות מפתח",
     debugMode: "מצב ניפוי באגים",
     debugModeDescription: "הצג חלונות ניפוי ופקדי מפתח",

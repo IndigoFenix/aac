@@ -251,6 +251,9 @@ export const licenses = pgTable("licenses", {
   // Invite token for direct registration (non-institute licenses)
   inviteToken: text("invite_token"),
 
+  // Pre-filled defaults for the invite signup form (set at creation, not editable)
+  inviteDefaults: jsonb("invite_defaults").$type<{ firstName?: string; lastName?: string; userType?: string }>(),
+
   // Status
   isActive: boolean("is_active").default(true).notNull(),
   activatedAt: timestamp("activated_at"),
@@ -563,9 +566,16 @@ export const insertClassroomUserSchema = createInsertSchema(classroomUsers).omit
 export const updateClassroomSchema = insertClassroomSchema.partial();
 export const updateClassroomUserSchema = insertClassroomUserSchema.partial();
 
-// License schemas — override `permissions` with the typed Zod schema
+// License schemas — override `permissions` and `inviteDefaults` with typed Zod schemas
+const inviteDefaultsSchema = z.object({
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  userType: z.string().optional(),
+}).nullable().optional();
+
 export const insertLicenseSchema = createInsertSchema(licenses, {
   permissions: licensePermissionsSchema.nullable().optional(),
+  inviteDefaults: inviteDefaultsSchema,
 }).omit({
   id: true,
   createdAt: true,
@@ -574,6 +584,7 @@ export const insertLicenseSchema = createInsertSchema(licenses, {
 
 export const updateLicenseSchema = createInsertSchema(licenses, {
   permissions: licensePermissionsSchema.nullable().optional(),
+  inviteDefaults: inviteDefaultsSchema,
 }).omit({
   id: true,
   createdAt: true,

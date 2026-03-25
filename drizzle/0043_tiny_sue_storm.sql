@@ -1,0 +1,1 @@
+ALTER TABLE "aac_settings" ADD COLUMN "app_config" jsonb DEFAULT '{}'::jsonb;
