@@ -490,6 +490,9 @@ export const en = {
     clearUnsavedDesc: "You have unsaved changes. Would you like to save before clearing the board?",
     discardAndClear: "Discard & Clear",
     saveAndClear: "Save & Clear",
+    generatingIcons: "Generating icons, remaining: {{remaining}}",
+    iconsGenerated: "All icons generated successfully",
+    iconsFailed: "{{count}} icon(s) failed to generate",
   },
 
   // ============================================================================

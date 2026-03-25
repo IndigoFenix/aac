@@ -67,7 +67,7 @@ manageMemory({ ops: [{ action: "set", path: "/Context_Board/pages/0/buttons/2", 
 
 **Colors:** Blue #3B82F6 (needs), Amber #F59E0B (emotions), Pink #EC4899 (people), Yellow #EAB308 (activities), Gray #6B7280 (objects), Green #059669 (yes), Red #DC2626 (no)
 
-**Icons:** A single emoji (e.g., "🏠") in the iconRef field. Required for every button. If custom symbols are available (listed below), also set symbolPath to use the custom image.
+**Icons:** A single emoji (e.g., "🏠") in the iconRef field. REQUIRED for every content button — NEVER omit iconRef, it serves as the fallback when symbol images are unavailable. Only navigation/utility buttons (Back, Home) may omit iconRef. If custom symbols are available (listed below), also set symbolPath to use the custom image.
 
 **Rebus Key:** The rebusKey field maps to Widgit Rebus symbols for Grid3 AAC software export. Required for every content button.
 - Use a single lowercase British English concept word or short phrase: "colour" not "color", "mum" not "mom", "aeroplane" not "airplane"

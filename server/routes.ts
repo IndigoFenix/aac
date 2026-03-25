@@ -942,6 +942,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/custom-symbols/resolve-keys", requireAuth, (req, res) =>
     customSymbolController.resolveKeys(req, res)
   );
+  app.get("/api/custom-symbols/watch", requireAuth, (req, res) =>
+    customSymbolController.watchSymbols(req, res)
+  );
   app.get("/api/custom-symbols/available/:studentId", requireAuth, (req, res) =>
     customSymbolController.getAvailableSymbols(req, res)
   );
