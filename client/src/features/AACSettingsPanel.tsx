@@ -57,7 +57,7 @@ You should:
 
 export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelProps) {
   const { student, refetchStudent } = useStudent();
-  const { isRTL, t } = useLanguage();
+  const { t } = useLanguage();
   const { theme } = useTheme();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -349,7 +349,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       )}>
         <div className="max-w-3xl mx-auto space-y-6">
           {/* Header */}
-          <div className={isRTL ? "text-right" : ""}>
+          <div>
             <h1 className="text-2xl font-bold text-foreground mb-1">
               {t('aacSettings.title')}
             </h1>
@@ -361,23 +361,17 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
           {/* Student Info Card */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className={cn(
-                "flex items-center gap-2 text-base",
-                isRTL && "flex-row-reverse"
-              )}>
+              <CardTitle className="flex items-center gap-2 text-base">
                 <User className="w-4 h-4" />
                 {t('aacSettings.currentStudent')}
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className={cn(
-                "flex items-center gap-3",
-                isRTL && "flex-row-reverse"
-              )}>
+              <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
                   <User className="w-5 h-5 text-primary" />
                 </div>
-                <div className={cn("flex-1", isRTL && "text-right")}>
+                <div className="flex-1">
                   <p className="font-medium">{student.name}</p>
                   <p className="text-sm text-muted-foreground">
                     {student.gender === 'male' ? t('aacSettings.genderMale') : student.gender === 'female' ? t('aacSettings.genderFemale') : t('aacSettings.genderNotSpecified')}
@@ -391,10 +385,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
           {/* AI Name */}
           <Card>
             <CardHeader>
-              <CardTitle className={cn(
-                "flex items-center gap-2",
-                isRTL && "flex-row-reverse"
-              )}>
+              <CardTitle className="flex items-center gap-2">
                 <User className="w-5 h-5" />
                 {t('aacSettings.aiName')}
               </CardTitle>
@@ -415,10 +406,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
           {/* Voice Settings */}
           <Card>
             <CardHeader>
-              <CardTitle className={cn(
-                "flex items-center gap-2",
-                isRTL && "flex-row-reverse"
-              )}>
+              <CardTitle className="flex items-center gap-2">
                 <Volume2 className="w-5 h-5" />
                 {t('aacSettings.voiceSettings')}
               </CardTitle>
@@ -429,14 +417,14 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
             <CardContent className="space-y-6">
               {/* Gemini Voice Settings */}
               <div className="space-y-4">
-                <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                <div className="space-y-0.5">
                   <Label className="text-base font-medium">{t('aacSettings.voiceSettings')}</Label>
                   <p className="text-sm text-muted-foreground">
                     {t('aacSettings.geminiVoiceDesc')}
                   </p>
                 </div>
 
-                <div className={cn("flex items-center justify-between", isRTL && "flex-row-reverse")}>
+                <div className="flex items-center justify-between">
                   <Label className="text-sm text-muted-foreground">{t('aacSettings.aiVoice')}</Label>
                   <Select value={geminiAiVoice || "_default"} onValueChange={(v) => setGeminiAiVoice(v === "_default" ? "" : v)}>
                     <SelectTrigger className="w-full md:w-[200px]">
@@ -456,7 +444,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </Select>
                 </div>
 
-                <div className={cn("flex items-center justify-between", isRTL && "flex-row-reverse")}>
+                <div className="flex items-center justify-between">
                   <Label className="text-sm text-muted-foreground">{t('aacSettings.studentVoice')}</Label>
                   <Select value={geminiStudentVoice || "_default"} onValueChange={(v) => setGeminiStudentVoice(v === "_default" ? "" : v)}>
                     <SelectTrigger className="w-full md:w-[200px]">
@@ -479,7 +467,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
 
               {/* ElevenLabs Direct Voice Settings */}
               <div className="pt-4 border-t space-y-4">
-                <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                <div className="space-y-0.5">
                   <Label className="text-base font-medium">
                     {t('aacSettings.elevenlabsTitle')}
                   </Label>
@@ -488,11 +476,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </p>
                 </div>
 
-                <div className={cn(
-                  "flex items-center justify-between",
-                  isRTL && "flex-row-reverse"
-                )}>
-                  <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
                     <Label className="text-sm text-muted-foreground">
                       {t('aacSettings.elevenlabsApiKey')}
                     </Label>
@@ -512,11 +497,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
 
                 {debouncedApiKey && !elevenlabsError && (
                   <>
-                    <div className={cn(
-                      "flex items-center justify-between",
-                      isRTL && "flex-row-reverse"
-                    )}>
-                      <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
                         <Label className="text-sm text-muted-foreground">
                           {t('aacSettings.elevenlabsStudentVoiceId')}
                         </Label>
@@ -563,11 +545,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                       )}
                     </div>
 
-                    <div className={cn(
-                      "flex items-center justify-between",
-                      isRTL && "flex-row-reverse"
-                    )}>
-                      <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
                         <Label className="text-sm text-muted-foreground">
                           {t('aacSettings.elevenlabsAiVoiceId')}
                         </Label>
@@ -618,11 +597,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
 
                 {!debouncedApiKey && (
                   <>
-                    <div className={cn(
-                      "flex items-center justify-between",
-                      isRTL && "flex-row-reverse"
-                    )}>
-                      <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
                         <Label className="text-sm text-muted-foreground">
                           {t('aacSettings.elevenlabsStudentVoiceId')}
                         </Label>
@@ -636,11 +612,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                       />
                     </div>
 
-                    <div className={cn(
-                      "flex items-center justify-between",
-                      isRTL && "flex-row-reverse"
-                    )}>
-                      <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
                         <Label className="text-sm text-muted-foreground">
                           {t('aacSettings.elevenlabsAiVoiceId')}
                         </Label>
@@ -662,10 +635,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
           {/* Icon-Text Ratio */}
           <Card>
             <CardHeader>
-              <CardTitle className={cn(
-                "flex items-center gap-2",
-                isRTL && "flex-row-reverse"
-              )}>
+              <CardTitle className="flex items-center gap-2">
                 <LayoutGrid className="w-5 h-5" />
                 {t('aacSettings.buttonSize')}
               </CardTitle>
@@ -717,10 +687,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
           {/* Interpretation Level */}
           <Card>
             <CardHeader>
-              <CardTitle className={cn(
-                "flex items-center gap-2",
-                isRTL && "flex-row-reverse"
-              )}>
+              <CardTitle className="flex items-center gap-2">
                 <Brain className="w-5 h-5" />
                 {t('aacSettings.interpretation')}
               </CardTitle>
@@ -769,10 +736,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
           {/* Startup Mode */}
           <Card>
             <CardHeader>
-              <CardTitle className={cn(
-                "flex items-center gap-2",
-                isRTL && "flex-row-reverse"
-              )}>
+              <CardTitle className="flex items-center gap-2">
                 <Zap className="w-5 h-5" />
                 {t('aacSettings.startupMode')}
               </CardTitle>
@@ -815,10 +779,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
           {/* Eyegaze / Dwell Selection */}
           <Card>
             <CardHeader>
-              <CardTitle className={cn(
-                "flex items-center gap-2",
-                isRTL && "flex-row-reverse"
-              )}>
+              <CardTitle className="flex items-center gap-2">
                 <Crosshair className="w-5 h-5" />
                 {t('aacSettings.eyegaze')}
               </CardTitle>
@@ -827,11 +788,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className={cn(
-                "flex flex-col gap-2 md:flex-row md:items-center md:justify-between",
-                isRTL && "md:flex-row-reverse"
-              )}>
-                <div className={cn("space-y-0.5", isRTL && "text-right")}>
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-0.5">
                   <Label className="text-base font-medium">
                     {t('aacSettings.enableEyegaze')}
                   </Label>
@@ -873,10 +831,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
           {/* Privacy */}
           <Card>
             <CardHeader>
-              <CardTitle className={cn(
-                "flex items-center gap-2",
-                isRTL && "flex-row-reverse"
-              )}>
+              <CardTitle className="flex items-center gap-2">
                 <Shield className="w-5 h-5" />
                 {t('aacSettings.privacy')}
               </CardTitle>
@@ -885,11 +840,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className={cn(
-                "flex flex-col gap-2 md:flex-row md:items-center md:justify-between",
-                isRTL && "md:flex-row-reverse"
-              )}>
-                <div className={cn("space-y-0.5", isRTL && "text-right")}>
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-0.5">
                   <Label className="text-base font-medium">
                     {t('aacSettings.allowReadProgress')}
                   </Label>
@@ -902,11 +854,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   onCheckedChange={setAllowReadProgress}
                 />
               </div>
-              <div className={cn(
-                "flex flex-col gap-2 md:flex-row md:items-center md:justify-between",
-                isRTL && "md:flex-row-reverse"
-              )}>
-                <div className={cn("space-y-0.5", isRTL && "text-right")}>
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-0.5">
                   <Label className="text-base font-medium">
                     {t('aacSettings.allowReadReports')}
                   </Label>
@@ -919,11 +868,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   onCheckedChange={setAllowReadReports}
                 />
               </div>
-              <div className={cn(
-                "flex flex-col gap-2 md:flex-row md:items-center md:justify-between",
-                isRTL && "md:flex-row-reverse"
-              )}>
-                <div className={cn("space-y-0.5", isRTL && "text-right")}>
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-0.5">
                   <Label className="text-base font-medium">
                     {t('aacSettings.allowNotes')}
                   </Label>
@@ -942,10 +888,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
           {/* Symbol Generation Settings */}
           <Card>
             <CardHeader>
-              <CardTitle className={cn(
-                "flex items-center gap-2",
-                isRTL && "flex-row-reverse"
-              )}>
+              <CardTitle className="flex items-center gap-2">
                 <ImageIcon className="w-5 h-5" />
                 {t('aacSettings.symbolGeneration')}
               </CardTitle>
@@ -954,11 +897,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className={cn(
-                "flex flex-col gap-2 md:flex-row md:items-center md:justify-between",
-                isRTL && "md:flex-row-reverse"
-              )}>
-                <div className={cn("space-y-0.5", isRTL && "text-right")}>
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-0.5">
                   <Label className="text-base font-medium">
                     {t('aacSettings.generateSymbols')}
                   </Label>
@@ -971,11 +911,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   onCheckedChange={setGenerateSymbols}
                 />
               </div>
-              <div className={cn(
-                "flex flex-col gap-2 md:flex-row md:items-center md:justify-between",
-                isRTL && "md:flex-row-reverse"
-              )}>
-                <div className={cn("space-y-0.5", isRTL && "text-right")}>
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-0.5">
                   <Label className="text-base font-medium">
                     {t('aacSettings.useApprovedSymbols')}
                   </Label>
@@ -988,11 +925,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   onCheckedChange={setUseApprovedSymbols}
                 />
               </div>
-              <div className={cn(
-                "flex flex-col gap-2 md:flex-row md:items-center md:justify-between",
-                isRTL && "md:flex-row-reverse"
-              )}>
-                <div className={cn("space-y-0.5", isRTL && "text-right")}>
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-0.5">
                   <Label className="text-base font-medium">
                     {t('aacSettings.useUnapprovedSymbols')}
                   </Label>
@@ -1011,10 +945,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
           {/* Chat Agent Prompt */}
           <Card>
             <CardHeader>
-              <CardTitle className={cn(
-                "flex items-center gap-2",
-                isRTL && "flex-row-reverse"
-              )}>
+              <CardTitle className="flex items-center gap-2">
                 <MessageSquare className="w-5 h-5" />
                 {t('aacSettings.chatBehavior')}
               </CardTitle>
@@ -1044,7 +975,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 onClick={handleResetToDefault}
                 className="text-xs"
               >
-                <RotateCcw className="w-3 h-3 mr-1" />
+                <RotateCcw className="w-3 h-3 me-1" />
                 {t('aacSettings.resetToDefault')}
               </Button>
             </CardContent>
@@ -1096,7 +1027,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
 
               {/* Spotify Account Connection — only visible when Spotify is enabled */}
               {appConfig.spotify?.enabled && (
-                <div className={cn("ml-10 p-3 rounded-lg border", isDark ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-200")}>
+                <div className={cn("ms-10 p-3 rounded-lg border", isDark ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-200")}>
                   {appConfig.spotify?.connected ? (
                     <div className="flex items-center justify-between">
                       <div>
@@ -1121,7 +1052,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                           } catch { /* ignore */ }
                         }}
                       >
-                        <Unlink className="w-3 h-3 mr-1" />
+                        <Unlink className="w-3 h-3 me-1" />
                         {t('aacSettings.spotifyDisconnect')}
                       </Button>
                     </div>
@@ -1141,7 +1072,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                           } catch { /* ignore */ }
                         }}
                       >
-                        <Link className="w-3 h-3 mr-1" />
+                        <Link className="w-3 h-3 me-1" />
                         {t('aacSettings.spotifyConnect')}
                       </Button>
                     </div>
@@ -1186,19 +1117,16 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
           </Card>
 
           {/* Action Buttons */}
-          <div className={cn(
-            "flex gap-3 pt-2",
-            isRTL ? "flex-row-reverse" : ""
-          )}>
+          <div className="flex gap-3 pt-2">
             <Button
               onClick={handleSave}
               disabled={!hasChanges || updateMutation.isPending}
               className="flex-1"
             >
               {updateMutation.isPending ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                <Loader2 className="w-4 h-4 me-2 animate-spin" />
               ) : (
-                <Save className="w-4 h-4 mr-2" />
+                <Save className="w-4 h-4 me-2" />
               )}
               {t('aacSettings.saveChanges')}
             </Button>
@@ -1207,7 +1135,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
               onClick={handleReset}
               disabled={!hasChanges || updateMutation.isPending}
             >
-              <RotateCcw className="w-4 h-4 mr-2" />
+              <RotateCcw className="w-4 h-4 me-2" />
               {t('aacSettings.discard')}
             </Button>
           </div>

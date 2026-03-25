@@ -55,7 +55,7 @@ resource "aws_acm_certificate" "cloudfront" {
   provider = aws.us_east_1
 
   domain_name               = var.domain_name
-  subject_alternative_names = ["www.${var.domain_name}"]
+  subject_alternative_names = ["www.${var.domain_name}", "app.${var.domain_name}"]
   validation_method         = "DNS"
 
   lifecycle {
@@ -71,6 +71,7 @@ resource "aws_route53_record" "cloudfront_cert_validation" {
   for_each = var.use_lambda && var.domain_name != "" ? {
     main = var.domain_name
     www  = "www.${var.domain_name}"
+    app  = "app.${var.domain_name}"
   } : {}
 
   allow_overwrite = true
@@ -132,6 +133,36 @@ resource "aws_cloudfront_function" "aac_spa_rewrite" {
   EOF
 }
 
+# CloudFront Function for landing page redirect
+# Redirects non-landing-page routes from root domain to app subdomain
+resource "aws_cloudfront_function" "landing_redirect" {
+  count   = var.use_lambda && var.lambda_image_exists && var.domain_name != "" ? 1 : 0
+  name    = "${local.name_prefix}-landing-redirect"
+  runtime = "cloudfront-js-2.0"
+  comment = "Redirect non-landing-page routes to app subdomain"
+
+  code = <<-EOF
+    function handler(event) {
+      var request = event.request;
+      var uri = request.uri;
+      if (uri.match(/\.\w+$/)) {
+        return request;
+      }
+      var allowed = ['/', '/index.html', '/terms-of-service', '/privacy-policy', '/cookie-policy', '/accessibility', '/ai-policy'];
+      for (var i = 0; i < allowed.length; i++) {
+        if (uri === allowed[i]) {
+          return request;
+        }
+      }
+      return {
+        statusCode: 302,
+        statusDescription: 'Found',
+        headers: { 'location': { value: 'https://app.${var.domain_name}' + uri } }
+      };
+    }
+  EOF
+}
+
 resource "aws_cloudfront_distribution" "frontend" {
   count = var.use_lambda && var.lambda_image_exists ? 1 : 0
 
@@ -141,6 +172,161 @@ resource "aws_cloudfront_distribution" "frontend" {
   price_class         = "PriceClass_100"
 
   aliases = var.domain_name != "" ? [var.domain_name, "www.${var.domain_name}"] : []
+
+  # S3 Origin for static files
+  origin {
+    domain_name              = aws_s3_bucket.frontend[0].bucket_regional_domain_name
+    origin_id                = "S3-frontend"
+    origin_access_control_id = aws_cloudfront_origin_access_control.frontend[0].id
+  }
+
+  # Lambda/API Gateway Origin for API
+  origin {
+    domain_name = local.api_endpoint
+    origin_id   = "Lambda-api"
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  # Default behavior - serve landing page from S3, redirect other routes to app subdomain
+  default_cache_behavior {
+    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "S3-frontend"
+
+    forwarded_values {
+      query_string = false
+      cookies {
+        forward = "none"
+      }
+    }
+
+    dynamic "function_association" {
+      for_each = var.domain_name != "" ? [1] : []
+      content {
+        event_type   = "viewer-request"
+        function_arn = aws_cloudfront_function.landing_redirect[0].arn
+      }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 3600
+    max_ttl                = 86400
+    compress               = true
+  }
+
+  # Auth routes - forward to Lambda (no caching)
+  ordered_cache_behavior {
+    path_pattern     = "/auth/*"
+    allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "Lambda-api"
+
+    forwarded_values {
+      query_string = true
+      headers      = ["Authorization", "Origin", "Accept", "Content-Type"]
+      cookies {
+        forward = "all"
+      }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 0
+    max_ttl                = 0
+  }
+
+  # API behavior - forward to Lambda
+  ordered_cache_behavior {
+    path_pattern     = "/api/*"
+    allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "Lambda-api"
+
+    forwarded_values {
+      query_string = true
+      headers      = ["Authorization", "Origin", "Accept", "Content-Type"]
+      cookies {
+        forward = "all"
+      }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 0
+    max_ttl                = 0
+  }
+
+  # Health check endpoint
+  ordered_cache_behavior {
+    path_pattern     = "/health"
+    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "Lambda-api"
+
+    forwarded_values {
+      query_string = false
+      cookies {
+        forward = "none"
+      }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 0
+    max_ttl                = 0
+  }
+
+  # SPA fallback
+  custom_error_response {
+    error_code         = 404
+    response_code      = 200
+    response_page_path = "/index.html"
+  }
+
+  custom_error_response {
+    error_code         = 403
+    response_code      = 200
+    response_page_path = "/index.html"
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    acm_certificate_arn            = var.domain_name != "" ? aws_acm_certificate_validation.cloudfront[0].certificate_arn : null
+    cloudfront_default_certificate = var.domain_name == ""
+    ssl_support_method             = var.domain_name != "" ? "sni-only" : null
+    minimum_protocol_version       = "TLSv1.2_2021"
+  }
+
+  tags = {
+    Name = "${local.name_prefix}-cdn"
+  }
+}
+
+# =============================================================================
+# CloudFront Distribution for App Subdomain (app.aivota.ai)
+# Full platform: API, AAC client, auth, SPA routing
+# =============================================================================
+resource "aws_cloudfront_distribution" "app" {
+  count = var.use_lambda && var.lambda_image_exists && var.domain_name != "" ? 1 : 0
+
+  enabled             = true
+  is_ipv6_enabled     = true
+  default_root_object = "index.html"
+  price_class         = "PriceClass_100"
+
+  aliases = ["app.${var.domain_name}"]
 
   # S3 Origin for static files
   origin {
@@ -316,14 +502,13 @@ resource "aws_cloudfront_distribution" "frontend" {
   }
 
   viewer_certificate {
-    acm_certificate_arn            = var.domain_name != "" ? aws_acm_certificate_validation.cloudfront[0].certificate_arn : null
-    cloudfront_default_certificate = var.domain_name == ""
-    ssl_support_method             = var.domain_name != "" ? "sni-only" : null
-    minimum_protocol_version       = "TLSv1.2_2021"
+    acm_certificate_arn      = aws_acm_certificate_validation.cloudfront[0].certificate_arn
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
   }
 
   tags = {
-    Name = "${local.name_prefix}-cdn"
+    Name = "${local.name_prefix}-app-cdn"
   }
 }
 
@@ -347,7 +532,10 @@ resource "aws_s3_bucket_policy" "frontend" {
         Resource = "${aws_s3_bucket.frontend[0].arn}/*"
         Condition = {
           StringEquals = {
-            "AWS:SourceArn" = aws_cloudfront_distribution.frontend[0].arn
+            "AWS:SourceArn" = compact([
+              aws_cloudfront_distribution.frontend[0].arn,
+              var.domain_name != "" ? one(aws_cloudfront_distribution.app[*].arn) : null
+            ])
           }
         }
       }
@@ -384,6 +572,21 @@ resource "aws_route53_record" "cloudfront_www" {
   alias {
     name                   = aws_cloudfront_distribution.frontend[0].domain_name
     zone_id                = aws_cloudfront_distribution.frontend[0].hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+
+resource "aws_route53_record" "cloudfront_app_subdomain" {
+  count = var.use_lambda && var.lambda_image_exists && var.domain_name != "" ? 1 : 0
+
+  zone_id         = data.aws_route53_zone.main[0].zone_id
+  name            = "app.${var.domain_name}"
+  type            = "A"
+  allow_overwrite = true
+
+  alias {
+    name                   = aws_cloudfront_distribution.app[0].domain_name
+    zone_id                = aws_cloudfront_distribution.app[0].hosted_zone_id
     evaluate_target_health = false
   }
 }

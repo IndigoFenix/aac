@@ -659,7 +659,7 @@ export class LiveRelay {
           this.consecutiveModelTurns = 0;
           this.awaitingModelResponse = true;
           this.provider!.sendMessage(
-            `[APP CLOSED] The user closed the "${msg.appId}" app and returned to the AAC board. Comment briefly on what they were doing in the app, then use rebuild_board() to create a fresh set of communication buttons for the current context.`,
+            `[APP CLOSED] The user closed the "${msg.appId}" app and returned to the AAC board. The full board is now restored (up to 12 buttons). Comment briefly on what they were doing in the app, then use rebuild_board() to create a fresh set of communication buttons for the current context.`,
             "user",
           );
           logDualAgent("LiveRelay.appDismissed", { sessionId: this.sessionId, appId: msg.appId });
@@ -1565,15 +1565,16 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
         const appId = extractStringArg(args, "app_id");
         const data = args.data as string | undefined;
         this.turnAccum.openAppData = { appId, data };
-        // Apps that need async search are deferred to processTurnEnd; others send immediately
-        const deferredApps = ["youtube", "spotify"];
-        if (!deferredApps.includes(appId)) {
+        // Apps with a search query (youtube/spotify) are deferred to processTurnEnd for async search;
+        // without a query, or for other apps, send immediately
+        const needsSearch = data && ["youtube", "spotify"].includes(appId);
+        if (!needsSearch) {
           this.send({ type: "app_open", data: { appId, data } });
         }
         return ({
           id: call.id,
           name,
-          response: { output: "ok" },
+          response: { output: "ok. The app is now open on screen. IMPORTANT: The board now has only 4 button slots shown in a small side panel next to the app. You MUST call rebuild_board now with up to 4 contextual buttons relevant to this app activity." },
         });
       }
 

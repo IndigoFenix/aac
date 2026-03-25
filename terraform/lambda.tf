@@ -216,7 +216,7 @@ resource "aws_lambda_function" "api" {
       # S3 bucket for uploads
       S3_UPLOADS_BUCKET       = aws_s3_bucket.uploads.bucket
       # Public URL for email links (Lambda sees API Gateway host, not the domain)
-      APP_URL                 = var.domain_name != "" ? "https://${var.domain_name}" : ""
+      APP_URL                 = var.domain_name != "" ? "https://app.${var.domain_name}" : ""
     }
   }
 
@@ -256,7 +256,7 @@ resource "aws_lambda_function_url" "api" {
     allow_credentials = true
     allow_headers     = ["*"]
     allow_methods     = ["*"]
-    allow_origins     = var.domain_name != "" ? ["https://${var.domain_name}"] : ["*"]
+    allow_origins     = var.domain_name != "" ? ["https://${var.domain_name}", "https://app.${var.domain_name}"] : ["*"]
     expose_headers    = ["*"]
     max_age           = 86400
   }
@@ -275,7 +275,7 @@ resource "aws_apigatewayv2_api" "lambda" {
     allow_credentials = true
     allow_headers     = ["*"]
     allow_methods     = ["*"]
-    allow_origins     = var.domain_name != "" ? ["https://${var.domain_name}"] : ["*"]
+    allow_origins     = var.domain_name != "" ? ["https://${var.domain_name}", "https://app.${var.domain_name}"] : ["*"]
     expose_headers    = ["*"]
     max_age           = 86400
   }

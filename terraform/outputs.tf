@@ -5,7 +5,7 @@
 # Application URL
 output "app_url" {
   description = "URL to access the application"
-  value       = var.domain_name != "" ? "https://${var.domain_name}" : (var.use_lambda && var.lambda_image_exists ? aws_cloudfront_distribution.frontend[0].domain_name : "http://${aws_lb.main.dns_name}")
+  value       = var.domain_name != "" ? "https://app.${var.domain_name}" : (var.use_lambda && var.lambda_image_exists ? aws_cloudfront_distribution.frontend[0].domain_name : "http://${aws_lb.main.dns_name}")
 }
 
 # ALB DNS (only when not using Lambda)
@@ -65,8 +65,19 @@ output "cloudfront_distribution_id" {
 }
 
 output "cloudfront_domain_name" {
-  description = "CloudFront distribution domain name"
+  description = "CloudFront distribution domain name (landing page)"
   value       = var.use_lambda && var.lambda_image_exists ? aws_cloudfront_distribution.frontend[0].domain_name : null
+}
+
+# App subdomain CloudFront (only when Lambda exists and domain is set)
+output "app_cloudfront_distribution_id" {
+  description = "CloudFront distribution ID for app subdomain"
+  value       = var.use_lambda && var.lambda_image_exists && var.domain_name != "" ? aws_cloudfront_distribution.app[0].id : null
+}
+
+output "app_cloudfront_domain_name" {
+  description = "CloudFront distribution domain name for app subdomain"
+  value       = var.use_lambda && var.lambda_image_exists && var.domain_name != "" ? aws_cloudfront_distribution.app[0].domain_name : null
 }
 
 # S3 Buckets
@@ -143,10 +154,12 @@ output "deployment_summary" {
       "Deployment: Lambda + S3 (Serverless)",
       "========================================",
       "",
-      "Frontend URL: https://${var.domain_name}",
+      "Landing Page: https://${var.domain_name}",
+      "App URL: https://app.${var.domain_name}",
       "API URL: ${local.api_url_output}",
       "API Type: ${var.use_api_gateway ? "API Gateway HTTP API" : "Lambda Function URL"}",
-      "CloudFront: ${aws_cloudfront_distribution.frontend[0].domain_name}",
+      "Landing CF: ${aws_cloudfront_distribution.frontend[0].domain_name}",
+      "App CF: ${try(aws_cloudfront_distribution.app[0].domain_name, "N/A")}",
       "S3 Bucket: ${aws_s3_bucket.frontend[0].bucket}",
       ""
     ]) : join("\n", [

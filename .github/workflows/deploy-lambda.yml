@@ -59,6 +59,7 @@ jobs:
       frontend_bucket: ${{ steps.tf-outputs.outputs.frontend_bucket }}
       lambda_function: ${{ steps.tf-outputs.outputs.lambda_function }}
       cloudfront_id: ${{ steps.tf-outputs.outputs.cloudfront_id }}
+      app_cloudfront_id: ${{ steps.tf-outputs.outputs.app_cloudfront_id }}
       lambda_ecr_url: ${{ steps.tf-outputs.outputs.lambda_ecr_url }}
       lambda_exists: ${{ steps.tf-outputs.outputs.lambda_exists }}
     
@@ -179,11 +180,13 @@ jobs:
           FRONTEND_BUCKET=$(terraform output -raw frontend_bucket_name 2>/dev/null || echo '')
           LAMBDA_FUNCTION=$(terraform output -raw lambda_function_name 2>/dev/null || echo '')
           CLOUDFRONT_ID=$(terraform output -raw cloudfront_distribution_id 2>/dev/null || echo '')
+          APP_CLOUDFRONT_ID=$(terraform output -raw app_cloudfront_distribution_id 2>/dev/null || echo '')
           LAMBDA_ECR_URL=$(terraform output -raw lambda_ecr_repository_url 2>/dev/null || echo '')
-          
+
           echo "frontend_bucket=$FRONTEND_BUCKET" >> $GITHUB_OUTPUT
           echo "lambda_function=$LAMBDA_FUNCTION" >> $GITHUB_OUTPUT
           echo "cloudfront_id=$CLOUDFRONT_ID" >> $GITHUB_OUTPUT
+          echo "app_cloudfront_id=$APP_CLOUDFRONT_ID" >> $GITHUB_OUTPUT
           echo "lambda_ecr_url=$LAMBDA_ECR_URL" >> $GITHUB_OUTPUT
           
           # Check if Lambda function exists
@@ -341,14 +344,23 @@ jobs:
             done
           fi
 
-      - name: Invalidate CloudFront cache
+      - name: Invalidate CloudFront caches
         env:
           CF_ID: ${{ needs.infrastructure.outputs.cloudfront_id }}
-        if: env.CF_ID != ''
+          APP_CF_ID: ${{ needs.infrastructure.outputs.app_cloudfront_id }}
         run: |
-          aws cloudfront create-invalidation \
-            --distribution-id $CF_ID \
-            --paths "/*"
+          if [ -n "$CF_ID" ]; then
+            echo "Invalidating landing page CloudFront: $CF_ID"
+            aws cloudfront create-invalidation \
+              --distribution-id $CF_ID \
+              --paths "/*"
+          fi
+          if [ -n "$APP_CF_ID" ]; then
+            echo "Invalidating app CloudFront: $APP_CF_ID"
+            aws cloudfront create-invalidation \
+              --distribution-id $APP_CF_ID \
+              --paths "/*"
+          fi
 
   # ===========================================
   # Deploy Lambda (Phase 2 only)

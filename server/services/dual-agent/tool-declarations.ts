@@ -240,13 +240,13 @@ function buildOpenAppTool(enabledApps: AACAppDefinition[]): FunctionDeclaration 
   const appList = enabledApps.map(a => `"${a.id}" — ${a.name}: ${a.description}`).join("; ");
   return {
     name: "open_app",
-    description: `Open an app for the user. Available: ${appList}. Only open with HIGH CONFIDENCE.`,
+    description: `Open an interactive app on the user's screen. These are real apps the user can interact with — ALWAYS use this tool instead of creating board buttons about the activity. Available: ${appList}.`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
       properties: {
         app_id: { type: "string", description: "The app ID to open." },
-        data: { type: "string", description: "Optional data to pass to the app." },
+        data: { type: "string", description: "Optional search query for media apps (YouTube/Spotify). E.g. 'happy kids songs' or 'dinosaur video'." },
       },
       required: ["app_id"],
     },

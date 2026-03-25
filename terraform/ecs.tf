@@ -119,7 +119,7 @@ resource "aws_ecs_task_definition" "main" {
         },
         {
           name  = "APP_URL"
-          value = var.domain_name != "" ? "https://${var.domain_name}" : ""
+          value = var.domain_name != "" ? "https://app.${var.domain_name}" : ""
         }
       ]
 
@@ -418,7 +418,7 @@ resource "aws_acm_certificate" "main" {
   count = var.domain_name != "" && !var.use_lambda ? 1 : 0
 
   domain_name               = var.domain_name
-  subject_alternative_names = ["www.${var.domain_name}"]
+  subject_alternative_names = ["www.${var.domain_name}", "app.${var.domain_name}"]
   validation_method         = "DNS"
 
   lifecycle {

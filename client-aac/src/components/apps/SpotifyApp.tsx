@@ -4,7 +4,6 @@
 // falls back to iframe embed (30-second previews) otherwise.
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { motion } from "framer-motion";
 import { X, Play, Pause, SkipBack, SkipForward } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -154,13 +153,8 @@ export default function SpotifyApp({ trackId, title, artist, studentId, onClose 
   };
 
   return (
-    <motion.div
-      className="fixed inset-0 z-50 bg-gradient-to-b from-gray-900 to-black flex flex-col"
-      data-dwell-trap
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ type: "spring", damping: 25, stiffness: 300 }}
+    <div
+      className="h-full bg-gradient-to-b from-gray-900 to-black flex flex-col"
     >
       {/* Header */}
       <div className="relative z-10 flex items-center gap-3 px-4 py-3">
@@ -249,6 +243,6 @@ export default function SpotifyApp({ trackId, title, artist, studentId, onClose 
           Close
         </button>
       </div>
-    </motion.div>
+    </div>
   );
 }

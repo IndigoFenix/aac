@@ -22,21 +22,21 @@ export const APP_REGISTRY: AACAppDefinition[] = [
   {
     id: "youtube",
     name: "YouTube",
-    description: "Watch child-safe YouTube videos. Suggest this if the user wants to watch a video.",
+    description: "Opens an interactive YouTube video player on the user's screen. Use open_app to launch it when the user wants to watch a video. Pass a search query in the data parameter.",
     icon: "▶️",
     enabledByDefault: false,
   },
   {
     id: "spotify",
     name: "Spotify",
-    description: "Listen to music on Spotify. Suggest this if the user wants to listen to a song or music.",
+    description: "Opens an interactive Spotify music player on the user's screen. Use open_app to launch it when the user wants to listen to music. Pass a search query in the data parameter (e.g. 'happy kids songs').",
     icon: "🎧",
     enabledByDefault: false,
   },
   {
     id: "drawing",
     name: "Drawing",
-    description: "Draw on a canvas with colors. Suggest this if the user mentions drawing or pictures.",
+    description: "Opens an interactive drawing canvas on the user's screen where they can draw with colors. ALWAYS use open_app to launch this when the user mentions drawing, coloring, or pictures — do NOT just create board buttons about drawing.",
     icon: "🎨",
     enabledByDefault: true,
     supportsDetectionCapture: true,
@@ -44,7 +44,7 @@ export const APP_REGISTRY: AACAppDefinition[] = [
   {
     id: "music",
     name: "Music Maker",
-    description: "Play musical notes on a piano. Suggest this if the user mentions music or wants to make music.",
+    description: "Opens an interactive piano on the user's screen where they can play musical notes. ALWAYS use open_app to launch this when the user wants to make music or play piano — do NOT just create board buttons about music.",
     icon: "🎵",
     enabledByDefault: true,
   },

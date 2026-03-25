@@ -29,6 +29,7 @@ import YouTubeApp from "@/components/apps/YouTubeApp";
 import DrawingApp from "@/components/apps/DrawingApp";
 import MusicApp from "@/components/apps/MusicApp";
 import SpotifyApp from "@/components/apps/SpotifyApp";
+import AppMiniBoard from "@/components/AppMiniBoard";
 import { CameraAttentivenessWrapper } from "@/components/CameraAttentivenessWrapper";
 import { CameraFrameCollector } from "@/lib/cameraFrameCollector";
 import { useFaceTracking } from "@/hooks/useFaceTracking";
@@ -129,36 +130,74 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
 
 /**
  * Renders the correct add-on app overlay based on the active app.
+ * Apps are shown alongside a mini 4-button board panel.
  * Must be rendered inside DualAgentProvider.
  */
-function AppOverlayBridge() {
+function AppOverlayBridge({ boardData, onButtonClick, language, voiceType, isRTL, suppressLocalSpeech }: {
+  boardData: ParsedBoardData | null;
+  onButtonClick: (button: BoardButton, spokenText: string) => void;
+  language?: string;
+  voiceType?: string;
+  isRTL?: boolean;
+  suppressLocalSpeech?: boolean;
+}) {
   const { activeApp, dismissApp, registerAppCanvasCapture, studentId } = useDualAgentContext();
+
+  // Determine which app component to render
+  let appContent: React.ReactNode = null;
+  if (activeApp?.appId === "youtube" && activeApp.appData?.videoId) {
+    appContent = (
+      <YouTubeApp
+        videoId={activeApp.appData.videoId}
+        title={activeApp.appData.title || "Video"}
+        onClose={dismissApp}
+      />
+    );
+  } else if (activeApp?.appId === "drawing") {
+    appContent = (
+      <DrawingApp
+        onClose={dismissApp}
+        onRegisterCapture={registerAppCanvasCapture}
+      />
+    );
+  } else if (activeApp?.appId === "music") {
+    appContent = <MusicApp onClose={dismissApp} />;
+  } else if (activeApp?.appId === "spotify" && activeApp.appData?.trackId) {
+    appContent = (
+      <SpotifyApp
+        trackId={activeApp.appData.trackId}
+        title={activeApp.appData.title || "Track"}
+        artist={activeApp.appData.artist || ""}
+        studentId={studentId}
+        onClose={dismissApp}
+      />
+    );
+  }
+
   return (
     <AnimatePresence>
-      {activeApp?.appId === "youtube" && activeApp.appData?.videoId && (
-        <YouTubeApp
-          videoId={activeApp.appData.videoId}
-          title={activeApp.appData.title || "Video"}
-          onClose={dismissApp}
-        />
-      )}
-      {activeApp?.appId === "drawing" && (
-        <DrawingApp
-          onClose={dismissApp}
-          onRegisterCapture={registerAppCanvasCapture}
-        />
-      )}
-      {activeApp?.appId === "music" && (
-        <MusicApp onClose={dismissApp} />
-      )}
-      {activeApp?.appId === "spotify" && activeApp.appData?.trackId && (
-        <SpotifyApp
-          trackId={activeApp.appData.trackId}
-          title={activeApp.appData.title || "Track"}
-          artist={activeApp.appData.artist || ""}
-          studentId={studentId}
-          onClose={dismissApp}
-        />
+      {appContent && (
+        <motion.div
+          className={`fixed inset-0 z-50 flex ${isRTL ? "flex-row-reverse" : "flex-row"}`}
+          data-dwell-trap
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+        >
+          {/* Mini board panel */}
+          <AppMiniBoard
+            board={boardData}
+            onButtonClick={onButtonClick}
+            language={language}
+            voiceType={voiceType}
+            suppressLocalSpeech={suppressLocalSpeech}
+          />
+          {/* App content fills remaining space */}
+          <div className="flex-1 min-w-0 relative">
+            {appContent}
+          </div>
+        </motion.div>
       )}
     </AnimatePresence>
   );
@@ -1282,7 +1321,14 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             onRestartSessionReady={(fn) => { restartSessionFnRef.current = fn; }}
             onPausedChange={(paused, setPausedFn) => { setIsPaused(paused); setPausedFnRef.current = setPausedFn; }}
           />
-          <AppOverlayBridge />
+          <AppOverlayBridge
+            boardData={boardData}
+            onButtonClick={handleBoardButtonClick}
+            language={currentLanguage}
+            voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
+            isRTL={isRTL}
+            suppressLocalSpeech={aiSessionActive}
+          />
           <DualAgentConversationBox
             isVisible={showConversation}
             onToggle={() => setShowConversation(!showConversation)}
