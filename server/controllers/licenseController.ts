@@ -32,6 +32,10 @@ const updateLicenseSchema = z.object({
   inviteEmail: z.string().email().optional().nullable(),
 });
 
+function getBaseUrl(req: Request): string {
+  return process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
+}
+
 class LicenseController {
   async listLicenses(req: Request, res: Response): Promise<void> {
     try {
@@ -65,8 +69,9 @@ class LicenseController {
         return;
       }
 
-      const baseUrl = `${req.protocol}://${req.get("host")}`;
-      const license = await licenseService.createLicenseWithSetup(parsed.data, baseUrl);
+      const baseUrl = getBaseUrl(req);
+      const currentUser = req.user as any;
+      const license = await licenseService.createLicenseWithSetup(parsed.data, baseUrl, currentUser.id);
       res.status(201).json({ license });
     } catch (error: any) {
       console.error("Error creating license:", error);
@@ -110,10 +115,11 @@ class LicenseController {
 
   async resendInvite(req: Request, res: Response): Promise<void> {
     try {
-      const baseUrl = `${req.protocol}://${req.get("host")}`;
-      const sent = await licenseService.resendInvite(req.params.id, baseUrl);
-      if (!sent) {
-        res.status(404).json({ message: "License not found or no invite email" });
+      const baseUrl = getBaseUrl(req);
+      const currentUser = req.user as any;
+      const result = await licenseService.resendInvite(req.params.id, baseUrl, currentUser.id);
+      if (!result.success) {
+        res.status(400).json({ message: result.error });
         return;
       }
       res.json({ success: true });

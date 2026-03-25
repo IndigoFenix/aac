@@ -7,6 +7,10 @@ import { userService, passwordResetService } from "../services";
 import { mfaService } from "../services/mfaService";
 import { registerSchema, loginSchema, validatePassword } from "@shared/schema";
 
+function getBaseUrl(req: Request): string {
+  return process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
+}
+
 // Store pending MFA setup secrets temporarily (in production, use Redis)
 const pendingMfaSetups = new Map<string, { secret: string; expiresAt: number }>();
 
@@ -152,10 +156,7 @@ export class AuthController {
         return;
       }
 
-      // Get base URL from request
-      const protocol = req.headers["x-forwarded-proto"] || req.protocol;
-      const host = req.headers["x-forwarded-host"] || req.get("host");
-      const baseUrl = `${protocol}://${host}`;
+      const baseUrl = getBaseUrl(req);
 
       // Always return success for security reasons (don't reveal if email exists)
       res.json({
@@ -749,9 +750,7 @@ export class AuthController {
         return;
       }
 
-      const protocol = req.headers["x-forwarded-proto"] || req.protocol;
-      const host = req.headers["x-forwarded-host"] || req.get("host");
-      const baseUrl = `${protocol}://${host}`;
+      const baseUrl = getBaseUrl(req);
 
       // Always return success for security
       res.json({
