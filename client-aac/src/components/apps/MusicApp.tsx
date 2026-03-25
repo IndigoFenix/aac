@@ -2,7 +2,6 @@
 // Full-screen piano overlay with one octave of colorful keys
 
 import { useRef, useCallback } from "react";
-import { motion } from "framer-motion";
 import { X } from "lucide-react";
 
 const NOTES = [
@@ -68,13 +67,8 @@ export default function MusicApp({ onClose }: MusicAppProps) {
   const btnBase = "flex items-center justify-center rounded-2xl font-bold shadow-lg active:scale-95 transition-transform select-none touch-none";
 
   return (
-    <motion.div
-      className="fixed inset-0 z-50 bg-gradient-to-b from-gray-900 to-gray-800 flex flex-col"
-      data-dwell-trap
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ type: "spring", damping: 25, stiffness: 300 }}
+    <div
+      className="h-full bg-gradient-to-b from-gray-900 to-gray-800 flex flex-col"
     >
       {/* Piano keys — pt-14 clears the header */}
       <div className="flex-1 flex items-stretch gap-3 px-3 pt-14 pb-3">
@@ -110,6 +104,6 @@ export default function MusicApp({ onClose }: MusicAppProps) {
           Close
         </button>
       </div>
-    </motion.div>
+    </div>
   );
 }

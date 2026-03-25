@@ -3,7 +3,6 @@
 // Moved from YouTubeVideoPlayer.tsx for the add-on apps system
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { motion } from "framer-motion";
 import { X, Play, Pause, RotateCcw, Rewind, FastForward } from "lucide-react";
 
 interface YouTubeAppProps {
@@ -134,14 +133,9 @@ export default function YouTubeApp({ videoId, title, onClose }: YouTubeAppProps)
   const btnBase = "flex items-center justify-center rounded-2xl text-white font-bold shadow-lg active:scale-95 transition-transform select-none";
 
   return (
-    <motion.div
+    <div
       ref={containerRef}
-      className="fixed inset-0 z-50 bg-black flex flex-col"
-      data-dwell-trap
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ type: "spring", damping: 25, stiffness: 300 }}
+      className="h-full bg-black flex flex-col"
     >
       <div className="relative z-10 flex items-center gap-3 px-4 py-3 bg-gradient-to-b from-black/80 to-transparent">
         <span className="text-white text-lg font-semibold truncate flex-1">{title}</span>
@@ -183,6 +177,6 @@ export default function YouTubeApp({ videoId, title, onClose }: YouTubeAppProps)
           </button>
         </div>
       )}
-    </motion.div>
+    </div>
   );
 }

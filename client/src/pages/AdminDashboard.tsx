@@ -13,12 +13,14 @@ import { SessionHistory } from '@/components/admin/SessionHistory';
 import { ContactInquiries } from '@/components/admin/ContactInquiries';
 import { LicenseList } from '@/components/admin/LicenseList';
 import { cn } from '@/lib/utils';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts' | 'licenses';
 
 export function AdminDashboard() {
   const [location, navigate] = useLocation();
   const [, params] = useRoute('/admin/library/:topicId');
+  const { direction } = useLanguage();
 
   // Determine active section from URL
   const getActiveSection = (): AdminSection => {
@@ -97,7 +99,7 @@ export function AdminDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background" dir={direction}>
       <AdminSidebar
         activeSection={activeSection}
         onSectionChange={handleSectionChange}

@@ -39,6 +39,21 @@ resource "aws_route53_record" "www" {
   }
 }
 
+# App subdomain pointing to ALB (only when NOT using Lambda)
+resource "aws_route53_record" "app_alb" {
+  count = var.domain_name != "" && !var.use_lambda ? 1 : 0
+
+  zone_id = data.aws_route53_zone.main[0].zone_id
+  name    = "app.${var.domain_name}"
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.main.dns_name
+    zone_id                = aws_lb.main.zone_id
+    evaluate_target_health = true
+  }
+}
+
 # =============================================================================
 # MX Record for Google email
 # =============================================================================
@@ -59,6 +74,7 @@ resource "aws_route53_record" "cert_validation" {
   for_each = var.domain_name != "" && !var.use_lambda ? {
     main = var.domain_name
     www  = "www.${var.domain_name}"
+    app  = "app.${var.domain_name}"
   } : {}
 
   allow_overwrite = true

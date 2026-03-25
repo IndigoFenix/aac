@@ -102,8 +102,8 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
     <div
       dir={isRTL ? 'rtl' : 'ltr'}
       className={cn(
-        "fixed top-0 h-screen bg-sidebar border-sidebar-border flex flex-col transition-all duration-300",
-        "left-0 border-r w-64"
+        "fixed top-0 h-screen bg-sidebar border-sidebar-border flex flex-col transition-all duration-300 z-10",
+        "start-0 border-e w-64"
       )}
     >
       {/* Logo */}
@@ -129,7 +129,7 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
           className="w-full justify-start text-muted-foreground hover:text-foreground"
           onClick={() => navigate('/overview')}
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="w-4 h-4 mirror-rtl" />
           <span className="ms-2">Back to Dashboard</span>
         </Button>
       </div>

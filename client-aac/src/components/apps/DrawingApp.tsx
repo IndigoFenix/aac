@@ -2,7 +2,6 @@
 // Full-screen drawing canvas overlay with large color buttons
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { motion } from "framer-motion";
 import { X, Eraser, Trash2, Pencil } from "lucide-react";
 import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
 
@@ -263,13 +262,8 @@ export default function DrawingApp({ onClose, onRegisterCapture }: DrawingAppPro
   const btnBase = "flex items-center justify-center rounded-2xl font-bold shadow-lg active:scale-95 transition-transform select-none touch-none";
 
   return (
-    <motion.div
-      className="fixed inset-0 z-50 bg-gray-100 flex flex-col"
-      data-dwell-trap
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ type: "spring", damping: 25, stiffness: 300 }}
+    <div
+      className="h-full bg-gray-100 flex flex-col"
     >
       {/* Canvas area */}
       <div className="flex-1 relative overflow-hidden">
@@ -390,6 +384,6 @@ export default function DrawingApp({ onClose, onRegisterCapture }: DrawingAppPro
           <X size={28} />
         </button>
       </div>
-    </motion.div>
+    </div>
   );
 }

@@ -325,3 +325,95 @@
 [2026-03-24T13:54:47.280Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
 [2026-03-24T13:54:47.444Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
 [2026-03-24T13:54:47.445Z] [resolveImageKeys] Done. Resolved 6, unresolved 0: 
+[2026-03-25T14:49:29.707Z] [resolveImageKeys] Resolving 5 keys: exploring, pencil_drawing, music_notes, sleepy_face, question_mark (format=internal, useUnapproved=true)
+[2026-03-25T14:49:29.875Z] [resolveImageKeys] No symbol found for "exploring"
+[2026-03-25T14:49:30.036Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-25T14:49:30.193Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-25T14:49:30.352Z] [resolveImageKeys] Resolved "sleepy_face" → __SYMBOL__:166b84ee-44cb-432b-9202-8737511086d8
+[2026-03-25T14:49:30.510Z] [resolveImageKeys] Resolved "question_mark" → __SYMBOL__:999c8ea6-52c4-45ac-b408-f0212046149c
+[2026-03-25T14:49:30.510Z] [resolveImageKeys] Done. Resolved 4, unresolved 1: exploring
+[2026-03-25T14:49:30.512Z] [queueGeneration] Queuing 1 keys: exploring (hasCallback=true)
+[2026-03-25T14:49:30.677Z] [processQueue] Generating "exploring"...
+[2026-03-25T14:49:39.296Z] [processQueue] Generated "exploring" → 73956a4d-bc56-419d-8f2d-6a6a7314f04b (1 total)
+[2026-03-25T14:49:54.240Z] [resolveImageKeys] Resolving 5 keys: drawing_palette, paper_stack, pencil_drawing, check_mark, return_arrow (format=internal, useUnapproved=true)
+[2026-03-25T14:49:54.397Z] [resolveImageKeys] No symbol found for "drawing_palette"
+[2026-03-25T14:49:54.554Z] [resolveImageKeys] No symbol found for "paper_stack"
+[2026-03-25T14:49:54.710Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-25T14:49:54.878Z] [resolveImageKeys] Resolved "check_mark" → __SYMBOL__:bd8bf1f6-a3c7-4a1c-a57c-3ed2744ae67e
+[2026-03-25T14:49:55.032Z] [resolveImageKeys] Resolved "return_arrow" → __SYMBOL__:9c893a9f-ca6e-4f2e-b6ac-aa2b4f6b9323
+[2026-03-25T14:49:55.033Z] [resolveImageKeys] Done. Resolved 3, unresolved 2: drawing_palette, paper_stack
+[2026-03-25T14:49:55.035Z] [queueGeneration] Queuing 2 keys: drawing_palette, paper_stack (hasCallback=true)
+[2026-03-25T14:49:55.193Z] [processQueue] Generating "drawing_palette"...
+[2026-03-25T14:50:01.425Z] [processQueue] Generated "drawing_palette" → 83248871-0203-4e0b-8cf5-15f5d24373e3 (1 total)
+[2026-03-25T14:50:02.275Z] [resolveImageKeys] Resolving 5 keys: red_square, blue_square, green_square, yellow_square, return_arrow (format=internal, useUnapproved=true)
+[2026-03-25T14:50:02.431Z] [resolveImageKeys] No symbol found for "red_square"
+[2026-03-25T14:50:02.604Z] [resolveImageKeys] No symbol found for "blue_square"
+[2026-03-25T14:50:02.759Z] [resolveImageKeys] No symbol found for "green_square"
+[2026-03-25T14:50:02.915Z] [resolveImageKeys] No symbol found for "yellow_square"
+[2026-03-25T14:50:03.070Z] [resolveImageKeys] Resolved "return_arrow" → __SYMBOL__:9c893a9f-ca6e-4f2e-b6ac-aa2b4f6b9323
+[2026-03-25T14:50:03.072Z] [resolveImageKeys] Done. Resolved 1, unresolved 4: red_square, blue_square, green_square, yellow_square
+[2026-03-25T14:50:03.073Z] [queueGeneration] Queuing 4 keys: red_square, blue_square, green_square, yellow_square (hasCallback=true)
+[2026-03-25T14:50:05.582Z] [processQueue] Generating "paper_stack"...
+[2026-03-25T14:50:11.381Z] [processQueue] Generated "paper_stack" → eee8fedc-0a6e-46d0-8c64-e4ea1528a01a (2 total)
+[2026-03-25T14:50:12.081Z] [resolveImageKeys] Resolving 4 keys: red_square, green_square, yellow_square, return_arrow (format=internal, useUnapproved=true)
+[2026-03-25T14:50:12.244Z] [resolveImageKeys] No symbol found for "red_square"
+[2026-03-25T14:50:12.410Z] [resolveImageKeys] No symbol found for "green_square"
+[2026-03-25T14:50:12.575Z] [resolveImageKeys] No symbol found for "yellow_square"
+[2026-03-25T14:50:12.737Z] [resolveImageKeys] Resolved "return_arrow" → __SYMBOL__:9c893a9f-ca6e-4f2e-b6ac-aa2b4f6b9323
+[2026-03-25T14:50:12.738Z] [resolveImageKeys] Done. Resolved 1, unresolved 3: red_square, green_square, yellow_square
+[2026-03-25T14:50:12.739Z] [queueGeneration] Queuing 3 keys: red_square, green_square, yellow_square (hasCallback=true)
+[2026-03-25T14:50:15.551Z] [processQueue] Generating "red_square"...
+[2026-03-25T14:50:18.535Z] [resolveImageKeys] Resolving 5 keys: drawing_palette, paper_stack, pencil_drawing, check_mark, return_arrow (format=internal, useUnapproved=true)
+[2026-03-25T14:50:18.703Z] [resolveImageKeys] Resolved "drawing_palette" → __SYMBOL__:83248871-0203-4e0b-8cf5-15f5d24373e3
+[2026-03-25T14:50:18.866Z] [resolveImageKeys] Resolved "paper_stack" → __SYMBOL__:eee8fedc-0a6e-46d0-8c64-e4ea1528a01a
+[2026-03-25T14:50:19.030Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-25T14:50:19.197Z] [resolveImageKeys] Resolved "check_mark" → __SYMBOL__:bd8bf1f6-a3c7-4a1c-a57c-3ed2744ae67e
+[2026-03-25T14:50:19.360Z] [resolveImageKeys] Resolved "return_arrow" → __SYMBOL__:9c893a9f-ca6e-4f2e-b6ac-aa2b4f6b9323
+[2026-03-25T14:50:19.362Z] [resolveImageKeys] Done. Resolved 5, unresolved 0: 
+[2026-03-25T14:50:21.799Z] [processQueue] Generated "red_square" → 9c8b49a3-7732-461f-a101-982635bb10d8 (3 total)
+[2026-03-25T14:50:25.958Z] [processQueue] Generating "blue_square"...
+[2026-03-25T14:50:27.267Z] [resolveImageKeys] Resolving 5 keys: exploring, pencil_drawing, music_notes, sleepy_face, question_mark (format=internal, useUnapproved=true)
+[2026-03-25T14:50:27.427Z] [resolveImageKeys] Resolved "exploring" → __SYMBOL__:73956a4d-bc56-419d-8f2d-6a6a7314f04b
+[2026-03-25T14:50:27.580Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-25T14:50:27.734Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-25T14:50:27.887Z] [resolveImageKeys] Resolved "sleepy_face" → __SYMBOL__:166b84ee-44cb-432b-9202-8737511086d8
+[2026-03-25T14:50:28.040Z] [resolveImageKeys] Resolved "question_mark" → __SYMBOL__:999c8ea6-52c4-45ac-b408-f0212046149c
+[2026-03-25T14:50:28.041Z] [resolveImageKeys] Done. Resolved 5, unresolved 0: 
+[2026-03-25T14:50:31.283Z] [processQueue] Generated "blue_square" → 814be1ad-3e6a-486b-a9e6-92f6080275d4 (4 total)
+[2026-03-25T14:50:33.256Z] [resolveImageKeys] Resolving 5 keys: music_notes, musical_genre, volume_up, volume_down, return_arrow (format=internal, useUnapproved=true)
+[2026-03-25T14:50:33.408Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-25T14:50:33.559Z] [resolveImageKeys] No symbol found for "musical_genre"
+[2026-03-25T14:50:33.719Z] [resolveImageKeys] No symbol found for "volume_up"
+[2026-03-25T14:50:33.875Z] [resolveImageKeys] No symbol found for "volume_down"
+[2026-03-25T14:50:34.026Z] [resolveImageKeys] Resolved "return_arrow" → __SYMBOL__:9c893a9f-ca6e-4f2e-b6ac-aa2b4f6b9323
+[2026-03-25T14:50:34.027Z] [resolveImageKeys] Done. Resolved 2, unresolved 3: musical_genre, volume_up, volume_down
+[2026-03-25T14:50:34.028Z] [queueGeneration] Queuing 3 keys: musical_genre, volume_up, volume_down (hasCallback=true)
+[2026-03-25T14:50:35.438Z] [processQueue] Generating "green_square"...
+[2026-03-25T14:50:40.605Z] [processQueue] Generated "green_square" → 4f489a44-59a7-4ac0-9ef0-cf80e43646c5 (5 total)
+[2026-03-25T14:50:44.763Z] [processQueue] Generating "yellow_square"...
+[2026-03-25T14:50:50.937Z] [processQueue] Generated "yellow_square" → 4fb67540-b7d9-4c7d-b8c7-7d7784fb7d23 (6 total)
+[2026-03-25T14:50:51.330Z] [resolveImageKeys] Resolving 3 keys: star_favorite, music_notes, return_arrow (format=internal, useUnapproved=true)
+[2026-03-25T14:50:51.482Z] [resolveImageKeys] Resolved "star_favorite" → __SYMBOL__:a192ec25-f84d-4986-b3ff-2f4343cd3c28
+[2026-03-25T14:50:51.634Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-25T14:50:51.785Z] [resolveImageKeys] Resolved "return_arrow" → __SYMBOL__:9c893a9f-ca6e-4f2e-b6ac-aa2b4f6b9323
+[2026-03-25T14:50:51.786Z] [resolveImageKeys] Done. Resolved 3, unresolved 0: 
+[2026-03-25T14:50:55.113Z] [processQueue] "red_square" already exists → 9c8b49a3-7732-461f-a101-982635bb10d8
+[2026-03-25T14:50:57.795Z] [resolveImageKeys] Resolving 5 keys: music_notes, musical_genre, volume_up, volume_down, return_arrow (format=internal, useUnapproved=true)
+[2026-03-25T14:50:57.955Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-25T14:50:58.115Z] [resolveImageKeys] No symbol found for "musical_genre"
+[2026-03-25T14:50:58.281Z] [resolveImageKeys] No symbol found for "volume_up"
+[2026-03-25T14:50:58.441Z] [resolveImageKeys] No symbol found for "volume_down"
+[2026-03-25T14:50:58.600Z] [resolveImageKeys] Resolved "return_arrow" → __SYMBOL__:9c893a9f-ca6e-4f2e-b6ac-aa2b4f6b9323
+[2026-03-25T14:50:58.601Z] [resolveImageKeys] Done. Resolved 2, unresolved 3: musical_genre, volume_up, volume_down
+[2026-03-25T14:50:58.604Z] [queueGeneration] Queuing 3 keys: musical_genre, volume_up, volume_down (hasCallback=true)
+[2026-03-25T14:50:59.277Z] [processQueue] "green_square" already exists → 4f489a44-59a7-4ac0-9ef0-cf80e43646c5
+[2026-03-25T14:51:03.445Z] [processQueue] "yellow_square" already exists → 4fb67540-b7d9-4c7d-b8c7-7d7784fb7d23
+[2026-03-25T14:51:07.609Z] [processQueue] Generating "musical_genre"...
+[2026-03-25T14:51:13.195Z] [processQueue] Generated "musical_genre" → c3284186-19b9-4eeb-9b25-7a4abb8546bc (7 total)
+[2026-03-25T14:51:17.371Z] [processQueue] Generating "volume_up"...
+[2026-03-25T14:51:22.464Z] [processQueue] Generated "volume_up" → 3dc4d68f-1586-4a98-9f56-682e6beb53c6 (8 total)
+[2026-03-25T14:51:26.625Z] [processQueue] Generating "volume_down"...
+[2026-03-25T14:51:31.516Z] [processQueue] Generated "volume_down" → 2af3f3c2-e424-4652-8f72-47708b143bfa (9 total)
+[2026-03-25T14:51:35.677Z] [processQueue] "musical_genre" already exists → c3284186-19b9-4eeb-9b25-7a4abb8546bc
+[2026-03-25T14:51:39.858Z] [processQueue] "volume_up" already exists → 3dc4d68f-1586-4a98-9f56-682e6beb53c6
+[2026-03-25T14:51:44.026Z] [processQueue] "volume_down" already exists → 2af3f3c2-e424-4652-8f72-47708b143bfa
