@@ -215,6 +215,8 @@ resource "aws_lambda_function" "api" {
       AWS_SECRETS_REGION      = var.aws_region
       # S3 bucket for uploads
       S3_UPLOADS_BUCKET       = aws_s3_bucket.uploads.bucket
+      # Public URL for email links (Lambda sees API Gateway host, not the domain)
+      APP_URL                 = var.domain_name != "" ? "https://${var.domain_name}" : ""
     }
   }
 

@@ -6,6 +6,10 @@ import { instituteService, userService } from "../services";
 import { insertInstituteSchema } from "@shared/schema";
 import { emailService } from "server/services/emailService";
 
+function getBaseUrl(req: Request): string {
+  return process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
+}
+
 export class InstituteController {
   // ==================== Institute CRUD ====================
 
@@ -388,10 +392,7 @@ export class InstituteController {
         return;
       }
   
-      // Get base URL from request
-      const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-      const host = req.headers['x-forwarded-host'] || req.get('host');
-      const baseUrl = `${protocol}://${host}`;
+      const baseUrl = getBaseUrl(req);
   
       const result = await instituteService.sendInvite(
         instituteId,
@@ -503,10 +504,7 @@ export class InstituteController {
       const currentUser = req.user as any;
       const { id: instituteId, inviteId } = req.params;
   
-      // Get base URL from request
-      const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-      const host = req.headers['x-forwarded-host'] || req.get('host');
-      const baseUrl = `${protocol}://${host}`;
+      const baseUrl = getBaseUrl(req);
   
       const result = await instituteService.resendInvite(
         inviteId,

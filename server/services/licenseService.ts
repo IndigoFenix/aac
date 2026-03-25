@@ -33,6 +33,7 @@ class LicenseService {
   async createLicenseWithSetup(
     data: CreateLicenseInput,
     baseUrl: string,
+    adminUserId: string,
   ): Promise<License> {
     let instituteId: string | undefined;
 
@@ -64,16 +65,16 @@ class LicenseService {
 
     const license = await licenseRepository.createLicense(licenseData);
 
-    // Step 4: Send invite email
+    // Step 4: Create invite and send email
     if (instituteId) {
-      try {
-        const invite = await instituteRepository.createInvite(
-          instituteId,
-          data.inviteEmail,
-          "system",
-          { role: "admin", grantAdmin: true, expiresInDays: 30 },
-        );
+      const invite = await instituteRepository.createInvite(
+        instituteId,
+        data.inviteEmail,
+        adminUserId,
+        { role: "admin", grantAdmin: true, expiresInDays: 30 },
+      );
 
+      try {
         const inviteLink = `${baseUrl}/invite/${invite.token}`;
         await emailService.sendLicenseInvite({
           inviteeEmail: data.inviteEmail,
@@ -84,7 +85,7 @@ class LicenseService {
           expiresAt: invite.expiresAt,
         });
       } catch (err) {
-        console.error("Failed to send institute invite for license:", err);
+        console.error("Failed to send institute invite email for license:", err);
       }
     } else {
       // Non-institute: use the license invite token
@@ -124,18 +125,26 @@ class LicenseService {
     return licenseRepository.deleteLicense(id);
   }
 
-  async resendInvite(licenseId: string, baseUrl: string): Promise<boolean> {
+  async resendInvite(licenseId: string, baseUrl: string, adminUserId: string): Promise<{ success: boolean; error?: string }> {
     const license = await licenseRepository.getLicenseById(licenseId);
-    if (!license || !license.inviteEmail) return false;
+    if (!license) return { success: false, error: "License not found" };
+    if (!license.inviteEmail) return { success: false, error: "No invite email on this license" };
 
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 30);
-
-    // For non-institute licenses, regenerate the invite token if missing
     let inviteLink: string;
+    let instituteName: string | undefined;
+
     if (license.instituteId) {
-      // Institute licenses use the institute invite token
-      inviteLink = `${baseUrl}/invite/${crypto.randomBytes(32).toString("hex")}`;
+      // Institute licenses: find existing pending invite or create a new one
+      const invite = await instituteRepository.createInvite(
+        license.instituteId,
+        license.inviteEmail,
+        adminUserId,
+        { role: "admin", grantAdmin: true, expiresInDays: 30 },
+      );
+      inviteLink = `${baseUrl}/invite/${invite.token}`;
+
+      const institute = await instituteRepository.getInstituteById(license.instituteId);
+      instituteName = institute?.name;
     } else {
       // Regenerate token if it was consumed or missing
       let token = license.inviteToken;
@@ -146,16 +155,20 @@ class LicenseService {
       inviteLink = `${baseUrl}/invite/${token}`;
     }
 
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 30);
+
     const result = await emailService.sendLicenseInvite({
       inviteeEmail: license.inviteEmail,
       licenseName: license.name || "Your License",
       licenseType: license.licenseType,
-      instituteName: undefined,
+      instituteName,
       inviteLink,
       expiresAt,
     });
 
-    return result.success;
+    if (!result.success) return { success: false, error: result.error || "Failed to send email" };
+    return { success: true };
   }
 
   /**

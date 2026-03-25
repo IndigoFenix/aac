@@ -116,6 +116,10 @@ resource "aws_ecs_task_definition" "main" {
         {
           name  = "AWS_REGION"
           value = var.aws_region
+        },
+        {
+          name  = "APP_URL"
+          value = var.domain_name != "" ? "https://${var.domain_name}" : ""
         }
       ]
 
