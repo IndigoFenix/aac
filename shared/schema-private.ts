@@ -340,6 +340,9 @@ export const aacSettings = pgTable("aac_settings", {
   geminiAiVoice: text("gemini_ai_voice"), // Gemini prebuilt voice for AI (e.g. "Kore", "Orus")
   geminiStudentVoice: text("gemini_student_voice"), // Gemini prebuilt voice for student (e.g. "Puck", "Leda")
 
+  // Local browser TTS fallback
+  useLocalTts: boolean("use_local_tts").default(false), // Use browser speechSynthesis instead of server TTS
+
   // Display settings
   iconTextRatio: integer("icon_text_ratio").default(3), // Icon-to-text size ratio 1–5 (1=mostly icon, 5=mostly text)
   usePcsSymbols: boolean("use_pcs_symbols").default(false), // PCS vs emoji preference

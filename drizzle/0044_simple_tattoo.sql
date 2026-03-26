@@ -1,0 +1,1 @@
+ALTER TABLE "aac_settings" ADD COLUMN "use_local_tts" boolean DEFAULT false;

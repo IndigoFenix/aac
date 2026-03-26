@@ -73,6 +73,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [elevenlabsStudentVoiceId, setElevenlabsStudentVoiceId] = useState('');
   const [geminiAiVoice, setGeminiAiVoice] = useState('');
   const [geminiStudentVoice, setGeminiStudentVoice] = useState('');
+  const [useLocalTts, setUseLocalTts] = useState(false);
   const [iconTextRatio, setIconTextRatio] = useState(3);
   const [interpretationLevel, setInterpretationLevel] = useState(2);
   const [startupMode, setStartupMode] = useState(0);
@@ -164,6 +165,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setElevenlabsStudentVoiceId(aac?.elevenlabsStudentVoiceId || '');
       setGeminiAiVoice(aac?.geminiAiVoice || '');
       setGeminiStudentVoice(aac?.geminiStudentVoice || '');
+      setUseLocalTts(aac?.useLocalTts ?? false);
       setIconTextRatio(aac?.iconTextRatio ?? 3);
       setInterpretationLevel(aac?.interpretationLevel ?? 2);
       setStartupMode(aac?.startupMode ?? 0);
@@ -192,6 +194,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalElevenlabsStudentVoiceId = aac?.elevenlabsStudentVoiceId || '';
       const originalGeminiAiVoice = aac?.geminiAiVoice || '';
       const originalGeminiStudentVoice = aac?.geminiStudentVoice || '';
+      const originalUseLocalTts = aac?.useLocalTts ?? false;
       const originalIconTextRatio = aac?.iconTextRatio ?? 3;
       const originalInterpretationLevel = aac?.interpretationLevel ?? 2;
       const originalStartupMode = aac?.startupMode ?? 0;
@@ -213,6 +216,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         elevenlabsStudentVoiceId !== originalElevenlabsStudentVoiceId ||
         geminiAiVoice !== originalGeminiAiVoice ||
         geminiStudentVoice !== originalGeminiStudentVoice ||
+        useLocalTts !== originalUseLocalTts ||
         iconTextRatio !== originalIconTextRatio ||
         interpretationLevel !== originalInterpretationLevel ||
         startupMode !== originalStartupMode ||
@@ -227,7 +231,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         JSON.stringify(appConfig) !== JSON.stringify(originalAppConfig)
       );
     }
-  }, [aiName, chatAgentPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, allowReadProgress, allowReadReports, allowNotes, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, student]);
+  }, [aiName, chatAgentPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, useLocalTts, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, allowReadProgress, allowReadReports, allowNotes, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -240,6 +244,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       elevenlabsStudentVoiceId?: string;
       geminiAiVoice?: string;
       geminiStudentVoice?: string;
+      useLocalTts?: boolean;
       iconTextRatio: number;
       interpretationLevel: number;
       startupMode: number;
@@ -285,6 +290,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       elevenlabsStudentVoiceId: elevenlabsStudentVoiceId.trim() || undefined,
       geminiAiVoice: geminiAiVoice || undefined,
       geminiStudentVoice: geminiStudentVoice || undefined,
+      useLocalTts,
       iconTextRatio,
       interpretationLevel,
       startupMode,
@@ -311,6 +317,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setElevenlabsStudentVoiceId(aac?.elevenlabsStudentVoiceId || '');
       setGeminiAiVoice(aac?.geminiAiVoice || '');
       setGeminiStudentVoice(aac?.geminiStudentVoice || '');
+      setUseLocalTts(aac?.useLocalTts ?? false);
       setIconTextRatio(aac?.iconTextRatio ?? 3);
       setInterpretationLevel(aac?.interpretationLevel ?? 2);
       setStartupMode(aac?.startupMode ?? 0);
@@ -465,6 +472,17 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                       <SelectItem value="Zephyr">Zephyr — Light, neutral</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+
+              {/* Local Browser TTS */}
+              <div className="pt-4 border-t space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-base font-medium">{t('aacSettings.localTtsTitle')}</Label>
+                    <p className="text-sm text-muted-foreground">{t('aacSettings.localTtsDesc')}</p>
+                  </div>
+                  <Switch checked={useLocalTts} onCheckedChange={setUseLocalTts} />
                 </div>
               </div>
 
