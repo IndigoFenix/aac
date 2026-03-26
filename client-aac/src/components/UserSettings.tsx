@@ -64,10 +64,10 @@ export default function UserSettings({
   const [aiName, setAiName] = useState("");
 
   // Voice settings
-  const [voiceType, setVoiceType] = useState("auto");
-  const [studentVoiceType, setStudentVoiceType] = useState("boy");
   const [customVoiceId, setCustomVoiceId] = useState<string | null>(null);
   const [customStudentVoiceId, setCustomStudentVoiceId] = useState<string | null>(null);
+  const [geminiAiVoice, setGeminiAiVoice] = useState("");
+  const [geminiStudentVoice, setGeminiStudentVoice] = useState("");
   const [elevenlabsEnabled, setElevenlabsEnabled] = useState(true);
   const [elevenlabsApiKey, setElevenlabsApiKey] = useState("");
   const [elevenlabsAiVoiceId, setElevenlabsAiVoiceId] = useState("");
@@ -173,10 +173,10 @@ export default function UserSettings({
     if (userProfile) {
       const aac = userProfile.aacSettings;
       setAiName(aac?.aiName || "");
-      const vt = aac?.voiceType || "auto";
-      const svt = aac?.studentVoiceType || "boy";
       setCustomVoiceId(aac?.customVoiceId || null);
       setCustomStudentVoiceId(aac?.customStudentVoiceId || null);
+      setGeminiAiVoice(aac?.geminiAiVoice || "");
+      setGeminiStudentVoice(aac?.geminiStudentVoice || "");
       setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || "");
       setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || "");
@@ -189,8 +189,6 @@ export default function UserSettings({
       const et = aac?.eyegazeTimeout ?? 2000;
       const ep = aac?.eyegazeProvider ?? "auto";
 
-      setVoiceType(vt);
-      setStudentVoiceType(svt);
       setIconTextRatio(itr);
       setInterpretationLevel(il);
       setStartupMode(sm);
@@ -200,7 +198,7 @@ export default function UserSettings({
       setEyegazeProvider(ep);
 
       // Store saved values for dirty detection
-      savedValuesRef.current = { vt, svt, il, sm, cap };
+      savedValuesRef.current = { il, sm, cap };
       setNeedsRestart(false);
     }
   }, [userProfile]);
@@ -214,8 +212,6 @@ export default function UserSettings({
   const checkRestartNeeded = () => {
     const saved = savedValuesRef.current;
     return (
-      voiceType !== saved.vt ||
-      studentVoiceType !== saved.svt ||
       interpretationLevel !== saved.il ||
       startupMode !== saved.sm ||
       chatAgentPrompt !== saved.cap
@@ -247,8 +243,6 @@ export default function UserSettings({
 
       // Update saved values reference
       savedValuesRef.current = {
-        vt: voiceType,
-        svt: studentVoiceType,
         il: interpretationLevel,
         sm: startupMode,
         cap: chatAgentPrompt,
@@ -277,10 +271,10 @@ export default function UserSettings({
   const handleSave = () => {
     updateMutation.mutate({
       aiName: aiName.trim() || undefined,
-      voiceType,
-      studentVoiceType,
       customVoiceId,
       customStudentVoiceId,
+      geminiAiVoice: geminiAiVoice || undefined,
+      geminiStudentVoice: geminiStudentVoice || undefined,
       elevenlabsEnabled,
       elevenlabsApiKey: elevenlabsApiKey.trim() || undefined,
       elevenlabsAiVoiceId: elevenlabsAiVoiceId.trim() || undefined,
@@ -298,10 +292,10 @@ export default function UserSettings({
   const handleResetDefaults = () => {
     if (!window.confirm(t("settings.confirmResetDefaults"))) return;
     setAiName("");
-    setVoiceType("auto");
-    setStudentVoiceType("boy");
     setCustomVoiceId(null);
     setCustomStudentVoiceId(null);
+    setGeminiAiVoice("");
+    setGeminiStudentVoice("");
     setElevenlabsApiKey("");
     setElevenlabsAiVoiceId("");
     setElevenlabsStudentVoiceId("");
@@ -324,21 +318,6 @@ export default function UserSettings({
     setShowRestartConfirm(false);
     onClose();
   };
-
-  const voiceOptions = [
-    { value: 'auto', label: t("settings.voiceAuto") },
-    { value: 'man', label: t("settings.voiceMan") },
-    { value: 'woman', label: t("settings.voiceWoman") },
-    { value: 'boy', label: t("settings.voiceBoy") },
-    { value: 'girl', label: t("settings.voiceGirl") },
-  ];
-
-  const studentVoiceOptions = [
-    { value: 'boy', label: t("settings.voiceBoy") },
-    { value: 'girl', label: t("settings.voiceGirl") },
-    { value: 'man', label: t("settings.voiceMan") },
-    { value: 'woman', label: t("settings.voiceWoman") },
-  ];
 
   const buttonSizeDescs = [
     t("settings.buttonSizeExtraLarge"),
@@ -465,77 +444,93 @@ export default function UserSettings({
                   {t("settings.voiceSettings")}
                 </h3>
 
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">{t("settings.studentVoice")}</Label>
-                  <Select value={studentVoiceType} onValueChange={setStudentVoiceType}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {studentVoiceOptions.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-gray-500">{t("settings.studentVoiceHint")}</p>
-                </div>
-
                 {activeVoices && activeVoices.length > 0 && (
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-500">{t("settings.customStudentVoice")}</Label>
-                    <Select
-                      value={customStudentVoiceId || "_none"}
-                      onValueChange={(v) => setCustomStudentVoiceId(v === "_none" ? null : v)}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="_none">{t("settings.noneFallback")}</SelectItem>
-                        {activeVoices.map((v) => (
-                          <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-gray-500">{t("settings.customStudentVoiceHint")}</p>
-                  </div>
+                  <>
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium text-gray-500">{t("settings.customStudentVoice")}</Label>
+                      <Select
+                        value={customStudentVoiceId || "_none"}
+                        onValueChange={(v) => setCustomStudentVoiceId(v === "_none" ? null : v)}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="_none">{t("settings.noneFallback")}</SelectItem>
+                          {activeVoices.map((v) => (
+                            <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-gray-500">{t("settings.customStudentVoiceHint")}</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium text-gray-500">{t("settings.customAiVoice")}</Label>
+                      <Select
+                        value={customVoiceId || "_none"}
+                        onValueChange={(v) => setCustomVoiceId(v === "_none" ? null : v)}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="_none">{t("settings.noneFallback")}</SelectItem>
+                          {activeVoices.map((v) => (
+                            <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-gray-500">{t("settings.customAiVoiceHint")}</p>
+                    </div>
+                  </>
                 )}
 
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">{t("settings.aiVoice")}</Label>
-                  <Select value={voiceType} onValueChange={setVoiceType}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {voiceOptions.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-gray-500">{t("settings.aiVoiceHint")}</p>
-                </div>
+                {/* Gemini Voice Settings */}
+                <div className="space-y-3 mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+                  <Label className="text-sm font-semibold">{t("settings.geminiVoice")}</Label>
+                  <p className="text-xs text-gray-500">{t("settings.geminiVoiceDesc")}</p>
 
-                {activeVoices && activeVoices.length > 0 && (
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-500">{t("settings.customAiVoice")}</Label>
-                    <Select
-                      value={customVoiceId || "_none"}
-                      onValueChange={(v) => setCustomVoiceId(v === "_none" ? null : v)}
-                    >
+                    <Label className="text-xs font-medium text-gray-500">{t("settings.studentVoice")}</Label>
+                    <Select value={geminiStudentVoice || "_default"} onValueChange={(v) => setGeminiStudentVoice(v === "_default" ? "" : v)}>
                       <SelectTrigger className="w-full">
-                        <SelectValue />
+                        <SelectValue placeholder="Default" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="_none">{t("settings.noneFallback")}</SelectItem>
-                        {activeVoices.map((v) => (
-                          <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
-                        ))}
+                        <SelectItem value="_default">{t("settings.voiceDefault")}</SelectItem>
+                        <SelectItem value="Puck">Puck — {t("settings.voicePuckDesc")}</SelectItem>
+                        <SelectItem value="Charon">Charon — {t("settings.voiceCharonDesc")}</SelectItem>
+                        <SelectItem value="Kore">Kore — {t("settings.voiceKoreDesc")}</SelectItem>
+                        <SelectItem value="Fenrir">Fenrir — {t("settings.voiceFenrirDesc")}</SelectItem>
+                        <SelectItem value="Aoede">Aoede — {t("settings.voiceAoedeDesc")}</SelectItem>
+                        <SelectItem value="Leda">Leda — {t("settings.voiceLedaDesc")}</SelectItem>
+                        <SelectItem value="Orus">Orus — {t("settings.voiceOrusDesc")}</SelectItem>
+                        <SelectItem value="Zephyr">Zephyr — {t("settings.voiceZephyrDesc")}</SelectItem>
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-gray-500">{t("settings.customAiVoiceHint")}</p>
                   </div>
-                )}
+
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium text-gray-500">{t("settings.aiVoice")}</Label>
+                    <Select value={geminiAiVoice || "_default"} onValueChange={(v) => setGeminiAiVoice(v === "_default" ? "" : v)}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Default" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_default">{t("settings.voiceDefault")}</SelectItem>
+                        <SelectItem value="Puck">Puck — {t("settings.voicePuckDesc")}</SelectItem>
+                        <SelectItem value="Charon">Charon — {t("settings.voiceCharonDesc")}</SelectItem>
+                        <SelectItem value="Kore">Kore — {t("settings.voiceKoreDesc")}</SelectItem>
+                        <SelectItem value="Fenrir">Fenrir — {t("settings.voiceFenrirDesc")}</SelectItem>
+                        <SelectItem value="Aoede">Aoede — {t("settings.voiceAoedeDesc")}</SelectItem>
+                        <SelectItem value="Leda">Leda — {t("settings.voiceLedaDesc")}</SelectItem>
+                        <SelectItem value="Orus">Orus — {t("settings.voiceOrusDesc")}</SelectItem>
+                        <SelectItem value="Zephyr">Zephyr — {t("settings.voiceZephyrDesc")}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
 
                 {/* ElevenLabs Direct Voice Settings */}
                 <div className="space-y-3 mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">

@@ -166,6 +166,7 @@ export function buildFunctionCallingPrompt(params: {
   cachedSymbols?: Array<{ id: string; key: string | null; description?: string | null }>;
   currentEmote?: string;
   activeApp?: string | null;
+  enabledApps?: Array<{ id: string; name: string; description: string }>;
   interpretationLevel?: number;
   autoSymbolsEnabled?: boolean;
   useDirectAudio?: boolean;
@@ -174,7 +175,7 @@ export function buildFunctionCallingPrompt(params: {
     studentName, persona, language, memoryContext, mode,
     studentAge, studentGender, studentDiagnosis, aiName,
     knownContacts, availableBoards, loadedBoardName, loadedPageName,
-    cachedSymbols, activeApp, interpretationLevel = 1,
+    cachedSymbols, activeApp, enabledApps, interpretationLevel = 1,
     autoSymbolsEnabled = false, useDirectAudio = false,
   } = params;
 
@@ -223,9 +224,10 @@ ${mode === 'silent' ? `MODE: SILENT — You do NOT talk to the user. Never call 
 
   // Custom boards
   if (availableBoards && availableBoards.length > 0) {
-    prompt += `\n\nCustom boards: ${availableBoards.map(b => `"${b.key}" (${b.name}${b.hint ? ` — ${b.hint}` : ''})`).join(', ')}`;
+    prompt += `\n\nCustom boards: ${availableBoards.map(b => `"${b.key}" (${b.name}${b.hint ? ` — ${b.hint}` : ''})`).join(', ')}
+When a custom board is loaded via set_board(), its buttons are shown in the main area and you CANNOT modify them. You get a 4-button side panel instead — use rebuild_board with up to 4 contextual buttons that complement the board. Do NOT repeat the board's existing buttons in the side panel.`;
     if (loadedBoardName) {
-      prompt += `\nCurrently loaded: "${loadedBoardName}"${loadedPageName ? ` page "${loadedPageName}"` : ''}`;
+      prompt += `\nCurrently loaded: "${loadedBoardName}"${loadedPageName ? ` page "${loadedPageName}"` : ''} (board has fixed buttons — use side panel for AI buttons)`;
     }
   }
 
@@ -234,9 +236,18 @@ ${mode === 'silent' ? `MODE: SILENT — You do NOT talk to the user. Never call 
     prompt += `\n\nCustom symbols (use symbol:ID as icon): ${cachedSymbols.map(s => `${s.key || s.id}${s.description ? ` — ${s.description}` : ''} (ID: ${s.id})`).join(', ')}`;
   }
 
-  // Active app
-  if (activeApp) {
-    prompt += `\n\nThe "${activeApp}" app is currently open.`;
+  // Apps
+  if (enabledApps && enabledApps.length > 0) {
+    prompt += `\n\n## Apps
+You have interactive apps you can open on the user's screen using open_app(). These are REAL apps — ALWAYS use open_app() instead of creating board buttons about the activity.
+When you open an app, the board shrinks to a 4-button side panel. You MUST call rebuild_board with up to 4 contextual buttons after opening an app.
+When an app is closed, the full board is restored (up to 12 buttons) — rebuild it for the current context.
+
+Available apps:
+${enabledApps.map(a => `- **${a.name}** (id: "${a.id}"): ${a.description}`).join('\n')}`;
+    if (activeApp) {
+      prompt += `\n\nThe "${activeApp}" app is currently open on screen (board limited to 4 buttons).`;
+    }
   }
 
   // Language

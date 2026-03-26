@@ -43,6 +43,7 @@ export interface UseLiveSessionOptions {
   onBoardUpdate?: (board: ParsedBoardData) => void;
   onBoardPatch?: (patch: BoardPatch) => void;
   onSetBoard?: (data: { board: ParsedBoardData; name: string; boardId: string }) => void;
+  onUnloadBoard?: () => void;
   onAiButtonPress?: (data: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] }) => void;
   onSymbolUpdate?: (data: { buttonLabel: string; symbolPath: string }) => void;
   onThinkingModeChange?: (thinking: boolean) => void;
@@ -61,6 +62,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     onBoardUpdate,
     onBoardPatch,
     onSetBoard,
+    onUnloadBoard,
     onAiButtonPress,
     onSymbolUpdate,
     onThinkingModeChange,
@@ -181,6 +183,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   onBoardPatchRef.current = onBoardPatch;
   const onSetBoardRef = useRef(onSetBoard);
   onSetBoardRef.current = onSetBoard;
+  const onUnloadBoardRef = useRef(onUnloadBoard);
+  onUnloadBoardRef.current = onUnloadBoard;
   const onAiButtonPressRef = useRef(onAiButtonPress);
   onAiButtonPressRef.current = onAiButtonPress;
   const onSymbolUpdateRef = useRef(onSymbolUpdate);
@@ -292,11 +296,13 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           break;
 
         case "set_board":
-          // AI selected a pre-built board — update board and notify parent
-          if (msg.data?.board) {
-            onBoardUpdateRef.current?.(msg.data.board);
-          }
+          // AI selected a pre-built board — notify parent (handled separately from regular board updates)
           onSetBoardRef.current?.(msg.data);
+          break;
+
+        case "unload_board":
+          // AI unloaded the prebuilt board — notify parent to clear prebuiltBoardData
+          onUnloadBoardRef.current?.();
           break;
 
         case "ai_button_press":

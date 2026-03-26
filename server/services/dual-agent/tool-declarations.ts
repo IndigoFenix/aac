@@ -17,7 +17,6 @@ export interface ToolDeclarationConfig {
   enabledApps: AACAppDefinition[];
   availableBoards: Array<{ key: string; name: string }>;
   hasLoadedBoard: boolean;
-  youtubeEnabled: boolean;
   faceRecognitionActive: boolean;
   cachedSymbols?: Array<{ id: string; name: string }>;
   isSilentMode?: boolean;
@@ -160,12 +159,13 @@ function buildRebuildBoardTool(config: ToolDeclarationConfig): FunctionDeclarati
     : "Comma-separated buttons: label|icon. Icon is an emoji, face:contactId, or symbol:symbolId. Example: \"Play|🎮, Music|🎵, Draw|✏️, Tired|😴\"";
   return {
     name: "rebuild_board",
-    description: `Replace the entire AAC board. Use after [BUTTON PRESS] inputs, major context shifts, or to create the initial board. Only call this once per turn. For minor changes, prefer add_buttons/remove_buttons. Max ${max} buttons, aim for ~${Math.min(8, max)}.`,
+    description: `Replace the entire AAC board. Use after [BUTTON PRESS] inputs, major context shifts, or to create the initial board. Only call this once per turn. For minor changes, prefer add_buttons/remove_buttons. Max ${max} buttons, aim for ~${Math.min(8, max)}. When a custom board is loaded, this updates the 4-button side panel (max 4). Set full_board=true to unload the custom board and return to the full dynamic board.`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
       properties: {
         buttons: { type: "string", description: formatDesc },
+        full_board: { type: "boolean", description: "Set to true to unload any custom board and return to the full dynamic board (up to 12 buttons)." },
       },
       required: ["buttons"],
     },
@@ -223,30 +223,17 @@ function buildEmoteTool(config: ToolDeclarationConfig): FunctionDeclaration {
   };
 }
 
-const PLAY_VIDEO: FunctionDeclaration = {
-  name: "play_video",
-  description: `Search and play a YouTube video. Only use with HIGH CONFIDENCE the user wants to watch something. Content is child-safety filtered.`,
-  behavior: Behavior.NON_BLOCKING,
-  parametersJsonSchema: {
-    type: "object",
-    properties: {
-      query: { type: "string", description: "YouTube search query." },
-    },
-    required: ["query"],
-  },
-};
-
 function buildOpenAppTool(enabledApps: AACAppDefinition[]): FunctionDeclaration {
-  const appList = enabledApps.map(a => `"${a.id}" — ${a.name}: ${a.description}`).join("; ");
+  const appIds = enabledApps.map(a => a.id).join(", ");
   return {
     name: "open_app",
-    description: `Open an interactive app on the user's screen. These are real apps the user can interact with — ALWAYS use this tool instead of creating board buttons about the activity. Available: ${appList}.`,
+    description: `Open an interactive app on the user's screen. See the "Apps" section in the system prompt for details. Available app IDs: ${appIds}.`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
       properties: {
         app_id: { type: "string", description: "The app ID to open." },
-        data: { type: "string", description: "Optional search query for media apps (YouTube/Spotify). E.g. 'happy kids songs' or 'dinosaur video'." },
+        data: { type: "string", description: "Optional search query for media apps (YouTube/Spotify)." },
       },
       required: ["app_id"],
     },
@@ -360,10 +347,6 @@ export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
   }
 
   declarations.push(buildEmoteTool(config));
-
-  if (config.youtubeEnabled) {
-    declarations.push(PLAY_VIDEO);
-  }
 
   if (config.enabledApps.length > 0) {
     declarations.push(buildOpenAppTool(config.enabledApps));

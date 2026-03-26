@@ -22,6 +22,7 @@ const messageSchema = z.object({
   featureContext: z.record(z.any()).optional(),
   vectorStoreId: z.string().optional(), // For file search support
   images: z.array(z.string()).optional(), // Base64 data URLs for inline images
+  documents: z.array(z.object({ dataUrl: z.string(), filename: z.string() })).optional(),
   messages: z
     .array(
       z.object({
@@ -74,7 +75,7 @@ export class ChatController {
         body.featureContext = JSON.parse(body.featureContext);
       }
 
-      let { studentId, sessionId, activeFeature, persona, messages, featureContext, vectorStoreId, images, replyType } = messageSchema.parse(body);
+      let { studentId, sessionId, activeFeature, persona, messages, featureContext, vectorStoreId, images, documents, replyType } = messageSchema.parse(body);
       if (!persona) {
         persona = "assistant";
       }
@@ -104,6 +105,7 @@ export class ChatController {
         featureContext,
         vectorStoreId,
         images,
+        documents,
         replyType: replyType || "html",
         currentImage,
       })

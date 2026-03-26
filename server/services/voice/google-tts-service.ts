@@ -12,11 +12,11 @@ const VOICE_MAP: Record<string, { languageCode: string; name: string }> = {
   "en-boy": { languageCode: "en-US", name: "en-US-Neural2-A" },
   "en-girl": { languageCode: "en-US", name: "en-US-Neural2-E" },
 
-  // Hebrew voices (Neural2)
-  "he-man": { languageCode: "he-IL", name: "he-IL-Neural2-D" },
-  "he-woman": { languageCode: "he-IL", name: "he-IL-Neural2-A" },
-  "he-boy": { languageCode: "he-IL", name: "he-IL-Neural2-D" },
-  "he-girl": { languageCode: "he-IL", name: "he-IL-Neural2-A" },
+  // Hebrew voices (Standard — Neural2 not available for he-IL)
+  "he-man": { languageCode: "he-IL", name: "he-IL-Standard-D" },
+  "he-woman": { languageCode: "he-IL", name: "he-IL-Standard-A" },
+  "he-boy": { languageCode: "he-IL", name: "he-IL-Standard-D" },
+  "he-girl": { languageCode: "he-IL", name: "he-IL-Standard-A" },
 
   // Arabic voices (Neural2)
   "ar-man": { languageCode: "ar-XA", name: "ar-XA-Neural2-B" },

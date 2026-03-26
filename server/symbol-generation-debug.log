@@ -467,3 +467,161 @@
 [2026-03-25T18:57:26.142Z] [processQueue] Generated "gears_mechanism" → e3570c28-9a0d-45fd-8c57-e1c46b550534 (14 total)
 [2026-03-25T18:57:30.322Z] [processQueue] Generating "map_location"...
 [2026-03-25T18:57:36.132Z] [processQueue] Generated "map_location" → 4e1b5211-5981-4513-98a5-f8a2be8e34bc (15 total)
+[2026-03-25T21:22:35.862Z] [resolveImageKeys] Resolving 6 keys: pencil_drawing, music_notes, magnifying_glass, sleepy_face, life_preserver, stop_sign (format=internal, useUnapproved=true)
+[2026-03-25T21:22:36.031Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-25T21:22:36.197Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-25T21:22:36.363Z] [resolveImageKeys] Resolved "magnifying_glass" → __SYMBOL__:2db13cb9-f160-490a-812e-56aba42450f3
+[2026-03-25T21:22:36.530Z] [resolveImageKeys] Resolved "sleepy_face" → __SYMBOL__:166b84ee-44cb-432b-9202-8737511086d8
+[2026-03-25T21:22:36.705Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-25T21:22:36.873Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
+[2026-03-25T21:22:36.874Z] [resolveImageKeys] Done. Resolved 6, unresolved 0: 
+[2026-03-25T21:22:54.288Z] [resolveImageKeys] Resolving 6 keys: blue_circle, red_circle, green_circle, yellow_circle, back_arrow, life_preserver (format=internal, useUnapproved=true)
+[2026-03-25T21:22:54.693Z] [resolveImageKeys] Resolved "blue_circle" → __SYMBOL__:428c3c7b-5520-4889-9bad-81796ac12c94
+[2026-03-25T21:22:55.336Z] [resolveImageKeys] Resolved "red_circle" → __SYMBOL__:8e127124-bcdb-4339-871e-f19e43a73de1
+[2026-03-25T21:22:55.669Z] [resolveImageKeys] Resolved "green_circle" → __SYMBOL__:f2f1ac04-0010-43b6-84a9-c16345832585
+[2026-03-25T21:22:55.957Z] [resolveImageKeys] Resolved "yellow_circle" → __SYMBOL__:b984057e-9f6d-478e-88cc-8c8af06605b9
+[2026-03-25T21:22:56.121Z] [resolveImageKeys] Resolved "back_arrow" → __SYMBOL__:9783a8fc-ef18-44a8-8c69-4f7f4c4d9694
+[2026-03-25T21:22:56.283Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-25T21:22:56.284Z] [resolveImageKeys] Done. Resolved 6, unresolved 0: 
+[2026-03-25T21:24:02.968Z] [resolveImageKeys] Resolving 1 keys: stop_sign (format=internal, useUnapproved=true)
+[2026-03-25T21:24:04.408Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
+[2026-03-25T21:24:04.411Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-03-25T21:24:14.062Z] [resolveImageKeys] Resolving 6 keys: game_controller, music_notes, magnifying_glass, sleepy_face, life_preserver, stop_sign (format=internal, useUnapproved=true)
+[2026-03-25T21:24:14.220Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-03-25T21:24:14.376Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-25T21:24:14.531Z] [resolveImageKeys] Resolved "magnifying_glass" → __SYMBOL__:2db13cb9-f160-490a-812e-56aba42450f3
+[2026-03-25T21:24:14.684Z] [resolveImageKeys] Resolved "sleepy_face" → __SYMBOL__:166b84ee-44cb-432b-9202-8737511086d8
+[2026-03-25T21:24:14.837Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-25T21:24:14.999Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
+[2026-03-25T21:24:15.000Z] [resolveImageKeys] Done. Resolved 6, unresolved 0: 
+[2026-03-25T21:24:30.834Z] [resolveImageKeys] Resolving 5 keys: music_notes, volume_high, volume_mute, stop_sign, life_preserver (format=internal, useUnapproved=true)
+[2026-03-25T21:24:32.116Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-25T21:24:32.275Z] [resolveImageKeys] Resolved "volume_high" → __SYMBOL__:57696123-2cb3-4cc7-811b-10024c31b9cd
+[2026-03-25T21:24:32.436Z] [resolveImageKeys] No symbol found for "volume_mute"
+[2026-03-25T21:24:32.595Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
+[2026-03-25T21:24:32.754Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-25T21:24:32.756Z] [resolveImageKeys] Done. Resolved 4, unresolved 1: volume_mute
+[2026-03-25T21:24:32.758Z] [queueGeneration] Queuing 1 keys: volume_mute (hasCallback=true)
+[2026-03-25T21:24:32.928Z] [processQueue] Generating "volume_mute"...
+[2026-03-25T21:24:38.865Z] [processQueue] Generated "volume_mute" → 05cc2123-ed65-4f96-a243-797269f2f801 (1 total)
+[2026-03-25T21:24:44.541Z] [resolveImageKeys] Resolving 5 keys: music_notes, volume_high, volume_mute, stop_sign, life_preserver (format=internal, useUnapproved=true)
+[2026-03-25T21:24:44.700Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-25T21:24:44.858Z] [resolveImageKeys] Resolved "volume_high" → __SYMBOL__:57696123-2cb3-4cc7-811b-10024c31b9cd
+[2026-03-25T21:24:45.031Z] [resolveImageKeys] Resolved "volume_mute" → __SYMBOL__:05cc2123-ed65-4f96-a243-797269f2f801
+[2026-03-25T21:24:45.188Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
+[2026-03-25T21:24:45.345Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-25T21:24:45.347Z] [resolveImageKeys] Done. Resolved 5, unresolved 0: 
+[2026-03-25T21:24:53.275Z] [resolveImageKeys] Resolving 2 keys: pause_button, rewind_button (format=internal, useUnapproved=true)
+[2026-03-25T21:24:53.457Z] [resolveImageKeys] Resolved "pause_button" → __SYMBOL__:41895f6f-cda7-4b3d-bd89-afea054a38b2
+[2026-03-25T21:24:53.617Z] [resolveImageKeys] No symbol found for "rewind_button"
+[2026-03-25T21:24:53.618Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: rewind_button
+[2026-03-25T21:24:53.620Z] [queueGeneration] Queuing 1 keys: rewind_button (hasCallback=true)
+[2026-03-25T21:24:53.782Z] [processQueue] Generating "rewind_button"...
+[2026-03-25T21:24:58.530Z] [processQueue] Generated "rewind_button" → 6ac2373f-7e79-4ea3-b8da-ee973e8ee073 (1 total)
+[2026-03-25T21:25:00.741Z] [resolveImageKeys] Resolving 5 keys: music_notes, volume_high, volume_mute, stop_sign, life_preserver (format=internal, useUnapproved=true)
+[2026-03-25T21:25:00.900Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-25T21:25:01.073Z] [resolveImageKeys] Resolved "volume_high" → __SYMBOL__:57696123-2cb3-4cc7-811b-10024c31b9cd
+[2026-03-25T21:25:01.231Z] [resolveImageKeys] Resolved "volume_mute" → __SYMBOL__:05cc2123-ed65-4f96-a243-797269f2f801
+[2026-03-25T21:25:01.389Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
+[2026-03-25T21:25:01.546Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-25T21:25:01.548Z] [resolveImageKeys] Done. Resolved 5, unresolved 0: 
+[2026-03-26T10:22:49.597Z] [resolveImageKeys] Resolving 8 keys: pencil_drawing, music_notes, picture_frame, game_controller, person_yawning, life_preserver, pause_symbol, stop_sign (format=internal, useUnapproved=true)
+[2026-03-26T10:22:49.752Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-26T10:22:49.904Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-26T10:22:50.061Z] [resolveImageKeys] Resolved "picture_frame" → __SYMBOL__:4376a162-6180-4357-b448-1a28a011f97b
+[2026-03-26T10:22:50.233Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-03-26T10:22:50.387Z] [resolveImageKeys] Resolved "person_yawning" → __SYMBOL__:a49afb33-4de1-4728-b67d-c4b287b2ef8a
+[2026-03-26T10:22:50.539Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-26T10:22:50.694Z] [resolveImageKeys] Resolved "pause_symbol" → __SYMBOL__:a5135144-1b9e-48d2-a919-b242f7d14a52
+[2026-03-26T10:22:50.856Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
+[2026-03-26T10:22:50.858Z] [resolveImageKeys] Done. Resolved 8, unresolved 0: 
+[2026-03-26T10:23:10.661Z] [resolveImageKeys] Resolving 6 keys: dog_face, cat_face, forest_trees, back_arrow, plus_sign, life_preserver (format=internal, useUnapproved=true)
+[2026-03-26T10:23:12.076Z] [resolveImageKeys] Resolved "dog_face" → __SYMBOL__:16ed7338-6d05-4539-8907-6becc9ba2066
+[2026-03-26T10:23:12.245Z] [resolveImageKeys] Resolved "cat_face" → __SYMBOL__:01b1412f-16c0-4b5f-bc84-1d420604f4cd
+[2026-03-26T10:23:12.397Z] [resolveImageKeys] No symbol found for "forest_trees"
+[2026-03-26T10:23:12.549Z] [resolveImageKeys] Resolved "back_arrow" → __SYMBOL__:9783a8fc-ef18-44a8-8c69-4f7f4c4d9694
+[2026-03-26T10:23:12.700Z] [resolveImageKeys] Resolved "plus_sign" → __SYMBOL__:651b735a-d40b-4550-bcf3-fc6df7c61bc0
+[2026-03-26T10:23:12.855Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-26T10:23:12.855Z] [resolveImageKeys] Done. Resolved 5, unresolved 1: forest_trees
+[2026-03-26T10:23:12.857Z] [queueGeneration] Queuing 1 keys: forest_trees (hasCallback=true)
+[2026-03-26T10:23:13.811Z] [processQueue] Generating "forest_trees"...
+[2026-03-26T10:23:23.422Z] [processQueue] Generated "forest_trees" → 410dc09e-4717-451e-9c72-8c52e840e794 (1 total)
+[2026-03-26T10:23:29.035Z] [resolveImageKeys] Resolving 6 keys: car_side, delivery_truck, airplane, locomotive, back_arrow, life_preserver (format=internal, useUnapproved=true)
+[2026-03-26T10:23:29.194Z] [resolveImageKeys] Resolved "car_side" → __SYMBOL__:61650331-cd95-4ed3-8a4b-d3319d7c4fc3
+[2026-03-26T10:23:29.351Z] [resolveImageKeys] No symbol found for "delivery_truck"
+[2026-03-26T10:23:29.508Z] [resolveImageKeys] No symbol found for "airplane"
+[2026-03-26T10:23:29.667Z] [resolveImageKeys] No symbol found for "locomotive"
+[2026-03-26T10:23:29.840Z] [resolveImageKeys] Resolved "back_arrow" → __SYMBOL__:9783a8fc-ef18-44a8-8c69-4f7f4c4d9694
+[2026-03-26T10:23:30.003Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-26T10:23:30.004Z] [resolveImageKeys] Done. Resolved 3, unresolved 3: delivery_truck, airplane, locomotive
+[2026-03-26T10:23:30.006Z] [queueGeneration] Queuing 3 keys: delivery_truck, airplane, locomotive (hasCallback=true)
+[2026-03-26T10:23:30.170Z] [processQueue] Generating "delivery_truck"...
+[2026-03-26T10:23:35.982Z] [processQueue] Generated "delivery_truck" → 5ca4d762-ca11-4359-8870-7fcd6892f1af (1 total)
+[2026-03-26T10:23:40.141Z] [processQueue] Generating "airplane"...
+[2026-03-26T10:23:46.744Z] [processQueue] Generated "airplane" → e3cc65af-5fc0-4bf4-8586-fecda4c819fb (2 total)
+[2026-03-26T10:23:47.347Z] [resolveImageKeys] Resolving 8 keys: pencil_drawing, music_notes, picture_frame, game_controller, person_yawning, life_preserver, pause_symbol, stop_sign (format=internal, useUnapproved=true)
+[2026-03-26T10:23:48.774Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-26T10:23:48.930Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-26T10:23:49.083Z] [resolveImageKeys] Resolved "picture_frame" → __SYMBOL__:4376a162-6180-4357-b448-1a28a011f97b
+[2026-03-26T10:23:49.236Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-03-26T10:23:49.390Z] [resolveImageKeys] Resolved "person_yawning" → __SYMBOL__:a49afb33-4de1-4728-b67d-c4b287b2ef8a
+[2026-03-26T10:23:49.543Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-26T10:23:49.696Z] [resolveImageKeys] Resolved "pause_symbol" → __SYMBOL__:a5135144-1b9e-48d2-a919-b242f7d14a52
+[2026-03-26T10:23:49.847Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
+[2026-03-26T10:23:49.848Z] [resolveImageKeys] Done. Resolved 8, unresolved 0: 
+[2026-03-26T10:23:50.906Z] [processQueue] Generating "locomotive"...
+[2026-03-26T10:23:56.341Z] [resolveImageKeys] Resolving 4 keys: color_palette, eraser_tool, back_arrow, life_preserver (format=internal, useUnapproved=true)
+[2026-03-26T10:23:56.505Z] [resolveImageKeys] Resolved "color_palette" → __SYMBOL__:33ea7620-2266-44d9-bcc4-d0c226b3ae82
+[2026-03-26T10:23:56.661Z] [resolveImageKeys] No symbol found for "eraser_tool"
+[2026-03-26T10:23:56.813Z] [resolveImageKeys] Resolved "back_arrow" → __SYMBOL__:9783a8fc-ef18-44a8-8c69-4f7f4c4d9694
+[2026-03-26T10:23:56.930Z] [processQueue] Generated "locomotive" → bf1f60b9-54b6-4a42-ab72-a4b9e0c452ee (3 total)
+[2026-03-26T10:23:56.972Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-26T10:23:56.974Z] [resolveImageKeys] Done. Resolved 3, unresolved 1: eraser_tool
+[2026-03-26T10:23:56.976Z] [queueGeneration] Queuing 1 keys: eraser_tool (hasCallback=true)
+[2026-03-26T10:23:57.136Z] [processQueue] Generating "eraser_tool"...
+[2026-03-26T10:24:04.270Z] [processQueue] Generated "eraser_tool" → 6fdd77f4-aadc-4519-8b87-60cd1e21dcff (1 total)
+[2026-03-26T10:25:31.591Z] [resolveImageKeys] Resolving 8 keys: pencil_drawing, music_notes, picture_frame, game_controller, person_yawning, life_preserver, pause_symbol, stop_sign (format=internal, useUnapproved=true)
+[2026-03-26T10:25:31.749Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-26T10:25:31.906Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-26T10:25:32.068Z] [resolveImageKeys] Resolved "picture_frame" → __SYMBOL__:4376a162-6180-4357-b448-1a28a011f97b
+[2026-03-26T10:25:32.219Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-03-26T10:25:32.372Z] [resolveImageKeys] Resolved "person_yawning" → __SYMBOL__:a49afb33-4de1-4728-b67d-c4b287b2ef8a
+[2026-03-26T10:25:32.524Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-26T10:25:32.677Z] [resolveImageKeys] Resolved "pause_symbol" → __SYMBOL__:a5135144-1b9e-48d2-a919-b242f7d14a52
+[2026-03-26T10:25:32.830Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
+[2026-03-26T10:25:32.831Z] [resolveImageKeys] Done. Resolved 8, unresolved 0: 
+[2026-03-26T10:25:44.307Z] [resolveImageKeys] Resolving 4 keys: pause_symbol, stop_sign, next_track, back_arrow (format=internal, useUnapproved=true)
+[2026-03-26T10:25:44.466Z] [resolveImageKeys] Resolved "pause_symbol" → __SYMBOL__:a5135144-1b9e-48d2-a919-b242f7d14a52
+[2026-03-26T10:25:44.624Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
+[2026-03-26T10:25:44.783Z] [resolveImageKeys] No symbol found for "next_track"
+[2026-03-26T10:25:44.940Z] [resolveImageKeys] Resolved "back_arrow" → __SYMBOL__:9783a8fc-ef18-44a8-8c69-4f7f4c4d9694
+[2026-03-26T10:25:44.942Z] [resolveImageKeys] Done. Resolved 3, unresolved 1: next_track
+[2026-03-26T10:25:44.943Z] [queueGeneration] Queuing 1 keys: next_track (hasCallback=true)
+[2026-03-26T10:25:45.107Z] [processQueue] Generating "next_track"...
+[2026-03-26T10:25:50.814Z] [processQueue] Generated "next_track" → 38060ed6-d9ff-4fe1-8b85-5fb781623be8 (1 total)
+[2026-03-26T10:26:25.369Z] [resolveImageKeys] Resolving 1 keys: previous_track (format=internal, useUnapproved=true)
+[2026-03-26T10:26:26.624Z] [resolveImageKeys] No symbol found for "previous_track"
+[2026-03-26T10:26:26.627Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: previous_track
+[2026-03-26T10:26:26.630Z] [queueGeneration] Queuing 1 keys: previous_track (hasCallback=true)
+[2026-03-26T10:26:26.791Z] [processQueue] Generating "previous_track"...
+[2026-03-26T10:26:32.191Z] [processQueue] Generated "previous_track" → 5a0162b2-6413-4ea3-81fc-8d72a5051681 (1 total)
+[2026-03-26T10:26:39.983Z] [resolveImageKeys] Resolving 8 keys: pencil_drawing, music_notes, picture_frame, game_controller, person_yawning, life_preserver, pause_symbol, stop_sign (format=internal, useUnapproved=true)
+[2026-03-26T10:26:40.141Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-26T10:26:40.298Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-26T10:26:40.457Z] [resolveImageKeys] Resolved "picture_frame" → __SYMBOL__:4376a162-6180-4357-b448-1a28a011f97b
+[2026-03-26T10:26:40.613Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-03-26T10:26:40.770Z] [resolveImageKeys] Resolved "person_yawning" → __SYMBOL__:a49afb33-4de1-4728-b67d-c4b287b2ef8a
+[2026-03-26T10:26:40.934Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-26T10:26:41.091Z] [resolveImageKeys] Resolved "pause_symbol" → __SYMBOL__:a5135144-1b9e-48d2-a919-b242f7d14a52
+[2026-03-26T10:26:41.262Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
+[2026-03-26T10:26:41.263Z] [resolveImageKeys] Done. Resolved 8, unresolved 0: 
+[2026-03-26T10:26:53.137Z] [resolveImageKeys] Resolving 8 keys: pencil_drawing, music_notes, picture_frame, game_controller, person_yawning, life_preserver, pause_symbol, stop_sign (format=internal, useUnapproved=true)
+[2026-03-26T10:26:53.299Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-26T10:26:53.460Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-26T10:26:53.619Z] [resolveImageKeys] Resolved "picture_frame" → __SYMBOL__:4376a162-6180-4357-b448-1a28a011f97b
+[2026-03-26T10:26:53.780Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-03-26T10:26:53.938Z] [resolveImageKeys] Resolved "person_yawning" → __SYMBOL__:a49afb33-4de1-4728-b67d-c4b287b2ef8a
+[2026-03-26T10:26:54.099Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-26T10:26:54.259Z] [resolveImageKeys] Resolved "pause_symbol" → __SYMBOL__:a5135144-1b9e-48d2-a919-b242f7d14a52
+[2026-03-26T10:26:54.418Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
+[2026-03-26T10:26:54.419Z] [resolveImageKeys] Done. Resolved 8, unresolved 0: 

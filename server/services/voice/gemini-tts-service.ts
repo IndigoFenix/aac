@@ -68,7 +68,7 @@ export async function synthesize(
 
   const ai = getClient();
   const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: "gemini-2.5-flash-preview-tts",
     contents: `Say the following in ${language}, exactly as written, with natural intonation. Do not add anything else:\n\n${text}`,
     config: {
       responseModalities: [Modality.AUDIO],

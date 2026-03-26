@@ -78,6 +78,8 @@ interface DualAgentConversationBoxProps {
   selectedSymbols?: string[];
   onClearSymbols?: () => void;
   onBoardUpdate?: (board: ParsedBoardData) => void;
+  onSetBoard?: (data: { board: ParsedBoardData; name: string; boardId: string }) => void;
+  onUnloadBoard?: () => void;
   currentBoard?: ParsedBoardData | null;
   boardMode: 'ai' | 'db';
   onBoardModeChange: (mode: 'ai' | 'db') => void;
@@ -101,6 +103,8 @@ export function DualAgentConversationBox({
   selectedSymbols,
   onClearSymbols,
   onBoardUpdate,
+  onSetBoard,
+  onUnloadBoard,
   currentBoard,
   boardMode,
   onBoardModeChange,
@@ -143,6 +147,8 @@ export function DualAgentConversationBox({
     cancelVoiceRecording,
     setCurrentBoard,
     setOnBoardUpdate,
+    setOnSetBoard,
+    setOnUnloadBoard,
     monitorError,
     monitorConsecutiveFailures,
     emote,
@@ -171,10 +177,18 @@ export function DualAgentConversationBox({
   const hasInitializedRef = useRef(false);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Set up board update callback
+  // Set up board update callbacks
   useEffect(() => {
     setOnBoardUpdate(onBoardUpdate || null);
   }, [onBoardUpdate, setOnBoardUpdate]);
+
+  useEffect(() => {
+    setOnSetBoard(onSetBoard || null);
+  }, [onSetBoard, setOnSetBoard]);
+
+  useEffect(() => {
+    setOnUnloadBoard(onUnloadBoard || null);
+  }, [onUnloadBoard, setOnUnloadBoard]);
 
   // Sync current board to context
   useEffect(() => {

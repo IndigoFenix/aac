@@ -64,6 +64,8 @@ interface DualAgentContextType {
   // Board management
   setCurrentBoard: (board: ParsedBoardData | null) => void;
   setOnBoardUpdate: (callback: ((board: ParsedBoardData) => void) | null) => void;
+  setOnSetBoard: (callback: ((data: { board: ParsedBoardData; name: string; boardId: string }) => void) | null) => void;
+  setOnUnloadBoard: (callback: (() => void) | null) => void;
 
   // Board patch (from detection)
   boardPatch: BoardPatch | null;
@@ -183,6 +185,8 @@ function DualAgentProviderInner({
   const [symbolUpdate, setSymbolUpdate] = React.useState<{ buttonLabel: string; symbolPath: string } | null>(null);
   const [aiButtonPress, setAiButtonPress] = React.useState<{ label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] } | null>(null);
   const onBoardUpdateRef = useRef<((board: ParsedBoardData) => void) | null>(null);
+  const onSetBoardRef = useRef<((data: { board: ParsedBoardData; name: string; boardId: string }) => void) | null>(null);
+  const onUnloadBoardRef = useRef<(() => void) | null>(null);
 
   // Mic stream for activity monitor
   const [micStream, setMicStream] = useState<MediaStream | null>(null);
@@ -256,8 +260,13 @@ function DualAgentProviderInner({
 
   const handleSetBoard = useCallback((data: { board: ParsedBoardData; name: string; boardId: string }) => {
     setCurrentBoard(data.board);
-    onBoardUpdateRef.current?.(data.board);
+    onSetBoardRef.current?.(data);
     console.log(`[DualAgentContext] SET_BOARD: "${data.name}" loaded`);
+  }, []);
+
+  const handleUnloadBoard = useCallback(() => {
+    onUnloadBoardRef.current?.();
+    console.log(`[DualAgentContext] UNLOAD_BOARD: returning to dynamic board`);
   }, []);
 
   const handleAiButtonPress = useCallback((data: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] }) => {
@@ -275,6 +284,7 @@ function DualAgentProviderInner({
     onBoardUpdate: handleBoardUpdate,
     onBoardPatch: handleBoardPatch,
     onSetBoard: handleSetBoard,
+    onUnloadBoard: handleUnloadBoard,
     onAiButtonPress: handleAiButtonPress,
     onSymbolUpdate: handleSymbolUpdate,
     autoPlayAudio: true,
@@ -414,6 +424,20 @@ function DualAgentProviderInner({
     []
   );
 
+  const setOnSetBoard = useCallback(
+    (callback: ((data: { board: ParsedBoardData; name: string; boardId: string }) => void) | null) => {
+      onSetBoardRef.current = callback;
+    },
+    []
+  );
+
+  const setOnUnloadBoard = useCallback(
+    (callback: (() => void) | null) => {
+      onUnloadBoardRef.current = callback;
+    },
+    []
+  );
+
   return (
     <ProviderShell
       studentId={studentId}
@@ -424,6 +448,8 @@ function DualAgentProviderInner({
       symbolUpdate={symbolUpdate}
       aiButtonPress={aiButtonPress}
       setOnBoardUpdate={setOnBoardUpdate}
+      setOnSetBoard={setOnSetBoard}
+      setOnUnloadBoard={setOnUnloadBoard}
       sendMessage={sendMessage}
       stopVoiceRecording={stopVoiceRecording}
       registerAppCanvasCapture={registerAppCanvasCapture}
@@ -450,6 +476,8 @@ interface ProviderShellProps {
   symbolUpdate: { buttonLabel: string; symbolPath: string } | null;
   aiButtonPress: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] } | null;
   setOnBoardUpdate: (callback: ((board: ParsedBoardData) => void) | null) => void;
+  setOnSetBoard: (callback: ((data: { board: ParsedBoardData; name: string; boardId: string }) => void) | null) => void;
+  setOnUnloadBoard: (callback: (() => void) | null) => void;
   sendMessage: (message: string) => Promise<void>;
   stopVoiceRecording: () => Promise<void>;
   registerAppCanvasCapture: (fn: (() => Promise<Blob | null>) | null) => void;
@@ -480,6 +508,8 @@ function ProviderShell({
   symbolUpdate,
   aiButtonPress,
   setOnBoardUpdate,
+  setOnSetBoard,
+  setOnUnloadBoard,
   sendMessage,
   stopVoiceRecording,
   registerAppCanvasCapture,
@@ -532,6 +562,8 @@ function ProviderShell({
 
     setCurrentBoard,
     setOnBoardUpdate,
+    setOnSetBoard,
+    setOnUnloadBoard,
 
     boardPatch,
     symbolUpdate,

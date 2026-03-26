@@ -15,7 +15,7 @@ import type {
 } from "./live-provider";
 import { GeminiLiveProvider } from "./gemini-live-provider";
 import { parseBoardButtons } from "./interactive-agent";
-import { getAppDefinition } from "./app-registry";
+import { getAppDefinition, APP_REGISTRY } from "./app-registry";
 
 /** Extract a string argument from tool call args.
  *  Gemini's native function calling frequently uses wrong parameter names
@@ -165,6 +165,7 @@ export type ServerMessage =
   | { type: "app_open"; data: any }
   | { type: "app_close"; data: any }
   | { type: "set_board"; data: { board: any; name: string; boardId: string } }
+  | { type: "unload_board"; data: any }
   | { type: "ai_button_press"; data: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: any[] } }
   | { type: "debug"; data: any }
   | { type: "error"; data: string }
@@ -777,7 +778,6 @@ export class LiveRelay {
           .filter((a): a is import("./types").AACAppDefinition => !!a),
         availableBoards: (cached.state.availableBoards || []).map(b => ({ key: b.key, name: b.name })),
         hasLoadedBoard: !!cached.state.loadedBoardId,
-        youtubeEnabled: cached.state.appState?.enabledApps?.includes("youtube") || false,
         faceRecognitionActive: (cached.state.cachedContacts?.length || 0) > 0 || this.unknownFaceDescriptors.length > 0,
         isSilentMode: this.interactionMode === "silent",
         maxBoardItems: cached.state.maxBoardItems || 12,
@@ -867,6 +867,7 @@ export class LiveRelay {
             knownContacts: state.cachedContacts?.length ? state.cachedContacts : undefined,
             availableBoards: state.availableBoards?.length ? state.availableBoards : undefined,
             cachedSymbols: state.cachedSymbols?.length ? state.cachedSymbols : undefined,
+            enabledApps: APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id)).map(a => ({ id: a.id, name: a.name, description: a.description })),
             interpretationLevel: state.interpretationLevel ?? 1,
             autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
             useDirectAudio: true,
@@ -1310,23 +1311,18 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
         const buttons = toolArgsToButtons(args.buttons);
         const maxSlots = state?.maxBoardItems || 12;
 
+        // When a prebuilt board is loaded, redirect to rebuild_board for the side panel
+        if (state?.loadedBoardId) {
+          return ({
+            id: call.id,
+            name,
+            response: { error: "Cannot add buttons to a prebuilt board. Use rebuild_board() to update the 4-button side panel instead." },
+          });
+        }
+
         // Enforce button limit
         if (state) {
-          if (state.loadedBoardId) {
-            const nativeLabels = this.getNativePageButtonLabels(state);
-            const blankSlots = maxSlots - nativeLabels.length;
-            const newAiCount = state.aiAddedButtonLabels.length + buttons.length;
-            if (newAiCount > blankSlots) {
-              const available = blankSlots - state.aiAddedButtonLabels.length;
-              logDualAgent("LiveRelay.boardPatchRejected", { sessionId: this.sessionId, attempted: buttons.length, current: state.aiAddedButtonLabels.length, max: blankSlots });
-              return ({
-                id: call.id,
-                name,
-                response: { error: `Cannot add ${buttons.length} button(s) — would exceed ${blankSlots} blank slots on this custom board. Currently ${state.aiAddedButtonLabels.length} AI-added buttons, ${available} slot(s) available. Use remove_buttons() to remove AI-added buttons first.` },
-                    });
-            }
-            state.aiAddedButtonLabels = [...state.aiAddedButtonLabels, ...buttons.map(b => b.label)];
-          } else {
+          {
             const newCount = state.boardButtonLabels.length + buttons.length;
             if (newCount > maxSlots) {
               const available = maxSlots - state.boardButtonLabels.length;
@@ -1354,15 +1350,8 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
         // Confirm with board state
         let stateMsg = "";
         if (state) {
-          if (state.loadedBoardId) {
-            const nativeLabels = this.getNativePageButtonLabels(state);
-            const blankSlots = maxSlots - nativeLabels.length;
-            const available = blankSlots - state.aiAddedButtonLabels.length;
-            stateMsg = `Custom board — AI-added (${state.aiAddedButtonLabels.length}/${blankSlots}): ${state.aiAddedButtonLabels.join(", ")}. ${available} slots available.`;
-          } else {
-            const available = maxSlots - state.boardButtonLabels.length;
-            stateMsg = `Board: ${state.boardButtonLabels.length}/${maxSlots} buttons (${available} available): ${state.boardButtonLabels.join(", ")}`;
-          }
+          const available = maxSlots - state.boardButtonLabels.length;
+          stateMsg = `Board: ${state.boardButtonLabels.length}/${maxSlots} buttons (${available} available): ${state.boardButtonLabels.join(", ")}`;
         }
 
         return ({
@@ -1376,43 +1365,29 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
         const labels = args.labels as string[] || [];
         const maxSlots = state?.maxBoardItems || 12;
 
-        let effectiveRemoves = labels;
+        // When a prebuilt board is loaded, redirect to rebuild_board for the side panel
+        if (state?.loadedBoardId) {
+          return ({
+            id: call.id,
+            name,
+            response: { error: "Cannot remove buttons from a prebuilt board. Use rebuild_board() to update the 4-button side panel instead." },
+          });
+        }
+
         if (state) {
-          if (state.loadedBoardId) {
-            const nativeSet = new Set(this.getNativePageButtonLabels(state).map(l => l.toLowerCase()));
-            effectiveRemoves = labels.filter(l => !nativeSet.has(l.toLowerCase()));
-            if (effectiveRemoves.length === 0) {
-              return ({
-                id: call.id,
-                name,
-                response: { error: "Cannot remove fixed board buttons. Only AI-added buttons can be removed." },
-                    });
-            }
-            const removeSet = new Set(effectiveRemoves.map(l => l.toLowerCase()));
-            state.aiAddedButtonLabels = state.aiAddedButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
-            state.boardButtonLabels = state.boardButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
-          } else {
-            const removeSet = new Set(labels.map(l => l.toLowerCase()));
-            state.boardButtonLabels = state.boardButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
-          }
+          const removeSet = new Set(labels.map(l => l.toLowerCase()));
+          state.boardButtonLabels = state.boardButtonLabels.filter(l => !removeSet.has(l.toLowerCase()));
         }
 
         this.lastBoardUpdateTime = Date.now();
-        this.send({ type: "board_patch", data: { add: [], remove: effectiveRemoves } });
+        this.send({ type: "board_patch", data: { add: [], remove: labels } });
         this.turnAccum.boardChanged = true;
-        this.turnAccum.boardRemoveLabels.push(...effectiveRemoves);
+        this.turnAccum.boardRemoveLabels.push(...labels);
 
         let stateMsg = "";
         if (state) {
-          if (state.loadedBoardId) {
-            const nativeLabels = this.getNativePageButtonLabels(state);
-            const blankSlots = maxSlots - nativeLabels.length;
-            const available = blankSlots - state.aiAddedButtonLabels.length;
-            stateMsg = `Custom board — AI-added (${state.aiAddedButtonLabels.length}/${blankSlots}): ${state.aiAddedButtonLabels.join(", ") || "none"}. ${available} slots available.`;
-          } else {
-            const available = maxSlots - state.boardButtonLabels.length;
-            stateMsg = `Board: ${state.boardButtonLabels.length}/${maxSlots} buttons (${available} available): ${state.boardButtonLabels.join(", ") || "none"}`;
-          }
+          const available = maxSlots - state.boardButtonLabels.length;
+          stateMsg = `Board: ${state.boardButtonLabels.length}/${maxSlots} buttons (${available} available): ${state.boardButtonLabels.join(", ") || "none"}`;
         }
 
         return ({
@@ -1423,16 +1398,24 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
       }
 
       case "rebuild_board": {
-        const buttons = toolArgsToButtons(args.buttons);
+        const fullBoard = args.full_board === true;
+        const isPrebuiltLoaded = !!state?.loadedBoardId;
+        // If full_board is requested, unload the prebuilt board and use full 12-slot mode
+        const useSidePanel = isPrebuiltLoaded && !fullBoard;
+        const maxSlots = useSidePanel ? 4 : 12;
+        const buttons = toolArgsToButtons(args.buttons).slice(0, maxSlots);
 
         if (state) {
-          state.loadedBoardId = null;
-          state.loadedBoardData = undefined;
-          state.currentPageId = null;
-          state.pageHistory = [];
-          state.maxBoardItems = 12;
-          state.aiAddedButtonLabels = [];
-          state.boardButtonLabels = buttons.slice(0, 12).map(b => b.label);
+          if (!useSidePanel) {
+            // Full board rebuild — clear prebuilt board state
+            state.loadedBoardId = null;
+            state.loadedBoardData = undefined;
+            state.currentPageId = null;
+            state.pageHistory = [];
+            state.maxBoardItems = 12;
+            state.aiAddedButtonLabels = [];
+          }
+          state.boardButtonLabels = buttons.map(b => b.label);
         }
 
         // Resolve existing symbols from DB (fast, awaited so board includes them)
@@ -1441,16 +1424,22 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
         this.queueMissingSymbolGeneration(buttons, unresolvedKeys);
 
         this.lastBoardUpdateTime = Date.now();
+        // When unloading a prebuilt board, send unload_board first so client clears prebuiltBoardData
+        if (isPrebuiltLoaded && fullBoard) {
+          this.send({ type: "unload_board", data: {} });
+        }
         this.send({ type: "board", data: this.buildBoardFromButtons(buttons) });
         this.turnAccum.boardChanged = true;
         this.turnAccum.boardRebuilt = true;
         this.turnAccum.boardAddLabels.push(...buttons.map(b => b.label));
 
-        const available = state ? ((state.maxBoardItems || 12) - state.boardButtonLabels.length) : 0;
+        const stateMsg = useSidePanel
+          ? `Side panel rebuilt. ${buttons.length}/4 buttons: ${buttons.map(b => b.label).join(", ")}`
+          : `Board rebuilt. ${buttons.length}/12 buttons (${12 - buttons.length} available): ${buttons.map(b => b.label).join(", ")}`;
         return ({
           id: call.id,
           name,
-          response: { output: "ok", board_state: `Board rebuilt. ${state?.boardButtonLabels.length || 0}/12 buttons (${available} available): ${state?.boardButtonLabels.join(", ") || ""}` },
+          response: { output: "ok", board_state: stateMsg },
         });
       }
 
@@ -1487,7 +1476,6 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
 
           logDualAgent("LiveRelay.setBoard", { sessionId: this.sessionId, boardName: match.name, boardId: match.id });
 
-          const blankSlots = state.maxBoardItems - nativeLabels.length;
           return ({
             id: call.id,
             name,
@@ -1495,10 +1483,8 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
               output: "ok",
               board_name: match.name,
               pages: boardData.pages?.length || 1,
-              slots: state.maxBoardItems,
-              fixed_buttons: nativeLabels.join(", "),
-              blank_slots: blankSlots,
-              note: "You CANNOT remove the board's built-in buttons. Use add_buttons() for the blank slots.",
+              board_buttons: nativeLabels.join(", "),
+              note: "Board loaded. The board's buttons are shown in the main area (you CANNOT modify them). You have a 4-button side panel — use rebuild_board with up to 4 contextual buttons. Do NOT repeat the board's existing buttons.",
             },
           });
         } catch (err) {
@@ -1548,16 +1534,6 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
           id: call.id,
           name,
           response: { output: "ok" },
-        });
-      }
-
-      case "play_video": {
-        const query = extractStringArg(args, "query");
-        this.turnAccum.openAppData = { appId: "youtube", data: query };
-        return ({
-          id: call.id,
-          name,
-          response: { output: "ok", note: "Video search will execute after turn completes" },
         });
       }
 
@@ -2042,14 +2018,17 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
           console.error("[LiveRelay] YouTube search failed:", err);
         }
       } else if (openAppData.appId === "spotify" && openAppData.data) {
+        let appData: any = { query: openAppData.data };
         try {
           const results = await searchSpotify(openAppData.data);
           if (results) {
-            this.send({ type: "app_open", data: { appId: "spotify", appData: { trackId: results.trackId, title: results.title, artist: results.artist, albumArt: results.albumArt } } });
+            appData = { trackId: results.trackId, title: results.title, artist: results.artist, albumArt: results.albumArt };
           }
         } catch (err) {
           console.error("[LiveRelay] Spotify search failed:", err);
         }
+        // Always open the app — SpotifyApp handles missing trackId gracefully
+        this.send({ type: "app_open", data: { appId: "spotify", appData } });
       }
       // Non-deferred apps are sent immediately in handleSingleToolCall
     }

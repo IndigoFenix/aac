@@ -1,5 +1,5 @@
 // client-aac/src/components/AppMiniBoard.tsx
-// Compact 4-button panel shown alongside open apps.
+// Compact 4-button panel shown alongside open apps and prebuilt boards.
 // Renders in a narrow vertical column; positioned left (LTR) or right (RTL).
 
 import { motion, AnimatePresence } from "framer-motion";
@@ -28,8 +28,6 @@ export default function AppMiniBoard({ board, onButtonClick, language, voiceType
     }
     onButtonClick(button, text);
   };
-
-  if (buttons.length === 0) return null;
 
   return (
     <div className="flex flex-col gap-2 p-2 h-full w-28 flex-shrink-0 bg-gray-900/90">

@@ -107,6 +107,9 @@ import {
       vectorStoreId?: string; // For file_search tool support
       currentImage?: CurrentImage; // Image to inject into the next API call (not stored in history)
       images?: string[]; // Base64 data URLs for inline images (single-use, cleared after API call)
+      documents?: Array<{ dataUrl: string; filename: string }>; // Base64 data URLs for documents (pending attachment)
+      /** Maps a message timestamp to its attached documents (survives rebuilds without touching DB) */
+      private documentsByMessage = new Map<number, Array<{ dataUrl: string; filename: string }>>();
   
       cullMessages: boolean;
       cullMessagesTo: number;
@@ -160,6 +163,7 @@ import {
           loopDetectionConfig?: LoopDetectionConfig;
           currentImage?: CurrentImage;
           images?: string[];
+          documents?: Array<{ dataUrl: string; filename: string }>;
           providerConfig?: { provider: import("@shared/llm-options").LLMProviderKey; model: string };
       }){
           this.chatState = JSON.parse(JSON.stringify(settings.chatState));
@@ -223,6 +227,10 @@ import {
 
           // Inline images from client (base64 data URLs, single-use)
           this.images = settings.images;
+
+          // Attached documents (base64 data URLs, single-use)
+          this.documents = settings.documents;
+
       }
 
       // Set vector store ID for file search (can be set after construction)
@@ -237,6 +245,18 @@ import {
   
       // Add messages to history and run toolCalls if included.
       async persistMessages(messages: ChatMessage[]) {
+          // Associate pending documents with the last user message's timestamp
+          if (this.documents && this.documents.length > 0) {
+              const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+              if (lastUserMsg) {
+                  const ts = lastUserMsg.timestamp || Date.now();
+                  lastUserMsg.timestamp = ts;
+                  this.documentsByMessage.set(ts, this.documents);
+
+              }
+              this.documents = undefined;
+          }
+
           for (const message of messages) {
               if (message.toolCalls) {
                   for (const toolCall of message.toolCalls) {
@@ -245,7 +265,7 @@ import {
                       }
                   }
               }
-  
+
               await this.addMessage(message);
   
               if (message.toolCalls) {
@@ -357,11 +377,29 @@ import {
               }
 
               if (stringifiedContent && message.role !== 'tool') {
-                  items.push({
-                      type: "message",
-                      role: message.role as "user" | "assistant" | "system",
-                      content: stringifiedContent,
-                  });
+                  // Check for attached documents on this message (stored in-memory, not in DB)
+                  const docs = message.timestamp ? this.documentsByMessage.get(message.timestamp) : undefined;
+                  if (docs && docs.length > 0) {
+                      const parts: GPTContentPart[] = [
+                          { type: 'input_text', text: stringifiedContent },
+                          ...docs.map(doc => ({
+                              type: 'input_document' as const,
+                              data_url: doc.dataUrl,
+                              filename: doc.filename,
+                          })),
+                      ];
+                      items.push({
+                          type: "message",
+                          role: message.role as "user" | "assistant" | "system",
+                          content: parts,
+                      });
+                  } else {
+                      items.push({
+                          type: "message",
+                          role: message.role as "user" | "assistant" | "system",
+                          content: stringifiedContent,
+                      });
+                  }
               }
           }
 
@@ -957,10 +995,24 @@ import {
               }
 
               if (stringifiedContent && message.role !== 'tool') {
-                  messages.push({
-                      role: message.role as "user" | "assistant" | "system",
-                      content: stringifiedContent,
-                  });
+                  // Check for attached documents on this message (stored in-memory, not in DB)
+                  const docs = message.timestamp ? this.documentsByMessage.get(message.timestamp) : undefined;
+                  if (docs && docs.length > 0) {
+                      const parts: any[] = [{ type: 'text', text: stringifiedContent }];
+                      for (const doc of docs) {
+                          parts.push({ type: 'input_document', data_url: doc.dataUrl, filename: doc.filename });
+                      }
+
+                      messages.push({
+                          role: message.role as "user" | "assistant" | "system",
+                          content: parts,
+                      });
+                  } else {
+                      messages.push({
+                          role: message.role as "user" | "assistant" | "system",
+                          content: stringifiedContent,
+                      });
+                  }
               }
           }
 

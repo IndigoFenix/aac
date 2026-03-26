@@ -223,18 +223,20 @@ export class DualAgentService {
         : Promise.resolve(undefined),
     ]);
 
-    // Default Gemini voices based on student gender:
+    // Derive voice types from student gender:
     // Student gets a voice matching their gender, AI gets a different female voice.
     const gender = (student as any)?.gender as string | undefined;
+    const studentFallback = gender === "female" ? "girl" : "boy";
+    const aiFallback = "woman"; // AI always uses a distinct female voice
     const defaultStudentGeminiVoice = gender === "female" ? "Leda" : "Puck";
-    const defaultAiGeminiVoice = defaultStudentGeminiVoice === "Leda" ? "Kore" : "Kore";
+    const defaultAiGeminiVoice = "Kore";
 
     // ElevenLabs can be toggled off without removing the stored config
     const elEnabled = aac?.elevenlabsEnabled !== false;
 
     return {
       aiVoice: {
-        fallbackType: (aac?.voiceType as any) || "woman",
+        fallbackType: aiFallback,
         customVoice: aiCustom || null,
         language: student?.primaryLanguage || "en",
         elevenlabsApiKey: elEnabled ? (aac?.elevenlabsApiKey || undefined) : undefined,
@@ -242,7 +244,7 @@ export class DualAgentService {
         geminiVoiceName: (aac as any)?.geminiAiVoice || defaultAiGeminiVoice,
       },
       studentVoice: {
-        fallbackType: (aac?.studentVoiceType as any) || "boy",
+        fallbackType: studentFallback as any,
         customVoice: studentCustom || null,
         language: student?.primaryLanguage || "en",
         elevenlabsApiKey: elEnabled ? (aac?.elevenlabsApiKey || undefined) : undefined,
@@ -416,6 +418,7 @@ export class DualAgentService {
         knownContacts: cachedContacts.length > 0 ? cachedContacts : undefined,
         availableBoards: availableBoards.length > 0 ? availableBoards : undefined,
         cachedSymbols: cachedSymbols.length > 0 ? cachedSymbols : undefined,
+        enabledApps: enabledAppDefs.map(a => ({ id: a.id, name: a.name, description: a.description })),
         interpretationLevel: student.aacSettings?.interpretationLevel ?? 2,
         autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
       });
@@ -667,6 +670,7 @@ export class DualAgentService {
           cachedSymbols: state.cachedSymbols,
           currentEmote: state.currentEmote,
           activeApp: state.appState.activeApp,
+          enabledApps: enabledApps.map(a => ({ id: a.id, name: a.name, description: a.description })),
           interpretationLevel: state.interpretationLevel,
           autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
         });

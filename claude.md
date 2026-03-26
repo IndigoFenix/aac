@@ -7,6 +7,7 @@ Currently we are focusing on an AAC platform for children with Rett's Syndrome. 
 ## Structure
 The platform contains two separate clients: The regular client, used by clinicians and caretakers, and the AAC client, used by the students themselves. Both share a common server.
 All calls to the API from the client need to use the apiRequest function.
+The project uses ES Modules, don't use __dirname
 
 ## Client
 This operates through a standard web-based interface containing an AI chat. The chat should be capable of interacting with all parts of the platform if instructed.
