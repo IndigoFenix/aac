@@ -1129,6 +1129,7 @@ export const en = {
     website: "Website",
     logo: "Logo",
     logoHint: "JPG, PNG up to 10MB",
+    fileTooLarge: "File is too large. Maximum size is {max}.",
     idNumber: "Organization ID",
     idNumberPlaceholder: "e.g. 123456",
     idType: "ID Type",
@@ -1608,6 +1609,8 @@ export const en = {
     alreadyAdded: "Already added",
     pending: "Pending",
     approve: "Approve",
+    uploadError: "Upload Error",
+    fileTooLarge: "File is too large. Maximum size is {max}.",
   },
 
   // ============================================================================
@@ -1748,6 +1751,7 @@ export const en = {
     NO_RESPONSE: "An error occurred while processing the response.",
     LLM_ERROR: "An error occurred while calling the AI model.",
     PARSE_ERROR: "An error occurred while processing the response.",
+    TOKEN_LIMIT: "Token usage limit error.",
     UNEXPECTED_ERROR: "An unexpected error occurred.",
     INIT_FAILED: "Failed to initialize session.",
     MESSAGE_REQUIRED: "Message is required.",

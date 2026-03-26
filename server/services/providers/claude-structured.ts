@@ -91,10 +91,14 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
             content: item.content,
           });
         } else {
-          // Multimodal content — convert input_image parts to Claude's native format
+          // Multimodal content — convert to Claude's native format
           const parts = (item.content as any[]);
-          const hasImages = parts.some((p: any) => p.type === "input_image");
-          if (hasImages) {
+
+          const hasMultimodal = parts.some((p: any) =>
+            p.type === "input_image" || p.type === "input_document"
+          );
+
+          if (hasMultimodal) {
             const claudeParts: any[] = [];
             for (const p of parts) {
               if (p.type === "input_text" && p.text) {
@@ -108,8 +112,25 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
                     source: { type: "base64", media_type: match[1], data: match[2] },
                   });
                 }
+              } else if (p.type === "input_document" && p.data_url) {
+                const match = (p.data_url as string).match(/^data:([^;]+);base64,(.+)$/);
+                if (match) {
+                  const mimeType = match[1];
+                  const base64Data = match[2];
+                  if (mimeType === "application/pdf") {
+                    claudeParts.push({
+                      type: "document",
+                      source: { type: "base64", media_type: "application/pdf", data: base64Data },
+                    });
+                  } else {
+                    // Text-based files: decode and send as text
+                    const text = Buffer.from(base64Data, "base64").toString("utf-8");
+                    claudeParts.push({ type: "text", text: `--- ${p.filename || "file"} ---\n${text}\n---` });
+                  }
+                }
               }
             }
+
             messages.push({
               role: item.role as "user" | "assistant",
               content: claudeParts,

@@ -84,15 +84,17 @@ export default function SpotifyApp({ trackId, title, artist, studentId, onClose 
           if (cancelled) return;
           deviceIdRef.current = device_id;
           setMode("sdk");
-          // Start playback
-          fetch(`https://api.spotify.com/v1/me/player/play?device_id=${device_id}`, {
-            method: "PUT",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${tokenRef.current}`,
-            },
-            body: JSON.stringify({ uris: [`spotify:track:${trackId}`] }),
-          }).catch(() => {});
+          // Start playback if we have a track
+          if (trackId) {
+            fetch(`https://api.spotify.com/v1/me/player/play?device_id=${device_id}`, {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${tokenRef.current}`,
+              },
+              body: JSON.stringify({ uris: [`spotify:track:${trackId}`] }),
+            }).catch(() => {});
+          }
         });
 
         player.addListener("player_state_changed", (state: any) => {
@@ -171,7 +173,15 @@ export default function SpotifyApp({ trackId, title, artist, studentId, onClose 
           <div className="text-white text-xl animate-pulse">Loading...</div>
         )}
 
-        {mode === "embed" && (
+        {mode === "embed" && !trackId && (
+          <div className="text-center">
+            <span className="text-6xl block mb-4">🎧</span>
+            <p className="text-white text-xl font-semibold">{title}</p>
+            <p className="text-gray-400 mt-2">Spotify is ready</p>
+          </div>
+        )}
+
+        {mode === "embed" && trackId && (
           <iframe
             src={embedUrl}
             width="100%"

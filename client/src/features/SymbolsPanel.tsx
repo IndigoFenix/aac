@@ -390,6 +390,16 @@ function CreateSymbolDialog({ open, onClose, studentId, onCreated }: {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (f) {
+      const maxSizeMB = 5;
+      if (f.size > maxSizeMB * 1024 * 1024) {
+        toast({
+          title: t('symbols.uploadError') || 'Upload Error',
+          description: t('symbols.fileTooLarge', { max: `${maxSizeMB}MB` }) || `File is too large. Maximum size is ${maxSizeMB}MB.`,
+          variant: 'destructive',
+        });
+        e.target.value = '';
+        return;
+      }
       setFile(f);
       setPreview(URL.createObjectURL(f));
     }

@@ -798,6 +798,8 @@ interface GetMessageManagerInput {
   vectorStoreId?: string;
   /** Base64 data URLs for inline images */
   images?: string[];
+  /** Attached documents (base64 data URLs with filenames) */
+  documents?: Array<{ dataUrl: string; filename: string }>;
   /** Image to include with the current request (not stored in history) */
   currentImage?: CurrentImage;
   /** Override the system prompt instead of building it from persona/student settings */
@@ -1304,6 +1306,7 @@ Example button with custom symbol:
     memoryProcessor,
     vectorStoreId: input.vectorStoreId,
     images: input.images,
+    documents: input.documents,
     loopDetectionConfig: CLINIAACIAN_LOOP_DETECTION_CONFIG,
     currentImage: input.currentImage,
     providerConfig: llmConfig,
@@ -1433,6 +1436,9 @@ export interface OnMessageInput {
   /** Base64 data URLs for inline images (sent as multimodal content to the LLM) */
   images?: string[];
 
+  /** Attached documents (base64 data URLs with filenames) */
+  documents?: Array<{ dataUrl: string; filename: string }>;
+
   /** Image to include with the current request (not stored in history) */
   currentImage?: CurrentImage;
 
@@ -1452,9 +1458,14 @@ export interface OnMessageStreamingInput extends OnMessageInput {
   onSelectStudent?: (studentId: string) => void;
 }
 
+function isCreditLimitError(error: any): boolean {
+  const msg = error?.message || error?.error?.message || '';
+  return msg.includes('credit balance is too low') || msg.includes('billing');
+}
+
 export async function onMessage(input: OnMessageInput): Promise<MessageResponse> {
   try {
-    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, vectorStoreId, images, currentImage, systemPromptOverride } = input;
+    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, vectorStoreId, images, documents, currentImage, systemPromptOverride } = input;
 
     const { manager: messageManager, memoryValues } = await getMessageManager({
       userId,
@@ -1465,6 +1476,7 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
       featureContext,
       vectorStoreId,
       images,
+      documents,
       currentImage,
       systemPromptOverride,
     });
@@ -1528,7 +1540,7 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
     return {
       message: {
         role: "system",
-        content: "error:UNEXPECTED_ERROR",
+        content: isCreditLimitError(error) ? "error:TOKEN_LIMIT" : "error:UNEXPECTED_ERROR",
         timestamp: Date.now(),
       },
       sessionId: input.sessionId,
@@ -1543,7 +1555,7 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
  */
 export async function onMessageStreaming(input: OnMessageStreamingInput): Promise<MessageResponse> {
   try {
-    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, onThinkingUpdate, onNavigate, onSelectStudent, vectorStoreId, images, currentImage, systemPromptOverride } = input;
+    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, onThinkingUpdate, onNavigate, onSelectStudent, vectorStoreId, images, documents, currentImage, systemPromptOverride } = input;
 
     const { manager: messageManager, memoryValues } = await getMessageManager({
       userId,
@@ -1557,6 +1569,7 @@ export async function onMessageStreaming(input: OnMessageStreamingInput): Promis
       onSelectStudent,
       vectorStoreId,
       images,
+      documents,
       currentImage,
       systemPromptOverride,
     });
@@ -1615,7 +1628,7 @@ export async function onMessageStreaming(input: OnMessageStreamingInput): Promis
     return {
       message: {
         role: "system",
-        content: "error:UNEXPECTED_ERROR",
+        content: isCreditLimitError(error) ? "error:TOKEN_LIMIT" : "error:UNEXPECTED_ERROR",
         timestamp: Date.now(),
       },
       sessionId: input.sessionId,
@@ -1661,7 +1674,7 @@ export async function* onMessageMdStreaming(
   try {
     const {
       userId, studentId, sessionId, activeFeature, persona, messages,
-      featureContext, onThinkingUpdate, onNavigate, onSelectStudent, vectorStoreId, images,
+      featureContext, onThinkingUpdate, onNavigate, onSelectStudent, vectorStoreId, images, documents,
       currentImage, systemPromptOverride,
     } = input;
 
@@ -1677,6 +1690,7 @@ export async function* onMessageMdStreaming(
       onSelectStudent,
       vectorStoreId,
       images,
+      documents,
       currentImage,
       systemPromptOverride,
     });
@@ -1723,7 +1737,7 @@ export async function* onMessageMdStreaming(
       type: 'complete',
       message: {
         role: "system",
-        content: "error:UNEXPECTED_ERROR",
+        content: isCreditLimitError(error) ? "error:TOKEN_LIMIT" : "error:UNEXPECTED_ERROR",
         timestamp: Date.now(),
       },
       creditsUsed: 0,

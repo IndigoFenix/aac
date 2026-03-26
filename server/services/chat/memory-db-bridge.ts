@@ -536,9 +536,9 @@ export function isPathVisible(
 ): boolean {
   const p = normalizePath(path);
   const state = memoryState ?? { visible: [], page: {} };
-  
+
   // Explicit visibility in state
-  if (state.visible.includes(p)) return true;
+  if ((state.visible ?? []).includes(p)) return true;
   
   // Check schema defaults
   const tokens = splitPath(p);
@@ -589,7 +589,7 @@ export function getVisiblePaths(
   const state = memoryState ?? { visible: [], page: {} };
   
   // Add explicitly visible paths
-  visible.push(...state.visible.map(normalizePath));
+  visible.push(...(state.visible ?? []).map(normalizePath));
   
   // Add schema-default opened paths
   for (const field of fields) {

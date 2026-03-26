@@ -191,20 +191,51 @@ export class ClaudeChatProvider implements ChatProvider {
         // Multi-part content (text + images)
         const blocks: any[] = [];
         for (const part of msg.content as any[]) {
-          if (part.type === "text" && part.text) {
+          // Handle both OpenAI Chat ("text") and Responses API ("input_text") formats
+          if ((part.type === "text" || part.type === "input_text") && part.text) {
             blocks.push({ type: "text", text: part.text });
+          } else if (part.type === "input_image" && part.image_url) {
+            // OpenAI Responses API format: { type: "input_image", image_url: "data:..." }
+            const url: string = part.image_url;
+            if (url.startsWith("data:")) {
+              const match = url.match(/^data:([^;]+);base64,(.+)$/);
+              if (match) {
+                blocks.push({
+                  type: "image",
+                  source: { type: "base64", media_type: match[1] as any, data: match[2] },
+                });
+              }
+            }
           } else if (part.type === "image_url" && part.image_url?.url) {
+            // OpenAI Chat Completions format: { type: "image_url", image_url: { url: "data:..." } }
             const url: string = part.image_url.url;
             if (url.startsWith("data:")) {
               const match = url.match(/^data:([^;]+);base64,(.+)$/);
               if (match) {
                 blocks.push({
                   type: "image",
-                  source: { type: "base64", media_type: match[1], data: match[2] },
+                  source: { type: "base64", media_type: match[1] as any, data: match[2] },
                 });
               }
             } else {
               blocks.push({ type: "text", text: `[Image: ${url}]` });
+            }
+          } else if (part.type === "input_document" && part.data_url) {
+            const match = (part.data_url as string).match(/^data:([^;]+);base64,(.+)$/);
+            if (match) {
+              const mimeType = match[1];
+              const base64Data = match[2];
+              if (mimeType === "application/pdf") {
+                // Claude native PDF support
+                blocks.push({
+                  type: "document",
+                  source: { type: "base64", media_type: "application/pdf", data: base64Data },
+                });
+              } else {
+                // Text-based files: decode and send as text
+                const text = Buffer.from(base64Data, "base64").toString("utf-8");
+                blocks.push({ type: "text", text: `--- ${part.filename || "file"} ---\n${text}\n---` });
+              }
             }
           }
         }

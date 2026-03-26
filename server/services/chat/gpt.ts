@@ -37,7 +37,13 @@ export interface GPTImageContentPart {
   image_url: string; // data:image/jpeg;base64,... or https://...
 }
 
-export type GPTContentPart = GPTTextContentPart | GPTImageContentPart;
+export interface GPTDocumentContentPart {
+  type: "input_document";
+  data_url: string; // data:application/pdf;base64,...
+  filename: string;
+}
+
+export type GPTContentPart = GPTTextContentPart | GPTImageContentPart | GPTDocumentContentPart;
 
 /** Message item for Responses API input */
 export interface GPTMessageItem {

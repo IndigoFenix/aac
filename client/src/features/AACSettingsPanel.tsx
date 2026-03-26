@@ -67,6 +67,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   // Form state
   const [aiName, setAiName] = useState('');
   const [chatAgentPrompt, setChatAgentPrompt] = useState('');
+  const [elevenlabsEnabled, setElevenlabsEnabled] = useState(true);
   const [elevenlabsApiKey, setElevenlabsApiKey] = useState('');
   const [elevenlabsAiVoiceId, setElevenlabsAiVoiceId] = useState('');
   const [elevenlabsStudentVoiceId, setElevenlabsStudentVoiceId] = useState('');
@@ -157,6 +158,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const aac = (student as any).aacSettings;
       setAiName(aac?.aiName || '');
       setChatAgentPrompt(aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT);
+      setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
       setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || '');
       setElevenlabsStudentVoiceId(aac?.elevenlabsStudentVoiceId || '');
@@ -184,6 +186,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const aac = (student as any).aacSettings;
       const originalAiName = aac?.aiName || '';
       const originalPrompt = aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT;
+      const originalElevenlabsEnabled = aac?.elevenlabsEnabled !== false;
       const originalElevenlabsApiKey = aac?.elevenlabsApiKey || '';
       const originalElevenlabsAiVoiceId = aac?.elevenlabsAiVoiceId || '';
       const originalElevenlabsStudentVoiceId = aac?.elevenlabsStudentVoiceId || '';
@@ -204,6 +207,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setHasChanges(
         aiName !== originalAiName ||
         chatAgentPrompt !== originalPrompt ||
+        elevenlabsEnabled !== originalElevenlabsEnabled ||
         elevenlabsApiKey !== originalElevenlabsApiKey ||
         elevenlabsAiVoiceId !== originalElevenlabsAiVoiceId ||
         elevenlabsStudentVoiceId !== originalElevenlabsStudentVoiceId ||
@@ -223,17 +227,14 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         JSON.stringify(appConfig) !== JSON.stringify(originalAppConfig)
       );
     }
-  }, [aiName, chatAgentPrompt, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, allowReadProgress, allowReadReports, allowNotes, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, student]);
+  }, [aiName, chatAgentPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, allowReadProgress, allowReadReports, allowNotes, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, student]);
 
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: async (data: {
       aiName?: string;
       chatAgentPrompt: string;
-      voiceType?: string;
-      studentVoiceType?: string;
-      customVoiceId?: string | null;
-      customStudentVoiceId?: string | null;
+      elevenlabsEnabled?: boolean;
       elevenlabsApiKey?: string;
       elevenlabsAiVoiceId?: string;
       elevenlabsStudentVoiceId?: string;
@@ -278,6 +279,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
     updateMutation.mutate({
       aiName: aiName.trim() || undefined,
       chatAgentPrompt,
+      elevenlabsEnabled,
       elevenlabsApiKey: elevenlabsApiKey.trim() || undefined,
       elevenlabsAiVoiceId: elevenlabsAiVoiceId.trim() || undefined,
       elevenlabsStudentVoiceId: elevenlabsStudentVoiceId.trim() || undefined,
@@ -303,6 +305,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const aac = (student as any).aacSettings;
       setAiName(aac?.aiName || '');
       setChatAgentPrompt(aac?.chatAgentPrompt || DEFAULT_AAC_PROMPT);
+      setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || '');
       setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || '');
       setElevenlabsStudentVoiceId(aac?.elevenlabsStudentVoiceId || '');
@@ -467,15 +470,21 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
 
               {/* ElevenLabs Direct Voice Settings */}
               <div className="pt-4 border-t space-y-4">
-                <div className="space-y-0.5">
-                  <Label className="text-base font-medium">
-                    {t('aacSettings.elevenlabsTitle')}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    {t('aacSettings.elevenlabsDesc')}
-                  </p>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-base font-medium">
+                      {t('aacSettings.elevenlabsTitle')}
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      {t('aacSettings.elevenlabsDesc')}
+                    </p>
+                  </div>
+                  {(elevenlabsApiKey.trim() || elevenlabsAiVoiceId.trim() || elevenlabsStudentVoiceId.trim()) && (
+                    <Switch checked={elevenlabsEnabled} onCheckedChange={setElevenlabsEnabled} />
+                  )}
                 </div>
 
+                <div className={elevenlabsEnabled ? '' : 'opacity-50 pointer-events-none'}>
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
                     <Label className="text-sm text-muted-foreground">
@@ -628,6 +637,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                     </div>
                   </>
                 )}
+                </div>
               </div>
             </CardContent>
           </Card>

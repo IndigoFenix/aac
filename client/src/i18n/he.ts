@@ -1323,6 +1323,7 @@ export const he = {
     website: "אתר אינטרנט",
     logo: "לוגו",
     logoHint: "JPG, PNG עד 10MB",
+    fileTooLarge: "הקובץ גדול מדי. הגודל המרבי הוא {max}.",
     idNumber: "מספר זיהוי ארגון",
     idNumberPlaceholder: "לדוגמה: 123456",
     idType: "סוג זיהוי",
@@ -1801,6 +1802,8 @@ export const he = {
     alreadyAdded: "כבר נוסף",
     pending: "ממתין",
     approve: "אשר",
+    uploadError: "שגיאת העלאה",
+    fileTooLarge: "הקובץ גדול מדי. הגודל המרבי הוא {max}.",
   },
 
   // ============================================================================
@@ -1938,6 +1941,7 @@ export const he = {
     NO_RESPONSE: "אירעה שגיאה בעיבוד התגובה.",
     LLM_ERROR: "אירעה שגיאה בקריאה למודל הבינה המלאכותית.",
     PARSE_ERROR: "אירעה שגיאה בעיבוד התגובה.",
+    TOKEN_LIMIT: "שגיאת מגבלת שימוש בטוקנים.",
     UNEXPECTED_ERROR: "אירעה שגיאה בלתי צפויה.",
     INIT_FAILED: "אתחול המפגש נכשל.",
     MESSAGE_REQUIRED: "נדרשת הודעה.",

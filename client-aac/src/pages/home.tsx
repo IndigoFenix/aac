@@ -59,7 +59,7 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for interpret/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onInitializedChange, onYesNoChange, onRestartSessionReady, onPausedChange }: {
+function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onInitializedChange, onYesNoChange, onRestartSessionReady, onPausedChange, onActiveAppChange }: {
   onModeChange: (mode: 'interact' | 'silent') => void;
   onInterpretReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
   onDetectionChange?: (enabled: boolean) => void;
@@ -71,8 +71,9 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
   onYesNoChange?: (active: boolean, dismiss: () => void) => void;
   onRestartSessionReady?: (fn: (() => void) | null) => void;
   onPausedChange?: (paused: boolean, setPaused: (p: boolean) => void) => void;
+  onActiveAppChange?: (app: import("@/hooks/dual-agent-types").ActiveAppData | null, dismissApp: () => void, registerCapture: (fn: (() => Promise<Blob | null>) | null) => void) => void;
 }) {
-  const { interactionMode, interpretButtons, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, isInitialized, yesNoActive, dismissYesNo, clearSession, initialize, paused, setPaused } = useDualAgentContext();
+  const { interactionMode, interpretButtons, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, isInitialized, yesNoActive, dismissYesNo, clearSession, initialize, paused, setPaused, activeApp, dismissApp, registerAppCanvasCapture, studentId } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(interactionMode);
@@ -125,82 +126,34 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
     onPausedChange?.(paused, setPaused);
   }, [paused, setPaused, onPausedChange]);
 
+  useEffect(() => {
+    onActiveAppChange?.(activeApp, dismissApp, registerAppCanvasCapture);
+  }, [activeApp, dismissApp, registerAppCanvasCapture, onActiveAppChange]);
+
   return null;
 }
 
-/**
- * Renders the correct add-on app overlay based on the active app.
- * Apps are shown alongside a mini 4-button board panel.
- * Must be rendered inside DualAgentProvider.
- */
-function AppOverlayBridge({ boardData, onButtonClick, language, voiceType, isRTL, suppressLocalSpeech }: {
-  boardData: ParsedBoardData | null;
-  onButtonClick: (button: BoardButton, spokenText: string) => void;
-  language?: string;
-  voiceType?: string;
-  isRTL?: boolean;
-  suppressLocalSpeech?: boolean;
-}) {
-  const { activeApp, dismissApp, registerAppCanvasCapture, studentId } = useDualAgentContext();
-
-  // Determine which app component to render
-  let appContent: React.ReactNode = null;
-  if (activeApp?.appId === "youtube" && activeApp.appData?.videoId) {
-    appContent = (
-      <YouTubeApp
-        videoId={activeApp.appData.videoId}
-        title={activeApp.appData.title || "Video"}
-        onClose={dismissApp}
-      />
-    );
-  } else if (activeApp?.appId === "drawing") {
-    appContent = (
-      <DrawingApp
-        onClose={dismissApp}
-        onRegisterCapture={registerAppCanvasCapture}
-      />
-    );
-  } else if (activeApp?.appId === "music") {
-    appContent = <MusicApp onClose={dismissApp} />;
-  } else if (activeApp?.appId === "spotify" && activeApp.appData?.trackId) {
-    appContent = (
-      <SpotifyApp
-        trackId={activeApp.appData.trackId}
-        title={activeApp.appData.title || "Track"}
-        artist={activeApp.appData.artist || ""}
-        studentId={studentId}
-        onClose={dismissApp}
-      />
-    );
+/** Returns the app component for the given activeApp, or null */
+function renderAppContent(
+  activeApp: import("@/hooks/dual-agent-types").ActiveAppData | null,
+  dismissApp: () => void,
+  registerCapture: (fn: (() => Promise<Blob | null>) | null) => void,
+  studentId: string,
+): React.ReactNode {
+  if (!activeApp) return null;
+  if (activeApp.appId === "youtube" && activeApp.appData?.videoId) {
+    return <YouTubeApp videoId={activeApp.appData.videoId} title={activeApp.appData.title || "Video"} onClose={dismissApp} />;
   }
-
-  return (
-    <AnimatePresence>
-      {appContent && (
-        <motion.div
-          className={`fixed inset-0 z-50 flex ${isRTL ? "flex-row-reverse" : "flex-row"}`}
-          data-dwell-trap
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.15 }}
-        >
-          {/* Mini board panel */}
-          <AppMiniBoard
-            board={boardData}
-            onButtonClick={onButtonClick}
-            language={language}
-            voiceType={voiceType}
-            suppressLocalSpeech={suppressLocalSpeech}
-          />
-          {/* App content fills remaining space */}
-          <div className="flex-1 min-w-0 relative">
-            {appContent}
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
+  if (activeApp.appId === "drawing") {
+    return <DrawingApp onClose={dismissApp} onRegisterCapture={registerCapture} />;
+  }
+  if (activeApp.appId === "music") {
+    return <MusicApp onClose={dismissApp} />;
+  }
+  if (activeApp.appId === "spotify") {
+    return <SpotifyApp trackId={activeApp.appData?.trackId || ""} title={activeApp.appData?.title || activeApp.appData?.query || "Music"} artist={activeApp.appData?.artist || ""} studentId={studentId} onClose={dismissApp} />;
+  }
+  return null;
 }
 
 export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) {
@@ -258,6 +211,10 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   // AAC Board state - populated from chat responses
   const [boardData, setBoardData] = useState<ParsedBoardData | null>(null);
 
+  // Prebuilt board state — set when AI loads a custom board via set_board
+  // When set, the main area shows the prebuilt board and AI board updates go to a side panel
+  const [prebuiltBoardData, setPrebuiltBoardData] = useState<ParsedBoardData | null>(null);
+
   // Board patch state — from detection (incremental add/remove)
   const [boardPatchData, setBoardPatchData] = useState<import("@/hooks/dual-agent-types").BoardPatch | null>(null);
 
@@ -277,6 +234,11 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   // Dual-agent mode bridged from context
   const [dualAgentMode, setDualAgentMode] = useState<'interact' | 'silent'>('interact');
   const [aiSessionActive, setAiSessionActive] = useState(false);
+
+  // Active app state (bridged from DualAgentContext)
+  const [activeApp, setActiveApp] = useState<import("@/hooks/dual-agent-types").ActiveAppData | null>(null);
+  const dismissAppRef = useRef<() => void>(() => {});
+  const registerAppCanvasCaptureRef = useRef<(fn: (() => Promise<Blob | null>) | null) => void>(() => {});
 
   // Yes/No overlay state (bridged from DualAgentContext)
   const [yesNoActive, setYesNoActive] = useState(false);
@@ -706,6 +668,21 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     });
   }, []);
 
+  // Handle set_board — AI loaded a prebuilt board (separate from regular board updates)
+  const handleSetBoard = useCallback((data: { board: ParsedBoardData; name: string; boardId: string }) => {
+    console.log('[Home] Prebuilt board loaded:', data.name);
+    setPrebuiltBoardData(data.board);
+    // Clear AI side-panel board so it starts fresh
+    setBoardData(null);
+    boardHistoryRef.current = [];
+  }, []);
+
+  // Handle unload_board — AI returned to the fully dynamic board
+  const handleUnloadBoard = useCallback(() => {
+    console.log('[Home] Prebuilt board unloaded, returning to dynamic board');
+    setPrebuiltBoardData(null);
+  }, []);
+
   const handleBoardBack = useCallback(() => {
     const prev = boardHistoryRef.current.pop();
     if (prev) {
@@ -1056,13 +1033,14 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
         </motion.div>
 
         {/* Board Area — fills all remaining space */}
-        <div className="flex-1 min-h-0 overflow-hidden relative">
+        <div className={`flex-1 min-h-0 overflow-hidden relative ${(activeApp || prebuiltBoardData) ? `flex ${isRTL ? 'flex-row-reverse' : 'flex-row'}` : ''}`}
+          data-dwell-trap={activeApp ? true : undefined}
+        >
           <YesNoOverlay
             active={yesNoActive}
             onSelect={(choice) => {
               dismissYesNoRef.current?.();
               setYesNoActive(false);
-              // Translate the choice and voice it in the student's language
               const translatedChoice = t(choice === "Yes" ? "quickActions.yes" : "quickActions.no");
               speak(translatedChoice, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
               interpretFnRef.current?.([translatedChoice], { [translatedChoice]: translatedChoice });
@@ -1072,21 +1050,38 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
               setYesNoActive(false);
             }}
           />
-          {boardMode === 'ai' ? (
-            <DynamicBoard
+          {/* Side panel for AI buttons — shown when an app is open or a prebuilt board is loaded */}
+          {(activeApp || prebuiltBoardData) && (
+            <AppMiniBoard
               board={boardData}
-              boardPatch={boardPatchData}
-              symbolUpdate={symbolUpdateData}
-              aiButtonPress={aiButtonPressData}
               onButtonClick={handleBoardButtonClick}
-              onBack={boardHistoryRef.current.length > 0 ? handleBoardBack : undefined}
-              onNavigate={handleBoardNavigate}
               language={currentLanguage}
               voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
-              iconTextRatio={userProfile?.aacSettings?.iconTextRatio ?? 3}
-              getFaceImage={faceImageCache.getFaceImage}
               suppressLocalSpeech={aiSessionActive}
             />
+          )}
+          {/* App content — replaces board when an app is active */}
+          {activeApp ? (
+            <div className="flex-1 min-w-0 h-full">
+              {renderAppContent(activeApp, dismissAppRef.current, registerAppCanvasCaptureRef.current, studentId)}
+            </div>
+          ) : boardMode === 'ai' ? (
+            <div className={(activeApp || prebuiltBoardData) ? "flex-1 min-w-0 h-full" : "h-full"}>
+              <DynamicBoard
+                board={prebuiltBoardData || boardData}
+                boardPatch={prebuiltBoardData ? null : boardPatchData}
+                symbolUpdate={prebuiltBoardData ? null : symbolUpdateData}
+                aiButtonPress={aiButtonPressData}
+                onButtonClick={handleBoardButtonClick}
+                onBack={boardHistoryRef.current.length > 0 ? handleBoardBack : undefined}
+                onNavigate={handleBoardNavigate}
+                language={currentLanguage}
+                voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
+                iconTextRatio={userProfile?.aacSettings?.iconTextRatio ?? 3}
+                getFaceImage={faceImageCache.getFaceImage}
+                suppressLocalSpeech={aiSessionActive}
+              />
+            </div>
           ) : (
             <PrebuiltBoardSection
               studentId={studentId}
@@ -1320,14 +1315,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             onYesNoChange={(active, dismiss) => { setYesNoActive(active); dismissYesNoRef.current = dismiss; }}
             onRestartSessionReady={(fn) => { restartSessionFnRef.current = fn; }}
             onPausedChange={(paused, setPausedFn) => { setIsPaused(paused); setPausedFnRef.current = setPausedFn; }}
-          />
-          <AppOverlayBridge
-            boardData={boardData}
-            onButtonClick={handleBoardButtonClick}
-            language={currentLanguage}
-            voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
-            isRTL={isRTL}
-            suppressLocalSpeech={aiSessionActive}
+            onActiveAppChange={(app, dismiss, registerCapture) => { setActiveApp(app); dismissAppRef.current = dismiss; registerAppCanvasCaptureRef.current = registerCapture; }}
           />
           <DualAgentConversationBox
             isVisible={showConversation}
@@ -1335,6 +1323,8 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             selectedSymbols={selectedSymbols}
             onClearSymbols={() => setSelectedSymbols([])}
             onBoardUpdate={handleBoardUpdate}
+            onSetBoard={handleSetBoard}
+            onUnloadBoard={handleUnloadBoard}
             currentBoard={boardData}
             boardMode={boardMode}
             onBoardModeChange={setBoardMode}

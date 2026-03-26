@@ -2149,6 +2149,16 @@ export function InstitutePanel({ isOpen, onClose }: InstitutePanelProps) {
                     onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (file) {
+                        const maxSizeMB = 10;
+                        if (file.size > maxSizeMB * 1024 * 1024) {
+                          toast({
+                            title: t('institute.error') || 'Error',
+                            description: t('institute.fileTooLarge', { max: `${maxSizeMB}MB` }) || `File is too large. Maximum size is ${maxSizeMB}MB.`,
+                            variant: 'destructive',
+                          });
+                          e.target.value = '';
+                          return;
+                        }
                         setLogoFile(file);
                         setLogoPreview(URL.createObjectURL(file));
                       }

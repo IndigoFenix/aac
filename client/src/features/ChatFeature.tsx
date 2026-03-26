@@ -457,11 +457,7 @@ export function ChatFeature() {
     <Button
       size="icon"
       variant="ghost"
-      className={cn(
-        "absolute top-2 z-10 h-7 w-7 rounded-full opacity-50 hover:opacity-100",
-        "transition-opacity duration-200",
-        isRTL ? "left-2" : "right-2",
-      )}
+      className="h-7 w-7 rounded-full opacity-50 hover:opacity-100 transition-opacity duration-200"
       onClick={handleSwitchToPopup}
       title={t('chat.switchToPopup')}
       data-testid="chat-mode-switch"
@@ -694,12 +690,14 @@ export function ChatFeature() {
 
   return (
     <div className="flex flex-col h-full relative">
-      {/* Mode switch button */}
-      {ModeSwitchButton}
-      
       {showWelcome ? (
         /* Welcome screen - centered content */
-        <div className="flex-1 flex items-center justify-center px-6 overflow-y-auto">
+        <div className="flex-1 flex items-center justify-center px-6 overflow-y-auto relative">
+          {ModeSwitchButton && (
+            <div className="absolute top-2 end-2 z-10">
+              {ModeSwitchButton}
+            </div>
+          )}
           <div className="w-full max-w-3xl space-y-8 py-12">
             {/* Welcome message */}
             <div className="text-center space-y-2">
@@ -771,6 +769,7 @@ export function ChatFeature() {
           {/* Header with persona dropdown */}
           <div className="flex-shrink-0 border-b border-border px-6 py-3 flex items-center justify-between">
             {PersonaDropdown}
+            {ModeSwitchButton}
           </div>
 
           {/* Scrollable messages area */}

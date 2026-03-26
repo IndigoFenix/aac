@@ -380,52 +380,30 @@ export const ChatProvider = ({
     setError(null);
 
     try {
-      // Intercept image files — convert to base64 data URL, send inline with message
       const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
-      if (IMAGE_TYPES.includes(file.type)) {
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-        const attachedFile: AttachedFile = {
-          fileId: `local-img-${Date.now()}`,
-          vectorStoreId: "",
-          filename: file.name,
-          mimeType: file.type,
-          size: file.size,
-          localFile: file,
-          type: "image",
-          dataUrl,
-        };
-        setAttachedFiles(prev => [...prev, attachedFile]);
-        return attachedFile;
-      }
+      const isImage = IMAGE_TYPES.includes(file.type);
 
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('sessionId', getOrCreateSessionId());
-
-      // Use apiRequest which handles base URL, credentials, and error handling
-      const response = await apiRequest('POST', '/api/chat/files/upload', formData);
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to upload file');
-      }
+      // Read all files as base64 data URLs — sent inline with messages
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
 
       const attachedFile: AttachedFile = {
-        ...data.file,
+        fileId: `local-${isImage ? 'img' : 'doc'}-${Date.now()}`,
+        vectorStoreId: "",
+        filename: file.name,
+        mimeType: file.type,
+        size: file.size,
         localFile: file,
-        type: "document",
+        type: isImage ? "image" : "document",
+        dataUrl,
       };
-
       setAttachedFiles(prev => [...prev, attachedFile]);
-      setVectorStoreId(data.file.vectorStoreId);
 
-      console.log('[useChat] File uploaded:', attachedFile.filename);
-
+      console.log('[useChat] File attached:', attachedFile.filename, `(${attachedFile.type})`);
       return attachedFile;
     } catch (err: any) {
       console.error('File upload failed:', err);
@@ -434,32 +412,16 @@ export const ChatProvider = ({
     } finally {
       setIsUploadingFile(false);
     }
-  }, [getOrCreateSessionId]);
+  }, []);
 
   const removeFile = useCallback((fileId: string) => {
-    // Skip server call for locally-stored images
-    if (attachedFiles.find(f => f.fileId === fileId)?.type === "image") {
-      setAttachedFiles(prev => prev.filter(f => f.fileId !== fileId));
-      return;
-    }
-
     setAttachedFiles(prev => prev.filter(f => f.fileId !== fileId));
-
-    // Optionally delete from OpenAI (fire and forget)
-    apiRequest('DELETE', `/api/chat/files/${fileId}`)
-      .catch(err => console.warn('Failed to delete file from OpenAI:', err));
-  }, [attachedFiles]);
+  }, []);
 
   const clearFiles = useCallback(() => {
-    // Delete all files from OpenAI
-    attachedFiles.forEach(file => {
-      apiRequest('DELETE', `/api/chat/files/${file.fileId}`)
-        .catch(err => console.warn('Failed to delete file:', err));
-    });
-
     setAttachedFiles([]);
     setVectorStoreId(null);
-  }, [attachedFiles]);
+  }, []);
 
   // ============================================================================
   // HANDLE CONTEXT DATA FROM RESPONSE
@@ -782,10 +744,16 @@ export const ChatProvider = ({
     // Accumulated text for md streaming mode
     let mdAccumulated = '';
 
-    // Include all session images so the AI can reference earlier images
+    // Include all attached files (images and documents) as base64 data URLs
     const imageUrls = attachedFiles.filter(f => f.type === "image" && f.dataUrl).map(f => f.dataUrl!);
     if (imageUrls.length > 0) {
       requestBody.images = imageUrls;
+    }
+    const documentFiles = attachedFiles
+      .filter(f => f.type === "document" && f.dataUrl)
+      .map(f => ({ dataUrl: f.dataUrl!, filename: f.filename }));
+    if (documentFiles.length > 0) {
+      requestBody.documents = documentFiles;
     }
 
     try {
