@@ -104,7 +104,6 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
               if (p.type === "input_text" && p.text) {
                 claudeParts.push({ type: "text", text: p.text });
               } else if (p.type === "input_image" && p.image_url) {
-                // Parse data URL: "data:image/png;base64,AAAA..."
                 const match = (p.image_url as string).match(/^data:([^;]+);base64,(.+)$/);
                 if (match) {
                   claudeParts.push({
@@ -123,7 +122,6 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
                       source: { type: "base64", media_type: "application/pdf", data: base64Data },
                     });
                   } else {
-                    // Text-based files: decode and send as text
                     const text = Buffer.from(base64Data, "base64").toString("utf-8");
                     claudeParts.push({ type: "text", text: `--- ${p.filename || "file"} ---\n${text}\n---` });
                   }

@@ -855,24 +855,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
 
   // ============= CHAT FILE UPLOAD ROUTES =============
-  // Upload a file for use in chat context
+  // Upload a file for use in chat context (stored in temporary server cache)
   app.post(
     "/api/chat/files/upload",
     optionalAuth,
     chatFileUpload.single("file"),
     (req, res) => fileUploadController.uploadFile(req, res)
   );
-  // Delete a specific file
+  // Delete a cached file
   app.delete("/api/chat/files/:fileId", optionalAuth, (req, res) =>
-    fileUploadController.deleteFile(req, res)
-  );
-  // List files for a session
-  app.get("/api/chat/sessions/:sessionId/files", optionalAuth, (req, res) =>
-    fileUploadController.listSessionFiles(req, res)
-  );
-  // Clean up all files for a session
-  app.delete("/api/chat/sessions/:sessionId/files", optionalAuth, (req, res) =>
-    fileUploadController.cleanupSessionFiles(req, res)
+    fileUploadController.deleteFileHandler(req, res)
   );
 
   // ============= VOICE ROUTES (AAC) =============

@@ -166,7 +166,9 @@ interface ChatContextType {
   aiRefreshing: Set<string>;
 
   // File attachments
-  attachedFiles: AttachedFile[];
+  pendingFiles: AttachedFile[];  // Newly uploaded, not yet sent with a message
+  contextFiles: AttachedFile[];  // Already sent, available as context for future messages
+  attachedFiles: AttachedFile[]; // Combined (pendingFiles + contextFiles) — all active files
   isUploadingFile: boolean;
   vectorStoreId: string | null;
 
@@ -261,7 +263,9 @@ export const ChatProvider = ({
   const [aiRefreshing, setAiRefreshing] = useState<Set<string>>(new Set());
 
   // File attachment state
-  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<AttachedFile[]>([]); // Not yet sent with a message
+  const [contextFiles, setContextFiles] = useState<AttachedFile[]>([]); // Already sent, available as context
+  const attachedFiles = [...pendingFiles, ...contextFiles]; // Combined view
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [vectorStoreId, setVectorStoreId] = useState<string | null>(null);
 
@@ -329,7 +333,8 @@ export const ChatProvider = ({
     setSession(null);
     setHistory([]);
     setError(null);
-    setAttachedFiles([]);
+    setPendingFiles([]);
+    setContextFiles([]);
 
     if (persistSession && typeof window !== 'undefined') {
       window.localStorage.removeItem(getStorageKey());
@@ -342,7 +347,8 @@ export const ChatProvider = ({
     setSession(null);
     setHistory([]);
     setError(null);
-    setAttachedFiles([]);
+    setPendingFiles([]);
+    setContextFiles([]);
 
     if (persistSession && typeof window !== 'undefined') {
       window.localStorage.removeItem(getStorageKey());
@@ -383,13 +389,16 @@ export const ChatProvider = ({
       const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
       const isImage = IMAGE_TYPES.includes(file.type);
 
-      // Read all files as base64 data URLs — sent inline with messages
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
+      // Read image data URL for preview thumbnail only
+      let dataUrl: string | undefined;
+      if (isImage) {
+        dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
 
       const attachedFile: AttachedFile = {
         fileId: `local-${isImage ? 'img' : 'doc'}-${Date.now()}`,
@@ -399,11 +408,13 @@ export const ChatProvider = ({
         size: file.size,
         localFile: file,
         type: isImage ? "image" : "document",
-        dataUrl,
+        dataUrl, // Only set for images (preview thumbnail)
       };
-      setAttachedFiles(prev => [...prev, attachedFile]);
-
-      console.log('[useChat] File attached:', attachedFile.filename, `(${attachedFile.type})`);
+      // Same-name file overwrites: remove any existing file with the same name
+      setPendingFiles(prev => prev.filter(f => f.filename !== file.name));
+      setContextFiles(prev => prev.filter(f => f.filename !== file.name));
+      // Add to pending (will be moved to context on send)
+      setPendingFiles(prev => [...prev, attachedFile]);
       return attachedFile;
     } catch (err: any) {
       console.error('File upload failed:', err);
@@ -415,11 +426,13 @@ export const ChatProvider = ({
   }, []);
 
   const removeFile = useCallback((fileId: string) => {
-    setAttachedFiles(prev => prev.filter(f => f.fileId !== fileId));
+    setPendingFiles(prev => prev.filter(f => f.fileId !== fileId));
+    setContextFiles(prev => prev.filter(f => f.fileId !== fileId));
   }, []);
 
   const clearFiles = useCallback(() => {
-    setAttachedFiles([]);
+    setPendingFiles([]);
+    setContextFiles([]);
     setVectorStoreId(null);
   }, []);
 
@@ -614,10 +627,12 @@ export const ChatProvider = ({
 
     console.log('[useChat] Sending message in mode:', activeFeature, featureMetadata);
 
-    // Combine metadata
+    // Only newly-uploaded files get tagged on this message
+    const newFileNames = pendingFiles.map(f => f.filename);
     const metadata = {
       ...featureMetadata,
       ...additionalMetadata,
+      ...(newFileNames.length > 0 ? { files: newFileNames } : {}),
     };
 
     // Create user message
@@ -630,6 +645,12 @@ export const ChatProvider = ({
 
     // Optimistically add user message
     setHistory(prev => [...prev, userMessage]);
+
+    // Move pending files to context (they've been associated with this message)
+    if (pendingFiles.length > 0) {
+      setContextFiles(prev => [...prev, ...pendingFiles]);
+      setPendingFiles([]);
+    }
 
     // Build request body
     const requestBody: Record<string, any> = {
@@ -744,16 +765,27 @@ export const ChatProvider = ({
     // Accumulated text for md streaming mode
     let mdAccumulated = '';
 
-    // Include all attached files (images and documents) as base64 data URLs
-    const imageUrls = attachedFiles.filter(f => f.type === "image" && f.dataUrl).map(f => f.dataUrl!);
-    if (imageUrls.length > 0) {
-      requestBody.images = imageUrls;
-    }
-    const documentFiles = attachedFiles
-      .filter(f => f.type === "document" && f.dataUrl)
-      .map(f => ({ dataUrl: f.dataUrl!, filename: f.filename }));
-    if (documentFiles.length > 0) {
-      requestBody.documents = documentFiles;
+    // Send all attached files as base64 — images use stored dataUrl, documents read from File
+    if (attachedFiles.length > 0) {
+      const documents: Array<{ dataUrl: string; filename: string }> = [];
+      for (const f of attachedFiles) {
+        if (f.dataUrl) {
+          // Images already have a dataUrl from when they were attached
+          documents.push({ dataUrl: f.dataUrl, filename: f.filename });
+        } else if (f.localFile) {
+          // Documents: read from the stored File object
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(f.localFile!);
+          });
+          documents.push({ dataUrl, filename: f.filename });
+        }
+      }
+      if (documents.length > 0) {
+        requestBody.documents = documents;
+      }
     }
 
     try {
@@ -876,7 +908,7 @@ export const ChatProvider = ({
       setIsThinking(false);
       setThinkingText(null);
     }
-  }, [session, activeFeature, user, student, history, persistSession, getStorageKey, getFeatureMetadata, handleContextData, persona, sendStreamingMessage, vectorStoreId, attachedFiles]);
+  }, [session, activeFeature, user, student, history, persistSession, getStorageKey, getFeatureMetadata, handleContextData, persona, sendStreamingMessage, vectorStoreId, pendingFiles, contextFiles]);
   
   const stopGeneration = useCallback(() => {
     stoppedByUserRef.current = true;
@@ -996,6 +1028,8 @@ export const ChatProvider = ({
     thinkingText,
     isThinking,
     aiRefreshing,
+    pendingFiles,
+    contextFiles,
     attachedFiles,
     isUploadingFile,
     vectorStoreId,

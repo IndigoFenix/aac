@@ -107,9 +107,9 @@ import {
       vectorStoreId?: string; // For file_search tool support
       currentImage?: CurrentImage; // Image to inject into the next API call (not stored in history)
       images?: string[]; // Base64 data URLs for inline images (single-use, cleared after API call)
-      documents?: Array<{ dataUrl: string; filename: string }>; // Base64 data URLs for documents (pending attachment)
-      /** Maps a message timestamp to its attached documents (survives rebuilds without touching DB) */
-      private documentsByMessage = new Map<number, Array<{ dataUrl: string; filename: string }>>();
+      documents?: Array<{ dataUrl: string; filename: string }>; // Pending documents from current request
+      /** Active file context — keyed by filename, latest version wins. Not persisted to DB. */
+      private contextFiles = new Map<string, { dataUrl: string; filename: string }>();
   
       cullMessages: boolean;
       cullMessagesTo: number;
@@ -245,15 +245,12 @@ import {
   
       // Add messages to history and run toolCalls if included.
       async persistMessages(messages: ChatMessage[]) {
-          // Associate pending documents with the last user message's timestamp
+          // Update context files — same filename overwrites older version
           if (this.documents && this.documents.length > 0) {
-              const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
-              if (lastUserMsg) {
-                  const ts = lastUserMsg.timestamp || Date.now();
-                  lastUserMsg.timestamp = ts;
-                  this.documentsByMessage.set(ts, this.documents);
-
+              for (const doc of this.documents) {
+                  this.contextFiles.set(doc.filename, doc);
               }
+              console.log(`[ChatMsgMgr] contextFiles updated: ${[...this.contextFiles.keys()].join(', ')}`);
               this.documents = undefined;
           }
 
@@ -377,29 +374,46 @@ import {
               }
 
               if (stringifiedContent && message.role !== 'tool') {
-                  // Check for attached documents on this message (stored in-memory, not in DB)
-                  const docs = message.timestamp ? this.documentsByMessage.get(message.timestamp) : undefined;
-                  if (docs && docs.length > 0) {
-                      const parts: GPTContentPart[] = [
-                          { type: 'input_text', text: stringifiedContent },
-                          ...docs.map(doc => ({
-                              type: 'input_document' as const,
-                              data_url: doc.dataUrl,
-                              filename: doc.filename,
-                          })),
-                      ];
-                      items.push({
-                          type: "message",
-                          role: message.role as "user" | "assistant" | "system",
-                          content: parts,
-                      });
-                  } else {
-                      items.push({
-                          type: "message",
-                          role: message.role as "user" | "assistant" | "system",
-                          content: stringifiedContent,
-                      });
+                  const item: any = {
+                      type: "message",
+                      role: message.role as "user" | "assistant" | "system",
+                      content: stringifiedContent,
+                  };
+                  if (message.metadata?.files) {
+                      item._filesMeta = message.metadata.files;
                   }
+                  items.push(item);
+              }
+          }
+
+          // Inject context files: attach each file to the last history message
+          // that listed it in metadata.files. Files with no matching message go
+          // into the first system message (history was culled).
+          if (this.contextFiles.size > 0) {
+              const orphanedFiles: GPTContentPart[] = [];
+              for (const [filename, doc] of this.contextFiles) {
+                  const mimeMatch = doc.dataUrl.match(/^data:([^;]+);/);
+                  const mime = mimeMatch?.[1] || '';
+                  const docPart: GPTContentPart = mime.startsWith('image/')
+                      ? { type: 'input_image' as const, image_url: doc.dataUrl }
+                      : { type: 'input_document' as const, data_url: doc.dataUrl, filename };
+                  let attached = false;
+                  for (let i = items.length - 1; i >= 0; i--) {
+                      const item = items[i] as any;
+                      if (item._filesMeta && (item._filesMeta as string[]).includes(filename) && item.type === 'message') {
+                          const existing: GPTContentPart[] = typeof item.content === 'string'
+                              ? [{ type: 'input_text', text: item.content }]
+                              : (item.content as GPTContentPart[]);
+                          item.content = [...existing, docPart];
+                          attached = true;
+                          break;
+                      }
+                  }
+                  if (!attached) orphanedFiles.push(docPart);
+              }
+              if (orphanedFiles.length > 0 && items.length > 0 && items[0].type === 'message' && items[0].role === 'system') {
+                  const sysText = typeof items[0].content === 'string' ? items[0].content : '';
+                  items[0].content = [{ type: 'input_text' as const, text: sysText }, ...orphanedFiles];
               }
           }
 
@@ -995,24 +1009,15 @@ import {
               }
 
               if (stringifiedContent && message.role !== 'tool') {
-                  // Check for attached documents on this message (stored in-memory, not in DB)
-                  const docs = message.timestamp ? this.documentsByMessage.get(message.timestamp) : undefined;
-                  if (docs && docs.length > 0) {
-                      const parts: any[] = [{ type: 'text', text: stringifiedContent }];
-                      for (const doc of docs) {
-                          parts.push({ type: 'input_document', data_url: doc.dataUrl, filename: doc.filename });
-                      }
-
-                      messages.push({
-                          role: message.role as "user" | "assistant" | "system",
-                          content: parts,
-                      });
-                  } else {
-                      messages.push({
-                          role: message.role as "user" | "assistant" | "system",
-                          content: stringifiedContent,
-                      });
+                  const entry: any = {
+                      role: message.role as "user" | "assistant" | "system",
+                      content: stringifiedContent,
+                  };
+                  // Tag with file metadata so the injection phase can find the right message
+                  if (message.metadata?.files) {
+                      entry._filesMeta = message.metadata.files;
                   }
+                  messages.push(entry);
               }
           }
 
@@ -1046,6 +1051,55 @@ import {
                   }
               }
               this.images = undefined;
+          }
+
+          // Inject context files into messages.
+          // Strategy: for each file, find the last message whose _filesMeta includes it.
+          // If not found (message was culled), inject into system prompt.
+          console.log(`[ChatMsgMgr] getConversationHistoryAsChatMessages: contextFiles=${this.contextFiles.size}, messages=${messages.length}, historyLen=${conversationHistory.length}`);
+          // Debug: check metadata on history entries
+          for (let h = 0; h < conversationHistory.length; h++) {
+              const m = conversationHistory[h];
+              if (m.metadata) console.log(`[ChatMsgMgr]   history[${h}] role=${m.role} metadata=${JSON.stringify(m.metadata)}`);
+          }
+          if (this.contextFiles.size > 0) {
+              // Log all _filesMeta tags on messages
+              for (let i = 0; i < messages.length; i++) {
+                  const meta = (messages[i] as any)._filesMeta;
+                  if (meta) console.log(`[ChatMsgMgr]   msg[${i}] role=${messages[i].role} _filesMeta=${JSON.stringify(meta)}`);
+              }
+
+              const orphanedParts: any[] = [];
+              for (const [filename, doc] of this.contextFiles) {
+                  const mimeMatch = doc.dataUrl.match(/^data:([^;]+);/);
+                  const mime = mimeMatch?.[1] || '';
+                  const docPart = mime.startsWith('image/')
+                      ? { type: 'image_url', image_url: { url: doc.dataUrl } }
+                      : { type: 'input_document', data_url: doc.dataUrl, filename };
+                  let attached = false;
+                  // Scan backwards for a message tagged with this file
+                  for (let i = messages.length - 1; i >= 0; i--) {
+                      const meta = (messages[i] as any)._filesMeta as string[] | undefined;
+                      if (meta && meta.includes(filename)) {
+                          const msg = messages[i];
+                          const existing: any[] = typeof msg.content === 'string'
+                              ? [{ type: 'text', text: msg.content }]
+                              : Array.isArray(msg.content) ? msg.content : [];
+                          msg.content = [...existing, docPart];
+                          attached = true;
+                          console.log(`[ChatMsgMgr]   attached "${filename}" to msg[${i}]`);
+                          break;
+                      }
+                  }
+                  if (!attached) {
+                      orphanedParts.push(docPart);
+                      console.log(`[ChatMsgMgr]   orphaned "${filename}" → system prompt`);
+                  }
+              }
+              if (orphanedParts.length > 0 && messages.length > 0 && messages[0].role === 'system') {
+                  const sysText = typeof messages[0].content === 'string' ? messages[0].content : '';
+                  messages[0].content = [{ type: 'text', text: sysText }, ...orphanedParts];
+              }
           }
 
           // Remove orphaned tool call / tool response pairs
