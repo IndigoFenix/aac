@@ -178,6 +178,7 @@ export type ServerMessage =
   | { type: "ask_yes_no"; data: any }                    // Deferred Yes/No — show after TTS playback
   | { type: "reconnecting"; data: string }               // Server is reconnecting to Gemini
   | { type: "client_tts"; data: { text: string; voiceId: string; apiKey: string; language: string; voiceRole: "ai" | "student" } }
+  | { type: "client_local_tts"; data: { text: string; language: string; voiceRole: "ai" | "student" } }
   | { type: "reconnected" }                              // Reconnection successful
   | { type: "session_reset"; sessionId: string }         // New session created after repeated failures
   | { type: "rate_limited"; data: string }               // Rate limited — client should NOT auto-reconnect
@@ -210,6 +211,7 @@ export class LiveRelay {
   // Voice config (resolved once during init)
   private aiVoice: ResolvedVoice | null = null;
   private studentVoice: ResolvedVoice | null = null;
+  private useLocalTts = false; // Use browser speechSynthesis instead of server TTS
 
   // For contact enrollment
   private unknownFaceDescriptors: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number } }> = [];
@@ -759,13 +761,21 @@ export class LiveRelay {
         console.warn("[LiveRelay] Voice resolution failed, using defaults:", err);
       }
 
+      // Local TTS mode: browser speechSynthesis — no server-side audio generation
+      const aac = cached.monitorAgent.getStudent?.()?.aacSettings;
+      this.useLocalTts = !!(aac as any)?.useLocalTts;
+      if (this.useLocalTts) {
+        console.log("[LiveRelay] Local TTS mode enabled — browser will synthesize speech");
+      }
+
       // Direct audio mode: model speaks directly when no ElevenLabs and interpretation is off.
       // The AI voice would otherwise fall through to Google Cloud TTS — skip that
       // and use Gemini's native audio output instead.
       const level = cached.state.interpretationLevel ?? 1;
       const aiVoiceHasElevenLabs = !!(this.aiVoice?.elevenlabsApiKey && this.aiVoice?.elevenlabsVoiceId)
         || !!(this.aiVoice?.customVoice?.active);
-      this.useDirectAudio = !aiVoiceHasElevenLabs && level <= 1;
+      // Local TTS forces text-only mode — model must use speak() tool so text routes to browser
+      this.useDirectAudio = !this.useLocalTts && !aiVoiceHasElevenLabs && level <= 1;
       if (this.useDirectAudio) {
         console.log("[LiveRelay] Direct audio mode enabled — model speaks directly, no external AI TTS");
       }
@@ -1429,6 +1439,11 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
           this.send({ type: "unload_board", data: {} });
         }
         this.send({ type: "board", data: this.buildBoardFromButtons(buttons) });
+        // In direct audio mode, the model speaks natively — no speak() tool call generates
+        // a "text" message. Send a placeholder so the client exits "Starting conversation".
+        if (this.useDirectAudio && !this.hasGreeted) {
+          this.send({ type: "text", data: " ", noAudioClear: true });
+        }
         this.turnAccum.boardChanged = true;
         this.turnAccum.boardRebuilt = true;
         this.turnAccum.boardAddLabels.push(...buttons.map(b => b.label));
@@ -2193,6 +2208,16 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
     label: string,
     timeoutMs = 15_000,
   ): Promise<void> {
+    // Local browser TTS: send text only, browser uses speechSynthesis
+    if (this.useLocalTts) {
+      const voiceRole = msgType === "avatar_audio" ? "ai" as const : "student" as const;
+      this.send({
+        type: "client_local_tts",
+        data: { text, language: voice.language || "en", voiceRole },
+      });
+      return;
+    }
+
     // Client-side TTS: send config to browser instead of synthesizing server-side
     if (this.isClientTts(voice)) {
       const voiceRole = msgType === "avatar_audio" ? "ai" as const : "student" as const;
@@ -2221,6 +2246,16 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
         }
       })();
       await Promise.race([streamPromise, timeoutPromise]);
+    } catch (err) {
+      // Auto-switch to local TTS on timeout/failure
+      console.warn(`[LiveRelay] TTS failed, auto-switching to local TTS:`, (err as Error).message);
+      this.useLocalTts = true;
+      // Send this text via local TTS so the user still hears it
+      const voiceRole = msgType === "avatar_audio" ? "ai" as const : "student" as const;
+      this.send({
+        type: "client_local_tts",
+        data: { text, language: voice.language || "en", voiceRole },
+      });
     } finally {
       if (timer) clearTimeout(timer);
     }

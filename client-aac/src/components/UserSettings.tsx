@@ -68,6 +68,7 @@ export default function UserSettings({
   const [customStudentVoiceId, setCustomStudentVoiceId] = useState<string | null>(null);
   const [geminiAiVoice, setGeminiAiVoice] = useState("");
   const [geminiStudentVoice, setGeminiStudentVoice] = useState("");
+  const [useLocalTts, setUseLocalTts] = useState(false);
   const [elevenlabsEnabled, setElevenlabsEnabled] = useState(true);
   const [elevenlabsApiKey, setElevenlabsApiKey] = useState("");
   const [elevenlabsAiVoiceId, setElevenlabsAiVoiceId] = useState("");
@@ -177,6 +178,7 @@ export default function UserSettings({
       setCustomStudentVoiceId(aac?.customStudentVoiceId || null);
       setGeminiAiVoice(aac?.geminiAiVoice || "");
       setGeminiStudentVoice(aac?.geminiStudentVoice || "");
+      setUseLocalTts(aac?.useLocalTts ?? false);
       setElevenlabsEnabled(aac?.elevenlabsEnabled !== false);
       setElevenlabsApiKey(aac?.elevenlabsApiKey || "");
       setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || "");
@@ -275,6 +277,7 @@ export default function UserSettings({
       customStudentVoiceId,
       geminiAiVoice: geminiAiVoice || undefined,
       geminiStudentVoice: geminiStudentVoice || undefined,
+      useLocalTts,
       elevenlabsEnabled,
       elevenlabsApiKey: elevenlabsApiKey.trim() || undefined,
       elevenlabsAiVoiceId: elevenlabsAiVoiceId.trim() || undefined,
@@ -296,6 +299,7 @@ export default function UserSettings({
     setCustomStudentVoiceId(null);
     setGeminiAiVoice("");
     setGeminiStudentVoice("");
+    setUseLocalTts(false);
     setElevenlabsApiKey("");
     setElevenlabsAiVoiceId("");
     setElevenlabsStudentVoiceId("");
@@ -529,6 +533,17 @@ export default function UserSettings({
                         <SelectItem value="Zephyr">Zephyr — {t("settings.voiceZephyrDesc")}</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                </div>
+
+                {/* Local Browser TTS */}
+                <div className="space-y-2 mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-sm font-semibold">{t("settings.localTtsTitle")}</Label>
+                      <p className="text-xs text-gray-500">{t("settings.localTtsDesc")}</p>
+                    </div>
+                    <Switch checked={useLocalTts} onCheckedChange={setUseLocalTts} />
                   </div>
                 </div>
 

@@ -172,6 +172,8 @@ export const en = {
     voiceLedaDesc: "Gentle, youthful female",
     voiceOrusDesc: "Steady, reassuring male",
     voiceZephyrDesc: "Light, neutral",
+    localTtsTitle: "Local Browser Voice",
+    localTtsDesc: "Use the browser's built-in speech synthesis instead of server-generated audio. Useful for slow connections.",
     elevenlabsTitle: "ElevenLabs Voice",
     elevenlabsDesc: "Enter your own ElevenLabs API key and voice IDs for high-quality TTS. Overrides all other voice settings when set.",
     elevenlabsApiKey: "ElevenLabs API Key",

@@ -161,6 +161,14 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Promise chain for client-side TTS — preserves ordering between consecutive calls
   const clientTtsChainRef = useRef(Promise.resolve());
 
+  // Local TTS sentence buffer — accumulates fragments until a sentence boundary
+  const localTtsBufferRef = useRef("");
+  const localTtsFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Slow-connection auto-switch: tracks consecutive audio timeouts
+  const audioTimeoutCountRef = useRef(0);
+  const localTtsActiveRef = useRef(false); // Dynamic override when slow connection detected
+
   // Streaming audio player
   const audioPlayer = useStreamingAudioPlayer({
     autoPlay: autoPlayAudio,
@@ -212,6 +220,47 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   }, []);
 
   // -------------------------------------------------------------------------
+  // Local browser TTS helpers
+  // -------------------------------------------------------------------------
+
+  /** Find the best matching browser voice for a language and role */
+  const pickBrowserVoice = useCallback((lang: string, role: "ai" | "student"): SpeechSynthesisVoice | null => {
+    const voices = window.speechSynthesis?.getVoices() || [];
+    // Gender preference: student matches student gender (default boy), AI uses female
+    const genderHint = role === "ai" ? "female" : "male";
+    const langPrefix = lang.split("-")[0]; // "he-IL" -> "he"
+    // Prefer natural/Google voices matching language + gender
+    return voices.find(v => v.lang.startsWith(langPrefix) && v.name.toLowerCase().includes(genderHint))
+      || voices.find(v => v.lang.startsWith(langPrefix) && (v.name.includes("Natural") || v.name.includes("Google")))
+      || voices.find(v => v.lang.startsWith(langPrefix))
+      || null;
+  }, []);
+
+  /** Speak text using browser speechSynthesis, returns a promise that resolves when done */
+  const speakLocal = useCallback((text: string, lang: string, role: "ai" | "student"): Promise<void> => {
+    return new Promise((resolve) => {
+      if (!window.speechSynthesis || !text.trim()) { resolve(); return; }
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = lang;
+      const voice = pickBrowserVoice(lang, role);
+      if (voice) utterance.voice = voice;
+      utterance.rate = 1.0;
+      utterance.onend = () => resolve();
+      utterance.onerror = () => resolve();
+      window.speechSynthesis.speak(utterance);
+    });
+  }, [pickBrowserVoice]);
+
+  /** Flush any buffered local TTS text as a complete utterance */
+  const flushLocalTtsBuffer = useCallback((lang: string, role: "ai" | "student") => {
+    const text = localTtsBufferRef.current.trim();
+    if (!text) return;
+    localTtsBufferRef.current = "";
+    // Chain onto the TTS promise chain to preserve ordering
+    clientTtsChainRef.current = clientTtsChainRef.current.then(() => speakLocal(text, lang, role));
+  }, [speakLocal]);
+
+  // -------------------------------------------------------------------------
   // Handle incoming server messages
   // -------------------------------------------------------------------------
 
@@ -252,6 +301,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         case "audio_interrupt":
           // Gemini was interrupted by user input — stop audio immediately
           audioPlayer.clear();
+          // Also cancel any local browser TTS
+          window.speechSynthesis?.cancel();
+          localTtsBufferRef.current = "";
+          if (localTtsFlushTimerRef.current) { clearTimeout(localTtsFlushTimerRef.current); localTtsFlushTimerRef.current = null; }
           break;
 
         case "transcript":
@@ -357,6 +410,29 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
               console.error("[LiveSession] Client TTS failed:", err);
             }
           });
+          break;
+        }
+
+        case "client_local_tts": {
+          // Server requests browser-native speechSynthesis
+          if (!audioEnabled) break;
+          const { text: localText, language: localLang, voiceRole: localRole } = msg.data as {
+            text: string; language: string; voiceRole: "ai" | "student";
+          };
+          // Buffer text and flush at sentence boundaries to avoid choppy speech
+          localTtsBufferRef.current += (localTtsBufferRef.current ? " " : "") + localText;
+          // Clear any pending flush timer
+          if (localTtsFlushTimerRef.current) clearTimeout(localTtsFlushTimerRef.current);
+          // Check for sentence-ending punctuation
+          const sentenceEnd = /[.!?؟。]\s*$/;
+          if (sentenceEnd.test(localTtsBufferRef.current.trim())) {
+            flushLocalTtsBuffer(localLang, localRole);
+          } else {
+            // Flush after a short pause (no more fragments arriving)
+            localTtsFlushTimerRef.current = setTimeout(() => {
+              flushLocalTtsBuffer(localLang, localRole);
+            }, 600);
+          }
           break;
         }
 

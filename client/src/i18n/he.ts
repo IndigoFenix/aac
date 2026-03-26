@@ -1836,6 +1836,8 @@ export const he = {
     customAiVoice: "קול AI מותאם",
     customAiVoiceHint: "דורס ברירת מחדל כשמוגדר (ElevenLabs)",
     noneFallback: "ללא (השתמש בברירת מחדל)",
+    localTtsTitle: "קול דפדפן מקומי",
+    localTtsDesc: "שימוש בסינתזת דיבור מובנית בדפדפן במקום שמע מהשרת. שימושי עבור חיבורים איטיים.",
     elevenlabsTitle: "קול ElevenLabs",
     elevenlabsDesc: "הזן מפתח API של ElevenLabs ומזהי קול לסינתזת קול באיכות גבוהה. עוקף את כל הגדרות הקול האחרות כשמוגדר.",
     elevenlabsApiKey: "מפתח API של ElevenLabs",

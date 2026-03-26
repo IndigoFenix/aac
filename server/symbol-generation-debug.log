@@ -625,3 +625,148 @@
 [2026-03-26T10:26:54.259Z] [resolveImageKeys] Resolved "pause_symbol" → __SYMBOL__:a5135144-1b9e-48d2-a919-b242f7d14a52
 [2026-03-26T10:26:54.418Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
 [2026-03-26T10:26:54.419Z] [resolveImageKeys] Done. Resolved 8, unresolved 0: 
+[2026-03-26T13:09:10.132Z] [resolveImageKeys] Resolving 6 keys: pencil_drawing, music_notes, photo_album, game_controller, person_yawning, person_raising_hand (format=internal, useUnapproved=true)
+[2026-03-26T13:09:11.495Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-26T13:09:11.649Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-26T13:09:11.807Z] [resolveImageKeys] Resolved "photo_album" → __SYMBOL__:9b800ead-859a-4ff6-8be9-7d2f9c50a11c
+[2026-03-26T13:09:11.972Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-03-26T13:09:12.128Z] [resolveImageKeys] Resolved "person_yawning" → __SYMBOL__:a49afb33-4de1-4728-b67d-c4b287b2ef8a
+[2026-03-26T13:09:12.282Z] [resolveImageKeys] Resolved "person_raising_hand" → __SYMBOL__:f93ff302-c003-491e-9163-c1127fbd31eb
+[2026-03-26T13:09:12.284Z] [resolveImageKeys] Done. Resolved 6, unresolved 0: 
+[2026-03-26T13:11:15.053Z] [resolveImageKeys] Resolving 6 keys: computer_programming, robot_head, data_storage, question_mark, pause_symbol, stop_sign (format=internal, useUnapproved=true)
+[2026-03-26T13:11:15.211Z] [resolveImageKeys] Resolved "computer_programming" → __SYMBOL__:f0b03f1e-d83f-4b0f-80db-9be181bcd5a0
+[2026-03-26T13:11:15.378Z] [resolveImageKeys] No symbol found for "robot_head"
+[2026-03-26T13:11:15.549Z] [resolveImageKeys] Resolved "data_storage" → __SYMBOL__:56cd1293-f880-4cbd-8345-de4e8c1a9094
+[2026-03-26T13:11:15.716Z] [resolveImageKeys] Resolved "question_mark" → __SYMBOL__:999c8ea6-52c4-45ac-b408-f0212046149c
+[2026-03-26T13:11:15.885Z] [resolveImageKeys] Resolved "pause_symbol" → __SYMBOL__:a5135144-1b9e-48d2-a919-b242f7d14a52
+[2026-03-26T13:11:16.041Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
+[2026-03-26T13:11:16.043Z] [resolveImageKeys] Done. Resolved 5, unresolved 1: robot_head
+[2026-03-26T13:11:16.050Z] [queueGeneration] Queuing 1 keys: robot_head (hasCallback=true)
+[2026-03-26T13:11:16.214Z] [processQueue] Generating "robot_head"...
+[2026-03-26T13:11:23.252Z] [processQueue] Generated "robot_head" → 81c3a6ca-f7bf-4467-9ddd-6b529b9d1f2d (1 total)
+[2026-03-26T13:11:46.639Z] [resolveImageKeys] Resolving 3 keys: music_notes, pencil_drawing, game_controller (format=internal, useUnapproved=true)
+[2026-03-26T13:11:47.853Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-26T13:11:48.004Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-26T13:11:48.181Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-03-26T13:11:48.182Z] [resolveImageKeys] Done. Resolved 3, unresolved 0: 
+[2026-03-26T13:11:54.267Z] [resolveImageKeys] Resolving 4 keys: question_mark, computer_programming, idea_bulb, stop_sign (format=internal, useUnapproved=true)
+[2026-03-26T13:11:54.419Z] [resolveImageKeys] Resolved "question_mark" → __SYMBOL__:999c8ea6-52c4-45ac-b408-f0212046149c
+[2026-03-26T13:11:54.570Z] [resolveImageKeys] Resolved "computer_programming" → __SYMBOL__:f0b03f1e-d83f-4b0f-80db-9be181bcd5a0
+[2026-03-26T13:11:54.724Z] [resolveImageKeys] No symbol found for "idea_bulb"
+[2026-03-26T13:11:54.876Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
+[2026-03-26T13:11:54.878Z] [resolveImageKeys] Done. Resolved 3, unresolved 1: idea_bulb
+[2026-03-26T13:11:54.881Z] [queueGeneration] Queuing 1 keys: idea_bulb (hasCallback=true)
+[2026-03-26T13:11:55.038Z] [processQueue] Generating "idea_bulb"...
+[2026-03-26T13:12:02.602Z] [processQueue] Generated "idea_bulb" → c682af3a-7a10-40bd-8f44-c76811f2255f (1 total)
+[2026-03-26T13:14:54.897Z] [resolveImageKeys] Resolving 4 keys: magnifying_glass, bug_insect, question_mark, stop_sign (format=internal, useUnapproved=true)
+[2026-03-26T13:14:56.172Z] [resolveImageKeys] Resolved "magnifying_glass" → __SYMBOL__:2db13cb9-f160-490a-812e-56aba42450f3
+[2026-03-26T13:14:56.357Z] [resolveImageKeys] No symbol found for "bug_insect"
+[2026-03-26T13:14:56.526Z] [resolveImageKeys] Resolved "question_mark" → __SYMBOL__:999c8ea6-52c4-45ac-b408-f0212046149c
+[2026-03-26T13:14:56.777Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
+[2026-03-26T13:14:56.780Z] [resolveImageKeys] Done. Resolved 3, unresolved 1: bug_insect
+[2026-03-26T13:14:56.782Z] [queueGeneration] Queuing 1 keys: bug_insect (hasCallback=true)
+[2026-03-26T13:14:57.123Z] [processQueue] Generating "bug_insect"...
+[2026-03-26T13:15:03.270Z] [processQueue] Generated "bug_insect" → 12eee7f9-e8d9-413d-83e3-5d1d8a433158 (1 total)
+[2026-03-26T13:15:10.699Z] [resolveImageKeys] Resolving 3 keys: map, waving_hand, stop_sign (format=internal, useUnapproved=true)
+[2026-03-26T13:15:10.856Z] [resolveImageKeys] Resolved "map" → __SYMBOL__:21c1f1f9-a5be-44c9-aadd-4179ee4f07b4
+[2026-03-26T13:15:11.013Z] [resolveImageKeys] Resolved "waving_hand" → __SYMBOL__:53199774-a1d7-40bd-9ddd-4f320c11c742
+[2026-03-26T13:15:11.168Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
+[2026-03-26T13:15:11.169Z] [resolveImageKeys] Done. Resolved 3, unresolved 0: 
+[2026-03-26T13:16:20.825Z] [resolveImageKeys] Resolving 4 keys: thumbs_up, suit_jacket, t_shirt, stop_sign (format=internal, useUnapproved=true)
+[2026-03-26T13:16:22.215Z] [resolveImageKeys] Resolved "thumbs_up" → __SYMBOL__:ee779fe6-3a63-41a0-9b66-85935690beda
+[2026-03-26T13:16:22.372Z] [resolveImageKeys] No symbol found for "suit_jacket"
+[2026-03-26T13:16:22.529Z] [resolveImageKeys] No symbol found for "t_shirt"
+[2026-03-26T13:16:22.687Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
+[2026-03-26T13:16:22.688Z] [resolveImageKeys] Done. Resolved 2, unresolved 2: suit_jacket, t_shirt
+[2026-03-26T13:16:22.690Z] [queueGeneration] Queuing 2 keys: suit_jacket, t_shirt (hasCallback=true)
+[2026-03-26T13:16:22.853Z] [processQueue] Generating "suit_jacket"...
+[2026-03-26T13:16:31.242Z] [processQueue] Generated "suit_jacket" → daa31ed4-de78-4a56-bd25-8d7caaeb3a1f (1 total)
+[2026-03-26T13:16:35.397Z] [processQueue] Generating "t_shirt"...
+[2026-03-26T13:16:42.070Z] [processQueue] Generated "t_shirt" → c8f393f8-a278-4d3c-bb33-6975862d4e90 (2 total)
+[2026-03-26T13:16:48.344Z] [resolveImageKeys] Resolving 1 keys: clothing_formal (format=internal, useUnapproved=true)
+[2026-03-26T13:16:48.497Z] [resolveImageKeys] No symbol found for "clothing_formal"
+[2026-03-26T13:16:48.498Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: clothing_formal
+[2026-03-26T13:16:48.500Z] [queueGeneration] Queuing 1 keys: clothing_formal (hasCallback=true)
+[2026-03-26T13:16:48.655Z] [processQueue] Generating "clothing_formal"...
+[2026-03-26T13:16:54.345Z] [processQueue] Generated "clothing_formal" → 066aba08-3f25-4339-8ef4-07f5f9738fec (1 total)
+[2026-03-26T13:28:07.391Z] [resolveImageKeys] Resolving 3 keys: computer_desk, drawer_closed, pants (format=internal, useUnapproved=true)
+[2026-03-26T13:28:08.765Z] [resolveImageKeys] No symbol found for "computer_desk"
+[2026-03-26T13:28:08.917Z] [resolveImageKeys] No symbol found for "drawer_closed"
+[2026-03-26T13:28:09.067Z] [resolveImageKeys] No symbol found for "pants"
+[2026-03-26T13:28:09.068Z] [resolveImageKeys] Done. Resolved 0, unresolved 3: computer_desk, drawer_closed, pants
+[2026-03-26T13:28:09.070Z] [queueGeneration] Queuing 3 keys: computer_desk, drawer_closed, pants (hasCallback=true)
+[2026-03-26T13:28:09.223Z] [processQueue] Generating "computer_desk"...
+[2026-03-26T13:28:16.443Z] [processQueue] Generated "computer_desk" → ce034ecd-c7bf-457c-9678-aef6a7d046e1 (1 total)
+[2026-03-26T13:28:20.604Z] [processQueue] Generating "drawer_closed"...
+[2026-03-26T13:28:27.546Z] [processQueue] Generated "drawer_closed" → 38c9bb1d-f1f6-4b0c-a049-f868eb7c1546 (2 total)
+[2026-03-26T13:28:31.708Z] [processQueue] Generating "pants"...
+[2026-03-26T13:28:37.853Z] [processQueue] Generated "pants" → 02c30faf-6611-42ea-a7fc-5512126d12e2 (3 total)
+[2026-03-26T13:29:40.600Z] [resolveImageKeys] Resolving 2 keys: scissors, scissors (format=internal, useUnapproved=true)
+[2026-03-26T13:29:41.969Z] [resolveImageKeys] Resolving 3 keys: check_mark, box_closed, question_mark (format=internal, useUnapproved=true)
+[2026-03-26T13:29:41.974Z] [resolveImageKeys] Resolved "scissors" → __SYMBOL__:8e360398-63be-4876-967b-0bf30956117a
+[2026-03-26T13:29:42.128Z] [resolveImageKeys] Resolved "scissors" → __SYMBOL__:8e360398-63be-4876-967b-0bf30956117a
+[2026-03-26T13:29:42.129Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-03-26T13:29:43.204Z] [resolveImageKeys] Resolved "check_mark" → __SYMBOL__:bd8bf1f6-a3c7-4a1c-a57c-3ed2744ae67e
+[2026-03-26T13:29:43.359Z] [resolveImageKeys] No symbol found for "box_closed"
+[2026-03-26T13:29:43.511Z] [resolveImageKeys] Resolved "question_mark" → __SYMBOL__:999c8ea6-52c4-45ac-b408-f0212046149c
+[2026-03-26T13:29:43.512Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: box_closed
+[2026-03-26T13:29:43.513Z] [queueGeneration] Queuing 1 keys: box_closed (hasCallback=true)
+[2026-03-26T13:29:43.666Z] [processQueue] Generating "box_closed"...
+[2026-03-26T13:32:31.957Z] [resolveImageKeys] Resolving 4 keys: computer_programming, computer_software, question_mark, life_preserver (format=internal, useUnapproved=true)
+[2026-03-26T13:32:32.116Z] [resolveImageKeys] Resolved "computer_programming" → __SYMBOL__:f0b03f1e-d83f-4b0f-80db-9be181bcd5a0
+[2026-03-26T13:32:32.273Z] [resolveImageKeys] No symbol found for "computer_software"
+[2026-03-26T13:32:32.433Z] [resolveImageKeys] Resolved "question_mark" → __SYMBOL__:999c8ea6-52c4-45ac-b408-f0212046149c
+[2026-03-26T13:32:32.595Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-26T13:32:32.597Z] [resolveImageKeys] Done. Resolved 3, unresolved 1: computer_software
+[2026-03-26T13:32:32.599Z] [queueGeneration] Queuing 1 keys: computer_software (hasCallback=true)
+[2026-03-26T13:32:32.769Z] [processQueue] Generating "computer_software"...
+[2026-03-26T13:32:41.878Z] [processQueue] Generated "computer_software" → 4d8c60de-8683-4d18-b023-e5420cb28291 (1 total)
+[2026-03-26T13:32:43.956Z] [resolveImageKeys] Resolving 2 keys: question_mark, life_preserver (format=internal, useUnapproved=true)
+[2026-03-26T13:32:44.115Z] [resolveImageKeys] Resolved "question_mark" → __SYMBOL__:999c8ea6-52c4-45ac-b408-f0212046149c
+[2026-03-26T13:32:44.276Z] [resolveImageKeys] Resolved "life_preserver" → __SYMBOL__:6000c054-65c9-49dd-831b-35b6880d733c
+[2026-03-26T13:32:44.280Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-03-26T13:33:42.266Z] [resolveImageKeys] Resolving 5 keys: computer_programming, software_development, debug_code, light_bulb, talking_about_technology (format=internal, useUnapproved=true)
+[2026-03-26T13:33:42.427Z] [resolveImageKeys] Resolved "computer_programming" → __SYMBOL__:f0b03f1e-d83f-4b0f-80db-9be181bcd5a0
+[2026-03-26T13:33:42.652Z] [resolveImageKeys] No symbol found for "software_development"
+[2026-03-26T13:33:42.810Z] [resolveImageKeys] No symbol found for "debug_code"
+[2026-03-26T13:33:42.966Z] [resolveImageKeys] Resolved "light_bulb" → __SYMBOL__:dc359eb3-21df-466b-80ce-a174308bdc05
+[2026-03-26T13:33:43.124Z] [resolveImageKeys] No symbol found for "talking_about_technology"
+[2026-03-26T13:33:43.125Z] [resolveImageKeys] Done. Resolved 2, unresolved 3: software_development, debug_code, talking_about_technology
+[2026-03-26T13:33:43.127Z] [queueGeneration] Queuing 3 keys: software_development, debug_code, talking_about_technology (hasCallback=true)
+[2026-03-26T13:33:43.301Z] [processQueue] Generating "software_development"...
+[2026-03-26T13:33:50.141Z] [processQueue] Generated "software_development" → f7fa68d2-e200-44ad-822d-e817ed9fe4a6 (1 total)
+[2026-03-26T13:33:54.309Z] [processQueue] Generating "debug_code"...
+[2026-03-26T13:34:04.669Z] [resolveImageKeys] Resolving 4 keys: code_tracing, syntax_error, logic_issue, ask_for_help (format=internal, useUnapproved=true)
+[2026-03-26T13:34:04.895Z] [resolveImageKeys] No symbol found for "code_tracing"
+[2026-03-26T13:34:05.049Z] [resolveImageKeys] No symbol found for "syntax_error"
+[2026-03-26T13:34:05.204Z] [resolveImageKeys] No symbol found for "logic_issue"
+[2026-03-26T13:34:05.357Z] [resolveImageKeys] No symbol found for "ask_for_help"
+[2026-03-26T13:34:05.358Z] [resolveImageKeys] Done. Resolved 0, unresolved 4: code_tracing, syntax_error, logic_issue, ask_for_help
+[2026-03-26T13:34:05.359Z] [queueGeneration] Queuing 4 keys: code_tracing, syntax_error, logic_issue, ask_for_help (hasCallback=true)
+[2026-03-26T13:34:05.757Z] [resolveImageKeys] Resolving 4 keys: code_tracing, syntax_error, logic_error, ask_for_help (format=internal, useUnapproved=true)
+[2026-03-26T13:34:05.909Z] [resolveImageKeys] No symbol found for "code_tracing"
+[2026-03-26T13:34:06.062Z] [resolveImageKeys] No symbol found for "syntax_error"
+[2026-03-26T13:34:06.212Z] [resolveImageKeys] No symbol found for "logic_error"
+[2026-03-26T13:34:06.376Z] [resolveImageKeys] No symbol found for "ask_for_help"
+[2026-03-26T13:34:06.377Z] [resolveImageKeys] Done. Resolved 0, unresolved 4: code_tracing, syntax_error, logic_error, ask_for_help
+[2026-03-26T13:34:06.379Z] [queueGeneration] Queuing 4 keys: code_tracing, syntax_error, logic_error, ask_for_help (hasCallback=true)
+[2026-03-26T13:34:06.385Z] [processQueue] Generated "debug_code" → db4858ce-6fe6-4bea-9410-c86828923457 (2 total)
+[2026-03-26T13:34:10.557Z] [processQueue] Generating "talking_about_technology"...
+[2026-03-26T13:34:20.897Z] [processQueue] Generated "talking_about_technology" → 584fd79b-2a75-4582-8d22-fd82e0259589 (3 total)
+[2026-03-26T13:34:25.069Z] [processQueue] Generating "code_tracing"...
+[2026-03-26T13:34:26.834Z] [resolveImageKeys] Resolving 5 keys: computer_programming, light_bulb, wrench_tool, magnifying_glass, chat_bubble (format=internal, useUnapproved=true)
+[2026-03-26T13:34:26.992Z] [resolveImageKeys] Resolved "computer_programming" → __SYMBOL__:f0b03f1e-d83f-4b0f-80db-9be181bcd5a0
+[2026-03-26T13:34:27.151Z] [resolveImageKeys] Resolved "light_bulb" → __SYMBOL__:dc359eb3-21df-466b-80ce-a174308bdc05
+[2026-03-26T13:34:27.309Z] [resolveImageKeys] Resolved "wrench_tool" → __SYMBOL__:edcf193b-93cd-4bc4-8e2f-565e6cac7577
+[2026-03-26T13:34:27.467Z] [resolveImageKeys] Resolved "magnifying_glass" → __SYMBOL__:2db13cb9-f160-490a-812e-56aba42450f3
+[2026-03-26T13:34:27.624Z] [resolveImageKeys] No symbol found for "chat_bubble"
+[2026-03-26T13:34:27.625Z] [resolveImageKeys] Done. Resolved 4, unresolved 1: chat_bubble
+[2026-03-26T13:34:27.626Z] [queueGeneration] Queuing 1 keys: chat_bubble (hasCallback=true)
+[2026-03-26T13:34:32.448Z] [processQueue] Generated "code_tracing" → 150e2051-6ca8-4baf-af62-0bc8b481d794 (4 total)
+[2026-03-26T13:34:36.610Z] [processQueue] Generating "syntax_error"...
+[2026-03-26T13:34:43.188Z] [processQueue] Generated "syntax_error" → 831ed1e2-f418-408a-96eb-ecd362d348ad (5 total)
+[2026-03-26T13:34:47.347Z] [processQueue] Generating "logic_issue"...
+[2026-03-26T13:34:53.985Z] [processQueue] Generated "logic_issue" → e0b344e4-26b8-45ba-802b-e77024c99ed8 (6 total)
+[2026-03-26T13:34:58.148Z] [processQueue] Generating "ask_for_help"...
+[2026-03-26T13:35:04.552Z] [processQueue] Generated "ask_for_help" → bef73fae-9b92-4a79-8496-7fd2dca3eb95 (7 total)
+[2026-03-26T13:35:08.709Z] [processQueue] "code_tracing" already exists → 150e2051-6ca8-4baf-af62-0bc8b481d794

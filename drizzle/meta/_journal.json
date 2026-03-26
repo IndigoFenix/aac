@@ -309,6 +309,13 @@
       "when": 1774429174958,
       "tag": "0043_tiny_sue_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1774529510880,
+      "tag": "0044_simple_tattoo",
+      "breakpoints": true
     }
   ]
 }

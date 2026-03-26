@@ -174,6 +174,8 @@ export const he: Translations = {
     voiceLedaDesc: "עדינה, אישה צעירה",
     voiceOrusDesc: "יציב, גבר מרגיע",
     voiceZephyrDesc: "קל, ניטרלי",
+    localTtsTitle: "קול דפדפן מקומי",
+    localTtsDesc: "שימוש בסינתזת דיבור מובנית בדפדפן במקום שמע מהשרת. שימושי עבור חיבורים איטיים.",
     elevenlabsTitle: "קול ElevenLabs",
     elevenlabsDesc: "הזן מפתח API של ElevenLabs ומזהי קול לסינתזת קול באיכות גבוהה. עוקף את כל הגדרות הקול האחרות כשמוגדר.",
     elevenlabsApiKey: "מפתח API של ElevenLabs",

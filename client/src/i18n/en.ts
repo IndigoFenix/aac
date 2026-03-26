@@ -1643,6 +1643,8 @@ export const en = {
     customAiVoice: "Custom AI Voice",
     customAiVoiceHint: "Overrides fallback when set (ElevenLabs)",
     noneFallback: "None (use fallback)",
+    localTtsTitle: "Local Browser Voice",
+    localTtsDesc: "Use the browser's built-in speech synthesis instead of server-generated audio. Useful for slow connections.",
     elevenlabsTitle: "ElevenLabs Voice",
     elevenlabsDesc: "Enter your own ElevenLabs API key and voice IDs for high-quality TTS. Overrides all other voice settings when set.",
     elevenlabsApiKey: "ElevenLabs API Key",
