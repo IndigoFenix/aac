@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { FeatureType, onMessage, CurrentImage } from "../services/sessionService";
+import { FeatureType, onMessage, type CurrentImage } from "../services/sessionService";
 import { ChatPersona } from "@shared/schema";
 
 // Validation schemas
@@ -20,8 +20,8 @@ const messageSchema = z.object({
   activeFeature: z.string().optional(),
   persona: z.string().optional(),
   featureContext: z.record(z.any()).optional(),
-  vectorStoreId: z.string().optional(), // For file search support
-  images: z.array(z.string()).optional(), // Base64 data URLs for inline images
+  vectorStoreId: z.string().optional(),
+  images: z.array(z.string()).optional(),
   documents: z.array(z.object({ dataUrl: z.string(), filename: z.string() })).optional(),
   messages: z
     .array(
@@ -29,6 +29,7 @@ const messageSchema = z.object({
         role: z.enum(["user", "assistant", "system"]),
         content: messageContentSchema,
         timestamp: z.number().optional(),
+        metadata: z.record(z.any()).optional(),
       })
     )
     .optional(),
@@ -80,7 +81,7 @@ export class ChatController {
         persona = "assistant";
       }
 
-      // Handle uploaded image - pass directly to sessionService (not stored in message history)
+      // Handle uploaded image via multer (single image from legacy path)
       const imageFile = (req as any).file as Express.Multer.File | undefined;
       let currentImage: CurrentImage | undefined;
       if (imageFile) {
@@ -88,7 +89,6 @@ export class ChatController {
           data: imageFile.buffer,
           mimeType: imageFile.mimetype || 'image/jpeg',
         };
-        console.log(`[ChatController] Image received, size: ${imageFile.size} bytes, type: ${currentImage.mimeType}`);
       }
 
       const messagesWithTimestamp = messages?.map((msg) => ({
@@ -104,8 +104,8 @@ export class ChatController {
         messages: messagesWithTimestamp,
         featureContext,
         vectorStoreId,
-        images,
-        documents,
+        images: images && images.length > 0 ? images : undefined,
+        documents: documents && documents.length > 0 ? documents : undefined,
         replyType: replyType || "html",
         currentImage,
       })

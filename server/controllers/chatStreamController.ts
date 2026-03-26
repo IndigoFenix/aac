@@ -20,8 +20,8 @@ const messageSchema = z.object({
   activeFeature: z.string().optional(),
   persona: z.string().optional(),
   featureContext: z.record(z.any()).optional(),
-  vectorStoreId: z.string().optional(), // For file search support
-  images: z.array(z.string()).optional(), // Base64 data URLs for inline images
+  vectorStoreId: z.string().optional(),
+  images: z.array(z.string()).optional(),
   documents: z.array(z.object({ dataUrl: z.string(), filename: z.string() })).optional(),
   messages: z
     .array(
@@ -29,6 +29,7 @@ const messageSchema = z.object({
         role: z.enum(["user", "assistant", "system"]),
         content: messageContentSchema,
         timestamp: z.number().optional(),
+        metadata: z.record(z.any()).optional(),
       })
     )
     .optional(),
@@ -117,8 +118,8 @@ export class ChatStreamController {
             messages: messagesWithTimestamp,
             featureContext,
             vectorStoreId,
-            images,
-            documents,
+            images: images && images.length > 0 ? images : undefined,
+            documents: documents && documents.length > 0 ? documents : undefined,
             replyType: "md",
             onThinkingUpdate,
             onNavigate,

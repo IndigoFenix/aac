@@ -817,6 +817,17 @@ export function ChatFeature() {
                           {getMessageContent(message)}
                         </p>
                       )}
+                      {/* File tags */}
+                      {message.metadata?.files && (message.metadata.files as string[]).length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {(message.metadata.files as string[]).map((fname, fi) => (
+                            <span key={fi} className="inline-flex items-center gap-1 text-xs bg-primary-foreground/10 rounded px-1.5 py-0.5 opacity-80">
+                              <Paperclip className="w-3 h-3" />
+                              {fname}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className={cn(
                       "flex items-center gap-2 mt-2",
