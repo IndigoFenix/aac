@@ -45,6 +45,7 @@ import {
   import { classroomService } from "../classroomService";
   import { studentService } from "../studentService";
   import { aacSettingsRepository } from "../../repositories/aacSettingsRepository";
+  import { instituteRepository } from "../../repositories/instituteRepository";
   
   // ============================================================================
   // HELPER FUNCTIONS
@@ -84,23 +85,23 @@ import {
   const institutesOps: MemoryDBOperations<any> = {
     list: async (ctx, { offset, limit }): Promise<ListResult<any>> => {
       const userId = getUserId(ctx);
-      
-      const institutesWithMembership = await instituteService.getUserInstitutesWithMembership(userId);
-      
-      // Apply pagination
-      const paged = institutesWithMembership.slice(offset, offset + limit);
-      const items = paged.map(({ institute, membership }) => ({
-        ...toMemoryValue(institute),
-        membership: toMemoryValue(membership),
-      }));
-      
-      const keys = paged.map(({ institute }) => institute.id);
-      
-      return {
-        items,
-        total: institutesWithMembership.length,
-        keys,
-      };
+      const selectedInstituteId = ctx.all.instituteId as string | undefined;
+
+      // Only show the selected institute
+      if (selectedInstituteId) {
+        const institute = await instituteService.getInstituteById(selectedInstituteId);
+        if (institute) {
+          const { isMember, membership } = await instituteService.verifyMembership(selectedInstituteId, userId);
+          if (isMember && membership) {
+            const item = { ...toMemoryValue(institute), membership: toMemoryValue(membership) };
+            return { items: [item], total: 1, keys: [institute.id] };
+          }
+        }
+        return { items: [], total: 0, keys: [] };
+      }
+
+      // No institute selected — show nothing
+      return { items: [], total: 0, keys: [] };
     },
   
     get: async (ctx, key) => {
@@ -779,17 +780,21 @@ import {
   const studentsOps: MemoryDBOperations<any> = {
     list: async (ctx, { offset, limit }): Promise<ListResult<any>> => {
       const userId = getUserId(ctx);
-      
-      const studentsWithLinks = await studentService.getStudentsWithLinksByUserId(userId);
-      
+      const instituteId = ctx.all.instituteId as string | undefined;
+
+      // If an institute is selected, scope students to that institute
+      const studentsWithLinks = instituteId
+        ? await studentService.getStudentsForUserInInstitute(userId, instituteId)
+        : await studentService.getStudentsWithLinksByUserId(userId);
+
       const paged = studentsWithLinks.slice(offset, offset + limit);
       const items = paged.map(({ student, link }) => ({
         ...toMemoryValue(student),
-        link: toMemoryValue(link),
+        link: link ? toMemoryValue(link) : undefined,
       }));
-      
+
       const keys = paged.map(({ student }) => student.id);
-  
+
       return {
         items,
         total: studentsWithLinks.length,
@@ -811,7 +816,37 @@ import {
   
     add: async (ctx, value) => {
       const userId = getUserId(ctx);
-  
+      const instituteId = ctx.all.instituteId as string | undefined;
+
+      // Resolve institute IDs: prefer explicit list, fall back to selected, then user's only one
+      let enrollInstituteIds: string[] = [];
+      if (value.instituteIds && Array.isArray(value.instituteIds) && value.instituteIds.length > 0) {
+        enrollInstituteIds = value.instituteIds;
+      } else if (instituteId) {
+        enrollInstituteIds = [instituteId];
+      } else {
+        const userInstitutes = await instituteService.getUserInstitutesWithMembership(userId);
+        if (userInstitutes.length === 1) {
+          enrollInstituteIds = [userInstitutes[0].institute.id];
+        }
+      }
+
+      if (enrollInstituteIds.length === 0) {
+        throw new Error("At least one institute is required to create a student. The user has no institute selected.");
+      }
+
+      // Validate ALL institute IDs upfront before creating anything:
+      // user must be a member of every institute being assigned
+      for (const instId of enrollInstituteIds) {
+        if (typeof instId !== 'string' || !instId) {
+          throw new Error("Invalid institute ID provided.");
+        }
+        const isMember = await instituteRepository.isUserMemberOfInstitute(instId, userId);
+        if (!isMember) {
+          throw new Error(`Access denied: you are not a member of institute ${instId}.`);
+        }
+      }
+
       const { student, link } = await studentService.createStudentWithLink(
         {
           name: value.name,
@@ -827,7 +862,12 @@ import {
         userId,
         "owner"
       );
-  
+
+      // Enroll in all validated institutes
+      for (const instId of enrollInstituteIds) {
+        await instituteService.assignStudentToInstitute(instId, student.id, userId);
+      }
+
       return {
         ...toMemoryValue(student),
         link: toMemoryValue(link),
@@ -1628,6 +1668,7 @@ import {
   const studentSchema: AgentMemoryFieldObjectWithDB = {
     id: "student",
     type: "object",
+    required: ["firstName", "instituteIds", "name"],
     properties: {
       id: { id: "id", type: "string" },
       name: { id: "name", type: "string" },
@@ -1641,12 +1682,18 @@ import {
         enum: ["tala", "us_iep"],
         description: "Educational framework: TALA (Israel) or US IEP",
       },
-      country: { id: "country", type: "string", default: "IL" },
-      primaryLanguage: { id: "primaryLanguage", type: "string", default: "he" },
+      country: { id: "country", type: "string", enum: ["IL", "US"], default: "IL", description: "IL (Israel) or US (United States)" },
+      primaryLanguage: { id: "primaryLanguage", type: "string", enum: ["he", "en"], default: "he", description: "he (Hebrew) or en (English)" },
       additionalLanguages: {
         id: "additionalLanguages",
         type: "array",
         items: { id: "language", type: "string" },
+      },
+      instituteIds: {
+        id: "instituteIds",
+        type: "array",
+        items: { id: "instituteId", type: "string" },
+        description: "Institute IDs to enroll this student in (from Context_Institutes). Required — use the currently selected institute if only one.",
       },
       isActive: { id: "isActive", type: "boolean" },
       link: {
@@ -1686,9 +1733,8 @@ import {
         db: studentClassroomsOps,
       } as AgentMemoryFieldArrayWithDB,
     },
-    required: ["name"],
   };
-  
+
   // ============================================================================
   // MAIN INSTITUTE MEMORY FIELDS
   // ============================================================================

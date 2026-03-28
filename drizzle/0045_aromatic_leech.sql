@@ -1,0 +1,1 @@
+ALTER TYPE "public"."institute_type" ADD VALUE 'family';

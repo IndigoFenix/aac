@@ -38,9 +38,11 @@ import {
   Edit,
   School,
   Hospital,
+  Home,
   BookOpen,
   Loader2,
   AlertTriangle,
+  Check,
 } from 'lucide-react';
 import { BiometricEnrollment } from '@/components/BiometricEnrollment';
 
@@ -118,6 +120,9 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
   const [formData, setFormData] = useState<StudentFormData>(INITIAL_FORM_STATE);
   
   // Institute assignment state
+  // For creation: multi-select array of institute IDs
+  const [selectedInstituteIds, setSelectedInstituteIds] = useState<string[]>([]);
+  // For editing: single institute to add to (existing flow)
   const [selectedInstituteId, setSelectedInstituteId] = useState('');
   const [selectedClassroomId, setSelectedClassroomId] = useState('');
   const [availableClassrooms, setAvailableClassrooms] = useState<Classroom[]>([]);
@@ -136,19 +141,13 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
   // ==========================================================================
 
   const createStudentMutation = useMutation({
-    mutationFn: async (studentData: Partial<StudentFormData>) => {
+    mutationFn: async (studentData: Partial<StudentFormData> & { instituteIds: string[] }) => {
       const res = await apiRequest('POST', '/api/students', studentData);
       return res.json();
     },
-    onSuccess: async (response) => {
+    onSuccess: async () => {
       await refetchStudent();
       queryClient.invalidateQueries({ queryKey: ['/api/students'] });
-
-      // Assign to institute if selected (response.student contains the created student)
-      const newStudentId = response?.student?.id;
-      if (selectedInstituteId && newStudentId) {
-        await handleInstituteAssignment(newStudentId);
-      }
 
       toast({
         title: t('toast.studentCreated') || 'Student Created',
@@ -200,6 +199,13 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
   // ==========================================================================
   // EFFECTS
   // ==========================================================================
+
+  // For creation: auto-select if user has exactly one institute
+  useEffect(() => {
+    if (!editingStudent && institutes.length === 1 && selectedInstituteIds.length === 0) {
+      setSelectedInstituteIds([institutes[0].id]);
+    }
+  }, [editingStudent, institutes]);
 
   // Initialize form when editing student changes
   useEffect(() => {
@@ -322,6 +328,16 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
       return;
     }
 
+    // For creation, at least one institute is required
+    if (!editingStudent && selectedInstituteIds.length === 0) {
+      toast({
+        title: t('common.error') || 'Error',
+        description: t('student.instituteRequired') || 'At least one institute is required',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const submitData = {
       firstName: formData.firstName,
       lastName: formData.lastName || undefined,
@@ -335,12 +351,13 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
     if (editingStudent) {
       updateStudentMutation.mutate({ id: editingStudent.id, data: submitData });
     } else {
-      createStudentMutation.mutate(submitData);
+      createStudentMutation.mutate({ ...submitData, instituteIds: selectedInstituteIds });
     }
   };
 
   const resetForm = () => {
     setFormData({ ...INITIAL_FORM_STATE, primaryLanguage: language });
+    setSelectedInstituteIds([]);
     setSelectedInstituteId('');
     setSelectedClassroomId('');
     setAvailableClassrooms([]);
@@ -377,7 +394,21 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
 
   const schoolInstitutes = institutes.filter(i => i.type === 'school');
   const clinicInstitutes = institutes.filter(i => i.type === 'clinic');
+  const familyInstitutes = institutes.filter(i => i.type === 'family');
   const isLoading = createStudentMutation.isPending || updateStudentMutation.isPending;
+  const noInstitutes = institutes.length === 0;
+
+  const toggleInstituteId = (id: string) => {
+    setSelectedInstituteIds(prev =>
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const instituteIcon = (type: string) => {
+    if (type === 'school') return <School className="w-4 h-4 text-blue-500" />;
+    if (type === 'clinic') return <Hospital className="w-4 h-4 text-green-500" />;
+    return <Home className="w-4 h-4 text-amber-500" />;
+  };
 
   // ==========================================================================
   // RENDER
@@ -530,17 +561,74 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
 
           <div className="space-y-4">
             <h3 className="text-sm font-medium">
-              {t('student.instituteAssignment') || 'Institute Assignment'}
+              {editingStudent
+                ? t('student.instituteAssignment') || 'Institute Assignment'
+                : (t('student.instituteAssignmentRequired') || 'Institute Assignment *')}
             </h3>
 
-            {/* Show current institutes for existing students */}
+            {/* No institutes warning */}
+            {noInstitutes && !editingStudent && (
+              <Alert className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950/20">
+                <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                <AlertDescription className="text-yellow-800 dark:text-yellow-200">
+                  {t('student.noInstitutesWarning') || 'You must belong to at least one institute to create a student.'}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* CREATION MODE: Multi-select institute checkboxes */}
+            {!editingStudent && !noInstitutes && (
+              <div className="space-y-2">
+                <Label className="text-muted-foreground text-xs">
+                  {t('student.selectInstitutes') || 'Select institutes for this student'}
+                </Label>
+                <div className="space-y-1 max-h-40 overflow-y-auto">
+                  {[
+                    ...(schoolInstitutes.length > 0 ? [{ header: t('institute.type.school') || 'Schools', items: schoolInstitutes }] : []),
+                    ...(clinicInstitutes.length > 0 ? [{ header: t('institute.type.clinic') || 'Clinics', items: clinicInstitutes }] : []),
+                    ...(familyInstitutes.length > 0 ? [{ header: t('institute.type.family') || 'Families', items: familyInstitutes }] : []),
+                  ].map(({ header, items }) => (
+                    <div key={header}>
+                      <div className="px-1 py-1 text-xs font-semibold text-muted-foreground">
+                        {header}
+                      </div>
+                      {items.map((inst) => {
+                        const checked = selectedInstituteIds.includes(inst.id);
+                        return (
+                          <button
+                            key={inst.id}
+                            type="button"
+                            onClick={() => toggleInstituteId(inst.id)}
+                            className={cn(
+                              'flex items-center gap-2 w-full p-2 rounded-md text-sm transition-colors text-start',
+                              checked ? 'bg-primary/10 border border-primary/30' : 'bg-muted/50 hover:bg-muted'
+                            )}
+                          >
+                            <div className={cn(
+                              'flex items-center justify-center w-4 h-4 rounded border',
+                              checked ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/40'
+                            )}>
+                              {checked && <Check className="w-3 h-3" />}
+                            </div>
+                            {instituteIcon(inst.type)}
+                            <span>{inst.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* EDITING MODE: Show current institutes */}
             {editingStudent && loadingStudentInstitutes && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 {t('common.loading') || 'Loading...'}
               </div>
             )}
-            
+
             {editingStudent && !loadingStudentInstitutes && studentInstitutes.length > 0 && (
               <div className="space-y-2">
                 <Label className="text-muted-foreground text-xs">
@@ -556,11 +644,7 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
                       )}
                     >
                       <div className="flex items-center gap-2">
-                        {si.type === 'school' ? (
-                          <School className="w-4 h-4 text-blue-500" />
-                        ) : (
-                          <Hospital className="w-4 h-4 text-green-500" />
-                        )}
+                        {instituteIcon(si.type)}
                         <span>{si.name}</span>
                         {si.grade && (
                           <Badge variant="outline" className="text-xs">
@@ -579,87 +663,104 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
               </div>
             )}
 
-            {/* Institute Selection */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="studentInstitute">
-                  {t('student.assignToInstitute') || 'Assign to Institute'}
-                </Label>
-                <Select
-                  value={selectedInstituteId}
-                  onValueChange={setSelectedInstituteId}
-                >
-                  <SelectTrigger id="studentInstitute">
-                    <SelectValue placeholder={t('student.selectInstitute') || 'Select institute...'} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {institutes.length === 0 ? (
-                      <div className="p-2 text-sm text-muted-foreground text-center">
-                        {t('student.noInstitutes') || 'No institutes available'}
-                      </div>
-                    ) : (
-                      <>
-                        {schoolInstitutes.length > 0 && (
-                          <>
-                            <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">
-                              {t('institute.type.school') || 'Schools'}
-                            </div>
-                            {schoolInstitutes.map((institute) => (
-                              <SelectItem key={institute.id} value={institute.id}>
-                                <span className="flex items-center gap-2">
-                                  <School className="w-4 h-4" />
-                                  {institute.name}
-                                </span>
-                              </SelectItem>
-                            ))}
-                          </>
-                        )}
-                        {clinicInstitutes.length > 0 && (
-                          <>
-                            <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-1">
-                              {t('institute.type.clinic') || 'Clinics'}
-                            </div>
-                            {clinicInstitutes.map((institute) => (
-                              <SelectItem key={institute.id} value={institute.id}>
-                                <span className="flex items-center gap-2">
-                                  <Hospital className="w-4 h-4" />
-                                  {institute.name}
-                                </span>
-                              </SelectItem>
-                            ))}
-                          </>
-                        )}
-                      </>
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
+            {/* EDITING MODE: Add to another institute */}
+            {editingStudent && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="studentInstitute">
+                    {t('student.assignToInstitute') || 'Assign to Institute'}
+                  </Label>
+                  <Select
+                    value={selectedInstituteId}
+                    onValueChange={setSelectedInstituteId}
+                  >
+                    <SelectTrigger id="studentInstitute">
+                      <SelectValue placeholder={t('student.selectInstitute') || 'Select institute...'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {institutes.length === 0 ? (
+                        <div className="p-2 text-sm text-muted-foreground text-center">
+                          {t('student.noInstitutes') || 'No institutes available'}
+                        </div>
+                      ) : (
+                        <>
+                          {schoolInstitutes.length > 0 && (
+                            <>
+                              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">
+                                {t('institute.type.school') || 'Schools'}
+                              </div>
+                              {schoolInstitutes.map((institute) => (
+                                <SelectItem key={institute.id} value={institute.id}>
+                                  <span className="flex items-center gap-2">
+                                    <School className="w-4 h-4" />
+                                    {institute.name}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </>
+                          )}
+                          {clinicInstitutes.length > 0 && (
+                            <>
+                              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-1">
+                                {t('institute.type.clinic') || 'Clinics'}
+                              </div>
+                              {clinicInstitutes.map((institute) => (
+                                <SelectItem key={institute.id} value={institute.id}>
+                                  <span className="flex items-center gap-2">
+                                    <Hospital className="w-4 h-4" />
+                                    {institute.name}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </>
+                          )}
+                          {familyInstitutes.length > 0 && (
+                            <>
+                              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-1">
+                                {t('institute.type.family') || 'Families'}
+                              </div>
+                              {familyInstitutes.map((institute) => (
+                                <SelectItem key={institute.id} value={institute.id}>
+                                  <span className="flex items-center gap-2">
+                                    <Home className="w-4 h-4" />
+                                    {institute.name}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </>
+                          )}
+                        </>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              {/* Grade Selection */}
-              <div className="space-y-2">
-                <Label htmlFor="studentGradeLevel">
-                  {t('student.gradeLevel') || 'Grade Level'}
-                </Label>
-                <Select
-                  value={formData.grade}
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, grade: value }))}
-                >
-                  <SelectTrigger id="studentGradeLevel">
-                    <SelectValue placeholder={t('student.selectGrade') || 'Select grade...'} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {GRADE_OPTIONS.map((grade) => (
-                      <SelectItem key={grade.value} value={grade.value}>
-                        {t(`student.grades.${grade.value}`) || grade.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {/* Grade Selection */}
+                <div className="space-y-2">
+                  <Label htmlFor="studentGradeLevel">
+                    {t('student.gradeLevel') || 'Grade Level'}
+                  </Label>
+                  <Select
+                    value={formData.grade}
+                    onValueChange={(value) => setFormData(prev => ({ ...prev, grade: value }))}
+                  >
+                    <SelectTrigger id="studentGradeLevel">
+                      <SelectValue placeholder={t('student.selectGrade') || 'Select grade...'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {GRADE_OPTIONS.map((grade) => (
+                        <SelectItem key={grade.value} value={grade.value}>
+                          {t(`student.grades.${grade.value}`) || grade.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Classroom Selection - Only for schools */}
-            {selectedInstituteId && institutes.find(i => i.id === selectedInstituteId)?.type === 'school' && (
+            {/* Classroom Selection - Only for schools (editing mode) */}
+            {editingStudent && selectedInstituteId && institutes.find(i => i.id === selectedInstituteId)?.type === 'school' && (
               <div className="space-y-2">
                 <Label htmlFor="studentClassroom">
                   {t('student.assignToClassroom') || 'Assign to Classroom'}
@@ -733,7 +834,7 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={isLoading || !formData.firstName.trim()}
+            disabled={isLoading || !formData.firstName.trim() || (!editingStudent && (noInstitutes || selectedInstituteIds.length === 0))}
             className="flex items-center gap-2"
           >
             {isLoading ? (

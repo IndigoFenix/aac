@@ -66,10 +66,9 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
   const [lastName, setLastName] = useState('');
   const [userType, setUserType] = useState('Caregiver');
 
-  // Institute fields (create only)
-  const [createInstitute, setCreateInstitute] = useState(false);
+  // Institute fields (create only) — institute is always required
   const [instituteName, setInstituteName] = useState('');
-  const [instituteType, setInstituteType] = useState<'school' | 'clinic'>('school');
+  const [instituteType, setInstituteType] = useState<'school' | 'clinic' | 'family'>('school');
   const [instituteLogo, setInstituteLogo] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
@@ -141,7 +140,6 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
     setFirstName('');
     setLastName('');
     setUserType('Caregiver');
-    setCreateInstitute(false);
     setInstituteName('');
     setInstituteType('school');
     setInstituteLogo(null);
@@ -212,6 +210,10 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
           toast({ title: t('admin.licenses.emailRequired'), variant: 'destructive' });
           return;
         }
+        if (!instituteName.trim()) {
+          toast({ title: t('admin.licenses.instituteNameRequired') || 'Institute name is required', variant: 'destructive' });
+          return;
+        }
         const data: CreateLicenseData = {
           name: name || undefined,
           licenseType,
@@ -223,10 +225,10 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
           firstName: firstName || undefined,
           lastName: lastName || undefined,
           userType: userType || undefined,
-          createInstitute: createInstitute || undefined,
-          instituteName: createInstitute ? instituteName : undefined,
-          instituteType: createInstitute ? instituteType : undefined,
-          instituteLogo: createInstitute && instituteLogo ? instituteLogo : undefined,
+          createInstitute: true,
+          instituteName,
+          instituteType,
+          instituteLogo: instituteLogo || undefined,
         };
         await createLicense.mutateAsync(data);
         toast({ title: t('admin.licenses.created') });
@@ -310,82 +312,73 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
 
               <Separator />
 
-              {/* Institute Section (create only) */}
+              {/* Institute Section (required — licenses must belong to an institute) */}
               <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-semibold">{t('admin.licenses.institute')}</h3>
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      checked={createInstitute}
-                      onCheckedChange={setCreateInstitute}
+                <h3 className="text-sm font-semibold mb-3">
+                  {t('admin.licenses.institute') || 'Institute'} *
+                </h3>
+                <div className="space-y-3">
+                  <div>
+                    <Label htmlFor="instituteName">{t('admin.licenses.instituteName')} *</Label>
+                    <Input
+                      id="instituteName"
+                      value={instituteName}
+                      onChange={(e) => setInstituteName(e.target.value)}
+                      placeholder={t('admin.licenses.instituteNamePlaceholder') || 'Enter institute name'}
                     />
-                    <span className="text-sm text-muted-foreground">
-                      {t('admin.licenses.createInstitute')}
-                    </span>
                   </div>
-                </div>
-                {createInstitute && (
-                  <div className="space-y-3">
-                    <div>
-                      <Label htmlFor="instituteName">{t('admin.licenses.instituteName')}</Label>
-                      <Input
-                        id="instituteName"
-                        value={instituteName}
-                        onChange={(e) => setInstituteName(e.target.value)}
+                  <div>
+                    <Label>{t('admin.licenses.instituteType')}</Label>
+                    <Select value={instituteType} onValueChange={(v) => setInstituteType(v as 'school' | 'clinic' | 'family')}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="school">{t('admin.licenses.school')}</SelectItem>
+                        <SelectItem value="clinic">{t('admin.licenses.clinic')}</SelectItem>
+                        <SelectItem value="family">{t('admin.licenses.family')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>{t('admin.licenses.instituteLogo')}</Label>
+                    <div className="flex items-center gap-3 mt-1">
+                      {logoPreview ? (
+                        <div className="relative">
+                          <img
+                            src={logoPreview}
+                            alt="Logo preview"
+                            className="w-16 h-16 rounded-lg object-cover border"
+                          />
+                          <button
+                            type="button"
+                            onClick={clearLogo}
+                            className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-0.5"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => logoInputRef.current?.click()}
+                        >
+                          <Upload className="w-4 h-4 me-2" />
+                          {t('admin.licenses.uploadLogo')}
+                        </Button>
+                      )}
+                      <input
+                        ref={logoInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleLogoChange}
+                        className="hidden"
                       />
                     </div>
-                    <div>
-                      <Label>{t('admin.licenses.instituteType')}</Label>
-                      <Select value={instituteType} onValueChange={(v) => setInstituteType(v as 'school' | 'clinic')}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="school">{t('admin.licenses.school')}</SelectItem>
-                          <SelectItem value="clinic">{t('admin.licenses.clinic')}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label>{t('admin.licenses.instituteLogo')}</Label>
-                      <div className="flex items-center gap-3 mt-1">
-                        {logoPreview ? (
-                          <div className="relative">
-                            <img
-                              src={logoPreview}
-                              alt="Logo preview"
-                              className="w-16 h-16 rounded-lg object-cover border"
-                            />
-                            <button
-                              type="button"
-                              onClick={clearLogo}
-                              className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-0.5"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => logoInputRef.current?.click()}
-                          >
-                            <Upload className="w-4 h-4 me-2" />
-                            {t('admin.licenses.uploadLogo')}
-                          </Button>
-                        )}
-                        <input
-                          ref={logoInputRef}
-                          type="file"
-                          accept="image/*"
-                          onChange={handleLogoChange}
-                          className="hidden"
-                        />
-                      </div>
-                    </div>
                   </div>
-                )}
+                </div>
               </div>
 
               <Separator />

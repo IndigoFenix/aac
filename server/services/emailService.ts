@@ -51,7 +51,7 @@ class EmailService {
   private fromAddress: string;
 
   constructor() {
-    this.fromAddress = process.env.SMTP_FROM || "noreply@aivota.ai";
+    this.fromAddress = "no-reply@aivota.ai";
     this.initialize();
   }
 

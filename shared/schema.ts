@@ -95,7 +95,7 @@ export const adminUsers = pgTable("admin_users", {
 export const institutes = pgTable("institutes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
-  type: instituteTypeEnum("type").notNull(), // 'school' or 'clinic'
+  type: instituteTypeEnum("type").notNull(), // 'school', 'clinic', or 'family'
   description: text("description"),
   address: text("address"),
   phone: text("phone"),

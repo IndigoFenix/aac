@@ -209,6 +209,7 @@ export const en = {
     genderMale: "Male",
     genderFemale: "Female",
     genderOther: "Other",
+    primaryLanguage: "Primary Language",
     dateOfBirth: "Date of Birth",
     ageDisplay: "Age: {{age}} years",
     systemType: "Educational System",
@@ -402,6 +403,200 @@ export const en = {
     imageKey: "Image Key",
     imageKeyPlaceholder: "e.g. drinking_water, person_yawning",
     imageKeyHint: "Auto-generated symbol key for custom image generation",
+  },
+
+  // ============================================================================
+  // CROP
+  // ============================================================================
+  crop: {
+    title: "Crop Image for Better Analysis",
+    description: "Crop the image to focus on the AAC area for better interpretation accuracy.",
+  },
+
+  // ============================================================================
+  // RESULT
+  // ============================================================================
+  result: {
+    interpretation: "Interpretation",
+    meaning: "Detailed Meaning",
+    meaningShort: "Interpretation",
+    aacText: "AAC Text",
+    analysis: "Analysis",
+    confidence: "Confidence Level",
+    suggestedResponse: "Suggested Response",
+    confidenceHigh: "High Confidence",
+    confidenceMedium: "Medium Confidence",
+    confidenceLow: "Low Confidence",
+  },
+
+  // ============================================================================
+  // SHARE
+  // ============================================================================
+  share: {
+    title: "Share Results",
+    whatsapp: "WhatsApp",
+    copy: "Copy Text",
+    email: "Email",
+  },
+
+  // ============================================================================
+  // CONTEXT
+  // ============================================================================
+  context: {
+    title: "Add Context Information",
+    description: "Providing context helps improve interpretation accuracy. All fields are optional.",
+    time: "Time",
+    timePlaceholder: "When was this communication made?",
+    useCurrentTime: "Use current time",
+    location: "Location",
+    locationPlaceholder: "Where was this communication made?",
+    useCurrentLocation: "Use current location (GPS)",
+    background: "Background Context",
+    backgroundPlaceholder: "General situation or environment when this was communicated...",
+    previousEvents: "Previous Events",
+    previousEventsPlaceholder: "What happened before this communication?",
+    futureEvents: "Future Events",
+    futureEventsPlaceholder: "Future events that might be related?",
+    cancel: "Cancel",
+    continue: "Continue to Interpretation",
+  },
+
+  // ============================================================================
+  // HISTORY
+  // ============================================================================
+  history: {
+    title: "Recent Interpretations",
+    empty: "No interpretations yet. Try interpreting some AAC communication!",
+    origin: "Origin",
+    text: "Text",
+    image: "Image",
+  },
+
+  // ============================================================================
+  // TOAST NOTIFICATIONS
+  // ============================================================================
+  toast: {
+    invalidFile: "Invalid File Type",
+    invalidFileDesc: "Please select a valid image file (JPG, PNG, etc.)",
+    imageRequired: "Image Required",
+    imageRequiredDesc: "Please select and crop an image file for interpretation.",
+    textRequired: "Text Required",
+    textRequiredDesc: "Please enter text for interpretation.",
+    imageCropped: "Image Cropped",
+    imageCroppedDesc: "The image has been cropped and is ready for interpretation.",
+    cropFailed: "Crop Failed",
+    cropFailedDesc: "Failed to crop the image. Please try again.",
+    saved: "Saved",
+    savedDesc: "The interpretation was saved successfully.",
+    deleted: "Deleted",
+    deletedDesc: "The interpretation was deleted.",
+    copied: "Copied",
+    copiedDesc: "Interpretation results copied to clipboard.",
+    copyFailed: "Copy Failed",
+    copyFailedDesc: "Failed to copy to clipboard. Please try again.",
+    // AAC User management
+    studentCreated: "AAC User Created",
+    studentCreatedDesc: "New AAC user was added successfully",
+    studentCreateFailed: "User Creation Failed",
+    studentCreateFailedDesc: "Could not create AAC user",
+    studentUpdated: "AAC User Updated",
+    studentUpdatedDesc: "AAC user details were updated successfully",
+    studentUpdateFailed: "Update Failed",
+    studentUpdateFailedDesc: "Could not update AAC user",
+    studentDeleted: "AAC User Deleted",
+    studentDeletedDesc: "AAC user was removed successfully",
+    studentDeleteFailed: "Deletion Failed",
+    studentDeleteFailedDesc: "Could not delete AAC user",
+    // Profile management
+    profileUpdated: "Profile Updated",
+    profileUpdatedDesc: "Your profile was updated successfully",
+    profileUpdateFailed: "Update Failed",
+    profileUpdateFailedDesc: "Could not update profile",
+    imageUploaded: "Image Uploaded",
+    imageUploadedDesc: "Your profile image was updated successfully",
+    imageUploadFailed: "Upload Failed",
+    imageUploadFailedDesc: "Could not upload image",
+    // Invite code management
+    inviteCreated: "Invite Code Created",
+    inviteCreatedDesc: "The invite code was created successfully",
+    inviteCreateFailed: "Code Creation Failed",
+    inviteCreateFailedDesc: "Could not create invite code",
+    inviteRedeemed: "Invite Code Redeemed",
+    inviteRedeemedDesc: 'AAC user "{alias}" was added successfully',
+    inviteRedeemFailed: "Code Redemption Failed",
+    inviteRedeemFailedDesc: "Could not redeem invite code",
+    inviteDeleted: "Invite Code Deleted",
+    inviteDeletedDesc: "The invite code was removed successfully",
+    inviteDeleteFailed: "Deletion Failed",
+    inviteDeleteFailedDesc: "Could not delete invite code",
+    // Location management
+    locationSaved: "Location Saved",
+    locationSavedDesc: "The location was saved successfully",
+    locationSaveFailed: "Save Failed",
+    locationSaveFailedDesc: "Could not save location",
+    locationDeleted: "Location Deleted",
+    locationDeletedDesc: "The location was removed successfully",
+    locationDeleteFailed: "Deletion Failed",
+    locationDeleteFailedDesc: "Could not delete location",
+    // Interpretation
+    interpretationSuccess: "Communication Interpreted",
+    interpretationSuccessDesc: "The AAC communication was analyzed successfully.",
+    interpretationFailed: "Interpretation Failed",
+    interpretationFailedDesc: "Could not interpret the communication.",
+    imageProcessed: "Image Processed",
+    imageProcessedDesc: "The image was processed and interpreted successfully.",
+    imageProcessingFailed: "Image Processing Failed",
+    imageProcessingFailedDesc: "Could not process the image.",
+  },
+
+  // ============================================================================
+  // UI LABELS
+  // ============================================================================
+  ui: {
+    loading: "Loading...",
+    creating: "Creating...",
+    redeeming: "Redeeming...",
+    noStudents: "No AAC users available",
+    createInviteCode: "Create Invite Code",
+    redeemInviteCode: "Redeem Invite Code",
+    enterInviteCode: "Enter invite code (8 characters)",
+    inviteCodePlaceholder: "e.g. ABC12345",
+    inviteCodeError: "Invite code must be exactly 8 characters",
+    redeemCode: "Redeem Code",
+    myInviteCodes: "My Invite Codes",
+    showHide: "Show/Hide",
+    created: "Created",
+    redeemed: "Redeemed",
+    copyInviteCode: "Copy Invite Code",
+    deleteInviteCode: "Delete Invite Code",
+    noInviteCodes: "No active invite codes",
+    close: "Close",
+  },
+
+  // ============================================================================
+  // LABELS
+  // ============================================================================
+  label: {
+    student: "Student",
+    age: "Age",
+    gender: "Gender",
+    condition: "Condition",
+    backgroundContext: "Background Context",
+  },
+
+  // ============================================================================
+  // ERROR MESSAGES
+  // ============================================================================
+  error: {
+    title: "Error",
+    selectStudent: "You must select an AAC user before continuing with interpretation",
+    locationUnavailable: "Location unavailable",
+    generic: "Something went wrong",
+    networkError: "Network error. Please check your connection.",
+    sessionExpired: "Your session has expired. Please log in again.",
+    notFound: "Not found",
+    unauthorized: "Unauthorized",
+    forbidden: "Access denied",
   },
 
   // ============================================================================
@@ -1927,6 +2122,7 @@ export const en = {
       instituteType: "Organization Type",
       school: "School",
       clinic: "Clinic",
+      family: "Family",
       instituteLogo: "Organization Logo",
       uploadLogo: "Upload Logo",
       userType: "User Type",

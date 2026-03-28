@@ -1,6 +1,7 @@
-import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
+import { useState, useEffect, useRef, createContext, useContext, ReactNode } from 'react';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useAuth } from "@/hooks/useAuth";
+import { useInstitute } from "@/hooks/useInstitute";
 import { Student } from '@shared/schema';
 
 interface StudentContextType {
@@ -12,7 +13,7 @@ interface StudentContextType {
   refetchStudent: () => Promise<void>;
 }
 
-const STUDENTS_QUERY_KEY = ['/api/students'];
+const studentsQueryKey = (instituteId?: string) => ['/api/students', { instituteId }];
 const studentDetailQueryKey = (id: string) => ['/api/students', id];
 
 const StudentContext = createContext<StudentContextType | null>(null);
@@ -30,30 +31,40 @@ export const StudentProvider = ({ children }: { children: ReactNode }) => {
   const [students, setStudents] = useState<Student[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { user } = useAuth();
+  const { currentInstitute } = useInstitute();
+  const prevInstituteIdRef = useRef<string | null | undefined>(undefined);
 
-  // Load list of students, with react-query + in‑memory cache
+  const currentInstituteId = currentInstitute?.id ?? null;
+  const currentQueryKey = studentsQueryKey(currentInstituteId ?? undefined);
+
+  // Load list of students scoped to the selected institute
   const loadStudents = async (): Promise<Student[]> => {
-    const cached = queryClient.getQueryData<Student[]>(STUDENTS_QUERY_KEY);
+    if (!currentInstituteId) {
+      setStudents([]);
+      return [];
+    }
+
+    const cached = queryClient.getQueryData<Student[]>(currentQueryKey);
     if (cached) {
       setStudents(cached);
       return cached;
     }
 
     try {
-      const response = await apiRequest('GET', '/api/students');
+      const response = await apiRequest('GET', `/api/students?instituteId=${currentInstituteId}`);
       const data = await response.json();
 
       const list: Student[] =
         data?.success && Array.isArray(data.students) ? data.students : [];
 
       setStudents(list);
-      queryClient.setQueryData<Student[]>(STUDENTS_QUERY_KEY, list);
+      queryClient.setQueryData<Student[]>(currentQueryKey, list);
 
       return list;
     } catch (error) {
       console.error('Get AAC Users failed:', error);
       setStudents([]);
-      queryClient.setQueryData<Student[]>(STUDENTS_QUERY_KEY, []);
+      queryClient.setQueryData<Student[]>(currentQueryKey, []);
       return [];
     }
   };
@@ -110,7 +121,7 @@ export const StudentProvider = ({ children }: { children: ReactNode }) => {
 
         // Update react‑query caches
         queryClient.setQueryData<Student>(studentDetailQueryKey(studentId), fresh);
-        queryClient.setQueryData<Student[]>(STUDENTS_QUERY_KEY, (prev) => {
+        queryClient.setQueryData<Student[]>(currentQueryKey, (prev) => {
           if (!prev) return [fresh];
           const idx = prev.findIndex((u) => u.id === fresh.id);
           if (idx === -1) return [...prev, fresh];
@@ -168,16 +179,38 @@ export const StudentProvider = ({ children }: { children: ReactNode }) => {
     await checkStudentStatus();
   };
 
-  // Refresh AAC users whenever the logged-in user changes
+  // Refresh AAC users whenever the logged-in user or selected institute changes
   useEffect(() => {
-    if (user) {
-      checkStudentStatus();  // user logged in → load AAC users
-    } else {
+    if (!user) {
       // user logged out → clear state
       setStudents([]);
       setStudent(null);
+      prevInstituteIdRef.current = undefined;
+      return;
     }
-  }, [user]);
+
+    const instituteChanged = prevInstituteIdRef.current !== undefined
+      && prevInstituteIdRef.current !== currentInstituteId;
+    prevInstituteIdRef.current = currentInstituteId;
+
+    if (!currentInstituteId) {
+      // No institute selected → clear students
+      setStudents([]);
+      setStudent(null);
+      setIsLoading(false);
+      return;
+    }
+
+    if (instituteChanged) {
+      // Institute changed → clear current selection and reload
+      setStudent(null);
+      if (typeof window !== 'undefined' && storageKey) {
+        window.localStorage.removeItem(storageKey);
+      }
+    }
+
+    checkStudentStatus();
+  }, [user, currentInstituteId]);
 
   const contextValue: StudentContextType = {
     student,
