@@ -29,7 +29,7 @@ interface CreateLicenseInput {
   // Optional institute creation
   createInstitute?: boolean;
   instituteName?: string;
-  instituteType?: "school" | "clinic";
+  instituteType?: "school" | "clinic" | "family";
   instituteLogo?: string; // base64 data URI
 }
 
@@ -59,15 +59,18 @@ class LicenseService {
       ? { firstName: data.firstName, lastName: data.lastName, userType: data.userType }
       : null;
 
+    // Normalize email to lowercase for consistent lookups
+    const normalizedEmail = data.inviteEmail.trim().toLowerCase();
+
     // Step 4: Create the license
     const licenseData: InsertLicense = {
-      name: data.name || `License for ${data.inviteEmail}`,
+      name: data.name || `License for ${normalizedEmail}`,
       licenseType: data.licenseType || "standard",
       subscriptionType: data.subscriptionType || "monthly",
       permissions: data.permissions || null,
       isTrial: data.isTrial || false,
       trialExpiresAt: data.trialExpiresAt ? new Date(data.trialExpiresAt) : null,
-      inviteEmail: data.inviteEmail,
+      inviteEmail: normalizedEmail,
       inviteToken: inviteToken || null,
       instituteId: instituteId || null,
       inviteDefaults,
@@ -80,7 +83,7 @@ class LicenseService {
     if (instituteId) {
       const invite = await instituteRepository.createInvite(
         instituteId,
-        data.inviteEmail,
+        normalizedEmail,
         adminUserId,
         { role: "admin", grantAdmin: true, expiresInDays: 30 },
       );
@@ -88,7 +91,7 @@ class LicenseService {
       try {
         const inviteLink = `${baseUrl}/invite/${invite.token}`;
         await emailService.sendLicenseInvite({
-          inviteeEmail: data.inviteEmail,
+          inviteeEmail: normalizedEmail,
           licenseName: license.name || "Your License",
           licenseType: license.licenseType,
           instituteName: data.instituteName,
@@ -106,7 +109,7 @@ class LicenseService {
         expiresAt.setDate(expiresAt.getDate() + 30);
 
         await emailService.sendLicenseInvite({
-          inviteeEmail: data.inviteEmail,
+          inviteeEmail: normalizedEmail,
           licenseName: license.name || "Your License",
           licenseType: license.licenseType,
           inviteLink,

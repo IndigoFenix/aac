@@ -387,7 +387,7 @@ export class StudentRepository {
           )
         )
       )
-      .orderBy(desc(students.createdAt));
+      .orderBy(students.id, desc(students.createdAt));
 
     return rows.map((r) => ({
       student: r.student,
