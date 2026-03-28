@@ -19,7 +19,7 @@ const createLicenseSchema = z.object({
   userType: z.string().optional(),
   createInstitute: z.boolean().optional(),
   instituteName: z.string().optional(),
-  instituteType: z.enum(["school", "clinic"]).optional(),
+  instituteType: z.enum(["school", "clinic", "family"]).optional(),
 });
 
 const updateLicenseSchema = z.object({
