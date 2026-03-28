@@ -68,6 +68,7 @@ import {
   LIBRARY_SYSTEM_PROMPT,
 } from "./memory-schema/topic-memory-schema";
 import { studentService } from "./studentService";
+import type { LicensePermissions } from "@shared/license-permissions";
 
 // Re-export for convenience
 export { PROGRESS_PROGRAM_FIELD, PROGRESS_SYSTEM_PROMPT };
@@ -114,6 +115,7 @@ export interface ChatContext {
   programId?: string; // Optional - if not provided, will load current program
   instituteId?: string; // Optional - for filtering medical records by clinic
   reportPermissions?: AccessPermissions; // Optional - defaults to all hidden
+  licensePermissions?: LicensePermissions; // Optional - license-based feature gating
 }
 
 export interface ChatContextState {
@@ -158,6 +160,7 @@ export class ChatContextManager {
         studentId: context.studentId,
         userId: context.userId,
         instituteId: context.instituteId,
+        licensePermissions: context.licensePermissions,
       },
       reportPermissions: permissions,
     };
@@ -667,10 +670,11 @@ export async function createChatContextManager(
   masterMemoryFields: AgentMemoryFieldWithDB[] = [],
   existingLoadState?: MemoryLoadState,
   instituteId?: string,
-  reportPermissions?: AccessPermissions
+  reportPermissions?: AccessPermissions,
+  licensePermissions?: LicensePermissions
 ): Promise<ChatContextManager> {
   const manager = new ChatContextManager(
-    { studentId, userId, programId, instituteId, reportPermissions },
+    { studentId, userId, programId, instituteId, reportPermissions, licensePermissions },
     masterMemoryFields,
     existingLoadState
   );

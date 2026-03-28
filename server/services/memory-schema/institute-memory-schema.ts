@@ -46,6 +46,9 @@ import {
   import { studentService } from "../studentService";
   import { aacSettingsRepository } from "../../repositories/aacSettingsRepository";
   import { instituteRepository } from "../../repositories/instituteRepository";
+  import { licenseRepository } from "../../repositories/licenseRepository";
+  import type { LicensePermissions } from "@shared/license-permissions";
+  import { resolvePermissions } from "@shared/license-permissions";
   
   // ============================================================================
   // HELPER FUNCTIONS
@@ -781,6 +784,12 @@ import {
     list: async (ctx, { offset, limit }): Promise<ListResult<any>> => {
       const userId = getUserId(ctx);
       const instituteId = ctx.all.instituteId as string | undefined;
+      const licensePerms = ctx.all.licensePermissions as LicensePermissions | undefined;
+
+      // License with maxStudents === 0 means no student access
+      if (licensePerms && licensePerms.maxStudents === 0) {
+        return { items: [], total: 0, keys: [] };
+      }
 
       // If an institute is selected, scope students to that institute
       const studentsWithLinks = instituteId
@@ -844,6 +853,26 @@ import {
         const isMember = await instituteRepository.isUserMemberOfInstitute(instId, userId);
         if (!isMember) {
           throw new Error(`Access denied: you are not a member of institute ${instId}.`);
+        }
+      }
+
+      // Check license student limits per institute
+      for (const instId of enrollInstituteIds) {
+        const instituteLicenses = await licenseRepository.getLicensesByInstituteId(instId);
+        const activeLicense = instituteLicenses.find(l => l.isActive && l.permissions);
+        const perms = activeLicense ? resolvePermissions(activeLicense.permissions as Partial<LicensePermissions>) : null;
+
+        if (perms) {
+          if (perms.maxStudents === 0) {
+            throw new Error("Your license does not allow adding students.");
+          }
+          if (perms.maxStudents !== -1) {
+            const studentsResult = await instituteService.getInstituteStudents(instId, userId);
+            const currentCount = studentsResult.students?.length ?? 0;
+            if (currentCount >= perms.maxStudents) {
+              throw new Error(`Student limit reached for this institute (${currentCount}/${perms.maxStudents}). Upgrade to add more.`);
+            }
+          }
         }
       }
 

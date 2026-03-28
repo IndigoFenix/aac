@@ -59,6 +59,8 @@ import {
 import { customSymbolRepository } from "../repositories/customSymbolRepository";
 import { aacSettingsRepository } from "../repositories/aacSettingsRepository";
 import { instituteRepository } from "../repositories/instituteRepository";
+import { licenseService } from "./licenseService";
+import type { LicensePermissions } from "@shared/license-permissions";
 import { resolveImageKeys, queueSymbolGeneration } from "./symbol/auto-symbol-service";
 
 /**
@@ -917,6 +919,15 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     educational: 'hidden',
   };
 
+  // Fetch license permissions for the current user
+  let licensePerms: LicensePermissions | undefined;
+  if (context.user) {
+    licensePerms = await licenseService.getUserPermissions(
+      context.user.id,
+      context.user.isSystemAdmin ?? false
+    );
+  }
+
   // Deserialize existing load state from chatState if available
   // Note: May be the cause of some bugs. If issues arise, consider setting it to undefined.
   const existingLoadState = chatState.loadStateCache ? deserializeLoadState(chatState.loadStateCache) : undefined;
@@ -925,18 +936,21 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   // so we keep report permissions hidden to avoid creating duplicate Context_Reports
   if (context.student && !isAACFeature) {
     // Determine report permissions based on user rights
-    // These could come from the userStudent relationship or be passed in featureContext
     const hasMedicalRights = context.userStudent?.hasMedicalRights ?? false;
     const hasEducationalRights = context.userStudent?.hasEducationalRights ?? false;
 
+    // License must also grant dashboard access for reports to be visible
+    const licenseDashboard = licensePerms?.dashboardLevel ?? 0;
+    const licenseAllowsReports = licenseDashboard !== 0;
+
     const canEdit = true; // For now, assume edit rights if they have any access
 
-    // Convert rights to permissions
-    accessPermissions.medical = hasMedicalRights ? (canEdit ? 'editable' : 'readonly') : 'hidden';
-    accessPermissions.functional = hasEducationalRights ? (canEdit ? 'editable' : 'readonly') : 'hidden';
-    accessPermissions.educational = hasEducationalRights ? (canEdit ? 'editable' : 'readonly') : 'hidden';
+    // Convert rights to permissions — both user-student rights AND license must allow
+    accessPermissions.medical = (hasMedicalRights && licenseAllowsReports) ? (canEdit ? 'editable' : 'readonly') : 'hidden';
+    accessPermissions.functional = (hasEducationalRights && licenseAllowsReports) ? (canEdit ? 'editable' : 'readonly') : 'hidden';
+    accessPermissions.educational = (hasEducationalRights && licenseAllowsReports) ? (canEdit ? 'editable' : 'readonly') : 'hidden';
   }
-    
+
   // Create the unified manager
   // For AAC mode, we don't use chatContextManager.getMemoryFields(), so pass empty array
   // For other modes, pass MASTER_MEMORY_FIELDS which gets included in the field list
@@ -947,7 +961,8 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     isAACFeature ? [] : MASTER_MEMORY_FIELDS,
     existingLoadState,
     context.institute?.id, // instituteId for medical records filtering
-    accessPermissions
+    accessPermissions,
+    licensePerms
   );
     
   // Build memory fields based on mode
