@@ -16,6 +16,7 @@ const messageContentSchema = z.union([
 
 const messageSchema = z.object({
   studentId: z.string().optional(),
+  instituteId: z.string().optional(),
   sessionId: z.string().optional(),
   activeFeature: z.string().optional(),
   persona: z.string().optional(),
@@ -56,7 +57,7 @@ export class ChatStreamController {
 
     try {
       const userId = req.user!.id;
-      let { studentId, sessionId, activeFeature, persona, messages, featureContext, vectorStoreId, images, documents, replyType } =
+      let { studentId, instituteId, sessionId, activeFeature, persona, messages, featureContext, vectorStoreId, images, documents, replyType } =
         messageSchema.parse(req.body);
 
       if (!persona) {
@@ -112,6 +113,7 @@ export class ChatStreamController {
           const stream = onMessageMdStreaming({
             userId,
             studentId,
+            instituteId,
             sessionId,
             activeFeature: activeFeature as FeatureType,
             persona: persona as ChatPersona,
@@ -152,6 +154,7 @@ export class ChatStreamController {
         const response = await onMessageStreaming({
           userId,
           studentId,
+          instituteId,
           sessionId,
           activeFeature: activeFeature as FeatureType,
           persona: persona as ChatPersona,

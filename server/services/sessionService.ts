@@ -58,6 +58,7 @@ import {
 } from "./system-prompts";
 import { customSymbolRepository } from "../repositories/customSymbolRepository";
 import { aacSettingsRepository } from "../repositories/aacSettingsRepository";
+import { instituteRepository } from "../repositories/instituteRepository";
 import { resolveImageKeys, queueSymbolGeneration } from "./symbol/auto-symbol-service";
 
 /**
@@ -787,6 +788,7 @@ async function spendCredits(
 interface GetMessageManagerInput {
   userId?: string;
   studentId?: string;
+  instituteId?: string;
   sessionId?: string;
   feature?: FeatureType;
   /** Persona ID (UUID) from the personas table, or undefined for default */
@@ -812,7 +814,7 @@ interface GetMessageManagerResult {
 }
 
 async function getMessageManager(input: GetMessageManagerInput): Promise<GetMessageManagerResult> {
-  const { userId, studentId, sessionId, featureContext, persona, feature = "chat", onThinkingUpdate, onNavigate, onSelectStudent } = input;
+  const { userId, studentId, instituteId, sessionId, featureContext, persona, feature = "chat", onThinkingUpdate, onNavigate, onSelectStudent } = input;
   const isAACFeature = (feature === 'aac');
 
   // Validate input - at least one identifier must be provided
@@ -841,6 +843,11 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   if (userId && studentId) {
     context.userStudent = await getUserStudent(userId, studentId);
     // Relationship is optional - they might not have one yet
+  }
+
+  // Load selected institute if provided
+  if (instituteId) {
+    context.institute = await instituteRepository.getInstituteById(instituteId);
   }
 
   if (isAACFeature && !context.student) {
@@ -1420,6 +1427,7 @@ function extractContextFromMemoryValues(memoryValues: FlatMemoryValues): Record<
 export interface OnMessageInput {
   userId?: string;
   studentId?: string;
+  instituteId?: string;
   sessionId?: string;
   activeFeature?: FeatureType;
   /** Persona ID (UUID) from the personas table, or undefined for default */
@@ -1465,11 +1473,12 @@ function isCreditLimitError(error: any): boolean {
 
 export async function onMessage(input: OnMessageInput): Promise<MessageResponse> {
   try {
-    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, vectorStoreId, images, documents, currentImage, systemPromptOverride } = input;
+    const { userId, studentId, instituteId, sessionId, activeFeature, persona, messages, replyType, featureContext, vectorStoreId, images, documents, currentImage, systemPromptOverride } = input;
 
     const { manager: messageManager, memoryValues } = await getMessageManager({
       userId,
       studentId,
+      instituteId,
       sessionId,
       feature: activeFeature,
       persona,
@@ -1555,11 +1564,12 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
  */
 export async function onMessageStreaming(input: OnMessageStreamingInput): Promise<MessageResponse> {
   try {
-    const { userId, studentId, sessionId, activeFeature, persona, messages, replyType, featureContext, onThinkingUpdate, onNavigate, onSelectStudent, vectorStoreId, images, documents, currentImage, systemPromptOverride } = input;
+    const { userId, studentId, instituteId, sessionId, activeFeature, persona, messages, replyType, featureContext, onThinkingUpdate, onNavigate, onSelectStudent, vectorStoreId, images, documents, currentImage, systemPromptOverride } = input;
 
     const { manager: messageManager, memoryValues } = await getMessageManager({
       userId,
       studentId,
+      instituteId,
       sessionId,
       feature: activeFeature,
       persona,
@@ -1673,7 +1683,7 @@ export async function* onMessageMdStreaming(
 ): AsyncGenerator<SessionMdStreamEvent> {
   try {
     const {
-      userId, studentId, sessionId, activeFeature, persona, messages,
+      userId, studentId, instituteId, sessionId, activeFeature, persona, messages,
       featureContext, onThinkingUpdate, onNavigate, onSelectStudent, vectorStoreId, images, documents,
       currentImage, systemPromptOverride,
     } = input;
@@ -1681,6 +1691,7 @@ export async function* onMessageMdStreaming(
     const { manager: messageManager, memoryValues } = await getMessageManager({
       userId,
       studentId,
+      instituteId,
       sessionId,
       feature: activeFeature,
       persona,

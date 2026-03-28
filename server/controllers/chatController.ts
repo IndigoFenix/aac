@@ -16,6 +16,7 @@ const messageContentSchema = z.union([
 
 const messageSchema = z.object({
   studentId: z.string().optional(),
+  instituteId: z.string().optional(),
   sessionId: z.string().nullish(),  // Allow null, undefined, or string
   activeFeature: z.string().optional(),
   persona: z.string().optional(),
@@ -76,7 +77,7 @@ export class ChatController {
         body.featureContext = JSON.parse(body.featureContext);
       }
 
-      let { studentId, sessionId, activeFeature, persona, messages, featureContext, vectorStoreId, images, documents, replyType } = messageSchema.parse(body);
+      let { studentId, instituteId, sessionId, activeFeature, persona, messages, featureContext, vectorStoreId, images, documents, replyType } = messageSchema.parse(body);
       if (!persona) {
         persona = "assistant";
       }
@@ -98,6 +99,7 @@ export class ChatController {
       const response = await onMessage({
         userId,
         studentId,
+        instituteId,
         sessionId: sessionId || undefined,
         activeFeature: activeFeature as FeatureType,
         persona: persona as ChatPersona,

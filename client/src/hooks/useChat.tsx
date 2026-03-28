@@ -279,7 +279,7 @@ export const ChatProvider = ({
   
   // External hooks
   const { student, selectStudent } = useStudent();
-  const { selectInstitute } = useInstitute();
+  const { currentInstitute, selectInstitute } = useInstitute();
   const { activeFeature, getFeatureMetadata, setActiveFeature } = useFeaturePanel();
   const { setSharedState } = useSharedState();
 
@@ -668,6 +668,9 @@ export const ChatProvider = ({
     }
     if (student?.id) {
       requestBody.studentId = student.id;
+    }
+    if (currentInstitute?.id) {
+      requestBody.instituteId = currentInstitute.id;
     }
     // Include vector store ID if files are attached
     if (vectorStoreId) {

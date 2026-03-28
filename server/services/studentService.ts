@@ -8,7 +8,43 @@ import {
   type UserStudent,
   type InsertUserStudent,
   type UpdateUserStudent,
+  students,
+  aacSettings,
+  studentContacts,
+  userStudents,
+  instituteStudents,
+  studentClassrooms,
+  medicalRecords,
+  functionalReports,
+  educationalReports,
+  programs,
+  profileDomains,
+  baselineMeasurements,
+  assessmentSources,
+  goals,
+  objectives,
+  userGoals,
+  userObjectives,
+  services,
+  serviceGoals,
+  accommodations,
+  progressReports,
+  goalProgressEntries,
+  dataPoints,
+  transitionPlans,
+  transitionGoals,
+  teamMembers,
+  meetings,
+  consentForms,
+  chatSessions,
+  boards,
+  inviteCodes,
+  inviteCodeRedemptions,
+  studentSymbolAssociations,
 } from "@shared/schema";
+import { db } from "../db";
+import { eq, inArray } from "drizzle-orm";
+import { deleteExternalData, type EntityRef } from "../external-storage";
 
 /** Fields that belong to the aac_settings table (sent without the 'aac' prefix from clients) */
 const AAC_SETTINGS_FIELDS = new Set([
@@ -118,6 +154,24 @@ export class StudentService {
   ): Promise<{ student: StudentWithAacSettings; link: UserStudent }[]> {
     const results = await studentRepository.getStudentsWithLinksByUserId(userId);
     // Enrich each student with their AAC settings
+    const enriched = await Promise.all(
+      results.map(async ({ student, link }) => {
+        const withSettings = await studentRepository.getStudentWithAacSettings(student.id);
+        return { student: withSettings || { ...student, aacSettings: null }, link };
+      })
+    );
+    return enriched;
+  }
+
+  /**
+   * Get students visible to a user within a specific institute.
+   * Filters by institute enrollment + (direct assignment OR shared classroom OR family).
+   */
+  async getStudentsForUserInInstitute(
+    userId: string,
+    instituteId: string
+  ): Promise<{ student: StudentWithAacSettings; link: UserStudent | null }[]> {
+    const results = await studentRepository.getStudentsForUserInInstitute(userId, instituteId);
     const enriched = await Promise.all(
       results.map(async ({ student, link }) => {
         const withSettings = await studentRepository.getStudentWithAacSettings(student.id);
@@ -250,6 +304,125 @@ export class StudentService {
     studentId: string
   ): Promise<boolean> {
     return studentRepository.deactivateUserStudentLink(userId, studentId);
+  }
+
+  // ==================== Permanent Deletion ====================
+
+  /**
+   * Permanently delete a student and ALL associated data from the system.
+   * This is irreversible. Deletes from all related tables in dependency order
+   * within a single transaction, then cleans up external storage.
+   */
+  async permanentlyDeleteStudent(studentId: string): Promise<{ deleted: boolean; tablesAffected: Record<string, number> }> {
+    const ref: EntityRef = { type: "student", id: studentId };
+    const counts: Record<string, number> = {};
+
+    // Collect IDs needed for cascading deletes before the transaction
+    const programRows = await db.select({ id: programs.id }).from(programs).where(eq(programs.studentId, studentId));
+    const programIds = programRows.map(r => r.id);
+
+    let goalIds: string[] = [];
+    let objectiveIds: string[] = [];
+    let serviceIds: string[] = [];
+    let profileDomainIds: string[] = [];
+    let transitionPlanIds: string[] = [];
+
+    if (programIds.length > 0) {
+      const [goalRows, pdRows, tpRows, svcRows] = await Promise.all([
+        db.select({ id: goals.id }).from(goals).where(inArray(goals.programId, programIds)),
+        db.select({ id: profileDomains.id }).from(profileDomains).where(inArray(profileDomains.programId, programIds)),
+        db.select({ id: transitionPlans.id }).from(transitionPlans).where(inArray(transitionPlans.programId, programIds)),
+        db.select({ id: services.id }).from(services).where(inArray(services.programId, programIds)),
+      ]);
+      goalIds = goalRows.map(r => r.id);
+      profileDomainIds = pdRows.map(r => r.id);
+      transitionPlanIds = tpRows.map(r => r.id);
+      serviceIds = svcRows.map(r => r.id);
+
+      if (goalIds.length > 0) {
+        const objRows = await db.select({ id: objectives.id }).from(objectives).where(inArray(objectives.goalId, goalIds));
+        objectiveIds = objRows.map(r => r.id);
+      }
+    }
+
+    // Helper to delete and count rows
+    const del = async (tx: Parameters<Parameters<typeof db.transaction>[0]>[0], table: any, condition: any, name: string) => {
+      const rows = await tx.delete(table).where(condition).returning({ id: table.id });
+      counts[name] = rows.length;
+      return rows;
+    };
+
+    await db.transaction(async (tx) => {
+      // --- Program-child leaf tables (deepest first) ---
+      if (objectiveIds.length > 0) {
+        await del(tx, userObjectives, inArray(userObjectives.objectiveId, objectiveIds), 'userObjectives');
+        // dataPoints can reference objectiveId
+        await del(tx, dataPoints, inArray(dataPoints.objectiveId, objectiveIds), 'dataPoints_byObjective');
+      }
+
+      if (goalIds.length > 0) {
+        await del(tx, dataPoints, inArray(dataPoints.goalId, goalIds), 'dataPoints');
+        await del(tx, goalProgressEntries, inArray(goalProgressEntries.goalId, goalIds), 'goalProgressEntries');
+        await del(tx, serviceGoals, inArray(serviceGoals.goalId, goalIds), 'serviceGoals');
+        await del(tx, userGoals, inArray(userGoals.goalId, goalIds), 'userGoals');
+        await del(tx, objectives, inArray(objectives.goalId, goalIds), 'objectives');
+      }
+
+      if (profileDomainIds.length > 0) {
+        await del(tx, baselineMeasurements, inArray(baselineMeasurements.profileDomainId, profileDomainIds), 'baselineMeasurements');
+        await del(tx, assessmentSources, inArray(assessmentSources.profileDomainId, profileDomainIds), 'assessmentSources');
+      }
+
+      if (transitionPlanIds.length > 0) {
+        await del(tx, transitionGoals, inArray(transitionGoals.transitionPlanId, transitionPlanIds), 'transitionGoals');
+      }
+
+      if (serviceIds.length > 0) {
+        await del(tx, serviceGoals, inArray(serviceGoals.serviceId, serviceIds), 'serviceGoals_byService');
+      }
+
+      if (programIds.length > 0) {
+        await del(tx, goals, inArray(goals.programId, programIds), 'goals');
+        await del(tx, profileDomains, inArray(profileDomains.programId, programIds), 'profileDomains');
+        await del(tx, services, inArray(services.programId, programIds), 'services');
+        await del(tx, accommodations, inArray(accommodations.programId, programIds), 'accommodations');
+        await del(tx, progressReports, inArray(progressReports.programId, programIds), 'progressReports');
+        await del(tx, transitionPlans, inArray(transitionPlans.programId, programIds), 'transitionPlans');
+        await del(tx, teamMembers, inArray(teamMembers.programId, programIds), 'teamMembers');
+        await del(tx, meetings, inArray(meetings.programId, programIds), 'meetings');
+        await del(tx, consentForms, inArray(consentForms.programId, programIds), 'consentForms');
+        await del(tx, programs, inArray(programs.id, programIds), 'programs');
+      }
+
+      // --- Direct student-linked tables ---
+      await del(tx, inviteCodeRedemptions, eq(inviteCodeRedemptions.studentId, studentId), 'inviteCodeRedemptions');
+      await del(tx, inviteCodes, eq(inviteCodes.studentId, studentId), 'inviteCodes');
+      await del(tx, studentSymbolAssociations, eq(studentSymbolAssociations.studentId, studentId), 'studentSymbolAssociations');
+      await del(tx, studentContacts, eq(studentContacts.studentId, studentId), 'studentContacts');
+      await del(tx, medicalRecords, eq(medicalRecords.studentId, studentId), 'medicalRecords');
+      await del(tx, functionalReports, eq(functionalReports.studentId, studentId), 'functionalReports');
+      await del(tx, educationalReports, eq(educationalReports.studentId, studentId), 'educationalReports');
+      await del(tx, chatSessions, eq(chatSessions.studentId, studentId), 'chatSessions');
+      await del(tx, boards, eq(boards.studentId, studentId), 'boards');
+      await del(tx, aacSettings, eq(aacSettings.studentId, studentId), 'aacSettings');
+
+      // --- Relationship tables ---
+      await del(tx, userStudents, eq(userStudents.studentId, studentId), 'userStudents');
+      await del(tx, instituteStudents, eq(instituteStudents.studentId, studentId), 'instituteStudents');
+      await del(tx, studentClassrooms, eq(studentClassrooms.studentId, studentId), 'studentClassrooms');
+
+      // --- The student record itself ---
+      await del(tx, students, eq(students.id, studentId), 'students');
+    });
+
+    // Clean up external storage (outside transaction - best effort)
+    try {
+      await deleteExternalData("students", studentId, ref);
+    } catch (err) {
+      console.error(`[permanentlyDeleteStudent] External storage cleanup failed for ${studentId}:`, err);
+    }
+
+    return { deleted: counts['students'] === 1, tablesAffected: counts };
   }
 
   // ==================== Utility Methods ====================

@@ -14,7 +14,7 @@ export const apiTypeEnum = pgEnum("api_type", [
 
 export const chatSessionStatusEnum = pgEnum("chat_session_status", ["open", "paused", "closed"]);
 
-export const instituteTypeEnum = pgEnum("institute_type", ["school", "clinic"]);
+export const instituteTypeEnum = pgEnum("institute_type", ["school", "clinic", "family"]);
 
 // IEP/TALA specific enums
 export const programFrameworkEnum = pgEnum("program_framework", ["tala", "us_iep"]);
@@ -1744,4 +1744,4 @@ export type MeetingType = 'initial_evaluation' | 'annual_review' | 'reevaluation
 export type ConsentType = 'initial_evaluation' | 'reevaluation' | 'placement' | 'release_of_information' | 'service_provision';
 export type TransitionArea = 'education' | 'employment' | 'independent_living' | 'community';
 export type TeamMemberRole = 'parent_guardian' | 'student' | 'homeroom_teacher' | 'special_education_teacher' | 'general_education_teacher' | 'speech_language_pathologist' | 'occupational_therapist' | 'physical_therapist' | 'psychologist' | 'administrator' | 'case_manager' | 'external_provider' | 'other';
-export type InstituteType = 'school' | 'clinic';
+export type InstituteType = 'school' | 'clinic' | 'family';

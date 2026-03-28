@@ -1,25 +1,35 @@
 import type { Request, Response } from "express";
 import { studentService } from "../services";
+import { instituteRepository } from "../repositories";
 
 export class StudentController {
   /**
-   * GET /api/students
-   * Get all students for the current user
+   * GET /api/students?instituteId=...
+   * Get students visible to the current user within the selected institute.
+   * If no instituteId is provided, returns an empty list.
    */
   async getStudents(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      console.log("Getting students for user ID:", currentUser.id);
+      const instituteId = req.query.instituteId as string | undefined;
 
-      // Get students with their link information
-      const studentsWithLinks = await studentService.getStudentsWithLinksByUserId(currentUser.id);
+      if (!instituteId) {
+        res.json({ success: true, students: [] });
+        return;
+      }
+
+      // Get students scoped to the selected institute
+      const studentsWithLinks = await studentService.getStudentsForUserInInstitute(
+        currentUser.id,
+        instituteId
+      );
 
       // Transform to include calculated age and role
       const students = studentsWithLinks.map(({ student, link }) => ({
         ...student,
         age: studentService.calculateAge(student.birthDate),
-        role: link.role,
-        linkId: link.id,
+        role: link?.role ?? null,
+        linkId: link?.id ?? null,
       }));
 
       res.json({ success: true, students });
@@ -65,17 +75,41 @@ export class StudentController {
 
   /**
    * POST /api/students
-   * Create a new student
+   * Create a new student. Requires instituteIds (array) — the student will be
+   * auto-enrolled in those institutes. Users with no institute cannot create students.
    */
   async createStudent(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
+      const { instituteIds, ...studentBody } = req.body;
 
-      if (!req.body.firstName && !req.body.name) {
+      if (!studentBody.firstName && !studentBody.name) {
         res
           .status(400)
           .json({ success: false, message: "First name is required" });
         return;
+      }
+
+      // Require at least one institute
+      if (!Array.isArray(instituteIds) || instituteIds.length === 0) {
+        res.status(400).json({
+          success: false,
+          message: "At least one institute is required to create a student",
+          code: "INSTITUTE_REQUIRED",
+        });
+        return;
+      }
+
+      // Verify the user is a member of every specified institute
+      for (const instId of instituteIds) {
+        const isMember = await instituteRepository.isUserMemberOfInstitute(instId, currentUser.id);
+        if (!isMember) {
+          res.status(403).json({
+            success: false,
+            message: "You must be a member of all specified institutes",
+          });
+          return;
+        }
       }
 
       // Check maxStudents license limit
@@ -91,9 +125,16 @@ export class StudentController {
       }
 
       const student = await studentService.createStudent(
-        { ...req.body, isActive: true },
+        { ...studentBody, isActive: true },
         currentUser.id,
         "owner" // Creating user becomes the owner
+      );
+
+      // Auto-enroll in all specified institutes
+      await Promise.all(
+        instituteIds.map((instId: string) =>
+          instituteRepository.assignStudentToInstitute(instId, student.id)
+        )
       );
 
       res.json({

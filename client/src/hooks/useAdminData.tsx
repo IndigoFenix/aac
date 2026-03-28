@@ -498,7 +498,7 @@ export interface CreateLicenseData {
   userType?: string;
   createInstitute?: boolean;
   instituteName?: string;
-  instituteType?: 'school' | 'clinic';
+  instituteType?: 'school' | 'clinic' | 'family';
   instituteLogo?: File;
 }
 

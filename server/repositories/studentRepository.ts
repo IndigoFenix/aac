@@ -2,6 +2,10 @@ import {
   students,
   aacSettings,
   userStudents,
+  instituteStudents,
+  studentClassrooms,
+  classroomUsers,
+  institutes,
   type Student,
   type InsertStudent,
   type UpdateStudent,
@@ -11,7 +15,7 @@ import {
   type UpdateUserStudent,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, or, isNotNull, sql } from "drizzle-orm";
 import {
   hydrateRecords,
   extractSensitiveFields,
@@ -322,6 +326,73 @@ export class StudentRepository {
         )
       );
     return { hasAccess: !!link, link: link || undefined };
+  }
+
+  // ==================== Institute-Scoped Student Queries ====================
+
+  /**
+   * Get students visible to a user within a specific institute.
+   * A student is visible if:
+   *   - They are actively enrolled in the institute, AND
+   *   - (They are directly assigned to the user via userStudents
+   *      OR they share a classroom with the user
+   *      OR the institute is a family)
+   */
+  async getStudentsForUserInInstitute(
+    userId: string,
+    instituteId: string
+  ): Promise<{ student: Student; link: UserStudent | null }[]> {
+    const rows = await db
+      .selectDistinctOn([students.id], {
+        student: students,
+        link: userStudents,
+        hasClassroomLink: sql<boolean>`CASE WHEN ${classroomUsers.id} IS NOT NULL THEN true ELSE false END`.as('has_classroom_link'),
+        isFamily: sql<boolean>`CASE WHEN ${institutes.type} = 'family' THEN true ELSE false END`.as('is_family'),
+      })
+      .from(instituteStudents)
+      .innerJoin(students, eq(instituteStudents.studentId, students.id))
+      .innerJoin(institutes, eq(instituteStudents.instituteId, institutes.id))
+      .leftJoin(
+        userStudents,
+        and(
+          eq(userStudents.studentId, students.id),
+          eq(userStudents.userId, userId),
+          eq(userStudents.isActive, true)
+        )
+      )
+      .leftJoin(
+        studentClassrooms,
+        and(
+          eq(studentClassrooms.studentId, students.id),
+          eq(studentClassrooms.isActive, true)
+        )
+      )
+      .leftJoin(
+        classroomUsers,
+        and(
+          eq(classroomUsers.classroomId, studentClassrooms.classroomId),
+          eq(classroomUsers.userId, userId),
+          eq(classroomUsers.isActive, true)
+        )
+      )
+      .where(
+        and(
+          eq(instituteStudents.instituteId, instituteId),
+          eq(instituteStudents.isActive, true),
+          eq(students.isActive, true),
+          or(
+            isNotNull(userStudents.id),        // directly assigned
+            isNotNull(classroomUsers.id),       // shares a classroom
+            sql`${institutes.type} = 'family'`  // family institute
+          )
+        )
+      )
+      .orderBy(desc(students.createdAt));
+
+    return rows.map((r) => ({
+      student: r.student,
+      link: r.link ?? null,
+    }));
   }
 
   // ==================== Legacy Compatibility Methods ====================
