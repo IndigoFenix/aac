@@ -237,23 +237,35 @@ export class StudentController {
     try {
       const currentUser = req.user as any;
       const studentId = req.params.id;
-      const { targetUserId, role } = req.body;
+      const { targetUserId, role, instituteId } = req.body;
 
       if (!targetUserId) {
         res.status(400).json({ success: false, message: "Target user ID is required" });
         return;
       }
 
-      // Verify the current user has access to this student
+      // Authorization: student owner OR institute admin (school/clinic)
       const { hasAccess, link: currentLink } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess) {
-        res.status(403).json({ success: false, message: "Access denied to this student" });
-        return;
+      const isOwner = hasAccess && currentLink?.role === "owner";
+      let isInstituteAdmin = false;
+
+      if (!isOwner && instituteId) {
+        const institute = await instituteRepository.getInstituteById(instituteId);
+        if (institute && (institute.type === 'school' || institute.type === 'clinic')) {
+          isInstituteAdmin = await instituteRepository.isUserAdminOfInstitute(instituteId, currentUser.id);
+          // Also verify the target user is a member of the same institute
+          if (isInstituteAdmin) {
+            const targetIsMember = await instituteRepository.isUserMemberOfInstitute(instituteId, targetUserId);
+            if (!targetIsMember) {
+              res.status(400).json({ success: false, message: "Target user is not a member of this institute" });
+              return;
+            }
+          }
+        }
       }
 
-      // Only owners can link other users
-      if (currentLink?.role !== "owner") {
-        res.status(403).json({ success: false, message: "Only owners can link other users" });
+      if (!isOwner && !isInstituteAdmin) {
+        res.status(403).json({ success: false, message: "Only student owners or institute admins can link users" });
         return;
       }
 
@@ -285,16 +297,22 @@ export class StudentController {
       const currentUser = req.user as any;
       const studentId = req.params.id;
       const targetUserId = req.params.userId;
+      const instituteId = req.query.instituteId as string | undefined;
 
-      // Verify the current user has access and is an owner
+      // Authorization: student owner OR institute admin (school/clinic)
       const { hasAccess, link: currentLink } = await studentService.verifyStudentAccess(studentId, currentUser.id);
-      if (!hasAccess) {
-        res.status(403).json({ success: false, message: "Access denied to this student" });
-        return;
+      const isOwner = hasAccess && currentLink?.role === "owner";
+      let isInstituteAdmin = false;
+
+      if (!isOwner && instituteId) {
+        const institute = await instituteRepository.getInstituteById(instituteId);
+        if (institute && (institute.type === 'school' || institute.type === 'clinic')) {
+          isInstituteAdmin = await instituteRepository.isUserAdminOfInstitute(instituteId, currentUser.id);
+        }
       }
 
-      if (currentLink?.role !== "owner") {
-        res.status(403).json({ success: false, message: "Only owners can unlink users" });
+      if (!isOwner && !isInstituteAdmin) {
+        res.status(403).json({ success: false, message: "Only student owners or institute admins can unlink users" });
         return;
       }
 

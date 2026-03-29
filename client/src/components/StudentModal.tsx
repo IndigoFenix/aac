@@ -5,10 +5,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
-import { useInstitute, Classroom, StudentInstitute } from '@/hooks/useInstitute';
+import { useInstitute, Classroom, StudentInstitute, InstituteMember } from '@/hooks/useInstitute';
 import { useStudent } from '@/hooks/useStudent';
+import { useAuth } from '@/hooks/useAuth';
 import { apiRequest } from '@/lib/queryClient';
-import { Student } from '@shared/schema';
+import { Student, UserStudent } from '@shared/schema';
 import { cn } from '@/lib/utils';
 
 import {
@@ -43,6 +44,9 @@ import {
   Loader2,
   AlertTriangle,
   Check,
+  UserPlus,
+  UserMinus,
+  Users,
 } from 'lucide-react';
 import { BiometricEnrollment } from '@/components/BiometricEnrollment';
 
@@ -108,9 +112,12 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
   const queryClient = useQueryClient();
   const { refetchStudent } = useStudent();
   
+  const { user } = useAuth();
   const {
     institutes,
+    currentInstitute,
     getClassrooms,
+    getMembers,
     addStudentToInstitute,
     getStudentInstitutes,
     addStudentToClassroom,
@@ -118,7 +125,7 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
 
   // Form state
   const [formData, setFormData] = useState<StudentFormData>(INITIAL_FORM_STATE);
-  
+
   // Institute assignment state
   // For creation: multi-select array of institute IDs
   const [selectedInstituteIds, setSelectedInstituteIds] = useState<string[]>([]);
@@ -127,14 +134,20 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
   const [selectedClassroomId, setSelectedClassroomId] = useState('');
   const [availableClassrooms, setAvailableClassrooms] = useState<Classroom[]>([]);
   const [loadingClassrooms, setLoadingClassrooms] = useState(false);
-  
+
   // Student's current institutes (for editing)
   const [studentInstitutes, setStudentInstitutes] = useState<StudentInstitute[]>([]);
   const [loadingStudentInstitutes, setLoadingStudentInstitutes] = useState(false);
-  
+
   // School transfer warning
   const [showSchoolWarning, setShowSchoolWarning] = useState(false);
   const [currentActiveSchool, setCurrentActiveSchool] = useState<StudentInstitute | null>(null);
+
+  // User-student link management (for institute admins)
+  const [instituteMembers, setInstituteMembers] = useState<InstituteMember[]>([]);
+  const [linkedUserIds, setLinkedUserIds] = useState<string[]>([]);
+  const [loadingLinks, setLoadingLinks] = useState(false);
+  const [linkingUserId, setLinkingUserId] = useState<string | null>(null);
 
   // ==========================================================================
   // MUTATIONS
@@ -221,10 +234,22 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
         primaryLanguage: editingStudent.primaryLanguage || language,
       });
       loadStudentInstitutes(editingStudent.id);
+      loadUserLinks(editingStudent.id);
     } else {
       resetForm();
     }
   }, [editingStudent]);
+
+  // Load institute members when editing (for the link management section)
+  useEffect(() => {
+    if (editingStudent && currentInstitute?.id && (currentInstitute.type === 'school' || currentInstitute.type === 'clinic')) {
+      getMembers(currentInstitute.id)
+        .then(setInstituteMembers)
+        .catch(() => setInstituteMembers([]));
+    } else {
+      setInstituteMembers([]);
+    }
+  }, [editingStudent, currentInstitute?.id]);
 
   // Load classrooms when institute is selected
   useEffect(() => {
@@ -280,6 +305,52 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
       setAvailableClassrooms([]);
     } finally {
       setLoadingClassrooms(false);
+    }
+  };
+
+  const loadUserLinks = async (studentId: string) => {
+    setLoadingLinks(true);
+    try {
+      const res = await apiRequest('GET', `/api/students/${studentId}/links`);
+      const data = await res.json();
+      const links: UserStudent[] = data?.success ? data.links : [];
+      setLinkedUserIds(links.filter(l => l.isActive).map(l => l.userId));
+    } catch {
+      setLinkedUserIds([]);
+    } finally {
+      setLoadingLinks(false);
+    }
+  };
+
+  const handleLinkUser = async (targetUserId: string) => {
+    if (!editingStudent || !currentInstitute) return;
+    setLinkingUserId(targetUserId);
+    try {
+      await apiRequest('POST', `/api/students/${editingStudent.id}/link`, {
+        targetUserId,
+        role: 'caregiver',
+        instituteId: currentInstitute.id,
+      });
+      setLinkedUserIds(prev => [...prev, targetUserId]);
+    } catch (error) {
+      console.error('Failed to link user:', error);
+      toast({ title: t('common.error') || 'Error', description: t('student.linkFailed') || 'Failed to link user', variant: 'destructive' });
+    } finally {
+      setLinkingUserId(null);
+    }
+  };
+
+  const handleUnlinkUser = async (targetUserId: string) => {
+    if (!editingStudent || !currentInstitute) return;
+    setLinkingUserId(targetUserId);
+    try {
+      await apiRequest('DELETE', `/api/students/${editingStudent.id}/link/${targetUserId}?instituteId=${currentInstitute.id}`);
+      setLinkedUserIds(prev => prev.filter(id => id !== targetUserId));
+    } catch (error) {
+      console.error('Failed to unlink user:', error);
+      toast({ title: t('common.error') || 'Error', description: t('student.unlinkFailed') || 'Failed to unlink user', variant: 'destructive' });
+    } finally {
+      setLinkingUserId(null);
     }
   };
 
@@ -364,6 +435,9 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
     setStudentInstitutes([]);
     setShowSchoolWarning(false);
     setCurrentActiveSchool(null);
+    setInstituteMembers([]);
+    setLinkedUserIds([]);
+    setLinkingUserId(null);
   };
 
   const handleClose = () => {
@@ -409,6 +483,16 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
     if (type === 'clinic') return <Hospital className="w-4 h-4 text-green-500" />;
     return <Home className="w-4 h-4 text-amber-500" />;
   };
+
+  // User link management: show only when editing, institute is school/clinic, user is admin, >1 member
+  const isCurrentUserAdmin = currentInstitute?.isAdmin ?? false;
+  const showUserLinks = !!editingStudent
+    && !!currentInstitute
+    && (currentInstitute.type === 'school' || currentInstitute.type === 'clinic')
+    && isCurrentUserAdmin
+    && instituteMembers.length > 1;
+  // Exclude the current user from the linkable members list
+  const otherMembers = instituteMembers.filter(m => m.id !== user?.id);
 
   // ==========================================================================
   // RENDER
@@ -816,6 +900,72 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
               </Alert>
             )}
           </div>
+
+          {/* User-Student Link Management (institute admins only) */}
+          {showUserLinks && (
+            <>
+              <Separator className="my-2" />
+              <div className="space-y-3">
+                <h3 className="text-sm font-medium flex items-center gap-2">
+                  <Users className="w-4 h-4" />
+                  {t('student.manageUserAccess') || 'User Access'}
+                </h3>
+                {loadingLinks ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {t('common.loading') || 'Loading...'}
+                  </div>
+                ) : (
+                  <div className="space-y-1 max-h-48 overflow-y-auto">
+                    {otherMembers.map((member) => {
+                      const isLinked = linkedUserIds.includes(member.id);
+                      const isBusy = linkingUserId === member.id;
+                      return (
+                        <div
+                          key={member.id}
+                          className={cn(
+                            'flex items-center justify-between p-2 rounded-md text-sm',
+                            isLinked ? 'bg-primary/10 border border-primary/20' : 'bg-muted/50'
+                          )}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="truncate font-medium">
+                              {member.fullName || member.email}
+                            </span>
+                            {member.role && (
+                              <Badge variant="outline" className="text-xs shrink-0">
+                                {member.role}
+                              </Badge>
+                            )}
+                          </div>
+                          <Button
+                            variant={isLinked ? 'destructive' : 'outline'}
+                            size="sm"
+                            className="shrink-0 ms-2"
+                            disabled={isBusy}
+                            onClick={() => isLinked ? handleUnlinkUser(member.id) : handleLinkUser(member.id)}
+                          >
+                            {isBusy ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : isLinked ? (
+                              <><UserMinus className="w-3 h-3 me-1" />{t('student.unlink') || 'Remove'}</>
+                            ) : (
+                              <><UserPlus className="w-3 h-3 me-1" />{t('student.link') || 'Add'}</>
+                            )}
+                          </Button>
+                        </div>
+                      );
+                    })}
+                    {otherMembers.length === 0 && (
+                      <p className="text-sm text-muted-foreground">
+                        {t('student.noOtherMembers') || 'No other members in this institute'}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
 
           {/* Biometric Enrollment - hidden until feature is ready
           {editingStudent && (

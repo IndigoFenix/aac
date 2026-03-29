@@ -938,60 +938,101 @@ import {
   /**
    * Student users operations (MAP) - users linked to a student
    */
+  /**
+   * Verify the requesting user is an admin of a school/clinic institute (required for link operations).
+   * Returns the validated instituteId.
+   */
+  async function requireInstituteAdmin(ctx: DBOperationContext): Promise<string> {
+    const userId = getUserId(ctx);
+    const selectedInstituteId = ctx.all.instituteId as string | undefined;
+    if (!selectedInstituteId) {
+      throw new Error("An institute must be selected to manage user-student links.");
+    }
+    const institute = await instituteRepository.getInstituteById(selectedInstituteId);
+    if (!institute || (institute.type !== 'school' && institute.type !== 'clinic')) {
+      throw new Error("User-student links can only be managed within a school or clinic.");
+    }
+    const isAdmin = await instituteRepository.isUserAdminOfInstitute(selectedInstituteId, userId);
+    if (!isAdmin) {
+      throw new Error("Only institute admins can manage user-student links.");
+    }
+    return selectedInstituteId;
+  }
+
   const studentUsersOps: MemoryDBOperations<any> = {
     list: async (ctx, { offset, limit }): Promise<ListResult<any>> => {
       const studentId = ctx.all.studentId;
       if (!studentId) throw new Error("studentId required");
-  
+
       const links = await studentService.getUsersLinkedToStudent(studentId);
-      
+
       const paged = links.slice(offset, offset + limit);
       const items = paged.map(link => toMemoryValue(link));
       const keys = paged.map(link => link.userId);
-  
+
       return {
         items,
         total: links.length,
         keys,
       };
     },
-  
+
     add: async (ctx, value) => {
       const studentId = ctx.all.studentId;
       if (!studentId) throw new Error("studentId required");
-  
+
+      const selectedInstituteId = await requireInstituteAdmin(ctx);
+
+      // Target user must be a member of the same institute
+      const targetUserId = value.userId;
+      if (!targetUserId) throw new Error("userId required");
+      const targetIsMember = await instituteRepository.isUserMemberOfInstitute(selectedInstituteId, targetUserId);
+      if (!targetIsMember) {
+        throw new Error("The target user is not a member of the selected institute.");
+      }
+
       const link = await studentService.linkUserToStudent(
-        value.userId,
+        targetUserId,
         studentId,
         value.role || "caregiver"
       );
-  
+
       return toMemoryValue(link);
     },
-  
+
     update: async (ctx, key, value) => {
       const studentId = ctx.all.studentId;
       if (!studentId) throw new Error("studentId required");
-  
+
+      await requireInstituteAdmin(ctx);
+
       const link = await studentService.getUserStudentLink(String(key), studentId);
       if (!link) throw new Error("Link not found");
-  
+
       const updated = await studentService.updateUserStudentLink(link.id, value);
       if (!updated) throw new Error("Failed to update link");
-  
+
       return toMemoryValue(updated);
     },
-  
+
     delete: async (ctx, key) => {
       const studentId = ctx.all.studentId;
       if (!studentId) throw new Error("studentId required");
-  
+
+      await requireInstituteAdmin(ctx);
+
+      // Cannot unlink the owner
+      const targetLink = await studentService.getUserStudentLink(String(key), studentId);
+      if (targetLink?.role === "owner") {
+        throw new Error("Cannot unlink the student's owner.");
+      }
+
       const removed = await studentService.unlinkUserFromStudent(String(key), studentId);
       if (!removed) throw new Error("Failed to remove link");
     },
-  
+
     fromDB: (record) => toMemoryValue(record),
-  
+
     getDBKey: (value) => value?.userId,
   };
   
