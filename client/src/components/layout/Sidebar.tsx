@@ -29,13 +29,16 @@ import {
   MessageSquare,
   Image,
   CalendarDays,
+  MessageCircleQuestion,
 } from 'lucide-react';
+import { useState } from 'react';
 import logoImage from '@assets/aivota_icon.png';
 import { useAuth } from '@/hooks/useAuth';
 import { useInstitute } from '@/hooks/useInstitute';
 import { openUI } from '@/lib/uiEvents';
 import { cn } from '@/lib/utils';
 import { FeatureType } from '@shared/schema';
+import { FeedbackDialog } from '@/components/FeedbackDialog';
 
 type SidebarProps = {
   isCollapsed?: boolean;
@@ -47,6 +50,7 @@ type SidebarProps = {
 export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left', isMobile = false, onNavigate }: SidebarProps) {
   // On mobile, always show expanded sidebar
   const isCollapsed = isMobile ? false : isCollapsedProp;
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const { user, logout } = useAuth();
   const { theme, setTheme } = useTheme();
   const { t, isRTL } = useLanguage();
@@ -395,6 +399,21 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
           {!isCollapsed && <span className="">{t('nav.settings')}</span>}
         </Button>
 
+        {/* Feedback / Bug Report */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn(
+            "w-full hover-elevate active-elevate-2",
+            isCollapsed ? "justify-center px-0" : "justify-start"
+          )}
+          onClick={() => setFeedbackOpen(true)}
+          title={isCollapsed ? (t('feedback.title') || 'Send Feedback') : undefined}
+        >
+          <MessageCircleQuestion className="w-4 h-4" />
+          {!isCollapsed && <span>{t('feedback.title') || 'Send Feedback'}</span>}
+        </Button>
+
         {/* Logout */}
         <Button
           variant="ghost"
@@ -411,6 +430,8 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
           {!isCollapsed && <span className="">{t('auth.logout')}</span>}
         </Button>
       </div>
+
+      <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </div>
   );
 }

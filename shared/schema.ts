@@ -1624,6 +1624,12 @@ export const inviteCodeRedemptionsRelations = relations(inviteCodeRedemptions, (
 // =============================================================================
 // CONTACT INQUIRIES (landing page form submissions)
 // =============================================================================
+export const contactMessageTypeEnum = pgEnum("contact_message_type", [
+  "contact",
+  "bug_report",
+  "support_request",
+]);
+
 export const contactRoleEnum = pgEnum("contact_role", [
   "district_administrator",
   "special_education_director",
@@ -1634,19 +1640,23 @@ export const contactRoleEnum = pgEnum("contact_role", [
 
 export const contactInquiries = pgTable("contact_inquiries", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  messageType: contactMessageTypeEnum("message_type").default("contact").notNull(),
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
   email: text("email").notNull(),
   organization: text("organization").notNull(),
   role: contactRoleEnum("role").notNull(),
   message: text("message"),
+  userId: varchar("user_id").references(() => users.id), // set when submitted by a logged-in user
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_contact_inquiries_email").on(table.email),
   index("idx_contact_inquiries_created_at").on(table.createdAt),
+  index("idx_contact_inquiries_message_type").on(table.messageType),
 ]);
 
 export const insertContactInquirySchema = createInsertSchema(contactInquiries).pick({
+  messageType: true,
   firstName: true,
   lastName: true,
   email: true,
