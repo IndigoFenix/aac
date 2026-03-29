@@ -802,8 +802,8 @@ interface GetMessageManagerInput {
   vectorStoreId?: string;
   /** Base64 data URLs for inline images */
   images?: string[];
-  /** Attached documents (base64 data URLs with filenames) */
-  documents?: Array<{ dataUrl: string; filename: string }>;
+  /** Attached documents (base64 data URLs with filenames, optionally pre-extracted text) */
+  documents?: Array<{ dataUrl: string; filename: string; extractedText?: string }>;
   /** Image to include with the current request (not stored in history) */
   currentImage?: CurrentImage;
   /** Override the system prompt instead of building it from persona/student settings */
@@ -1461,8 +1461,8 @@ export interface OnMessageInput {
   /** Base64 data URLs for inline images (sent as multimodal content to the LLM) */
   images?: string[];
 
-  /** Attached documents (base64 data URLs with filenames) */
-  documents?: Array<{ dataUrl: string; filename: string }>;
+  /** Attached documents (base64 data URLs with filenames, optionally pre-extracted text) */
+  documents?: Array<{ dataUrl: string; filename: string; extractedText?: string }>;
 
   /** Image to include with the current request (not stored in history) */
   currentImage?: CurrentImage;
@@ -1605,8 +1605,9 @@ export async function onMessageStreaming(input: OnMessageStreamingInput): Promis
     console.log('[onMessageStreaming] After getMessageManager, memoryValues keys:', Object.keys(memoryValues));
 
     // Persist any incoming messages
+    let extractions: Array<{ filename: string; extractedText: string }> | undefined;
     if (messages && messages.length > 0) {
-      await messageManager.persistMessages(
+      extractions = await messageManager.persistMessages(
         messages.map((message) => ({ ...message, timestamp: Date.now() }))
       );
     }
@@ -1639,6 +1640,7 @@ export async function onMessageStreaming(input: OnMessageStreamingInput): Promis
         ...response,
         memoryValues: mergedMemoryValues,
         contextData,
+        extractions,
       };
     } else {
       return {
@@ -1681,6 +1683,7 @@ export type SessionMdStreamEvent =
   | { type: "thinking"; text: string }
   | { type: "navigate"; feature: string }
   | { type: "select_student"; studentId: string }
+  | { type: "file_extracted"; filename: string; extractedText: string }
   | {
       type: "complete";
       message: ChatMessage;
@@ -1725,9 +1728,15 @@ export async function* onMessageMdStreaming(
 
     // Persist any incoming messages
     if (messages && messages.length > 0) {
-      await messageManager.persistMessages(
+      const extractions = await messageManager.persistMessages(
         messages.map((message) => ({ ...message, timestamp: Date.now() }))
       );
+      // Send extraction results back to client so it can cache them
+      if (extractions) {
+        for (const ext of extractions) {
+          yield { type: 'file_extracted' as const, filename: ext.filename, extractedText: ext.extractedText };
+        }
+      }
     }
 
     // Stream the response

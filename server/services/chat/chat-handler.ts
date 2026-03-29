@@ -21,6 +21,7 @@ import {
   import { getChatProvider } from "../providers/provider-factory";
   import type { ChatMessage as ProviderChatMessage, ChatTool, StreamChunk } from "../providers/streaming-provider";
   import type { LLMProviderKey } from "@shared/llm-options";
+  import { extractDocument } from "./file-extractor";
 
   const isProd = process.env.NODE_ENV === 'production';
   
@@ -107,9 +108,9 @@ import {
       vectorStoreId?: string; // For file_search tool support
       currentImage?: CurrentImage; // Image to inject into the next API call (not stored in history)
       images?: string[]; // Base64 data URLs for inline images (single-use, cleared after API call)
-      documents?: Array<{ dataUrl: string; filename: string }>; // Pending documents from current request
+      documents?: Array<{ dataUrl: string; filename: string; extractedText?: string }>; // Pending documents from current request
       /** Active file context — keyed by filename, latest version wins. Not persisted to DB. */
-      private contextFiles = new Map<string, { dataUrl: string; filename: string }>();
+      private contextFiles = new Map<string, { dataUrl: string; filename: string; extractedText?: string }>();
   
       cullMessages: boolean;
       cullMessagesTo: number;
@@ -163,7 +164,7 @@ import {
           loopDetectionConfig?: LoopDetectionConfig;
           currentImage?: CurrentImage;
           images?: string[];
-          documents?: Array<{ dataUrl: string; filename: string }>;
+          documents?: Array<{ dataUrl: string; filename: string; extractedText?: string }>;
           providerConfig?: { provider: import("@shared/llm-options").LLMProviderKey; model: string };
       }){
           this.chatState = JSON.parse(JSON.stringify(settings.chatState));
@@ -244,11 +245,41 @@ import {
       }
   
       // Add messages to history and run toolCalls if included.
-      async persistMessages(messages: ChatMessage[]) {
+      // Returns extraction results for files that were processed.
+      async persistMessages(messages: ChatMessage[]): Promise<Array<{ filename: string; extractedText: string }> | undefined> {
           // Update context files — same filename overwrites older version
+          // Run file extraction so the LLM gets readable text instead of raw base64
+          let extractions: Array<{ filename: string; extractedText: string }> | undefined;
           if (this.documents && this.documents.length > 0) {
               for (const doc of this.documents) {
-                  this.contextFiles.set(doc.filename, doc);
+                  // If client already sent extracted text, use it directly
+                  if (doc.extractedText) {
+                      this.contextFiles.set(doc.filename, {
+                          dataUrl: doc.dataUrl,
+                          filename: doc.filename,
+                          extractedText: doc.extractedText,
+                      });
+                      console.log(`[ChatMsgMgr] reusing client-cached extraction for ${doc.filename}`);
+                      continue;
+                  }
+                  try {
+                      const result = await extractDocument(doc.dataUrl, doc.filename);
+                      if (result.extracted && result.text) {
+                          this.contextFiles.set(doc.filename, {
+                              dataUrl: result.dataUrl ?? doc.dataUrl,
+                              filename: doc.filename,
+                              extractedText: result.text,
+                          });
+                          if (!extractions) extractions = [];
+                          extractions.push({ filename: doc.filename, extractedText: result.text });
+                          console.log(`[ChatMsgMgr] extracted text from ${doc.filename} (${result.text.length} chars)`);
+                      } else {
+                          this.contextFiles.set(doc.filename, doc);
+                      }
+                  } catch (err) {
+                      console.error(`[ChatMsgMgr] extraction failed for ${doc.filename}:`, err);
+                      this.contextFiles.set(doc.filename, doc);
+                  }
               }
               console.log(`[ChatMsgMgr] contextFiles updated: ${[...this.contextFiles.keys()].join(', ')}`);
               this.documents = undefined;
@@ -273,8 +304,9 @@ import {
               }
           }
           if (this.onUpdateChatState) await this.onUpdateChatState(this.chatState, this.log);
+          return extractions;
       }
-  
+
       // Generate a response to the conversation in its current state, without adding new messages.
       async getResponse(responseType: 'text' | 'html' | 'md', apiValues?: { [key: string]: string }): Promise<MessageResponse> {
           const reply = await this.updateConversation(0, responseType, apiValues);
@@ -394,9 +426,15 @@ import {
               for (const [filename, doc] of this.contextFiles) {
                   const mimeMatch = doc.dataUrl.match(/^data:([^;]+);/);
                   const mime = mimeMatch?.[1] || '';
-                  const docPart: GPTContentPart = mime.startsWith('image/')
-                      ? { type: 'input_image' as const, image_url: doc.dataUrl }
-                      : { type: 'input_document' as const, data_url: doc.dataUrl, filename };
+                  let docPart: GPTContentPart;
+                  if (doc.extractedText) {
+                      // Use extracted text instead of raw base64
+                      docPart = { type: 'input_text' as const, text: `[File: ${filename}]\n${doc.extractedText}` };
+                  } else if (mime.startsWith('image/')) {
+                      docPart = { type: 'input_image' as const, image_url: doc.dataUrl };
+                  } else {
+                      docPart = { type: 'input_document' as const, data_url: doc.dataUrl, filename };
+                  }
                   let attached = false;
                   for (let i = items.length - 1; i >= 0; i--) {
                       const item = items[i] as any;

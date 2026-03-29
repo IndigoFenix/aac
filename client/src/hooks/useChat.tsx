@@ -48,6 +48,8 @@ export interface AttachedFile {
   type?: "document" | "image";
   // Base64 data URL for images (e.g. "data:image/png;base64,...")
   dataUrl?: string;
+  // Server-extracted text content — sent back instead of raw base64 on subsequent messages
+  extractedText?: string;
 }
 
 // Icon name type - matches Lucide icon names (for legacy support)
@@ -721,6 +723,15 @@ export const ChatProvider = ({
           handleContextData(data.contextData);
         }
 
+        // Cache any file extractions from the response (non-streaming fallback)
+        if (data.extractions && Array.isArray(data.extractions)) {
+          for (const ext of data.extractions) {
+            setContextFiles(prev => prev.map(f =>
+              f.filename === ext.filename ? { ...f, extractedText: ext.extractedText } : f
+            ));
+          }
+        }
+
         // Update session
         if (data.sessionId && (!session?.id || data.sessionId !== session.id)) {
           const newSession: ChatSession = {
@@ -779,11 +790,14 @@ export const ChatProvider = ({
     // Accumulated text for md streaming mode
     let mdAccumulated = '';
 
-    // Send all attached files as base64 — images use stored dataUrl, documents read from File
+    // Send all attached files — if we have cached extracted text, send that instead of raw base64
     if (attachedFiles.length > 0) {
-      const documents: Array<{ dataUrl: string; filename: string }> = [];
+      const documents: Array<{ dataUrl: string; filename: string; extractedText?: string }> = [];
       for (const f of attachedFiles) {
-        if (f.dataUrl) {
+        if (f.extractedText) {
+          // Server already extracted this file — send extracted text, skip raw data
+          documents.push({ dataUrl: '', filename: f.filename, extractedText: f.extractedText });
+        } else if (f.dataUrl) {
           // Images already have a dataUrl from when they were attached
           documents.push({ dataUrl: f.dataUrl, filename: f.filename });
         } else if (f.localFile) {
@@ -845,6 +859,12 @@ export const ChatProvider = ({
         onSelectStudent: (studentId) => {
           console.log('[useChat] AI selecting student:', studentId);
           selectStudent(studentId);
+        },
+        onFileExtracted: (filename, extractedText) => {
+          // Cache extracted text on the file so we send it instead of raw base64 next time
+          setContextFiles(prev => prev.map(f =>
+            f.filename === filename ? { ...f, extractedText } : f
+          ));
         },
         onComplete: (data) => {
           try {
