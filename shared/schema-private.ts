@@ -133,6 +133,7 @@ export const instituteRoleEnum = pgEnum("institute_role", [
   "teacher",     // Classroom teacher
   "therapist",   // Speech therapist, OT, PT, etc.
   "aide",        // Teaching aide/assistant
+  "parent",      // Parent/guardian of a student
   "staff",       // General staff member
   "observer",    // Read-only access for observers/interns
 ]);
@@ -174,6 +175,7 @@ export const INSTITUTE_ROLES = [
   { value: "teacher", labelKey: "institute.roles.teacher" },
   { value: "therapist", labelKey: "institute.roles.therapist" },
   { value: "aide", labelKey: "institute.roles.aide" },
+  { value: "parent", labelKey: "institute.roles.parent" },
   { value: "staff", labelKey: "institute.roles.staff" },
   { value: "observer", labelKey: "institute.roles.observer" },
 ] as const;

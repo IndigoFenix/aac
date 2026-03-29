@@ -11,6 +11,7 @@ import { useFeaturePanel } from '@/contexts/FeaturePanelContext';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { openUI } from '@/lib/uiEvents';
 import { apiRequest } from '@/lib/queryClient';
+import { useStudentLabel } from '@/hooks/useStudentLabel';
 import { cn } from '@/lib/utils';
 
 type TopHeaderProps = {
@@ -22,6 +23,7 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
   const { student, students, isLoading: isStudentLoading, selectStudent } = useStudent();
   const { institutes, currentInstitute, currentPermissions, selectInstitute } = useInstitute();
   const { t, isRTL } = useLanguage();
+  const { ts } = useStudentLabel();
   const { activeFeature } = useFeaturePanel();
 
   const getHeaderTitle = (): string => {
@@ -37,7 +39,7 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
       case 'institute':
         return t('nav.institute');
       case 'students':
-        return t('nav.students');
+        return ts('nav.students');
       case 'aacsettings':
         return t('nav.aacsettings');
       case 'progress':
@@ -129,7 +131,7 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
             htmlFor="student-selector"
             className="hidden md:inline text-xs text-muted-foreground"
           >
-            {t('header.student')}
+            {ts('header.student')}
           </label>
           <select
             id="student-selector"
@@ -147,10 +149,10 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
           >
             <option value="">
               {isStudentLoading
-                ? t('header.loadingStudents')
+                ? ts('header.loadingStudents')
                 : students.length
-                ? t('header.selectStudent')
-                : t('header.noStudents')}
+                ? ts('header.selectStudent')
+                : ts('header.noStudents')}
             </option>
             {students && students.map((u) => (
               <option key={u.id} value={u.id}>

@@ -30,5 +30,6 @@ There are 2 different deployment paths in Terraform. The lightweight one we are 
 
 ## Translations
 The client (both of them) uses i18n translations with a t() function for English and Hebrew.
+Whenever the term "student" is used, we use ts() instead, which swaps "student" for "child" when relevant.
 If you add any strings to the client, add their translations.
 If you see any missing translations on the client while working, add them.

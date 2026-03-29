@@ -1,0 +1,1 @@
+ALTER TYPE "public"."institute_role" ADD VALUE 'parent' BEFORE 'staff';
