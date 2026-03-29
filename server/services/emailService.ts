@@ -51,7 +51,7 @@ class EmailService {
   private fromAddress: string;
 
   constructor() {
-    this.fromAddress = "no-reply@aivota.ai";
+    this.fromAddress = "cs@aivota.ai";
     this.initialize();
   }
 
