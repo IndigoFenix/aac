@@ -16,6 +16,7 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, and, desc, or, isNotNull, sql } from "drizzle-orm";
+import { instituteRepository } from "./instituteRepository";
 import {
   hydrateRecords,
   extractSensitiveFields,
@@ -336,18 +337,50 @@ export class StudentRepository {
    *   - They are actively enrolled in the institute, AND
    *   - (They are directly assigned to the user via userStudents
    *      OR they share a classroom with the user
-   *      OR the institute is a family)
+   *      OR the institute is a family
+   *      OR the user is an admin of the institute — including customer support)
    */
   async getStudentsForUserInInstitute(
     userId: string,
     instituteId: string
   ): Promise<{ student: Student; link: UserStudent | null }[]> {
+    // Check admin status upfront (accounts for customer support via AsyncLocalStorage)
+    const isAdmin = await instituteRepository.isUserAdminOfInstitute(instituteId, userId);
+
+    // Admins see all students in the institute — simpler query, no visibility joins needed
+    if (isAdmin) {
+      const rows = await db
+        .selectDistinctOn([students.id], {
+          student: students,
+          link: userStudents,
+        })
+        .from(instituteStudents)
+        .innerJoin(students, eq(instituteStudents.studentId, students.id))
+        .leftJoin(
+          userStudents,
+          and(
+            eq(userStudents.studentId, students.id),
+            eq(userStudents.userId, userId),
+            eq(userStudents.isActive, true)
+          )
+        )
+        .where(
+          and(
+            eq(instituteStudents.instituteId, instituteId),
+            eq(instituteStudents.isActive, true),
+            eq(students.isActive, true)
+          )
+        )
+        .orderBy(students.id, desc(students.createdAt));
+
+      return rows.map((r) => ({ student: r.student, link: r.link ?? null }));
+    }
+
+    // Non-admins: check direct assignment, shared classroom, or family institute
     const rows = await db
       .selectDistinctOn([students.id], {
         student: students,
         link: userStudents,
-        hasClassroomLink: sql<boolean>`CASE WHEN ${classroomUsers.id} IS NOT NULL THEN true ELSE false END`.as('has_classroom_link'),
-        isFamily: sql<boolean>`CASE WHEN ${institutes.type} = 'family' THEN true ELSE false END`.as('is_family'),
       })
       .from(instituteStudents)
       .innerJoin(students, eq(instituteStudents.studentId, students.id))

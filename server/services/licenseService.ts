@@ -200,49 +200,70 @@ class LicenseService {
   }
 
   /**
-   * Resolve the effective license info for a user.
-   * Checks: direct user license first, then institute licenses.
-   * System admins get MAX permissions with "enterprise" type.
+   * Resolve the effective license info for an institute.
+   * If no instituteId is provided, returns defaults (no optional permissions).
+   * System admins always get MAX permissions.
+   */
+  async getInstituteLicenseInfo(instituteId?: string, isSystemAdmin?: boolean): Promise<{ permissions: LicensePermissions; licenseType: string; isTrial: boolean; trialExpiresAt: Date | null }> {
+    if (isSystemAdmin) return { permissions: { ...MAX_LICENSE_PERMISSIONS }, licenseType: "enterprise", isTrial: false, trialExpiresAt: null };
+
+    if (!instituteId) {
+      return { permissions: resolvePermissions(null), licenseType: "none", isTrial: false, trialExpiresAt: null };
+    }
+
+    const instituteLicenses = await licenseRepository.getLicensesByInstituteId(instituteId);
+    const activeLicense = instituteLicenses.find((l) => l.isActive && l.permissions);
+    if (activeLicense) {
+      return { permissions: resolvePermissions(activeLicense.permissions), licenseType: activeLicense.licenseType, isTrial: activeLicense.isTrial, trialExpiresAt: activeLicense.trialExpiresAt };
+    }
+
+    return { permissions: resolvePermissions(null), licenseType: "none", isTrial: false, trialExpiresAt: null };
+  }
+
+  /** Convenience: just the permissions for an institute */
+  async getInstitutePermissions(instituteId?: string, isSystemAdmin?: boolean): Promise<LicensePermissions> {
+    const { permissions } = await this.getInstituteLicenseInfo(instituteId, isSystemAdmin);
+    return permissions;
+  }
+
+  /**
+   * @deprecated Use getInstituteLicenseInfo instead. This resolves based on the user's
+   * institutes (picks the first one with an active license). Kept for callers that
+   * don't have an instituteId available.
    */
   async getUserLicenseInfo(userId: string, isSystemAdmin?: boolean): Promise<{ permissions: LicensePermissions; licenseType: string; isTrial: boolean; trialExpiresAt: Date | null }> {
     if (isSystemAdmin) return { permissions: { ...MAX_LICENSE_PERMISSIONS }, licenseType: "enterprise", isTrial: false, trialExpiresAt: null };
 
-    // 1. Check direct user license
-    const directLicense = await licenseRepository.getLicenseByUserId(userId);
-    if (directLicense?.isActive && directLicense.permissions) {
-      return { permissions: resolvePermissions(directLicense.permissions), licenseType: directLicense.licenseType, isTrial: directLicense.isTrial, trialExpiresAt: directLicense.trialExpiresAt };
-    }
-
-    // 2. Check institute licenses
+    // Check institute licenses (getInstitutesByUserId respects support mode)
     const institutes = await instituteRepository.getInstitutesByUserId(userId);
     for (const inst of institutes) {
-      const instituteLicenses = await licenseRepository.getLicensesByInstituteId(inst.id);
-      const activeLicense = instituteLicenses.find((l) => l.isActive && l.permissions);
-      if (activeLicense) {
-        return { permissions: resolvePermissions(activeLicense.permissions), licenseType: activeLicense.licenseType, isTrial: activeLicense.isTrial, trialExpiresAt: activeLicense.trialExpiresAt };
-      }
+      const result = await this.getInstituteLicenseInfo(inst.id);
+      if (result.licenseType !== "none") return result;
     }
 
-    // 3. No license found — return defaults (all disabled)
     return { permissions: resolvePermissions(null), licenseType: "none", isTrial: false, trialExpiresAt: null };
   }
 
-  /** Convenience: just the permissions */
+  /** @deprecated Use getInstitutePermissions instead */
   async getUserPermissions(userId: string, isSystemAdmin?: boolean): Promise<LicensePermissions> {
     const { permissions } = await this.getUserLicenseInfo(userId, isSystemAdmin);
     return permissions;
   }
 
   /**
-   * Check if a user can add more students based on their license.
+   * Check if more students can be added to an institute based on its license.
    * Returns { allowed: true } or { allowed: false, reason: string }.
    */
-  async checkMaxStudents(userId: string, isSystemAdmin?: boolean): Promise<{ allowed: boolean; reason?: string }> {
-    const perms = await this.getUserPermissions(userId, isSystemAdmin);
+  async checkMaxStudents(instituteId?: string, isSystemAdmin?: boolean): Promise<{ allowed: boolean; reason?: string }> {
+    const perms = await this.getInstitutePermissions(instituteId, isSystemAdmin);
     if (perms.maxStudents === -1) return { allowed: true }; // unlimited
+    if (perms.maxStudents === 0) return { allowed: false, reason: "Your license does not allow adding students." };
 
-    const students = await studentRepository.getStudentsByUserId(userId);
-    const currentCount = students.length;
+    if (!instituteId) return { allowed: false, reason: "No institute selected." };
+
+    // Count students in the institute
+    const studentsResult = await instituteRepository.getStudentsInInstitute(instituteId);
+    const currentCount = studentsResult.length;
 
     if (currentCount >= perms.maxStudents) {
       return {

@@ -168,12 +168,16 @@ export class UserService {
 
   /**
    * Format user for response with license permissions included.
+   * @param instituteId - The selected institute ID. If provided, resolves license from that institute.
+   *   If not provided, falls back to scanning the user's institutes.
    */
-  async formatUserWithPermissions(user: User) {
+  async formatUserWithPermissions(user: User, instituteId?: string) {
     const base = this.formatUserForResponse(user);
     try {
       const { licenseService } = await import("./licenseService");
-      const { permissions, licenseType, isTrial, trialExpiresAt } = await licenseService.getUserLicenseInfo(user.id, user.isSystemAdmin);
+      const { permissions, licenseType, isTrial, trialExpiresAt } = instituteId
+        ? await licenseService.getInstituteLicenseInfo(instituteId, user.isSystemAdmin)
+        : await licenseService.getUserLicenseInfo(user.id, user.isSystemAdmin);
       return { ...base, licensePermissions: permissions, licenseType, isTrial, trialExpiresAt };
     } catch (err) {
       console.error("Failed to fetch license permissions:", err);

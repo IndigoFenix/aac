@@ -1215,6 +1215,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     licenseController.resendInvite(req, res)
   );
 
+  // Customer support (system admin)
+  app.post("/api/admin/support-login", requireAuth, requireSystemAdmin, (req, res) =>
+    authController.supportLogin(req, res)
+  );
+  app.post("/api/admin/support-logout", requireAuth, requireSystemAdmin, (req, res) =>
+    authController.supportLogout(req, res)
+  );
+
   // Contact inquiries (admin)
   app.get("/api/admin/contacts", requireAuth, requireSystemAdmin, (req, res) =>
     contactController.list(req, res)

@@ -48,6 +48,10 @@ export async function setupUserAuth(app: Express) {
   app.use(passport.initialize());
   app.use(passport.session());
 
+  // Propagate customer support context via AsyncLocalStorage
+  const { supportContext } = await import("./middleware/auth");
+  app.use(supportContext);
+
   // Local Strategy for email/password login
   passport.use(new LocalStrategy(
     {

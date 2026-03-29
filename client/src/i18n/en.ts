@@ -2145,6 +2145,11 @@ export const en = {
       updated: "License updated successfully",
       deleted: "License deactivated successfully",
     },
+    support: {
+      activeMode: "Customer Support Mode Active",
+      exit: "Exit Support Mode",
+      login: "Login as Support"
+    }
   },
 
   // ============================================================================

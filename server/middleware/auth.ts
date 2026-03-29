@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import { userRepository, studentRepository } from "../repositories";
 import type { LicensePermissions } from "@shared/license-permissions";
+import { runWithSupportContext } from "../services/customerSupportService";
 
 /**
  * Middleware that requires user to be authenticated
@@ -18,6 +19,25 @@ export const requireAuth: RequestHandler = (
     return;
   }
   next();
+};
+
+/**
+ * Middleware that propagates customer support context via AsyncLocalStorage.
+ * If the user has an active support session, all downstream calls (including
+ * repository methods) can check getActiveSupportInstituteId() without needing req.
+ * Must be applied AFTER requireAuth.
+ */
+export const supportContext: RequestHandler = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
+  const supportInstituteId = (req.session as any)?.support?.instituteId;
+  if (supportInstituteId) {
+    runWithSupportContext(supportInstituteId, () => next());
+  } else {
+    next();
+  }
 };
 
 /**

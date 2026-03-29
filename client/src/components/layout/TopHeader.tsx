@@ -2,7 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { User, Menu, Settings, LogOut, Shield, Building2 } from 'lucide-react';
+import { User, Menu, Settings, LogOut, Shield, Building2, HeadsetIcon } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useStudent } from '@/hooks/useStudent';
 import { useInstitute } from '@/hooks/useInstitute';
@@ -10,6 +10,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useFeaturePanel } from '@/contexts/FeaturePanelContext';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { openUI } from '@/lib/uiEvents';
+import { apiRequest } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
 
 type TopHeaderProps = {
@@ -19,7 +20,7 @@ type TopHeaderProps = {
 export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
   const { user, logout } = useAuth();
   const { student, students, isLoading: isStudentLoading, selectStudent } = useStudent();
-  const { institutes, currentInstitute, selectInstitute } = useInstitute();
+  const { institutes, currentInstitute, currentPermissions, selectInstitute } = useInstitute();
   const { t, isRTL } = useLanguage();
   const { activeFeature } = useFeaturePanel();
 
@@ -50,12 +51,37 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
 
   // Since this component is only rendered in protected routes,
   // user should always be defined here
+  const inSupportMode = !!user?.supportSession;
+
+  const handleSupportLogout = async () => {
+    try {
+      await apiRequest('POST', '/api/admin/support-logout');
+      window.location.href = '/admin';
+    } catch (err) {
+      console.error('Failed to exit support mode:', err);
+    }
+  };
+
   if (!user) {
     return null;
   }
 
   return (
-    <header className="h-14 md:h-16 border-b border-border bg-background px-3 md:px-6 flex items-center justify-between">
+    <header className="relative border-b border-border bg-background">
+      {/* Support mode banner */}
+      {inSupportMode && (
+        <div className="flex items-center justify-between px-3 md:px-6 py-1.5 bg-amber-100 dark:bg-amber-950/40 border-b border-amber-300 dark:border-amber-800">
+          <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 text-xs font-medium">
+            <HeadsetIcon className="w-3.5 h-3.5" />
+            {t('admin.support.activeMode') || 'Customer support mode'}
+            {currentInstitute && <span className="font-normal">— {currentInstitute.name}</span>}
+          </div>
+          <Button variant="outline" size="sm" className="h-6 text-xs px-2" onClick={handleSupportLogout}>
+            {t('admin.support.exit') || 'Exit'}
+          </Button>
+        </div>
+      )}
+      <div className="h-14 md:h-16 px-3 md:px-6 flex items-center justify-between">
       {/* Start side - Menu and title */}
       <div className="flex items-center gap-2">
         <Button
@@ -135,10 +161,10 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
         </div>
 
         {/* License type badge - hidden on mobile */}
-        {user.licenseType && user.licenseType !== 'none' && (
+        {currentInstitute?.licenseType && currentInstitute.licenseType !== 'none' && (
           <div className="hidden md:flex items-center gap-1 text-xs text-muted-foreground">
-            <span className="font-medium text-foreground capitalize">{user.licenseType}</span>
-            {user.isTrial && (
+            <span className="font-medium text-foreground capitalize">{currentInstitute.licenseType}</span>
+            {currentInstitute.isTrial && (
               <span className="text-amber-600 font-medium">({t('admin.licenses.trial')})</span>
             )}
           </div>
@@ -196,6 +222,7 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
         <div className="hidden md:block">
           <LanguageSelector />
         </div>
+      </div>
       </div>
     </header>
   );

@@ -5,6 +5,7 @@ import { useState, useEffect, createContext, useContext, ReactNode, useCallback 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/useAuth';
+import { type LicensePermissions, DEFAULT_LICENSE_PERMISSIONS } from '@shared/license-permissions';
 
 // =============================================================================
 // TYPES
@@ -27,6 +28,10 @@ export interface Institute {
   isAdmin?: boolean;
   role?: string;
   membershipId?: string;
+  licensePermissions?: LicensePermissions;
+  licenseType?: string;
+  isTrial?: boolean;
+  trialExpiresAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -165,6 +170,8 @@ interface InstituteContextType {
   // State
   institutes: Institute[];
   currentInstitute: Institute | null;
+  /** License permissions for the currently selected institute (defaults if none selected) */
+  currentPermissions: LicensePermissions;
   isLoading: boolean;
   error: string | null;
 
@@ -742,10 +749,14 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
   // CONTEXT VALUE
   // =============================================================================
 
+  // License permissions for the selected institute (defaults if none selected)
+  const currentPermissions: LicensePermissions = currentInstitute?.licensePermissions ?? { ...DEFAULT_LICENSE_PERMISSIONS };
+
   const contextValue: InstituteContextType = {
     // State
     institutes,
     currentInstitute,
+    currentPermissions,
     isLoading,
     error,
     
