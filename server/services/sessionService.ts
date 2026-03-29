@@ -936,8 +936,10 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   // so we keep report permissions hidden to avoid creating duplicate Context_Reports
   if (context.student && !isAACFeature) {
     // Determine report permissions based on user rights
-    const hasMedicalRights = context.userStudent?.hasMedicalRights ?? false;
-    const hasEducationalRights = context.userStudent?.hasEducationalRights ?? false;
+    // Family institutes grant full access to all members
+    const isFamilyInstitute = context.institute?.type === 'family';
+    const hasMedicalRights = isFamilyInstitute || (context.userStudent?.hasMedicalRights ?? false);
+    const hasEducationalRights = isFamilyInstitute || (context.userStudent?.hasEducationalRights ?? false);
 
     // License must also grant dashboard access for reports to be visible
     const licenseDashboard = licensePerms?.dashboardLevel ?? 0;

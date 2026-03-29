@@ -29,11 +29,13 @@ export class ReportController {
     try {
       const currentUser = req.user as any;
       const { studentId } = req.params;
+      const instituteId = req.query.instituteId as string | undefined;
 
       const access = await reportService.verifyReportAccess(
         studentId,
         currentUser.id,
-        "medical"
+        "medical",
+        instituteId
       );
 
       if (!access.hasAccess) {
@@ -63,12 +65,13 @@ export class ReportController {
     try {
       const currentUser = req.user as any;
       const { studentId } = req.params;
-      const { instituteId } = req.query;
+      const instituteId = req.query.instituteId as string | undefined;
 
       const access = await reportService.verifyReportAccess(
         studentId,
         currentUser.id,
-        "medical"
+        "medical",
+        instituteId
       );
 
       if (!access.hasAccess) {
@@ -110,12 +113,13 @@ export class ReportController {
     try {
       const currentUser = req.user as any;
       const { studentId } = req.params;
-      const { instituteId } = req.query;
+      const instituteId = req.query.instituteId as string | undefined;
 
       const access = await reportService.verifyReportAccess(
         studentId,
         currentUser.id,
-        "medical"
+        "medical",
+        instituteId
       );
 
       if (!access.hasAccess) {
@@ -186,11 +190,13 @@ export class ReportController {
     try {
       const currentUser = req.user as any;
       const { studentId } = req.params;
+      const instituteId = req.query.instituteId as string | undefined;
 
       const access = await reportService.verifyReportAccess(
         studentId,
         currentUser.id,
-        "medical"
+        "medical",
+        instituteId
       );
 
       if (!access.hasAccess) {
@@ -402,11 +408,13 @@ export class ReportController {
     try {
       const currentUser = req.user as any;
       const { studentId } = req.params;
+      const instituteId = req.query.instituteId as string | undefined;
 
       const access = await reportService.verifyReportAccess(
         studentId,
         currentUser.id,
-        "functional"
+        "functional",
+        instituteId
       );
 
       if (!access.hasAccess) {
@@ -436,11 +444,13 @@ export class ReportController {
     try {
       const currentUser = req.user as any;
       const { studentId } = req.params;
+      const instituteId = req.query.instituteId as string | undefined;
 
       const access = await reportService.verifyReportAccess(
         studentId,
         currentUser.id,
-        "functional"
+        "functional",
+        instituteId
       );
 
       if (!access.hasAccess) {
@@ -479,11 +489,13 @@ export class ReportController {
     try {
       const currentUser = req.user as any;
       const { studentId } = req.params;
+      const instituteId = req.query.instituteId as string | undefined;
 
       const access = await reportService.verifyReportAccess(
         studentId,
         currentUser.id,
-        "functional"
+        "functional",
+        instituteId
       );
 
       if (!access.hasAccess) {
@@ -550,11 +562,13 @@ export class ReportController {
     try {
       const currentUser = req.user as any;
       const { studentId } = req.params;
+      const instituteId = req.query.instituteId as string | undefined;
 
       const access = await reportService.verifyReportAccess(
         studentId,
         currentUser.id,
-        "functional"
+        "functional",
+        instituteId
       );
 
       if (!access.hasAccess) {
@@ -766,11 +780,13 @@ export class ReportController {
     try {
       const currentUser = req.user as any;
       const { studentId } = req.params;
+      const instituteId = req.query.instituteId as string | undefined;
 
       const access = await reportService.verifyReportAccess(
         studentId,
         currentUser.id,
-        "educational"
+        "educational",
+        instituteId
       );
 
       if (!access.hasAccess) {
@@ -800,11 +816,13 @@ export class ReportController {
     try {
       const currentUser = req.user as any;
       const { studentId } = req.params;
+      const instituteId = req.query.instituteId as string | undefined;
 
       const access = await reportService.verifyReportAccess(
         studentId,
         currentUser.id,
-        "educational"
+        "educational",
+        instituteId
       );
 
       if (!access.hasAccess) {
@@ -843,11 +861,13 @@ export class ReportController {
     try {
       const currentUser = req.user as any;
       const { studentId } = req.params;
+      const instituteId = req.query.instituteId as string | undefined;
 
       const access = await reportService.verifyReportAccess(
         studentId,
         currentUser.id,
-        "educational"
+        "educational",
+        instituteId
       );
 
       if (!access.hasAccess) {
@@ -914,11 +934,13 @@ export class ReportController {
     try {
       const currentUser = req.user as any;
       const { studentId } = req.params;
+      const instituteId = req.query.instituteId as string | undefined;
 
       const access = await reportService.verifyReportAccess(
         studentId,
         currentUser.id,
-        "educational"
+        "educational",
+        instituteId
       );
 
       if (!access.hasAccess) {
@@ -1131,9 +1153,11 @@ export class ReportController {
       const currentUser = req.user as any;
       const { studentId } = req.params;
 
+      const instituteId = req.query.instituteId as string | undefined;
       const result = await reportService.getAllReportsForStudent(
         studentId,
-        currentUser.id
+        currentUser.id,
+        instituteId
       );
 
       res.json({
@@ -1157,10 +1181,12 @@ export class ReportController {
     try {
       const currentUser = req.user as any;
       const { studentId } = req.params;
+      const instituteId = req.query.instituteId as string | undefined;
 
       const result = await reportService.getCurrentReportsForStudent(
         studentId,
-        currentUser.id
+        currentUser.id,
+        instituteId
       );
 
       res.json({

@@ -1,4 +1,4 @@
-import { studentRepository, aacSettingsRepository } from "../repositories";
+import { studentRepository, aacSettingsRepository, instituteRepository } from "../repositories";
 import {
   type Student,
   type InsertStudent,
@@ -251,7 +251,8 @@ export class StudentService {
    */
   async verifyStudentAccess(
     studentId: string,
-    userId: string
+    userId: string,
+    instituteId?: string
   ): Promise<{ hasAccess: boolean; student?: StudentWithAacSettings; link?: UserStudent; hasMedicalRights: boolean; hasEducationalRights: boolean; }> {
     const student = await studentRepository.getStudentWithAacSettings(studentId);
     if (!student) {
@@ -259,11 +260,22 @@ export class StudentService {
     }
 
     const link = await studentRepository.getUserStudentLink(userId, studentId);
-    if (!link || !link.isActive) {
-      return { hasAccess: false, student, hasMedicalRights: false, hasEducationalRights: false };
+    if (link?.isActive) {
+      return { hasAccess: true, student, link, hasMedicalRights: true, hasEducationalRights: true };
     }
 
-    return { hasAccess: true, student, link, hasMedicalRights: true, hasEducationalRights: true };
+    // Family institutes grant full access to all members without a direct link
+    if (instituteId) {
+      const institute = await instituteRepository.getInstituteById(instituteId);
+      if (institute?.type === 'family') {
+        const isMember = await instituteRepository.isUserMemberOfInstitute(instituteId, userId);
+        if (isMember) {
+          return { hasAccess: true, student, hasMedicalRights: true, hasEducationalRights: true };
+        }
+      }
+    }
+
+    return { hasAccess: false, student, hasMedicalRights: false, hasEducationalRights: false };
   }
 
   // ==================== User-AAC User Link Operations ====================

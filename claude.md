@@ -33,3 +33,4 @@ The client (both of them) uses i18n translations with a t() function for English
 Whenever the term "student" is used, we use ts() instead, which swaps "student" for "child" when relevant.
 If you add any strings to the client, add their translations.
 If you see any missing translations on the client while working, add them.
+The english and hebrew translation files should have identical keys on identical lines. If you see something that doesn't line up, fix it.
