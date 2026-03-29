@@ -1079,6 +1079,13 @@ export interface ParsedBoardData {
   grid: BoardGrid;
   pages: BoardPage[];
   currentPageId?: string;
+  /** Board cover/thumbnail image */
+  coverImage?: {
+    iconRef?: string;      // Emoji or icon reference (e.g. "🏠")
+    imageKey?: string;     // Auto-generated symbol key (e.g. "communication_board")
+    symbolPath?: string;   // Resolved symbol path (e.g. "/api/symbols/abc123.svg" or "[sstix#]50026.emf")
+    backgroundColor?: string; // Background color for the cover (e.g. "#D6FFF6FF")
+  };
 }
 
 /**
@@ -1675,7 +1682,7 @@ export type InsertContactInquiry = z.infer<typeof insertContactInquirySchema>;
 // PUBLIC TABLES — Calendar
 // =============================================================================
 
-export const eventRepeatEnum = pgEnum("event_repeat", ["none", "daily", "weekly"]);
+export const eventRepeatEnum = pgEnum("event_repeat", ["none", "daily", "weekly", "monthly_date", "monthly_weekday"]);
 export const eventAttendeeTypeEnum = pgEnum("event_attendee_type", ["user", "student", "classroom", "institute"]);
 
 export const calendarEvents = pgTable("calendar_events", {
@@ -1688,7 +1695,9 @@ export const calendarEvents = pgTable("calendar_events", {
 
   // Recurrence
   repeatType: eventRepeatEnum("repeat_type").default("none").notNull(),
+  repeatInterval: integer("repeat_interval").default(1), // every N weeks (for weekly type)
   repeatDays: jsonb("repeat_days").$type<number[]>(), // 0=Sun..6=Sat for weekly repeats
+  repeatMonthWeek: integer("repeat_month_week"), // for monthly_weekday: 1=first, 2=second, 3=third, -1=last
   repeatEndDate: timestamp("repeat_end_date"), // when recurrence stops
 
   createdByUserId: varchar("created_by_user_id").references(() => users.id).notNull(),

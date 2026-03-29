@@ -67,9 +67,99 @@ export function ButtonInspector() {
     return null;
   }
 
-  // Don't show if no button selected
+  // When no button is selected, show board-level properties
   if (!selectedBtn) {
-    return null;
+    const coverImage = board?.coverImage;
+    return (
+      <div className={cn(
+        "p-4 rounded-xl border shadow-sm space-y-4",
+        isDark ? "bg-slate-900 border-slate-700" : "bg-white border-gray-200"
+      )}>
+        <h3 className={cn(
+          "text-sm font-semibold",
+          isDark ? "text-slate-200" : "text-gray-800"
+        )}>
+          {t("board.properties") || "Board Properties"}
+        </h3>
+
+        {/* Cover Image */}
+        <div className="space-y-2">
+          <Label className={cn(
+            "text-xs font-medium",
+            isDark ? "text-slate-400" : "text-gray-600"
+          )}>
+            {t("board.coverImage") || "Cover Image"}
+          </Label>
+          <div className="flex items-center gap-2">
+            {/* Preview */}
+            <div
+              className="w-12 h-12 rounded-lg flex items-center justify-center border"
+              style={{ backgroundColor: coverImage?.backgroundColor || '#FFFFFFFF' }}
+            >
+              {coverImage?.symbolPath && (coverImage.symbolPath.startsWith("/api/") || coverImage.symbolPath.startsWith("http")) ? (
+                <img
+                  src={coverImage.symbolPath.startsWith("/api/") ? apiUrl(coverImage.symbolPath) : coverImage.symbolPath}
+                  alt="Cover"
+                  className="w-8 h-8 object-contain"
+                />
+              ) : coverImage?.iconRef ? (
+                <span className="text-xl leading-none">{coverImage.iconRef}</span>
+              ) : (
+                <Image className="w-5 h-5 text-gray-400" />
+              )}
+            </div>
+            {/* Icon input */}
+            <Input
+              className={cn(
+                "h-8 text-sm flex-1",
+                isDark ? "bg-slate-800 border-slate-700 text-slate-200" : "bg-white border-gray-300"
+              )}
+              placeholder={t("board.coverIconPlaceholder") || "Emoji (e.g. 🏠)"}
+              value={coverImage?.iconRef || ""}
+              onChange={(e) => {
+                if (!board) return;
+                const updated = { ...board, coverImage: { ...board.coverImage, iconRef: e.target.value } };
+                useBoardStore.getState().updateBoard(updated);
+              }}
+            />
+          </div>
+          {/* Image Key */}
+          <Input
+            className={cn(
+              "h-8 text-sm",
+              isDark ? "bg-slate-800 border-slate-700 text-slate-200" : "bg-white border-gray-300"
+            )}
+            placeholder={t("board.coverImageKeyPlaceholder") || "Image key (e.g. communication_board)"}
+            value={coverImage?.imageKey || ""}
+            onChange={(e) => {
+              if (!board) return;
+              const updated = { ...board, coverImage: { ...board.coverImage, imageKey: e.target.value } };
+              useBoardStore.getState().updateBoard(updated);
+            }}
+          />
+          {/* Background Color */}
+          <div className="flex items-center gap-2">
+            <Label className={cn(
+              "text-xs",
+              isDark ? "text-slate-400" : "text-gray-600"
+            )}>
+              {t("board.coverBackground") || "Background"}
+            </Label>
+            <input
+              type="color"
+              className="w-8 h-8 rounded border-0 cursor-pointer"
+              value={(coverImage?.backgroundColor || "#ffffff").slice(0, 7)}
+              onChange={(e) => {
+                if (!board) return;
+                const color = e.target.value.toUpperCase() + "FF";
+                const updated = { ...board, coverImage: { ...board.coverImage, backgroundColor: color } };
+                useBoardStore.getState().updateBoard(updated);
+              }}
+            />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const handleUpdate = (field: string, value: any) => {
@@ -177,7 +267,7 @@ export function ButtonInspector() {
                   alt={selectedBtn.label}
                   className="w-8 h-8 object-contain mb-1"
                 />
-              ) : selectedBtn.iconRef && /[\u{1F000}-\u{1FFFF}]|[\u{2600}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F900}-\u{1F9FF}]/u.test(selectedBtn.iconRef) ? (
+              ) : selectedBtn.iconRef && (([...selectedBtn.iconRef].length === 1 && !selectedBtn.iconRef.startsWith("fa")) || /[\u{1F000}-\u{1FFFF}]|[\u{2600}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F900}-\u{1F9FF}]/u.test(selectedBtn.iconRef)) ? (
                 <span className="text-2xl mb-1 leading-none">{selectedBtn.iconRef}</span>
               ) : (
                 <i

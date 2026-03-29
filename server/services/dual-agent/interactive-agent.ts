@@ -51,12 +51,14 @@ export function parseBoardButtons(content: string): Array<{ label: string; iconR
       }
 
       if (label) {
+        // Skip imageKey when icon is a single character/number (not an emoji) — the character is the visual
+        const isSingleChar = iconRef.length === 1 && !/[\u{1F000}-\u{1FFFF}]|[\u{2600}-\u{27BF}]/u.test(iconRef);
         buttons.push({
           label,
           iconRef: iconRef || "fas fa-comment",
           symbolPath,
-          // Only include imageKey if no custom symbol is already set
-          imageKey: symbolPath ? undefined : imageKey,
+          // Only include imageKey if no custom symbol is set and icon isn't a plain character
+          imageKey: (symbolPath || isSingleChar) ? undefined : imageKey,
           sentence,
         });
       }

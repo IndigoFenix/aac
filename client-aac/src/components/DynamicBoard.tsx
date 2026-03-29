@@ -62,9 +62,11 @@ const DEFAULT_ROWS = 3;
 const DEFAULT_COLS = 4;
 const BLANK_SLOT: SlotState = { type: "blank" };
 
-// Check if a string is an emoji (not a FontAwesome class)
-function isEmoji(str: string): boolean {
+/** Returns true if the string should be rendered as text (emoji or single character/number) rather than a Font Awesome icon class */
+function isDisplayableIcon(str: string): boolean {
   if (!str || str.startsWith("fa") || str.includes(" ")) return false;
+  // Single characters (letters, numbers, punctuation) are displayable as-is
+  if ([...str].length === 1) return true;
   return /[\u{1F000}-\u{1FFFF}]|[\u{2600}-\u{27BF}]|[\u{FE00}-\u{FEFF}]|[\u{1F900}-\u{1F9FF}]|[\u{2702}-\u{27B0}]|[\u{E000}-\u{F8FF}]|[\u{200D}]|[\u{20E3}]|[\u{FE0F}]|[\u{2190}-\u{21FF}]|[\u{2300}-\u{23FF}]|[\u{2460}-\u{24FF}]|[\u{25A0}-\u{25FF}]|[\u{2B00}-\u{2BFF}]|[\u{3000}-\u{303F}]|[\u{3200}-\u{32FF}]|[\u{1F100}-\u{1F1FF}]|[\u{1F200}-\u{1F2FF}]|[\u{1F300}-\u{1F5FF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F700}-\u{1F77F}]/u.test(str);
 }
 
@@ -187,9 +189,20 @@ export default function DynamicBoard({
     const page = getCurrentPage();
     const buttons: BoardButton[] = page?.buttons || [];
 
+    // Use row/col placement if buttons have position data (e.g. imported boards),
+    // otherwise fall back to sequential placement (e.g. AI-generated boards)
+    const hasPositions = buttons.length > 0 && buttons.some(b => b.row != null && b.col != null);
+
     setSlots(
       Array.from({ length: totalSlots }, (_, i): SlotState => {
-        if (i < buttons.length) {
+        if (hasPositions) {
+          const row = Math.floor(i / gridCols);
+          const col = i % gridCols;
+          const button = buttons.find(b => b.row === row && b.col === col);
+          if (button) {
+            return { type: "occupied", button, anim: "entering" };
+          }
+        } else if (i < buttons.length) {
           return { type: "occupied", button: buttons[i], anim: "entering" };
         }
         return BLANK_SLOT;
@@ -495,10 +508,10 @@ export default function DynamicBoard({
     }
     // Show emoji with loading spinner while symbol is being generated
     if ((button as any).imageKey) {
-      const emoji = button.iconRef && isEmoji(button.iconRef) ? button.iconRef : getEmojiForLabel(button.label);
+      const emoji = button.iconRef && isDisplayableIcon(button.iconRef) ? button.iconRef : getEmojiForLabel(button.label);
       return renderLoadingOverlay(emoji);
     }
-    if (button.iconRef && isEmoji(button.iconRef)) {
+    if (button.iconRef && isDisplayableIcon(button.iconRef)) {
       return <span style={emojiStyle}>{button.iconRef}</span>;
     }
     if (button.iconRef) {

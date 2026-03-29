@@ -72,7 +72,7 @@ const upload = multer({
 // Configure multer for chat file uploads (various file types)
 const chatFileUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB limit
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB limit
 });
 
 // Configure multer for AAC uploads (images and audio)

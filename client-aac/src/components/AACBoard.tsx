@@ -199,7 +199,7 @@ export default function AACBoard({ board, onButtonClick, language = "en", voiceT
                         alt={button.label}
                         className="w-[60%] h-[60%] object-contain"
                       />
-                    ) : button.iconRef && isEmoji(button.iconRef) ? (
+                    ) : button.iconRef && isDisplayableIcon(button.iconRef) ? (
                       <span className="text-[2.5rem] sm:text-[3rem] md:text-[3.5rem] leading-none">{button.iconRef}</span>
                     ) : button.iconRef ? (
                       <i className={`${button.iconRef} text-[2.5rem] sm:text-[3rem] md:text-[3.5rem] leading-none`} />
@@ -261,10 +261,10 @@ export default function AACBoard({ board, onButtonClick, language = "en", voiceT
   );
 }
 
-// Simple emoji mapping for common words (fallback when no symbol)
-// Check if a string is an emoji (not a FontAwesome class)
-function isEmoji(str: string): boolean {
+/** Returns true if the string should be rendered as text (emoji or single character) rather than a Font Awesome icon class */
+function isDisplayableIcon(str: string): boolean {
   if (!str || str.startsWith('fa') || str.includes(' ')) return false;
+  if ([...str].length === 1) return true;
   return /[\u{1F000}-\u{1FFFF}]|[\u{2600}-\u{27BF}]|[\u{FE00}-\u{FEFF}]|[\u{1F900}-\u{1F9FF}]|[\u{2702}-\u{27B0}]|[\u{E000}-\u{F8FF}]|[\u{200D}]|[\u{20E3}]|[\u{FE0F}]|[\u{2190}-\u{21FF}]|[\u{2300}-\u{23FF}]|[\u{2460}-\u{24FF}]|[\u{25A0}-\u{25FF}]|[\u{2B00}-\u{2BFF}]|[\u{3000}-\u{303F}]|[\u{3200}-\u{32FF}]|[\u{1F100}-\u{1F1FF}]|[\u{1F200}-\u{1F2FF}]|[\u{1F300}-\u{1F5FF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F700}-\u{1F77F}]/u.test(str);
 }
 

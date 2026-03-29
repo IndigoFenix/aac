@@ -58,7 +58,9 @@ export interface BoardIR {
   pages: PageIR[];
   assets?: { [key: string]: Blob | string };
   coverImage?: {
-    symbolPath: string; // e.g. "[sstix#]50026.emf"
+    iconRef?: string;      // Emoji or icon reference (e.g. "🏠")
+    imageKey?: string;     // Auto-generated symbol key (e.g. "communication_board")
+    symbolPath?: string;   // Resolved symbol path (e.g. "[sstix#]50026.emf" or "/api/symbols/...")
     backgroundColor?: string; // e.g. "#D6FFF6FF"
   };
 }
@@ -71,7 +73,9 @@ export interface BoardModifier {
   removePageIds?: string[];
   assets?: { [key: string]: Blob | string };
   coverImage?: {
-    symbolPath: string; // e.g. "[sstix#]50026.emf"
-    backgroundColor?: string; // e.g. "#D6FFF6FF"
+    iconRef?: string;
+    imageKey?: string;
+    symbolPath?: string;
+    backgroundColor?: string;
   };
 }

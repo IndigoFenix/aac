@@ -1887,7 +1887,9 @@ import {
         endTime: new Date(value.endTime),
         allDay: value.allDay ?? false,
         repeatType: value.repeatType ?? 'none',
+        repeatInterval: value.repeatInterval ?? 1,
         repeatDays: value.repeatDays,
+        repeatMonthWeek: value.repeatMonthWeek,
         repeatEndDate: value.repeatEndDate ? new Date(value.repeatEndDate) : undefined,
       }, userId);
 
@@ -1911,7 +1913,9 @@ import {
       if (value.endTime !== undefined) updates.endTime = new Date(value.endTime);
       if (value.allDay !== undefined) updates.allDay = value.allDay;
       if (value.repeatType !== undefined) updates.repeatType = value.repeatType;
+      if (value.repeatInterval !== undefined) updates.repeatInterval = value.repeatInterval;
       if (value.repeatDays !== undefined) updates.repeatDays = value.repeatDays;
+      if (value.repeatMonthWeek !== undefined) updates.repeatMonthWeek = value.repeatMonthWeek;
       if (value.repeatEndDate !== undefined) updates.repeatEndDate = value.repeatEndDate ? new Date(value.repeatEndDate) : null;
 
       const event = await calendarRepository.updateEvent(String(key), updates);
@@ -1938,9 +1942,11 @@ import {
       startTime: { id: "startTime", type: "string", format: "ISO 8601 datetime" },
       endTime: { id: "endTime", type: "string", format: "ISO 8601 datetime" },
       allDay: { id: "allDay", type: "boolean" },
-      repeatType: { id: "repeatType", type: "string", enum: ["none", "daily", "weekly"] },
-      repeatDays: { id: "repeatDays", type: "array", items: { id: "day", type: "number" }, description: "0=Sun..6=Sat, for weekly repeats" },
-      repeatEndDate: { id: "repeatEndDate", type: "string", format: "ISO 8601 datetime" },
+      repeatType: { id: "repeatType", type: "string", enum: ["none", "daily", "weekly", "monthly_date", "monthly_weekday"], description: "'none'=one-time, 'daily'=every day, 'weekly'=specific days each week, 'monthly_date'=same date each month, 'monthly_weekday'=Nth weekday each month (e.g., 2nd Tuesday)." },
+      repeatInterval: { id: "repeatInterval", type: "number", description: "For weekly: repeat every N weeks (1=every week, 2=every 2 weeks, etc). Default 1." },
+      repeatDays: { id: "repeatDays", type: "array", items: { id: "day", type: "number" }, description: "For weekly: which days. 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat. Example: [1,3,5] for Mon/Wed/Fri." },
+      repeatMonthWeek: { id: "repeatMonthWeek", type: "number", description: "For monthly_weekday: which occurrence. 1=first, 2=second, 3=third, -1=last. The weekday is taken from the event's start date." },
+      repeatEndDate: { id: "repeatEndDate", type: "string", format: "ISO 8601 datetime", description: "When the recurring event stops repeating." },
     },
     required: ["title", "startTime", "endTime"],
   };

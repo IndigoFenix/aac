@@ -49,14 +49,18 @@ interface AttendeeEntry {
   label: string; // display name
 }
 
+type RepeatType = 'none' | 'daily' | 'weekly' | 'monthly_date' | 'monthly_weekday';
+
 interface EventFormData {
   title: string;
   description: string;
   startTime: string;
   endTime: string;
   allDay: boolean;
-  repeatType: 'none' | 'daily' | 'weekly';
+  repeatType: RepeatType;
+  repeatInterval: number;
   repeatDays: number[];
+  repeatMonthWeek: number;
   repeatEndDate: string;
   attendees: AttendeeEntry[];
 }
@@ -68,7 +72,9 @@ const defaultFormData: EventFormData = {
   endTime: '',
   allDay: false,
   repeatType: 'none',
+  repeatInterval: 1,
   repeatDays: [],
+  repeatMonthWeek: 1,
   repeatEndDate: '',
   attendees: [],
 };
@@ -181,10 +187,19 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
         }
       } else if (ev.repeatType === 'weekly' && ev.repeatDays) {
         const days = ev.repeatDays as number[];
+        const interval = (ev as any).repeatInterval || 1;
         const cursor = new Date(Math.max(evStart.getTime(), startDate.getTime()));
         cursor.setHours(evStart.getHours(), evStart.getMinutes(), 0, 0);
-        // Align to start of week
+        // Align to start of the week that contains evStart
+        const evWeekStart = new Date(evStart);
+        evWeekStart.setDate(evWeekStart.getDate() - evWeekStart.getDay());
         cursor.setDate(cursor.getDate() - cursor.getDay());
+        // Align cursor to the correct interval week
+        if (interval > 1) {
+          const weeksDiff = Math.round((cursor.getTime() - evWeekStart.getTime()) / (7 * 86400000));
+          const offset = weeksDiff % interval;
+          if (offset !== 0) cursor.setDate(cursor.getDate() + (interval - offset) * 7);
+        }
         const repeatEnd = ev.repeatEndDate ? new Date(ev.repeatEndDate) : endDate;
         const limit = new Date(Math.min(repeatEnd.getTime(), endDate.getTime()));
         while (cursor <= limit) {
@@ -195,7 +210,54 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
               result.push({ event: ev, date: new Date(d) });
             }
           }
-          cursor.setDate(cursor.getDate() + 7);
+          cursor.setDate(cursor.getDate() + 7 * interval);
+        }
+      } else if (ev.repeatType === 'monthly_date') {
+        // Repeat on the same day-of-month as the start date
+        const dayOfMonth = evStart.getDate();
+        const cursor = new Date(Math.max(evStart.getTime(), startDate.getTime()));
+        cursor.setHours(evStart.getHours(), evStart.getMinutes(), 0, 0);
+        cursor.setDate(1); // start of month
+        const repeatEnd = ev.repeatEndDate ? new Date(ev.repeatEndDate) : endDate;
+        const limit = new Date(Math.min(repeatEnd.getTime(), endDate.getTime()));
+        while (cursor <= limit) {
+          const d = new Date(cursor);
+          d.setDate(dayOfMonth);
+          // Handle months with fewer days (e.g., Feb 30 → skip)
+          if (d.getMonth() === cursor.getMonth() && d >= startDate && d <= limit && d >= evStart) {
+            result.push({ event: ev, date: new Date(d) });
+          }
+          cursor.setMonth(cursor.getMonth() + 1);
+        }
+      } else if (ev.repeatType === 'monthly_weekday') {
+        // Repeat on the Nth weekday of each month (e.g., 2nd Tuesday)
+        const targetDay = evStart.getDay(); // 0=Sun..6=Sat
+        const monthWeek = (ev as any).repeatMonthWeek || 1; // 1=first, 2=second, 3=third, -1=last
+        const cursor = new Date(Math.max(evStart.getTime(), startDate.getTime()));
+        cursor.setHours(evStart.getHours(), evStart.getMinutes(), 0, 0);
+        cursor.setDate(1);
+        const repeatEnd = ev.repeatEndDate ? new Date(ev.repeatEndDate) : endDate;
+        const limit = new Date(Math.min(repeatEnd.getTime(), endDate.getTime()));
+        while (cursor <= limit) {
+          let d: Date | null = null;
+          if (monthWeek === -1) {
+            // Last occurrence: start from end of month
+            const lastDay = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+            lastDay.setHours(evStart.getHours(), evStart.getMinutes(), 0, 0);
+            while (lastDay.getDay() !== targetDay) lastDay.setDate(lastDay.getDate() - 1);
+            d = lastDay;
+          } else {
+            // Nth occurrence: find first targetDay, then skip N-1 weeks
+            const first = new Date(cursor);
+            while (first.getDay() !== targetDay) first.setDate(first.getDate() + 1);
+            first.setDate(first.getDate() + (monthWeek - 1) * 7);
+            first.setHours(evStart.getHours(), evStart.getMinutes(), 0, 0);
+            if (first.getMonth() === cursor.getMonth()) d = first;
+          }
+          if (d && d >= startDate && d <= limit && d >= evStart) {
+            result.push({ event: ev, date: new Date(d) });
+          }
+          cursor.setMonth(cursor.getMonth() + 1);
         }
       }
     }
@@ -298,8 +360,10 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
       startTime: toLocalDateTimeString(new Date(ev.startTime)),
       endTime: toLocalDateTimeString(new Date(ev.endTime)),
       allDay: ev.allDay,
-      repeatType: ev.repeatType as any,
+      repeatType: ev.repeatType as RepeatType,
+      repeatInterval: (ev as any).repeatInterval || 1,
       repeatDays: (ev.repeatDays as number[]) || [],
+      repeatMonthWeek: (ev as any).repeatMonthWeek || 1,
       repeatEndDate: ev.repeatEndDate ? toLocalDateString(new Date(ev.repeatEndDate)) : '',
       attendees: existingAttendees,
     });
@@ -315,7 +379,9 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
       endTime: new Date(formData.endTime).toISOString(),
       allDay: formData.allDay,
       repeatType: formData.repeatType,
+      repeatInterval: formData.repeatType === 'weekly' ? formData.repeatInterval : undefined,
       repeatDays: formData.repeatType === 'weekly' ? formData.repeatDays : undefined,
+      repeatMonthWeek: formData.repeatType === 'monthly_weekday' ? formData.repeatMonthWeek : undefined,
       repeatEndDate: formData.repeatEndDate ? new Date(formData.repeatEndDate).toISOString() : undefined,
       attendees: formData.attendees
         .filter((a) => a.attendeeType !== 'user' || a.attendeeId !== user?.id) // creator is auto-added
@@ -665,27 +731,69 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
                   <SelectItem value="none">{t('calendar.repeatNone')}</SelectItem>
                   <SelectItem value="daily">{t('calendar.repeatDaily')}</SelectItem>
                   <SelectItem value="weekly">{t('calendar.repeatWeekly')}</SelectItem>
+                  <SelectItem value="monthly_date">{t('calendar.repeatMonthlyDate') || 'Monthly (same date)'}</SelectItem>
+                  <SelectItem value="monthly_weekday">{t('calendar.repeatMonthlyWeekday') || 'Monthly (same weekday)'}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Weekly day selection */}
+            {/* Weekly: day selection + interval */}
             {formData.repeatType === 'weekly' && (
-              <div className="space-y-2">
-                <Label>{t('calendar.repeatDays')}</Label>
-                <div className="flex gap-1">
-                  {dayLabels.map((label, i) => (
-                    <Button
-                      key={i}
-                      size="sm"
-                      variant={formData.repeatDays.includes(i) ? 'default' : 'outline'}
-                      className="w-9 h-9 p-0"
-                      onClick={() => toggleRepeatDay(i)}
-                    >
-                      {label}
-                    </Button>
-                  ))}
+              <>
+                <div className="space-y-2">
+                  <Label>{t('calendar.repeatDays')}</Label>
+                  <div className="flex gap-1">
+                    {dayLabels.map((label, i) => (
+                      <Button
+                        key={i}
+                        size="sm"
+                        variant={formData.repeatDays.includes(i) ? 'default' : 'outline'}
+                        className="w-9 h-9 p-0"
+                        onClick={() => toggleRepeatDay(i)}
+                      >
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
+                <div className="space-y-2">
+                  <Label>{t('calendar.everyNWeeks') || 'Every N weeks'}</Label>
+                  <Select
+                    value={String(formData.repeatInterval)}
+                    onValueChange={(val) => setFormData(prev => ({ ...prev, repeatInterval: Number(val) }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">{t('calendar.everyWeek') || 'Every week'}</SelectItem>
+                      <SelectItem value="2">{t('calendar.every2Weeks') || 'Every 2 weeks'}</SelectItem>
+                      <SelectItem value="3">{t('calendar.every3Weeks') || 'Every 3 weeks'}</SelectItem>
+                      <SelectItem value="4">{t('calendar.every4Weeks') || 'Every 4 weeks'}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
+
+            {/* Monthly weekday: which occurrence */}
+            {formData.repeatType === 'monthly_weekday' && (
+              <div className="space-y-2">
+                <Label>{t('calendar.monthWeekOccurrence') || 'Which occurrence'}</Label>
+                <Select
+                  value={String(formData.repeatMonthWeek)}
+                  onValueChange={(val) => setFormData(prev => ({ ...prev, repeatMonthWeek: Number(val) }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">{t('calendar.monthFirst') || 'First'}</SelectItem>
+                    <SelectItem value="2">{t('calendar.monthSecond') || 'Second'}</SelectItem>
+                    <SelectItem value="3">{t('calendar.monthThird') || 'Third'}</SelectItem>
+                    <SelectItem value="-1">{t('calendar.monthLast') || 'Last'}</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             )}
 

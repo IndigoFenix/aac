@@ -223,8 +223,9 @@ export function MainLayout() {
         isResizing && "bg-primary/50"
       )}
       style={{
-        left: `${chatSize}%`,
-        transform: 'translateX(-50%)',
+        ...(isRTL
+          ? { right: `${chatSize}%`, transform: 'translateX(50%)' }
+          : { left: `${chatSize}%`, transform: 'translateX(-50%)' }),
       }}
       onMouseDown={handleResizeStart}
     >
