@@ -706,9 +706,15 @@ export class InstituteController {
       const result = await instituteService.getInviteByToken(token);
 
       if (result.success) {
-        // Look up associated license for invite defaults
+        // Look up associated license for invite defaults (match by email + institute)
         const { licenseRepository } = await import("../repositories/licenseRepository");
-        const license = await licenseRepository.getLicenseByInviteEmail(result.invite!.inviteeEmail);
+        const license = await licenseRepository.getLicenseByInviteEmailAndInstitute(
+          result.invite!.inviteeEmail,
+          result.invite!.instituteId
+        );
+
+        // Check if the invitee already has an account
+        const existingUser = await userService.getUserByEmail(result.invite!.inviteeEmail);
 
         res.json({
           success: true,
@@ -732,6 +738,10 @@ export class InstituteController {
               }
             : null,
           inviteDefaults: license?.inviteDefaults || null,
+          existingUser: existingUser ? {
+            firstName: existingUser.firstName,
+            lastName: existingUser.lastName,
+          } : null,
         });
         return;
       }
@@ -780,11 +790,13 @@ export class InstituteController {
     try {
       const currentUser = req.user as any;
       const { token } = req.params;
+      const { userType } = req.body || {};
 
       // 1. Try institute invite
       const result = await instituteService.acceptInviteByToken(
         token,
-        currentUser.id
+        currentUser.id,
+        userType
       );
 
       if (result.success) {
@@ -939,7 +951,7 @@ export class InstituteController {
       await userService.updateOnboardingStep(newUser.id, 3);
       const { licenseService } = await import("../services/licenseService");
       await licenseService.linkLicenseToUser(invite.inviteeEmail, newUser.id);
-      const acceptResult = await instituteService.acceptInvite(invite.id, newUser.id);
+      const acceptResult = await instituteService.acceptInvite(invite.id, newUser.id, userType);
       if (!acceptResult.success) {
         res.status(400).json({
           success: false,

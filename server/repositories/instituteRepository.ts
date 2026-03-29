@@ -174,17 +174,18 @@ export class InstituteRepository {
     instituteId: string,
     userId: string,
     role: string = "staff",
-    isAdmin: boolean = false
+    isAdmin: boolean = false,
+    userType?: string
   ): Promise<InstituteUser> {
     // Check if membership already exists
     const existing = await this.getInstituteUserLink(instituteId, userId);
-    
+
     if (existing) {
       // Reactivate if inactive
       if (!existing.isActive) {
         const [updated] = await db
           .update(instituteUsers)
-          .set({ isActive: true, role, isAdmin, updatedAt: new Date() })
+          .set({ isActive: true, role, isAdmin, ...(userType ? { userType } : {}), updatedAt: new Date() })
           .where(eq(instituteUsers.id, existing.id))
           .returning();
         return updated;
@@ -199,6 +200,7 @@ export class InstituteRepository {
         userId,
         role,
         isAdmin,
+        ...(userType ? { userType } : {}),
         isActive: true,
       })
       .returning();
@@ -507,7 +509,8 @@ export class InstituteRepository {
    */
   async acceptInvite(
     inviteId: string,
-    userId: string
+    userId: string,
+    userType?: string
   ): Promise<{ success: boolean; membership?: InstituteUser; error?: string }> {
     const invite = await this.getInviteById(inviteId);
 
@@ -542,7 +545,8 @@ export class InstituteRepository {
       invite.instituteId,
       userId,
       invite.role,
-      invite.grantAdmin
+      invite.grantAdmin,
+      userType
     );
 
     // Mark invite as accepted

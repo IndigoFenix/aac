@@ -78,6 +78,14 @@ export class LicenseRepository {
     return license || undefined;
   }
 
+  async getLicenseByInviteEmailAndInstitute(email: string, instituteId: string): Promise<License | undefined> {
+    const [license] = await db
+      .select()
+      .from(licenses)
+      .where(and(eq(licenses.inviteEmail, email), eq(licenses.instituteId, instituteId)));
+    return license || undefined;
+  }
+
   async updateLicense(id: string, updates: UpdateLicense): Promise<License | undefined> {
     const [license] = await db
       .update(licenses)

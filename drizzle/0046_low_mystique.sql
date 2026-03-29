@@ -1,0 +1,1 @@
+ALTER TABLE "institute_users" ADD COLUMN "user_type" text;

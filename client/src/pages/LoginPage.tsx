@@ -167,6 +167,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
   
   // Invite acceptance state
   const [isAcceptingInvite, setIsAcceptingInvite] = useState(false);
+  const [inviteUserType, setInviteUserType] = useState<UserType>('Caregiver');
 
   // Email mismatch auto-logout state
   const [isLoggingOutMismatch, setIsLoggingOutMismatch] = useState(false);
@@ -248,11 +249,39 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
         institute: InstituteData | null;
         invitedBy: InviterData | null;
         licenseInvite?: boolean;
+        inviteDefaults?: { firstName?: string; lastName?: string; userType?: string } | null;
+        existingUser?: { firstName?: string; lastName?: string } | null;
       };
     },
     enabled: isInviteMode,
     retry: false,
   });
+
+  // After Google OAuth redirect, auto-accept the pending invite
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+    const pendingToken = sessionStorage.getItem('pendingInviteToken');
+    if (!pendingToken) return;
+    sessionStorage.removeItem('pendingInviteToken');
+    (async () => {
+      try {
+        // Fetch invite details to get the institute ID
+        const inviteRes = await apiRequest('GET', `/api/invites/token/${pendingToken}`);
+        const inviteInfo = await inviteRes.json();
+
+        await apiRequest('POST', `/api/invites/token/${pendingToken}/accept`);
+        toast({ title: t('invite.accepted') || 'Invite Accepted' });
+
+        // Pre-select the new institute
+        if (inviteInfo?.institute?.id && user?.id) {
+          localStorage.setItem(`cliniaacian.${user.id}.currentInstituteId`, inviteInfo.institute.id);
+        }
+      } catch {
+        // Accept failed — not critical
+      }
+      window.location.href = '/home';
+    })();
+  }, [isAuthenticated, user]);
 
   // Auto-logout if logged-in user doesn't match invite email
   useEffect(() => {
@@ -310,13 +339,11 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
       // Normal login success
       if (result.success && result.user) {
         await refetchUser();
-        toast({
-          title: t('auth.loginSuccess'),
-          description: t('auth.welcomeBack')
-        });
         if (isInviteMode) {
-          // Page will re-render and show accept invite UI
+          // Stay on the page — user needs to select userType before accepting
+          toast({ title: t('auth.loginSuccess'), description: t('auth.welcomeBack') });
         } else {
+          toast({ title: t('auth.loginSuccess'), description: t('auth.welcomeBack') });
           setLocation('/home');
         }
       } else {
@@ -455,69 +482,74 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
 
   const handleRegister = async (e: FormEvent) => {
     e.preventDefault();
-    const d = registerData;
+    const invDefaults = inviteData?.inviteDefaults;
+    const d = {
+      ...registerData,
+      firstName: registerData.firstName || invDefaults?.firstName || '',
+      lastName: registerData.lastName || invDefaults?.lastName || '',
+      userType: registerData.userType || (invDefaults?.userType as UserType) || 'Caregiver',
+    };
 
-    // Validation
-    const emailToUse = isInviteMode && inviteData ? inviteData.invite.email : d.email;
-    
-    if (!d.firstName.trim() || !d.password.trim() || !d.confirmPassword.trim()) {
-      toast({ 
-        title: t('auth.error'), 
-        description: t('auth.fieldsRequired'), 
-        variant: 'destructive' 
-      });
+    const isExistingUser = isInviteMode && !!inviteData?.existingUser;
+
+    // Validation — existing users only need password
+    if (!d.password.trim()) {
+      toast({ title: t('auth.error'), description: t('auth.fieldsRequired'), variant: 'destructive' });
       return;
     }
 
-    if (!isInviteMode && !d.email.trim()) {
-      toast({ 
-        title: t('auth.error'), 
-        description: t('auth.fieldsRequired'), 
-        variant: 'destructive' 
-      });
-      return;
-    }
+    if (!isExistingUser) {
+      if (!d.firstName.trim()) {
+        toast({ title: t('auth.error'), description: t('auth.fieldsRequired'), variant: 'destructive' });
+        return;
+      }
 
-    if (d.password !== d.confirmPassword) {
-      toast({ 
-        title: t('auth.error'), 
-        description: t('auth.passwordMismatch'), 
-        variant: 'destructive' 
-      });
-      return;
-    }
+      if (!isInviteMode && !d.email.trim()) {
+        toast({ title: t('auth.error'), description: t('auth.fieldsRequired'), variant: 'destructive' });
+        return;
+      }
 
-    // Validate password against policy
-    const passwordErrors: string[] = [];
-    if (d.password.length < passwordPolicy.minLength) {
-      passwordErrors.push(`Password must be at least ${passwordPolicy.minLength} characters`);
-    }
-    if (passwordPolicy.requireUppercase && !/[A-Z]/.test(d.password)) {
-      passwordErrors.push('Password must contain at least one uppercase letter');
-    }
-    if (passwordPolicy.requireLowercase && !/[a-z]/.test(d.password)) {
-      passwordErrors.push('Password must contain at least one lowercase letter');
-    }
-    if (passwordPolicy.requireNumber && !/[0-9]/.test(d.password)) {
-      passwordErrors.push('Password must contain at least one number');
-    }
+      if (d.password !== d.confirmPassword) {
+        toast({ title: t('auth.error'), description: t('auth.passwordMismatch'), variant: 'destructive' });
+        return;
+      }
 
-    if (passwordErrors.length > 0) {
-      toast({
-        title: t('auth.error'),
-        description: passwordErrors[0],
-        variant: 'destructive',
-      });
-      return;
+      // Validate password against policy
+      const passwordErrors: string[] = [];
+      if (d.password.length < passwordPolicy.minLength) {
+        passwordErrors.push(`Password must be at least ${passwordPolicy.minLength} characters`);
+      }
+      if (passwordPolicy.requireUppercase && !/[A-Z]/.test(d.password)) {
+        passwordErrors.push('Password must contain at least one uppercase letter');
+      }
+      if (passwordPolicy.requireLowercase && !/[a-z]/.test(d.password)) {
+        passwordErrors.push('Password must contain at least one lowercase letter');
+      }
+      if (passwordPolicy.requireNumber && !/[0-9]/.test(d.password)) {
+        passwordErrors.push('Password must contain at least one number');
+      }
+
+      if (passwordErrors.length > 0) {
+        toast({ title: t('auth.error'), description: passwordErrors[0], variant: 'destructive' });
+        return;
+      }
     }
 
     setIsRegistering(true);
 
     try {
       let response;
-      
-      if (isInviteMode) {
-        // Register via invite
+
+      if (isExistingUser && inviteData) {
+        // Existing user: log in and accept invite
+        const loginResult = await login(inviteData.invite.email, d.password);
+        if (!loginResult.success) {
+          throw new Error(loginResult.message || t('auth.invalidCredentials') || 'Invalid password');
+        }
+        // Now accept the invite with userType
+        response = await apiRequest('POST', `/api/invites/token/${inviteToken}/accept`, { userType: d.userType });
+      } else if (isInviteMode) {
+        // New user: register via invite
         response = await apiRequest('POST', `/api/invites/token/${inviteToken}/register`, {
           firstName: d.firstName,
           lastName: d.lastName,
@@ -542,22 +574,26 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
       }
 
       await refetchUser();
-      
+
       if (isInviteMode && inviteData) {
-        toast({ 
+        toast({
           title: t('invite.registered') || 'Welcome!',
           description: inviteData.institute
             ? (t('invite.registeredDesc') || 'Your account has been created and you have joined {institute}').replace('{institute}', inviteData.institute.name)
             : (t('invite.licenseActivated') || 'Your account has been created and your license is active.')
         });
+        // Pre-select the new institute and reload to refresh all contexts
+        if (inviteData.institute?.id && data.user?.id) {
+          localStorage.setItem(`cliniaacian.${data.user.id}.currentInstituteId`, inviteData.institute.id);
+        }
+        window.location.href = '/home';
       } else {
-        toast({ 
-          title: t('auth.registerSuccess'), 
-          description: t('auth.registerSuccessDesc') 
+        toast({
+          title: t('auth.registerSuccess'),
+          description: t('auth.registerSuccessDesc')
         });
+        setLocation('/home');
       }
-      
-      setLocation('/home');
       
     } catch (error: any) {
       toast({ 
@@ -573,7 +609,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
   const handleAcceptInvite = async () => {
     setIsAcceptingInvite(true);
     try {
-      const response = await apiRequest('POST', `/api/invites/token/${inviteToken}/accept`);
+      const response = await apiRequest('POST', `/api/invites/token/${inviteToken}/accept`, { userType: inviteUserType });
       const data = await response.json();
 
       if (!response.ok || !data.success) {
@@ -587,7 +623,11 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
           : (t('invite.licenseActivated') || 'Your license has been activated.'),
       });
 
-      setLocation('/home');
+      // Pre-select the new institute and full-reload to refresh all contexts
+      if (inviteData?.institute?.id && user?.id) {
+        localStorage.setItem(`cliniaacian.${user.id}.currentInstituteId`, inviteData.institute.id);
+      }
+      window.location.href = '/home';
     } catch (error: any) {
       toast({
         title: t('invite.error') || 'Error',
@@ -703,6 +743,26 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
                 <p className="text-sm italic">"{invite.message}"</p>
               </div>
             )}
+
+            {/* User Type */}
+            <div className="space-y-2">
+              <Label>{language === 'he' ? 'סוג משתמש' : 'Your Role'}</Label>
+              <Select
+                value={inviteUserType}
+                onValueChange={(v) => setInviteUserType(v as UserType)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {userTypeOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
             <Button
               className="w-full"
@@ -1073,7 +1133,9 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
                     <img src={aivotaLogo} alt="Aivota" className="mx-auto h-16 mb-4 object-contain" />
                   )}
                   <CardTitle className="text-2xl font-bold">
-                    {t('invite.createAccount') || 'Create Your Account'}
+                    {inviteData.existingUser
+                      ? (t('invite.joinInstitute') || 'Join Institute')
+                      : (t('invite.createAccount') || 'Create Your Account')}
                   </CardTitle>
                   <CardDescription>
                     {inviteData.institute
@@ -1147,35 +1209,46 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
                   </div>
                 )}
 
-                {/* Name fields */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="firstName">
-                      {t('auth.firstName') || 'First Name'} {isInviteMode && '*'}
-                    </Label>
-                    <Input
-                      id="firstName"
-                      type="text"
-                      value={registerData.firstName}
-                      onChange={(e) => setRegisterData(prev => ({ ...prev, firstName: e.target.value }))}
-                      placeholder={t('auth.firstNamePlaceholder')}
-                      required
-                      disabled={isRegistering}
-                    />
+                {/* Name fields — hidden for existing users (name already in system) */}
+                {!(isInviteMode && inviteData?.existingUser) && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="firstName">
+                        {t('auth.firstName') || 'First Name'} {isInviteMode && '*'}
+                      </Label>
+                      <Input
+                        id="firstName"
+                        type="text"
+                        value={registerData.firstName || inviteData?.inviteDefaults?.firstName || ''}
+                        onChange={(e) => setRegisterData(prev => ({ ...prev, firstName: e.target.value }))}
+                        placeholder={t('auth.firstNamePlaceholder')}
+                        required
+                        disabled={isRegistering}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="lastName">{t('auth.lastName')}</Label>
+                      <Input
+                        id="lastName"
+                        type="text"
+                        value={registerData.lastName || inviteData?.inviteDefaults?.lastName || ''}
+                        onChange={(e) => setRegisterData(prev => ({ ...prev, lastName: e.target.value }))}
+                        placeholder={t('auth.lastNamePlaceholder')}
+                        required={!isInviteMode}
+                        disabled={isRegistering}
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="lastName">{t('auth.lastName')}</Label>
-                    <Input
-                      id="lastName"
-                      type="text"
-                      value={registerData.lastName}
-                      onChange={(e) => setRegisterData(prev => ({ ...prev, lastName: e.target.value }))}
-                      placeholder={t('auth.lastNamePlaceholder')}
-                      required={!isInviteMode}
-                      disabled={isRegistering}
-                    />
-                  </div>
-                </div>
+                )}
+
+                {/* Greeting for existing users */}
+                {isInviteMode && inviteData?.existingUser && (
+                  <p className="text-sm text-muted-foreground">
+                    {(t('invite.welcomeBack') || 'Welcome back, {name}! Enter your password to join.').replace(
+                      '{name}', inviteData.existingUser.firstName || inviteData.invite.email
+                    )}
+                  </p>
+                )}
 
                 {/* User Type */}
                 <div className="space-y-2">
@@ -1183,10 +1256,10 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
                     {language === 'he' ? 'סוג משתמש' : 'User Type'}
                   </Label>
                   <Select
-                    value={registerData.userType}
-                    onValueChange={(value) => setRegisterData(prev => ({ 
-                      ...prev, 
-                      userType: value as UserType 
+                    value={registerData.userType || (inviteData?.inviteDefaults?.userType as UserType) || 'Caregiver'}
+                    onValueChange={(value) => setRegisterData(prev => ({
+                      ...prev,
+                      userType: value as UserType
                     }))}
                     disabled={isRegistering}
                   >
@@ -1220,22 +1293,24 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
                   />
                 </div>
 
-                {/* Confirm Password */}
-                <div className="space-y-2">
-                  <Label htmlFor="confirmPassword">
-                    {t('auth.confirmPassword')} {isInviteMode && '*'}
-                  </Label>
-                  <Input
-                    id="confirmPassword"
-                    type="password"
-                    value={registerData.confirmPassword}
-                    onChange={(e) => setRegisterData(prev => ({ ...prev, confirmPassword: e.target.value }))}
-                    placeholder={t('auth.confirmPasswordPlaceholder')}
-                    required
-                    dir="ltr"
-                    disabled={isRegistering}
-                  />
-                </div>
+                {/* Confirm Password — not needed for existing users */}
+                {!(isInviteMode && inviteData?.existingUser) && (
+                  <div className="space-y-2">
+                    <Label htmlFor="confirmPassword">
+                      {t('auth.confirmPassword')} {isInviteMode && '*'}
+                    </Label>
+                    <Input
+                      id="confirmPassword"
+                      type="password"
+                      value={registerData.confirmPassword}
+                      onChange={(e) => setRegisterData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                      placeholder={t('auth.confirmPasswordPlaceholder')}
+                      required
+                      dir="ltr"
+                      disabled={isRegistering}
+                    />
+                  </div>
+                )}
 
                 <Button 
                   type="submit" 
@@ -1247,6 +1322,11 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
                     <>
                       <Loader2 className="w-4 h-4 animate-spin me-2" />
                       {t('auth.registering')}
+                    </>
+                  ) : isInviteMode && inviteData?.existingUser ? (
+                    <>
+                      <CheckCircle className="w-4 h-4 me-2" />
+                      {t('invite.loginAndJoin') || 'Log In & Join'}
                     </>
                   ) : isInviteMode ? (
                     <>
@@ -1288,14 +1368,16 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
               </CardContent>
 
               <CardFooter className="flex flex-col gap-3">
-                {isInviteMode ? (
+                {isInviteMode && inviteData?.existingUser ? (
+                  null
+                ) : isInviteMode ? (
                   <>
                     <div className="text-sm text-center text-muted-foreground">
                       {t('auth.hasAccount') || 'Already have an account?'}
                     </div>
-                    <Button 
-                      variant="outline" 
-                      className="w-full" 
+                    <Button
+                      variant="outline"
+                      className="w-full"
                       onClick={() => setShowRegister(false)}
                       type="button"
                     >

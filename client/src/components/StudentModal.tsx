@@ -668,9 +668,9 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
                 </Label>
                 <div className="space-y-1 max-h-40 overflow-y-auto">
                   {[
-                    ...(schoolInstitutes.length > 0 ? [{ header: t('institute.type.school') || 'Schools', items: schoolInstitutes }] : []),
-                    ...(clinicInstitutes.length > 0 ? [{ header: t('institute.type.clinic') || 'Clinics', items: clinicInstitutes }] : []),
-                    ...(familyInstitutes.length > 0 ? [{ header: t('institute.type.family') || 'Families', items: familyInstitutes }] : []),
+                    ...(schoolInstitutes.length > 0 ? [{ header: t('institute.type.schoolPlural') || 'Schools', items: schoolInstitutes }] : []),
+                    ...(clinicInstitutes.length > 0 ? [{ header: t('institute.type.clinicPlural') || 'Clinics', items: clinicInstitutes }] : []),
+                    ...(familyInstitutes.length > 0 ? [{ header: t('institute.type.familyPlural') || 'Families', items: familyInstitutes }] : []),
                   ].map(({ header, items }) => (
                     <div key={header}>
                       <div className="px-1 py-1 text-xs font-semibold text-muted-foreground">
@@ -771,7 +771,7 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
                           {schoolInstitutes.length > 0 && (
                             <>
                               <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">
-                                {t('institute.type.school') || 'Schools'}
+                                {t('institute.type.schoolPlural') || 'Schools'}
                               </div>
                               {schoolInstitutes.map((institute) => (
                                 <SelectItem key={institute.id} value={institute.id}>
@@ -786,7 +786,7 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
                           {clinicInstitutes.length > 0 && (
                             <>
                               <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-1">
-                                {t('institute.type.clinic') || 'Clinics'}
+                                {t('institute.type.clinicPlural') || 'Clinics'}
                               </div>
                               {clinicInstitutes.map((institute) => (
                                 <SelectItem key={institute.id} value={institute.id}>
@@ -801,7 +801,7 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
                           {familyInstitutes.length > 0 && (
                             <>
                               <div className="px-2 py-1 text-xs font-semibold text-muted-foreground mt-1">
-                                {t('institute.type.family') || 'Families'}
+                                {t('institute.type.familyPlural') || 'Families'}
                               </div>
                               {familyInstitutes.map((institute) => (
                                 <SelectItem key={institute.id} value={institute.id}>

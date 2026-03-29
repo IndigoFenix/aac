@@ -380,9 +380,10 @@ export class InstituteService {
    */
   async acceptInvite(
     inviteId: string,
-    userId: string
+    userId: string,
+    userType?: string
   ): Promise<{ success: boolean; membership?: InstituteUser; error?: string }> {
-    return instituteRepository.acceptInvite(inviteId, userId);
+    return instituteRepository.acceptInvite(inviteId, userId, userType);
   }
 
   /**
@@ -390,15 +391,16 @@ export class InstituteService {
    */
   async acceptInviteByToken(
     token: string,
-    userId: string
+    userId: string,
+    userType?: string
   ): Promise<{ success: boolean; membership?: InstituteUser; institute?: Institute; error?: string }> {
     const invite = await instituteRepository.getInviteByToken(token);
-    
+
     if (!invite) {
       return { success: false, error: "Invite not found" };
     }
 
-    const result = await instituteRepository.acceptInvite(invite.id, userId);
+    const result = await instituteRepository.acceptInvite(invite.id, userId, userType);
     
     if (result.success) {
       const institute = await instituteRepository.getInstituteById(invite.instituteId);
