@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useStudent } from '@/hooks/useStudent';
+import { useInstitute } from '@/hooks/useInstitute';
 import { useChat } from '@/hooks/useChat';
 import { useFeaturePanel, useSharedState } from '@/contexts/FeaturePanelContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -72,6 +73,9 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
   const isDark = theme === 'dark';
   const { user } = useAuth();
   const { students, selectStudent } = useStudent();
+  const { currentPermissions } = useInstitute();
+  const dashboardLevel = currentPermissions?.dashboardLevel ?? 0;
+  const showProgress = dashboardLevel === -1 || dashboardLevel > 0;
   const { aiRefreshing } = useChat();
   const isAiRefreshing = aiRefreshing.has('students');
   const { setActiveFeature, registerMetadataBuilder, unregisterMetadataBuilder } = useFeaturePanel();
@@ -343,14 +347,16 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align={isRTL ? 'start' : 'end'}>
                       <DropdownMenuLabel>{t('students.actions') || 'Actions'}</DropdownMenuLabel>
+                      {showProgress && (
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            goToProgress(student.id);
+                          }}>
+                          {t('students.openProgress') || 'Open Plan'}
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        goToProgress(student.id);
-                      }}>
-                        {t('students.openProgress') || 'Open Plan'}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem 
                         onClick={(e) => {
                           e.stopPropagation();
                           handleEditStudent(student);
@@ -358,7 +364,6 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                       >
                         {t('students.editDetails') || 'Edit Details'}
                       </DropdownMenuItem>
-                      <DropdownMenuItem>{t('students.viewHistory') || 'View History'}</DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem className="text-destructive">
                         {t('students.archive') || 'Archive'}

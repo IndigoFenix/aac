@@ -178,7 +178,8 @@ export class ChatContextManager {
     permissions: AccessPermissions
   ): AgentMemoryFieldWithDB[] {
     // Start with master fields + institute fields (these don't require a student)
-    let fields = getBaseInstituteMemoryFields(masterMemoryFields);
+    const includeCalendar = !!this.context.licensePermissions?.calendar;
+    let fields = getBaseInstituteMemoryFields(masterMemoryFields, includeCalendar);
 
     // Add library fields (global knowledge base, always available)
     fields = getBaseLibraryMemoryFields(fields);
