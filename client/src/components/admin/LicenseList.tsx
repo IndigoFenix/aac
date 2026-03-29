@@ -36,6 +36,7 @@ import {
   Loader2,
   MoreHorizontal,
   Mail,
+  HeadsetIcon,
 } from 'lucide-react';
 import {
   useLicenses,
@@ -44,6 +45,8 @@ import {
 } from '@/hooks/useAdminData';
 import { LicenseForm } from './LicenseForm';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useAuth } from '@/hooks/useAuth';
+import { apiRequest } from '@/lib/queryClient';
 
 function getStatusInfo(license: AdminLicense): { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' } {
   if (license.suspendedAt) return { label: 'Suspended', variant: 'destructive' };
@@ -69,12 +72,16 @@ function getPermissionsSummary(permissions: any): string {
 export function LicenseList() {
   const { toast } = useToast();
   const { t } = useLanguage();
+  const { user, refetchUser } = useAuth();
   const { data: licenses, isLoading, error } = useLicenses();
   const { deleteLicense, resendInvite } = useLicenseMutations();
 
   const [editingLicense, setEditingLicense] = useState<AdminLicense | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [supportLoading, setSupportLoading] = useState<string | null>(null);
+
+  const inSupportMode = !!user?.supportSession;
 
   const handleEdit = (license: AdminLicense) => {
     setEditingLicense(license);
@@ -116,6 +123,26 @@ export function LicenseList() {
         description: err.message || 'Failed to resend invite',
         variant: 'destructive',
       });
+    }
+  };
+
+  const handleSupportLogin = async (licenseId: string) => {
+    setSupportLoading(licenseId);
+    try {
+      const res = await apiRequest('POST', '/api/admin/support-login', { licenseId });
+      const data = await res.json();
+      if (data.success) {
+        toast({ title: `Entered support mode for ${data.institute?.name || 'institute'}` });
+        await refetchUser();
+        // Force page reload to reset all contexts (institutes, students, etc.)
+        window.location.href = '/';
+      } else {
+        toast({ title: t('common.error'), description: data.message, variant: 'destructive' });
+      }
+    } catch (err: any) {
+      toast({ title: t('common.error'), description: err.message || 'Failed to enter support mode', variant: 'destructive' });
+    } finally {
+      setSupportLoading(null);
     }
   };
 
@@ -221,6 +248,17 @@ export function LicenseList() {
                             <DropdownMenuItem onClick={() => handleResendInvite(license.id)}>
                               <Mail className="w-4 h-4 me-2" />
                               {t('admin.licenses.resendInvite')}
+                            </DropdownMenuItem>
+                          )}
+                          {license.instituteId && !inSupportMode && (
+                            <DropdownMenuItem
+                              disabled={supportLoading === license.id}
+                              onClick={() => handleSupportLogin(license.id)}
+                            >
+                              {supportLoading === license.id
+                                ? <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                                : <HeadsetIcon className="w-4 h-4 me-2" />}
+                              {t('admin.support.login') || 'Login as Support'}
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuItem

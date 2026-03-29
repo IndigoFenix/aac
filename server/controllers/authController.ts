@@ -6,6 +6,9 @@ import passport from "passport";
 import { userService, passwordResetService } from "../services";
 import { mfaService } from "../services/mfaService";
 import { registerSchema, loginSchema, validatePassword } from "@shared/schema";
+import { isCustomerSupport, type SupportSession } from "../services/customerSupportService";
+import { instituteRepository } from "../repositories/instituteRepository";
+import { licenseRepository } from "../repositories/licenseRepository";
 
 function getBaseUrl(req: Request): string {
   return process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
@@ -266,10 +269,12 @@ export class AuthController {
   async getCurrentUser(req: Request, res: Response): Promise<void> {
     if (req.isAuthenticated() && req.user) {
       const user = req.user as any;
-      const userData = await userService.formatUserWithPermissions(user);
+      const support = req.session?.support ?? null;
+      // Use the support institute for license resolution when in support mode
+      const userData = await userService.formatUserWithPermissions(user, support?.instituteId);
       res.json({
         success: true,
-        user: userData,
+        user: { ...userData, supportSession: support },
       });
     } else {
       res.json({
@@ -923,6 +928,85 @@ export class AuthController {
         success: false,
         message: "Failed to get MFA status",
       });
+    }
+  }
+
+  // ==================== Customer Support ====================
+
+  /**
+   * POST /api/admin/support-login
+   * Enter customer support mode for a specific license's institute.
+   * Only available to users with customer support privileges (system admins).
+   */
+  async supportLogin(req: Request, res: Response): Promise<void> {
+    try {
+      const user = req.user as any;
+      if (!isCustomerSupport(user)) {
+        res.status(403).json({ success: false, message: "Not authorized for customer support" });
+        return;
+      }
+
+      const { licenseId } = req.body;
+      if (!licenseId) {
+        res.status(400).json({ success: false, message: "licenseId is required" });
+        return;
+      }
+
+      const license = await licenseRepository.getLicenseById(licenseId);
+      if (!license) {
+        res.status(404).json({ success: false, message: "License not found" });
+        return;
+      }
+      if (!license.instituteId) {
+        res.status(400).json({ success: false, message: "This license has no associated institute" });
+        return;
+      }
+
+      const institute = await instituteRepository.getInstituteById(license.instituteId);
+      if (!institute) {
+        res.status(404).json({ success: false, message: "Institute not found" });
+        return;
+      }
+
+      // Set support session
+      req.session.support = {
+        instituteId: license.instituteId,
+        startedAt: new Date().toISOString(),
+      };
+
+      console.log(`[CustomerSupport] User ${user.email} entered support mode for institute "${institute.name}" (${license.instituteId})`);
+
+      res.json({
+        success: true,
+        message: `Entered support mode for ${institute.name}`,
+        support: req.session.support,
+        institute: { id: institute.id, name: institute.name, type: institute.type },
+      });
+    } catch (error: any) {
+      console.error("Support login error:", error);
+      res.status(500).json({ success: false, message: "Failed to enter support mode" });
+    }
+  }
+
+  /**
+   * POST /api/admin/support-logout
+   * Exit customer support mode and return to normal admin access.
+   */
+  async supportLogout(req: Request, res: Response): Promise<void> {
+    try {
+      const user = req.user as any;
+      const wasInSupport = !!req.session?.support;
+
+      delete req.session.support;
+
+      if (wasInSupport) {
+        console.log(`[CustomerSupport] User ${user?.email} exited support mode`);
+      }
+
+      res.json({ success: true, message: "Exited support mode" });
+    } catch (error: any) {
+      console.error("Support logout error:", error);
+      res.status(500).json({ success: false, message: "Failed to exit support mode" });
     }
   }
 }

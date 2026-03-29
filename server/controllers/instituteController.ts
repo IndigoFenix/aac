@@ -3,8 +3,11 @@
 
 import type { Request, Response } from "express";
 import { instituteService, userService } from "../services";
+import { instituteRepository } from "../repositories";
 import { insertInstituteSchema } from "@shared/schema";
 import { emailService } from "server/services/emailService";
+import { isInSupportMode, getSupportSession } from "../services/customerSupportService";
+import { licenseService } from "../services/licenseService";
 
 function getBaseUrl(req: Request): string {
   return process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
@@ -20,19 +23,54 @@ export class InstituteController {
   async getInstitutes(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
-      
+      const support = getSupportSession(req);
+
+      // In support mode, only return the support institute (as admin)
+      if (support?.instituteId) {
+        const institute = await instituteRepository.getInstituteById(support.instituteId);
+        if (institute) {
+          const { permissions, licenseType, isTrial, trialExpiresAt } = await licenseService.getInstituteLicenseInfo(institute.id);
+          res.json({
+            success: true,
+            institutes: [{
+              ...institute,
+              isAdmin: true,
+              role: 'support',
+              membershipId: null,
+              licensePermissions: permissions,
+              licenseType,
+              isTrial,
+              trialExpiresAt,
+            }],
+          });
+          return;
+        }
+      }
+
       const institutesWithMembership = await instituteService.getUserInstitutesWithMembership(
         currentUser.id
       );
-      
+
+      // Resolve license permissions for each institute
+      const institutesWithPermissions = await Promise.all(
+        institutesWithMembership.map(async ({ institute, membership }) => {
+          const { permissions, licenseType, isTrial, trialExpiresAt } = await licenseService.getInstituteLicenseInfo(institute.id);
+          return {
+            ...institute,
+            isAdmin: membership.isAdmin,
+            role: membership.role,
+            membershipId: membership.id,
+            licensePermissions: permissions,
+            licenseType,
+            isTrial,
+            trialExpiresAt,
+          };
+        })
+      );
+
       res.json({
         success: true,
-        institutes: institutesWithMembership.map(({ institute, membership }) => ({
-          ...institute,
-          isAdmin: membership.isAdmin,
-          role: membership.role,
-          membershipId: membership.id,
-        })),
+        institutes: institutesWithPermissions,
       });
     } catch (error: any) {
       console.error("Error fetching institutes:", error);

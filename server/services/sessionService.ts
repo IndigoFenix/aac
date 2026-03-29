@@ -919,11 +919,11 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     educational: 'hidden',
   };
 
-  // Fetch license permissions for the current user
+  // Fetch license permissions based on the selected institute
   let licensePerms: LicensePermissions | undefined;
   if (context.user) {
-    licensePerms = await licenseService.getUserPermissions(
-      context.user.id,
+    licensePerms = await licenseService.getInstitutePermissions(
+      context.institute?.id,
       context.user.isSystemAdmin ?? false
     );
   }

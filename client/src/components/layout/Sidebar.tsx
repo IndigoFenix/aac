@@ -52,13 +52,13 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
   const { t, isRTL } = useLanguage();
   const { activeFeature, setActiveFeature } = useFeaturePanel();
   const { student, students } = useStudent();
-  const { currentInstitute, institutes } = useInstitute();
+  const { currentInstitute, currentPermissions, institutes } = useInstitute();
 
   // Use institution logo if available, otherwise default CliniAACian logo
   const displayLogo = currentInstitute?.logoUrl || logoImage;
   const displayName = currentInstitute?.name || 'CliniAACian';
 
-  const perms = user?.licensePermissions;
+  const perms = currentPermissions;
   const hasInstitute = institutes.length > 0;
   const maxStudents = perms?.maxStudents ?? 0;
   const hasStudentAccess = maxStudents === -1 || maxStudents > 0;

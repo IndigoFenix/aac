@@ -1,5 +1,6 @@
 export {
   requireAuth,
+  supportContext,
   optionalAuth,
   requireAdmin,
   requireSystemAdmin,

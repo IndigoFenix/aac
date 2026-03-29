@@ -1,6 +1,7 @@
 // server/repositories/instituteRepository.ts
 // Repository for institute management operations
 
+import { getActiveSupportInstituteId } from "../services/customerSupportService";
 import {
   institutes,
   instituteUsers,
@@ -85,9 +86,17 @@ export class InstituteRepository {
   }
 
   /**
-   * Get all institutes a user belongs to
+   * Get all institutes a user belongs to.
+   * In customer support mode, returns only the support institute.
    */
   async getInstitutesByUserId(userId: string): Promise<Institute[]> {
+    // In support mode, only return the support institute
+    const supportId = getActiveSupportInstituteId();
+    if (supportId) {
+      const inst = await this.getInstituteById(supportId);
+      return inst ? [inst] : [];
+    }
+
     const results = await db
       .select({ institute: institutes })
       .from(instituteUsers)
@@ -296,23 +305,29 @@ export class InstituteRepository {
   }
 
   /**
-   * Check if user is admin of an institute
+   * Check if user is admin of an institute.
+   * Returns true automatically if the user is in customer support mode for this institute.
    */
   async isUserAdminOfInstitute(
     instituteId: string,
     userId: string
   ): Promise<boolean> {
+    // Customer support agents are always admin of their support institute
+    if (getActiveSupportInstituteId() === instituteId) return true;
     const link = await this.getInstituteUserLink(instituteId, userId);
     return !!(link && link.isActive && link.isAdmin);
   }
 
   /**
-   * Check if user is member of an institute
+   * Check if user is member of an institute.
+   * Returns true automatically if the user is in customer support mode for this institute.
    */
   async isUserMemberOfInstitute(
     instituteId: string,
     userId: string
   ): Promise<boolean> {
+    // Customer support agents are always members of their support institute
+    if (getActiveSupportInstituteId() === instituteId) return true;
     const link = await this.getInstituteUserLink(instituteId, userId);
     return !!(link && link.isActive);
   }

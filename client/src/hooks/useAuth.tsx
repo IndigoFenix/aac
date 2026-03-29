@@ -33,6 +33,7 @@ interface User {
   licenseType?: string;
   isTrial?: boolean;
   trialExpiresAt?: string;
+  supportSession?: { instituteId: string; startedAt: string } | null;
 }
 
 export interface LoginResult {
