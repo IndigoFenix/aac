@@ -124,6 +124,7 @@ export const instituteUsers = pgTable("institute_users", {
   userId: varchar("user_id").references(() => users.id).notNull(),
   isAdmin: boolean("is_admin").default(false).notNull(), // Whether user is an admin of this institute
   role: text("role").default("staff"), // 'staff', 'therapist', 'teacher', etc.
+  userType: text("user_type"), // Professional type: 'Caregiver', 'Parent', 'Teacher', 'SLP'
   data: jsonb("data").default({}), // Private data for this relationship
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
