@@ -14,7 +14,7 @@ interface EmailOptions {
 interface InstituteInviteEmailData {
   inviteeEmail: string;
   instituteName: string;
-  instituteType: "school" | "clinic";
+  instituteType: "school" | "clinic" | "family";
   inviterName?: string;
   role: string;
   isAdmin: boolean;

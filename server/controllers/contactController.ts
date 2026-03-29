@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { db } from "../db";
 import { contactInquiries, insertContactInquirySchema } from "@shared/schema";
 import { emailService } from "../services/emailService";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, and } from "drizzle-orm";
 
 const ROLE_LABELS: Record<string, string> = {
   district_administrator: "District Administrator",
@@ -12,25 +12,35 @@ const ROLE_LABELS: Record<string, string> = {
   other: "Other",
 };
 
+const TYPE_LABELS: Record<string, string> = {
+  contact: "Contact Inquiry",
+  bug_report: "Bug Report",
+  support_request: "Support Request",
+};
+
 export class ContactController {
   async submit(req: Request, res: Response): Promise<void> {
     try {
       const data = insertContactInquirySchema.parse(req.body);
 
+      // Attach userId if the user is authenticated
+      const userId = req.isAuthenticated?.() ? (req.user as any)?.id : undefined;
+
       const [inquiry] = await db
         .insert(contactInquiries)
-        .values(data)
+        .values({ ...data, userId: userId || null })
         .returning();
 
       // Send notification email (fire-and-forget)
       const notifyEmail = process.env.CONTACT_NOTIFY_EMAIL;
       if (notifyEmail && emailService.isReady()) {
         const roleLabel = ROLE_LABELS[data.role] || data.role;
+        const typeLabel = TYPE_LABELS[data.messageType || "contact"] || data.messageType;
         emailService.sendEmail({
           to: notifyEmail,
-          subject: `New Contact Inquiry from ${data.firstName} ${data.lastName}`,
+          subject: `[${typeLabel}] from ${data.firstName} ${data.lastName}`,
           text: [
-            `New contact form submission:`,
+            `New ${typeLabel}:`,
             ``,
             `Name: ${data.firstName} ${data.lastName}`,
             `Email: ${data.email}`,
@@ -44,7 +54,7 @@ export class ContactController {
             .join("\n"),
           html: `
 <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-  <h2 style="color: #2D6A4F;">New Discovery Call Request</h2>
+  <h2 style="color: #2D6A4F;">${typeLabel}</h2>
   <table style="width: 100%; border-collapse: collapse;">
     <tr><td style="padding: 8px 0; color: #666;">Name</td><td style="padding: 8px 0; font-weight: 600;">${data.firstName} ${data.lastName}</td></tr>
     <tr><td style="padding: 8px 0; color: #666;">Email</td><td style="padding: 8px 0;"><a href="mailto:${data.email}">${data.email}</a></td></tr>
@@ -67,11 +77,18 @@ export class ContactController {
     }
   }
 
-  async list(_req: Request, res: Response): Promise<void> {
+  async list(req: Request, res: Response): Promise<void> {
     try {
+      const messageType = req.query.messageType as string | undefined;
+      const conditions = [];
+      if (messageType) {
+        conditions.push(eq(contactInquiries.messageType, messageType as any));
+      }
+
       const inquiries = await db
         .select()
         .from(contactInquiries)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
         .orderBy(desc(contactInquiries.createdAt));
       res.json(inquiries);
     } catch (error: any) {

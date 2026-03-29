@@ -1959,6 +1959,26 @@ export const en = {
   },
 
   // ============================================================================
+  // FEEDBACK
+  // ============================================================================
+  feedback: {
+    title: "Send Feedback",
+    description: "Report a bug or request support. We will respond to your email.",
+    type: "Type",
+    bugReport: "Bug Report",
+    supportRequest: "Support Request",
+    email: "Your Email",
+    message: "Message",
+    messageRequired: "Please describe the issue",
+    bugPlaceholder: "Describe what happened and what you expected...",
+    supportPlaceholder: "How can we help you?",
+    send: "Send",
+    sent: "Message Sent",
+    sentDesc: "Thank you for your feedback. We will get back to you soon.",
+    sendFailed: "Failed to send message",
+  },
+
+  // ============================================================================
   // CONSENT
   // ============================================================================
   errors: {
