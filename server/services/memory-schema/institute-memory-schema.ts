@@ -47,6 +47,7 @@ import {
   import { aacSettingsRepository } from "../../repositories/aacSettingsRepository";
   import { instituteRepository } from "../../repositories/instituteRepository";
   import { licenseRepository } from "../../repositories/licenseRepository";
+  import { calendarRepository } from "../../repositories/calendarRepository";
   import type { LicensePermissions } from "@shared/license-permissions";
   import { resolvePermissions } from "@shared/license-permissions";
   
@@ -1838,6 +1839,124 @@ import {
   };
   
   // ============================================================================
+  // DATABASE OPERATIONS - CALENDAR EVENTS
+  // ============================================================================
+
+  const calendarOps: MemoryDBOperations<any> = {
+    list: async (ctx, { offset, limit }): Promise<ListResult<any>> => {
+      const userId = getUserId(ctx);
+
+      // Show events for the next 90 days by default
+      const startDate = new Date();
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date();
+      endDate.setDate(endDate.getDate() + 90);
+
+      // Build attendee keys: the user + their selected institute
+      const attendeeKeys: { type: string; id: string }[] = [
+        { type: 'user', id: userId },
+      ];
+      const selectedInstituteId = ctx.all.instituteId as string | undefined;
+      if (selectedInstituteId) {
+        attendeeKeys.push({ type: 'institute', id: selectedInstituteId });
+      }
+
+      const events = await calendarRepository.getEventsForAttendees(attendeeKeys, startDate, endDate);
+
+      const paged = events.slice(offset, offset + limit);
+      return {
+        items: paged.map(e => toMemoryValue(e)),
+        total: events.length,
+        keys: paged.map(e => e.id),
+      };
+    },
+
+    get: async (ctx, key) => {
+      const event = await calendarRepository.getEventById(String(key));
+      if (!event) return undefined;
+      const attendees = await calendarRepository.getAttendeesByEventId(event.id);
+      return { ...toMemoryValue(event), attendees: attendees.map(a => toMemoryValue(a)) };
+    },
+
+    add: async (ctx, value) => {
+      const userId = getUserId(ctx);
+      const event = await calendarRepository.createEvent({
+        title: value.title,
+        description: value.description,
+        startTime: new Date(value.startTime),
+        endTime: new Date(value.endTime),
+        allDay: value.allDay ?? false,
+        repeatType: value.repeatType ?? 'none',
+        repeatDays: value.repeatDays,
+        repeatEndDate: value.repeatEndDate ? new Date(value.repeatEndDate) : undefined,
+      }, userId);
+
+      // Auto-add the user as an attendee
+      await calendarRepository.addAttendee({ eventId: event.id, attendeeType: 'user', attendeeId: userId });
+
+      // Add the selected institute as attendee if available
+      const selectedInstituteId = ctx.all.instituteId as string | undefined;
+      if (selectedInstituteId) {
+        await calendarRepository.addAttendee({ eventId: event.id, attendeeType: 'institute', attendeeId: selectedInstituteId });
+      }
+
+      return toMemoryValue(event);
+    },
+
+    update: async (ctx, key, value) => {
+      const updates: Record<string, any> = {};
+      if (value.title !== undefined) updates.title = value.title;
+      if (value.description !== undefined) updates.description = value.description;
+      if (value.startTime !== undefined) updates.startTime = new Date(value.startTime);
+      if (value.endTime !== undefined) updates.endTime = new Date(value.endTime);
+      if (value.allDay !== undefined) updates.allDay = value.allDay;
+      if (value.repeatType !== undefined) updates.repeatType = value.repeatType;
+      if (value.repeatDays !== undefined) updates.repeatDays = value.repeatDays;
+      if (value.repeatEndDate !== undefined) updates.repeatEndDate = value.repeatEndDate ? new Date(value.repeatEndDate) : null;
+
+      const event = await calendarRepository.updateEvent(String(key), updates);
+      if (!event) throw new Error("Event not found");
+      return toMemoryValue(event);
+    },
+
+    delete: async (ctx, key) => {
+      const deleted = await calendarRepository.deleteEvent(String(key));
+      if (!deleted) throw new Error("Event not found");
+    },
+
+    fromDB: (record) => toMemoryValue(record),
+    getDBKey: (value) => value?.id,
+  };
+
+  const calendarEventSchema: AgentMemoryFieldObjectWithDB = {
+    id: "event",
+    type: "object",
+    properties: {
+      id: { id: "id", type: "string" },
+      title: { id: "title", type: "string" },
+      description: { id: "description", type: "string" },
+      startTime: { id: "startTime", type: "string", format: "ISO 8601 datetime" },
+      endTime: { id: "endTime", type: "string", format: "ISO 8601 datetime" },
+      allDay: { id: "allDay", type: "boolean" },
+      repeatType: { id: "repeatType", type: "string", enum: ["none", "daily", "weekly"] },
+      repeatDays: { id: "repeatDays", type: "array", items: { id: "day", type: "number" }, description: "0=Sun..6=Sat, for weekly repeats" },
+      repeatEndDate: { id: "repeatEndDate", type: "string", format: "ISO 8601 datetime" },
+    },
+    required: ["title", "startTime", "endTime"],
+  };
+
+  export const INSTITUTE_CALENDAR_FIELD: AgentMemoryFieldMapWithDB = {
+    id: "Context_Calendar",
+    type: "map",
+    title: "Calendar Events",
+    description: "Calendar events for the current user and selected organization. Upcoming 90 days.",
+    opened: true,
+    displayKey: "title",
+    values: calendarEventSchema,
+    db: calendarOps,
+  };
+
+  // ============================================================================
   // SYSTEM PROMPT FOR INSTITUTE MODE
   // ============================================================================
   
@@ -1877,10 +1996,11 @@ import {
    * Get the complete memory fields for institute mode
    * Combines master memory fields with institute-specific fields
    */
-  export function getInstituteMemoryFields(masterFields: AgentMemoryFieldWithDB[]): AgentMemoryFieldWithDB[] {
+  export function getInstituteMemoryFields(masterFields: AgentMemoryFieldWithDB[], includeCalendar?: boolean): AgentMemoryFieldWithDB[] {
     return [
-      ...masterFields, 
+      ...masterFields,
       INSTITUTE_INSTITUTES_FIELD,
       INSTITUTE_STUDENTS_FIELD,
+      ...(includeCalendar ? [INSTITUTE_CALENDAR_FIELD] : []),
     ];
   }

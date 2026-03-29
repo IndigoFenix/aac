@@ -144,6 +144,11 @@ export interface ChatResponseActions {
   reports?: any;
   // Report updates - trigger ReportsPanel reload
   reportsUpdated?: boolean;
+
+  // Calendar context data - extracted from Context_Calendar memory field
+  calendar?: any;
+  // Calendar updates - trigger CalendarPanel reload
+  calendarUpdated?: boolean;
 }
 
 interface ChatContextType {
@@ -594,6 +599,12 @@ export const ChatProvider = ({
         // Invalidate all reports queries for the student
         queryClient.invalidateQueries({ queryKey: ['/api/students', studentId, 'reports'] });
       }
+    }
+
+    // Handle calendar updates - triggers CalendarPanel reload
+    if (contextData.calendar || contextData.calendarUpdated) {
+      console.log('[ChatProvider] Calendar data updated by AI, invalidating queries');
+      queryClient.invalidateQueries({ queryKey: ['/api/calendar/events'] });
     }
 
     // Clear AI refreshing states after a short delay to allow queries to complete
