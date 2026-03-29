@@ -15,6 +15,7 @@ The board is stored at /Context_Board with this structure:
 - name: Board name
 - grid: { rows, cols }
 - currentPageId: Which page is active
+- coverImage: { iconRef, imageKey, backgroundColor } — Board thumbnail/cover image (same icon system as buttons)
 - pages: Array of pages, each containing:
   - id, name
   - buttons: Array of buttons with id, row, col, label, spokenText, color, iconRef, rebusKey, imageKey, symbolPath (optional), action
@@ -27,6 +28,7 @@ manageMemory({ ops: [{ action: "set", path: "/Context_Board", value: {
   name: "My Board",
   grid: { rows: 3, cols: 3 },
   currentPageId: "page-main",
+  coverImage: { iconRef: "👋", imageKey: "greeting_hello", backgroundColor: "#3B82F6FF" },
   pages: [{
     id: "page-main",
     name: "Main",
@@ -67,7 +69,7 @@ manageMemory({ ops: [{ action: "set", path: "/Context_Board/pages/0/buttons/2", 
 
 **Colors:** Blue #3B82F6 (needs), Amber #F59E0B (emotions), Pink #EC4899 (people), Yellow #EAB308 (activities), Gray #6B7280 (objects), Green #059669 (yes), Red #DC2626 (no)
 
-**Icons:** A single emoji (e.g., "🏠") in the iconRef field. REQUIRED for every content button — NEVER omit iconRef, it serves as the fallback when symbol images are unavailable. Only navigation/utility buttons (Back, Home) may omit iconRef. If custom symbols are available (listed below), also set symbolPath to use the custom image.
+**Icons:** A single emoji (e.g., "🏠") or a single character/number (e.g., "7", "A", "?") in the iconRef field. REQUIRED for every content button — NEVER omit iconRef, it serves as the fallback when symbol images are unavailable. When using a single character or number as the icon (e.g. for number buttons, letter buttons, or punctuation), do NOT set imageKey — the character itself is the visual. Only navigation/utility buttons (Back, Home) may omit iconRef. If custom symbols are available (listed below), also set symbolPath to use the custom image.
 
 **Rebus Key:** The rebusKey field maps to Widgit Rebus symbols for Grid3 AAC software export. Required for every content button.
 - Use a single lowercase British English concept word or short phrase: "colour" not "color", "mum" not "mom", "aeroplane" not "airplane"
@@ -75,13 +77,13 @@ manageMemory({ ops: [{ action: "set", path: "/Context_Board/pages/0/buttons/2", 
 - Use the verb form for actions: "eat", "drink", "play", "sleep", "listen"
 - Use the most specific concept: "hungry" not "I am hungry", "toilet" not "bathroom"
 - For "more", use "more 1"
-- Omit rebusKey for navigation/utility buttons (Back, Home)
 
 ${IMAGE_KEY_BOARD_PROMPT}
 
 **Actions:** { type: "speak", text: "..." } or { type: "link", toPageId: "page-id" }
 
 ## General Guidelines (follow these rules unless specified otherwise)
+- When creating a new board, always set a coverImage with an appropriate iconRef and imageKey that represents the board's topic.
 - When creating more than one board, if there is no main/home page, create one.
 - If creating a single board, do not create a main page.
 - The home page should be at index 0 of pages array with id "page-main". If creating one where one did not exist, insert it at index 0.

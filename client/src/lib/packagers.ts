@@ -4,8 +4,32 @@ import { resolveGrid3Path } from './rebus-cleanup';
 import { emojiToConcept } from './emoji-to-grid3';
 import { apiUrl } from './queryClient';
 
+/** Map short language codes to Grid3 locale strings */
+function toGrid3Locale(lang?: string): string {
+  if (!lang) return 'en-US';
+  if (lang.includes('-')) return lang; // Already a locale (e.g. "he-IL")
+  switch (lang) {
+    case 'he': return 'he-IL';
+    case 'en': return 'en-US';
+    case 'ar': return 'ar-SA';
+    case 'es': return 'es-ES';
+    case 'fr': return 'fr-FR';
+    case 'de': return 'de-DE';
+    case 'ru': return 'ru-RU';
+    case 'pt': return 'pt-BR';
+    case 'zh': return 'zh-CN';
+    case 'ja': return 'ja-JP';
+    default: return `${lang}-${lang.toUpperCase()}`;
+  }
+}
+
+export interface GridsetPackagerOptions {
+  /** Language code (e.g. "he", "en", "he-IL"). Defaults to "en-US". */
+  language?: string;
+}
+
 export class GridsetPackager {
-  static async package(board: BoardIR): Promise<Blob> {
+  static async package(board: BoardIR, options?: GridsetPackagerOptions): Promise<Blob> {
     const zip = new JSZip();
 
     // Build page ID → name map for Jump.To navigation
@@ -20,6 +44,7 @@ export class GridsetPackager {
     const firstPageName = board.pages[0].name;
     const coverBackground = board.coverImage?.backgroundColor || "#FFFFFFFF";
     const coverImage = board.coverImage?.symbolPath || "[widgit]widgit rebus\\c\\communicate.emf";
+    const locale = toGrid3Locale(options?.language);
 
     // --- Settings0/settings.xml ---
     zip.file("Settings0/settings.xml", `<GridSetSettings xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
@@ -35,7 +60,7 @@ export class GridsetPackager {
     <Theme>Kids</Theme>
   </Appearance>
   <StartGrid>${this.escapeXml(firstPageName)}</StartGrid>
-  <Language>en-US</Language>
+  <Language>${locale}</Language>
   <ThumbnailBackground>${coverBackground}</ThumbnailBackground>
   <Thumbnail>${coverImage}</Thumbnail>
   <GridSetFileFormatVersion>1</GridSetFileFormatVersion>

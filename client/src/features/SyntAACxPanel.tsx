@@ -24,6 +24,7 @@ import { useSymbolStore, useSymbolCounts } from '@/store/symbol-store';
 import { useSharedState, useFeaturePanel } from '@/contexts/FeaturePanelContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useStudent } from '@/hooks/useStudent';
 import { cn } from '@/lib/utils';
 
 interface DropboxFile {
@@ -46,8 +47,9 @@ interface SyntAACxPanelProps {
 }
 
 export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
-  const { t, isRTL } = useLanguage();
+  const { t, isRTL, language } = useLanguage();
   const { theme } = useTheme();
+  const { student } = useStudent();
   const isDark = theme === 'dark';
 
   const { user } = useAuth();
@@ -195,7 +197,7 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
     if (!board) return;
     const { GridsetPackager, downloadFile } = await import('@/lib/packagers');
     try {
-      const blob = await GridsetPackager.package(board);
+      const blob = await GridsetPackager.package(board, { language: student?.primaryLanguage || language });
       const filename = `${board.name.replace(/[<>:"/\\|?*]/g, '_')}.gridset`;
       downloadFile(blob, filename);
     } catch (error) {
@@ -259,7 +261,7 @@ export function SyntAACxPanel({ isOpen, onClose }: SyntAACxPanelProps) {
     if (!board || !dropboxConnection?.connected) return;
     try {
       const { GridsetPackager } = await import('@/lib/packagers');
-      const blob = await GridsetPackager.package(board);
+      const blob = await GridsetPackager.package(board, { language: student?.primaryLanguage || language });
       const fileData = await blobToBase64(blob);
       const fileName = `${board.name.replace(/[<>:"/\\|?*]/g, '_')}.gridset`;
       uploadToDropbox.mutate({ fileType: 'gridset', fileData, fileName });

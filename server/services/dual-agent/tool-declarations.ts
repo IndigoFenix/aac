@@ -116,8 +116,8 @@ function buildAddButtonsTool(config: ToolDeclarationConfig): FunctionDeclaration
   const max = config.maxBoardItems || 12;
   const needsSentences = config.interpretationLevel <= 1;
   const formatDesc = needsSentences
-    ? "Comma-separated buttons: label|icon|imageKey|sentence. The sentence is a natural phrase the student means when pressing this button — keep it short and comma-free. imageKey is an unambiguous English key for symbol generation (leave empty if not needed). Icon is an emoji, face:contactId, or symbol:symbolId. Example: \"Water|💧|water_glass|I would like some water, Play|🎮|game_controller|I want to play, Go outside|🚪|door_outside|Can we go outside\""
-    : "Comma-separated buttons: label|icon. Icon is an emoji, face:contactId, or symbol:symbolId. Example: \"Water|💧, Play|🎮, Go outside|🚪\"";
+    ? "Comma-separated buttons: label|icon|imageKey|sentence. The sentence is a natural phrase the student means when pressing this button — keep it short and comma-free. imageKey is an unambiguous English key for symbol generation (leave empty if not needed). Icon is an emoji, single character/number, face:contactId, or symbol:symbolId. When using a single character/number as icon (e.g. 7, A, ?), omit imageKey. Example: \"Water|💧|water_glass|I would like some water, Play|🎮|game_controller|I want to play, Seven|7||I am 7 years old\""
+    : "Comma-separated buttons: label|icon. Icon is an emoji, single character/number, face:contactId, or symbol:symbolId. Example: \"Water|💧, Play|🎮, Seven|7\"";
   return {
     name: "add_buttons",
     description: `Add communication buttons to the AAC board. Max ${max} buttons total — call remove_buttons() first if full. Do not duplicate existing buttons or include Yes/No/Help/More (automatic).`,
@@ -155,8 +155,8 @@ function buildRebuildBoardTool(config: ToolDeclarationConfig): FunctionDeclarati
   const max = config.maxBoardItems || 12;
   const needsSentences = config.interpretationLevel <= 1;
   const formatDesc = needsSentences
-    ? "Comma-separated buttons: label|icon|imageKey|sentence. The sentence is a natural phrase the student means when pressing this button — keep it short and comma-free. imageKey is an unambiguous English key for symbol generation (leave empty if not needed). Icon is an emoji, face:contactId, or symbol:symbolId. Example: \"Play|🎮|game_controller|I want to play, Music|🎵|music_notes|Put on some music, Draw|✏️|pencil_drawing|I want to draw, Tired|😴|sleepy_face|I am tired\""
-    : "Comma-separated buttons: label|icon. Icon is an emoji, face:contactId, or symbol:symbolId. Example: \"Play|🎮, Music|🎵, Draw|✏️, Tired|😴\"";
+    ? "Comma-separated buttons: label|icon|imageKey|sentence. The sentence is a natural phrase the student means when pressing this button — keep it short and comma-free. imageKey is an unambiguous English key for symbol generation (leave empty if not needed). Icon is an emoji, single character/number, face:contactId, or symbol:symbolId. When using a single character/number as icon (e.g. 7, A, ?), omit imageKey. Example: \"Play|🎮|game_controller|I want to play, Music|🎵|music_notes|Put on some music, Draw|✏️|pencil_drawing|I want to draw, Tired|😴|sleepy_face|I am tired\""
+    : "Comma-separated buttons: label|icon. Icon is an emoji, single character/number, face:contactId, or symbol:symbolId. Example: \"Play|🎮, Music|🎵, Draw|✏️, Tired|😴\"";
   return {
     name: "rebuild_board",
     description: `Replace the entire AAC board. Use after [BUTTON PRESS] inputs, major context shifts, or to create the initial board. Only call this once per turn. For minor changes, prefer add_buttons/remove_buttons. Max ${max} buttons, aim for ~${Math.min(8, max)}. When a custom board is loaded, this updates the 4-button side panel (max 4). Set full_board=true to unload the custom board and return to the full dynamic board.`,

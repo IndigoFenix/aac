@@ -90,8 +90,13 @@ async function resolveImageKeysOnBoard(board: any, studentId?: string): Promise<
     } catch { /* ignore — treat as disabled */ }
   }
 
+  // Collect buttons and coverImage (both use imageKey → symbolPath resolution)
   const allButtons = (board.pages as any[]).flatMap((p: any) => p.buttons || []);
-  const buttonsWithKeys = allButtons.filter((b: any) => b.imageKey && !b.symbolPath?.includes('/api/custom-symbols/'));
+  const imageItems: any[] = [...allButtons];
+  if (board.coverImage?.imageKey && !board.coverImage?.symbolPath?.includes('/api/custom-symbols/')) {
+    imageItems.push(board.coverImage);
+  }
+  const buttonsWithKeys = imageItems.filter((b: any) => b.imageKey && !b.symbolPath?.includes('/api/custom-symbols/'));
   if (buttonsWithKeys.length === 0) {
     console.log(`[resolveImageKeysOnBoard] No pending imageKeys found`);
     return;
@@ -1488,6 +1493,24 @@ function isCreditLimitError(error: any): boolean {
   return msg.includes('credit balance is too low') || msg.includes('billing');
 }
 
+function isRateLimitError(error: any): boolean {
+  const msg = error?.message || error?.error?.message || '';
+  const status = error?.status || error?.error?.status || error?.statusCode;
+  return status === 429 || msg.includes('rate_limit') || msg.includes('rate limit');
+}
+
+function isInputTooLargeError(error: any): boolean {
+  const msg = error?.message || error?.error?.message || '';
+  return isRateLimitError(error) && (msg.includes('input token') || msg.includes('prompt length'));
+}
+
+function classifyError(error: any): string {
+  if (isCreditLimitError(error)) return "error:TOKEN_LIMIT";
+  if (isInputTooLargeError(error)) return "error:INPUT_TOO_LARGE";
+  if (isRateLimitError(error)) return "error:RATE_LIMIT";
+  return "error:UNEXPECTED_ERROR";
+}
+
 export async function onMessage(input: OnMessageInput): Promise<MessageResponse> {
   try {
     const { userId, studentId, instituteId, sessionId, activeFeature, persona, messages, replyType, featureContext, vectorStoreId, images, documents, currentImage, systemPromptOverride } = input;
@@ -1566,7 +1589,7 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
     return {
       message: {
         role: "system",
-        content: isCreditLimitError(error) ? "error:TOKEN_LIMIT" : "error:UNEXPECTED_ERROR",
+        content: classifyError(error),
         timestamp: Date.now(),
       },
       sessionId: input.sessionId,
@@ -1657,7 +1680,7 @@ export async function onMessageStreaming(input: OnMessageStreamingInput): Promis
     return {
       message: {
         role: "system",
-        content: isCreditLimitError(error) ? "error:TOKEN_LIMIT" : "error:UNEXPECTED_ERROR",
+        content: classifyError(error),
         timestamp: Date.now(),
       },
       sessionId: input.sessionId,
@@ -1774,7 +1797,7 @@ export async function* onMessageMdStreaming(
       type: 'complete',
       message: {
         role: "system",
-        content: isCreditLimitError(error) ? "error:TOKEN_LIMIT" : "error:UNEXPECTED_ERROR",
+        content: classifyError(error),
         timestamp: Date.now(),
       },
       creditsUsed: 0,
