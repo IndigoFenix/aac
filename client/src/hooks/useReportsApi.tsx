@@ -45,12 +45,13 @@ export type {
 /**
  * Fetch all reports for a student
  */
-export function useAllReports(studentId: string | undefined, enabled: boolean = true) {
+export function useAllReports(studentId: string | undefined, instituteId?: string, enabled: boolean = true) {
   return useQuery<AllReportsSummary>({
-    queryKey: ['/api/students', studentId, 'reports'],
+    queryKey: ['/api/students', studentId, 'reports', instituteId],
     queryFn: async () => {
       if (!studentId) throw new Error('No student selected');
-      const response = await apiRequest('GET', `/api/students/${studentId}/reports`);
+      const qs = instituteId ? `?instituteId=${instituteId}` : '';
+      const response = await apiRequest('GET', `/api/students/${studentId}/reports${qs}`);
       if (!response.ok) throw new Error('Failed to fetch reports');
       return response.json();
     },
@@ -61,7 +62,7 @@ export function useAllReports(studentId: string | undefined, enabled: boolean = 
 /**
  * Fetch current (non-archived) reports for a student
  */
-export function useCurrentReports(studentId: string | undefined, enabled: boolean = true) {
+export function useCurrentReports(studentId: string | undefined, instituteId?: string, enabled: boolean = true) {
   return useQuery<{
     medicalRecord: MedicalRecord | null;
     functionalReport: FunctionalReport | null;
@@ -71,10 +72,11 @@ export function useCurrentReports(studentId: string | undefined, enabled: boolea
       hasEducationalRights: boolean;
     };
   }>({
-    queryKey: ['/api/students', studentId, 'reports', 'current'],
+    queryKey: ['/api/students', studentId, 'reports', 'current', instituteId],
     queryFn: async () => {
       if (!studentId) throw new Error('No student selected');
-      const response = await apiRequest('GET', `/api/students/${studentId}/reports/current`);
+      const qs = instituteId ? `?instituteId=${instituteId}` : '';
+      const response = await apiRequest('GET', `/api/students/${studentId}/reports/current${qs}`);
       if (!response.ok) throw new Error('Failed to fetch current reports');
       return response.json();
     },

@@ -263,7 +263,7 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
   const [showFinalizeDialog, setShowFinalizeDialog] = useState(false);
 
   // Queries
-  const { data: currentReports, isLoading, error } = useCurrentReports(student?.id);
+  const { data: currentReports, isLoading, error } = useCurrentReports(student?.id, currentInstitute?.id);
   const { data: archivedMedical } = useArchivedMedicalRecords(student?.id, undefined, showArchivedMedical);
   const { data: archivedFunctional } = useArchivedFunctionalReports(student?.id, showArchivedFunctional);
   const { data: archivedEducational } = useArchivedEducationalReports(student?.id, showArchivedEducational);

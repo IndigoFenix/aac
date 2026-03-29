@@ -31,13 +31,14 @@ export class ReportService {
   async verifyReportAccess(
     studentId: string,
     userId: string,
-    reportType: "medical" | "functional" | "educational"
+    reportType: "medical" | "functional" | "educational",
+    instituteId?: string
   ): Promise<{
     hasAccess: boolean;
     hasMedicalRights?: boolean;
     hasEducationalRights?: boolean;
   }> {
-    const access = await studentService.verifyStudentAccess(studentId, userId);
+    const access = await studentService.verifyStudentAccess(studentId, userId, instituteId);
     if (!access.hasAccess) {
       return { hasAccess: false };
     }
@@ -446,7 +447,8 @@ export class ReportService {
    */
   async getAllReportsForStudent(
     studentId: string,
-    userId: string
+    userId: string,
+    instituteId?: string
   ): Promise<{
     medicalRecords: MedicalRecord[];
     functionalReports: FunctionalReport[];
@@ -458,7 +460,8 @@ export class ReportService {
   }> {
     const studentAccess = await studentService.verifyStudentAccess(
       studentId,
-      userId
+      userId,
+      instituteId
     );
 
     if (!studentAccess.hasAccess) {
@@ -497,7 +500,8 @@ export class ReportService {
    */
   async getCurrentReportsForStudent(
     studentId: string,
-    userId: string
+    userId: string,
+    instituteId?: string
   ): Promise<{
     medicalRecord: MedicalRecord | undefined;
     functionalReport: FunctionalReport | undefined;
@@ -509,7 +513,8 @@ export class ReportService {
   }> {
     const studentAccess = await studentService.verifyStudentAccess(
       studentId,
-      userId
+      userId,
+      instituteId
     );
 
     if (!studentAccess.hasAccess) {
