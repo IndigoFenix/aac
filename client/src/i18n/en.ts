@@ -1448,6 +1448,7 @@ export const en = {
       teacher: "Teacher",
       therapist: "Therapist",
       aide: "Aide",
+      parent: "Parent",
       staff: "Staff",
       observer: "Observer"
     }

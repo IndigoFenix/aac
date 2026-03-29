@@ -1448,6 +1448,7 @@ export const he = {
       teacher: "מורה",
       therapist: "מטפל/ת",
       aide: "סייע/ת",
+      parent: "הורה",
       staff: "צוות",
       observer: "משקיף/ה"
     }

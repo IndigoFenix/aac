@@ -7,6 +7,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
 import { useInstitute, Classroom, StudentInstitute, InstituteMember } from '@/hooks/useInstitute';
 import { useStudent } from '@/hooks/useStudent';
+import { useStudentLabel } from '@/hooks/useStudentLabel';
 import { useAuth } from '@/hooks/useAuth';
 import { apiRequest } from '@/lib/queryClient';
 import { Student, UserStudent } from '@shared/schema';
@@ -108,6 +109,7 @@ const INITIAL_FORM_STATE: StudentFormData = {
 
 export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalProps) {
   const { t, isRTL, language } = useLanguage();
+  const { ts } = useStudentLabel();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { refetchStudent } = useStudent();
@@ -503,12 +505,12 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
           <DialogTitle className={isRTL ? 'text-right' : ''}>
-            {editingStudent ? t('student.edit') || 'Edit Student' : t('student.addNew') || 'Add New Student'}
+            {editingStudent ? ts('student.edit') || 'Edit Student' : ts('student.addNew') || 'Add New Student'}
           </DialogTitle>
           <DialogDescription className={isRTL ? 'text-right' : ''}>
             {editingStudent
-              ? t('student.editDescription') || 'Update student information.'
-              : t('student.addNewDescription') || 'Create a profile for a new student.'}
+              ? ts('student.editDescription') || 'Update student information.'
+              : ts('student.addNewDescription') || 'Create a profile for a new student.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -1000,7 +1002,7 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
             ) : (
               <>
                 <Plus className="w-4 h-4" />
-                {t('student.addStudent') || 'Add Student'}
+                {ts('student.addStudent') || 'Add Student'}
               </>
             )}
           </Button>

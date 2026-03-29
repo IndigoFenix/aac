@@ -39,6 +39,7 @@ import { openUI } from '@/lib/uiEvents';
 import { cn } from '@/lib/utils';
 import { FeatureType } from '@shared/schema';
 import { FeedbackDialog } from '@/components/FeedbackDialog';
+import { useStudentLabel } from '@/hooks/useStudentLabel';
 
 type SidebarProps = {
   isCollapsed?: boolean;
@@ -54,6 +55,7 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
   const { user, logout } = useAuth();
   const { theme, setTheme } = useTheme();
   const { t, isRTL } = useLanguage();
+  const { ts } = useStudentLabel();
   const { activeFeature, setActiveFeature } = useFeaturePanel();
   const { student, students } = useStudent();
   const { currentInstitute, currentPermissions, institutes } = useInstitute();
@@ -188,7 +190,7 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
         <item.icon className="w-4 h-4" />
         {!isCollapsed && (
           <>
-            <span className="">{t(item.labelKey)}</span>
+            <span className="">{ts(item.labelKey)}</span>
             {'badge' in item && item.badge && (
               <Badge variant="secondary" className="text-xs px-1.5 py-0 h-5 ms-auto">
                 {item.badge}
@@ -328,7 +330,7 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
           <div className={cn("py-4 space-y-3 flex-shrink-0", isCollapsed ? "px-2" : "px-6")}>
             {!isCollapsed && (
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
-                {t('nav.studentManagement')}
+                {ts('nav.studentManagement')}
               </p>
             )}
             <div className="space-y-1">
