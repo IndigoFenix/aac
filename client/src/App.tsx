@@ -10,6 +10,7 @@ import { ThemeProvider } from "@/contexts/ThemeContext";
 import { SoundProvider } from "@/contexts/SoundContext";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { StudentProvider, useStudent } from "@/hooks/useStudent";
+import { StudentLabelSync } from "@/hooks/useStudentLabel";
 import NotFound from "@/pages/not-found";
 import PurchaseCredits from "@/pages/purchase-credits";
 import TermsOfService from "@/pages/terms-of-service";
@@ -273,6 +274,7 @@ function App() {
         <SoundProvider>
           <AuthProvider>
             <InstituteProvider>
+              <StudentLabelSync />
               <StudentProvider>
                 <FeaturePanelProvider>
                   <ChatProvider>

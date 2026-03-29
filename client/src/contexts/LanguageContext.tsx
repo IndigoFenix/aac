@@ -7,13 +7,14 @@ import React, {
     useCallback, 
     ReactNode 
   } from 'react';
-  import { 
-    translations, 
-    SUPPORTED_LANGUAGES, 
-    LanguageCode, 
+  import {
+    translations,
+    SUPPORTED_LANGUAGES,
+    LanguageCode,
     Language,
-    Translations 
+    Translations
   } from '@/i18n';
+  import { adaptStudentLabel } from '@/lib/studentLabel';
   
   // ============================================================================
   // TYPES
@@ -137,12 +138,13 @@ import React, {
   
       // Interpolate parameters
       if (params) {
-        return Object.entries(params).reduce((str, [paramKey, paramValue]) => {
+        value = Object.entries(params).reduce((str, [paramKey, paramValue]) => {
           return str.replace(new RegExp(`\\{${paramKey}\\}`, 'g'), String(paramValue));
         }, value);
       }
-  
-      return value;
+
+      // Replace {{STUDENT}}/{{STUDENTS}} placeholders with context-appropriate labels
+      return adaptStudentLabel(value);
     }, [language]);
   
     const contextValue: LanguageContextType = {

@@ -1,24 +1,24 @@
 /**
- * Hook that provides a translation function aware of the student/child distinction.
+ * Hook that provides a translation function aware of the student/child/patient distinction.
  *
- * Usage:
- *   const { ts } = useStudentLabel();
- *   ts('nav.students')  // → "Students" or "Children" depending on current institute
- *   ts('header.student') // → "Student" or "Child"
- *
- * `ts` works exactly like `t` but post-processes the result through adaptStudentLabel.
- * Use it for any user-facing string that contains "student" / "תלמיד".
+ * Also keeps the module-level student context in sync so that `t()` can
+ * automatically resolve {{STUDENT}}/{{STUDENTS}} placeholders even without `ts()`.
  */
 
-import { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useInstitute } from '@/hooks/useInstitute';
-import { adaptStudentLabel, getStudentLabels } from '@/lib/studentLabel';
+import { adaptStudentLabel, getStudentLabels, setCurrentStudentContext } from '@/lib/studentLabel';
 
 export function useStudentLabel() {
   const { t, language } = useLanguage();
   const { currentInstitute } = useInstitute();
   const instituteType = currentInstitute?.type;
+
+  // Keep the module-level context in sync so adaptStudentLabel works globally
+  useEffect(() => {
+    setCurrentStudentContext(instituteType, language);
+  }, [instituteType, language]);
 
   /** Translate and adapt student/child labels based on institute type */
   const ts = useCallback(
@@ -31,4 +31,13 @@ export function useStudentLabel() {
   const labels = getStudentLabels(instituteType, language);
 
   return { ts, studentLabel: labels.singular, studentsLabel: labels.plural };
+}
+
+/**
+ * Invisible component that keeps the module-level student label context in sync.
+ * Mount once inside InstituteProvider.
+ */
+export function StudentLabelSync() {
+  useStudentLabel(); // triggers the useEffect that calls setCurrentStudentContext
+  return null;
 }
