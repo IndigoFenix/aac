@@ -19,7 +19,7 @@ function withBase(path: string): string {
 /**
  * SSE event types sent by the server
  */
-export type SSEEventType = 'thinking' | 'navigate' | 'select_student' | 'text_delta' | 'complete' | 'error' | 'close';
+export type SSEEventType = 'thinking' | 'navigate' | 'select_student' | 'text_delta' | 'file_extracted' | 'complete' | 'error' | 'close';
 
 /**
  * Thinking event data
@@ -41,6 +41,8 @@ export interface StreamCallbacks {
   onSelectStudent?: (studentId: string) => void;
   /** Called when a text token is received (md streaming mode) */
   onTextDelta?: (text: string) => void;
+  /** Called when the server has extracted text from an uploaded file */
+  onFileExtracted?: (filename: string, extractedText: string) => void;
   /** Called when the final response is ready */
   onComplete: (response: any) => void;
   /** Called when an error occurs */
@@ -189,6 +191,10 @@ export function useChatStream(): UseChatStreamResult {
 
               case 'select_student':
                 callbacks.onSelectStudent?.(parsed.studentId);
+                break;
+
+              case 'file_extracted':
+                callbacks.onFileExtracted?.(parsed.filename, parsed.extractedText);
                 break;
 
               case 'complete':

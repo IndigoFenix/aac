@@ -23,7 +23,7 @@ const messageSchema = z.object({
   featureContext: z.record(z.any()).optional(),
   vectorStoreId: z.string().optional(),
   images: z.array(z.string()).optional(),
-  documents: z.array(z.object({ dataUrl: z.string(), filename: z.string() })).optional(),
+  documents: z.array(z.object({ dataUrl: z.string(), filename: z.string(), extractedText: z.string().optional() })).optional(),
   messages: z
     .array(
       z.object({

@@ -1118,6 +1118,9 @@ export interface MessageResponse {
     /** Additional context types can be added here */
     [key: string]: any;
   };
+
+  /** File extraction results — cached by client to avoid re-extraction */
+  extractions?: Array<{ filename: string; extractedText: string }>;
 }
 
 // Memory system types

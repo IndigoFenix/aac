@@ -770,3 +770,139 @@
 [2026-03-26T13:34:58.148Z] [processQueue] Generating "ask_for_help"...
 [2026-03-26T13:35:04.552Z] [processQueue] Generated "ask_for_help" → bef73fae-9b92-4a79-8496-7fd2dca3eb95 (7 total)
 [2026-03-26T13:35:08.709Z] [processQueue] "code_tracing" already exists → 150e2051-6ca8-4baf-af62-0bc8b481d794
+[2026-03-29T18:34:07.084Z] [resolveImageKeys] Resolving 79 keys: girl_going_to_school, girl_smiling, seven_years_old, kindergarten_building, meeting_team, learning_together, playing_game, doing_activities, eating, participating, person_laughing, learning_new_things, children_playing_together, boy_friend, boy_friend, boy_friend, boy_friend, calendar_days, woman_teacher, woman_teacher, woman_teacher, all_friends_together, playing_game, person_missing_someone, many_feelings, person_excited, person_confused, good_feeling, person_sad, person_scared, person_stressed, person_bored, person_missing, coping_strategies, person_talking, children_playing_together, person_calling, reading_book, looking_at_photos, asking_for_help, school_building, learning, classroom, large_building, older_children, backpack, break_time, school_bell, teacher, summer_break_home, having_fun, love, saying_goodbye, mother, father, sea, horizon, home_with_family, love, mother, father, grandmother, grandfather, closed_building, going_to_first_grade, meeting_people, new_friends, new_team, saying_hello, my_teacher, riding_bus, first_grade_classroom, having_fun_at_school, big_girl, graduate, learning, playing, person_excited, well_done (format=api-path, useUnapproved=true)
+[2026-03-29T18:34:07.261Z] [resolveImageKeys] No symbol found for "girl_going_to_school"
+[2026-03-29T18:34:07.415Z] [resolveImageKeys] No symbol found for "girl_smiling"
+[2026-03-29T18:34:07.571Z] [resolveImageKeys] No symbol found for "seven_years_old"
+[2026-03-29T18:34:07.727Z] [resolveImageKeys] No symbol found for "kindergarten_building"
+[2026-03-29T18:34:07.884Z] [resolveImageKeys] No symbol found for "meeting_team"
+[2026-03-29T18:34:08.041Z] [resolveImageKeys] No symbol found for "learning_together"
+[2026-03-29T18:34:08.196Z] [resolveImageKeys] Resolved "playing_game" → /api/custom-symbols/65151da2-7197-4181-8723-d8b0ef096a93/image
+[2026-03-29T18:34:08.351Z] [resolveImageKeys] No symbol found for "doing_activities"
+[2026-03-29T18:34:08.506Z] [resolveImageKeys] No symbol found for "eating"
+[2026-03-29T18:34:08.660Z] [resolveImageKeys] No symbol found for "participating"
+[2026-03-29T18:34:08.814Z] [resolveImageKeys] Resolved "person_laughing" → /api/custom-symbols/c5e2e0e7-f393-46e4-aa4d-bf6e5ecaa150/image
+[2026-03-29T18:34:08.969Z] [resolveImageKeys] No symbol found for "learning_new_things"
+[2026-03-29T18:34:09.126Z] [resolveImageKeys] No symbol found for "children_playing_together"
+[2026-03-29T18:34:09.280Z] [resolveImageKeys] No symbol found for "boy_friend"
+[2026-03-29T18:34:09.434Z] [resolveImageKeys] No symbol found for "boy_friend"
+[2026-03-29T18:34:09.588Z] [resolveImageKeys] No symbol found for "boy_friend"
+[2026-03-29T18:34:09.742Z] [resolveImageKeys] No symbol found for "boy_friend"
+[2026-03-29T18:34:09.897Z] [resolveImageKeys] No symbol found for "calendar_days"
+[2026-03-29T18:34:10.053Z] [resolveImageKeys] No symbol found for "woman_teacher"
+[2026-03-29T18:34:10.207Z] [resolveImageKeys] No symbol found for "woman_teacher"
+[2026-03-29T18:34:10.358Z] [resolveImageKeys] No symbol found for "woman_teacher"
+[2026-03-29T18:34:10.509Z] [resolveImageKeys] No symbol found for "all_friends_together"
+[2026-03-29T18:34:10.665Z] [resolveImageKeys] Resolved "playing_game" → /api/custom-symbols/65151da2-7197-4181-8723-d8b0ef096a93/image
+[2026-03-29T18:34:10.816Z] [resolveImageKeys] No symbol found for "person_missing_someone"
+[2026-03-29T18:34:10.969Z] [resolveImageKeys] No symbol found for "many_feelings"
+[2026-03-29T18:34:11.122Z] [resolveImageKeys] No symbol found for "person_excited"
+[2026-03-29T18:34:11.276Z] [resolveImageKeys] Resolved "person_confused" → /api/custom-symbols/25106600-4d0a-4386-a55f-52a2f02bc3ab/image
+[2026-03-29T18:34:11.429Z] [resolveImageKeys] No symbol found for "good_feeling"
+[2026-03-29T18:34:11.582Z] [resolveImageKeys] No symbol found for "person_sad"
+[2026-03-29T18:34:11.738Z] [resolveImageKeys] No symbol found for "person_scared"
+[2026-03-29T18:34:11.893Z] [resolveImageKeys] No symbol found for "person_stressed"
+[2026-03-29T18:34:12.044Z] [resolveImageKeys] No symbol found for "person_bored"
+[2026-03-29T18:34:12.197Z] [resolveImageKeys] No symbol found for "person_missing"
+[2026-03-29T18:34:12.352Z] [resolveImageKeys] No symbol found for "coping_strategies"
+[2026-03-29T18:34:12.504Z] [resolveImageKeys] No symbol found for "person_talking"
+[2026-03-29T18:34:12.656Z] [resolveImageKeys] No symbol found for "children_playing_together"
+[2026-03-29T18:34:12.809Z] [resolveImageKeys] Resolved "person_calling" → /api/custom-symbols/8690b999-af15-44b0-83ef-5ba732a8d86e/image
+[2026-03-29T18:34:12.964Z] [resolveImageKeys] Resolved "reading_book" → /api/custom-symbols/3b75b547-c5dd-4b42-98c2-121477a6bf24/image
+[2026-03-29T18:34:13.118Z] [resolveImageKeys] No symbol found for "looking_at_photos"
+[2026-03-29T18:34:13.270Z] [resolveImageKeys] No symbol found for "asking_for_help"
+[2026-03-29T18:34:13.423Z] [resolveImageKeys] No symbol found for "school_building"
+[2026-03-29T18:34:13.575Z] [resolveImageKeys] No symbol found for "learning"
+[2026-03-29T18:34:13.726Z] [resolveImageKeys] No symbol found for "classroom"
+[2026-03-29T18:34:13.878Z] [resolveImageKeys] No symbol found for "large_building"
+[2026-03-29T18:34:14.032Z] [resolveImageKeys] No symbol found for "older_children"
+[2026-03-29T18:34:14.186Z] [resolveImageKeys] No symbol found for "backpack"
+[2026-03-29T18:34:14.342Z] [resolveImageKeys] Resolved "break_time" → /api/custom-symbols/1dbbf463-11dc-484d-aca8-b2a3b1541ddb/image
+[2026-03-29T18:34:14.499Z] [resolveImageKeys] No symbol found for "school_bell"
+[2026-03-29T18:34:14.656Z] [resolveImageKeys] No symbol found for "teacher"
+[2026-03-29T18:34:14.811Z] [resolveImageKeys] No symbol found for "summer_break_home"
+[2026-03-29T18:34:14.966Z] [resolveImageKeys] No symbol found for "having_fun"
+[2026-03-29T18:34:15.122Z] [resolveImageKeys] No symbol found for "love"
+[2026-03-29T18:34:15.277Z] [resolveImageKeys] No symbol found for "saying_goodbye"
+[2026-03-29T18:34:15.437Z] [resolveImageKeys] Resolved "mother" → /api/custom-symbols/0953b1f5-b920-4cb0-92fb-0ed579fa2ebd/image
+[2026-03-29T18:34:15.597Z] [resolveImageKeys] Resolved "father" → /api/custom-symbols/931a5a76-ee2c-4b3d-918e-eae47edffddc/image
+[2026-03-29T18:34:15.753Z] [resolveImageKeys] No symbol found for "sea"
+[2026-03-29T18:34:15.908Z] [resolveImageKeys] No symbol found for "horizon"
+[2026-03-29T18:34:16.063Z] [resolveImageKeys] No symbol found for "home_with_family"
+[2026-03-29T18:34:16.223Z] [resolveImageKeys] No symbol found for "love"
+[2026-03-29T18:34:16.378Z] [resolveImageKeys] Resolved "mother" → /api/custom-symbols/0953b1f5-b920-4cb0-92fb-0ed579fa2ebd/image
+[2026-03-29T18:34:16.533Z] [resolveImageKeys] Resolved "father" → /api/custom-symbols/931a5a76-ee2c-4b3d-918e-eae47edffddc/image
+[2026-03-29T18:34:16.693Z] [resolveImageKeys] Resolved "grandmother" → /api/custom-symbols/b700f00f-cbbd-430c-9a92-58d55d62963e/image
+[2026-03-29T18:34:16.849Z] [resolveImageKeys] Resolved "grandfather" → /api/custom-symbols/e8efc01a-7d21-4ff4-9311-43b6bfbbedad/image
+[2026-03-29T18:34:17.005Z] [resolveImageKeys] No symbol found for "closed_building"
+[2026-03-29T18:34:17.162Z] [resolveImageKeys] No symbol found for "going_to_first_grade"
+[2026-03-29T18:34:17.318Z] [resolveImageKeys] No symbol found for "meeting_people"
+[2026-03-29T18:34:17.473Z] [resolveImageKeys] No symbol found for "new_friends"
+[2026-03-29T18:34:17.628Z] [resolveImageKeys] No symbol found for "new_team"
+[2026-03-29T18:34:17.781Z] [resolveImageKeys] No symbol found for "saying_hello"
+[2026-03-29T18:34:17.932Z] [resolveImageKeys] No symbol found for "my_teacher"
+[2026-03-29T18:34:18.083Z] [resolveImageKeys] No symbol found for "riding_bus"
+[2026-03-29T18:34:18.234Z] [resolveImageKeys] No symbol found for "first_grade_classroom"
+[2026-03-29T18:34:18.386Z] [resolveImageKeys] No symbol found for "having_fun_at_school"
+[2026-03-29T18:34:18.542Z] [resolveImageKeys] No symbol found for "big_girl"
+[2026-03-29T18:34:18.696Z] [resolveImageKeys] No symbol found for "graduate"
+[2026-03-29T18:34:18.850Z] [resolveImageKeys] No symbol found for "learning"
+[2026-03-29T18:34:19.005Z] [resolveImageKeys] No symbol found for "playing"
+[2026-03-29T18:34:19.160Z] [resolveImageKeys] No symbol found for "person_excited"
+[2026-03-29T18:34:19.315Z] [resolveImageKeys] No symbol found for "well_done"
+[2026-03-29T18:34:19.319Z] [resolveImageKeys] Done. Resolved 13, unresolved 66: girl_going_to_school, girl_smiling, seven_years_old, kindergarten_building, meeting_team, learning_together, doing_activities, eating, participating, learning_new_things, children_playing_together, boy_friend, boy_friend, boy_friend, boy_friend, calendar_days, woman_teacher, woman_teacher, woman_teacher, all_friends_together, person_missing_someone, many_feelings, person_excited, good_feeling, person_sad, person_scared, person_stressed, person_bored, person_missing, coping_strategies, person_talking, children_playing_together, looking_at_photos, asking_for_help, school_building, learning, classroom, large_building, older_children, backpack, school_bell, teacher, summer_break_home, having_fun, love, saying_goodbye, sea, horizon, home_with_family, love, closed_building, going_to_first_grade, meeting_people, new_friends, new_team, saying_hello, my_teacher, riding_bus, first_grade_classroom, having_fun_at_school, big_girl, graduate, learning, playing, person_excited, well_done
+[2026-03-29T18:34:19.324Z] [queueGeneration] Queuing 66 keys: girl_going_to_school, girl_smiling, seven_years_old, kindergarten_building, meeting_team, learning_together, doing_activities, eating, participating, learning_new_things, children_playing_together, boy_friend, boy_friend, boy_friend, boy_friend, calendar_days, woman_teacher, woman_teacher, woman_teacher, all_friends_together, person_missing_someone, many_feelings, person_excited, good_feeling, person_sad, person_scared, person_stressed, person_bored, person_missing, coping_strategies, person_talking, children_playing_together, looking_at_photos, asking_for_help, school_building, learning, classroom, large_building, older_children, backpack, school_bell, teacher, summer_break_home, having_fun, love, saying_goodbye, sea, horizon, home_with_family, love, closed_building, going_to_first_grade, meeting_people, new_friends, new_team, saying_hello, my_teacher, riding_bus, first_grade_classroom, having_fun_at_school, big_girl, graduate, learning, playing, person_excited, well_done (hasCallback=false)
+[2026-03-29T18:34:19.490Z] [processQueue] Generating "girl_going_to_school"...
+[2026-03-29T18:34:27.256Z] [processQueue] Generated "girl_going_to_school" → a94a7176-334a-4e72-b321-03fbdddbd5df (1 total)
+[2026-03-29T18:34:31.419Z] [processQueue] Generating "girl_smiling"...
+[2026-03-29T18:34:38.526Z] [processQueue] Generated "girl_smiling" → 4a5422ca-b1ea-4a31-8809-48bc82f5182e (2 total)
+[2026-03-29T18:34:42.681Z] [processQueue] Generating "seven_years_old"...
+[2026-03-29T18:34:48.982Z] [processQueue] Generated "seven_years_old" → 0a282925-6610-4923-96c8-af268dd2293c (3 total)
+[2026-03-29T18:34:53.166Z] [processQueue] Generating "kindergarten_building"...
+[2026-03-29T18:34:59.402Z] [processQueue] Generated "kindergarten_building" → 76938f39-2c32-4784-b725-79b6824edac4 (4 total)
+[2026-03-29T18:35:03.570Z] [processQueue] Generating "meeting_team"...
+[2026-03-29T18:35:09.587Z] [processQueue] Generated "meeting_team" → 1417ee90-eb34-4ac3-9d9e-c44479542be7 (5 total)
+[2026-03-29T18:35:13.753Z] [processQueue] Generating "learning_together"...
+[2026-03-29T18:35:20.286Z] [processQueue] Generated "learning_together" → 4bdf93ce-fc3a-4c5b-8ccc-4b783d2073c8 (6 total)
+[2026-03-29T18:35:24.472Z] [processQueue] Generating "doing_activities"...
+[2026-03-29T18:35:29.916Z] [processQueue] Generated "doing_activities" → 1bb7c81e-c877-4725-8e75-2fd1d9cf7eac (7 total)
+[2026-03-29T18:35:34.091Z] [processQueue] Generating "eating"...
+[2026-03-29T18:35:39.603Z] [processQueue] Generated "eating" → 8cd67707-34b7-42bf-8c42-7ce49bd1d925 (8 total)
+[2026-03-29T18:35:43.762Z] [processQueue] Generating "participating"...
+[2026-03-29T18:35:49.710Z] [processQueue] Generated "participating" → fb954795-0f75-4324-a461-01754a21bfeb (9 total)
+[2026-03-29T18:35:53.873Z] [processQueue] Generating "learning_new_things"...
+[2026-03-29T18:35:59.689Z] [processQueue] Generated "learning_new_things" → 89bea764-2fbf-433c-98d8-1b8a7bbf975d (10 total)
+[2026-03-29T18:36:03.850Z] [processQueue] Generating "children_playing_together"...
+[2026-03-29T18:36:10.284Z] [processQueue] Generated "children_playing_together" → 53d0356b-dad3-4877-9885-678ad617ca2d (11 total)
+[2026-03-29T18:36:14.450Z] [processQueue] Generating "boy_friend"...
+[2026-03-29T18:36:21.118Z] [processQueue] Generated "boy_friend" → 5d77b673-fe10-462f-a67e-aaca461f6ef8 (12 total)
+[2026-03-29T18:36:25.290Z] [processQueue] "boy_friend" already exists → 5d77b673-fe10-462f-a67e-aaca461f6ef8
+[2026-03-29T18:36:29.450Z] [processQueue] "boy_friend" already exists → 5d77b673-fe10-462f-a67e-aaca461f6ef8
+[2026-03-29T18:36:33.618Z] [processQueue] "boy_friend" already exists → 5d77b673-fe10-462f-a67e-aaca461f6ef8
+[2026-03-29T18:36:37.789Z] [processQueue] Generating "calendar_days"...
+[2026-03-29T18:36:43.399Z] [processQueue] Generated "calendar_days" → 026d8fa4-f079-425d-942e-a1df2c220d9a (13 total)
+[2026-03-29T18:36:47.573Z] [processQueue] Generating "woman_teacher"...
+[2026-03-29T18:36:53.607Z] [processQueue] Generated "woman_teacher" → ebe32fdd-2065-463c-bfe2-18edb482fcc7 (14 total)
+[2026-03-29T18:36:57.770Z] [processQueue] "woman_teacher" already exists → ebe32fdd-2065-463c-bfe2-18edb482fcc7
+[2026-03-29T18:37:01.931Z] [processQueue] "woman_teacher" already exists → ebe32fdd-2065-463c-bfe2-18edb482fcc7
+[2026-03-29T18:37:06.092Z] [processQueue] Generating "all_friends_together"...
+[2026-03-29T18:37:11.883Z] [processQueue] Generated "all_friends_together" → b56b526a-54bd-4aa8-8964-e72d492db467 (15 total)
+[2026-03-29T18:37:19.362Z] [processQueue] Generating "person_missing_someone"...
+[2026-03-29T18:37:25.641Z] [processQueue] Generated "person_missing_someone" → b66cd9b3-3e4f-4d4e-a28f-e85b27cf926f (16 total)
+[2026-03-29T18:37:29.833Z] [processQueue] Generating "many_feelings"...
+[2026-03-29T18:37:36.096Z] [processQueue] Generated "many_feelings" → 5f44588b-c267-49be-aa04-35036d844118 (17 total)
+[2026-03-29T18:37:40.261Z] [processQueue] Generating "person_excited"...
+[2026-03-29T18:37:46.423Z] [processQueue] Generated "person_excited" → 4648ad83-d2f6-4162-8767-0f4e2ec8e9d2 (18 total)
+[2026-03-29T18:37:50.989Z] [processQueue] Generating "good_feeling"...
+[2026-03-29T18:37:58.348Z] [processQueue] Generated "good_feeling" → fd5275d4-0fbe-48a4-a510-0c4b620a6e66 (19 total)
+[2026-03-29T18:38:02.513Z] [processQueue] Generating "person_sad"...
+[2026-03-29T18:38:08.015Z] [processQueue] Generated "person_sad" → 1676c2d0-2302-4463-9cb7-dae389a06abd (20 total)
+[2026-03-29T18:38:13.339Z] [processQueue] Generating "person_scared"...
+[2026-03-29T18:38:20.255Z] [processQueue] Generated "person_scared" → e2fdee13-4957-4998-bf4d-0292c81da296 (21 total)
+[2026-03-29T18:38:24.429Z] [processQueue] Generating "person_stressed"...
+[2026-03-29T18:38:29.784Z] [processQueue] Generated "person_stressed" → f726e82d-4857-4794-8459-6551eb85c1a1 (22 total)
+[2026-03-29T18:38:33.965Z] [processQueue] Generating "person_bored"...
+[2026-03-29T18:38:40.046Z] [processQueue] Generated "person_bored" → 9178b683-7abf-4c11-8caa-4e92d32028bf (23 total)
+[2026-03-29T18:38:44.219Z] [processQueue] Generating "person_missing"...
+[2026-03-29T18:38:52.033Z] [processQueue] Generated "person_missing" → c23f2707-6c9c-4b65-b0c7-9f5e38d2e418 (24 total)
+[2026-03-29T18:38:56.193Z] [processQueue] Generating "coping_strategies"...
