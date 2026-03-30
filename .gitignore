@@ -9,3 +9,4 @@ vite.config.ts.*
 .env
 .claude
 generative-ai
+reference-files
