@@ -114,10 +114,34 @@ resource "aws_s3_bucket_ownership_controls" "cloudfront_logs" {
 resource "aws_s3_bucket_acl" "cloudfront_logs" {
   count  = var.use_lambda && var.enable_cloudfront_logging ? 1 : 0
   bucket = aws_s3_bucket.cloudfront_logs[0].id
-  acl    = "private"
+
+  access_control_policy {
+    owner {
+      id = data.aws_canonical_user_id.current.id
+    }
+
+    grant {
+      permission = "FULL_CONTROL"
+      grantee {
+        id   = data.aws_canonical_user_id.current.id
+        type = "CanonicalUser"
+      }
+    }
+
+    # CloudFront log delivery canonical user
+    grant {
+      permission = "FULL_CONTROL"
+      grantee {
+        id   = "c4c1ede66af53448b93c283ce9448c4ba468c9432aa01d700d3878632f77d2d0"
+        type = "CanonicalUser"
+      }
+    }
+  }
 
   depends_on = [aws_s3_bucket_ownership_controls.cloudfront_logs]
 }
+
+data "aws_canonical_user_id" "current" {}
 
 resource "aws_s3_bucket_public_access_block" "cloudfront_logs" {
   count  = var.use_lambda && var.enable_cloudfront_logging ? 1 : 0
