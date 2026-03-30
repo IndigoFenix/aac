@@ -31,6 +31,9 @@ interface CreateLicenseInput {
   instituteName?: string;
   instituteType?: "school" | "clinic" | "family";
   instituteLogo?: string; // base64 data URI
+
+  // Language for email (e.g. 'he' for Hebrew)
+  language?: string;
 }
 
 class LicenseService {
@@ -97,6 +100,7 @@ class LicenseService {
           instituteName: data.instituteName,
           inviteLink,
           expiresAt: invite.expiresAt,
+          language: data.language,
         });
       } catch (err) {
         console.error("Failed to send institute invite email for license:", err);
@@ -114,6 +118,7 @@ class LicenseService {
           licenseType: license.licenseType,
           inviteLink,
           expiresAt,
+          language: data.language,
         });
       } catch (err) {
         console.error("Failed to send license invite email:", err);
@@ -147,6 +152,8 @@ class LicenseService {
     let inviteLink: string;
     let instituteName: string | undefined;
 
+    let language: string | undefined;
+
     if (license.instituteId) {
       // Institute licenses: find existing pending invite or create a new one
       const invite = await instituteRepository.createInvite(
@@ -159,6 +166,7 @@ class LicenseService {
 
       const institute = await instituteRepository.getInstituteById(license.instituteId);
       instituteName = institute?.name;
+      language = institute?.language || undefined;
     } else {
       // Regenerate token if it was consumed or missing
       let token = license.inviteToken;
@@ -179,6 +187,7 @@ class LicenseService {
       instituteName,
       inviteLink,
       expiresAt,
+      language,
     });
 
     if (!result.success) return { success: false, error: result.error || "Failed to send email" };

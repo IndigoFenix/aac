@@ -360,7 +360,7 @@ export function ChatFeature() {
       return interimTranscript || t('chat.listening');
     }
     if (student) {
-      return t('chat.placeholderWithUser', { name: student.name });
+      return t('chat.placeholderWithUser', { name: student.firstName || student.name.split(' ')[0] });
     }
     return t('chat.placeholder');
   };
@@ -709,13 +709,13 @@ export function ChatFeature() {
               </h2>
               <p className="text-base text-muted-foreground">
                 {student 
-                  ? t('chat.welcomeWithUser', { name: student.name })
+                  ? t('chat.welcomeWithUser', { name: student.firstName || student.name.split(' ')[0] })
                   : t('chat.welcomeMessage')
                 }
               </p>
               {student && (
                 <p className="text-sm text-muted-foreground/70">
-                  {t('chat.workingWith')} <span className="font-medium">{student.name}</span>
+                  {t('chat.workingWith')} <span className="font-medium">{student.firstName || student.name.split(' ')[0]}</span>
                 </p>
               )}
             </div>
