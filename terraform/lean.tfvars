@@ -38,8 +38,9 @@ enable_guardduty = false   # Saves variable (usage-based)
 # =============================================================================
 # Audit & Logging - DISABLED for cost savings
 # =============================================================================
-enable_cloudtrail    = false   # Saves CloudWatch + S3 data event costs
-enable_vpc_flow_logs = false   # Saves CloudWatch Logs ingestion costs
+enable_cloudtrail          = false   # Saves CloudWatch + S3 data event costs
+enable_vpc_flow_logs       = false   # Saves CloudWatch Logs ingestion costs
+enable_cloudfront_logging  = true    # Minimal cost, useful for debugging origin errors
 app_log_retention_days = 14    # Shorter retention for remaining logs
 
 # =============================================================================

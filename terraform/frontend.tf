@@ -91,6 +91,59 @@ resource "aws_acm_certificate_validation" "cloudfront" {
 }
 
 # =============================================================================
+# S3 Bucket for CloudFront Access Logs
+# =============================================================================
+resource "aws_s3_bucket" "cloudfront_logs" {
+  count  = var.use_lambda && var.enable_cloudfront_logging ? 1 : 0
+  bucket = "${local.name_prefix}-cf-logs"
+
+  tags = {
+    Name = "${local.name_prefix}-cf-logs"
+  }
+}
+
+resource "aws_s3_bucket_ownership_controls" "cloudfront_logs" {
+  count  = var.use_lambda && var.enable_cloudfront_logging ? 1 : 0
+  bucket = aws_s3_bucket.cloudfront_logs[0].id
+
+  rule {
+    object_ownership = "BucketOwnerPreferred"
+  }
+}
+
+resource "aws_s3_bucket_acl" "cloudfront_logs" {
+  count  = var.use_lambda && var.enable_cloudfront_logging ? 1 : 0
+  bucket = aws_s3_bucket.cloudfront_logs[0].id
+  acl    = "private"
+
+  depends_on = [aws_s3_bucket_ownership_controls.cloudfront_logs]
+}
+
+resource "aws_s3_bucket_public_access_block" "cloudfront_logs" {
+  count  = var.use_lambda && var.enable_cloudfront_logging ? 1 : 0
+  bucket = aws_s3_bucket.cloudfront_logs[0].id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "cloudfront_logs" {
+  count  = var.use_lambda && var.enable_cloudfront_logging ? 1 : 0
+  bucket = aws_s3_bucket.cloudfront_logs[0].id
+
+  rule {
+    id     = "expire-old-logs"
+    status = "Enabled"
+
+    expiration {
+      days = var.app_log_retention_days
+    }
+  }
+}
+
+# =============================================================================
 # CloudFront Distribution (created in Phase 2 - needs Lambda URL)
 # =============================================================================
 
@@ -172,6 +225,15 @@ resource "aws_cloudfront_distribution" "frontend" {
   price_class         = "PriceClass_100"
 
   aliases = var.domain_name != "" ? [var.domain_name, "www.${var.domain_name}"] : []
+
+  dynamic "logging_config" {
+    for_each = var.enable_cloudfront_logging ? [1] : []
+    content {
+      bucket          = aws_s3_bucket.cloudfront_logs[0].bucket_domain_name
+      prefix          = "landing/"
+      include_cookies = false
+    }
+  }
 
   # S3 Origin for static files
   origin {
@@ -329,6 +391,15 @@ resource "aws_cloudfront_distribution" "app" {
   price_class         = "PriceClass_100"
 
   aliases = ["app.${var.domain_name}"]
+
+  dynamic "logging_config" {
+    for_each = var.enable_cloudfront_logging ? [1] : []
+    content {
+      bucket          = aws_s3_bucket.cloudfront_logs[0].bucket_domain_name
+      prefix          = "app/"
+      include_cookies = false
+    }
+  }
 
   # S3 Origin for static files
   origin {
