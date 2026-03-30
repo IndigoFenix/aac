@@ -11,8 +11,10 @@ const createEventSchema = z.object({
   startTime: z.string().transform((s) => new Date(s)),
   endTime: z.string().transform((s) => new Date(s)),
   allDay: z.boolean().optional().default(false),
-  repeatType: z.enum(["none", "daily", "weekly"]).optional().default("none"),
+  repeatType: z.enum(["none", "daily", "weekly", "monthly_date", "monthly_weekday"]).optional().default("none"),
+  repeatInterval: z.number().int().min(1).max(4).optional().default(1),
   repeatDays: z.array(z.number().min(0).max(6)).optional(),
+  repeatMonthWeek: z.number().int().optional(), // 1, 2, 3, or -1
   repeatEndDate: z.string().transform((s) => new Date(s)).optional(),
   attendees: z
     .array(
@@ -36,8 +38,10 @@ const updateEventSchema = z.object({
     .transform((s) => new Date(s))
     .optional(),
   allDay: z.boolean().optional(),
-  repeatType: z.enum(["none", "daily", "weekly"]).optional(),
+  repeatType: z.enum(["none", "daily", "weekly", "monthly_date", "monthly_weekday"]).optional(),
+  repeatInterval: z.number().int().min(1).max(4).optional().nullable(),
   repeatDays: z.array(z.number().min(0).max(6)).optional().nullable(),
+  repeatMonthWeek: z.number().int().optional().nullable(),
   repeatEndDate: z
     .string()
     .transform((s) => new Date(s))

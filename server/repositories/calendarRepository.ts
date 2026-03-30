@@ -135,10 +135,12 @@ export class CalendarRepository {
             ),
             // Repeating: event starts before range end, recurrence hasn't ended before range start
             and(
-              // repeatType != 'none' — we check daily or weekly
+              // Any recurring type
               or(
                 eq(calendarEvents.repeatType, "daily"),
                 eq(calendarEvents.repeatType, "weekly"),
+                eq(calendarEvents.repeatType, "monthly_date"),
+                eq(calendarEvents.repeatType, "monthly_weekday"),
               ),
               lte(calendarEvents.startTime, endDate),
               or(
