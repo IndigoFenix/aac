@@ -94,8 +94,9 @@ resource "aws_acm_certificate_validation" "cloudfront" {
 # S3 Bucket for CloudFront Access Logs
 # =============================================================================
 resource "aws_s3_bucket" "cloudfront_logs" {
-  count  = var.use_lambda && var.enable_cloudfront_logging ? 1 : 0
-  bucket = "${local.name_prefix}-cf-logs"
+  count    = var.use_lambda && var.enable_cloudfront_logging ? 1 : 0
+  provider = aws.us_east_1
+  bucket   = "${local.name_prefix}-cf-logs"
 
   tags = {
     Name = "${local.name_prefix}-cf-logs"
@@ -103,8 +104,9 @@ resource "aws_s3_bucket" "cloudfront_logs" {
 }
 
 resource "aws_s3_bucket_ownership_controls" "cloudfront_logs" {
-  count  = var.use_lambda && var.enable_cloudfront_logging ? 1 : 0
-  bucket = aws_s3_bucket.cloudfront_logs[0].id
+  count    = var.use_lambda && var.enable_cloudfront_logging ? 1 : 0
+  provider = aws.us_east_1
+  bucket   = aws_s3_bucket.cloudfront_logs[0].id
 
   rule {
     # CloudFront standard logging needs to write objects and manage ACLs
@@ -113,8 +115,9 @@ resource "aws_s3_bucket_ownership_controls" "cloudfront_logs" {
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "cloudfront_logs" {
-  count  = var.use_lambda && var.enable_cloudfront_logging ? 1 : 0
-  bucket = aws_s3_bucket.cloudfront_logs[0].id
+  count    = var.use_lambda && var.enable_cloudfront_logging ? 1 : 0
+  provider = aws.us_east_1
+  bucket   = aws_s3_bucket.cloudfront_logs[0].id
 
   rule {
     id     = "expire-old-logs"
