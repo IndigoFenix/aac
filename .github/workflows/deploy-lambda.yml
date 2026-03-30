@@ -395,6 +395,43 @@ jobs:
           aws lambda wait function-updated \
             --function-name $FUNCTION
 
+      - name: Run database migrations
+        env:
+          FUNCTION: ${{ needs.infrastructure.outputs.lambda_function }}
+        run: |
+          echo "Enabling migrations for deployment cold start..."
+          # Temporarily set RUN_MIGRATIONS=true, invoke to trigger cold start with migrations
+          aws lambda update-function-configuration \
+            --function-name $FUNCTION \
+            --environment "Variables={$(aws lambda get-function-configuration \
+              --function-name $FUNCTION \
+              --query 'Environment.Variables' \
+              --output json | jq -r 'to_entries | map("\(.key)=\(.value)") | join(",")'),RUN_MIGRATIONS=true}" \
+            --query 'FunctionName' --output text
+          aws lambda wait function-updated --function-name $FUNCTION
+
+          # Invoke Lambda to trigger cold start with migrations
+          LAMBDA_URL=$(aws lambda get-function-url-config \
+            --function-name $FUNCTION \
+            --query 'FunctionUrl' \
+            --output text 2>/dev/null || echo "")
+          if [ -n "$LAMBDA_URL" ]; then
+            echo "Triggering migration via health check..."
+            curl -s --max-time 300 "${LAMBDA_URL}health" || true
+            sleep 5
+          fi
+
+          # Remove RUN_MIGRATIONS so normal cold starts skip migrations
+          aws lambda update-function-configuration \
+            --function-name $FUNCTION \
+            --environment "Variables={$(aws lambda get-function-configuration \
+              --function-name $FUNCTION \
+              --query 'Environment.Variables' \
+              --output json | jq -r 'del(.RUN_MIGRATIONS) | to_entries | map("\(.key)=\(.value)") | join(",")'),RUN_MIGRATIONS=false}" \
+            --query 'FunctionName' --output text
+          aws lambda wait function-updated --function-name $FUNCTION
+          echo "Migrations complete, RUN_MIGRATIONS disabled"
+
       - name: Verify Lambda health
         env:
           FUNCTION: ${{ needs.infrastructure.outputs.lambda_function }}
