@@ -294,6 +294,7 @@ export class InstituteService {
           message: invite.message || undefined,
           inviteLink,
           expiresAt: invite.expiresAt,
+          language: institute.language || undefined,
         });
 
         if (!emailResult.success) {
@@ -513,6 +514,7 @@ export class InstituteService {
           message: invite.message || undefined,
           inviteLink,
           expiresAt: invite.expiresAt,
+          language: institute.language || undefined,
         });
 
         if (!emailResult.success) {
