@@ -22,6 +22,7 @@ import OnboardingFlow from "@/pages/OnboardingFlow";
 import LoginPage from "@/pages/LoginPage";
 import Dashboard from "./pages/Dashboard";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { ServerStatusGuard } from "@/components/ServerStatusGuard";
 import "./i18n";
 import { ChatProvider } from "./hooks/useChat";
 import { FeaturePanelProvider } from "@/contexts/FeaturePanelContext";
@@ -271,25 +272,27 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <LanguageProvider>
-        <SoundProvider>
-          <AuthProvider>
-            <InstituteProvider>
-              <StudentLabelSync />
-              <StudentProvider>
-                <FeaturePanelProvider>
-                  <ChatProvider>
-                    <ThemeProvider defaultTheme="dark">
-                      <TooltipProvider>
-                        <Toaster />
-                        <Router />
-                      </TooltipProvider>
-                    </ThemeProvider>
-                  </ChatProvider>
-                </FeaturePanelProvider>
-              </StudentProvider>
-            </InstituteProvider>
-          </AuthProvider>
-        </SoundProvider>
+        <ServerStatusGuard>
+          <SoundProvider>
+            <AuthProvider>
+              <InstituteProvider>
+                <StudentLabelSync />
+                <StudentProvider>
+                  <FeaturePanelProvider>
+                    <ChatProvider>
+                      <ThemeProvider defaultTheme="dark">
+                        <TooltipProvider>
+                          <Toaster />
+                          <Router />
+                        </TooltipProvider>
+                      </ThemeProvider>
+                    </ChatProvider>
+                  </FeaturePanelProvider>
+                </StudentProvider>
+              </InstituteProvider>
+            </AuthProvider>
+          </SoundProvider>
+        </ServerStatusGuard>
       </LanguageProvider>
     </QueryClientProvider>
   );

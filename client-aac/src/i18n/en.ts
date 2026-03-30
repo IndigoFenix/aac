@@ -362,6 +362,8 @@ export const en = {
     TTS_FAILED: "Failed to synthesize speech.",
     NO_SPEECH: "No speech detected.",
     VOICE_CHAT_FAILED: "Failed to process voice chat.",
+    SERVICE_STARTING: "The server is starting up. Retrying...",
+    SERVICE_UNAVAILABLE: "The server is temporarily unavailable. Please try again in a moment.",
   },
 };
 

@@ -364,5 +364,7 @@ export const he: Translations = {
     TTS_FAILED: "סינתזת הדיבור נכשלה.",
     NO_SPEECH: "לא זוהה דיבור.",
     VOICE_CHAT_FAILED: "עיבוד שיחה קולית נכשל.",
+    SERVICE_STARTING: "השרת מתחיל לעבוד. מנסה שוב...",
+    SERVICE_UNAVAILABLE: "השרת אינו זמין באופן זמני. אנא נסה שוב בעוד רגע.",
   },
 };
