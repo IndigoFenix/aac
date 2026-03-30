@@ -74,7 +74,7 @@ app.use(async (req, res, next) => {
       await Promise.race([
         initPromise,
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("Initialization timeout")), 25000)
+          setTimeout(() => reject(new Error("Initialization timeout")), 55000)
         )
       ]);
     }
