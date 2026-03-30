@@ -23,7 +23,6 @@ export const pool = new Pool({
     rejectUnauthorized: false
   },
   max: 3,
-  connectionTimeoutMillis: 5000,
   idleTimeoutMillis: 30000,
 });
 
