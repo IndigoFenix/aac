@@ -344,6 +344,13 @@
       "when": 1774796906603,
       "tag": "0048_eager_black_tarantula",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1774862467933,
+      "tag": "0049_tan_thena",
+      "breakpoints": true
     }
   ]
 }
