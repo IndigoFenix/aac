@@ -315,7 +315,7 @@ export function PromptPane() {
         irData,
       };
 
-      const res = await apiRequest("POST", "/api/board/save", payload);
+      const res = await apiRequest("POST", "/api/boards", payload);
       if (!res.ok) {
         throw new Error("Failed to save board");
       }

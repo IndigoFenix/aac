@@ -342,9 +342,9 @@ resource "aws_cloudwatch_metric_alarm" "lambda_duration" {
   metric_name         = "Duration"
   namespace           = "AWS/Lambda"
   period              = 300
-  statistic           = "Average"
-  threshold           = 50000
-  alarm_description   = "Lambda function approaching timeout"
+  statistic           = "p99"
+  threshold           = 840000
+  alarm_description   = "Lambda p99 duration approaching 15-minute timeout"
 
   dimensions = {
     FunctionName = aws_lambda_function.api[0].function_name

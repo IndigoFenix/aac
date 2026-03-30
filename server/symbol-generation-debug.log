@@ -975,3 +975,235 @@
 [2026-03-29T18:44:47.755Z] [processQueue] "person_excited" already exists → 4648ad83-d2f6-4162-8767-0f4e2ec8e9d2
 [2026-03-29T18:44:51.923Z] [processQueue] Generating "well_done"...
 [2026-03-29T18:44:57.446Z] [processQueue] Generated "well_done" → 5164b9b1-4838-4277-8a2b-8e5beed8e456 (57 total)
+[2026-03-30T17:28:00.704Z] [resolveImageKeys] Resolving 100 keys: question_mark, book_open, plate_food, gift_box, musical_note, person_eating, person_drinking, sound_waves, celebration_party, wine_cup, hands_washing, parsley_leaf, matzah_bread, book_open, hands_washing, matzah_bread, bitter_herbs, sandwich_wrap, plate_food, matzah_bread, hands_together, musical_note, celebration_party, king_crown, person_male, people_group, lightning_bolt, question_mark, children_group, chain_link, shield_protection, hands_together, question_mark, matzah_bread, bitter_herbs, number_two, person_reclining, water_drop, blood_drop, frog_animal, insect_bug, bee_insect, virus_germ, person_sick, hail_weather, locust_insect, darkness_night, person_sad, matzah_bread, bitter_herbs, bowl_paste, meat_bone, egg_food, parsley_leaf, salt_shaker, person_eating, person_hot, person_tasting, person_wanting, plate_food, matzah_bread, bitter_herbs, sandwich_wrap, chicken_meat, fish_animal, vegetable_carrot, person_eating, person_satisfied, magnifying_glass, sparkle_shine, person_quiet, gift_box, trophy_award, person_happy, musical_note, goat_animal, number_one, number_two, number_three, number_four, number_five, number_six, number_seven, number_eight, number_nine, number_ten, star_bright, people_group, balance_scale, goat_animal, cat_animal, dog_animal, stick_wood, fire_flame, water_wave, ox_animal, knife_blade, angel_wings, heaven_sky, passover_seder (format=api-path, useUnapproved=true)
+[2026-03-30T17:28:00.881Z] [resolveImageKeys] Resolved "question_mark" → /api/custom-symbols/999c8ea6-52c4-45ac-b408-f0212046149c/image
+[2026-03-30T17:28:01.047Z] [resolveImageKeys] Resolved "book_open" → /api/custom-symbols/66f4d4e4-63e3-477c-9abb-313940d0787c/image
+[2026-03-30T17:28:01.214Z] [resolveImageKeys] No symbol found for "plate_food"
+[2026-03-30T17:28:01.379Z] [resolveImageKeys] No symbol found for "gift_box"
+[2026-03-30T17:28:01.546Z] [resolveImageKeys] Resolved "musical_note" → /api/custom-symbols/1b0d08e8-f73b-4247-ba6b-9c91e93e622a/image
+[2026-03-30T17:28:01.712Z] [resolveImageKeys] Resolved "person_eating" → /api/custom-symbols/28a2d75a-3d43-450b-9666-81f802ca68a4/image
+[2026-03-30T17:28:01.875Z] [resolveImageKeys] Resolved "person_drinking" → /api/custom-symbols/7af21f35-f7d2-45a7-b4fe-61e845ebec24/image
+[2026-03-30T17:28:02.039Z] [resolveImageKeys] No symbol found for "sound_waves"
+[2026-03-30T17:28:02.206Z] [resolveImageKeys] Resolved "celebration_party" → /api/custom-symbols/53024dfa-2c28-41c9-a305-19cef455e736/image
+[2026-03-30T17:28:02.373Z] [resolveImageKeys] No symbol found for "wine_cup"
+[2026-03-30T17:28:02.545Z] [resolveImageKeys] No symbol found for "hands_washing"
+[2026-03-30T17:28:02.709Z] [resolveImageKeys] No symbol found for "parsley_leaf"
+[2026-03-30T17:28:02.875Z] [resolveImageKeys] No symbol found for "matzah_bread"
+[2026-03-30T17:28:03.039Z] [resolveImageKeys] Resolved "book_open" → /api/custom-symbols/66f4d4e4-63e3-477c-9abb-313940d0787c/image
+[2026-03-30T17:28:03.206Z] [resolveImageKeys] No symbol found for "hands_washing"
+[2026-03-30T17:28:03.379Z] [resolveImageKeys] No symbol found for "matzah_bread"
+[2026-03-30T17:28:03.543Z] [resolveImageKeys] No symbol found for "bitter_herbs"
+[2026-03-30T17:28:03.711Z] [resolveImageKeys] No symbol found for "sandwich_wrap"
+[2026-03-30T17:28:03.880Z] [resolveImageKeys] No symbol found for "plate_food"
+[2026-03-30T17:28:04.042Z] [resolveImageKeys] No symbol found for "matzah_bread"
+[2026-03-30T17:28:04.205Z] [resolveImageKeys] Resolved "hands_together" → /api/custom-symbols/500cd7e9-3778-4622-8353-d54828c00531/image
+[2026-03-30T17:28:04.369Z] [resolveImageKeys] Resolved "musical_note" → /api/custom-symbols/1b0d08e8-f73b-4247-ba6b-9c91e93e622a/image
+[2026-03-30T17:28:04.537Z] [resolveImageKeys] Resolved "celebration_party" → /api/custom-symbols/53024dfa-2c28-41c9-a305-19cef455e736/image
+[2026-03-30T17:28:04.701Z] [resolveImageKeys] No symbol found for "king_crown"
+[2026-03-30T17:28:04.869Z] [resolveImageKeys] No symbol found for "person_male"
+[2026-03-30T17:28:05.034Z] [resolveImageKeys] Resolved "people_group" → /api/custom-symbols/d46c0a92-9779-437c-9273-2a45c0e306a3/image
+[2026-03-30T17:28:05.197Z] [resolveImageKeys] No symbol found for "lightning_bolt"
+[2026-03-30T17:28:05.366Z] [resolveImageKeys] Resolved "question_mark" → /api/custom-symbols/999c8ea6-52c4-45ac-b408-f0212046149c/image
+[2026-03-30T17:28:05.529Z] [resolveImageKeys] No symbol found for "children_group"
+[2026-03-30T17:28:05.694Z] [resolveImageKeys] No symbol found for "chain_link"
+[2026-03-30T17:28:05.859Z] [resolveImageKeys] No symbol found for "shield_protection"
+[2026-03-30T17:28:06.025Z] [resolveImageKeys] Resolved "hands_together" → /api/custom-symbols/500cd7e9-3778-4622-8353-d54828c00531/image
+[2026-03-30T17:28:06.189Z] [resolveImageKeys] Resolved "question_mark" → /api/custom-symbols/999c8ea6-52c4-45ac-b408-f0212046149c/image
+[2026-03-30T17:28:06.360Z] [resolveImageKeys] No symbol found for "matzah_bread"
+[2026-03-30T17:28:06.528Z] [resolveImageKeys] No symbol found for "bitter_herbs"
+[2026-03-30T17:28:06.696Z] [resolveImageKeys] Resolved "number_two" → /api/custom-symbols/cb10ebdc-58bc-43c7-b536-cfc7aa5f8fb3/image
+[2026-03-30T17:28:06.862Z] [resolveImageKeys] No symbol found for "person_reclining"
+[2026-03-30T17:28:07.028Z] [resolveImageKeys] No symbol found for "water_drop"
+[2026-03-30T17:28:07.192Z] [resolveImageKeys] No symbol found for "blood_drop"
+[2026-03-30T17:28:07.356Z] [resolveImageKeys] No symbol found for "frog_animal"
+[2026-03-30T17:28:07.517Z] [resolveImageKeys] No symbol found for "insect_bug"
+[2026-03-30T17:28:07.688Z] [resolveImageKeys] No symbol found for "bee_insect"
+[2026-03-30T17:28:07.849Z] [resolveImageKeys] No symbol found for "virus_germ"
+[2026-03-30T17:28:08.011Z] [resolveImageKeys] No symbol found for "person_sick"
+[2026-03-30T17:28:08.174Z] [resolveImageKeys] No symbol found for "hail_weather"
+[2026-03-30T17:28:08.336Z] [resolveImageKeys] No symbol found for "locust_insect"
+[2026-03-30T17:28:08.499Z] [resolveImageKeys] No symbol found for "darkness_night"
+[2026-03-30T17:28:08.661Z] [resolveImageKeys] Resolved "person_sad" → /api/custom-symbols/1676c2d0-2302-4463-9cb7-dae389a06abd/image
+[2026-03-30T17:28:08.825Z] [resolveImageKeys] No symbol found for "matzah_bread"
+[2026-03-30T17:28:08.987Z] [resolveImageKeys] No symbol found for "bitter_herbs"
+[2026-03-30T17:28:09.153Z] [resolveImageKeys] No symbol found for "bowl_paste"
+[2026-03-30T17:28:09.318Z] [resolveImageKeys] No symbol found for "meat_bone"
+[2026-03-30T17:28:09.484Z] [resolveImageKeys] No symbol found for "egg_food"
+[2026-03-30T17:28:09.651Z] [resolveImageKeys] No symbol found for "parsley_leaf"
+[2026-03-30T17:28:09.815Z] [resolveImageKeys] No symbol found for "salt_shaker"
+[2026-03-30T17:28:09.979Z] [resolveImageKeys] Resolved "person_eating" → /api/custom-symbols/28a2d75a-3d43-450b-9666-81f802ca68a4/image
+[2026-03-30T17:28:10.143Z] [resolveImageKeys] No symbol found for "person_hot"
+[2026-03-30T17:28:10.307Z] [resolveImageKeys] No symbol found for "person_tasting"
+[2026-03-30T17:28:10.468Z] [resolveImageKeys] No symbol found for "person_wanting"
+[2026-03-30T17:28:10.632Z] [resolveImageKeys] No symbol found for "plate_food"
+[2026-03-30T17:28:10.795Z] [resolveImageKeys] No symbol found for "matzah_bread"
+[2026-03-30T17:28:10.960Z] [resolveImageKeys] No symbol found for "bitter_herbs"
+[2026-03-30T17:28:11.126Z] [resolveImageKeys] No symbol found for "sandwich_wrap"
+[2026-03-30T17:28:11.290Z] [resolveImageKeys] No symbol found for "chicken_meat"
+[2026-03-30T17:28:11.455Z] [resolveImageKeys] No symbol found for "fish_animal"
+[2026-03-30T17:28:11.617Z] [resolveImageKeys] No symbol found for "vegetable_carrot"
+[2026-03-30T17:28:11.780Z] [resolveImageKeys] Resolved "person_eating" → /api/custom-symbols/28a2d75a-3d43-450b-9666-81f802ca68a4/image
+[2026-03-30T17:28:11.942Z] [resolveImageKeys] No symbol found for "person_satisfied"
+[2026-03-30T17:28:12.106Z] [resolveImageKeys] Resolved "magnifying_glass" → /api/custom-symbols/2db13cb9-f160-490a-812e-56aba42450f3/image
+[2026-03-30T17:28:12.272Z] [resolveImageKeys] No symbol found for "sparkle_shine"
+[2026-03-30T17:28:12.437Z] [resolveImageKeys] No symbol found for "person_quiet"
+[2026-03-30T17:28:12.601Z] [resolveImageKeys] No symbol found for "gift_box"
+[2026-03-30T17:28:12.767Z] [resolveImageKeys] No symbol found for "trophy_award"
+[2026-03-30T17:28:12.932Z] [resolveImageKeys] No symbol found for "person_happy"
+[2026-03-30T17:28:13.095Z] [resolveImageKeys] Resolved "musical_note" → /api/custom-symbols/1b0d08e8-f73b-4247-ba6b-9c91e93e622a/image
+[2026-03-30T17:28:13.258Z] [resolveImageKeys] No symbol found for "goat_animal"
+[2026-03-30T17:28:13.423Z] [resolveImageKeys] Resolved "number_one" → /api/custom-symbols/03f9190d-4603-4387-8600-abf0d991b4c1/image
+[2026-03-30T17:28:13.589Z] [resolveImageKeys] Resolved "number_two" → /api/custom-symbols/cb10ebdc-58bc-43c7-b536-cfc7aa5f8fb3/image
+[2026-03-30T17:28:13.757Z] [resolveImageKeys] Resolved "number_three" → /api/custom-symbols/5c08c6ab-15b1-406d-b4ac-24edf1eeb6c6/image
+[2026-03-30T17:28:13.924Z] [resolveImageKeys] Resolved "number_four" → /api/custom-symbols/932153e7-abf0-4e60-a68e-6922e026c0b3/image
+[2026-03-30T17:28:14.088Z] [resolveImageKeys] Resolved "number_five" → /api/custom-symbols/f64a5210-a378-4b79-86e5-3da64b71a2d7/image
+[2026-03-30T17:28:14.252Z] [resolveImageKeys] Resolved "number_six" → /api/custom-symbols/9b19d457-573b-429f-9e95-dca35ba15ffe/image
+[2026-03-30T17:28:14.417Z] [resolveImageKeys] No symbol found for "number_seven"
+[2026-03-30T17:28:14.583Z] [resolveImageKeys] No symbol found for "number_eight"
+[2026-03-30T17:28:14.751Z] [resolveImageKeys] No symbol found for "number_nine"
+[2026-03-30T17:28:14.926Z] [resolveImageKeys] No symbol found for "number_ten"
+[2026-03-30T17:28:15.095Z] [resolveImageKeys] No symbol found for "star_bright"
+[2026-03-30T17:28:15.266Z] [resolveImageKeys] Resolved "people_group" → /api/custom-symbols/d46c0a92-9779-437c-9273-2a45c0e306a3/image
+[2026-03-30T17:28:15.432Z] [resolveImageKeys] No symbol found for "balance_scale"
+[2026-03-30T17:28:15.596Z] [resolveImageKeys] No symbol found for "goat_animal"
+[2026-03-30T17:28:15.762Z] [resolveImageKeys] No symbol found for "cat_animal"
+[2026-03-30T17:28:15.926Z] [resolveImageKeys] No symbol found for "dog_animal"
+[2026-03-30T17:28:16.091Z] [resolveImageKeys] No symbol found for "stick_wood"
+[2026-03-30T17:28:16.253Z] [resolveImageKeys] No symbol found for "fire_flame"
+[2026-03-30T17:28:16.416Z] [resolveImageKeys] Resolved "water_wave" → /api/custom-symbols/483541c9-a96d-4c0a-8f5f-43a7758fa7a6/image
+[2026-03-30T17:28:16.578Z] [resolveImageKeys] No symbol found for "ox_animal"
+[2026-03-30T17:28:16.744Z] [resolveImageKeys] No symbol found for "knife_blade"
+[2026-03-30T17:28:16.907Z] [resolveImageKeys] No symbol found for "angel_wings"
+[2026-03-30T17:28:17.069Z] [resolveImageKeys] No symbol found for "heaven_sky"
+[2026-03-30T17:28:17.234Z] [resolveImageKeys] No symbol found for "passover_seder"
+[2026-03-30T17:28:17.236Z] [resolveImageKeys] Done. Resolved 28, unresolved 72: plate_food, gift_box, sound_waves, wine_cup, hands_washing, parsley_leaf, matzah_bread, hands_washing, matzah_bread, bitter_herbs, sandwich_wrap, plate_food, matzah_bread, king_crown, person_male, lightning_bolt, children_group, chain_link, shield_protection, matzah_bread, bitter_herbs, person_reclining, water_drop, blood_drop, frog_animal, insect_bug, bee_insect, virus_germ, person_sick, hail_weather, locust_insect, darkness_night, matzah_bread, bitter_herbs, bowl_paste, meat_bone, egg_food, parsley_leaf, salt_shaker, person_hot, person_tasting, person_wanting, plate_food, matzah_bread, bitter_herbs, sandwich_wrap, chicken_meat, fish_animal, vegetable_carrot, person_satisfied, sparkle_shine, person_quiet, gift_box, trophy_award, person_happy, goat_animal, number_seven, number_eight, number_nine, number_ten, star_bright, balance_scale, goat_animal, cat_animal, dog_animal, stick_wood, fire_flame, ox_animal, knife_blade, angel_wings, heaven_sky, passover_seder
+[2026-03-30T17:28:17.240Z] [queueGeneration] Queuing 72 keys: plate_food, gift_box, sound_waves, wine_cup, hands_washing, parsley_leaf, matzah_bread, hands_washing, matzah_bread, bitter_herbs, sandwich_wrap, plate_food, matzah_bread, king_crown, person_male, lightning_bolt, children_group, chain_link, shield_protection, matzah_bread, bitter_herbs, person_reclining, water_drop, blood_drop, frog_animal, insect_bug, bee_insect, virus_germ, person_sick, hail_weather, locust_insect, darkness_night, matzah_bread, bitter_herbs, bowl_paste, meat_bone, egg_food, parsley_leaf, salt_shaker, person_hot, person_tasting, person_wanting, plate_food, matzah_bread, bitter_herbs, sandwich_wrap, chicken_meat, fish_animal, vegetable_carrot, person_satisfied, sparkle_shine, person_quiet, gift_box, trophy_award, person_happy, goat_animal, number_seven, number_eight, number_nine, number_ten, star_bright, balance_scale, goat_animal, cat_animal, dog_animal, stick_wood, fire_flame, ox_animal, knife_blade, angel_wings, heaven_sky, passover_seder (hasCallback=false)
+[2026-03-30T17:28:17.438Z] [processQueue] Generating "plate_food"...
+[2026-03-30T17:28:24.677Z] [processQueue] Generated "plate_food" → 77d7fffd-3f9f-4672-bac8-78aa097e15ae (1 total)
+[2026-03-30T17:28:28.853Z] [processQueue] Generating "gift_box"...
+[2026-03-30T17:28:36.725Z] [processQueue] Generated "gift_box" → 47689844-cb4f-4f68-a4b8-ae7a2de910f0 (2 total)
+[2026-03-30T17:28:40.905Z] [processQueue] Generating "sound_waves"...
+[2026-03-30T17:28:49.059Z] [processQueue] Generated "sound_waves" → 8192ecc7-1dd6-4c47-9663-19061cd7874a (3 total)
+[2026-03-30T17:28:53.238Z] [processQueue] Generating "wine_cup"...
+[2026-03-30T17:28:59.660Z] [processQueue] Generated "wine_cup" → adc973cd-b72f-4c1f-a16a-1dfe3867d592 (4 total)
+[2026-03-30T17:29:03.825Z] [processQueue] Generating "hands_washing"...
+[2026-03-30T17:29:11.690Z] [processQueue] Generated "hands_washing" → 59c4b1e6-6b8a-4cb3-ad48-10fbb9d82ce9 (5 total)
+[2026-03-30T17:29:15.869Z] [processQueue] Generating "parsley_leaf"...
+[2026-03-30T17:29:21.253Z] [processQueue] Generated "parsley_leaf" → cbe4fadb-fabc-43c8-bc40-2a0fe98fb91d (6 total)
+[2026-03-30T17:29:25.431Z] [processQueue] Generating "matzah_bread"...
+[2026-03-30T17:29:32.183Z] [processQueue] Generated "matzah_bread" → f5bc9ef6-a75c-426b-bae0-7e0a708b118d (7 total)
+[2026-03-30T17:29:36.371Z] [processQueue] "hands_washing" already exists → 59c4b1e6-6b8a-4cb3-ad48-10fbb9d82ce9
+[2026-03-30T17:29:40.548Z] [processQueue] "matzah_bread" already exists → f5bc9ef6-a75c-426b-bae0-7e0a708b118d
+[2026-03-30T17:29:44.719Z] [processQueue] Generating "bitter_herbs"...
+[2026-03-30T17:29:53.485Z] [processQueue] Generated "bitter_herbs" → f5a99ccf-6a27-40b6-9543-eb1d31f900f8 (8 total)
+[2026-03-30T17:29:57.653Z] [processQueue] Generating "sandwich_wrap"...
+[2026-03-30T17:30:07.239Z] [processQueue] Generated "sandwich_wrap" → 430023c2-f147-42ea-bca6-22e57fa21811 (9 total)
+[2026-03-30T17:30:11.412Z] [processQueue] "plate_food" already exists → 77d7fffd-3f9f-4672-bac8-78aa097e15ae
+[2026-03-30T17:30:15.585Z] [processQueue] "matzah_bread" already exists → f5bc9ef6-a75c-426b-bae0-7e0a708b118d
+[2026-03-30T17:30:19.759Z] [processQueue] Generating "king_crown"...
+[2026-03-30T17:30:27.638Z] [processQueue] Generated "king_crown" → 3bd0e180-77fe-46da-befd-a3e9428bb3bc (10 total)
+[2026-03-30T17:30:31.809Z] [processQueue] Generating "person_male"...
+[2026-03-30T17:30:40.438Z] [processQueue] Generated "person_male" → fb637a6e-f779-4562-b4f7-bfb1a8161a98 (11 total)
+[2026-03-30T17:30:44.614Z] [processQueue] Generating "lightning_bolt"...
+[2026-03-30T17:30:50.378Z] [processQueue] Generated "lightning_bolt" → 49827794-b602-4251-af8c-d59c6afec5a4 (12 total)
+[2026-03-30T17:30:54.545Z] [processQueue] Generating "children_group"...
+[2026-03-30T17:31:03.956Z] [processQueue] Generated "children_group" → d48ccfdb-b56e-408f-9406-76e458aa17dc (13 total)
+[2026-03-30T17:31:08.122Z] [processQueue] Generating "chain_link"...
+[2026-03-30T17:31:14.011Z] [processQueue] Generated "chain_link" → 2c61ea58-261c-4d06-b7e9-e50d57f33b8d (14 total)
+[2026-03-30T17:31:18.183Z] [processQueue] Generating "shield_protection"...
+[2026-03-30T17:31:25.019Z] [processQueue] Generated "shield_protection" → a8ea8e2f-6abf-4543-b99c-46e8afaede8a (15 total)
+[2026-03-30T17:31:29.186Z] [processQueue] "matzah_bread" already exists → f5bc9ef6-a75c-426b-bae0-7e0a708b118d
+[2026-03-30T17:31:33.364Z] [processQueue] "bitter_herbs" already exists → f5a99ccf-6a27-40b6-9543-eb1d31f900f8
+[2026-03-30T17:31:37.537Z] [processQueue] Generating "person_reclining"...
+[2026-03-30T17:31:43.752Z] [processQueue] Generated "person_reclining" → c5f62990-5267-45a1-813b-3412908b6f19 (16 total)
+[2026-03-30T17:31:47.925Z] [processQueue] Generating "water_drop"...
+[2026-03-30T17:31:53.998Z] [processQueue] Generated "water_drop" → 863f032c-46a3-4135-adfd-7d789d3ef8e7 (17 total)
+[2026-03-30T17:31:58.168Z] [processQueue] Generating "blood_drop"...
+[2026-03-30T17:32:04.593Z] [processQueue] Generated "blood_drop" → 502b8412-2516-49c7-b215-adcdf88c63c5 (18 total)
+[2026-03-30T17:32:08.760Z] [processQueue] Generating "frog_animal"...
+[2026-03-30T17:32:14.605Z] [processQueue] Generated "frog_animal" → 550de980-ebab-43aa-8535-354bd257e6e8 (19 total)
+[2026-03-30T17:32:18.778Z] [processQueue] Generating "insect_bug"...
+[2026-03-30T17:32:25.087Z] [processQueue] Generated "insect_bug" → 25795faa-90a8-4c7d-bea1-23a1bf110776 (20 total)
+[2026-03-30T17:32:29.268Z] [processQueue] Generating "bee_insect"...
+[2026-03-30T17:32:35.206Z] [processQueue] Generated "bee_insect" → eebe09b4-c044-419a-a5d9-26d789bb3851 (21 total)
+[2026-03-30T17:32:39.387Z] [processQueue] Generating "virus_germ"...
+[2026-03-30T17:32:45.108Z] [processQueue] Generated "virus_germ" → ab4b9de6-8a75-4fab-a922-4cd8ecae2978 (22 total)
+[2026-03-30T17:32:49.275Z] [processQueue] Generating "person_sick"...
+[2026-03-30T17:32:58.188Z] [processQueue] Generated "person_sick" → a7baab26-9d18-47c3-8c80-dbe86e3e5050 (23 total)
+[2026-03-30T17:33:02.370Z] [processQueue] Generating "hail_weather"...
+[2026-03-30T17:33:07.909Z] [processQueue] Generated "hail_weather" → 0ed685b5-c709-4650-a53e-d42f6167ccd8 (24 total)
+[2026-03-30T17:33:12.083Z] [processQueue] Generating "locust_insect"...
+[2026-03-30T17:33:19.673Z] [processQueue] Generated "locust_insect" → 5e9a8d83-161a-4270-8738-ebd1a82f24fd (25 total)
+[2026-03-30T17:33:23.838Z] [processQueue] Generating "darkness_night"...
+[2026-03-30T17:33:32.547Z] [processQueue] Generated "darkness_night" → d5b396f3-e125-478a-a2e1-0678aad3ea3b (26 total)
+[2026-03-30T17:33:36.723Z] [processQueue] "matzah_bread" already exists → f5bc9ef6-a75c-426b-bae0-7e0a708b118d
+[2026-03-30T17:33:40.898Z] [processQueue] "bitter_herbs" already exists → f5a99ccf-6a27-40b6-9543-eb1d31f900f8
+[2026-03-30T17:33:45.068Z] [processQueue] Generating "bowl_paste"...
+[2026-03-30T17:33:52.976Z] [processQueue] Generated "bowl_paste" → c0f9dab6-7fad-45db-8b3c-ca2fb5e9bc85 (27 total)
+[2026-03-30T17:33:57.146Z] [processQueue] Generating "meat_bone"...
+[2026-03-30T17:34:02.001Z] [processQueue] Generated "meat_bone" → 240ab49c-e7ab-4bed-b031-e05de129722c (28 total)
+[2026-03-30T17:34:06.182Z] [processQueue] Generating "egg_food"...
+[2026-03-30T17:34:11.960Z] [processQueue] Generated "egg_food" → eb2e86f9-084c-4e19-bef7-85e36695de94 (29 total)
+[2026-03-30T17:34:16.135Z] [processQueue] "parsley_leaf" already exists → cbe4fadb-fabc-43c8-bc40-2a0fe98fb91d
+[2026-03-30T17:34:20.304Z] [processQueue] Generating "salt_shaker"...
+[2026-03-30T17:34:28.071Z] [processQueue] Generated "salt_shaker" → 87bf0d4b-817a-4684-a471-d2a74e7d888d (30 total)
+[2026-03-30T17:34:32.245Z] [processQueue] Generating "person_hot"...
+[2026-03-30T17:34:38.605Z] [processQueue] Generated "person_hot" → b26d3076-7155-4f89-a48a-6b4889fc8034 (31 total)
+[2026-03-30T17:34:42.775Z] [processQueue] Generating "person_tasting"...
+[2026-03-30T17:34:49.949Z] [processQueue] Generated "person_tasting" → 672e4436-e7ea-452d-8d43-653737034d8b (32 total)
+[2026-03-30T17:34:54.122Z] [processQueue] Generating "person_wanting"...
+[2026-03-30T17:35:00.414Z] [processQueue] Generated "person_wanting" → 76a74fa1-2f8d-4ab6-aa6f-e693a9af0a9a (33 total)
+[2026-03-30T17:35:04.590Z] [processQueue] "plate_food" already exists → 77d7fffd-3f9f-4672-bac8-78aa097e15ae
+[2026-03-30T17:35:08.768Z] [processQueue] "matzah_bread" already exists → f5bc9ef6-a75c-426b-bae0-7e0a708b118d
+[2026-03-30T17:35:12.941Z] [processQueue] "bitter_herbs" already exists → f5a99ccf-6a27-40b6-9543-eb1d31f900f8
+[2026-03-30T17:35:17.113Z] [processQueue] "sandwich_wrap" already exists → 430023c2-f147-42ea-bca6-22e57fa21811
+[2026-03-30T17:35:21.292Z] [processQueue] Generating "chicken_meat"...
+[2026-03-30T17:35:28.662Z] [processQueue] Generated "chicken_meat" → ea5538f9-a337-4ad2-bfe7-5d7ea849150a (34 total)
+[2026-03-30T17:35:32.834Z] [processQueue] Generating "fish_animal"...
+[2026-03-30T17:35:34.130Z] [processQueue] Failed "fish_animal": No image data in generation response
+[2026-03-30T17:35:38.324Z] [processQueue] Generating "vegetable_carrot"...
+[2026-03-30T17:35:44.009Z] [processQueue] Generated "vegetable_carrot" → 2ad7665e-54b8-42f2-9990-887d22b09adc (35 total)
+[2026-03-30T17:35:48.178Z] [processQueue] Generating "person_satisfied"...
+[2026-03-30T17:35:54.372Z] [processQueue] Generated "person_satisfied" → 6e010c3b-3b83-44b1-96fd-2732b142c887 (36 total)
+[2026-03-30T17:35:58.537Z] [processQueue] Generating "sparkle_shine"...
+[2026-03-30T17:36:04.549Z] [processQueue] Generated "sparkle_shine" → 67b924e4-6a6a-44e2-8189-752d8a304692 (37 total)
+[2026-03-30T17:36:08.727Z] [processQueue] Generating "person_quiet"...
+[2026-03-30T17:36:14.413Z] [processQueue] Generated "person_quiet" → 793803f8-d20f-4116-9cb2-0c9989cfd3d2 (38 total)
+[2026-03-30T17:36:18.589Z] [processQueue] "gift_box" already exists → 47689844-cb4f-4f68-a4b8-ae7a2de910f0
+[2026-03-30T17:36:22.754Z] [processQueue] Generating "trophy_award"...
+[2026-03-30T17:36:31.678Z] [processQueue] Generated "trophy_award" → 30f2640b-0bb8-44ca-91f8-ec48d2023fdb (39 total)
+[2026-03-30T17:36:35.841Z] [processQueue] Generating "person_happy"...
+[2026-03-30T17:36:45.882Z] [processQueue] Generated "person_happy" → 5876a593-5515-4351-86ae-5e871e25aede (40 total)
+[2026-03-30T17:36:50.058Z] [processQueue] Generating "goat_animal"...
+[2026-03-30T17:36:56.321Z] [processQueue] Generated "goat_animal" → d7b096a3-d72d-460e-a32b-b69b2fd6f45e (41 total)
+[2026-03-30T17:37:00.500Z] [processQueue] Generating "number_seven"...
+[2026-03-30T17:37:05.665Z] [processQueue] Generated "number_seven" → a776660e-5765-4de6-b61f-897003f4ab87 (42 total)
+[2026-03-30T17:37:09.841Z] [processQueue] Generating "number_eight"...
+[2026-03-30T17:37:16.199Z] [processQueue] Generated "number_eight" → 3ebe5289-fd6a-49fd-a69c-5e562f545336 (43 total)
+[2026-03-30T17:37:20.380Z] [processQueue] Generating "number_nine"...
+[2026-03-30T17:37:29.578Z] [processQueue] Generated "number_nine" → 38cf0d8c-ec50-4737-b740-a60263bc9db0 (44 total)
+[2026-03-30T17:37:33.746Z] [processQueue] Generating "number_ten"...
+[2026-03-30T17:37:39.575Z] [processQueue] Generated "number_ten" → 78d98c1f-4c33-451b-ba01-d9eb8e145816 (45 total)
+[2026-03-30T17:37:43.744Z] [processQueue] Generating "star_bright"...
+[2026-03-30T17:37:49.818Z] [processQueue] Generated "star_bright" → bf357f00-f6c4-40dd-81a8-a7a342b29102 (46 total)
+[2026-03-30T17:37:54.007Z] [processQueue] Generating "balance_scale"...
+[2026-03-30T17:38:00.617Z] [processQueue] Generated "balance_scale" → 487ecdd7-3034-4e24-91eb-d7dcf7c2be10 (47 total)
+[2026-03-30T17:38:04.789Z] [processQueue] "goat_animal" already exists → d7b096a3-d72d-460e-a32b-b69b2fd6f45e
+[2026-03-30T17:38:08.971Z] [processQueue] Generating "cat_animal"...
+[2026-03-30T17:38:16.254Z] [processQueue] Generated "cat_animal" → ed0627e6-7214-4ea3-9773-a35d1b913357 (48 total)
+[2026-03-30T17:38:20.420Z] [processQueue] Generating "dog_animal"...
+[2026-03-30T17:38:22.983Z] [processQueue] Failed "dog_animal": No image data in generation response
+[2026-03-30T17:38:27.155Z] [processQueue] Generating "stick_wood"...
+[2026-03-30T17:38:33.245Z] [processQueue] Generated "stick_wood" → cfadf030-deb4-4f74-9125-83e9bf826bfd (49 total)
+[2026-03-30T17:38:37.420Z] [processQueue] Generating "fire_flame"...
+[2026-03-30T17:38:43.538Z] [processQueue] Generated "fire_flame" → d6d0b988-c76e-484b-9b31-24b2e6ca5c27 (50 total)
+[2026-03-30T17:38:47.731Z] [processQueue] Generating "ox_animal"...
+[2026-03-30T17:38:53.472Z] [processQueue] Generated "ox_animal" → bc7c4756-7b9a-4c01-9a02-f72db0256833 (51 total)
+[2026-03-30T17:38:57.650Z] [processQueue] Generating "knife_blade"...
+[2026-03-30T17:39:03.228Z] [processQueue] Generated "knife_blade" → 6612a513-3d00-4cf3-9dd1-735b7911b6bd (52 total)
+[2026-03-30T17:39:07.390Z] [processQueue] Generating "angel_wings"...
+[2026-03-30T17:39:14.156Z] [processQueue] Generated "angel_wings" → cd2b2e4b-46a9-46d3-bfc0-b8f2c8730001 (53 total)
+[2026-03-30T17:39:18.334Z] [processQueue] Generating "heaven_sky"...
+[2026-03-30T17:39:24.641Z] [processQueue] Generated "heaven_sky" → 9c9c2bc8-de59-4fe5-93cf-9abe45f1097b (54 total)
+[2026-03-30T17:39:28.832Z] [processQueue] Generating "passover_seder"...
+[2026-03-30T17:39:36.106Z] [processQueue] Generated "passover_seder" → 68af0e3d-a89c-4aba-9bd5-141c401006fd (55 total)
