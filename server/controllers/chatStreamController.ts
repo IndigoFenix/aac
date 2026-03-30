@@ -54,6 +54,7 @@ function sendSSEEvent(res: Response, event: string, data: any): void {
 export class ChatStreamController {
   async onMessage(req: Request, res: Response): Promise<void> {
     const startTime = Date.now();
+    let keepaliveInterval: ReturnType<typeof setInterval> | undefined;
 
     try {
       const userId = req.user!.id;
@@ -70,6 +71,13 @@ export class ChatStreamController {
       res.setHeader("Connection", "keep-alive");
       res.setHeader("X-Accel-Buffering", "no"); // Disable nginx buffering
       res.flushHeaders();
+
+      // Send SSE keepalive comments every 30s to prevent CloudFront/proxy timeouts
+      keepaliveInterval = setInterval(() => {
+        if (!res.writableEnded) {
+          res.write(": keepalive\n\n");
+        }
+      }, 30000);
 
       // Thinking update callback - sends SSE events
       const onThinkingUpdate = (thinkingText: string) => {
@@ -192,6 +200,8 @@ export class ChatStreamController {
           details: error.message || String(error),
         });
       }
+    } finally {
+      clearInterval(keepaliveInterval);
     }
   }
 }
