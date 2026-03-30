@@ -150,12 +150,6 @@ jobs:
             -backend-config="key=aivota/${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}/terraform.tfstate" \
             -backend-config="region=${{ env.AWS_REGION }}"
 
-      # ONE-TIME: Unlock stale state lock from cancelled run
-      # TODO: Remove this step after one successful deploy
-      - name: Force unlock Terraform state
-        working-directory: terraform
-        run: terraform force-unlock -force 2608ba68-0c21-1792-8e72-7515e702e59b
-
       - name: Terraform Plan
         working-directory: terraform
         run: |
