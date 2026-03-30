@@ -21,7 +21,10 @@ export const pool = new Pool({
     // Connection is still TLS encrypted, just not verifying the server certificate
     // This is safe because Lambda is in a private VPC with security group rules
     rejectUnauthorized: false
-  }
+  },
+  max: 3,
+  connectionTimeoutMillis: 5000,
+  idleTimeoutMillis: 30000,
 });
 
 export const db = drizzle(pool, { schema });

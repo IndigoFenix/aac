@@ -146,8 +146,8 @@ async function runMigrations(): Promise<void> {
 }
 
 async function waitForDatabase(): Promise<void> {
-  const maxRetries = 5;
-  const retryDelay = 1000;
+  const maxRetries = 10;
+  const retryDelay = 2000;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
