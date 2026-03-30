@@ -1,7 +1,8 @@
 // src/hooks/useChat.tsx
 import { useState, useEffect, createContext, useContext, ReactNode, useCallback, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest, queryClient } from '@/lib/queryClient';
+import { apiRequest, queryClient, ServiceUnavailableError } from '@/lib/queryClient';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { useStudent } from './useStudent';
 import { useInstitute } from './useInstitute';
 import { useAuth } from './useAuth';
@@ -249,6 +250,7 @@ export const ChatProvider = ({
 
   // External hooks - need user for enabled condition on personas query
   const { user } = useAuth();
+  const { t } = useLanguage();
 
   // Fetch selectable personas from API (only when authenticated)
   const { data: personas = [], isLoading: isPersonasLoading } = useQuery({
@@ -924,9 +926,11 @@ export const ChatProvider = ({
       return processResponseData(data);
     } catch (err: any) {
       console.error('Send message failed:', err);
-      const errorText = err.message || 'Failed to send message';
+      const errorText = err instanceof ServiceUnavailableError
+        ? t("error.serviceUnavailable")
+        : err.message || t("chat.error");
       setError(errorText);
-      toast({ variant: "destructive", title: "Send failed", description: errorText });
+      toast({ variant: "destructive", title: t("error.title"), description: errorText });
 
       const errorMessage: ChatMessage = {
         role: 'system',

@@ -6,6 +6,7 @@
  */
 
 import { useCallback, useRef } from 'react';
+import { ServiceUnavailableError } from '@/lib/queryClient';
 
 // Read and sanitize the base URL from Vite env (same as queryClient.ts)
 const API_BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, "") ?? "";
@@ -143,6 +144,9 @@ export function useChatStream(): UseChatStreamResult {
       });
 
       if (!response.ok) {
+        if (response.status === 502 || response.status === 503 || response.status === 504) {
+          throw new ServiceUnavailableError();
+        }
         throw new Error(`HTTP error: ${response.status}`);
       }
 
