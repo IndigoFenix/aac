@@ -10,8 +10,21 @@ export function apiUrl(path: string): string {
   return API_BASE_URL ? `${API_BASE_URL}/${cleanPath}` : `/${cleanPath}`;
 }
 
+export class ServiceUnavailableError extends Error {
+  status = 503;
+  constructor(message: string) {
+    super(message);
+    this.name = "ServiceUnavailableError";
+  }
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      throw new ServiceUnavailableError(
+        "The server is starting up. Retrying..."
+      );
+    }
     const text = (await res.text()) || res.statusText;
     throw new Error(`${res.status}: ${text}`);
   }
@@ -107,6 +120,10 @@ export function getQueryFn<T>(options: {
   };
 }
 
+function isServiceUnavailable(error: unknown): boolean {
+  return error instanceof ServiceUnavailableError;
+}
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -114,10 +131,14 @@ export const queryClient = new QueryClient({
       refetchInterval: false,
       refetchOnWindowFocus: false,
       staleTime: Infinity,
-      retry: false,
+      retry: (failureCount, error) =>
+        isServiceUnavailable(error) && failureCount < 5,
+      retryDelay: (attempt) => Math.min(2000 * 2 ** attempt, 15000),
     },
     mutations: {
-      retry: false,
+      retry: (failureCount, error) =>
+        isServiceUnavailable(error) && failureCount < 3,
+      retryDelay: (attempt) => Math.min(2000 * 2 ** attempt, 15000),
     },
   },
 });

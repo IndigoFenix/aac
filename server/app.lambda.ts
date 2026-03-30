@@ -62,32 +62,35 @@ app.use(async (req, res, next) => {
   
   // If there was a startup error, return 503
   if (startupError) {
-    return res.status(503).json({ 
-      error: "Service failed to start", 
-      details: startupError.message 
+    log(`503 ${req.method} ${req.path} - startup error: ${startupError.message}`);
+    return res.status(503).json({
+      error: "Service failed to start",
+      details: startupError.message
     });
   }
-  
+
   // Wait for initialization to complete (with timeout)
   try {
     if (initPromise) {
       await Promise.race([
         initPromise,
-        new Promise((_, reject) => 
+        new Promise((_, reject) =>
           setTimeout(() => reject(new Error("Initialization timeout")), 55000)
         )
       ]);
     }
-    
+
     if (isReady) {
       return next();
     } else {
+      log(`503 ${req.method} ${req.path} - service not ready after init`);
       return res.status(503).json({ error: "Service not ready" });
     }
   } catch (error: any) {
-    return res.status(503).json({ 
-      error: "Service initialization failed", 
-      details: error.message 
+    log(`503 ${req.method} ${req.path} - init failed: ${error.message}`);
+    return res.status(503).json({
+      error: "Service initialization failed",
+      details: error.message
     });
   }
 });

@@ -603,6 +603,8 @@ export const en = {
     locationUnavailable: "Location unavailable",
     generic: "Something went wrong",
     networkError: "Network error. Please check your connection.",
+    serviceStarting: "The server is starting up. Retrying...",
+    serviceUnavailable: "The server is temporarily unavailable. Please try again in a moment.",
     sessionExpired: "Your session has expired. Please log in again.",
     notFound: "Not found",
     unauthorized: "Unauthorized",

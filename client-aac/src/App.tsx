@@ -11,6 +11,7 @@ import { LanguageProvider, useLanguage } from "@/contexts/LanguageContext";
 import { AppInitializationProvider } from "@/contexts/AppInitializationContext";
 import { BoardsProvider } from "@/contexts/BoardsContext";
 import { ConversationProvider } from "@/contexts/ConversationContext";
+import { ServerStatusGuard } from "@/components/ServerStatusGuard";
 import { useState } from "react";
 
 interface AuthUser {
@@ -119,10 +120,12 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="light">
         <LanguageProvider>
-          <TooltipProvider>
-            <Toaster />
-            <MainApp />
-          </TooltipProvider>
+          <ServerStatusGuard>
+            <TooltipProvider>
+              <Toaster />
+              <MainApp />
+            </TooltipProvider>
+          </ServerStatusGuard>
         </LanguageProvider>
       </ThemeProvider>
     </QueryClientProvider>

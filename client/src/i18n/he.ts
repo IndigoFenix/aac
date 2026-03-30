@@ -603,6 +603,8 @@ export const he = {
     locationUnavailable: "לא ניתן לקבל מיקום",
     generic: "משהו השתבש",
     networkError: "שגיאת רשת. אנא בדוק את החיבור שלך.",
+    serviceStarting: "השרת מתחיל לעבוד. מנסה שוב...",
+    serviceUnavailable: "השרת אינו זמין באופן זמני. אנא נסה שוב בעוד רגע.",
     sessionExpired: "הסשן שלך פג. אנא התחבר שוב.",
     notFound: "לא נמצא",
     unauthorized: "לא מורשה",
