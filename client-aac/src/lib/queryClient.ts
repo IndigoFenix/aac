@@ -12,8 +12,9 @@ export function apiUrl(path: string): string {
 
 export class ServiceUnavailableError extends Error {
   status = 503;
-  constructor(message: string) {
-    super(message);
+  code = "SERVICE_UNAVAILABLE" as const;
+  constructor() {
+    super("SERVICE_UNAVAILABLE");
     this.name = "ServiceUnavailableError";
   }
 }
@@ -21,9 +22,7 @@ export class ServiceUnavailableError extends Error {
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     if (res.status === 502 || res.status === 503 || res.status === 504) {
-      throw new ServiceUnavailableError(
-        "The server is starting up. Retrying..."
-      );
+      throw new ServiceUnavailableError();
     }
     const text = (await res.text()) || res.statusText;
     throw new Error(`${res.status}: ${text}`);
