@@ -114,6 +114,15 @@ resource "aws_s3_bucket_ownership_controls" "cloudfront_logs" {
   }
 }
 
+resource "aws_s3_bucket_acl" "cloudfront_logs" {
+  count    = var.use_lambda && var.enable_cloudfront_logging ? 1 : 0
+  provider = aws.us_east_1
+  bucket   = aws_s3_bucket.cloudfront_logs[0].id
+  acl      = "private"
+
+  depends_on = [aws_s3_bucket_ownership_controls.cloudfront_logs]
+}
+
 resource "aws_s3_bucket_lifecycle_configuration" "cloudfront_logs" {
   count    = var.use_lambda && var.enable_cloudfront_logging ? 1 : 0
   provider = aws.us_east_1
@@ -122,6 +131,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "cloudfront_logs" {
   rule {
     id     = "expire-old-logs"
     status = "Enabled"
+
+    filter {}
 
     expiration {
       days = var.app_log_retention_days
