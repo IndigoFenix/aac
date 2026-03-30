@@ -172,6 +172,12 @@ variable "single_nat_gateway" {
   default     = false
 }
 
+variable "enable_cloudfront_logging" {
+  description = "Enable CloudFront access logging to S3 (useful for debugging origin errors)"
+  type        = bool
+  default     = true
+}
+
 variable "enable_rds_enhanced_monitoring" {
   description = "Enable RDS enhanced monitoring and Performance Insights (disable for dev/lean)"
   type        = bool
