@@ -29,22 +29,31 @@ function log(message: string, source = "lambda") {
 }
 
 // Health check - always responds (required for Lambda Adapter)
-app.get('/health', (_req, res) => {
+// During startup, waits up to 14s to keep Lambda unfrozen so the DB connection can complete.
+// Without this, Lambda freezes between invocations, pausing the TCP/TLS handshake.
+app.get('/health', async (_req, res) => {
+  if (!isReady && !startupError && initPromise) {
+    await Promise.race([
+      initPromise,
+      new Promise(resolve => setTimeout(resolve, 14000))
+    ]);
+  }
+
   if (startupError) {
-    res.status(200).json({ 
-      status: 'error', 
+    res.status(200).json({
+      status: 'error',
       error: startupError.message,
-      timestamp: new Date().toISOString() 
+      timestamp: new Date().toISOString()
     });
   } else if (!isReady) {
-    res.status(200).json({ 
-      status: 'starting', 
-      timestamp: new Date().toISOString() 
+    res.status(200).json({
+      status: 'starting',
+      timestamp: new Date().toISOString()
     });
   } else {
-    res.status(200).json({ 
-      status: 'healthy', 
-      timestamp: new Date().toISOString() 
+    res.status(200).json({
+      status: 'healthy',
+      timestamp: new Date().toISOString()
     });
   }
 });
