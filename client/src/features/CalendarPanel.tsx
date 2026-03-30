@@ -631,7 +631,12 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
                           <div className="flex items-center gap-1 mt-1">
                             <Repeat className="w-3 h-3 text-muted-foreground" />
                             <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                              {t(`calendar.repeat${item.event.repeatType.charAt(0).toUpperCase() + item.event.repeatType.slice(1)}` as any)}
+                              {t(({
+                                daily: 'calendar.repeatDaily',
+                                weekly: 'calendar.repeatWeekly',
+                                monthly_date: 'calendar.repeatMonthlyDate',
+                                monthly_weekday: 'calendar.repeatMonthlyWeekday',
+                              } as Record<string, string>)[item.event.repeatType] || 'calendar.repeatNone')}
                             </Badge>
                           </div>
                         )}
