@@ -175,8 +175,12 @@ async function initializeApp(): Promise<void> {
     // Step 1: Wait for database
     await waitForDatabase();
 
-    // Step 2: Run migrations
-    await runMigrations();
+    // Step 2: Run migrations only during deployment (triggered by RUN_MIGRATIONS env var)
+    if (process.env.RUN_MIGRATIONS === "true") {
+      await runMigrations();
+    } else {
+      log("Skipping migrations (not a deployment run)");
+    }
 
     // Step 3: Register routes
     log("Registering routes...");
