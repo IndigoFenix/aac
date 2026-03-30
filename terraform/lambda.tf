@@ -313,6 +313,7 @@ resource "aws_apigatewayv2_integration" "lambda" {
   integration_type       = "AWS_PROXY"
   integration_uri        = aws_lambda_function.api[0].invoke_arn
   payload_format_version = "2.0"
+  timeout_milliseconds   = 300000
 }
 
 resource "aws_apigatewayv2_route" "lambda" {

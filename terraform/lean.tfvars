@@ -21,7 +21,7 @@ domain_name = "aivota.ai"
 # =============================================================================
 use_lambda          = true
 lambda_image_exists = true
-use_api_gateway     = false    # Function URL has no timeout cap (API Gateway hard-caps at 30s)
+use_api_gateway     = true     # Function URLs not supported in il-central-1
 
 # ECS disabled
 ecs_task_cpu     = 256
