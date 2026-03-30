@@ -150,16 +150,6 @@ jobs:
             -backend-config="key=aivota/${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}/terraform.tfstate" \
             -backend-config="region=${{ env.AWS_REGION }}"
 
-      # ONE-TIME: Remove old CF logs bucket (was in il-central-1, moving to us-east-1)
-      # TODO: Remove this step after one successful deploy
-      - name: Migrate CF logs bucket to us-east-1
-        working-directory: terraform
-        run: |
-          terraform state rm 'aws_s3_bucket.cloudfront_logs[0]' 2>/dev/null || true
-          terraform state rm 'aws_s3_bucket_ownership_controls.cloudfront_logs[0]' 2>/dev/null || true
-          terraform state rm 'aws_s3_bucket_lifecycle_configuration.cloudfront_logs[0]' 2>/dev/null || true
-          aws s3 rb s3://aivota-prod-cf-logs --region il-central-1 2>/dev/null || true
-
       - name: Terraform Plan
         working-directory: terraform
         run: |
