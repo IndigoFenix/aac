@@ -133,15 +133,23 @@ export function useChatStream(): UseChatStreamResult {
 
     try {
       const url = withBase('/api/chat/stream');
-      const response = await fetch(url, {
+
+      const doFetch = async () => fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-        signal: abortControllerRef.current.signal,
+        signal: abortControllerRef.current!.signal,
         credentials: 'include',
       });
+
+      let response = await doFetch();
+
+      // Retry once on 502/503/504 (cold-start on new Lambda instance)
+      if (!response.ok && (response.status === 502 || response.status === 503 || response.status === 504)) {
+        console.warn(`[useChatStream] Got ${response.status}, retrying in 3s...`);
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        response = await doFetch();
+      }
 
       if (!response.ok) {
         if (response.status === 502 || response.status === 503 || response.status === 504) {
