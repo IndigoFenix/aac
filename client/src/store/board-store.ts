@@ -161,6 +161,7 @@ export interface BoardState {
     irData: BoardIR;
     automaticSelection?: boolean;
     automaticSelectionHint?: string;
+    isGenerated?: boolean;
   }) => void;
 
   /** Mark a board as saved, clear dirty flag, and store db id. */

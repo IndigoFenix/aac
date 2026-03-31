@@ -1043,8 +1043,9 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
   };
 
   // Fetch license permissions based on the selected institute
+  // AAC mode is governed by student aacSettings, not institute licenses
   let licensePerms: LicensePermissions | undefined;
-  if (context.user) {
+  if (context.user && !isAACFeature) {
     licensePerms = await licenseService.getInstitutePermissions(
       context.institute?.id,
       context.user.isSystemAdmin ?? false

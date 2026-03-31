@@ -134,6 +134,7 @@ export default function DynamicBoard({
 }: DynamicBoardProps) {
   const { speak } = useTextToSpeech();
   const { t } = useLanguage();
+  const isRTL = language === "he" || language === "ar";
 
   // Icon/text sizing based on ratio level
   const level = RATIO_LEVELS[Math.max(1, Math.min(5, iconTextRatio))] || RATIO_LEVELS[3];
@@ -444,7 +445,15 @@ export default function DynamicBoard({
     // occupied
     const { button, anim } = slot;
     const isEntering = anim === "entering";
-    const isLinkButton = button.action?.type === "link";
+    const actionType = button.action?.type;
+    const isLinkButton = actionType === "link";
+    const isBackButton = actionType === "back" || actionType === "home";
+
+    const borderClass = isLinkButton
+      ? "border-blue-400 border-2"
+      : isBackButton
+        ? "border-amber-400 border-2"
+        : "border-gray-200";
 
     return (
       <motion.button
@@ -455,19 +464,25 @@ export default function DynamicBoard({
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: isEntering ? 0.3 : 0.15 }}
         onClick={() => handleButtonClick(button)}
-        className={`flex flex-col items-center justify-center p-1 rounded-xl shadow-sm border min-h-0 min-w-0 overflow-hidden ${isLinkButton ? "border-blue-300 ring-1 ring-blue-200" : "border-gray-200"}`}
+        className={`flex flex-col items-center justify-center p-1 rounded-xl shadow-sm border min-h-0 min-w-0 overflow-hidden relative ${borderClass}`}
         style={{ backgroundColor: getButtonColor(button.color) }}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
       >
         <div className="flex items-center justify-center min-h-0 w-full overflow-hidden" style={{ flex: `${level.iconFlex} 1 0px` }}>
-          {renderIcon(button)}
+          {isBackButton
+            ? <i className={`fas ${actionType === "home" ? "fa-house" : isRTL ? "fa-arrow-right" : "fa-arrow-left"} text-gray-700`} style={{ fontSize: iconFontSize }} />
+            : renderIcon(button)}
         </div>
         <div className="flex items-center justify-center w-full overflow-hidden" style={{ flex: `${level.textFlex} 1 0px` }}>
           <span className="font-medium text-center text-gray-800 leading-tight line-clamp-2" style={{ fontSize: textFontSize }}>
             {button.label}
           </span>
         </div>
+        {/* Action type indicator */}
+        {isLinkButton && (
+          <span className="absolute top-0.5 right-0.5 text-blue-600 opacity-70" style={{ fontSize: '0.55em' }}>▶</span>
+        )}
       </motion.button>
     );
   };

@@ -636,6 +636,7 @@ export const en = {
     createEmptyBoard: "Create Empty Board",
     manageBoards: "Manage Boards",
     notLoaded: "Not loaded",
+    aiGenerated: "AI Generated",
     saveBoard: "Save Board",
     saving: "Saving...",
     noBoardYet: "No board yet",
@@ -1945,6 +1946,11 @@ export const en = {
     useApprovedSymbolsDesc: "Show approved generated symbols on AAC buttons",
     useUnapprovedSymbols: "Use Unapproved Symbols",
     useUnapprovedSymbolsDesc: "Also show newly generated symbols before they are reviewed and approved",
+    // Dynamic Boards
+    dynamicBoards: "Dynamic Boards",
+    dynamicBoardsDesc: "Allow the AI to create and edit AAC boards based on the situation.",
+    dynamicBoardsEnabled: "Enable Dynamic Boards",
+    dynamicBoardsEnabledDesc: "When enabled, the AI monitor can generate situation-specific boards during AAC sessions.",
     // Apps
     apps: "Apps",
     appsDescription: "Enable or disable add-on apps available during AAC sessions",

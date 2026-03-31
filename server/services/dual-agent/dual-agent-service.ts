@@ -392,7 +392,7 @@ export class DualAgentService {
         availableBoards = boards.map(b => {
           const irData = b.irData as any;
           const grid = irData?.grid || { rows: 3, cols: 4 };
-          return { id: b.id, key: b.name.toLowerCase().replace(/ /g, '_'), name: b.name, hint: b.automaticSelectionHint || undefined, grid };
+          return { id: b.id, key: b.name.toLowerCase().replace(/ /g, '_'), name: b.name, hint: b.automaticSelectionHint || undefined, isGenerated: b.isGenerated ?? false, grid };
         });
       } catch { /* ignore */ }
     }
@@ -650,7 +650,7 @@ export class DualAgentService {
             state.availableBoards = boards.map(b => {
               const irData = b.irData as any;
               const grid = irData?.grid || { rows: 3, cols: 4 };
-              return { id: b.id, key: b.name.toLowerCase().replace(/ /g, '_'), name: b.name, hint: b.automaticSelectionHint || undefined, grid };
+              return { id: b.id, key: b.name.toLowerCase().replace(/ /g, '_'), name: b.name, hint: b.automaticSelectionHint || undefined, isGenerated: b.isGenerated ?? false, grid };
             });
           } catch { state.availableBoards = []; }
         }
@@ -1055,7 +1055,10 @@ export class DualAgentService {
       // 7. Run monitor agent with the snapshot
       // ------------------------------------------------------------------
       const response = await Promise.race([
-        monitorAgent.processPendingMessages(pendingSnapshot, board, state.interactionMode, state.interactivePrompt),
+        monitorAgent.processPendingMessages(
+          pendingSnapshot, board, state.interactionMode, state.interactivePrompt,
+          state.availableBoards?.map(b => ({ id: b.id, name: b.name, hint: b.hint, isGenerated: (b as any).isGenerated }))
+        ),
         new Promise<never>((_, reject) => {
           timeoutController.signal.addEventListener("abort", () =>
             reject(new Error("Monitor processing timed out"))
@@ -1082,6 +1085,68 @@ export class DualAgentService {
 
         // Live API hook: forward context injection to Gemini session
         state.onContextInjection?.(response.contextInjection);
+      }
+
+      // Handle generated board from monitor
+      if (response.generatedBoard && state.userId) {
+        try {
+          const { name, boardId, irData, hint } = response.generatedBoard;
+          let savedBoardId: string;
+
+          if (boardId) {
+            // Edit existing generated board
+            await boardRepository.updateBoard(boardId, {
+              name,
+              irData: irData as any,
+              automaticSelection: true,
+              automaticSelectionHint: hint || undefined,
+            });
+            savedBoardId = boardId;
+            console.log(`[DualAgentService] Monitor updated generated board: ${boardId} "${name}"`);
+          } else {
+            // Create new generated board
+            const board = await boardRepository.createBoard({
+              userId: state.userId,
+              studentId: state.studentId,
+              name,
+              irData: irData as any,
+              automaticSelection: true,
+              automaticSelectionHint: hint || undefined,
+              isGenerated: true,
+            });
+            savedBoardId = board.id;
+            console.log(`[DualAgentService] Monitor created generated board: ${board.id} "${name}"`);
+          }
+
+          // Add to available boards so interactive agent can use it immediately
+          const boardGrid = irData.grid || { rows: 4, cols: 4 };
+          const newEntry = {
+            id: savedBoardId,
+            key: name.toLowerCase().replace(/\s+/g, '_'),
+            name,
+            hint: hint || undefined,
+            isGenerated: true,
+            grid: boardGrid,
+          };
+
+          if (!state.availableBoards) state.availableBoards = [];
+          const existingIdx = state.availableBoards.findIndex(b => b.id === savedBoardId);
+          if (existingIdx >= 0) {
+            state.availableBoards[existingIdx] = newEntry;
+          } else {
+            state.availableBoards.push(newEntry);
+          }
+
+          // Notify interactive agent about the new board via context injection
+          // The interactive agent's prompt will be fully rebuilt on next monitor cycle
+          const boardNotice = `A new board "${name}" is now available${hint ? ` (${hint})` : ''}. Use set_board("${newEntry.key}") to load it when appropriate.`;
+          state.onContextInjection?.(boardNotice);
+
+          // Notify AAC client via WebSocket
+          state.onBoardGenerated?.({ boardId: savedBoardId, name, hint });
+        } catch (err) {
+          console.error("[DualAgentService] Failed to save generated board:", err);
+        }
       }
 
       console.log("[DualAgentService] doMonitorProcessing: completed successfully");
