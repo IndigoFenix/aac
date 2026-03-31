@@ -918,12 +918,20 @@ export const ChatProvider = ({
         return streamingResult;
       }
 
-      // Fallback to non-streaming endpoint if streaming didn't complete
-      console.log('[useChat] Falling back to non-streaming endpoint');
-      const response = await apiRequest('POST', '/api/chat', requestBody);
-      const data = await response.json();
+      // Retry streaming with a short delay (handles cold-start on new Lambda instance)
+      console.log('[useChat] Streaming did not complete, retrying after delay...');
+      await new Promise(resolve => setTimeout(resolve, 3000));
 
-      return processResponseData(data);
+      if (stoppedByUserRef.current) return null;
+
+      try {
+        const retryResponse = await apiRequest('POST', '/api/chat', requestBody);
+        const retryData = await retryResponse.json();
+        return processResponseData(retryData);
+      } catch (retryErr: any) {
+        console.error('Retry also failed:', retryErr);
+        throw retryErr; // let the outer catch handle it
+      }
     } catch (err: any) {
       console.error('Send message failed:', err);
       const errorText = err instanceof ServiceUnavailableError
