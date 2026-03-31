@@ -486,15 +486,16 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
     return <Home className="w-4 h-4 text-amber-500" />;
   };
 
+  // Exclude the current user from the linkable members list (do this first because the current user might be a customer service account)
+  const otherMembers = instituteMembers.filter(m => m.id !== user?.id);
+
   // User link management: show only when editing, institute is school/clinic, user is admin, >1 member
   const isCurrentUserAdmin = currentInstitute?.isAdmin ?? false;
   const showUserLinks = !!editingStudent
     && !!currentInstitute
     && (currentInstitute.type === 'school' || currentInstitute.type === 'clinic')
     && isCurrentUserAdmin
-    && instituteMembers.length > 1;
-  // Exclude the current user from the linkable members list
-  const otherMembers = instituteMembers.filter(m => m.id !== user?.id);
+    && otherMembers.length > 0;
 
   // ==========================================================================
   // RENDER

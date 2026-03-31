@@ -524,6 +524,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     studentController.deleteStudent(req, res)
   );
 
+  // Student-user link management
+  app.get("/api/students/:id/links", requireAuth, (req, res) =>
+    studentController.getLinkedUsers(req, res)
+  );
+  app.post("/api/students/:id/link", requireAuth, (req, res) =>
+    studentController.linkUser(req, res)
+  );
+  app.delete("/api/students/:id/link/:userId", requireAuth, (req, res) =>
+    studentController.unlinkUser(req, res)
+  );
+
   // ==========================================================================
   // COMPOSITE ENDPOINTS (must come before specific type endpoints)
   // ==========================================================================

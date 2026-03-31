@@ -287,10 +287,11 @@ ${enabledApps.map(a => `- **${a.name}** (id: "${a.id}"): ${a.description}`).join
  * Replaces buildAACPersonaSystemPrompt when used in dual-agent context.
  */
 export function buildMonitorSystemPrompt(
-  student: { name: string; aacSettings?: { chatAgentPrompt?: string | null } | null; framework?: string | null },
+  student: { name: string; aacSettings?: { chatAgentPrompt?: string | null; dynamicBoardsEnabled?: boolean | null } | null; framework?: string | null },
   framework: string | null,
   interactionMode: 'interact' | 'silent' = 'interact',
   interactivePrompt?: string,
+  availableBoards?: Array<{ id: string; name: string; hint?: string; isGenerated?: boolean }>,
 ): string {
   const personaPrompt = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
 
@@ -301,6 +302,62 @@ export function buildMonitorSystemPrompt(
   let prompt = AAC_UNIFIED_MONITOR_PROMPT;
   prompt += `\n## Current Mode\n${modeNote}\n`;
   prompt += '\n' + AAC_MEMORY_PROMPT;
+
+  // Dynamic board generation section
+  if (student.aacSettings?.dynamicBoardsEnabled) {
+    prompt += `\n## Dynamic Board Generation
+You can create and edit AAC boards to help the student communicate in specific situations.
+Use this when you notice the student is in a context that would benefit from a dedicated board
+(e.g., mealtime, a specific class, at home, at the playground, a social situation).
+
+**Rules:**
+- Before creating a new board, check if an appropriate board already exists (see list below). If so, edit it instead.
+- You can only edit boards marked as [generated]. Human-authored boards are read-only.
+- Create boards with commonly-needed buttons for the situation. Use multi-page layouts when appropriate (e.g., main page + sub-pages for categories).
+- Each button needs: label, iconRef (emoji), and optionally a sentence (what the button says when pressed).
+- Navigation buttons (action type "link") connect pages. Back buttons (action type "back") return to the previous page.
+- Set automaticSelection to true and provide a hint describing when this board should be used.
+- The board will immediately become available to the Interactive Agent.
+
+**To create or edit a board, output a [BOARD] tag with JSON:**
+[BOARD]
+{
+  "name": "Board Name",
+  "boardId": null,
+  "hint": "When the student is at mealtime",
+  "irData": {
+    "name": "Board Name",
+    "grid": { "rows": 4, "cols": 4 },
+    "pages": [
+      {
+        "id": "main",
+        "name": "Main",
+        "buttons": [
+          { "id": "b1", "row": 0, "col": 0, "label": "I want", "iconRef": "👉", "sentence": "I want something", "color": "yellow" },
+          { "id": "b2", "row": 0, "col": 1, "label": "Food", "iconRef": "🍽️", "action": { "type": "link", "toPageId": "food" } },
+          { "id": "nav-back", "row": 3, "col": 0, "label": "Back", "action": { "type": "back" } }
+        ]
+      }
+    ]
+  }
+}
+[/BOARD]
+
+Set "boardId" to an existing board's ID to edit it (only [generated] boards). Set to null for new boards.
+`;
+
+    // List existing boards
+    if (availableBoards && availableBoards.length > 0) {
+      prompt += `\n**Existing boards:**\n`;
+      for (const b of availableBoards) {
+        const tag = b.isGenerated ? ' [generated]' : ' [manual]';
+        prompt += `- "${b.name}" (ID: ${b.id})${b.hint ? ` — ${b.hint}` : ''}${tag}\n`;
+      }
+    } else {
+      prompt += `\n**No boards exist yet.** Create boards as needed for the student's situations.\n`;
+    }
+  }
+
   if (interactivePrompt) {
     prompt += `\n## Interactive Agent's Current Prompt\n<quote>\n${interactivePrompt}\n</quote>`;
   }

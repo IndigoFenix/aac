@@ -113,7 +113,7 @@ export interface DualAgentSessionState {
   aiAddedButtonLabels: string[]; // Buttons AI added on top of a loaded custom board (removable by AI)
 
   // Pre-built board selection
-  availableBoards?: Array<{ id: string; key: string; name: string; hint?: string; grid: { rows: number; cols: number } }>;
+  availableBoards?: Array<{ id: string; key: string; name: string; hint?: string; isGenerated?: boolean; grid: { rows: number; cols: number } }>;
   loadedBoardId?: string | null;
   loadedBoardData?: ParsedBoardData;
   currentPageId?: string | null;
@@ -156,6 +156,9 @@ export interface DualAgentSessionState {
   // Live API hook: called when monitor injects context, so relay can forward to Gemini session
   onContextInjection?: (text: string) => void;
 
+  // Live API hook: called when monitor generates a new board, so relay can notify the client
+  onBoardGenerated?: (board: { boardId: string; name: string; hint?: string }) => void;
+
   // Storage control — when false, session data is not persisted to the database
   remoteStorageEnabled: boolean;
 
@@ -173,6 +176,13 @@ export interface MonitorResponse {
   updatedPrompt?: string;
   // Context to inject
   contextInjection?: string;
+  // Board IR to save/update (generated board)
+  generatedBoard?: {
+    name: string;
+    boardId?: string; // if editing an existing board
+    irData: ParsedBoardData;
+    hint?: string; // automaticSelectionHint
+  };
 }
 
 /**

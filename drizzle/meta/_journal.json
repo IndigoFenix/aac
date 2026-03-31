@@ -351,6 +351,13 @@
       "when": 1774862467933,
       "tag": "0049_tan_thena",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1774974142432,
+      "tag": "0050_living_patriot",
+      "breakpoints": true
     }
   ]
 }

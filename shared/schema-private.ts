@@ -353,6 +353,7 @@ export const aacSettings = pgTable("aac_settings", {
   generateSymbols: boolean("generate_symbols").default(false).notNull(), // Generate symbol images on-the-fly via Gemini
   useApprovedSymbols: boolean("use_approved_symbols").default(false).notNull(), // Show approved generated symbols on buttons
   useUnapprovedSymbols: boolean("use_unapproved_symbols").default(false).notNull(), // Also show unapproved (newly generated) symbols
+  dynamicBoardsEnabled: boolean("dynamic_boards_enabled").default(false).notNull(), // AI can generate/edit boards during AAC sessions
 
   // Input settings
   signLanguageReading: boolean("sign_language_reading").default(false), // Sign language detection enabled
@@ -1143,6 +1144,7 @@ export const boards = pgTable("boards", {
   language: text("language").default("en"),
   automaticSelection: boolean("automatic_selection").default(false).notNull(),
   automaticSelectionHint: text("automatic_selection_hint"),
+  isGenerated: boolean("is_generated").default(false).notNull(), // AI-generated during AAC session
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   loadedAt: timestamp("loaded_at").defaultNow().notNull(),

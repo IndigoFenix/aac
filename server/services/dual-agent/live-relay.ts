@@ -394,7 +394,17 @@ export class LiveRelay {
 
         if (this.initialConnectionDone) {
           this.send({ type: "reconnected" });
-          this.injectReconnectionContext();
+          if (!this.hasGreeted) {
+            // Reconnected before greeting — re-send a greeting prompt instead of
+            // reconnection context (which uses turnComplete=false and would stall)
+            console.log("[LiveRelay] Reconnected before greeting — re-prompting");
+            const prompt = this.interactionMode === 'silent'
+              ? `Generate 4-12 contextual utterance buttons using rebuild_board().`
+              : `Call rebuild_board() with 4-12 initial communication buttons, then greet the user.`;
+            this.provider!.sendMessage(prompt, "user");
+          } else {
+            this.injectReconnectionContext();
+          }
         }
       },
       onReconnecting: () => {

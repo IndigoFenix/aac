@@ -33,6 +33,7 @@ export default function AACBoard({ board, onButtonClick, language = "en", voiceT
   const [currentPageId, setCurrentPageId] = useState<string | null>(null);
   const [pageHistory, setPageHistory] = useState<string[]>([]);
   const { speak, isSpeaking } = useTextToSpeech();
+  const isRTL = language === "he" || language === "ar";
 
   // Get current page
   const getCurrentPage = useCallback((): BoardPage | null => {
@@ -185,7 +186,11 @@ export default function AACBoard({ board, onButtonClick, language = "en", voiceT
                   whileHover={{ scale: 1.05, boxShadow: "0 8px 25px rgba(0,0,0,0.15)" }}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => handleButtonClick(button)}
-                  className="relative flex flex-col items-center justify-center p-3 rounded-2xl shadow-lg transition-all cursor-pointer touch-manipulation"
+                  className={`relative flex flex-col items-center justify-center p-3 rounded-2xl shadow-lg transition-all cursor-pointer touch-manipulation ${
+                    button.action?.type === "link" ? "border-2 border-blue-400" :
+                    button.action?.type === "back" || button.action?.type === "home" ? "border-2 border-amber-400" :
+                    ""
+                  }`}
                   style={{
                     backgroundColor: getButtonColor(button.color),
                     minHeight: "80px",
@@ -193,7 +198,9 @@ export default function AACBoard({ board, onButtonClick, language = "en", voiceT
                 >
                   {/* Symbol/Icon */}
                   <div className="flex-1 flex items-center justify-center min-h-0">
-                    {button.symbolPath ? (
+                    {(button.action?.type === "back" || button.action?.type === "home") ? (
+                      <i className={`fas ${button.action.type === "home" ? "fa-house" : isRTL ? "fa-arrow-right" : "fa-arrow-left"} text-[2.5rem] sm:text-[3rem] md:text-[3.5rem] leading-none text-gray-700`} />
+                    ) : button.symbolPath ? (
                       <img
                         src={button.symbolPath}
                         alt={button.label}
@@ -215,9 +222,12 @@ export default function AACBoard({ board, onButtonClick, language = "en", voiceT
                     {button.label}
                   </span>
 
-                  {/* Link indicator */}
+                  {/* Action type indicators */}
                   {button.action?.type === "link" && (
-                    <div className="absolute top-1 right-1 w-3 h-3 bg-blue-500 rounded-full" />
+                    <span className="absolute top-1 right-1 text-blue-600 opacity-70 text-[0.6rem]">▶</span>
+                  )}
+                  {(button.action?.type === "back" || button.action?.type === "home") && (
+                    <span className="absolute top-1 left-1 text-amber-600 opacity-70 text-[0.6rem]">◀</span>
                   )}
                 </motion.button>
               );

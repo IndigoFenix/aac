@@ -163,6 +163,7 @@ export function BoardSelector() {
         irData: fullBoard.irData,
         automaticSelection: fullBoard.automaticSelection,
         automaticSelectionHint: fullBoard.automaticSelectionHint,
+        isGenerated: fullBoard.isGenerated,
       });
 
       toast({
@@ -211,6 +212,9 @@ export function BoardSelector() {
       }
       if (board.automaticSelectionHint !== undefined) {
         payload.automaticSelectionHint = board.automaticSelectionHint;
+      }
+      if ((board as any).isGenerated !== undefined) {
+        (payload as any).isGenerated = (board as any).isGenerated;
       }
 
       // Use PATCH for existing boards, POST for new ones
@@ -399,6 +403,11 @@ export function BoardSelector() {
                       <span>{b.name}</span>
                       {b.automaticSelection && (
                         <Zap className="w-3 h-3 text-blue-500" />
+                      )}
+                      {(b as any).isGenerated && (
+                        <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-500">
+                          AI
+                        </span>
                       )}
                       {b.isDirty && (
                         <span className="text-[9px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-500">
@@ -631,6 +640,37 @@ export function BoardSelector() {
               </PopoverContent>
             </Popover>
           )}
+        </div>
+      )}
+
+      {/* AI Generated toggle */}
+      {board && (
+        <div className={cn(
+          'flex items-center gap-2 mt-1',
+          isRTL && 'flex-row-reverse'
+        )}>
+          <Checkbox
+            id="is-generated"
+            checked={(board as any).isGenerated ?? false}
+            onCheckedChange={(checked) => {
+              const currentBoard = useBoardStore.getState().board;
+              if (currentBoard) {
+                useBoardStore.setState((state) => {
+                  const updated = { ...currentBoard, isGenerated: !!checked, isDirty: true } as any;
+                  return {
+                    board: updated,
+                    boards: state.boards.map((b: any) => b._id === updated._id ? updated : b),
+                  };
+                });
+              }
+            }}
+          />
+          <Label htmlFor="is-generated" className={cn(
+            'text-xs cursor-pointer',
+            isDark ? 'text-slate-400' : 'text-gray-500'
+          )}>
+            {t('board.aiGenerated') || 'AI Generated'}
+          </Label>
         </div>
       )}
 

@@ -166,27 +166,31 @@ export class MonitorAgent {
 ${AAC_MEMORY_PROMPT}
 
 ## Your Task
-Prepare the Interactive Agent for this session by creating an enhanced custom prompt that incorporates the student's data.
+Create an enhanced custom prompt for the Interactive Agent using the student's data.
 
-Step 1: Explore the student's context using the memory system. View the relevant Context_ paths:
-- Context_MedicalInfo — safety alerts, medications, medical considerations
-- Context_EducationalInfo — communication mode, strategies, reinforcers
-- Context_Progress — current IEP/program goals and objectives
-- Context_Classmates — people the student interacts with
-- Context_FunctionalInfo — mobility, sensory profile, ADL status
-Also review any existing Student_ memory fields (notes, interests, preferences, communication style).
+**IMPORTANT: Be efficient.** You have a limited number of tool calls. Follow this procedure:
 
-Step 2: Based on what you find, generate an enhanced version of the current custom prompt shown below. The enhanced prompt should:
-- Preserve the intent and tone of the original
-- Weave in student-specific behavioral instructions (medical alerts, communication strategies, goals to support, interests, important people)
-- Be concise and actionable — no more than 500 words
-- Focus on what matters most for a live conversation
-- Skip areas where there's no meaningful data
-- Use plain text only — no markdown headers (#), no HTML tags, no bold/italic markup
-  (the output will be inserted into a larger prompt that already has its own structure)
+1. Make ONE manageMemory call to view the top-level summaries of all relevant paths at once:
+   Context_MedicalInfo, Context_EducationalInfo, Context_Progress, Context_Classmates, Context_FunctionalInfo, Student_Notes, Student_Interests, Student_People, Student_Preferences
+
+2. If a path is empty or says "Path not found", SKIP it entirely — do NOT drill deeper into empty paths.
+
+3. Only drill into a path (view children) if the summary indicates it contains actual data.
+
+4. After at most 2-3 tool calls, you MUST output the enhanced prompt. Do not continue exploring.
+
+5. If the student is new and has little or no data, that is fine — output a prompt based on what you do know (name, age, language, diagnosis if available) and the original custom prompt below.
+
+## Enhanced Prompt Requirements
+- Preserve the intent and tone of the original prompt
+- Weave in any student-specific data you found (medical alerts, goals, interests, important people)
+- Be concise — no more than 500 words
+- Skip areas with no data
+- Use plain text only — no markdown headers, no HTML, no bold/italic
 - Use dashes (-) for bullet points if needed
 
-Step 3: Output ONLY the enhanced prompt between [ENHANCED_PROMPT] and [/ENHANCED_PROMPT] tags. Nothing else outside the tags.
+## Output Format
+Output ONLY the enhanced prompt between [ENHANCED_PROMPT] and [/ENHANCED_PROMPT] tags. Nothing else outside the tags.
 
 ## Current Custom Prompt
 ${personaPrompt}`;
@@ -243,6 +247,7 @@ ${personaPrompt}`;
     currentBoard?: ParsedBoardData,
     interactionMode: AACInteractionMode = 'interact',
     interactivePrompt?: string,
+    availableBoards?: Array<{ id: string; name: string; hint?: string; isGenerated?: boolean }>,
   ): Promise<MonitorResponse> {
     if (pendingMessages.length === 0) {
       return {};
@@ -276,7 +281,7 @@ ${personaPrompt}`;
     try {
       // Build monitor prompt for dual mode
       const systemPromptOverride = this.student
-        ? buildMonitorSystemPrompt(this.student, this.framework, interactionMode, interactivePrompt)
+        ? buildMonitorSystemPrompt(this.student, this.framework, interactionMode, interactivePrompt, availableBoards)
         : undefined;
 
       // Process through sessionService for memory updates
@@ -318,6 +323,27 @@ ${personaPrompt}`;
         );
         if (contextMatch) {
           response.contextInjection = contextMatch[1].trim();
+        }
+      }
+
+      if (responseText.includes("[BOARD]")) {
+        const boardMatch = responseText.match(
+          /\[BOARD\]([\s\S]*?)\[\/BOARD\]/
+        );
+        if (boardMatch) {
+          try {
+            const boardData = JSON.parse(boardMatch[1].trim());
+            if (boardData.name && boardData.irData) {
+              response.generatedBoard = {
+                name: boardData.name,
+                boardId: boardData.boardId || undefined,
+                irData: boardData.irData,
+                hint: boardData.hint || undefined,
+              };
+            }
+          } catch (err) {
+            console.warn("[MonitorAgent] Failed to parse [BOARD] JSON:", err);
+          }
         }
       }
 

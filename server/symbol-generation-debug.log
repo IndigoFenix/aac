@@ -1207,3 +1207,134 @@
 [2026-03-30T17:39:24.641Z] [processQueue] Generated "heaven_sky" → 9c9c2bc8-de59-4fe5-93cf-9abe45f1097b (54 total)
 [2026-03-30T17:39:28.832Z] [processQueue] Generating "passover_seder"...
 [2026-03-30T17:39:36.106Z] [processQueue] Generated "passover_seder" → 68af0e3d-a89c-4aba-9bd5-141c401006fd (55 total)
+[2026-03-31T20:00:50.098Z] [resolveImageKeys] Resolving 8 keys: game_controller, pizza, soda, pencil_drawing, music_notes, reading_book, tree, television (format=internal, useUnapproved=true)
+[2026-03-31T20:00:51.446Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-03-31T20:00:51.613Z] [resolveImageKeys] Resolved "pizza" → __SYMBOL__:8e675957-673c-4163-9c62-d23db64a64e8
+[2026-03-31T20:00:51.778Z] [resolveImageKeys] No symbol found for "soda"
+[2026-03-31T20:00:51.952Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-31T20:00:52.114Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-31T20:00:52.278Z] [resolveImageKeys] Resolved "reading_book" → __SYMBOL__:3b75b547-c5dd-4b42-98c2-121477a6bf24
+[2026-03-31T20:00:52.443Z] [resolveImageKeys] Resolved "tree" → __SYMBOL__:df5f8bae-b41d-4559-9da1-cabaac1f5357
+[2026-03-31T20:00:52.610Z] [resolveImageKeys] Resolved "television" → __SYMBOL__:6e80c6c1-bace-445d-85f0-936a1766e568
+[2026-03-31T20:00:52.611Z] [resolveImageKeys] Done. Resolved 7, unresolved 1: soda
+[2026-03-31T20:00:52.613Z] [queueGeneration] Queuing 1 keys: soda (hasCallback=true)
+[2026-03-31T20:00:52.783Z] [processQueue] Generating "soda"...
+[2026-03-31T20:00:59.068Z] [processQueue] Generated "soda" → 3ba2b356-7b37-4c4e-8822-062999fadccd (1 total)
+[2026-03-31T20:01:04.539Z] [resolveImageKeys] Resolving 2 keys: color_palette, red_x (format=internal, useUnapproved=true)
+[2026-03-31T20:01:04.700Z] [resolveImageKeys] Resolved "color_palette" → __SYMBOL__:33ea7620-2266-44d9-bcc4-d0c226b3ae82
+[2026-03-31T20:01:04.872Z] [resolveImageKeys] No symbol found for "red_x"
+[2026-03-31T20:01:04.874Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: red_x
+[2026-03-31T20:01:04.878Z] [queueGeneration] Queuing 1 keys: red_x (hasCallback=true)
+[2026-03-31T20:01:05.040Z] [processQueue] Generating "red_x"...
+[2026-03-31T20:01:10.329Z] [processQueue] Generated "red_x" → a3641694-6f78-4e04-82bf-78b34ec2491c (1 total)
+[2026-03-31T20:02:13.876Z] [resolveImageKeys] Resolving 8 keys: game_controller, pizza, soda, pencil_drawing, music_notes, reading_book, tree, television (format=internal, useUnapproved=true)
+[2026-03-31T20:02:15.185Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-03-31T20:02:15.351Z] [resolveImageKeys] Resolved "pizza" → __SYMBOL__:8e675957-673c-4163-9c62-d23db64a64e8
+[2026-03-31T20:02:15.515Z] [resolveImageKeys] Resolved "soda" → __SYMBOL__:3ba2b356-7b37-4c4e-8822-062999fadccd
+[2026-03-31T20:02:15.677Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-31T20:02:15.839Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-31T20:02:16.002Z] [resolveImageKeys] Resolved "reading_book" → __SYMBOL__:3b75b547-c5dd-4b42-98c2-121477a6bf24
+[2026-03-31T20:02:16.164Z] [resolveImageKeys] Resolved "tree" → __SYMBOL__:df5f8bae-b41d-4559-9da1-cabaac1f5357
+[2026-03-31T20:02:16.326Z] [resolveImageKeys] Resolved "television" → __SYMBOL__:6e80c6c1-bace-445d-85f0-936a1766e568
+[2026-03-31T20:02:16.328Z] [resolveImageKeys] Done. Resolved 8, unresolved 0: 
+[2026-03-31T20:02:26.241Z] [resolveImageKeys] Resolving 2 keys: play_button, stop_button (format=internal, useUnapproved=true)
+[2026-03-31T20:02:26.417Z] [resolveImageKeys] Resolved "play_button" → __SYMBOL__:64ae6b6a-cc00-49a9-a395-c167fc05426b
+[2026-03-31T20:02:26.583Z] [resolveImageKeys] Resolved "stop_button" → __SYMBOL__:b621caea-23bd-4be8-b0be-c13a897bcad2
+[2026-03-31T20:02:26.584Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-03-31T20:02:52.880Z] [resolveImageKeys] Resolving 8 keys: game_controller, pizza, soda, pencil_drawing, music_notes, reading_book, tree, television (format=internal, useUnapproved=true)
+[2026-03-31T20:02:53.042Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-03-31T20:02:53.202Z] [resolveImageKeys] Resolved "pizza" → __SYMBOL__:8e675957-673c-4163-9c62-d23db64a64e8
+[2026-03-31T20:02:53.367Z] [resolveImageKeys] Resolved "soda" → __SYMBOL__:3ba2b356-7b37-4c4e-8822-062999fadccd
+[2026-03-31T20:02:53.543Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-31T20:02:53.703Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-31T20:02:53.862Z] [resolveImageKeys] Resolved "reading_book" → __SYMBOL__:3b75b547-c5dd-4b42-98c2-121477a6bf24
+[2026-03-31T20:02:54.029Z] [resolveImageKeys] Resolved "tree" → __SYMBOL__:df5f8bae-b41d-4559-9da1-cabaac1f5357
+[2026-03-31T20:02:54.189Z] [resolveImageKeys] Resolved "television" → __SYMBOL__:6e80c6c1-bace-445d-85f0-936a1766e568
+[2026-03-31T20:02:54.191Z] [resolveImageKeys] Done. Resolved 8, unresolved 0: 
+[2026-03-31T20:03:01.011Z] [resolveImageKeys] Resolving 2 keys: story_book, light_bulb (format=internal, useUnapproved=true)
+[2026-03-31T20:03:01.182Z] [resolveImageKeys] Resolved "story_book" → __SYMBOL__:ec80c41d-5d2e-481f-97c1-0f5725f37bac
+[2026-03-31T20:03:01.346Z] [resolveImageKeys] Resolved "light_bulb" → __SYMBOL__:dc359eb3-21df-466b-80ce-a174308bdc05
+[2026-03-31T20:03:01.348Z] [resolveImageKeys] Done. Resolved 2, unresolved 0: 
+[2026-03-31T20:03:12.209Z] [resolveImageKeys] Resolving 3 keys: lion_face, rocket, dinosaur (format=internal, useUnapproved=true)
+[2026-03-31T20:03:12.376Z] [resolveImageKeys] Resolved "lion_face" → __SYMBOL__:f108916e-6fab-4893-8269-2d52e0728f48
+[2026-03-31T20:03:12.539Z] [resolveImageKeys] No symbol found for "rocket"
+[2026-03-31T20:03:12.702Z] [resolveImageKeys] No symbol found for "dinosaur"
+[2026-03-31T20:03:12.703Z] [resolveImageKeys] Done. Resolved 1, unresolved 2: rocket, dinosaur
+[2026-03-31T20:03:12.705Z] [queueGeneration] Queuing 2 keys: rocket, dinosaur (hasCallback=true)
+[2026-03-31T20:03:12.878Z] [processQueue] Generating "rocket"...
+[2026-03-31T20:03:18.481Z] [processQueue] Generated "rocket" → 641ea22d-af42-4070-96e7-7eafc7a3639c (1 total)
+[2026-03-31T20:03:22.648Z] [processQueue] Generating "dinosaur"...
+[2026-03-31T20:03:24.085Z] [resolveImageKeys] Resolving 4 keys: story_book, light_bulb, game_controller, pencil_drawing (format=internal, useUnapproved=true)
+[2026-03-31T20:03:24.254Z] [resolveImageKeys] Resolved "story_book" → __SYMBOL__:ec80c41d-5d2e-481f-97c1-0f5725f37bac
+[2026-03-31T20:03:24.419Z] [resolveImageKeys] Resolved "light_bulb" → __SYMBOL__:dc359eb3-21df-466b-80ce-a174308bdc05
+[2026-03-31T20:03:24.581Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-03-31T20:03:24.743Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-31T20:03:24.745Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-03-31T20:03:30.126Z] [processQueue] Generated "dinosaur" → 2d3425a0-6952-4df0-be24-3b49d1d56615 (2 total)
+[2026-03-31T20:03:40.659Z] [resolveImageKeys] Resolving 8 keys: game_controller, pizza, soda, pencil_drawing, music_notes, reading_book, tree, television (format=internal, useUnapproved=true)
+[2026-03-31T20:03:40.819Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-03-31T20:03:40.986Z] [resolveImageKeys] Resolved "pizza" → __SYMBOL__:8e675957-673c-4163-9c62-d23db64a64e8
+[2026-03-31T20:03:41.151Z] [resolveImageKeys] Resolved "soda" → __SYMBOL__:3ba2b356-7b37-4c4e-8822-062999fadccd
+[2026-03-31T20:03:41.320Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-31T20:03:41.483Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-31T20:03:41.644Z] [resolveImageKeys] Resolved "reading_book" → __SYMBOL__:3b75b547-c5dd-4b42-98c2-121477a6bf24
+[2026-03-31T20:03:41.811Z] [resolveImageKeys] Resolved "tree" → __SYMBOL__:df5f8bae-b41d-4559-9da1-cabaac1f5357
+[2026-03-31T20:03:41.971Z] [resolveImageKeys] Resolved "television" → __SYMBOL__:6e80c6c1-bace-445d-85f0-936a1766e568
+[2026-03-31T20:03:41.973Z] [resolveImageKeys] Done. Resolved 8, unresolved 0: 
+[2026-03-31T20:04:11.791Z] [resolveImageKeys] Resolving 4 keys: person_walking, car, tree, house (format=internal, useUnapproved=true)
+[2026-03-31T20:04:11.967Z] [resolveImageKeys] Resolved "person_walking" → __SYMBOL__:6ae204b0-d675-43ca-8fbd-bdce12edb6c9
+[2026-03-31T20:04:12.129Z] [resolveImageKeys] Resolved "car" → __SYMBOL__:97b06125-a0c9-4296-a540-4c5c9562d223
+[2026-03-31T20:04:12.289Z] [resolveImageKeys] Resolved "tree" → __SYMBOL__:df5f8bae-b41d-4559-9da1-cabaac1f5357
+[2026-03-31T20:04:12.449Z] [resolveImageKeys] Resolved "house" → __SYMBOL__:4e78c7c2-856d-47bc-ae70-41a92b0342b2
+[2026-03-31T20:04:12.450Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-03-31T20:04:51.600Z] [resolveImageKeys] Resolving 2 keys: scissors, cut (format=internal, useUnapproved=true)
+[2026-03-31T20:04:51.781Z] [resolveImageKeys] Resolved "scissors" → __SYMBOL__:8e360398-63be-4876-967b-0bf30956117a
+[2026-03-31T20:04:51.938Z] [resolveImageKeys] No symbol found for "cut"
+[2026-03-31T20:04:51.939Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: cut
+[2026-03-31T20:04:51.940Z] [queueGeneration] Queuing 1 keys: cut (hasCallback=true)
+[2026-03-31T20:04:52.101Z] [processQueue] Generating "cut"...
+[2026-03-31T20:04:57.479Z] [processQueue] Generated "cut" → e016772d-8eb1-419f-b1d0-0e65192eeb8a (1 total)
+[2026-03-31T20:25:20.222Z] [resolveImageKeys] Resolving 4 keys: game_controller, pencil_drawing, music_notes, outside_park (format=internal, useUnapproved=true)
+[2026-03-31T20:25:21.537Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-03-31T20:25:21.697Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-31T20:25:21.856Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-31T20:25:22.015Z] [resolveImageKeys] No symbol found for "outside_park"
+[2026-03-31T20:25:22.017Z] [resolveImageKeys] Done. Resolved 3, unresolved 1: outside_park
+[2026-03-31T20:25:22.019Z] [queueGeneration] Queuing 1 keys: outside_park (hasCallback=true)
+[2026-03-31T20:25:22.187Z] [processQueue] Generating "outside_park"...
+[2026-03-31T20:25:33.644Z] [processQueue] Generated "outside_park" → 80eaaadd-9dc3-4c61-b785-d72a3bd9e241 (1 total)
+[2026-03-31T20:25:43.198Z] [resolveImageKeys] Resolving 4 keys: help_sign, stop_sign, pause_symbol, thumbs_up (format=internal, useUnapproved=true)
+[2026-03-31T20:25:43.371Z] [resolveImageKeys] Resolved "help_sign" → __SYMBOL__:c750a6dc-4699-4926-ab54-10018125da95
+[2026-03-31T20:25:43.530Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
+[2026-03-31T20:25:43.691Z] [resolveImageKeys] Resolved "pause_symbol" → __SYMBOL__:a5135144-1b9e-48d2-a919-b242f7d14a52
+[2026-03-31T20:25:43.850Z] [resolveImageKeys] Resolved "thumbs_up" → __SYMBOL__:ee779fe6-3a63-41a0-9b66-85935690beda
+[2026-03-31T20:25:43.851Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-03-31T20:59:17.853Z] [resolveImageKeys] Resolving 6 keys: game_controller, pencil_drawing, music_notes, eating_apple, drinking_beverage, pause_symbol (format=internal, useUnapproved=true)
+[2026-03-31T20:59:18.012Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-03-31T20:59:18.166Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-31T20:59:18.321Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-31T20:59:18.477Z] [resolveImageKeys] No symbol found for "eating_apple"
+[2026-03-31T20:59:18.632Z] [resolveImageKeys] Resolved "drinking_beverage" → __SYMBOL__:a38709a0-9d8d-45b5-b8ea-164296dc7916
+[2026-03-31T20:59:18.785Z] [resolveImageKeys] Resolved "pause_symbol" → __SYMBOL__:a5135144-1b9e-48d2-a919-b242f7d14a52
+[2026-03-31T20:59:18.787Z] [resolveImageKeys] Done. Resolved 5, unresolved 1: eating_apple
+[2026-03-31T20:59:18.790Z] [queueGeneration] Queuing 1 keys: eating_apple (hasCallback=true)
+[2026-03-31T20:59:19.027Z] [processQueue] Generating "eating_apple"...
+[2026-03-31T20:59:24.968Z] [processQueue] Generated "eating_apple" → 0ac40659-1f9c-4ca9-9fbe-9586054d709c (1 total)
+[2026-03-31T20:59:33.780Z] [resolveImageKeys] Resolving 5 keys: water_glass, milk_carton, juice_box, plus_sign, stop_sign (format=internal, useUnapproved=true)
+[2026-03-31T20:59:33.941Z] [resolveImageKeys] Resolved "water_glass" → __SYMBOL__:6551b479-01c1-43bf-9012-589f5a7f69f1
+[2026-03-31T20:59:34.100Z] [resolveImageKeys] No symbol found for "milk_carton"
+[2026-03-31T20:59:34.260Z] [resolveImageKeys] Resolved "juice_box" → __SYMBOL__:74741aab-7259-445b-af97-ba0f9463814e
+[2026-03-31T20:59:34.421Z] [resolveImageKeys] Resolved "plus_sign" → __SYMBOL__:651b735a-d40b-4550-bcf3-fc6df7c61bc0
+[2026-03-31T20:59:34.584Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
+[2026-03-31T20:59:34.586Z] [resolveImageKeys] Done. Resolved 4, unresolved 1: milk_carton
+[2026-03-31T20:59:34.588Z] [queueGeneration] Queuing 1 keys: milk_carton (hasCallback=true)
+[2026-03-31T20:59:34.757Z] [processQueue] Generating "milk_carton"...
+[2026-03-31T20:59:44.001Z] [processQueue] Generated "milk_carton" → 8b85edae-8c20-4d2d-b1b2-99e9463ba4de (1 total)
+[2026-03-31T20:59:45.456Z] [resolveImageKeys] Resolving 6 keys: game_controller, pencil_drawing, music_notes, eating_apple, drinking_beverage, pause_symbol (format=internal, useUnapproved=true)
+[2026-03-31T20:59:45.620Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-03-31T20:59:45.783Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-03-31T20:59:45.948Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-03-31T20:59:46.135Z] [resolveImageKeys] Resolved "eating_apple" → __SYMBOL__:0ac40659-1f9c-4ca9-9fbe-9586054d709c
+[2026-03-31T20:59:46.313Z] [resolveImageKeys] Resolved "drinking_beverage" → __SYMBOL__:a38709a0-9d8d-45b5-b8ea-164296dc7916
+[2026-03-31T20:59:46.480Z] [resolveImageKeys] Resolved "pause_symbol" → __SYMBOL__:a5135144-1b9e-48d2-a919-b242f7d14a52
+[2026-03-31T20:59:46.482Z] [resolveImageKeys] Done. Resolved 6, unresolved 0: 

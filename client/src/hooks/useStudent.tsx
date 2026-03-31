@@ -176,6 +176,7 @@ export const StudentProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const refetchStudent = async () => {
+    queryClient.removeQueries({ queryKey: studentsQueryKey(currentInstituteId ?? undefined) });
     await checkStudentStatus();
   };
 

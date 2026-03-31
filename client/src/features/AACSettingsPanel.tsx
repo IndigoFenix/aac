@@ -85,6 +85,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [generateSymbols, setGenerateSymbols] = useState(false);
   const [useApprovedSymbols, setUseApprovedSymbols] = useState(false);
   const [useUnapprovedSymbols, setUseUnapprovedSymbols] = useState(false);
+  const [dynamicBoardsEnabled, setDynamicBoardsEnabled] = useState(false);
   const [appConfig, setAppConfig] = useState<Record<string, any>>({});
   const [hasChanges, setHasChanges] = useState(false);
 
@@ -176,6 +177,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAllowNotes(aac?.allowNotes ?? true);
       setGenerateSymbols(aac?.generateSymbols ?? false);
       setUseApprovedSymbols(aac?.useApprovedSymbols ?? false);
+      setDynamicBoardsEnabled(aac?.dynamicBoardsEnabled ?? false);
       setUseUnapprovedSymbols(aac?.useUnapprovedSymbols ?? false);
       setAppConfig(aac?.appConfig || {});
       setHasChanges(false);
@@ -256,6 +258,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       generateSymbols: boolean;
       useApprovedSymbols: boolean;
       useUnapprovedSymbols: boolean;
+      dynamicBoardsEnabled: boolean;
       appConfig?: Record<string, any>;
     }) => {
       const response = await apiRequest('PATCH', `/api/students/${student?.id}`, data);
@@ -302,6 +305,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       generateSymbols,
       useApprovedSymbols,
       useUnapprovedSymbols,
+      dynamicBoardsEnabled,
       appConfig,
     });
   };
@@ -328,6 +332,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setAllowNotes(aac?.allowNotes ?? true);
       setGenerateSymbols(aac?.generateSymbols ?? false);
       setUseApprovedSymbols(aac?.useApprovedSymbols ?? false);
+      setDynamicBoardsEnabled(aac?.dynamicBoardsEnabled ?? false);
       setUseUnapprovedSymbols(aac?.useUnapprovedSymbols ?? false);
       setAppConfig(aac?.appConfig || {});
     }
@@ -965,6 +970,32 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 <Switch
                   checked={useUnapprovedSymbols}
                   onCheckedChange={setUseUnapprovedSymbols}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Dynamic Boards */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">{t('aacSettings.dynamicBoards') || 'Dynamic Boards'}</CardTitle>
+              <CardDescription>
+                {t('aacSettings.dynamicBoardsDesc') || 'Allow the AI to create and edit AAC boards based on the situation.'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-medium">
+                    {t('aacSettings.dynamicBoardsEnabled') || 'Enable Dynamic Boards'}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('aacSettings.dynamicBoardsEnabledDesc') || 'When enabled, the AI monitor can generate situation-specific boards during AAC sessions.'}
+                  </p>
+                </div>
+                <Switch
+                  checked={dynamicBoardsEnabled}
+                  onCheckedChange={setDynamicBoardsEnabled}
                 />
               </div>
             </CardContent>

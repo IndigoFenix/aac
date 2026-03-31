@@ -636,7 +636,8 @@ export const he = {
     createEmptyBoard: "צור לוח ריק",
     manageBoards: "ניהול לוחות",
     notLoaded: "לא נטען",
-    saveBoard: "שמור לוח",
+    aiGenerated: "נוצר ע״י AI",
+    saveBoard:"שמור לוח",
     saving: "שומר…",
     noBoardYet: "עדיין אין לוח",
     noBoardDescription: "השתמש בלוח ההנחיות כדי ליצור לוח AAC ראשון או ליצור לוח ריק",
@@ -1945,6 +1946,11 @@ export const he = {
     useApprovedSymbolsDesc: "הצג סמלים מאושרים שנוצרו על כפתורי AAC",
     useUnapprovedSymbols: "השתמש בסמלים לא מאושרים",
     useUnapprovedSymbolsDesc: "הצג גם סמלים שנוצרו לאחרונה לפני שנבדקו ואושרו",
+    // Dynamic Boards
+    dynamicBoards: "לוחות דינמיים",
+    dynamicBoardsDesc: "אפשר ל-AI ליצור ולערוך לוחות AAC בהתאם למצב.",
+    dynamicBoardsEnabled: "הפעל לוחות דינמיים",
+    dynamicBoardsEnabledDesc: "כאשר מופעל, הסוכן המפקח יכול ליצור לוחות ייעודיים למצבים במהלך שיחות AAC.",
     // Apps
     apps: "אפליקציות",
     appsDescription: "הפעל או השבת אפליקציות נוספות הזמינות במהלך מפגשי AAC",

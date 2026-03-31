@@ -613,6 +613,9 @@ export function BoardCanvas() {
                         onClick={(e) => handleButtonClick(button, e)}
                         className={cn(
                           "aspect-square rounded-xl flex flex-col items-center justify-center p-2 transition-all text-white font-medium text-sm shadow-lg relative",
+                          button.action?.type === "link" ? "border-2 border-blue-400" :
+                          button.action?.type === "back" || button.action?.type === "home" ? "border-2 border-amber-400" :
+                          "",
                           isEditMode
                             ? selectedButtonId === button.id
                               ? isDark
@@ -626,6 +629,14 @@ export function BoardCanvas() {
                         }}
                       >
                         {(() => {
+                          // Back/home buttons get a universal FA icon
+                          if (button.action?.type === "back" || button.action?.type === "home") {
+                            const faClass = button.action.type === "home"
+                              ? "fa-house"
+                              : isRTL ? "fa-arrow-right" : "fa-arrow-left";
+                            return <i className={`fas ${faClass} text-xl mb-1`} />;
+                          }
+
                           // Icon priority: 1) button.symbolPath (server-resolved), 2) symbol store (SSE-resolved),
                           // 3) pending spinner, 4) iconRef emoji/icon, 5) fallback emoji
                           const resolvedPath = button.symbolPath
@@ -671,7 +682,19 @@ export function BoardCanvas() {
                           {button.label}
                         </span>
                         
-                        {/* Action indicator for preview mode */}
+                        {/* Action type indicators */}
+                        {button.action?.type === "link" && (
+                          <span className={cn(
+                            "absolute top-0.5 text-blue-200 opacity-80 text-[0.5rem]",
+                            isRTL ? "left-0.5" : "right-0.5"
+                          )}>▶</span>
+                        )}
+                        {(button.action?.type === "back" || button.action?.type === "home") && (
+                          <span className={cn(
+                            "absolute top-0.5 text-amber-200 opacity-80 text-[0.5rem]",
+                            isRTL ? "right-0.5" : "left-0.5"
+                          )}>◀</span>
+                        )}
                         {!isEditMode && button.action?.type === "youtube" && (
                           <Play size={10} className={cn(
                             "absolute top-1 opacity-60",

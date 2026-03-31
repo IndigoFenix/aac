@@ -57,7 +57,7 @@ const AAC_SETTINGS_FIELDS = new Set([
   "eyegazeEnabled", "eyegazeTimeout", "eyegazeProvider", "aiName", "knownPeople",
   "allowReadProgress", "allowReadReports", "allowNotes",
   "generateSymbols", "useApprovedSymbols", "useUnapprovedSymbols",
-  "appConfig",
+  "dynamicBoardsEnabled", "appConfig",
 ]);
 
 /**
@@ -264,12 +264,26 @@ export class StudentService {
       return { hasAccess: true, student, link, hasMedicalRights: true, hasEducationalRights: true };
     }
 
-    // Family institutes grant full access to all members without a direct link
-    if (instituteId) {
-      const institute = await instituteRepository.getInstituteById(instituteId);
-      if (institute?.type === 'family') {
-        const isMember = await instituteRepository.isUserMemberOfInstitute(instituteId, userId);
+    // Check institute-based access: family membership or admin of school/clinic
+    const enrollments = await instituteRepository.getInstitutesByStudentId(studentId);
+    for (const { institute } of enrollments) {
+      if (!institute) continue;
+
+      // If a specific institute was requested, only check that one
+      if (instituteId && institute.id !== instituteId) continue;
+
+      // Family institutes grant full access to all members without a direct link
+      if (institute.type === 'family') {
+        const isMember = await instituteRepository.isUserMemberOfInstitute(institute.id, userId);
         if (isMember) {
+          return { hasAccess: true, student, hasMedicalRights: true, hasEducationalRights: true };
+        }
+      }
+
+      // Institute admins of school/clinic have full access to enrolled students
+      if (institute.type === 'school' || institute.type === 'clinic') {
+        const isAdmin = await instituteRepository.isUserAdminOfInstitute(institute.id, userId);
+        if (isAdmin) {
           return { hasAccess: true, student, hasMedicalRights: true, hasEducationalRights: true };
         }
       }
