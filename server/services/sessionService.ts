@@ -59,6 +59,7 @@ import {
 import { customSymbolRepository } from "../repositories/customSymbolRepository";
 import { aacSettingsRepository } from "../repositories/aacSettingsRepository";
 import { instituteRepository } from "../repositories/instituteRepository";
+import { calendarRepository } from "../repositories/calendarRepository";
 import { licenseService } from "./licenseService";
 import type { LicensePermissions } from "@shared/license-permissions";
 import { resolveImageKeys, queueSymbolGeneration } from "./symbol/auto-symbol-service";
@@ -820,6 +821,123 @@ interface GetMessageManagerResult {
   memoryValues: FlatMemoryValues;
 }
 
+/**
+ * Load calendar events that the AI should be aware of at conversation start.
+ * Returns a list of flagged events with priority/urgency metadata.
+ */
+async function loadFlaggedCalendarEvents(
+  userId: string,
+  instituteId?: string
+): Promise<any[]> {
+  const now = new Date();
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date(now);
+  todayEnd.setHours(23, 59, 59, 999);
+
+  const yesterday = new Date(todayStart);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const threeDaysOut = new Date(todayStart);
+  threeDaysOut.setDate(threeDaysOut.getDate() + 3);
+  threeDaysOut.setHours(23, 59, 59, 999);
+
+  const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+  const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
+
+  // Fetch events in the window: yesterday through 3 days out
+  const attendeeKeys: { type: string; id: string }[] = [
+    { type: 'user', id: userId },
+  ];
+  if (instituteId) {
+    attendeeKeys.push({ type: 'institute', id: instituteId });
+  }
+
+  const rawEvents = await calendarRepository.getEventsForAttendees(attendeeKeys, yesterday, threeDaysOut);
+
+  // Expand recurring events into concrete occurrences
+  const expanded = calendarRepository.expandRecurringEvents(rawEvents, yesterday, threeDaysOut);
+
+  const flagged: any[] = [];
+  const seen = new Set<string>(); // dedupe by event id + date
+
+  for (const { event: ev, date: occurrenceDate } of expanded) {
+    const dedupeKey = `${ev.id}:${occurrenceDate.toDateString()}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+
+    // Calculate the occurrence's actual time span
+    const evStart = new Date(ev.startTime);
+    const duration = new Date(ev.endTime).getTime() - evStart.getTime();
+    const occStart = new Date(occurrenceDate);
+    occStart.setHours(evStart.getHours(), evStart.getMinutes(), evStart.getSeconds());
+    const occEnd = new Date(occStart.getTime() + duration);
+    const isRepeating = ev.repeatType !== 'none';
+
+    if (isRepeating) {
+      // Repeating: flag if this occurrence is within ±1 hour of now
+      const isWithinHour = occStart <= oneHourFromNow && occEnd >= oneHourAgo;
+      if (isWithinHour) {
+        const isNow = occStart <= now && occEnd >= now;
+        flagged.push({
+          id: ev.id,
+          title: ev.title,
+          description: ev.description,
+          occurrenceDate: occurrenceDate.toISOString(),
+          startTime: occStart.toISOString(),
+          endTime: occEnd.toISOString(),
+          repeatType: ev.repeatType,
+          flag: isNow ? 'happening_now' : (occStart > now ? 'starting_soon' : 'just_ended'),
+          opened: true,
+        });
+      }
+    } else {
+      // Non-repeating: categorize by date
+      const isToday = occStart >= todayStart && occStart <= todayEnd;
+      const isYesterday = occStart >= yesterday && occStart < todayStart;
+      const isUpcoming = occStart > todayEnd && occStart <= threeDaysOut;
+
+      if (isToday) {
+        const isNow = occStart <= now && occEnd >= now;
+        flagged.push({
+          id: ev.id,
+          title: ev.title,
+          description: ev.description,
+          occurrenceDate: occurrenceDate.toISOString(),
+          startTime: occStart.toISOString(),
+          endTime: occEnd.toISOString(),
+          flag: isNow ? 'happening_now' : (occStart > now ? 'later_today' : 'earlier_today'),
+          opened: true,
+        });
+      } else if (isYesterday) {
+        flagged.push({
+          id: ev.id,
+          title: ev.title,
+          description: ev.description,
+          occurrenceDate: occurrenceDate.toISOString(),
+          startTime: occStart.toISOString(),
+          endTime: occEnd.toISOString(),
+          flag: 'yesterday',
+          opened: false,
+        });
+      } else if (isUpcoming) {
+        flagged.push({
+          id: ev.id,
+          title: ev.title,
+          description: ev.description,
+          occurrenceDate: occurrenceDate.toISOString(),
+          startTime: occStart.toISOString(),
+          endTime: occEnd.toISOString(),
+          flag: 'upcoming_3_days',
+          opened: false,
+        });
+      }
+    }
+  }
+
+  return flagged;
+}
+
 async function getMessageManager(input: GetMessageManagerInput): Promise<GetMessageManagerResult> {
   const { userId, studentId, instituteId, sessionId, featureContext, persona, feature = "chat", onThinkingUpdate, onNavigate, onSelectStudent } = input;
   const isAACFeature = (feature === 'aac');
@@ -1118,6 +1236,18 @@ Example button with custom symbol:
 
   // Inject mode-specific context into memory values
   injectModeContext(memoryValues, feature, featureContext, sessionId);
+
+  // Inject flagged calendar events so the AI is aware of important upcoming/recent events
+  if (!isAACFeature && licensePerms?.calendar && context.user) {
+    try {
+      const flagged = await loadFlaggedCalendarEvents(context.user.id, context.institute?.id);
+      if (flagged.length > 0) {
+        memoryValues["Context_CalendarAlerts"] = flagged;
+      }
+    } catch (err) {
+      console.warn('[getMessageManager] Failed to load calendar alerts:', err);
+    }
+  }
 
   // Create callbacks
   const onUpdateMemoryValues = async (newMemoryValues: FlatMemoryValues) => {

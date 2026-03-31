@@ -2173,6 +2173,7 @@ export const en = {
       school: "School",
       clinic: "Clinic",
       family: "Family",
+      instituteLanguage: "Language",
       instituteLogo: "Organization Logo",
       uploadLogo: "Upload Logo",
       userType: "User Type",

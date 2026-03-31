@@ -2173,6 +2173,7 @@ export const he = {
       school: "בית ספר",
       clinic: "מרפאה",
       family: "משפחה",
+      instituteLanguage: "שפה",
       instituteLogo: "לוגו ארגון",
       uploadLogo: "העלאת לוגו",
       userType: "סוג משתמש",

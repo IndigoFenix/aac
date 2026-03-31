@@ -143,6 +143,12 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
 
+  /** Get the right post-login destination. System admins go to /admin unless in support mode. */
+  const getPostLoginPath = (u?: typeof user) => {
+    const target = u ?? user;
+    return (target?.isSystemAdmin && !target?.supportSession) ? '/admin' : '/home';
+  };
+
   // View state
   const [showRegister, setShowRegister] = useState(isInviteMode);
 
@@ -344,7 +350,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
           toast({ title: t('auth.loginSuccess'), description: t('auth.welcomeBack') });
         } else {
           toast({ title: t('auth.loginSuccess'), description: t('auth.welcomeBack') });
-          setLocation('/home');
+          setLocation(getPostLoginPath(result.user));
         }
       } else {
         toast({
@@ -374,7 +380,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
       if (data.success && data.user) {
         await refetchUser();
         toast({ title: 'Impersonation', description: `Logged in as ${data.user.email}` });
-        setLocation('/home');
+        setLocation(getPostLoginPath(data.user));
       } else {
         toast({ title: 'Impersonation failed', description: data.message, variant: 'destructive' });
       }
@@ -406,7 +412,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
         if (isInviteMode) {
           // Page will re-render and show accept invite UI
         } else {
-          setLocation('/home');
+          setLocation(getPostLoginPath());
         }
       } else {
         toast({
@@ -447,7 +453,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
         if (isInviteMode) {
           // Page will re-render and show accept invite UI
         } else {
-          setLocation('/home');
+          setLocation(getPostLoginPath());
         }
       } else {
         toast({
@@ -592,7 +598,7 @@ export default function LoginPage({ inviteToken: propToken }: LoginPageProps = {
           title: t('auth.registerSuccess'),
           description: t('auth.registerSuccessDesc')
         });
-        setLocation('/home');
+        setLocation(getPostLoginPath());
       }
       
     } catch (error: any) {

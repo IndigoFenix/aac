@@ -69,6 +69,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
   // Institute fields (create only) — institute is always required
   const [instituteName, setInstituteName] = useState('');
   const [instituteType, setInstituteType] = useState<'school' | 'clinic' | 'family'>('school');
+  const [instituteLanguage, setInstituteLanguage] = useState<string>(language || 'en');
   const [instituteLogo, setInstituteLogo] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
@@ -142,6 +143,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
     setUserType('Caregiver');
     setInstituteName('');
     setInstituteType('school');
+    setInstituteLanguage(language || 'en');
     setInstituteLogo(null);
     setLogoPreview(null);
     setName('');
@@ -228,6 +230,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
           createInstitute: true,
           instituteName,
           instituteType,
+          language: instituteLanguage,
           instituteLogo: instituteLogo || undefined,
         };
         await createLicense.mutateAsync(data);
@@ -337,6 +340,18 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
                         <SelectItem value="school">{t('admin.licenses.school')}</SelectItem>
                         <SelectItem value="clinic">{t('admin.licenses.clinic')}</SelectItem>
                         <SelectItem value="family">{t('admin.licenses.family')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>{t('admin.licenses.instituteLanguage') || 'Language'}</Label>
+                    <Select value={instituteLanguage} onValueChange={setInstituteLanguage}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="en">English</SelectItem>
+                        <SelectItem value="he">עברית (Hebrew)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
