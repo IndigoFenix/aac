@@ -9,7 +9,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
 
   // Show loading spinner while checking auth status
   if (isLoading) {
@@ -26,6 +26,11 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   // Redirect to login if not authenticated
   if (!isAuthenticated) {
     return <Redirect to="/login" />;
+  }
+
+  // System admins go to admin panel unless in customer support mode
+  if (user?.isSystemAdmin && !user?.supportSession) {
+    return <Redirect to="/admin" />;
   }
 
   // Render protected content

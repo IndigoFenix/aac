@@ -1846,7 +1846,7 @@ import {
     list: async (ctx, { offset, limit }): Promise<ListResult<any>> => {
       const userId = getUserId(ctx);
 
-      // Show events for the next 90 days by default
+      // Show events for the next 90 days
       const startDate = new Date();
       startDate.setHours(0, 0, 0, 0);
       const endDate = new Date();
@@ -1863,11 +1863,19 @@ import {
 
       const events = await calendarRepository.getEventsForAttendees(attendeeKeys, startDate, endDate);
 
-      const paged = events.slice(offset, offset + limit);
+      // Expand recurring events into individual occurrences with concrete dates
+      const expanded = calendarRepository.expandRecurringEvents(
+        events, startDate, endDate
+      );
+
+      const paged = expanded.slice(offset, offset + limit);
       return {
-        items: paged.map(e => toMemoryValue(e)),
-        total: events.length,
-        keys: paged.map(e => e.id),
+        items: paged.map(({ event, date }) => ({
+          ...toMemoryValue(event),
+          occurrenceDate: date.toISOString(),
+        })),
+        total: expanded.length,
+        keys: paged.map(({ event }) => event.id),
       };
     },
 
@@ -1939,7 +1947,8 @@ import {
       id: { id: "id", type: "string" },
       title: { id: "title", type: "string" },
       description: { id: "description", type: "string" },
-      startTime: { id: "startTime", type: "string", format: "ISO 8601 datetime" },
+      occurrenceDate: { id: "occurrenceDate", type: "string", format: "ISO 8601 datetime", description: "The actual date this occurrence falls on (accounts for recurrence expansion)." },
+      startTime: { id: "startTime", type: "string", format: "ISO 8601 datetime", description: "Original event start time (for recurring events, this is the first occurrence)." },
       endTime: { id: "endTime", type: "string", format: "ISO 8601 datetime" },
       allDay: { id: "allDay", type: "boolean" },
       repeatType: { id: "repeatType", type: "string", enum: ["none", "daily", "weekly", "monthly_date", "monthly_weekday"], description: "'none'=one-time, 'daily'=every day, 'weekly'=specific days each week, 'monthly_date'=same date each month, 'monthly_weekday'=Nth weekday each month (e.g., 2nd Tuesday)." },
@@ -1955,7 +1964,7 @@ import {
     id: "Context_Calendar",
     type: "map",
     title: "Calendar Events",
-    description: "Calendar events for the current user and selected organization. Upcoming 90 days.",
+    description: "Calendar events for the next 90 days, with recurring events expanded into individual occurrences. Each entry has an occurrenceDate showing when it actually happens. Use Context_CalendarAlerts for today's priority events.",
     opened: true,
     displayKey: "title",
     values: calendarEventSchema,

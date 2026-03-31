@@ -50,6 +50,7 @@ class LicenseService {
         name: data.instituteName,
         type: data.instituteType,
         logoUrl: data.instituteLogo || null,
+        language: data.language || null,
       });
       instituteId = institute.id;
     }

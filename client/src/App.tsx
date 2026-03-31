@@ -34,8 +34,8 @@ import LandingPage from "./components/landing-page/LandingPage";
 
 // Component to redirect authenticated users away from login page
 function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
-  
+  const { user, isAuthenticated, isLoading } = useAuth();
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -43,12 +43,13 @@ function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-  
-  // If already authenticated, redirect to home
+
+  // If already authenticated, redirect to the appropriate page
   if (isAuthenticated) {
-    return <Redirect to="/home" />;
+    const dest = (user?.isSystemAdmin && !user?.supportSession) ? '/admin' : '/home';
+    return <Redirect to={dest} />;
   }
-  
+
   return <>{children}</>;
 }
 

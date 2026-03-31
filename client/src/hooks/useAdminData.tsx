@@ -499,6 +499,7 @@ export interface CreateLicenseData {
   createInstitute?: boolean;
   instituteName?: string;
   instituteType?: 'school' | 'clinic' | 'family';
+  language?: string;
   instituteLogo?: File;
 }
 

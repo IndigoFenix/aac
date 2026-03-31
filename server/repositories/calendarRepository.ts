@@ -174,6 +174,104 @@ export class CalendarRepository {
       attendees: attendeesByEvent.get(event.id) || [],
     }));
   }
+
+  /**
+   * Expand recurring events into individual occurrence dates within a date range.
+   * Non-repeating events are returned as-is. Recurring events generate one entry
+   * per occurrence date within [rangeStart, rangeEnd].
+   */
+  expandRecurringEvents(
+    events: CalendarEvent[],
+    rangeStart: Date,
+    rangeEnd: Date
+  ): { event: CalendarEvent; date: Date }[] {
+    const result: { event: CalendarEvent; date: Date }[] = [];
+
+    for (const ev of events) {
+      const evStart = new Date(ev.startTime);
+
+      if (ev.repeatType === 'none') {
+        result.push({ event: ev, date: evStart });
+        continue;
+      }
+
+      const repeatEnd = ev.repeatEndDate ? new Date(ev.repeatEndDate) : rangeEnd;
+      const limit = new Date(Math.min(repeatEnd.getTime(), rangeEnd.getTime()));
+
+      if (ev.repeatType === 'daily') {
+        const cursor = new Date(Math.max(evStart.getTime(), rangeStart.getTime()));
+        cursor.setHours(evStart.getHours(), evStart.getMinutes(), 0, 0);
+        while (cursor <= limit) {
+          result.push({ event: ev, date: new Date(cursor) });
+          cursor.setDate(cursor.getDate() + 1);
+        }
+      } else if (ev.repeatType === 'weekly' && ev.repeatDays) {
+        const days = ev.repeatDays as number[];
+        const interval = (ev as any).repeatInterval || 1;
+        const cursor = new Date(Math.max(evStart.getTime(), rangeStart.getTime()));
+        cursor.setHours(evStart.getHours(), evStart.getMinutes(), 0, 0);
+        const evWeekStart = new Date(evStart);
+        evWeekStart.setDate(evWeekStart.getDate() - evWeekStart.getDay());
+        cursor.setDate(cursor.getDate() - cursor.getDay());
+        if (interval > 1) {
+          const weeksDiff = Math.round((cursor.getTime() - evWeekStart.getTime()) / (7 * 86400000));
+          const offset = weeksDiff % interval;
+          if (offset !== 0) cursor.setDate(cursor.getDate() + (interval - offset) * 7);
+        }
+        while (cursor <= limit) {
+          for (const day of days) {
+            const d = new Date(cursor);
+            d.setDate(d.getDate() + day);
+            if (d >= rangeStart && d <= limit && d >= evStart) {
+              result.push({ event: ev, date: new Date(d) });
+            }
+          }
+          cursor.setDate(cursor.getDate() + 7 * interval);
+        }
+      } else if (ev.repeatType === 'monthly_date') {
+        const dayOfMonth = evStart.getDate();
+        const cursor = new Date(Math.max(evStart.getTime(), rangeStart.getTime()));
+        cursor.setHours(evStart.getHours(), evStart.getMinutes(), 0, 0);
+        cursor.setDate(1);
+        while (cursor <= limit) {
+          const d = new Date(cursor);
+          d.setDate(dayOfMonth);
+          if (d.getMonth() === cursor.getMonth() && d >= rangeStart && d <= limit && d >= evStart) {
+            result.push({ event: ev, date: new Date(d) });
+          }
+          cursor.setMonth(cursor.getMonth() + 1);
+        }
+      } else if (ev.repeatType === 'monthly_weekday') {
+        const targetDay = evStart.getDay();
+        const monthWeek = (ev as any).repeatMonthWeek || 1;
+        const cursor = new Date(Math.max(evStart.getTime(), rangeStart.getTime()));
+        cursor.setHours(evStart.getHours(), evStart.getMinutes(), 0, 0);
+        cursor.setDate(1);
+        while (cursor <= limit) {
+          let d: Date | null = null;
+          if (monthWeek === -1) {
+            const lastDay = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+            lastDay.setHours(evStart.getHours(), evStart.getMinutes(), 0, 0);
+            while (lastDay.getDay() !== targetDay) lastDay.setDate(lastDay.getDate() - 1);
+            d = lastDay;
+          } else {
+            const first = new Date(cursor);
+            while (first.getDay() !== targetDay) first.setDate(first.getDate() + 1);
+            first.setDate(first.getDate() + (monthWeek - 1) * 7);
+            first.setHours(evStart.getHours(), evStart.getMinutes(), 0, 0);
+            if (first.getMonth() === cursor.getMonth()) d = first;
+          }
+          if (d && d >= rangeStart && d <= limit && d >= evStart) {
+            result.push({ event: ev, date: new Date(d) });
+          }
+          cursor.setMonth(cursor.getMonth() + 1);
+        }
+      }
+    }
+
+    result.sort((a, b) => a.date.getTime() - b.date.getTime());
+    return result;
+  }
 }
 
 export const calendarRepository = new CalendarRepository();
