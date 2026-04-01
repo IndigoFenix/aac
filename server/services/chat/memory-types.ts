@@ -176,6 +176,10 @@ export interface MemoryState {
   visible: string[];
   /** Pagination settings per container path */
   page: Record<string, { offset: number; limit: number }>;
+  /** When true, the memory prompt is rendered once and frozen until compression */
+  staticPromptMode?: boolean;
+  /** Cached rendered prompt — set on first render in static mode, cleared on compression */
+  _cachedPrompt?: string;
   /** Optional: cached load state for session restoration */
   loadStateCache?: {
     loaded: string[];

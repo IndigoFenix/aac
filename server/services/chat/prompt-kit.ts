@@ -85,13 +85,33 @@ export interface NlpSchema {
         const memoryTool = buildMemoryTool();
         tools.push(memoryTool);
 
-        const memoryPrompt = renderMemoryVisualization(
-            ctx.agent.memoryFields,
-            ctx.memoryValues,
-            ctx.memoryState,
-            { maxPreviewScalars: 100 }
-        );
+        let memoryPrompt: string;
+        if (ctx.memoryState?.staticPromptMode && ctx.memoryState._cachedPrompt) {
+            // Static mode: reuse the frozen prompt from first render
+            memoryPrompt = ctx.memoryState._cachedPrompt;
+            console.log('[buildPromptAndTools] Using CACHED memory prompt (static mode)');
+        } else {
+            // Render normally (dynamic mode, OR first render in static mode)
+            memoryPrompt = renderMemoryVisualization(
+                ctx.agent.memoryFields,
+                ctx.memoryValues,
+                ctx.memoryState,
+                { maxPreviewScalars: 100 }
+            );
+            // In static mode, freeze this render for subsequent calls
+            if (ctx.memoryState?.staticPromptMode) {
+                ctx.memoryState._cachedPrompt = memoryPrompt;
+                console.log('[buildPromptAndTools] FROZE memory prompt for static mode');
+            }
+        }
         startPrompt += memoryPrompt;
+
+        // TEMPORARY: pad system prompt to test if cache threshold is the issue
+        // Remove this once caching is confirmed working
+        if (process.env.PAD_SYSTEM_PROMPT === 'true') {
+            const padding = '\n\n' + Array(100).fill('<!-- The following reference material is included for context. Augmentative and Alternative Communication (AAC) encompasses all forms of communication other than oral speech that are used to express thoughts, needs, wants, and ideas. People with severe speech or language problems rely on AAC to supplement existing speech or replace speech that is not functional. Special augmentative aids such as picture and symbol communication boards and electronic devices are available to help people express themselves. -->').join('\n');
+            startPrompt += padding;
+        }
 
         // Debug: log what the AI sees for Student_* arrays
         memDebugSeparator('buildPromptAndTools — AI memory view');

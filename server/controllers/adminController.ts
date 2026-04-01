@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { adminService, userService, creditService } from "../services";
 import { mfaService } from "../services/mfaService";
+import { activityLogService } from "../services/activityLogService";
 import { userRepository, interpretationRepository, settingsRepository, instituteRepository } from "../repositories";
 import { insertApiProviderSchemaWithValidation } from "@shared/schema";
 import { MODEL_OPTIONS, USE_CASES, type UseCaseKey, type LLMConfigValue } from "@shared/llm-options";
@@ -58,6 +59,12 @@ export class AdminController {
       }
 
       res.json({ success: true, user: updatedUser });
+      activityLogService.log({
+        userId: (req as any).user?.id,
+        eventType: "update",
+        subjectType1: "user",
+        subjectId1: req.params.id,
+      });
     } catch (error: any) {
       console.error("Error updating user:", error);
       if (error.message === "Invalid user type") {
@@ -88,6 +95,13 @@ export class AdminController {
         res.json({
           success: true,
           message: "User deleted successfully",
+        });
+        activityLogService.log({
+          userId: (req as any).user?.id,
+          eventType: "delete",
+          subjectType1: "user",
+          subjectId1: userId,
+          details: { email: user.email },
         });
       } else {
         res.status(500).json({

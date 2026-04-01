@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import { boardRepository } from "../repositories";
 import { analyticsService } from "../services/analyticsService";
+import { activityLogService } from "../services/activityLogService";
 
 const saveBoardSchema = z.object({
   name: z.string().min(1),
@@ -27,6 +28,13 @@ export class BoardController {
       });
 
       res.status(201).json(board);
+
+      activityLogService.log({
+        userId: req.user!.id,
+        eventType: "create",
+        subjectType1: "board",
+        subjectId1: board.id,
+      });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
@@ -108,6 +116,13 @@ export class BoardController {
 
       const updated = await boardRepository.updateBoard(board.id, updates);
       res.json(updated);
+
+      activityLogService.log({
+        userId: req.user!.id,
+        eventType: "update",
+        subjectType1: "board",
+        subjectId1: req.params.id,
+      });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }

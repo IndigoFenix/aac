@@ -593,6 +593,12 @@ import {
               }
           }
 
+          // In static prompt mode, clear the cached prompt so it re-renders
+          // with current data on the next LLM call (incorporating any new opened fields).
+          if (this.chatState.memoryState?.staticPromptMode) {
+              delete this.chatState.memoryState._cachedPrompt;
+          }
+
           return { removed: removalSet.size, warnings, historyLength: history.length };
       }
 

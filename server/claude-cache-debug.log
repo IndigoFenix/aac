@@ -1,0 +1,1032 @@
+{
+  "timestamp": "2026-04-01T10:30:28.164Z",
+  "model": "claude-haiku-4-5-20251001",
+  "hasRequestCacheControl": true,
+  "systemLength": 12040,
+  "systemHasBlockCacheControl": false,
+  "toolCount": 2,
+  "toolNames": [
+    "manageMemory",
+    "pruneMessages"
+  ],
+  "lastToolHasCacheControl": false,
+  "messageCount": 1,
+  "messageRoles": [
+    "user"
+  ],
+  "messagesWithCacheControl": 0
+}
+---PARAMS_END---
+{
+  "input_tokens": 19,
+  "cache_creation_input_tokens": 4683,
+  "cache_read_input_tokens": 0,
+  "cache_creation": {
+    "ephemeral_5m_input_tokens": 4683,
+    "ephemeral_1h_input_tokens": 0
+  },
+  "output_tokens": 198,
+  "service_tier": "standard",
+  "inference_geo": "not_available"
+}
+===END===
+
+{
+  "timestamp": "2026-04-01T10:30:32.207Z",
+  "model": "claude-haiku-4-5-20251001",
+  "hasRequestCacheControl": true,
+  "systemLength": 12040,
+  "systemHasBlockCacheControl": false,
+  "toolCount": 2,
+  "toolNames": [
+    "manageMemory",
+    "pruneMessages"
+  ],
+  "lastToolHasCacheControl": false,
+  "messageCount": 3,
+  "messageRoles": [
+    "user",
+    "assistant",
+    "user"
+  ],
+  "messagesWithCacheControl": 0
+}
+---PARAMS_END---
+{
+  "input_tokens": 21,
+  "cache_creation_input_tokens": 5953,
+  "cache_read_input_tokens": 0,
+  "cache_creation": {
+    "ephemeral_5m_input_tokens": 5953,
+    "ephemeral_1h_input_tokens": 0
+  },
+  "output_tokens": 61,
+  "service_tier": "standard",
+  "inference_geo": "not_available"
+}
+===END===
+
+{
+  "timestamp": "2026-04-01T10:30:33.292Z",
+  "model": "claude-haiku-4-5-20251001",
+  "hasRequestCacheControl": true,
+  "systemLength": 12040,
+  "systemHasBlockCacheControl": false,
+  "toolCount": 2,
+  "toolNames": [
+    "manageMemory",
+    "pruneMessages"
+  ],
+  "lastToolHasCacheControl": false,
+  "messageCount": 5,
+  "messageRoles": [
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user"
+  ],
+  "messagesWithCacheControl": 0
+}
+---PARAMS_END---
+{
+  "input_tokens": 21,
+  "cache_creation_input_tokens": 6218,
+  "cache_read_input_tokens": 0,
+  "cache_creation": {
+    "ephemeral_5m_input_tokens": 6218,
+    "ephemeral_1h_input_tokens": 0
+  },
+  "output_tokens": 55,
+  "service_tier": "standard",
+  "inference_geo": "not_available"
+}
+===END===
+
+{
+  "timestamp": "2026-04-01T10:30:34.153Z",
+  "model": "claude-haiku-4-5-20251001",
+  "hasRequestCacheControl": true,
+  "systemLength": 12040,
+  "systemHasBlockCacheControl": false,
+  "toolCount": 2,
+  "toolNames": [
+    "manageMemory",
+    "pruneMessages"
+  ],
+  "lastToolHasCacheControl": false,
+  "messageCount": 7,
+  "messageRoles": [
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user"
+  ],
+  "messagesWithCacheControl": 0
+}
+---PARAMS_END---
+{
+  "input_tokens": 21,
+  "cache_creation_input_tokens": 6406,
+  "cache_read_input_tokens": 0,
+  "cache_creation": {
+    "ephemeral_5m_input_tokens": 6406,
+    "ephemeral_1h_input_tokens": 0
+  },
+  "output_tokens": 56,
+  "service_tier": "standard",
+  "inference_geo": "not_available"
+}
+===END===
+
+{
+  "timestamp": "2026-04-01T10:30:35.516Z",
+  "model": "claude-haiku-4-5-20251001",
+  "hasRequestCacheControl": true,
+  "systemLength": 12040,
+  "systemHasBlockCacheControl": false,
+  "toolCount": 2,
+  "toolNames": [
+    "manageMemory",
+    "pruneMessages"
+  ],
+  "lastToolHasCacheControl": false,
+  "messageCount": 9,
+  "messageRoles": [
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user"
+  ],
+  "messagesWithCacheControl": 0
+}
+---PARAMS_END---
+{
+  "input_tokens": 21,
+  "cache_creation_input_tokens": 6641,
+  "cache_read_input_tokens": 0,
+  "cache_creation": {
+    "ephemeral_5m_input_tokens": 6641,
+    "ephemeral_1h_input_tokens": 0
+  },
+  "output_tokens": 132,
+  "service_tier": "standard",
+  "inference_geo": "not_available"
+}
+===END===
+
+{
+  "timestamp": "2026-04-01T10:30:37.207Z",
+  "model": "claude-haiku-4-5-20251001",
+  "hasRequestCacheControl": true,
+  "systemLength": 12040,
+  "systemHasBlockCacheControl": false,
+  "toolCount": 2,
+  "toolNames": [
+    "manageMemory",
+    "pruneMessages"
+  ],
+  "lastToolHasCacheControl": false,
+  "messageCount": 11,
+  "messageRoles": [
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user"
+  ],
+  "messagesWithCacheControl": 0
+}
+---PARAMS_END---
+{
+  "input_tokens": 21,
+  "cache_creation_input_tokens": 7122,
+  "cache_read_input_tokens": 0,
+  "cache_creation": {
+    "ephemeral_5m_input_tokens": 7122,
+    "ephemeral_1h_input_tokens": 0
+  },
+  "output_tokens": 86,
+  "service_tier": "standard",
+  "inference_geo": "not_available"
+}
+===END===
+
+{
+  "timestamp": "2026-04-01T10:30:38.208Z",
+  "model": "claude-haiku-4-5-20251001",
+  "hasRequestCacheControl": true,
+  "systemLength": 12040,
+  "systemHasBlockCacheControl": false,
+  "toolCount": 2,
+  "toolNames": [
+    "manageMemory",
+    "pruneMessages"
+  ],
+  "lastToolHasCacheControl": false,
+  "messageCount": 13,
+  "messageRoles": [
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user"
+  ],
+  "messagesWithCacheControl": 0
+}
+---PARAMS_END---
+{
+  "input_tokens": 21,
+  "cache_creation_input_tokens": 7324,
+  "cache_read_input_tokens": 0,
+  "cache_creation": {
+    "ephemeral_5m_input_tokens": 7324,
+    "ephemeral_1h_input_tokens": 0
+  },
+  "output_tokens": 70,
+  "service_tier": "standard",
+  "inference_geo": "not_available"
+}
+===END===
+
+{
+  "timestamp": "2026-04-01T10:30:39.326Z",
+  "model": "claude-haiku-4-5-20251001",
+  "hasRequestCacheControl": true,
+  "systemLength": 12040,
+  "systemHasBlockCacheControl": false,
+  "toolCount": 2,
+  "toolNames": [
+    "manageMemory",
+    "pruneMessages"
+  ],
+  "lastToolHasCacheControl": false,
+  "messageCount": 15,
+  "messageRoles": [
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user"
+  ],
+  "messagesWithCacheControl": 0
+}
+---PARAMS_END---
+{
+  "input_tokens": 21,
+  "cache_creation_input_tokens": 7478,
+  "cache_read_input_tokens": 0,
+  "cache_creation": {
+    "ephemeral_5m_input_tokens": 7478,
+    "ephemeral_1h_input_tokens": 0
+  },
+  "output_tokens": 62,
+  "service_tier": "standard",
+  "inference_geo": "not_available"
+}
+===END===
+
+{
+  "timestamp": "2026-04-01T10:30:40.451Z",
+  "model": "claude-haiku-4-5-20251001",
+  "hasRequestCacheControl": true,
+  "systemLength": 12040,
+  "systemHasBlockCacheControl": false,
+  "toolCount": 2,
+  "toolNames": [
+    "manageMemory",
+    "pruneMessages"
+  ],
+  "lastToolHasCacheControl": false,
+  "messageCount": 17,
+  "messageRoles": [
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user"
+  ],
+  "messagesWithCacheControl": 0
+}
+---PARAMS_END---
+{
+  "input_tokens": 21,
+  "cache_creation_input_tokens": 7608,
+  "cache_read_input_tokens": 0,
+  "cache_creation": {
+    "ephemeral_5m_input_tokens": 7608,
+    "ephemeral_1h_input_tokens": 0
+  },
+  "output_tokens": 56,
+  "service_tier": "standard",
+  "inference_geo": "not_available"
+}
+===END===
+
+{
+  "timestamp": "2026-04-01T10:30:43.573Z",
+  "model": "claude-haiku-4-5-20251001",
+  "hasRequestCacheControl": true,
+  "systemLength": 12040,
+  "systemHasBlockCacheControl": false,
+  "toolCount": 2,
+  "toolNames": [
+    "manageMemory",
+    "pruneMessages"
+  ],
+  "lastToolHasCacheControl": false,
+  "messageCount": 19,
+  "messageRoles": [
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user"
+  ],
+  "messagesWithCacheControl": 0
+}
+---PARAMS_END---
+{
+  "input_tokens": 21,
+  "cache_creation_input_tokens": 7720,
+  "cache_read_input_tokens": 0,
+  "cache_creation": {
+    "ephemeral_5m_input_tokens": 7720,
+    "ephemeral_1h_input_tokens": 0
+  },
+  "output_tokens": 69,
+  "service_tier": "standard",
+  "inference_geo": "not_available"
+}
+===END===
+
+{
+  "timestamp": "2026-04-01T10:30:44.639Z",
+  "model": "claude-haiku-4-5-20251001",
+  "hasRequestCacheControl": true,
+  "systemLength": 12276,
+  "systemHasBlockCacheControl": false,
+  "toolCount": 2,
+  "toolNames": [
+    "manageMemory",
+    "pruneMessages"
+  ],
+  "lastToolHasCacheControl": false,
+  "messageCount": 21,
+  "messageRoles": [
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user"
+  ],
+  "messagesWithCacheControl": 0
+}
+---PARAMS_END---
+{
+  "input_tokens": 21,
+  "cache_creation_input_tokens": 7920,
+  "cache_read_input_tokens": 0,
+  "cache_creation": {
+    "ephemeral_5m_input_tokens": 7920,
+    "ephemeral_1h_input_tokens": 0
+  },
+  "output_tokens": 60,
+  "service_tier": "standard",
+  "inference_geo": "not_available"
+}
+===END===
+
+{
+  "timestamp": "2026-04-01T10:30:55.211Z",
+  "model": "claude-haiku-4-5-20251001",
+  "hasRequestCacheControl": true,
+  "systemLength": 12276,
+  "systemHasBlockCacheControl": false,
+  "toolCount": 2,
+  "toolNames": [
+    "manageMemory",
+    "pruneMessages"
+  ],
+  "lastToolHasCacheControl": false,
+  "messageCount": 23,
+  "messageRoles": [
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user"
+  ],
+  "messagesWithCacheControl": 0
+}
+---PARAMS_END---
+{
+  "input_tokens": 21,
+  "cache_creation_input_tokens": 8044,
+  "cache_read_input_tokens": 0,
+  "cache_creation": {
+    "ephemeral_5m_input_tokens": 8044,
+    "ephemeral_1h_input_tokens": 0
+  },
+  "output_tokens": 76,
+  "service_tier": "standard",
+  "inference_geo": "not_available"
+}
+===END===
+
+{
+  "timestamp": "2026-04-01T10:31:05.017Z",
+  "model": "claude-haiku-4-5-20251001",
+  "hasRequestCacheControl": true,
+  "systemLength": 12276,
+  "systemHasBlockCacheControl": false,
+  "toolCount": 2,
+  "toolNames": [
+    "manageMemory",
+    "pruneMessages"
+  ],
+  "lastToolHasCacheControl": false,
+  "messageCount": 25,
+  "messageRoles": [
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user"
+  ],
+  "messagesWithCacheControl": 0
+}
+---PARAMS_END---
+{
+  "input_tokens": 21,
+  "cache_creation_input_tokens": 8508,
+  "cache_read_input_tokens": 0,
+  "cache_creation": {
+    "ephemeral_5m_input_tokens": 8508,
+    "ephemeral_1h_input_tokens": 0
+  },
+  "output_tokens": 68,
+  "service_tier": "standard",
+  "inference_geo": "not_available"
+}
+===END===
+
+{
+  "timestamp": "2026-04-01T10:31:14.319Z",
+  "model": "claude-haiku-4-5-20251001",
+  "hasRequestCacheControl": true,
+  "systemLength": 12276,
+  "systemHasBlockCacheControl": false,
+  "toolCount": 2,
+  "toolNames": [
+    "manageMemory",
+    "pruneMessages"
+  ],
+  "lastToolHasCacheControl": false,
+  "messageCount": 27,
+  "messageRoles": [
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user"
+  ],
+  "messagesWithCacheControl": 0
+}
+---PARAMS_END---
+{
+  "input_tokens": 21,
+  "cache_creation_input_tokens": 8656,
+  "cache_read_input_tokens": 0,
+  "cache_creation": {
+    "ephemeral_5m_input_tokens": 8656,
+    "ephemeral_1h_input_tokens": 0
+  },
+  "output_tokens": 55,
+  "service_tier": "standard",
+  "inference_geo": "not_available"
+}
+===END===
+
+{
+  "timestamp": "2026-04-01T10:31:24.606Z",
+  "model": "claude-haiku-4-5-20251001",
+  "hasRequestCacheControl": true,
+  "systemLength": 12276,
+  "systemHasBlockCacheControl": false,
+  "toolCount": 2,
+  "toolNames": [
+    "manageMemory",
+    "pruneMessages"
+  ],
+  "lastToolHasCacheControl": false,
+  "messageCount": 29,
+  "messageRoles": [
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user"
+  ],
+  "messagesWithCacheControl": 0
+}
+---PARAMS_END---
+{
+  "input_tokens": 21,
+  "cache_creation_input_tokens": 8882,
+  "cache_read_input_tokens": 0,
+  "cache_creation": {
+    "ephemeral_5m_input_tokens": 8882,
+    "ephemeral_1h_input_tokens": 0
+  },
+  "output_tokens": 57,
+  "service_tier": "standard",
+  "inference_geo": "not_available"
+}
+===END===
+
+{
+  "timestamp": "2026-04-01T10:31:34.880Z",
+  "model": "claude-haiku-4-5-20251001",
+  "hasRequestCacheControl": true,
+  "systemLength": 12989,
+  "systemHasBlockCacheControl": false,
+  "toolCount": 2,
+  "toolNames": [
+    "manageMemory",
+    "pruneMessages"
+  ],
+  "lastToolHasCacheControl": false,
+  "messageCount": 23,
+  "messageRoles": [
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user"
+  ],
+  "messagesWithCacheControl": 0
+}
+---PARAMS_END---
+{
+  "input_tokens": 21,
+  "cache_creation_input_tokens": 7291,
+  "cache_read_input_tokens": 0,
+  "cache_creation": {
+    "ephemeral_5m_input_tokens": 7291,
+    "ephemeral_1h_input_tokens": 0
+  },
+  "output_tokens": 96,
+  "service_tier": "standard",
+  "inference_geo": "not_available"
+}
+===END===
+
+{
+  "timestamp": "2026-04-01T10:31:45.796Z",
+  "model": "claude-haiku-4-5-20251001",
+  "hasRequestCacheControl": true,
+  "systemLength": 12989,
+  "systemHasBlockCacheControl": false,
+  "toolCount": 2,
+  "toolNames": [
+    "manageMemory",
+    "pruneMessages"
+  ],
+  "lastToolHasCacheControl": false,
+  "messageCount": 25,
+  "messageRoles": [
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user"
+  ],
+  "messagesWithCacheControl": 0
+}
+---PARAMS_END---
+{
+  "input_tokens": 21,
+  "cache_creation_input_tokens": 7618,
+  "cache_read_input_tokens": 0,
+  "cache_creation": {
+    "ephemeral_5m_input_tokens": 7618,
+    "ephemeral_1h_input_tokens": 0
+  },
+  "output_tokens": 55,
+  "service_tier": "standard",
+  "inference_geo": "not_available"
+}
+===END===
+
+{
+  "timestamp": "2026-04-01T10:31:54.546Z",
+  "model": "claude-haiku-4-5-20251001",
+  "hasRequestCacheControl": true,
+  "systemLength": 12989,
+  "systemHasBlockCacheControl": false,
+  "toolCount": 2,
+  "toolNames": [
+    "manageMemory",
+    "pruneMessages"
+  ],
+  "lastToolHasCacheControl": false,
+  "messageCount": 27,
+  "messageRoles": [
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user"
+  ],
+  "messagesWithCacheControl": 0
+}
+---PARAMS_END---
+{
+  "input_tokens": 21,
+  "cache_creation_input_tokens": 7785,
+  "cache_read_input_tokens": 0,
+  "cache_creation": {
+    "ephemeral_5m_input_tokens": 7785,
+    "ephemeral_1h_input_tokens": 0
+  },
+  "output_tokens": 80,
+  "service_tier": "standard",
+  "inference_geo": "not_available"
+}
+===END===
+
+{
+  "timestamp": "2026-04-01T10:32:03.861Z",
+  "model": "claude-haiku-4-5-20251001",
+  "hasRequestCacheControl": true,
+  "systemLength": 12989,
+  "systemHasBlockCacheControl": false,
+  "toolCount": 2,
+  "toolNames": [
+    "manageMemory",
+    "pruneMessages"
+  ],
+  "lastToolHasCacheControl": false,
+  "messageCount": 29,
+  "messageRoles": [
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user"
+  ],
+  "messagesWithCacheControl": 0
+}
+---PARAMS_END---
+{
+  "input_tokens": 21,
+  "cache_creation_input_tokens": 7969,
+  "cache_read_input_tokens": 0,
+  "cache_creation": {
+    "ephemeral_5m_input_tokens": 7969,
+    "ephemeral_1h_input_tokens": 0
+  },
+  "output_tokens": 54,
+  "service_tier": "standard",
+  "inference_geo": "not_available"
+}
+===END===
+
+{
+  "timestamp": "2026-04-01T10:32:13.351Z",
+  "model": "claude-haiku-4-5-20251001",
+  "hasRequestCacheControl": true,
+  "systemLength": 13056,
+  "systemHasBlockCacheControl": false,
+  "toolCount": 2,
+  "toolNames": [
+    "manageMemory",
+    "pruneMessages"
+  ],
+  "lastToolHasCacheControl": false,
+  "messageCount": 23,
+  "messageRoles": [
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user"
+  ],
+  "messagesWithCacheControl": 0
+}
+---PARAMS_END---
+{
+  "input_tokens": 21,
+  "cache_creation_input_tokens": 7279,
+  "cache_read_input_tokens": 0,
+  "cache_creation": {
+    "ephemeral_5m_input_tokens": 7279,
+    "ephemeral_1h_input_tokens": 0
+  },
+  "output_tokens": 56,
+  "service_tier": "standard",
+  "inference_geo": "not_available"
+}
+===END===
+
+{
+  "timestamp": "2026-04-01T10:32:22.452Z",
+  "model": "claude-haiku-4-5-20251001",
+  "hasRequestCacheControl": true,
+  "systemLength": 13195,
+  "systemHasBlockCacheControl": false,
+  "toolCount": 0,
+  "toolNames": [],
+  "lastToolHasCacheControl": false,
+  "messageCount": 25,
+  "messageRoles": [
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user",
+    "assistant",
+    "user"
+  ],
+  "messagesWithCacheControl": 0
+}
+---PARAMS_END---

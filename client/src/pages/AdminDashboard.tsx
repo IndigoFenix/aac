@@ -12,10 +12,11 @@ import { ModelSettings } from '@/components/admin/ModelSettings';
 import { SessionHistory } from '@/components/admin/SessionHistory';
 import { ContactInquiries } from '@/components/admin/ContactInquiries';
 import { LicenseList } from '@/components/admin/LicenseList';
+import { ActivityLog } from '@/components/admin/ActivityLog';
 import { cn } from '@/lib/utils';
 import { useLanguage } from '@/contexts/LanguageContext';
 
-type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts' | 'licenses';
+type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts' | 'licenses' | 'activity-log';
 
 export function AdminDashboard() {
   const [location, navigate] = useLocation();
@@ -30,6 +31,7 @@ export function AdminDashboard() {
     if (location.startsWith('/admin/sessions')) return 'sessions';
     if (location.startsWith('/admin/contacts')) return 'contacts';
     if (location.startsWith('/admin/licenses')) return 'licenses';
+    if (location.startsWith('/admin/activity-log')) return 'activity-log';
     if (location.startsWith('/admin/personas')) return 'personas';
     return 'personas'; // default
   };
@@ -57,6 +59,8 @@ export function AdminDashboard() {
       navigate('/admin/contacts');
     } else if (section === 'licenses') {
       navigate('/admin/licenses');
+    } else if (section === 'activity-log') {
+      navigate('/admin/activity-log');
     }
   };
 
@@ -93,6 +97,10 @@ export function AdminDashboard() {
 
     if (activeSection === 'licenses') {
       return <LicenseList />;
+    }
+
+    if (activeSection === 'activity-log') {
+      return <ActivityLog />;
     }
 
     return null;

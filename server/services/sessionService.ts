@@ -1001,9 +1001,13 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     template.corePrompt = personaResult.prompt;
   }
   
+  // Static prompt mode: system prompt shows only schema, data lives in tool responses.
+  // Enable via STATIC_MEMORY_PROMPT=true env var. Defaults to dynamic (current behavior).
+  const useStaticMemoryPrompt = process.env.STATIC_MEMORY_PROMPT === 'true';
+
   const newChatState: ChatState = {
     history: [],
-    memoryState: { visible: [], page: {} },
+    memoryState: { visible: [], page: {}, staticPromptMode: useStaticMemoryPrompt || undefined },
     conversationSummary: "",
     openedTopics: [],
   };
@@ -1237,6 +1241,8 @@ Example button with custom symbol:
 
   // Inject mode-specific context into memory values
   injectModeContext(memoryValues, feature, featureContext, sessionId);
+
+
 
   // Inject flagged calendar events so the AI is aware of important upcoming/recent events
   if (!isAACFeature && licensePerms?.calendar && context.user) {

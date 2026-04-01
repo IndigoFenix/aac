@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { studentService } from "../services";
 import { instituteRepository } from "../repositories";
+import { activityLogService } from "../services/activityLogService";
 
 export class StudentController {
   /**
@@ -145,6 +146,15 @@ export class StudentController {
           age: studentService.calculateAge(student.birthDate),
         },
       });
+
+      activityLogService.log({
+        instituteId: instituteIds[0],
+        userId: currentUser.id,
+        eventType: "create",
+        subjectType1: "student",
+        subjectId1: student.id,
+        details: { name: studentBody.firstName || studentBody.name },
+      });
     } catch (error: any) {
       console.error("Error creating student:", error);
       res
@@ -179,6 +189,13 @@ export class StudentController {
             ...updatedStudent,
             age: studentService.calculateAge(updatedStudent.birthDate),
           },
+        });
+
+        activityLogService.log({
+          userId: currentUser.id,
+          eventType: "update",
+          subjectType1: "student",
+          subjectId1: studentId,
         });
       } else {
         res.status(404).json({ success: false, message: "student not found" });
@@ -216,6 +233,13 @@ export class StudentController {
 
       if (deleted) {
         res.json({ success: true, message: "student deleted successfully" });
+
+        activityLogService.log({
+          userId: currentUser.id,
+          eventType: "delete",
+          subjectType1: "student",
+          subjectId1: studentId,
+        });
       } else {
         res.status(404).json({ success: false, message: "student not found" });
       }
@@ -280,6 +304,17 @@ export class StudentController {
         message: "User linked successfully",
         link,
       });
+
+      activityLogService.log({
+        instituteId: instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "link",
+        subjectType1: "student",
+        subjectId1: studentId,
+        subjectType2: "user",
+        subjectId2: targetUserId,
+        details: { role: role || "caregiver" },
+      });
     } catch (error: any) {
       console.error("Error linking user:", error);
       res
@@ -327,6 +362,16 @@ export class StudentController {
 
       if (unlinked) {
         res.json({ success: true, message: "User unlinked successfully" });
+
+        activityLogService.log({
+          instituteId: instituteId ?? null,
+          userId: currentUser.id,
+          eventType: "unlink",
+          subjectType1: "student",
+          subjectId1: studentId,
+          subjectType2: "user",
+          subjectId2: targetUserId,
+        });
       } else {
         res.status(404).json({ success: false, message: "Link not found" });
       }

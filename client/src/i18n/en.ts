@@ -2204,7 +2204,39 @@ export const en = {
       activeMode: "Customer Support Mode Active",
       exit: "Exit Support Mode",
       login: "Login as Support"
-    }
+    },
+    activityLog: {
+      title: "Activity Log",
+      subtitle: "View all data changes and report access across the system.",
+      noLogs: "No activity logs found",
+      filters: {
+        allEvents: "All Events",
+        allSubjects: "All Subjects",
+        allSources: "All Sources",
+        aiOnly: "AI Only",
+        humanOnly: "Human Only",
+        clear: "Clear",
+      },
+      eventTypes: {
+        create: "Created",
+        update: "Updated",
+        delete: "Deleted",
+        link: "Linked",
+        unlink: "Unlinked",
+        view: "Viewed",
+        finalize: "Finalized",
+        revision: "Revised",
+      },
+      columns: {
+        date: "Date",
+        user: "User",
+        event: "Event",
+        subject: "Subject",
+        relatedSubject: "Related",
+        institute: "Organization",
+        ai: "AI",
+      },
+    },
   },
 
   // ============================================================================

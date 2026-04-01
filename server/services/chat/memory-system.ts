@@ -1456,6 +1456,97 @@ export function renderMemoryVisualization(
   return lines.join('\n');
 }
 
+/**
+ * Render a STATIC schema-only memory prompt (no data values).
+ * Used in staticPromptMode — the system prompt shows only the structure,
+ * and actual data is delivered through manageMemory tool responses.
+ * This prompt is identical across LLM rounds, enabling prompt caching.
+ */
+export function renderMemorySchema(
+  memoryFields: AgentMemoryField[],
+): string {
+  const lines: string[] = [];
+
+  lines.push(getMemoryToolInstructions());
+  lines.push('=== Memory Schema ===');
+  lines.push('Data is NOT shown here. Use manageMemory with "view" to load data.');
+  lines.push('Previously viewed data is available in tool response messages above.');
+  lines.push('');
+
+  // Render each top-level field as a schema entry
+  function renderFieldSchema(field: AgentMemoryField, path: string, indent = ''): void {
+    const readOnly = (field as any).readOnly ? ' (read-only)' : '';
+    const desc = field.description ? ` — ${field.description}` : '';
+    const dbBacked = (field as any).db ? ' (database-backed — may contain items; view to load)' : '';
+
+    if (field.type === 'object') {
+      const obj = field as AgentMemoryFieldObject;
+      lines.push(`${indent}• ${path} {object}${desc}${readOnly}`);
+      const props = obj.properties ?? {};
+      for (const [key, propSchema] of Object.entries(props)) {
+        const propPath = `${path}/${key}`;
+        const propField = propSchema as AgentMemoryField;
+        if (propField.type === 'object' || propField.type === 'array' || propField.type === 'map' || propField.type === 'topic') {
+          renderFieldSchema(propField, propPath, indent + '  ');
+        } else {
+          const pDesc = propField.description ? ` — ${propField.description}` : '';
+          const enumStr = (propField as any).enum ? ` [${(propField as any).enum.join(', ')}]` : '';
+          lines.push(`${indent}  - ${key}: ${propField.type}${enumStr}${pDesc}`);
+        }
+      }
+    } else if (field.type === 'array') {
+      const arr = field as AgentMemoryFieldArray;
+      const itemType = arr.items?.type || 'any';
+      lines.push(`${indent}• ${path} {array of ${itemType}}${desc}${readOnly}${dbBacked}`);
+      if (arr.items?.type === 'object') {
+        const itemObj = arr.items as AgentMemoryFieldObject;
+        const propNames = Object.keys(itemObj.properties ?? {});
+        if (propNames.length > 0) {
+          lines.push(`${indent}  item props: ${propNames.join(', ')}`);
+        }
+        if (itemObj.required?.length) {
+          lines.push(`${indent}  required: ${itemObj.required.join(', ')}`);
+        }
+      }
+    } else if (field.type === 'map') {
+      const map = field as AgentMemoryFieldMap;
+      const valType = map.values?.type || 'any';
+      const displayKey = (field as any).displayKey ? ` (display: ${(field as any).displayKey})` : '';
+      lines.push(`${indent}• ${path} {map<string, ${valType}>}${desc}${readOnly}${dbBacked}${displayKey}`);
+      if (map.values?.type === 'object') {
+        const valObj = map.values as AgentMemoryFieldObject;
+        const propNames = Object.keys(valObj.properties ?? {});
+        if (propNames.length > 0) {
+          lines.push(`${indent}  value props: ${propNames.join(', ')}`);
+        }
+        if (valObj.required?.length) {
+          lines.push(`${indent}  required: ${valObj.required.join(', ')}`);
+        }
+      }
+    } else if (field.type === 'topic') {
+      lines.push(`${indent}• ${path} {topic tree}${desc}${readOnly}${dbBacked}`);
+    } else {
+      // Primitive
+      const enumStr = (field as any).enum ? ` [${(field as any).enum.join(', ')}]` : '';
+      lines.push(`${indent}• ${path} (${field.type})${enumStr}${desc}${readOnly}`);
+    }
+  }
+
+  for (const f of memoryFields) {
+    renderFieldSchema(f, '/' + f.id);
+  }
+
+  // Concise navigation help
+  lines.push('');
+  const allowedRoots = memoryFields.map(f => `/${f.id}{${f.type}}`).join(', ');
+  lines.push('Allowed roots: ' + allowedRoots);
+  lines.push('To load data: manageMemory { "ops": [ { "action": "view", "path": "/path" } ] }');
+  lines.push('To load children: view with path "/path/*"');
+  lines.push('Mutations: "set" for scalars/objects, "add" for arrays/maps/topics, "delete" to remove.');
+
+  return lines.join('\n');
+}
+
 /* ------------------------------
  * reorderArrayDeletes(...)
  * Reorders delete operations on arrays to process from highest index to lowest.

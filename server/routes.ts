@@ -51,6 +51,8 @@ import { contactController } from "./controllers/contactController";
 import { licenseController } from "./controllers/licenseController";
 import { calendarController } from "./controllers/calendarController";
 import { registerDropboxRoutes } from "./services/dropboxRoutes";
+import { activityLogService } from "./services/activityLogService";
+import { activityLogController } from "./controllers/activityLogController";
 
 // Configure multer for image uploads
 const upload = multer({
@@ -1124,6 +1126,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const deleted = await userRepository.deleteUser(id);
       if (deleted) {
         res.json({ success: true, message: "User deleted successfully" });
+        activityLogService.log({
+          userId: (req as any).user?.id,
+          eventType: "delete",
+          subjectType1: "user",
+          subjectId1: id,
+        });
       } else {
         res.status(404).json({ success: false, message: "User not found" });
       }
@@ -1198,6 +1206,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.get("/api/admin/sessions/chat/:id/log", requireAdmin, (req, res) =>
     sessionHistoryController.getChatSessionLog(req, res)
+  );
+
+  // Activity logs (system admin)
+  app.get("/api/admin/activity-logs", requireAuth, requireSystemAdmin, (req, res) =>
+    activityLogController.getLogs(req, res)
   );
 
   // Licenses (admin)

@@ -84,6 +84,7 @@ import {
   type ListResult,
 } from "../chat/memory-types";
 import { programService } from "../programService";
+import { activityLogService } from "../activityLogService";
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -252,6 +253,15 @@ const programOps: MemoryDBOperations<Program> = {
       const updated = await programService.updateProgram(existing.id, {
         ...value as UpdateProgram,
       });
+      activityLogService.log({
+        userId: ctx.all.userId,
+        instituteId: ctx.all.instituteId,
+        eventType: "update",
+        subjectType1: "program",
+        subjectId1: updated?.id,
+        details: { studentId },
+        isAiInitiated: true,
+      });
       return updated;
     } else {
       // Create new program with default profile domains
@@ -259,10 +269,20 @@ const programOps: MemoryDBOperations<Program> = {
         ...value as InsertProgram,
         studentId,
       }, true);
-      
+
+      activityLogService.log({
+        userId: ctx.all.userId,
+        instituteId: ctx.all.instituteId,
+        eventType: "create",
+        subjectType1: "program",
+        subjectId1: program.id,
+        details: { studentId },
+        isAiInitiated: true,
+      });
+
       // Return program with domains populated so AI can see them
       const result = programOps.fromDB!(program);
-      
+
       // Populate profileDomains map with created domains
       if (domains.length > 0) {
         for (const domain of domains) {
@@ -270,7 +290,7 @@ const programOps: MemoryDBOperations<Program> = {
           result.profileDomains[key] = toMemoryValue(domain);
         }
       }
-      
+
       return result;
     }
   },
@@ -330,6 +350,16 @@ const profileDomainsOps: MemoryDBOperations<ProfileDomain> = {
       .values({ ...value, programId })
       .returning();
 
+    activityLogService.log({
+      userId: ctx.all.userId,
+      instituteId: ctx.all.instituteId,
+      eventType: "create",
+      subjectType1: "profile_domain",
+      subjectId1: created.id,
+      details: { studentId: ctx.all.studentId },
+      isAiInitiated: true,
+    });
+
     return created;
   },
 
@@ -343,7 +373,7 @@ const profileDomainsOps: MemoryDBOperations<ProfileDomain> = {
       eq(profileDomains.programId, programId),
       String(key)
     );
-    
+
     if (!domain) throw new Error(`ProfileDomain with key ${key} not found`);
 
     const [updated] = await db
@@ -351,6 +381,16 @@ const profileDomainsOps: MemoryDBOperations<ProfileDomain> = {
       .set({ ...value, updatedAt: new Date() })
       .where(eq(profileDomains.id, domain.id))
       .returning();
+
+    activityLogService.log({
+      userId: ctx.all.userId,
+      instituteId: ctx.all.instituteId,
+      eventType: "update",
+      subjectType1: "profile_domain",
+      subjectId1: updated.id,
+      details: { studentId: ctx.all.studentId },
+      isAiInitiated: true,
+    });
 
     return updated;
   },
@@ -365,9 +405,18 @@ const profileDomainsOps: MemoryDBOperations<ProfileDomain> = {
       eq(profileDomains.programId, programId),
       String(key)
     );
-    
+
     if (domain) {
       await db.delete(profileDomains).where(eq(profileDomains.id, domain.id));
+      activityLogService.log({
+        userId: ctx.all.userId,
+        instituteId: ctx.all.instituteId,
+        eventType: "delete",
+        subjectType1: "profile_domain",
+        subjectId1: domain.id,
+        details: { studentId: ctx.all.studentId },
+        isAiInitiated: true,
+      });
     }
   },
 
@@ -522,9 +571,19 @@ const goalsOps: MemoryDBOperations<Goal> = {
         sortOrder: (maxOrder?.max ?? -1) + 1,
       })
       .returning();
-  
+
+    activityLogService.log({
+      userId: ctx.all.userId,
+      instituteId: ctx.all.instituteId,
+      eventType: "create",
+      subjectType1: "goal",
+      subjectId1: created.id,
+      details: { studentId: ctx.all.studentId },
+      isAiInitiated: true,
+    });
+
     return created;
-  },  
+  },
 
   update: async (ctx, key, value) => {
     const programId = ctx.all.programId;
@@ -536,7 +595,7 @@ const goalsOps: MemoryDBOperations<Goal> = {
       eq(goals.programId, programId),
       String(key)
     );
-    
+
     if (!goal) throw new Error(`Goal with key ${key} not found`);
 
     const [updated] = await db
@@ -544,6 +603,16 @@ const goalsOps: MemoryDBOperations<Goal> = {
       .set({ ...value, updatedAt: new Date() })
       .where(eq(goals.id, goal.id))
       .returning();
+
+    activityLogService.log({
+      userId: ctx.all.userId,
+      instituteId: ctx.all.instituteId,
+      eventType: "update",
+      subjectType1: "goal",
+      subjectId1: updated.id,
+      details: { studentId: ctx.all.studentId },
+      isAiInitiated: true,
+    });
 
     return updated;
   },
@@ -558,9 +627,18 @@ const goalsOps: MemoryDBOperations<Goal> = {
       eq(goals.programId, programId),
       String(key)
     );
-    
+
     if (goal) {
       await db.delete(goals).where(eq(goals.id, goal.id));
+      activityLogService.log({
+        userId: ctx.all.userId,
+        instituteId: ctx.all.instituteId,
+        eventType: "delete",
+        subjectType1: "goal",
+        subjectId1: goal.id,
+        details: { studentId: ctx.all.studentId },
+        isAiInitiated: true,
+      });
     }
   },
 
@@ -621,6 +699,16 @@ const objectivesOps: MemoryDBOperations<Objective> = {
       })
       .returning();
 
+    activityLogService.log({
+      userId: ctx.all.userId,
+      instituteId: ctx.all.instituteId,
+      eventType: "create",
+      subjectType1: "objective",
+      subjectId1: created.id,
+      details: { studentId: ctx.all.studentId },
+      isAiInitiated: true,
+    });
+
     return created;
   },
 
@@ -647,6 +735,16 @@ const objectivesOps: MemoryDBOperations<Objective> = {
       .where(eq(objectives.id, items[0].id))
       .returning();
 
+    activityLogService.log({
+      userId: ctx.all.userId,
+      instituteId: ctx.all.instituteId,
+      eventType: "update",
+      subjectType1: "objective",
+      subjectId1: updated.id,
+      details: { studentId: ctx.all.studentId },
+      isAiInitiated: true,
+    });
+
     return updated;
   },
 
@@ -661,6 +759,15 @@ const objectivesOps: MemoryDBOperations<Objective> = {
 
     if (items[0]) {
       await db.delete(objectives).where(eq(objectives.id, items[0].id));
+      activityLogService.log({
+        userId: ctx.all.userId,
+        instituteId: ctx.all.instituteId,
+        eventType: "delete",
+        subjectType1: "objective",
+        subjectId1: items[0].id,
+        details: { studentId: ctx.all.studentId },
+        isAiInitiated: true,
+      });
     }
   },
 
@@ -722,6 +829,16 @@ const dataPointsOps: MemoryDBOperations<DataPoint> = {
       })
       .returning();
 
+    activityLogService.log({
+      userId: ctx.all.userId,
+      instituteId: ctx.all.instituteId,
+      eventType: "create",
+      subjectType1: "data_point",
+      subjectId1: created.id,
+      details: { studentId: ctx.all.studentId },
+      isAiInitiated: true,
+    });
+
     return created;
   },
 
@@ -743,6 +860,15 @@ const dataPointsOps: MemoryDBOperations<DataPoint> = {
 
     if (items[0]) {
       await db.delete(dataPoints).where(eq(dataPoints.id, items[0].id));
+      activityLogService.log({
+        userId: ctx.all.userId,
+        instituteId: ctx.all.instituteId,
+        eventType: "delete",
+        subjectType1: "data_point",
+        subjectId1: items[0].id,
+        details: { studentId: ctx.all.studentId },
+        isAiInitiated: true,
+      });
     }
   },
 

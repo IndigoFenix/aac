@@ -8,3 +8,4 @@ export { adminService, AdminService } from "./adminService";
 export { instituteService, InstituteService } from "./instituteService";
 export { classroomService, ClassroomService } from "./classroomService";
 export { reportService, ReportService } from "./reportService";
+export { activityLogService } from "./activityLogService";
