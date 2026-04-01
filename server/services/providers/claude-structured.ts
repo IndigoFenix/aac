@@ -28,8 +28,23 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
 
     // Convert input items to Claude messages
     const { system: extraSystem, messages } = this.convertInputItems(request.input);
+    // NOTE: extraSystem contains system-role messages from conversation history
+    // (summary, memory snapshots, etc). These change between rounds, so prepending
+    // them to the system prompt would invalidate prompt caching. Instead, inject
+    // them as a user message at the start of the conversation.
     if (extraSystem) {
-      systemPrompt = extraSystem + "\n\n" + systemPrompt;
+      messages.unshift({
+        role: "user" as const,
+        content: [{ type: "text", text: `[System Context]\n${extraSystem}` }],
+      });
+      // Claude requires alternating roles — if the next message is also user, merge
+      if (messages.length > 1 && messages[1].role === "user") {
+        const first = messages.shift()!;
+        const second = messages[0];
+        const firstParts = Array.isArray(first.content) ? first.content : [{ type: "text", text: first.content }];
+        const secondParts = Array.isArray(second.content) ? second.content : [{ type: "text", text: second.content }];
+        messages[0] = { role: "user", content: [...firstParts, ...secondParts] };
+      }
     }
 
     // Convert real tools to Claude format
@@ -48,13 +63,11 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
       });
     }
 
-    // Block-level caching on system prompt only — saves costs when the system prompt
-    // is stable across turns (static prompt mode) AND exceeds the minimum token threshold
-    // (~4096 tokens for Haiku 4.5). Request-level automatic caching is NOT used because
-    // it caches the growing message prefix, which means 1.25x cost on every turn with
-    // no reads (since the prefix changes each turn).
+    // Only enable prompt caching when STATIC_MEMORY_PROMPT is set — the system prompt
+    // must be stable across turns for caching to produce reads instead of just writes.
+    const useCache = process.env.STATIC_MEMORY_PROMPT === 'true';
     const systemBlock = systemPrompt
-      ? [{ type: "text" as const, text: systemPrompt, cache_control: { type: "ephemeral" as const } }]
+      ? [{ type: "text" as const, text: systemPrompt, ...(useCache ? { cache_control: { type: "ephemeral" as const } } : {}) }]
       : undefined;
 
     const params: any = {
@@ -67,7 +80,31 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
       tool_choice: tools.length > 0 ? { type: "any" as const } : undefined,
     };
 
+    // Log full system prompt + usage to file for cache debugging
+    if (useCache) {
+      try {
+        const fs = await import('fs');
+        const { join, dirname } = await import('path');
+        const { fileURLToPath } = await import('url');
+        const __fn = fileURLToPath(import.meta.url);
+        const logFile = join(dirname(__fn), '..', '..', 'claude-cache-debug.log');
+        fs.appendFileSync(logFile, `\n${'='.repeat(80)}\n[${new Date().toISOString()}] msgs=${messages.length}\n${'='.repeat(80)}\n${systemPrompt}\n${'─'.repeat(80)}\n`);
+      } catch {}
+    }
+
     const response = await this.client.messages.create(params);
+
+    if (useCache) {
+      try {
+        const fs = await import('fs');
+        const { join, dirname } = await import('path');
+        const { fileURLToPath } = await import('url');
+        const __fn = fileURLToPath(import.meta.url);
+        const logFile = join(dirname(__fn), '..', '..', 'claude-cache-debug.log');
+        fs.appendFileSync(logFile, `USAGE: ${JSON.stringify(response.usage)}\n`);
+      } catch {}
+    }
+
     return this.parseResponse(response);
   }
 

@@ -1,16 +1,16 @@
-[10:38:00.854] memoryValues.Student_Notes (1 items)
+[11:01:19.048] memoryValues.Student_Notes (1 items)
 [
   "Gal shows strong preference for interactive apps (drawing, music) over passive activities. Engages with 'Facts' interest but prefers hands-on exploration. Pattern: when offered reading/facts, will select the option but quickly navigate away, suggesting curiosity but preference for direct interaction rather than passive consumption."
 ]
-[10:38:00.856] memoryValues.Student_People (0 items)
+[11:01:19.048] memoryValues.Student_People (0 items)
 []
-[10:38:00.857] memoryValues.Student_Interests (3 items)
+[11:01:19.049] memoryValues.Student_Interests (3 items)
 [
   "facts",
   "drawing",
   "music"
 ]
-[10:38:00.858] memoryValues.Student_Preferences
+[11:01:19.050] memoryValues.Student_Preferences
 {
   "FavoriteActivities": [
     "drawing",
@@ -19,11 +19,11 @@
     "interactive exploration"
   ]
 }
-[10:38:00.860] memoryValues.Student_CommunicationStyle
+[11:01:19.052] memoryValues.Student_CommunicationStyle
 {
   "PrimaryMethod": "AAC"
 }
-[10:38:00.861] memoryVisualization — data section (62 lines)
+[11:01:19.054] memoryVisualization — data section (62 lines)
 === Current Memory ===
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
@@ -90,7 +90,7 @@ Notes:
 ============================================================
   manageMemory called
 ============================================================
-[10:38:02.619] INPUT
+[11:01:20.958] INPUT
 {
   "ops": [
     {
@@ -112,10 +112,38 @@ Notes:
     {
       "action": "view",
       "path": "/Context_FunctionalInfo"
+    },
+    {
+      "action": "view",
+      "path": "/Student_Notes"
+    },
+    {
+      "action": "view",
+      "path": "/Student_Interests"
+    },
+    {
+      "action": "view",
+      "path": "/Student_People"
+    },
+    {
+      "action": "view",
+      "path": "/Student_Preferences"
     }
   ]
 }
-[10:38:03.846] RESULTS
+[11:01:20.960] BEFORE view /Student_Notes — Student_Notes array (1 items)
+[
+  "Gal shows strong preference for interactive apps (drawing, music) over passive activities. Engages with 'Facts' interest but prefers hands-on exploration. Pattern: when offered reading/facts, will select the option but quickly navigate away, suggesting curiosity but preference for direct interaction rather than passive consumption."
+]
+[11:01:20.961] BEFORE view /Student_Interests — Student_Interests array (3 items)
+[
+  "facts",
+  "drawing",
+  "music"
+]
+[11:01:20.963] BEFORE view /Student_People — Student_People array (0 items)
+[]
+[11:01:22.187] RESULTS
 [
   {
     "target": "/Context_MedicalInfo",
@@ -166,258 +194,7 @@ Notes:
       "/Context_FunctionalInfo"
     ],
     "summary": "Path not found or not loaded"
-  }
-]
-[10:38:03.848] AFTER view /Context_Classmates — Context_Classmates array (0 items)
-[]
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[10:38:03.852] memoryValues.Student_Notes (1 items)
-[
-  "Gal shows strong preference for interactive apps (drawing, music) over passive activities. Engages with 'Facts' interest but prefers hands-on exploration. Pattern: when offered reading/facts, will select the option but quickly navigate away, suggesting curiosity but preference for direct interaction rather than passive consumption."
-]
-[10:38:03.853] memoryValues.Student_People (0 items)
-[]
-[10:38:03.855] memoryValues.Student_Interests (3 items)
-[
-  "facts",
-  "drawing",
-  "music"
-]
-[10:38:03.856] memoryValues.Student_Preferences
-{
-  "FavoriteActivities": [
-    "drawing",
-    "music",
-    "interactive apps",
-    "interactive exploration"
-  ]
-}
-[10:38:03.858] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[10:38:03.859] memoryVisualization — data section (62 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 3 items) — Things the student enjoys or is interested in 
-  - [0]: "facts"
-  - [1]: "drawing"
-  - [2]: "music"
-  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (hidden)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
-  - [0]: "Gal shows strong preference for interactive apps (drawing, music) over passive activities. Engages with 'Facts' interest but prefers hands-on exploration. Pattern: when offered reading/facts, will select the option but quickly navigate away, suggesting curiosity but preference for direct interaction rather than passive consumption."
-  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
-• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  (may contain items - view "/Context_Library" to load from database)
-• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  manageMemory called
-============================================================
-[10:38:05.317] INPUT
-{
-  "ops": [
-    {
-      "action": "view",
-      "path": "/Context_StudentInfo/*"
-    }
-  ]
-}
-[10:38:05.324] RESULTS
-[
-  {
-    "target": "/Context_StudentInfo/*",
-    "action": "view",
-    "ok": true,
-    "message": "• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) \\n  ↪ To expand: view \"/Context_StudentInfo/*\". (read-only)",
-    "mutatedPaths": [
-      "/Context_StudentInfo/id",
-      "/Context_StudentInfo/name",
-      "/Context_StudentInfo/birthDate",
-      "/Context_StudentInfo/gender",
-      "/Context_StudentInfo/primaryLanguage",
-      "/Context_StudentInfo/framework"
-    ],
-    "summary": "6 item(s): id, name, birthDate, gender, primaryLanguage..."
-  }
-]
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[10:38:05.329] memoryValues.Student_Notes (1 items)
-[
-  "Gal shows strong preference for interactive apps (drawing, music) over passive activities. Engages with 'Facts' interest but prefers hands-on exploration. Pattern: when offered reading/facts, will select the option but quickly navigate away, suggesting curiosity but preference for direct interaction rather than passive consumption."
-]
-[10:38:05.331] memoryValues.Student_People (0 items)
-[]
-[10:38:05.332] memoryValues.Student_Interests (3 items)
-[
-  "facts",
-  "drawing",
-  "music"
-]
-[10:38:05.334] memoryValues.Student_Preferences
-{
-  "FavoriteActivities": [
-    "drawing",
-    "music",
-    "interactive apps",
-    "interactive exploration"
-  ]
-}
-[10:38:05.335] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[10:38:05.337] memoryVisualization — data section (62 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 3 items) — Things the student enjoys or is interested in 
-  - [0]: "facts"
-  - [1]: "drawing"
-  - [2]: "music"
-  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (hidden)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
-  - [0]: "Gal shows strong preference for interactive apps (drawing, music) over passive activities. Engages with 'Facts' interest but prefers hands-on exploration. Pattern: when offered reading/facts, will select the option but quickly navigate away, suggesting curiosity but preference for direct interaction rather than passive consumption."
-  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
-• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  (may contain items - view "/Context_Library" to load from database)
-• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  manageMemory called
-============================================================
-[10:38:06.795] INPUT
-{
-  "ops": [
-    {
-      "action": "view",
-      "path": "/Student_Notes"
-    },
-    {
-      "action": "view",
-      "path": "/Student_Interests"
-    },
-    {
-      "action": "view",
-      "path": "/Student_Preferences/*"
-    }
-  ]
-}
-[10:38:06.797] BEFORE view /Student_Notes — Student_Notes array (1 items)
-[
-  "Gal shows strong preference for interactive apps (drawing, music) over passive activities. Engages with 'Facts' interest but prefers hands-on exploration. Pattern: when offered reading/facts, will select the option but quickly navigate away, suggesting curiosity but preference for direct interaction rather than passive consumption."
-]
-[10:38:06.798] BEFORE view /Student_Interests — Student_Interests array (3 items)
-[
-  "facts",
-  "drawing",
-  "music"
-]
-[10:38:06.806] RESULTS
-[
+  },
   {
     "target": "/Student_Notes",
     "action": "view",
@@ -439,43 +216,57 @@ Notes:
     "summary": "Array with 3 item(s)"
   },
   {
-    "target": "/Student_Preferences/*",
+    "target": "/Student_People",
     "action": "view",
     "ok": true,
-    "message": "• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement \\n  - FavoriteActivities: {array} \\n      - [0]: \"drawing\"\\n      - [1]: \"music\"\\n      - [2]: \"interactive apps\"\\n      - [3]: \"interactive exploration\"\\n      ↪ To append: action \"add\" at \"/Student_Preferences/FavoriteActivities\" with value. To update item: action \"set\" at \"/Student_Preferences/FavoriteActivities/<index>\".\\n  - RewardPreferences: {array} (empty)\\n  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)\\n  ↪ To expand: view \"/Student_Preferences/*\". To modify: action \"set\" on \"/Student_Preferences\" or \"/Student_Preferences/<property>\".",
+    "message": "• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) \\n  (empty - no items to display)\\n  ↪ To append: action \"add\" at \"/Student_People\" with value.",
     "mutatedPaths": [
-      "/Student_Preferences/FavoriteActivities"
+      "/Student_People"
+    ],
+    "summary": "Empty array (0 items)"
+  },
+  {
+    "target": "/Student_Preferences",
+    "action": "view",
+    "ok": true,
+    "message": "• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement \\n  - FavoriteActivities: {array} (hidden)\\n  - RewardPreferences: {array} (empty)\\n  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)\\n  ↪ To expand: view \"/Student_Preferences/*\". To modify: action \"set\" on \"/Student_Preferences\" or \"/Student_Preferences/<property>\".",
+    "mutatedPaths": [
+      "/Student_Preferences"
     ],
     "summary": "1 item(s): FavoriteActivities"
   }
 ]
-[10:38:06.808] AFTER view /Student_Notes — Student_Notes array (1 items)
+[11:01:22.188] AFTER view /Context_Classmates — Context_Classmates array (0 items)
+[]
+[11:01:22.190] AFTER view /Student_Notes — Student_Notes array (1 items)
 [
   "Gal shows strong preference for interactive apps (drawing, music) over passive activities. Engages with 'Facts' interest but prefers hands-on exploration. Pattern: when offered reading/facts, will select the option but quickly navigate away, suggesting curiosity but preference for direct interaction rather than passive consumption."
 ]
-[10:38:06.809] AFTER view /Student_Interests — Student_Interests array (3 items)
+[11:01:22.191] AFTER view /Student_Interests — Student_Interests array (3 items)
 [
   "facts",
   "drawing",
   "music"
 ]
+[11:01:22.192] AFTER view /Student_People — Student_People array (0 items)
+[]
 
 ============================================================
   buildPromptAndTools — AI memory view
 ============================================================
-[10:38:06.814] memoryValues.Student_Notes (1 items)
+[11:01:22.197] memoryValues.Student_Notes (1 items)
 [
   "Gal shows strong preference for interactive apps (drawing, music) over passive activities. Engages with 'Facts' interest but prefers hands-on exploration. Pattern: when offered reading/facts, will select the option but quickly navigate away, suggesting curiosity but preference for direct interaction rather than passive consumption."
 ]
-[10:38:06.815] memoryValues.Student_People (0 items)
+[11:01:22.198] memoryValues.Student_People (0 items)
 []
-[10:38:06.817] memoryValues.Student_Interests (3 items)
+[11:01:22.199] memoryValues.Student_Interests (3 items)
 [
   "facts",
   "drawing",
   "music"
 ]
-[10:38:06.818] memoryValues.Student_Preferences
+[11:01:22.203] memoryValues.Student_Preferences
 {
   "FavoriteActivities": [
     "drawing",
@@ -484,11 +275,11 @@ Notes:
     "interactive exploration"
   ]
 }
-[10:38:06.820] memoryValues.Student_CommunicationStyle
+[11:01:22.205] memoryValues.Student_CommunicationStyle
 {
   "PrimaryMethod": "AAC"
 }
-[10:38:06.822] memoryVisualization — data section (62 lines)
+[11:01:22.207] memoryVisualization — data section (62 lines)
 === Current Memory ===
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
@@ -555,55 +346,45 @@ Notes:
 ============================================================
   manageMemory called
 ============================================================
-[10:38:08.657] INPUT
+[11:01:23.447] INPUT
 {
   "ops": [
     {
-      "action": "hide",
-      "path": "/Student_Preferences/RewardPreferences"
-    },
-    {
-      "action": "hide",
-      "path": "/Student_Preferences/AvoidTopics"
+      "action": "view",
+      "path": "/Student_Preferences/FavoriteActivities"
     }
   ]
 }
-[10:38:08.661] RESULTS
+[11:01:23.455] RESULTS
 [
   {
-    "target": "/Student_Preferences/RewardPreferences",
-    "action": "hide",
+    "target": "/Student_Preferences/FavoriteActivities",
+    "action": "view",
     "ok": true,
+    "message": "• /Student_Preferences/FavoriteActivities (array, 4 items) \\n  - [0]: \"drawing\"\\n  - [1]: \"music\"\\n  - [2]: \"interactive apps\"\\n  - [3]: \"interactive exploration\"\\n  ↪ To append: action \"add\" at \"/Student_Preferences/FavoriteActivities\" with value. To update item: action \"set\" at \"/Student_Preferences/FavoriteActivities/<index>\".",
     "mutatedPaths": [
-      "/Student_Preferences/RewardPreferences"
-    ]
-  },
-  {
-    "target": "/Student_Preferences/AvoidTopics",
-    "action": "hide",
-    "ok": true,
-    "mutatedPaths": [
-      "/Student_Preferences/AvoidTopics"
-    ]
+      "/Student_Preferences/FavoriteActivities"
+    ],
+    "summary": "Array with 4 item(s)"
   }
 ]
 
 ============================================================
   buildPromptAndTools — AI memory view
 ============================================================
-[10:38:08.665] memoryValues.Student_Notes (1 items)
+[11:01:23.459] memoryValues.Student_Notes (1 items)
 [
   "Gal shows strong preference for interactive apps (drawing, music) over passive activities. Engages with 'Facts' interest but prefers hands-on exploration. Pattern: when offered reading/facts, will select the option but quickly navigate away, suggesting curiosity but preference for direct interaction rather than passive consumption."
 ]
-[10:38:08.666] memoryValues.Student_People (0 items)
+[11:01:23.460] memoryValues.Student_People (0 items)
 []
-[10:38:08.667] memoryValues.Student_Interests (3 items)
+[11:01:23.462] memoryValues.Student_Interests (3 items)
 [
   "facts",
   "drawing",
   "music"
 ]
-[10:38:08.668] memoryValues.Student_Preferences
+[11:01:23.465] memoryValues.Student_Preferences
 {
   "FavoriteActivities": [
     "drawing",
@@ -612,11 +393,11 @@ Notes:
     "interactive exploration"
   ]
 }
-[10:38:08.669] memoryValues.Student_CommunicationStyle
+[11:01:23.466] memoryValues.Student_CommunicationStyle
 {
   "PrimaryMethod": "AAC"
 }
-[10:38:08.670] memoryVisualization — data section (62 lines)
+[11:01:23.467] memoryVisualization — data section (62 lines)
 === Current Memory ===
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
@@ -683,24 +464,24 @@ Notes:
 ============================================================
   manageMemory called
 ============================================================
-[10:38:25.217] INPUT
+[11:01:27.213] INPUT
 {
   "ops": [
     {
       "action": "view",
-      "path": "/Student_CommunicationStyle/*"
+      "path": "/Student_CommunicationStyle"
     }
   ]
 }
-[10:38:25.222] RESULTS
+[11:01:27.219] RESULTS
 [
   {
-    "target": "/Student_CommunicationStyle/*",
+    "target": "/Student_CommunicationStyle",
     "action": "view",
     "ok": true,
     "message": "• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) \\n  - PrimaryMethod: \"AAC\" — verbal, nonverbal, AAC, or mixed\\n  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)\\n  ↪ To expand: view \"/Student_CommunicationStyle/*\". To modify: action \"set\" on \"/Student_CommunicationStyle\" or \"/Student_CommunicationStyle/<property>\".",
     "mutatedPaths": [
-      "/Student_CommunicationStyle/PrimaryMethod"
+      "/Student_CommunicationStyle"
     ],
     "summary": "1 item(s): PrimaryMethod"
   }
@@ -709,19 +490,19 @@ Notes:
 ============================================================
   buildPromptAndTools — AI memory view
 ============================================================
-[10:38:25.225] memoryValues.Student_Notes (1 items)
+[11:01:27.224] memoryValues.Student_Notes (1 items)
 [
   "Gal shows strong preference for interactive apps (drawing, music) over passive activities. Engages with 'Facts' interest but prefers hands-on exploration. Pattern: when offered reading/facts, will select the option but quickly navigate away, suggesting curiosity but preference for direct interaction rather than passive consumption."
 ]
-[10:38:25.227] memoryValues.Student_People (0 items)
+[11:01:27.225] memoryValues.Student_People (0 items)
 []
-[10:38:25.228] memoryValues.Student_Interests (3 items)
+[11:01:27.227] memoryValues.Student_Interests (3 items)
 [
   "facts",
   "drawing",
   "music"
 ]
-[10:38:25.229] memoryValues.Student_Preferences
+[11:01:27.229] memoryValues.Student_Preferences
 {
   "FavoriteActivities": [
     "drawing",
@@ -730,11 +511,11 @@ Notes:
     "interactive exploration"
   ]
 }
-[10:38:25.230] memoryValues.Student_CommunicationStyle
+[11:01:27.230] memoryValues.Student_CommunicationStyle
 {
   "PrimaryMethod": "AAC"
 }
-[10:38:25.231] memoryVisualization — data section (62 lines)
+[11:01:27.231] memoryVisualization — data section (62 lines)
 === Current Memory ===
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
@@ -801,449 +582,31 @@ Notes:
 ============================================================
   manageMemory called
 ============================================================
-[10:38:46.074] INPUT
+[11:01:28.837] INPUT
 {
   "ops": [
     {
       "action": "hide",
-      "path": "/Context_StudentInfo"
-    },
-    {
-      "action": "hide",
-      "path": "/Student_Interests"
-    },
-    {
-      "action": "hide",
-      "path": "/Student_Notes"
-    }
-  ]
-}
-[10:38:46.076] BEFORE hide /Student_Interests — Student_Interests array (3 items)
-[
-  "facts",
-  "drawing",
-  "music"
-]
-[10:38:46.077] BEFORE hide /Student_Notes — Student_Notes array (1 items)
-[
-  "Gal shows strong preference for interactive apps (drawing, music) over passive activities. Engages with 'Facts' interest but prefers hands-on exploration. Pattern: when offered reading/facts, will select the option but quickly navigate away, suggesting curiosity but preference for direct interaction rather than passive consumption."
-]
-[10:38:46.082] RESULTS
-[
-  {
-    "target": "/Context_StudentInfo",
-    "action": "hide",
-    "ok": true,
-    "mutatedPaths": [
-      "/Context_StudentInfo"
-    ]
-  },
-  {
-    "target": "/Student_Interests",
-    "action": "hide",
-    "ok": true,
-    "mutatedPaths": [
-      "/Student_Interests"
-    ]
-  },
-  {
-    "target": "/Student_Notes",
-    "action": "hide",
-    "ok": true,
-    "mutatedPaths": [
-      "/Student_Notes"
-    ]
-  }
-]
-[10:38:46.083] AFTER hide /Student_Interests — Student_Interests array (3 items)
-[
-  "facts",
-  "drawing",
-  "music"
-]
-[10:38:46.085] AFTER hide /Student_Notes — Student_Notes array (1 items)
-[
-  "Gal shows strong preference for interactive apps (drawing, music) over passive activities. Engages with 'Facts' interest but prefers hands-on exploration. Pattern: when offered reading/facts, will select the option but quickly navigate away, suggesting curiosity but preference for direct interaction rather than passive consumption."
-]
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[10:38:46.088] memoryValues.Student_Notes (1 items)
-[
-  "Gal shows strong preference for interactive apps (drawing, music) over passive activities. Engages with 'Facts' interest but prefers hands-on exploration. Pattern: when offered reading/facts, will select the option but quickly navigate away, suggesting curiosity but preference for direct interaction rather than passive consumption."
-]
-[10:38:46.089] memoryValues.Student_People (0 items)
-[]
-[10:38:46.090] memoryValues.Student_Interests (3 items)
-[
-  "facts",
-  "drawing",
-  "music"
-]
-[10:38:46.092] memoryValues.Student_Preferences
-{
-  "FavoriteActivities": [
-    "drawing",
-    "music",
-    "interactive apps",
-    "interactive exploration"
-  ]
-}
-[10:38:46.093] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[10:38:46.094] memoryVisualization — data section (62 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 3 items) — Things the student enjoys or is interested in 
-  - [0]: "facts"
-  - [1]: "drawing"
-  - [2]: "music"
-  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (hidden)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
-  - [0]: "Gal shows strong preference for interactive apps (drawing, music) over passive activities. Engages with 'Facts' interest but prefers hands-on exploration. Pattern: when offered reading/facts, will select the option but quickly navigate away, suggesting curiosity but preference for direct interaction rather than passive consumption."
-  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
-• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  (may contain items - view "/Context_Library" to load from database)
-• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  manageMemory called
-============================================================
-[10:39:04.838] INPUT
-{
-  "ops": [
-    {
-      "action": "hide",
-      "path": "/Student_CommunicationStyle"
-    }
-  ]
-}
-[10:39:04.844] RESULTS
-[
-  {
-    "target": "/Student_CommunicationStyle",
-    "action": "hide",
-    "ok": true,
-    "mutatedPaths": [
-      "/Student_CommunicationStyle"
-    ]
-  }
-]
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[10:39:04.850] memoryValues.Student_Notes (1 items)
-[
-  "Gal shows strong preference for interactive apps (drawing, music) over passive activities. Engages with 'Facts' interest but prefers hands-on exploration. Pattern: when offered reading/facts, will select the option but quickly navigate away, suggesting curiosity but preference for direct interaction rather than passive consumption."
-]
-[10:39:04.851] memoryValues.Student_People (0 items)
-[]
-[10:39:04.853] memoryValues.Student_Interests (3 items)
-[
-  "facts",
-  "drawing",
-  "music"
-]
-[10:39:04.855] memoryValues.Student_Preferences
-{
-  "FavoriteActivities": [
-    "drawing",
-    "music",
-    "interactive apps",
-    "interactive exploration"
-  ]
-}
-[10:39:04.857] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[10:39:04.859] memoryVisualization — data section (62 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 3 items) — Things the student enjoys or is interested in 
-  - [0]: "facts"
-  - [1]: "drawing"
-  - [2]: "music"
-  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (hidden)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
-  - [0]: "Gal shows strong preference for interactive apps (drawing, music) over passive activities. Engages with 'Facts' interest but prefers hands-on exploration. Pattern: when offered reading/facts, will select the option but quickly navigate away, suggesting curiosity but preference for direct interaction rather than passive consumption."
-  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
-• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  (may contain items - view "/Context_Library" to load from database)
-• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  manageMemory called
-============================================================
-[10:39:23.174] INPUT
-{
-  "ops": [
-    {
-      "action": "hide",
-      "path": "/Student_Preferences"
-    }
-  ]
-}
-[10:39:23.182] RESULTS
-[
-  {
-    "target": "/Student_Preferences",
-    "action": "hide",
-    "ok": true,
-    "mutatedPaths": [
-      "/Student_Preferences"
-    ]
-  }
-]
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[10:39:23.185] memoryValues.Student_Notes (1 items)
-[
-  "Gal shows strong preference for interactive apps (drawing, music) over passive activities. Engages with 'Facts' interest but prefers hands-on exploration. Pattern: when offered reading/facts, will select the option but quickly navigate away, suggesting curiosity but preference for direct interaction rather than passive consumption."
-]
-[10:39:23.186] memoryValues.Student_People (0 items)
-[]
-[10:39:23.187] memoryValues.Student_Interests (3 items)
-[
-  "facts",
-  "drawing",
-  "music"
-]
-[10:39:23.188] memoryValues.Student_Preferences
-{
-  "FavoriteActivities": [
-    "drawing",
-    "music",
-    "interactive apps",
-    "interactive exploration"
-  ]
-}
-[10:39:23.189] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[10:39:23.191] memoryVisualization — data section (62 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 3 items) — Things the student enjoys or is interested in 
-  - [0]: "facts"
-  - [1]: "drawing"
-  - [2]: "music"
-  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (hidden)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
-  - [0]: "Gal shows strong preference for interactive apps (drawing, music) over passive activities. Engages with 'Facts' interest but prefers hands-on exploration. Pattern: when offered reading/facts, will select the option but quickly navigate away, suggesting curiosity but preference for direct interaction rather than passive consumption."
-  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
-• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  (may contain items - view "/Context_Library" to load from database)
-• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  manageMemory called
-============================================================
-[10:39:44.645] INPUT
-{
-  "ops": [
-    {
-      "action": "hide",
-      "path": "/Context_MedicalInfo"
-    },
-    {
-      "action": "hide",
-      "path": "/Context_EducationalInfo"
-    },
-    {
-      "action": "hide",
-      "path": "/Context_Progress"
+      "path": "/Student_People"
     },
     {
       "action": "hide",
       "path": "/Context_Classmates"
-    },
-    {
-      "action": "hide",
-      "path": "/Context_FunctionalInfo"
     }
   ]
 }
-[10:39:44.646] BEFORE hide /Context_Classmates — Context_Classmates array (0 items)
+[11:01:28.838] BEFORE hide /Student_People — Student_People array (0 items)
 []
-[10:39:44.651] RESULTS
+[11:01:28.839] BEFORE hide /Context_Classmates — Context_Classmates array (0 items)
+[]
+[11:01:28.843] RESULTS
 [
   {
-    "target": "/Context_MedicalInfo",
+    "target": "/Student_People",
     "action": "hide",
     "ok": true,
     "mutatedPaths": [
-      "/Context_MedicalInfo"
-    ]
-  },
-  {
-    "target": "/Context_EducationalInfo",
-    "action": "hide",
-    "ok": true,
-    "mutatedPaths": [
-      "/Context_EducationalInfo"
-    ]
-  },
-  {
-    "target": "/Context_Progress",
-    "action": "hide",
-    "ok": true,
-    "mutatedPaths": [
-      "/Context_Progress"
+      "/Student_People"
     ]
   },
   {
@@ -1253,35 +616,29 @@ Notes:
     "mutatedPaths": [
       "/Context_Classmates"
     ]
-  },
-  {
-    "target": "/Context_FunctionalInfo",
-    "action": "hide",
-    "ok": true,
-    "mutatedPaths": [
-      "/Context_FunctionalInfo"
-    ]
   }
 ]
-[10:39:44.652] AFTER hide /Context_Classmates — Context_Classmates array (0 items)
+[11:01:28.845] AFTER hide /Student_People — Student_People array (0 items)
+[]
+[11:01:28.846] AFTER hide /Context_Classmates — Context_Classmates array (0 items)
 []
 
 ============================================================
   buildPromptAndTools — AI memory view
 ============================================================
-[10:39:44.658] memoryValues.Student_Notes (1 items)
+[11:01:28.850] memoryValues.Student_Notes (1 items)
 [
   "Gal shows strong preference for interactive apps (drawing, music) over passive activities. Engages with 'Facts' interest but prefers hands-on exploration. Pattern: when offered reading/facts, will select the option but quickly navigate away, suggesting curiosity but preference for direct interaction rather than passive consumption."
 ]
-[10:39:44.660] memoryValues.Student_People (0 items)
+[11:01:28.851] memoryValues.Student_People (0 items)
 []
-[10:39:44.661] memoryValues.Student_Interests (3 items)
+[11:01:28.852] memoryValues.Student_Interests (3 items)
 [
   "facts",
   "drawing",
   "music"
 ]
-[10:39:44.663] memoryValues.Student_Preferences
+[11:01:28.853] memoryValues.Student_Preferences
 {
   "FavoriteActivities": [
     "drawing",
@@ -1290,11 +647,11 @@ Notes:
     "interactive exploration"
   ]
 }
-[10:39:44.666] memoryValues.Student_CommunicationStyle
+[11:01:28.854] memoryValues.Student_CommunicationStyle
 {
   "PrimaryMethod": "AAC"
 }
-[10:39:44.667] memoryVisualization — data section (62 lines)
+[11:01:28.856] memoryVisualization — data section (62 lines)
 === Current Memory ===
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
@@ -1361,67 +718,45 @@ Notes:
 ============================================================
   manageMemory called
 ============================================================
-[10:40:04.028] INPUT
+[11:01:29.685] INPUT
 {
   "ops": [
     {
-      "action": "hide",
-      "path": "/Context_StudentInstitutes"
-    },
-    {
-      "action": "hide",
-      "path": "/Context_Classes"
-    },
-    {
-      "action": "hide",
-      "path": "/Context_Library"
+      "action": "view",
+      "path": "/Context_StudentInfo"
     }
   ]
 }
-[10:40:04.032] RESULTS
+[11:01:29.689] RESULTS
 [
   {
-    "target": "/Context_StudentInstitutes",
-    "action": "hide",
+    "target": "/Context_StudentInfo",
+    "action": "view",
     "ok": true,
+    "message": "• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) \\n  ↪ To expand: view \"/Context_StudentInfo/*\". (read-only)",
     "mutatedPaths": [
-      "/Context_StudentInstitutes"
-    ]
-  },
-  {
-    "target": "/Context_Classes",
-    "action": "hide",
-    "ok": true,
-    "mutatedPaths": [
-      "/Context_Classes"
-    ]
-  },
-  {
-    "target": "/Context_Library",
-    "action": "hide",
-    "ok": true,
-    "mutatedPaths": [
-      "/Context_Library"
-    ]
+      "/Context_StudentInfo"
+    ],
+    "summary": "6 item(s): id, name, birthDate, gender, primaryLanguage..."
   }
 ]
 
 ============================================================
   buildPromptAndTools — AI memory view
 ============================================================
-[10:40:04.036] memoryValues.Student_Notes (1 items)
+[11:01:29.692] memoryValues.Student_Notes (1 items)
 [
   "Gal shows strong preference for interactive apps (drawing, music) over passive activities. Engages with 'Facts' interest but prefers hands-on exploration. Pattern: when offered reading/facts, will select the option but quickly navigate away, suggesting curiosity but preference for direct interaction rather than passive consumption."
 ]
-[10:40:04.037] memoryValues.Student_People (0 items)
+[11:01:29.693] memoryValues.Student_People (0 items)
 []
-[10:40:04.039] memoryValues.Student_Interests (3 items)
+[11:01:29.694] memoryValues.Student_Interests (3 items)
 [
   "facts",
   "drawing",
   "music"
 ]
-[10:40:04.040] memoryValues.Student_Preferences
+[11:01:29.695] memoryValues.Student_Preferences
 {
   "FavoriteActivities": [
     "drawing",
@@ -1430,11 +765,11 @@ Notes:
     "interactive exploration"
   ]
 }
-[10:40:04.041] memoryValues.Student_CommunicationStyle
+[11:01:29.697] memoryValues.Student_CommunicationStyle
 {
   "PrimaryMethod": "AAC"
 }
-[10:40:04.042] memoryVisualization — data section (62 lines)
+[11:01:29.698] memoryVisualization — data section (62 lines)
 === Current Memory ===
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
