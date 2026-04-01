@@ -1338,3 +1338,30 @@
 [2026-03-31T20:59:46.313Z] [resolveImageKeys] Resolved "drinking_beverage" → __SYMBOL__:a38709a0-9d8d-45b5-b8ea-164296dc7916
 [2026-03-31T20:59:46.480Z] [resolveImageKeys] Resolved "pause_symbol" → __SYMBOL__:a5135144-1b9e-48d2-a919-b242f7d14a52
 [2026-03-31T20:59:46.482Z] [resolveImageKeys] Done. Resolved 6, unresolved 0: 
+[2026-04-01T09:19:16.459Z] [resolveImageKeys] Resolving 6 keys: game_controller, pencil_drawing, music_notes, outside_tree, apple_snack, pause_symbol (format=internal, useUnapproved=true)
+[2026-04-01T09:19:16.611Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-04-01T09:19:16.765Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-04-01T09:19:16.920Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-04-01T09:19:17.073Z] [resolveImageKeys] No symbol found for "outside_tree"
+[2026-04-01T09:19:17.226Z] [resolveImageKeys] No symbol found for "apple_snack"
+[2026-04-01T09:19:17.378Z] [resolveImageKeys] Resolved "pause_symbol" → __SYMBOL__:a5135144-1b9e-48d2-a919-b242f7d14a52
+[2026-04-01T09:19:17.381Z] [resolveImageKeys] Done. Resolved 4, unresolved 2: outside_tree, apple_snack
+[2026-04-01T09:19:17.385Z] [queueGeneration] Queuing 2 keys: outside_tree, apple_snack (hasCallback=true)
+[2026-04-01T09:19:17.554Z] [processQueue] Generating "outside_tree"...
+[2026-04-01T09:19:25.911Z] [processQueue] Generated "outside_tree" → 7944f17c-4d62-49e9-83ac-6cda2404f849 (1 total)
+[2026-04-01T09:19:30.074Z] [processQueue] Generating "apple_snack"...
+[2026-04-01T09:19:37.882Z] [processQueue] Generated "apple_snack" → 394edc4a-0b2f-4d73-a6cf-5c9908572665 (2 total)
+[2026-04-01T09:51:49.430Z] [resolveImageKeys] Resolving 6 keys: game_controller, pencil_drawing, music_notes, outside_tree, apple, pause_symbol (format=internal, useUnapproved=true)
+[2026-04-01T09:51:49.588Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-04-01T09:51:49.745Z] [resolveImageKeys] Resolved "pencil_drawing" → __SYMBOL__:4b8448f1-de21-4cfc-9374-cb6e8572c130
+[2026-04-01T09:51:49.905Z] [resolveImageKeys] Resolved "music_notes" → __SYMBOL__:233431d0-3f1a-421d-9231-84aa30f2e3db
+[2026-04-01T09:51:50.063Z] [resolveImageKeys] Resolved "outside_tree" → __SYMBOL__:7944f17c-4d62-49e9-83ac-6cda2404f849
+[2026-04-01T09:51:50.217Z] [resolveImageKeys] Resolved "apple" → __SYMBOL__:67c72e58-2876-4485-84f4-e71d8f0d0bf7
+[2026-04-01T09:51:50.371Z] [resolveImageKeys] Resolved "pause_symbol" → __SYMBOL__:a5135144-1b9e-48d2-a919-b242f7d14a52
+[2026-04-01T09:51:50.372Z] [resolveImageKeys] Done. Resolved 6, unresolved 0: 
+[2026-04-01T10:04:35.465Z] [resolveImageKeys] Resolving 4 keys: apple, stop_sign, game_controller, life_saver (format=internal, useUnapproved=true)
+[2026-04-01T10:04:35.626Z] [resolveImageKeys] Resolved "apple" → __SYMBOL__:67c72e58-2876-4485-84f4-e71d8f0d0bf7
+[2026-04-01T10:04:35.783Z] [resolveImageKeys] Resolved "stop_sign" → __SYMBOL__:1321d48a-6ff6-4c28-bd7b-b2ded7d108a3
+[2026-04-01T10:04:35.949Z] [resolveImageKeys] Resolved "game_controller" → __SYMBOL__:ae6112a0-a319-464d-9865-c2cdc8dbe4fb
+[2026-04-01T10:04:36.110Z] [resolveImageKeys] Resolved "life_saver" → __SYMBOL__:ce4ea5a9-9d9e-4400-a311-4e4112e2c03d
+[2026-04-01T10:04:36.111Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 

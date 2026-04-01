@@ -2204,7 +2204,39 @@ export const he = {
       activeMode: "מצב תמיכה פעיל",
       exit: "יציאה ממצב תמיכה",
       login: "התחברות כתמיכה"
-    }
+    },
+    activityLog: {
+      title: "יומן פעילות",
+      subtitle: "צפייה בכל שינויי הנתונים וגישה לדוחות במערכת.",
+      noLogs: "לא נמצאו רשומות פעילות",
+      filters: {
+        allEvents: "כל האירועים",
+        allSubjects: "כל הנושאים",
+        allSources: "כל המקורות",
+        aiOnly: "AI בלבד",
+        humanOnly: "משתמשים בלבד",
+        clear: "נקה",
+      },
+      eventTypes: {
+        create: "נוצר",
+        update: "עודכן",
+        delete: "נמחק",
+        link: "קושר",
+        unlink: "נותק",
+        view: "נצפה",
+        finalize: "אושר",
+        revision: "תוקן",
+      },
+      columns: {
+        date: "תאריך",
+        user: "משתמש",
+        event: "אירוע",
+        subject: "נושא",
+        relatedSubject: "קשור",
+        institute: "ארגון",
+        ai: "AI",
+      },
+    },
   },
 
   // ============================================================================

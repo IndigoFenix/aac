@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { programService, studentService } from "../services";
+import { activityLogService } from "../services/activityLogService";
 import {
   insertProgramSchema,
   updateProgramSchema,
@@ -98,6 +99,14 @@ export class ProgramController {
         message: "Program created successfully",
         program,
         domains,
+      });
+
+      activityLogService.log({
+        userId: currentUser.id,
+        eventType: "create",
+        subjectType1: "program",
+        subjectId1: program.id,
+        details: { studentId, createDefaultDomains },
       });
     } catch (error: any) {
       console.error("Error creating program:", error);
@@ -236,6 +245,13 @@ export class ProgramController {
 
       if (updated) {
         res.json({ success: true, message: "Program updated successfully", program: updated });
+
+        activityLogService.log({
+          userId: currentUser.id,
+          eventType: "update",
+          subjectType1: "program",
+          subjectId1: id,
+        });
       } else {
         res.status(404).json({ success: false, message: "Program not found" });
       }
@@ -271,6 +287,14 @@ export class ProgramController {
       const updated = await programService.activateProgram(id);
       if (updated) {
         res.json({ success: true, message: "Program activated successfully", program: updated });
+
+        activityLogService.log({
+          userId: currentUser.id,
+          eventType: "update",
+          subjectType1: "program",
+          subjectId1: id,
+          details: { action: "activate" },
+        });
       } else {
         res.status(404).json({ success: false, message: "Program not found" });
       }
@@ -298,6 +322,14 @@ export class ProgramController {
       const updated = await programService.archiveProgram(id);
       if (updated) {
         res.json({ success: true, message: "Program archived successfully", program: updated });
+
+        activityLogService.log({
+          userId: currentUser.id,
+          eventType: "update",
+          subjectType1: "program",
+          subjectId1: id,
+          details: { action: "archive" },
+        });
       } else {
         res.status(404).json({ success: false, message: "Program not found" });
       }
@@ -325,6 +357,13 @@ export class ProgramController {
       const deleted = await programService.deleteProgram(id);
       if (deleted) {
         res.json({ success: true, message: "Program deleted successfully" });
+
+        activityLogService.log({
+          userId: currentUser.id,
+          eventType: "delete",
+          subjectType1: "program",
+          subjectId1: id,
+        });
       } else {
         res.status(404).json({ success: false, message: "Program not found" });
       }
@@ -383,6 +422,15 @@ export class ProgramController {
       const domain = await programService.createProfileDomain(validatedData);
 
       res.json({ success: true, message: "Domain created successfully", domain });
+
+      activityLogService.log({
+        userId: currentUser.id,
+        eventType: "create",
+        subjectType1: "profile_domain",
+        subjectId1: domain.id,
+        subjectType2: "program",
+        subjectId2: programId,
+      });
     } catch (error: any) {
       console.error("Error creating domain:", error);
       if (error.name === "ZodError") {
@@ -419,6 +467,13 @@ export class ProgramController {
 
       if (updated) {
         res.json({ success: true, message: "Domain updated successfully", domain: updated });
+
+        activityLogService.log({
+          userId: currentUser.id,
+          eventType: "update",
+          subjectType1: "profile_domain",
+          subjectId1: id,
+        });
       } else {
         res.status(404).json({ success: false, message: "Domain not found" });
       }
@@ -456,6 +511,13 @@ export class ProgramController {
       const deleted = await programService.deleteProfileDomain(id);
       if (deleted) {
         res.json({ success: true, message: "Domain deleted successfully" });
+
+        activityLogService.log({
+          userId: currentUser.id,
+          eventType: "delete",
+          subjectType1: "profile_domain",
+          subjectId1: id,
+        });
       } else {
         res.status(404).json({ success: false, message: "Domain not found" });
       }
@@ -514,6 +576,15 @@ export class ProgramController {
       const goal = await programService.createGoal(validatedData);
 
       res.json({ success: true, message: "Goal created successfully", goal });
+
+      activityLogService.log({
+        userId: currentUser.id,
+        eventType: "create",
+        subjectType1: "goal",
+        subjectId1: goal.id,
+        subjectType2: "program",
+        subjectId2: programId,
+      });
     } catch (error: any) {
       console.error("Error creating goal:", error);
       if (error.name === "ZodError") {
@@ -579,6 +650,13 @@ export class ProgramController {
 
       if (updated) {
         res.json({ success: true, message: "Goal updated successfully", goal: updated });
+
+        activityLogService.log({
+          userId: currentUser.id,
+          eventType: "update",
+          subjectType1: "goal",
+          subjectId1: id,
+        });
       } else {
         res.status(404).json({ success: false, message: "Goal not found" });
       }
@@ -616,6 +694,13 @@ export class ProgramController {
       const deleted = await programService.deleteGoal(id);
       if (deleted) {
         res.json({ success: true, message: "Goal deleted successfully" });
+
+        activityLogService.log({
+          userId: currentUser.id,
+          eventType: "delete",
+          subjectType1: "goal",
+          subjectId1: id,
+        });
       } else {
         res.status(404).json({ success: false, message: "Goal not found" });
       }
@@ -649,6 +734,14 @@ export class ProgramController {
       const updated = await programService.achieveGoal(id);
       if (updated) {
         res.json({ success: true, message: "Goal marked as achieved", goal: updated });
+
+        activityLogService.log({
+          userId: currentUser.id,
+          eventType: "update",
+          subjectType1: "goal",
+          subjectId1: id,
+          details: { action: "achieve" },
+        });
       } else {
         res.status(404).json({ success: false, message: "Goal not found" });
       }
@@ -719,6 +812,15 @@ export class ProgramController {
       const objective = await programService.createObjective(validatedData);
 
       res.json({ success: true, message: "Objective created successfully", objective });
+
+      activityLogService.log({
+        userId: currentUser.id,
+        eventType: "create",
+        subjectType1: "objective",
+        subjectId1: objective.id,
+        subjectType2: "goal",
+        subjectId2: goalId,
+      });
     } catch (error: any) {
       console.error("Error creating objective:", error);
       if (error.name === "ZodError") {
@@ -761,6 +863,13 @@ export class ProgramController {
 
       if (updated) {
         res.json({ success: true, message: "Objective updated successfully", objective: updated });
+
+        activityLogService.log({
+          userId: currentUser.id,
+          eventType: "update",
+          subjectType1: "objective",
+          subjectId1: id,
+        });
       } else {
         res.status(404).json({ success: false, message: "Objective not found" });
       }
@@ -804,6 +913,13 @@ export class ProgramController {
       const deleted = await programService.deleteObjective(id);
       if (deleted) {
         res.json({ success: true, message: "Objective deleted successfully" });
+
+        activityLogService.log({
+          userId: currentUser.id,
+          eventType: "delete",
+          subjectType1: "objective",
+          subjectId1: id,
+        });
       } else {
         res.status(404).json({ success: false, message: "Objective not found" });
       }
@@ -862,6 +978,15 @@ export class ProgramController {
       const service = await programService.createService(validatedData);
 
       res.json({ success: true, message: "Service created successfully", service });
+
+      activityLogService.log({
+        userId: currentUser.id,
+        eventType: "create",
+        subjectType1: "service",
+        subjectId1: service.id,
+        subjectType2: "program",
+        subjectId2: programId,
+      });
     } catch (error: any) {
       console.error("Error creating service:", error);
       if (error.name === "ZodError") {
@@ -898,6 +1023,13 @@ export class ProgramController {
 
       if (updated) {
         res.json({ success: true, message: "Service updated successfully", service: updated });
+
+        activityLogService.log({
+          userId: currentUser.id,
+          eventType: "update",
+          subjectType1: "service",
+          subjectId1: id,
+        });
       } else {
         res.status(404).json({ success: false, message: "Service not found" });
       }
@@ -935,6 +1067,13 @@ export class ProgramController {
       const deleted = await programService.deleteService(id);
       if (deleted) {
         res.json({ success: true, message: "Service deleted successfully" });
+
+        activityLogService.log({
+          userId: currentUser.id,
+          eventType: "delete",
+          subjectType1: "service",
+          subjectId1: id,
+        });
       } else {
         res.status(404).json({ success: false, message: "Service not found" });
       }
@@ -1011,6 +1150,15 @@ export class ProgramController {
         message: "Data point recorded successfully",
         dataPoint,
       });
+
+      activityLogService.log({
+        userId: currentUser.id,
+        eventType: "create",
+        subjectType1: "data_point",
+        subjectId1: dataPoint.id,
+        subjectType2: "goal",
+        subjectId2: goalId,
+      });
     } catch (error: any) {
       console.error("Error creating data point:", error);
       if (error.name === "ZodError") {
@@ -1035,6 +1183,13 @@ export class ProgramController {
       const deleted = await programService.deleteDataPoint(id);
       if (deleted) {
         res.json({ success: true, message: "Data point deleted successfully" });
+
+        activityLogService.log({
+          userId: currentUser.id,
+          eventType: "delete",
+          subjectType1: "data_point",
+          subjectId1: id,
+        });
       } else {
         res.status(404).json({ success: false, message: "Data point not found" });
       }
@@ -1103,6 +1258,15 @@ export class ProgramController {
         message: "Progress report created successfully",
         report,
       });
+
+      activityLogService.log({
+        userId: currentUser.id,
+        eventType: "create",
+        subjectType1: "progress_report",
+        subjectId1: report.id,
+        subjectType2: "program",
+        subjectId2: programId,
+      });
     } catch (error: any) {
       console.error("Error creating progress report:", error);
       res.status(500).json({ success: false, message: "Failed to create progress report" });
@@ -1135,6 +1299,13 @@ export class ProgramController {
 
       if (updated) {
         res.json({ success: true, message: "Progress report updated successfully", report: updated });
+
+        activityLogService.log({
+          userId: currentUser.id,
+          eventType: "update",
+          subjectType1: "progress_report",
+          subjectId1: id,
+        });
       } else {
         res.status(404).json({ success: false, message: "Progress report not found" });
       }
@@ -1197,6 +1368,15 @@ export class ProgramController {
       const member = await programService.createTeamMember(validatedData);
 
       res.json({ success: true, message: "Team member added successfully", member });
+
+      activityLogService.log({
+        userId: currentUser.id,
+        eventType: "create",
+        subjectType1: "team_member",
+        subjectId1: member.id,
+        subjectType2: "program",
+        subjectId2: programId,
+      });
     } catch (error: any) {
       console.error("Error creating team member:", error);
       if (error.name === "ZodError") {
@@ -1233,6 +1413,13 @@ export class ProgramController {
 
       if (updated) {
         res.json({ success: true, message: "Team member updated successfully", member: updated });
+
+        activityLogService.log({
+          userId: currentUser.id,
+          eventType: "update",
+          subjectType1: "team_member",
+          subjectId1: id,
+        });
       } else {
         res.status(404).json({ success: false, message: "Team member not found" });
       }
@@ -1270,6 +1457,13 @@ export class ProgramController {
       const deleted = await programService.deleteTeamMember(id);
       if (deleted) {
         res.json({ success: true, message: "Team member removed successfully" });
+
+        activityLogService.log({
+          userId: currentUser.id,
+          eventType: "delete",
+          subjectType1: "team_member",
+          subjectId1: id,
+        });
       } else {
         res.status(404).json({ success: false, message: "Team member not found" });
       }
@@ -1328,6 +1522,15 @@ export class ProgramController {
       const meeting = await programService.createMeeting(validatedData);
 
       res.json({ success: true, message: "Meeting created successfully", meeting });
+
+      activityLogService.log({
+        userId: currentUser.id,
+        eventType: "create",
+        subjectType1: "meeting",
+        subjectId1: meeting.id,
+        subjectType2: "program",
+        subjectId2: programId,
+      });
     } catch (error: any) {
       console.error("Error creating meeting:", error);
       if (error.name === "ZodError") {
@@ -1364,6 +1567,13 @@ export class ProgramController {
 
       if (updated) {
         res.json({ success: true, message: "Meeting updated successfully", meeting: updated });
+
+        activityLogService.log({
+          userId: currentUser.id,
+          eventType: "update",
+          subjectType1: "meeting",
+          subjectId1: id,
+        });
       } else {
         res.status(404).json({ success: false, message: "Meeting not found" });
       }
@@ -1401,6 +1611,13 @@ export class ProgramController {
       const deleted = await programService.deleteMeeting(id);
       if (deleted) {
         res.json({ success: true, message: "Meeting deleted successfully" });
+
+        activityLogService.log({
+          userId: currentUser.id,
+          eventType: "delete",
+          subjectType1: "meeting",
+          subjectId1: id,
+        });
       } else {
         res.status(404).json({ success: false, message: "Meeting not found" });
       }
@@ -1482,6 +1699,15 @@ export class ProgramController {
       const consent = await programService.createConsentForm(validatedData);
 
       res.json({ success: true, message: "Consent form created successfully", consent });
+
+      activityLogService.log({
+        userId: currentUser.id,
+        eventType: "create",
+        subjectType1: "consent_form",
+        subjectId1: consent.id,
+        subjectType2: "program",
+        subjectId2: programId,
+      });
     } catch (error: any) {
       console.error("Error creating consent form:", error);
       if (error.name === "ZodError") {
@@ -1518,6 +1744,13 @@ export class ProgramController {
 
       if (updated) {
         res.json({ success: true, message: "Consent form updated successfully", consent: updated });
+
+        activityLogService.log({
+          userId: currentUser.id,
+          eventType: "update",
+          subjectType1: "consent_form",
+          subjectId1: id,
+        });
       } else {
         res.status(404).json({ success: false, message: "Consent form not found" });
       }

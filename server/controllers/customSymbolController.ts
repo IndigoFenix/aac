@@ -3,6 +3,7 @@ import { customSymbolRepository } from "../repositories/customSymbolRepository";
 import { customSymbolService } from "../services/symbol/custom-symbol-service";
 import { generateSymbolImage } from "../services/symbol/symbol-generator";
 import { symbolEvents } from "../services/symbol/auto-symbol-service";
+import { activityLogService } from "../services/activityLogService";
 
 class CustomSymbolController {
   // ==================== Symbol CRUD ====================
@@ -25,6 +26,13 @@ class CustomSymbolController {
       });
 
       res.status(201).json(symbol);
+
+      activityLogService.log({
+        userId,
+        eventType: "create",
+        subjectType1: "custom_symbol",
+        subjectId1: symbol.id,
+      });
     } catch (error: any) {
       console.error("[CustomSymbolController] createSymbol error:", error);
       res.status(500).json({ message: error.message || "Failed to create symbol" });
@@ -325,6 +333,13 @@ class CustomSymbolController {
       });
       if (!updated) return res.status(404).json({ message: "Symbol not found" });
       res.json(updated);
+
+      activityLogService.log({
+        userId: (req as any).user?.id,
+        eventType: "update",
+        subjectType1: "custom_symbol",
+        subjectId1: req.params.id,
+      });
     } catch (error: any) {
       console.error("[CustomSymbolController] updateSymbol error:", error);
       res.status(500).json({ message: "Failed to update symbol" });
@@ -345,6 +360,13 @@ class CustomSymbolController {
 
       await customSymbolRepository.deleteSymbol(req.params.id);
       res.json({ success: true });
+
+      activityLogService.log({
+        userId: (req as any).user?.id,
+        eventType: "delete",
+        subjectType1: "custom_symbol",
+        subjectId1: req.params.id,
+      });
     } catch (error: any) {
       console.error("[CustomSymbolController] deleteSymbol error:", error);
       res.status(500).json({ message: "Failed to delete symbol" });
@@ -367,6 +389,15 @@ class CustomSymbolController {
         description: description || null,
       });
       res.status(201).json(assoc);
+
+      activityLogService.log({
+        userId,
+        eventType: "link",
+        subjectType1: "custom_symbol",
+        subjectId1: req.params.id,
+        subjectType2: "user",
+        subjectId2: userId,
+      });
     } catch (error: any) {
       if (error.code === "23505") return res.status(409).json({ message: "Association already exists" });
       console.error("[CustomSymbolController] createUserAssociation error:", error);
@@ -387,6 +418,15 @@ class CustomSymbolController {
         description: description || null,
       });
       res.status(201).json(assoc);
+
+      activityLogService.log({
+        userId: (req as any).user?.id,
+        eventType: "link",
+        subjectType1: "custom_symbol",
+        subjectId1: req.params.id,
+        subjectType2: "student",
+        subjectId2: studentId,
+      });
     } catch (error: any) {
       if (error.code === "23505") return res.status(409).json({ message: "Association already exists" });
       console.error("[CustomSymbolController] createStudentAssociation error:", error);
@@ -407,6 +447,16 @@ class CustomSymbolController {
         description: description || null,
       });
       res.status(201).json(assoc);
+
+      activityLogService.log({
+        userId: (req as any).user?.id,
+        instituteId,
+        eventType: "link",
+        subjectType1: "custom_symbol",
+        subjectId1: req.params.id,
+        subjectType2: "institute",
+        subjectId2: instituteId,
+      });
     } catch (error: any) {
       if (error.code === "23505") return res.status(409).json({ message: "Association already exists" });
       console.error("[CustomSymbolController] createInstituteAssociation error:", error);
@@ -479,6 +529,15 @@ class CustomSymbolController {
       // Orphan cleanup
       await customSymbolService.deleteSymbolIfOrphaned(assoc.symbolId);
       res.json({ success: true });
+
+      activityLogService.log({
+        userId: (req as any).user?.id,
+        eventType: "unlink",
+        subjectType1: "custom_symbol",
+        subjectId1: assoc.symbolId,
+        subjectType2: "user",
+        subjectId2: assoc.userId,
+      });
     } catch (error: any) {
       console.error("[CustomSymbolController] deleteUserAssociation error:", error);
       res.status(500).json({ message: "Failed to delete association" });
@@ -494,6 +553,15 @@ class CustomSymbolController {
       await customSymbolRepository.deleteStudentAssociation(req.params.assocId);
       await customSymbolService.deleteSymbolIfOrphaned(assoc.symbolId);
       res.json({ success: true });
+
+      activityLogService.log({
+        userId: (req as any).user?.id,
+        eventType: "unlink",
+        subjectType1: "custom_symbol",
+        subjectId1: assoc.symbolId,
+        subjectType2: "student",
+        subjectId2: assoc.studentId,
+      });
     } catch (error: any) {
       console.error("[CustomSymbolController] deleteStudentAssociation error:", error);
       res.status(500).json({ message: "Failed to delete association" });
@@ -509,6 +577,15 @@ class CustomSymbolController {
       await customSymbolRepository.deleteInstituteAssociation(req.params.assocId);
       await customSymbolService.deleteSymbolIfOrphaned(assoc.symbolId);
       res.json({ success: true });
+
+      activityLogService.log({
+        userId: (req as any).user?.id,
+        eventType: "unlink",
+        subjectType1: "custom_symbol",
+        subjectId1: assoc.symbolId,
+        subjectType2: "institute",
+        subjectId2: assoc.instituteId,
+      });
     } catch (error: any) {
       console.error("[CustomSymbolController] deleteInstituteAssociation error:", error);
       res.status(500).json({ message: "Failed to delete association" });

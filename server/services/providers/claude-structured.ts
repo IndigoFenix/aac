@@ -48,18 +48,22 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
       });
     }
 
+    // Block-level caching on system prompt only — saves costs when the system prompt
+    // is stable across turns (static prompt mode) AND exceeds the minimum token threshold
+    // (~4096 tokens for Haiku 4.5). Request-level automatic caching is NOT used because
+    // it caches the growing message prefix, which means 1.25x cost on every turn with
+    // no reads (since the prefix changes each turn).
+    const systemBlock = systemPrompt
+      ? [{ type: "text" as const, text: systemPrompt, cache_control: { type: "ephemeral" as const } }]
+      : undefined;
+
     const params: any = {
       model,
-      system: systemPrompt
-        ? [{ type: "text" as const, text: systemPrompt, cache_control: { type: "ephemeral" as const } }]
-        : undefined,
+      system: systemBlock,
       messages,
       max_tokens: request.maxTokens || 2048,
       temperature: request.temperature ?? 0.7,
       tools: tools.length > 0 ? tools : undefined,
-      // Force the model to call at least one tool on every turn when we have tools.
-      // It will call real tools when it needs to, and _structured_response
-      // when it is ready to produce its final answer.
       tool_choice: tools.length > 0 ? { type: "any" as const } : undefined,
     };
 
@@ -259,7 +263,7 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
     return {
       promptTokens: response.usage?.input_tokens ?? 0,
       completionTokens: response.usage?.output_tokens ?? 0,
-      cachedTokens: response.usage?.input_tokens_details?.cache_read_input_tokens ?? 0,
+      cachedTokens: (response.usage as any)?.cache_read_input_tokens ?? 0,
       content,
       output: response.content,
       toolCalls: functionCalls,

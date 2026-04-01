@@ -8,6 +8,7 @@ import { insertInstituteSchema } from "@shared/schema";
 import { emailService } from "server/services/emailService";
 import { isInSupportMode, getSupportSession } from "../services/customerSupportService";
 import { licenseService } from "../services/licenseService";
+import { activityLogService } from "../services/activityLogService";
 
 function getBaseUrl(req: Request): string {
   return process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
@@ -163,6 +164,15 @@ export class InstituteController {
           role: membership.role,
         },
       });
+
+      activityLogService.log({
+        instituteId: institute.id,
+        userId: currentUser.id,
+        eventType: "create",
+        subjectType1: "institute",
+        subjectId1: institute.id,
+        details: { name: institute.name },
+      });
     } catch (error: any) {
       console.error("Error creating institute:", error);
       res.status(500).json({
@@ -208,6 +218,14 @@ export class InstituteController {
         message: "Institute updated successfully",
         institute: result.institute,
       });
+
+      activityLogService.log({
+        instituteId: instituteId,
+        userId: currentUser.id,
+        eventType: "update",
+        subjectType1: "institute",
+        subjectId1: instituteId,
+      });
     } catch (error: any) {
       console.error("Error updating institute:", error);
       res.status(500).json({
@@ -242,6 +260,14 @@ export class InstituteController {
       res.json({
         success: true,
         message: "Institute deleted successfully",
+      });
+
+      activityLogService.log({
+        instituteId: instituteId,
+        userId: currentUser.id,
+        eventType: "delete",
+        subjectType1: "institute",
+        subjectId1: instituteId,
       });
     } catch (error: any) {
       console.error("Error deleting institute:", error);
@@ -330,6 +356,16 @@ export class InstituteController {
         message: "Member updated successfully",
         membership: result.membership,
       });
+
+      activityLogService.log({
+        instituteId: instituteId,
+        userId: currentUser.id,
+        eventType: "update",
+        subjectType1: "institute",
+        subjectId1: instituteId,
+        subjectType2: "user",
+        subjectId2: targetUserId,
+      });
     } catch (error: any) {
       console.error("Error updating member:", error);
       res.status(500).json({
@@ -365,6 +401,16 @@ export class InstituteController {
       res.json({
         success: true,
         message: "Member removed successfully",
+      });
+
+      activityLogService.log({
+        instituteId: instituteId,
+        userId: currentUser.id,
+        eventType: "unlink",
+        subjectType1: "institute",
+        subjectId1: instituteId,
+        subjectType2: "user",
+        subjectId2: targetUserId,
       });
     } catch (error: any) {
       console.error("Error removing member:", error);
@@ -454,6 +500,13 @@ export class InstituteController {
         invite: result.invite,
         inviteLink: instituteService.getInviteLink(result.invite!.token, baseUrl),
       });
+
+      activityLogService.log({
+        instituteId: instituteId,
+        userId: currentUser.id,
+        eventType: "create",
+        subjectType1: "invite",
+      });
     } catch (error: any) {
       console.error("Error sending invite:", error);
       res.status(500).json({
@@ -523,6 +576,14 @@ export class InstituteController {
       res.json({
         success: true,
         message: "Invite cancelled successfully",
+      });
+
+      activityLogService.log({
+        instituteId: req.params.id,
+        userId: currentUser.id,
+        eventType: "delete",
+        subjectType1: "invite",
+        subjectId1: inviteId,
       });
     } catch (error: any) {
       console.error("Error cancelling invite:", error);
@@ -1100,6 +1161,16 @@ export class InstituteController {
         message: "Student added to institute",
         enrollment: result.enrollment,
       });
+
+      activityLogService.log({
+        instituteId: instituteId,
+        userId: currentUser.id,
+        eventType: "link",
+        subjectType1: "institute",
+        subjectId1: instituteId,
+        subjectType2: "student",
+        subjectId2: studentId,
+      });
     } catch (error: any) {
       console.error("Error adding student to institute:", error);
       res.status(500).json({
@@ -1139,6 +1210,16 @@ export class InstituteController {
         message: "Student enrollment updated",
         enrollment: result.enrollment,
       });
+
+      activityLogService.log({
+        instituteId: instituteId,
+        userId: currentUser.id,
+        eventType: "update",
+        subjectType1: "institute",
+        subjectId1: instituteId,
+        subjectType2: "student",
+        subjectId2: studentId,
+      });
     } catch (error: any) {
       console.error("Error updating student enrollment:", error);
       res.status(500).json({
@@ -1176,6 +1257,16 @@ export class InstituteController {
       res.json({
         success: true,
         message: "Student removed from institute",
+      });
+
+      activityLogService.log({
+        instituteId: instituteId,
+        userId: currentUser.id,
+        eventType: "unlink",
+        subjectType1: "institute",
+        subjectId1: instituteId,
+        subjectType2: "student",
+        subjectId2: studentId,
       });
     } catch (error: any) {
       console.error("Error removing student from institute:", error);

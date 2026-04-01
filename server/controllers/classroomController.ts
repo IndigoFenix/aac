@@ -4,6 +4,7 @@
 import type { Request, Response } from "express";
 import { classroomService } from "../services/classroomService";
 import { insertClassroomSchema } from "@shared/schema";
+import { activityLogService } from "../services/activityLogService";
 
 export class ClassroomController {
   // ==================== Classroom CRUD ====================
@@ -119,6 +120,14 @@ export class ClassroomController {
         message: "Classroom created successfully",
         classroom: result.classroom,
       });
+
+      activityLogService.log({
+        instituteId,
+        userId: currentUser.id,
+        eventType: "create",
+        subjectType1: "classroom",
+        subjectId1: result.classroom?.id,
+      });
     } catch (error: any) {
       console.error("Error creating classroom:", error);
       res.status(500).json({
@@ -156,6 +165,14 @@ export class ClassroomController {
         message: "Classroom updated successfully",
         classroom: result.classroom,
       });
+
+      activityLogService.log({
+        instituteId: result.classroom?.instituteId,
+        userId: currentUser.id,
+        eventType: "update",
+        subjectType1: "classroom",
+        subjectId1: classroomId,
+      });
     } catch (error: any) {
       console.error("Error updating classroom:", error);
       res.status(500).json({
@@ -190,6 +207,13 @@ export class ClassroomController {
       res.json({
         success: true,
         message: "Classroom deleted successfully",
+      });
+
+      activityLogService.log({
+        userId: currentUser.id,
+        eventType: "delete",
+        subjectType1: "classroom",
+        subjectId1: classroomId,
       });
     } catch (error: any) {
       console.error("Error deleting classroom:", error);
@@ -287,6 +311,15 @@ export class ClassroomController {
         message: "Member added to classroom",
         membership: result.membership,
       });
+
+      activityLogService.log({
+        userId: currentUser.id,
+        eventType: "link",
+        subjectType1: "classroom",
+        subjectId1: classroomId,
+        subjectType2: "user",
+        subjectId2: userId,
+      });
     } catch (error: any) {
       console.error("Error adding classroom member:", error);
       res.status(500).json({
@@ -326,6 +359,15 @@ export class ClassroomController {
         message: "Member updated successfully",
         membership: result.membership,
       });
+
+      activityLogService.log({
+        userId: currentUser.id,
+        eventType: "update",
+        subjectType1: "classroom",
+        subjectId1: classroomId,
+        subjectType2: "user",
+        subjectId2: userId,
+      });
     } catch (error: any) {
       console.error("Error updating classroom member:", error);
       res.status(500).json({
@@ -361,6 +403,15 @@ export class ClassroomController {
       res.json({
         success: true,
         message: "Member removed from classroom",
+      });
+
+      activityLogService.log({
+        userId: currentUser.id,
+        eventType: "unlink",
+        subjectType1: "classroom",
+        subjectId1: classroomId,
+        subjectType2: "user",
+        subjectId2: userId,
       });
     } catch (error: any) {
       console.error("Error removing classroom member:", error);
@@ -458,6 +509,15 @@ export class ClassroomController {
         message: "Student added to classroom",
         enrollment: result.enrollment,
       });
+
+      activityLogService.log({
+        userId: currentUser.id,
+        eventType: "link",
+        subjectType1: "classroom",
+        subjectId1: classroomId,
+        subjectType2: "student",
+        subjectId2: studentId,
+      });
     } catch (error: any) {
       console.error("Error adding student to classroom:", error);
       res.status(500).json({
@@ -497,6 +557,15 @@ export class ClassroomController {
         message: "Student enrollment updated",
         enrollment: result.enrollment,
       });
+
+      activityLogService.log({
+        userId: currentUser.id,
+        eventType: "update",
+        subjectType1: "classroom",
+        subjectId1: classroomId,
+        subjectType2: "student",
+        subjectId2: studentId,
+      });
     } catch (error: any) {
       console.error("Error updating student enrollment:", error);
       res.status(500).json({
@@ -532,6 +601,15 @@ export class ClassroomController {
       res.json({
         success: true,
         message: "Student removed from classroom",
+      });
+
+      activityLogService.log({
+        userId: currentUser.id,
+        eventType: "unlink",
+        subjectType1: "classroom",
+        subjectId1: classroomId,
+        subjectType2: "student",
+        subjectId2: studentId,
       });
     } catch (error: any) {
       console.error("Error removing student from classroom:", error);

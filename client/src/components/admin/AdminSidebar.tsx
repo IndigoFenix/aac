@@ -16,12 +16,13 @@ import {
   Sun,
   Mail,
   KeyRound,
+  ClipboardList,
 } from 'lucide-react';
 import logoImage from '@assets/aivota_icon.png';
 import { cn } from '@/lib/utils';
 import { useLocation } from 'wouter';
 
-type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts' | 'licenses';
+type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts' | 'licenses' | 'activity-log';
 
 type AdminSidebarProps = {
   activeSection: AdminSection;
@@ -75,6 +76,12 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
       label: 'Licenses',
       section: 'licenses' as AdminSection,
       testId: 'admin-nav-licenses',
+    },
+    {
+      icon: ClipboardList,
+      label: 'Activity Log',
+      section: 'activity-log' as AdminSection,
+      testId: 'admin-nav-activity-log',
     },
   ];
 

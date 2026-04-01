@@ -44,6 +44,7 @@ import {
   import { instituteService } from "../instituteService";
   import { classroomService } from "../classroomService";
   import { studentService } from "../studentService";
+  import { activityLogService } from "../activityLogService";
   import { aacSettingsRepository } from "../../repositories/aacSettingsRepository";
   import { instituteRepository } from "../../repositories/instituteRepository";
   import { licenseRepository } from "../../repositories/licenseRepository";
@@ -141,7 +142,16 @@ import {
         },
         userId
       );
-      
+
+      activityLogService.log({
+        instituteId: institute.id,
+        userId: getUserId(ctx),
+        eventType: "create",
+        subjectType1: "institute",
+        subjectId1: institute.id,
+        isAiInitiated: true,
+      });
+
       return {
         ...toMemoryValue(institute),
         membership: toMemoryValue(membership),
@@ -150,29 +160,47 @@ import {
   
     update: async (ctx, key, value) => {
       const userId = getUserId(ctx);
-      
+
       const result = await instituteService.updateInstitute(
         String(key),
         value,
         userId
       );
-      
+
       if (!result.success || !result.institute) {
         throw new Error(result.error || "Failed to update institute");
       }
-      
+
+      activityLogService.log({
+        instituteId: String(key),
+        userId: getUserId(ctx),
+        eventType: "update",
+        subjectType1: "institute",
+        subjectId1: String(key),
+        isAiInitiated: true,
+      });
+
       return toMemoryValue(result.institute);
     },
-  
+
     delete: async (ctx, key) => {
       const userId = getUserId(ctx);
-      
+
       const result = await instituteService.deleteInstitute(String(key), userId);
       if (!result.success) {
         throw new Error(result.error || "Failed to delete institute");
       }
+
+      activityLogService.log({
+        instituteId: String(key),
+        userId: getUserId(ctx),
+        eventType: "delete",
+        subjectType1: "institute",
+        subjectId1: String(key),
+        isAiInitiated: true,
+      });
     },
-  
+
     fromDB: (record) => ({
       ...toMemoryValue(record),
       // Initialize empty collections for nested data
@@ -228,42 +256,64 @@ import {
       const userId = getUserId(ctx);
       const instituteId = ctx.all.instituteId;
       if (!instituteId) throw new Error("instituteId required");
-  
+
       const result = await instituteService.updateMember(
         instituteId,
         String(key),
         { role: value.role, isAdmin: value.isAdmin },
         userId
       );
-  
+
       if (!result.success) {
         throw new Error(result.error || "Failed to update member");
       }
-  
+
+      activityLogService.log({
+        instituteId,
+        userId: getUserId(ctx),
+        eventType: "update",
+        subjectType1: "institute",
+        subjectId1: instituteId,
+        subjectType2: "user",
+        subjectId2: String(key),
+        isAiInitiated: true,
+      });
+
       return { membership: result.membership ? toMemoryValue(result.membership) : undefined };
     },
-  
+
     delete: async (ctx, key) => {
       const userId = getUserId(ctx);
       const instituteId = ctx.all.instituteId;
       if (!instituteId) throw new Error("instituteId required");
-  
+
       const result = await instituteService.removeMember(
         instituteId,
         String(key),
         userId
       );
-  
+
       if (!result.success) {
         throw new Error(result.error || "Failed to remove member");
       }
+
+      activityLogService.log({
+        instituteId,
+        userId: getUserId(ctx),
+        eventType: "unlink",
+        subjectType1: "institute",
+        subjectId1: instituteId,
+        subjectType2: "user",
+        subjectId2: String(key),
+        isAiInitiated: true,
+      });
     },
-  
+
     fromDB: (record) => ({
       user: record?.user ? toMemoryValue(record.user, ["createdAt", "updatedAt", "password"]) : undefined,
       membership: record?.membership ? toMemoryValue(record.membership) : undefined,
     }),
-  
+
     getDBKey: (value) => value?.user?.id || value?.membership?.userId,
   };
   
@@ -328,46 +378,79 @@ import {
 
       // Get the full student data
       const student = await studentService.getStudentById(studentId);
-  
+
+      activityLogService.log({
+        instituteId,
+        userId: getUserId(ctx),
+        eventType: "link",
+        subjectType1: "institute",
+        subjectId1: instituteId,
+        subjectType2: "student",
+        subjectId2: studentId,
+        isAiInitiated: true,
+      });
+
       return {
         student: student ? toMemoryValue(student) : undefined,
         enrollment: toMemoryValue(result.enrollment),
       };
     },
-  
+
     update: async (ctx, key, value) => {
       const userId = getUserId(ctx);
       const instituteId = ctx.all.instituteId;
       if (!instituteId) throw new Error("instituteId required");
-  
+
       const result = await instituteService.updateStudentEnrollment(
         instituteId,
         String(key),
         { idNumber: value.idNumber, grade: value.grade },
         userId
       );
-  
+
       if (!result.success) {
         throw new Error(result.error || "Failed to update enrollment");
       }
-  
+
+      activityLogService.log({
+        instituteId,
+        userId: getUserId(ctx),
+        eventType: "update",
+        subjectType1: "institute",
+        subjectId1: instituteId,
+        subjectType2: "student",
+        subjectId2: String(key),
+        isAiInitiated: true,
+      });
+
       return { enrollment: result.enrollment ? toMemoryValue(result.enrollment) : undefined };
     },
-  
+
     delete: async (ctx, key) => {
       const userId = getUserId(ctx);
       const instituteId = ctx.all.instituteId;
       if (!instituteId) throw new Error("instituteId required");
-  
+
       const result = await instituteService.removeStudentFromInstitute(
         instituteId,
         String(key),
         userId
       );
-  
+
       if (!result.success) {
         throw new Error(result.error || "Failed to remove student");
       }
+
+      activityLogService.log({
+        instituteId,
+        userId: getUserId(ctx),
+        eventType: "unlink",
+        subjectType1: "institute",
+        subjectId1: instituteId,
+        subjectType2: "student",
+        subjectId2: String(key),
+        isAiInitiated: true,
+      });
     },
   
     fromDB: (record) => ({
@@ -452,35 +535,62 @@ import {
       if (!result.success || !result.classroom) {
         throw new Error(result.error || "Failed to create classroom");
       }
-  
+
+      activityLogService.log({
+        instituteId: ctx.all.instituteId,
+        userId: getUserId(ctx),
+        eventType: "create",
+        subjectType1: "classroom",
+        subjectId1: result.classroom.id,
+        isAiInitiated: true,
+      });
+
       return toMemoryValue(result.classroom);
     },
-  
+
     update: async (ctx, key, value) => {
       const userId = getUserId(ctx);
-  
+
       const result = await classroomService.updateClassroom(
         String(key),
         value,
         userId
       );
-  
+
       if (!result.success || !result.classroom) {
         throw new Error(result.error || "Failed to update classroom");
       }
-  
+
+      activityLogService.log({
+        instituteId: ctx.all.instituteId,
+        userId: getUserId(ctx),
+        eventType: "update",
+        subjectType1: "classroom",
+        subjectId1: String(key),
+        isAiInitiated: true,
+      });
+
       return toMemoryValue(result.classroom);
     },
-  
+
     delete: async (ctx, key) => {
       const userId = getUserId(ctx);
-  
+
       const result = await classroomService.deleteClassroom(String(key), userId);
       if (!result.success) {
         throw new Error(result.error || "Failed to delete classroom");
       }
+
+      activityLogService.log({
+        instituteId: ctx.all.instituteId,
+        userId: getUserId(ctx),
+        eventType: "delete",
+        subjectType1: "classroom",
+        subjectId1: String(key),
+        isAiInitiated: true,
+      });
     },
-  
+
     fromDB: (record) => ({
       ...toMemoryValue(record),
       members: {},
@@ -552,49 +662,82 @@ import {
         throw new Error(result.error || "Failed to add member");
       }
 
+      activityLogService.log({
+        instituteId: ctx.all.instituteId,
+        userId: getUserId(ctx),
+        eventType: "link",
+        subjectType1: "classroom",
+        subjectId1: classroomId,
+        subjectType2: "user",
+        subjectId2: targetUserId,
+        isAiInitiated: true,
+      });
+
       return { membership: toMemoryValue(result.membership) };
     },
-  
+
     update: async (ctx, key, value) => {
       const userId = getUserId(ctx);
       const classroomId = ctx.all.classroomId;
       if (!classroomId) throw new Error("classroomId required");
-  
+
       const result = await classroomService.updateClassroomMember(
         classroomId,
         String(key),
         { role: value.role, isPrimary: value.isPrimary },
         userId
       );
-  
+
       if (!result.success) {
         throw new Error(result.error || "Failed to update member");
       }
-  
+
+      activityLogService.log({
+        instituteId: ctx.all.instituteId,
+        userId: getUserId(ctx),
+        eventType: "update",
+        subjectType1: "classroom",
+        subjectId1: classroomId,
+        subjectType2: "user",
+        subjectId2: String(key),
+        isAiInitiated: true,
+      });
+
       return { membership: result.membership ? toMemoryValue(result.membership) : undefined };
     },
-  
+
     delete: async (ctx, key) => {
       const userId = getUserId(ctx);
       const classroomId = ctx.all.classroomId;
       if (!classroomId) throw new Error("classroomId required");
-  
+
       const result = await classroomService.removeUserFromClassroom(
         classroomId,
         String(key),
         userId
       );
-  
+
       if (!result.success) {
         throw new Error(result.error || "Failed to remove member");
       }
+
+      activityLogService.log({
+        instituteId: ctx.all.instituteId,
+        userId: getUserId(ctx),
+        eventType: "unlink",
+        subjectType1: "classroom",
+        subjectId1: classroomId,
+        subjectType2: "user",
+        subjectId2: String(key),
+        isAiInitiated: true,
+      });
     },
-  
+
     fromDB: (record) => ({
       user: record?.user ? toMemoryValue(record.user, ["createdAt", "updatedAt", "password"]) : undefined,
       membership: record?.membership ? toMemoryValue(record.membership) : undefined,
     }),
-  
+
     getDBKey: (value) => value?.user?.id || value?.membership?.userId,
   };
   
@@ -659,45 +802,78 @@ import {
 
       const student = await studentService.getStudentById(studentId);
 
+      activityLogService.log({
+        instituteId: ctx.all.instituteId,
+        userId: getUserId(ctx),
+        eventType: "link",
+        subjectType1: "classroom",
+        subjectId1: classroomId,
+        subjectType2: "student",
+        subjectId2: studentId,
+        isAiInitiated: true,
+      });
+
       return {
         student: student ? toMemoryValue(student) : undefined,
         enrollment: toMemoryValue(result.enrollment),
       };
     },
-  
+
     update: async (ctx, key, value) => {
       const userId = getUserId(ctx);
       const classroomId = ctx.all.classroomId;
       if (!classroomId) throw new Error("classroomId required");
-  
+
       const result = await classroomService.updateStudentEnrollment(
         String(key),
         classroomId,
         { isPrimary: value.isPrimary, notes: value.notes },
         userId
       );
-  
+
       if (!result.success) {
         throw new Error(result.error || "Failed to update enrollment");
       }
-  
+
+      activityLogService.log({
+        instituteId: ctx.all.instituteId,
+        userId: getUserId(ctx),
+        eventType: "update",
+        subjectType1: "classroom",
+        subjectId1: classroomId,
+        subjectType2: "student",
+        subjectId2: String(key),
+        isAiInitiated: true,
+      });
+
       return { enrollment: result.enrollment ? toMemoryValue(result.enrollment) : undefined };
     },
-  
+
     delete: async (ctx, key) => {
       const userId = getUserId(ctx);
       const classroomId = ctx.all.classroomId;
       if (!classroomId) throw new Error("classroomId required");
-  
+
       const result = await classroomService.removeStudentFromClassroom(
         String(key),
         classroomId,
         userId
       );
-  
+
       if (!result.success) {
         throw new Error(result.error || "Failed to remove student");
       }
+
+      activityLogService.log({
+        instituteId: ctx.all.instituteId,
+        userId: getUserId(ctx),
+        eventType: "unlink",
+        subjectType1: "classroom",
+        subjectId1: classroomId,
+        subjectType2: "student",
+        subjectId2: String(key),
+        isAiInitiated: true,
+      });
     },
   
     fromDB: (record) => ({
@@ -756,21 +932,39 @@ import {
       if (!result.success || !result.invite) {
         throw new Error(result.error || "Failed to send invite");
       }
-  
+
+      activityLogService.log({
+        instituteId: ctx.all.instituteId,
+        userId: getUserId(ctx),
+        eventType: "create",
+        subjectType1: "invite",
+        subjectId1: result.invite.id,
+        isAiInitiated: true,
+      });
+
       return toMemoryValue(result.invite);
     },
-  
+
     delete: async (ctx, key) => {
       const userId = getUserId(ctx);
-  
+
       const result = await instituteService.cancelInvite(String(key), userId);
       if (!result.success) {
         throw new Error(result.error || "Failed to cancel invite");
       }
+
+      activityLogService.log({
+        instituteId: ctx.all.instituteId,
+        userId: getUserId(ctx),
+        eventType: "delete",
+        subjectType1: "invite",
+        subjectId1: String(key),
+        isAiInitiated: true,
+      });
     },
-  
+
     fromDB: (record) => toMemoryValue(record),
-  
+
     getDBKey: (value) => value?.id,
   };
   
@@ -898,18 +1092,37 @@ import {
         await instituteService.assignStudentToInstitute(instId, student.id, userId);
       }
 
+      activityLogService.log({
+        instituteId: ctx.all.instituteId,
+        userId: getUserId(ctx),
+        eventType: "create",
+        subjectType1: "student",
+        subjectId1: student.id,
+        isAiInitiated: true,
+      });
+
       return {
         ...toMemoryValue(student),
         link: toMemoryValue(link),
       };
     },
-  
+
     update: async (ctx, key, value) => {
       const student = await studentService.updateStudent(String(key), value);
       if (!student) throw new Error("Failed to update student");
+
+      activityLogService.log({
+        instituteId: ctx.all.instituteId,
+        userId: getUserId(ctx),
+        eventType: "update",
+        subjectType1: "student",
+        subjectId1: String(key),
+        isAiInitiated: true,
+      });
+
       return toMemoryValue(student);
     },
-  
+
     delete: async (ctx, key) => {
       throw new Error("AI is not allowed to delete students directly. User must delete the student manually.");
       const deleted = await studentService.deleteStudent(String(key));
@@ -998,6 +1211,17 @@ import {
         value.role || "caregiver"
       );
 
+      activityLogService.log({
+        instituteId: ctx.all.instituteId,
+        userId: getUserId(ctx),
+        eventType: "link",
+        subjectType1: "student",
+        subjectId1: studentId,
+        subjectType2: "user",
+        subjectId2: targetUserId,
+        isAiInitiated: true,
+      });
+
       return toMemoryValue(link);
     },
 
@@ -1012,6 +1236,17 @@ import {
 
       const updated = await studentService.updateUserStudentLink(link.id, value);
       if (!updated) throw new Error("Failed to update link");
+
+      activityLogService.log({
+        instituteId: ctx.all.instituteId,
+        userId: getUserId(ctx),
+        eventType: "update",
+        subjectType1: "student",
+        subjectId1: studentId,
+        subjectType2: "user",
+        subjectId2: String(key),
+        isAiInitiated: true,
+      });
 
       return toMemoryValue(updated);
     },
@@ -1030,6 +1265,17 @@ import {
 
       const removed = await studentService.unlinkUserFromStudent(String(key), studentId);
       if (!removed) throw new Error("Failed to remove link");
+
+      activityLogService.log({
+        instituteId: ctx.all.instituteId,
+        userId: getUserId(ctx),
+        eventType: "unlink",
+        subjectType1: "student",
+        subjectId1: studentId,
+        subjectType2: "user",
+        subjectId2: String(key),
+        isAiInitiated: true,
+      });
     },
 
     fromDB: (record) => toMemoryValue(record),

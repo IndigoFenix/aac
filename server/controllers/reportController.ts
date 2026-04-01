@@ -7,6 +7,7 @@
 
 import type { Request, Response } from "express";
 import { reportService } from "../services";
+import { activityLogService } from "../services/activityLogService";
 import {
   type InsertMedicalRecord,
   type UpdateMedicalRecord,
@@ -173,6 +174,13 @@ export class ReportController {
       }
 
       res.json({ success: true, record: result.record });
+      activityLogService.log({
+        instituteId: (result.record as any).instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "view",
+        subjectType1: "medical_record",
+        subjectId1: id,
+      });
     } catch (error: any) {
       console.error("Error fetching medical record:", error);
       res.status(500).json({
@@ -219,6 +227,13 @@ export class ReportController {
         success: true,
         message: "Medical record created successfully",
         record,
+      });
+      activityLogService.log({
+        instituteId: instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "create",
+        subjectType1: "medical_record",
+        subjectId1: (record as any).id ?? null,
       });
     } catch (error: any) {
       console.error("Error creating medical record:", error);
@@ -272,6 +287,13 @@ export class ReportController {
         message: "Medical record updated successfully",
         record: updated,
       });
+      activityLogService.log({
+        instituteId: (updated as any).instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "update",
+        subjectType1: "medical_record",
+        subjectId1: id,
+      });
     } catch (error: any) {
       console.error("Error updating medical record:", error);
       res.status(500).json({
@@ -306,6 +328,13 @@ export class ReportController {
         success: true,
         message: "Medical record finalized successfully",
         record: finalized,
+      });
+      activityLogService.log({
+        instituteId: (finalized as any).instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "finalize",
+        subjectType1: "medical_record",
+        subjectId1: id,
       });
     } catch (error: any) {
       console.error("Error finalizing medical record:", error);
@@ -344,6 +373,14 @@ export class ReportController {
         success: true,
         message: "Medical record revision created successfully",
         record: newRecord,
+      });
+      activityLogService.log({
+        instituteId: (newRecord as any).instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "revision",
+        subjectType1: "medical_record",
+        subjectId1: id,
+        details: { newRecordId: (newRecord as any).id ?? null },
       });
     } catch (error: any) {
       console.error("Error creating medical record revision:", error);
@@ -386,6 +423,13 @@ export class ReportController {
       res.json({
         success: true,
         message: "Medical record deleted successfully",
+      });
+      activityLogService.log({
+        instituteId: (result.record as any).instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "delete",
+        subjectType1: "medical_record",
+        subjectId1: id,
       });
     } catch (error: any) {
       console.error("Error deleting medical record:", error);
@@ -545,6 +589,13 @@ export class ReportController {
       }
 
       res.json({ success: true, report: result.report });
+      activityLogService.log({
+        instituteId: (result.report as any).instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "view",
+        subjectType1: "functional_report",
+        subjectId1: id,
+      });
     } catch (error: any) {
       console.error("Error fetching functional report:", error);
       res.status(500).json({
@@ -591,6 +642,13 @@ export class ReportController {
         success: true,
         message: "Functional report created successfully",
         report,
+      });
+      activityLogService.log({
+        instituteId: instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "create",
+        subjectType1: "functional_report",
+        subjectId1: (report as any).id ?? null,
       });
     } catch (error: any) {
       console.error("Error creating functional report:", error);
@@ -644,6 +702,13 @@ export class ReportController {
         message: "Functional report updated successfully",
         report: updated,
       });
+      activityLogService.log({
+        instituteId: (updated as any).instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "update",
+        subjectType1: "functional_report",
+        subjectId1: id,
+      });
     } catch (error: any) {
       console.error("Error updating functional report:", error);
       res.status(500).json({
@@ -678,6 +743,13 @@ export class ReportController {
         success: true,
         message: "Functional report finalized successfully",
         report: finalized,
+      });
+      activityLogService.log({
+        instituteId: (finalized as any).instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "finalize",
+        subjectType1: "functional_report",
+        subjectId1: id,
       });
     } catch (error: any) {
       console.error("Error finalizing functional report:", error);
@@ -716,6 +788,14 @@ export class ReportController {
         success: true,
         message: "Functional report revision created successfully",
         report: newReport,
+      });
+      activityLogService.log({
+        instituteId: (newReport as any).instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "revision",
+        subjectType1: "functional_report",
+        subjectId1: id,
+        details: { newReportId: (newReport as any).id ?? null },
       });
     } catch (error: any) {
       console.error("Error creating functional report revision:", error);
@@ -758,6 +838,13 @@ export class ReportController {
       res.json({
         success: true,
         message: "Functional report deleted successfully",
+      });
+      activityLogService.log({
+        instituteId: (result.report as any).instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "delete",
+        subjectType1: "functional_report",
+        subjectId1: id,
       });
     } catch (error: any) {
       console.error("Error deleting functional report:", error);
@@ -917,6 +1004,13 @@ export class ReportController {
       }
 
       res.json({ success: true, report: result.report });
+      activityLogService.log({
+        instituteId: (result.report as any).instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "view",
+        subjectType1: "educational_report",
+        subjectId1: id,
+      });
     } catch (error: any) {
       console.error("Error fetching educational report:", error);
       res.status(500).json({
@@ -963,6 +1057,13 @@ export class ReportController {
         success: true,
         message: "Educational report created successfully",
         report,
+      });
+      activityLogService.log({
+        instituteId: instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "create",
+        subjectType1: "educational_report",
+        subjectId1: (report as any).id ?? null,
       });
     } catch (error: any) {
       console.error("Error creating educational report:", error);
@@ -1016,6 +1117,13 @@ export class ReportController {
         message: "Educational report updated successfully",
         report: updated,
       });
+      activityLogService.log({
+        instituteId: (updated as any).instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "update",
+        subjectType1: "educational_report",
+        subjectId1: id,
+      });
     } catch (error: any) {
       console.error("Error updating educational report:", error);
       res.status(500).json({
@@ -1050,6 +1158,13 @@ export class ReportController {
         success: true,
         message: "Educational report finalized successfully",
         report: finalized,
+      });
+      activityLogService.log({
+        instituteId: (finalized as any).instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "finalize",
+        subjectType1: "educational_report",
+        subjectId1: id,
       });
     } catch (error: any) {
       console.error("Error finalizing educational report:", error);
@@ -1088,6 +1203,14 @@ export class ReportController {
         success: true,
         message: "Educational report revision created successfully",
         report: newReport,
+      });
+      activityLogService.log({
+        instituteId: (newReport as any).instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "revision",
+        subjectType1: "educational_report",
+        subjectId1: id,
+        details: { newReportId: (newReport as any).id ?? null },
       });
     } catch (error: any) {
       console.error("Error creating educational report revision:", error);
@@ -1130,6 +1253,13 @@ export class ReportController {
       res.json({
         success: true,
         message: "Educational report deleted successfully",
+      });
+      activityLogService.log({
+        instituteId: (result.report as any).instituteId ?? null,
+        userId: currentUser.id,
+        eventType: "delete",
+        subjectType1: "educational_report",
+        subjectId1: id,
       });
     } catch (error: any) {
       console.error("Error deleting educational report:", error);

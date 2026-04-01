@@ -191,6 +191,18 @@ export const CLASSROOM_ROLES = [
 export type InstituteRole = typeof INSTITUTE_ROLES[number]["value"];
 export type ClassroomRole = typeof CLASSROOM_ROLES[number]["value"];
 
+export const activityEventTypeEnum = pgEnum("activity_event_type", [
+  "create", "update", "delete", "link", "unlink", "view", "finalize", "revision"
+]);
+
+export const activitySubjectTypeEnum = pgEnum("activity_subject_type", [
+  "student", "classroom", "institute", "user", "board", "custom_symbol",
+  "program", "goal", "objective", "service", "accommodation",
+  "progress_report", "data_point", "team_member", "meeting",
+  "medical_record", "functional_report", "educational_report",
+  "profile_domain", "invite", "consent_form", "transition_plan", "transition_goal"
+]);
+
 // =============================================================================
 // USER / AUTH TABLES (Private)
 // =============================================================================
@@ -1586,6 +1598,30 @@ export const updateStudentSymbolAssociationSchema = createInsertSchema(studentSy
 }).partial();
 
 // =============================================================================
+// ACTIVITY LOGS (Private)
+// =============================================================================
+
+export const activityLogs = pgTable("activity_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  instituteId: varchar("institute_id"),
+  userId: varchar("user_id"),
+  eventType: activityEventTypeEnum("event_type").notNull(),
+  subjectType1: activitySubjectTypeEnum("subject_type_1").notNull(),
+  subjectId1: varchar("subject_id_1"),
+  subjectType2: activitySubjectTypeEnum("subject_type_2"),
+  subjectId2: varchar("subject_id_2"),
+  details: jsonb("details"),
+  isAiInitiated: boolean("is_ai_initiated").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_activity_logs_institute").on(table.instituteId),
+  index("idx_activity_logs_user").on(table.userId),
+  index("idx_activity_logs_event_type").on(table.eventType),
+  index("idx_activity_logs_subject_type").on(table.subjectType1),
+  index("idx_activity_logs_created_at").on(table.createdAt),
+]);
+
+// =============================================================================
 // TYPES (Private tables)
 // =============================================================================
 
@@ -1749,3 +1785,9 @@ export type ConsentType = 'initial_evaluation' | 'reevaluation' | 'placement' | 
 export type TransitionArea = 'education' | 'employment' | 'independent_living' | 'community';
 export type TeamMemberRole = 'parent_guardian' | 'student' | 'homeroom_teacher' | 'special_education_teacher' | 'general_education_teacher' | 'speech_language_pathologist' | 'occupational_therapist' | 'physical_therapist' | 'psychologist' | 'administrator' | 'case_manager' | 'external_provider' | 'other';
 export type InstituteType = 'school' | 'clinic' | 'family';
+
+// Activity log types
+export type ActivityEventType = (typeof activityEventTypeEnum.enumValues)[number];
+export type ActivitySubjectType = (typeof activitySubjectTypeEnum.enumValues)[number];
+export type ActivityLog = typeof activityLogs.$inferSelect;
+export type InsertActivityLog = typeof activityLogs.$inferInsert;
