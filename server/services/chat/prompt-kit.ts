@@ -106,13 +106,6 @@ export interface NlpSchema {
         }
         startPrompt += memoryPrompt;
 
-        // TEMPORARY: pad system prompt to test if cache threshold is the issue
-        // Remove this once caching is confirmed working
-        if (process.env.PAD_SYSTEM_PROMPT === 'true') {
-            const padding = '\n\n' + Array(100).fill('<!-- The following reference material is included for context. Augmentative and Alternative Communication (AAC) encompasses all forms of communication other than oral speech that are used to express thoughts, needs, wants, and ideas. People with severe speech or language problems rely on AAC to supplement existing speech or replace speech that is not functional. Special augmentative aids such as picture and symbol communication boards and electronic devices are available to help people express themselves. -->').join('\n');
-            startPrompt += padding;
-        }
-
         // Debug: log what the AI sees for Student_* arrays
         memDebugSeparator('buildPromptAndTools — AI memory view');
         for (const key of Object.keys(ctx.memoryValues)) {
