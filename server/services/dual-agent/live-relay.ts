@@ -99,7 +99,7 @@ import { MODEL_OPTIONS, type LLMProviderKey } from "@shared/llm-options";
 /** Map VoiceType to Gemini prebuilt voice names */
 const GEMINI_VOICE_MAP: Record<string, string> = {
   man:   "Orus",
-  woman: "Kore",
+  woman: "Zephyr",
   boy:   "Puck",
   girl:  "Leda",
 };
@@ -148,7 +148,8 @@ export type ClientMessage =
   | { type: "app_canvas"; data: string }                     // base64 PNG — app canvas (e.g. drawing)
   | { type: "focus_frame"; data: string }                    // base64 JPEG — high-res focus frame
   | { type: "set_paused"; paused: boolean }
-  | { type: "local_state"; snapshot: import("@shared/aac-local-storage").AacSessionSnapshot };
+  | { type: "local_state"; snapshot: import("@shared/aac-local-storage").AacSessionSnapshot }
+  | { type: "context_injection"; text: string };           // inject context without triggering a response
 
 /** Messages from server → client */
 export type ServerMessage =
@@ -683,6 +684,17 @@ export class LiveRelay {
           // Client sending cached local state for session rebuild — store on the pending init
           this.pendingLocalState = msg.snapshot;
           break;
+
+        case "context_injection":
+          // Inject context into the AI without triggering a response turn
+          if (this.provider) {
+            this.provider.sendContextInjection(msg.text);
+            logDualAgent("LiveRelay.contextInjection", {
+              sessionId: this.sessionId,
+              text: msg.text.substring(0, 80),
+            });
+          }
+          break;
       }
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
@@ -830,7 +842,7 @@ export class LiveRelay {
         // re-triggering from delayed tool responses (e.g. rebuild_board).
         this.useToolResponseScheduling = true;
         this.provider = new GeminiLiveProvider(callbacks, true /* useVertexAI */);
-        const geminiVoice = this.aiVoice?.geminiVoiceName || GEMINI_VOICE_MAP[this.aiVoice?.fallbackType || "woman"] || "Kore";
+        const geminiVoice = this.aiVoice?.geminiVoiceName || GEMINI_VOICE_MAP[this.aiVoice?.fallbackType || "woman"] || "Zephyr";
         providerConfig = {
           model: aacChatConfig.model,
           temperature: 0.7,
@@ -848,7 +860,7 @@ export class LiveRelay {
         // proactiveAudio: false — same as GA path
         this.useToolResponseScheduling = !this.useDirectAudio;
         this.provider = new GeminiLiveProvider(callbacks);
-        const geminiVoice = this.aiVoice?.geminiVoiceName || GEMINI_VOICE_MAP[this.aiVoice?.fallbackType || "woman"] || "Kore";
+        const geminiVoice = this.aiVoice?.geminiVoiceName || GEMINI_VOICE_MAP[this.aiVoice?.fallbackType || "woman"] || "Zephyr";
         providerConfig = {
           model: aacChatConfig.model,
           temperature: 0.7,
@@ -1022,28 +1034,12 @@ export class LiveRelay {
 
     if (this.useDirectAudio) {
       // Direct audio mode: model speaks directly, no speak() tool
-      return `CRITICAL — OUTPUT RULES:
-You speak directly — your voice is heard by the user. Do NOT narrate tool calls or board changes. Just talk naturally.
-Use your tools (rebuild_board, add_buttons, etc.) for board management, but your SPEECH is your natural audio output, not a tool call.
-
-BOARD-SPEECH COORDINATION:
-The AAC board is how the user responds to you. When you ask a question, the board buttons MUST be relevant answers to that specific question. Think about what you are going to say FIRST, then build the board to match. For example:
-- If you ask "What do you want to play?", the board should have play options (Blocks, Cars, Dolls...), NOT generic options (Help, Break, All done).
-- If you ask "How are you feeling?", the board should have emotions (Happy, Sad, Tired...).
-- Always include a few general-purpose options alongside the specific answers.
-
-BUTTON PRESS HANDLING:
-When you receive a [BUTTON PRESS] message, the student's sentence has already been voiced aloud via a separate TTS system. You will hear this through the microphone — it is NOT new speech from a person. Do NOT transcribe or repeat it. Wait a moment for the student's voice to finish, then respond naturally.
-
-AUDIO ECHO AWARENESS:
+      return `AUDIO ECHO AWARENESS:
 You receive continuous microphone audio. You WILL hear your own voice echoed back through the speakers — never transcribe or respond to your own echoes. Also, button press sentences are voiced by a separate TTS system — those echoes are NOT new speech either.`;
     }
 
     const toolList = hasInterpret ? "speak() and interpret()" : "speak()";
-    return `CRITICAL — OUTPUT RULES:
-You communicate ONLY through function calls (tool calls). Do NOT produce speech or audio output — your audio is discarded. A separate TTS system voices the text from your ${toolList} calls instead.
-
-AUDIO ECHO AWARENESS:
+    return `AUDIO ECHO AWARENESS:
 You receive continuous microphone audio. Because ${toolList} text is voiced by external TTS through speakers near the mic, you WILL hear your own output echoed back. Recognize these echoes as YOUR OWN output — never transcribe or respond to them. Only treat audio as genuine user speech if it clearly does NOT match something you recently said.${!hasInterpret ? `\nWhen a button is pressed, the student's pre-generated sentence is also voiced via TTS — you will hear this echo too. Do NOT transcribe it.` : ''}`;
   }
 

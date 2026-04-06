@@ -229,7 +229,7 @@ export class DualAgentService {
     const studentFallback = gender === "female" ? "girl" : "boy";
     const aiFallback = "woman"; // AI always uses a distinct female voice
     const defaultStudentGeminiVoice = gender === "female" ? "Leda" : "Puck";
-    const defaultAiGeminiVoice = "Kore";
+    const defaultAiGeminiVoice = "Zephyr";
 
     // ElevenLabs can be toggled off without removing the stored config
     const elEnabled = aac?.elevenlabsEnabled !== false;
@@ -406,7 +406,7 @@ export class DualAgentService {
       const rawPersona = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
       const persona = initResult.enhancedPrompt || rawPersona;
       interactivePrompt = buildFunctionCallingPrompt({
-        studentName: student.name,
+        studentName: student.firstName || student.name?.split(' ')[0] || "",
         persona,
         language: student.primaryLanguage || undefined,
         memoryContext: initResult.enhancedPrompt ? undefined : initResult.initialContext,
@@ -656,7 +656,7 @@ export class DualAgentService {
         }
 
         state.interactivePrompt = buildFunctionCallingPrompt({
-          studentName: student.name,
+          studentName: student.firstName || student.name.split(' ')[0] || "",
           persona: personaPrompt,
           language: student.primaryLanguage || undefined,
           mode: state.interactionMode,

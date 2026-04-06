@@ -1,7 +1,7 @@
 // client-aac/src/components/DualAgentConversationBox.tsx
 // Conversation UI for the dual-agent AAC system
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Volume2,
@@ -24,6 +24,7 @@ import {
   Moon,
   Zap,
   ScanSearch,
+  MoonStar,
 } from "lucide-react";
 // Emotion-based avatar body images
 import avatarHappy from "@assets/axolotl-happy.png";
@@ -50,6 +51,7 @@ import type { RawTrackedHand } from "@/lib/handGestureTypes";
 import { useDualAgentContext } from "@/contexts/DualAgentContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTheme } from "@/contexts/ThemeContext";
+import { useEyeTrackingDwell } from "@/contexts/EyeTrackingDwellContext";
 import { LanguageSelector } from "@/components/LanguageSelector";
 import { FaceMirror } from "@/components/FaceMirror";
 
@@ -138,6 +140,7 @@ export function DualAgentConversationBox({
     setVideoCaptureEnabled,
     initialize,
     sendMessage,
+    sendContextOnly,
     clearSession,
     setAudioEnabled,
     setVoiceEnabled,
@@ -164,6 +167,7 @@ export function DualAgentConversationBox({
   } = useDualAgentContext();
   const { t } = useLanguage();
   const { theme, toggleTheme } = useTheme();
+  const { mode: dwellMode } = useEyeTrackingDwell();
 
   // Stable refs — prevents re-send loops when callback identities change across renders
   const sendMessageRef = useRef(sendMessage);
@@ -243,19 +247,32 @@ export function DualAgentConversationBox({
     clearSession();
   };
 
-  const handleToggleMode = () => {
+  // Avatar click: in silent mode → wake up. In interact mode → send contextual message.
+  const handleAvatarClick = useCallback((e: React.MouseEvent) => {
     if (interactionMode === 'silent') {
       // Switching to interact mode — trigger a greeting
       setInteractionMode('interact');
       if (isInitialized) {
         sendMessage("[system: the device has been switched to interactive mode, greet the user]");
       }
-    } else {
-      // Switching to silent mode — stop all audio
-      setInteractionMode('silent');
-      stopAudio();
+    } else if (isInitialized) {
+      // Determine input method: eyegaze dwell triggers .click() programmatically
+      if (dwellMode === 'eyegaze') {
+        // Eyegaze focus — context only, no conversation update
+        sendContextOnly("[system: the user is focusing on you]");
+      } else if (e.nativeEvent instanceof PointerEvent && e.nativeEvent.pointerType === 'touch') {
+        sendMessage("[system: the user touched you]");
+      } else {
+        sendMessage("[system: the user clicked you]");
+      }
     }
-  };
+  }, [interactionMode, isInitialized, dwellMode, setInteractionMode, sendMessage, sendContextOnly]);
+
+  // Quiet button: enter silent mode
+  const handleQuiet = useCallback(() => {
+    setInteractionMode('silent');
+    stopAudio();
+  }, [setInteractionMode, stopAudio]);
 
   // Determine if avatar should show asleep
   const isAsleep = interactionMode === 'silent';
@@ -278,12 +295,14 @@ export function DualAgentConversationBox({
         <div className="px-4 py-2">
           {/* Two-row grid: avatar spans both rows on left, buttons top-right, text bottom-right */}
           <div className="flex items-stretch gap-3">
-            {/* Animated Avatar — spans both rows, click to toggle silent/interact mode */}
+            {/* Avatar + Quiet button column */}
+            <div className="shrink-0 self-center flex flex-col items-center gap-1">
+            {/* Animated Avatar — click to wake (silent mode) or send attention message (interact mode) */}
             <button
               data-dwell
-              onClick={handleToggleMode}
-              className="relative shrink-0 w-20 self-center cursor-pointer hover:opacity-90 transition-opacity select-none"
-              title={interactionMode === 'silent' ? "Switch to interact mode (device talks back)" : "Switch to silent mode (buttons only)"}
+              onClick={handleAvatarClick}
+              className="relative shrink-0 w-20 cursor-pointer hover:opacity-90 transition-opacity select-none"
+              title={interactionMode === 'silent' ? "Switch to interact mode (device talks back)" : "Tap to get attention"}
             >
                 <>
                   {error ? (
@@ -332,145 +351,164 @@ export function DualAgentConversationBox({
                   </AnimatePresence>
                 </>
             </button>
+            </div>
 
             {/* Right side: two rows */}
             <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
-              {/* Top row: menu buttons — aligned to end */}
-              <div className="flex items-center justify-end gap-1 flex-wrap">
-                {/* Board Mode Toggle */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onBoardModeChange(boardMode === 'ai' ? 'db' : 'ai')}
-                  className={`text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0 ${boardMode === 'db' ? 'bg-white/20' : ''}`}
-                  title={boardMode === 'ai' ? "Switch to database boards" : "Switch to AI board"}
-                >
-                  {boardMode === 'ai' ? <Grid3X3 className="w-4 h-4" /> : <Brain className="w-4 h-4" />}
-                </Button>
-                {/* Video Capture Toggle */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setVideoCaptureEnabled(!videoCaptureEnabled)}
-                  className={`text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0 ${videoCaptureEnabled ? 'bg-white/20' : ''}`}
-                  title={videoCaptureEnabled ? "Disable video capture" : "Enable video capture"}
-                >
-                  {videoCaptureEnabled ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                </Button>
-                {/* Audio Capture Toggle */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setVoiceEnabled(!voiceEnabled)}
-                  className={`text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0 ${voiceEnabled ? 'bg-white/20' : ''}`}
-                  title={voiceEnabled ? "Disable audio capture" : "Enable audio capture"}
-                >
-                  {voiceEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
-                </Button>
-                {/* Audio Toggle */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setAudioEnabled(!audioEnabled)}
-                  className="text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0"
-                  title={audioEnabled ? "Mute audio" : "Unmute audio"}
-                >
-                  {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-                </Button>
-                {/* Response Mode Toggle: Fast (Zap) vs Analyze (ScanSearch) */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setResponseMode(responseMode === 'fast' ? 'analyze' : 'fast')}
-                  className={`text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0 ${responseMode === 'fast' ? 'bg-white/20' : ''}`}
-                  title={responseMode === 'fast' ? "Fast mode (respond first)" : "Analyze mode (observe first)"}
-                >
-                  {responseMode === 'fast' ? <Zap className="w-4 h-4" /> : <ScanSearch className="w-4 h-4" />}
-                </Button>
-
-                <div className="w-px h-4 bg-white/30 mx-0.5" />
-
-                <LanguageSelector className="text-xs" />
-
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={toggleTheme}
-                  className="text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0"
-                  title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-                >
-                  {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-                </Button>
-
-                {debugMode && onDebugPanelToggle && (
+              {/* Top row: menu buttons */}
+              <div className="flex items-center gap-1 flex-wrap">
+                {/* Quiet button — visible only when in interact mode, aligned to start */}
+                <div className="flex items-center justify-start gap-1 flex-wrap">
+                  
+                  {interactionMode !== 'silent' && (
+                    <button
+                      data-dwell
+                      onClick={handleQuiet}
+                      className="flex items-center justify-center w-12 h-6 rounded-full bg-indigo-800/60 hover:bg-indigo-700/80 transition-colors cursor-pointer select-none"
+                      title={t("quickActions.quiet")}
+                    >
+                      <MoonStar className="w-3.5 h-3.5 text-white/80" />
+                      <span className="text-[10px] text-white/80 ml-0.5 font-medium">{t("quickActions.quiet")}</span>
+                    </button>
+                  )}
+                </div>
+                {/* Menu buttons — aligned to end */}
+                <div className="flex items-center justify-end gap-1 flex-wrap">
+                  {/* Board Mode Toggle */}
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={onDebugPanelToggle}
-                    className={`h-7 w-7 p-0 ${showDebugPanel ? 'text-yellow-300 bg-white/20' : 'text-white hover:text-gray-200 hover:bg-white/10'}`}
-                    title="Debug Panel"
+                    onClick={() => onBoardModeChange(boardMode === 'ai' ? 'db' : 'ai')}
+                    className={`text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0 ${boardMode === 'db' ? 'bg-white/20' : ''}`}
+                    title={boardMode === 'ai' ? "Switch to database boards" : "Switch to AI board"}
                   >
-                    <Bug className="w-4 h-4" />
+                    {boardMode === 'ai' ? <Grid3X3 className="w-4 h-4" /> : <Brain className="w-4 h-4" />}
                   </Button>
-                )}
-
-                {onFullScreen && (
+                  {/* Video Capture Toggle */}
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={onFullScreen}
+                    onClick={() => setVideoCaptureEnabled(!videoCaptureEnabled)}
+                    className={`text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0 ${videoCaptureEnabled ? 'bg-white/20' : ''}`}
+                    title={videoCaptureEnabled ? "Disable video capture" : "Enable video capture"}
+                  >
+                    {videoCaptureEnabled ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                  </Button>
+                  {/* Audio Capture Toggle */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setVoiceEnabled(!voiceEnabled)}
+                    className={`text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0 ${voiceEnabled ? 'bg-white/20' : ''}`}
+                    title={voiceEnabled ? "Disable audio capture" : "Enable audio capture"}
+                  >
+                    {voiceEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+                  </Button>
+                  {/* Audio Toggle */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setAudioEnabled(!audioEnabled)}
                     className="text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0"
-                    title="Toggle Full Screen"
+                    title={audioEnabled ? "Mute audio" : "Unmute audio"}
                   >
-                    <Maximize className="w-4 h-4" />
+                    {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
                   </Button>
-                )}
-
-                {onSettings && (
+                  {/* Response Mode Toggle: Fast (Zap) vs Analyze (ScanSearch) */}
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={onSettings}
+                    onClick={() => setResponseMode(responseMode === 'fast' ? 'analyze' : 'fast')}
+                    className={`text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0 ${responseMode === 'fast' ? 'bg-white/20' : ''}`}
+                    title={responseMode === 'fast' ? "Fast mode (respond first)" : "Analyze mode (observe first)"}
+                  >
+                    {responseMode === 'fast' ? <Zap className="w-4 h-4" /> : <ScanSearch className="w-4 h-4" />}
+                  </Button>
+
+                  <div className="w-px h-4 bg-white/30 mx-0.5" />
+
+                  <LanguageSelector className="text-xs" />
+
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={toggleTheme}
                     className="text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0"
-                    title="Settings"
+                    title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
                   >
-                    <Settings className="w-4 h-4" />
+                    {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
                   </Button>
-                )}
 
-                {onExitStudent && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={onExitStudent}
-                    className="text-white hover:text-orange-300 hover:bg-white/10 h-7 w-7 p-0"
-                    title="Switch Student"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                  </Button>
-                )}
+                  {debugMode && onDebugPanelToggle && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={onDebugPanelToggle}
+                      className={`h-7 w-7 p-0 ${showDebugPanel ? 'text-yellow-300 bg-white/20' : 'text-white hover:text-gray-200 hover:bg-white/10'}`}
+                      title="Debug Panel"
+                    >
+                      <Bug className="w-4 h-4" />
+                    </Button>
+                  )}
 
-                {onLogout && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={onLogout}
-                    className="text-white hover:text-red-300 hover:bg-white/10 h-7 w-7 p-0"
-                    title="Log Out"
-                  >
-                    <LogOut className="w-4 h-4" />
-                  </Button>
-                )}
+                  {onFullScreen && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={onFullScreen}
+                      className="text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0"
+                      title="Toggle Full Screen"
+                    >
+                      <Maximize className="w-4 h-4" />
+                    </Button>
+                  )}
 
-                {monitorError && monitorConsecutiveFailures > 0 && (
-                  <span
-                    className="flex items-center gap-1 text-xs bg-red-500/80 px-2 py-0.5 rounded cursor-help"
-                    title={`Monitor agent error (${monitorConsecutiveFailures} failures): ${monitorError}`}
-                  >
-                    <AlertTriangle className="w-3 h-3" />
-                    Monitor
-                  </span>
-                )}
+                  {onSettings && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={onSettings}
+                      className="text-white hover:text-gray-200 hover:bg-white/10 h-7 w-7 p-0"
+                      title="Settings"
+                    >
+                      <Settings className="w-4 h-4" />
+                    </Button>
+                  )}
+
+                  {onExitStudent && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={onExitStudent}
+                      className="text-white hover:text-orange-300 hover:bg-white/10 h-7 w-7 p-0"
+                      title="Switch Student"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                    </Button>
+                  )}
+
+                  {onLogout && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={onLogout}
+                      className="text-white hover:text-red-300 hover:bg-white/10 h-7 w-7 p-0"
+                      title="Log Out"
+                    >
+                      <LogOut className="w-4 h-4" />
+                    </Button>
+                  )}
+
+                  {monitorError && monitorConsecutiveFailures > 0 && (
+                    <span
+                      className="flex items-center gap-1 text-xs bg-red-500/80 px-2 py-0.5 rounded cursor-help"
+                      title={`Monitor agent error (${monitorConsecutiveFailures} failures): ${monitorError}`}
+                    >
+                      <AlertTriangle className="w-3 h-3" />
+                      Monitor
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Bottom row: message / silent content — min-h keeps header stable during loading */}

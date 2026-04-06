@@ -36,6 +36,7 @@ export class UserRepository {
     return hydrated;
   }
 
+  /** @deprecated Use identityProviderRepository.getExternalIdentityByExternalId instead */
   async getUserByGoogleId(googleId: string): Promise<User | undefined> {
     const [user] = await db
       .select()
@@ -76,7 +77,7 @@ export class UserRepository {
         insertUser.firstName && insertUser.lastName
           ? `${insertUser.firstName} ${insertUser.lastName}`
           : null,
-      authProvider: "email",
+      authProvider: insertUser.authProvider || "email",
       referralCode,
     };
 
@@ -95,6 +96,7 @@ export class UserRepository {
     return ext.completeData as User;
   }
 
+  /** @deprecated Use createUser with authProvider: "google" + identityService.linkIdentity instead */
   async createGoogleUser(googleData: {
     email: string;
     firstName?: string;

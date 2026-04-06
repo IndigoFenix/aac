@@ -557,7 +557,7 @@ function topicBreadth(node: TopicNode): number {
   return Object.keys(node.subtopics).length;
 }
 
-function getMemoryToolInstructions(): string {
+function getMemoryToolInstructions(staticMode = false): string {
   
   const pathSyntax = [
     "Use JSON-Pointer-like paths. Examples:",
@@ -581,14 +581,17 @@ function getMemoryToolInstructions(): string {
   Use ManageMemory to store and retrieve information from memory.
   View any memory that seems relevant to the conversation.
   If a user mentions an item that you cannot see, check whether you have fully opened its relevant list.
-  If you open multiple items in order to find something, hide the ones you don't need immediately afterwards.
-  Hide information that is not relevant to the conversation to keep your memory focused.
+  ${staticMode
+    ? `Viewed data stays in the conversation history. Do NOT re-view paths you have already viewed in this conversation; the data is in your earlier tool responses.`
+    : `If you open multiple items in order to find something, hide the ones you don't need immediately afterwards.
+  Hide information that is not relevant to the conversation to keep your memory focused.`}
   Any empty memory field should be filled as soon as relevant information becomes available.
 
   Actions by type:
   - "set": Use for objects and primitives. Creates or updates the value at the path.
   - "add": Use ONLY for arrays (append item), maps (add key), and topics (add subtopic). Requires "value", and "key" for maps/topics.
-  - "view"/"hide": Control what's visible in the memory display.
+  - "view": Load data from memory. ${staticMode ? 'Data stays in conversation history — no need to re-view.' : ''}
+  ${staticMode ? '' : '- "hide": Remove data from the memory display.'}
   - "delete": Remove items from arrays, maps, or topics.
   - "clear": Empty a container (array/map/topic).
 
@@ -622,7 +625,12 @@ function getMemoryToolInstructions(): string {
  * buildMemoryTool(agent)
  * ------------------------------ */
 
-export function buildMemoryTool(): GPTFunctionTool {
+export function buildMemoryTool(staticMode = false): GPTFunctionTool {
+
+  // In static mode, "hide" is not exposed — hiding happens only via pruneMessages closePaths.
+  const actions = staticMode
+    ? ["view","set","upsert","add","insert","delete","clear","rename"]
+    : ["view","hide","set","upsert","add","insert","delete","clear","rename"];
 
   const operationSchema: JSONSchema = {
     type: "object",
@@ -630,11 +638,11 @@ export function buildMemoryTool(): GPTFunctionTool {
     properties: {
       action: {
         type: "string",
-        enum: ["view","hide","set","upsert","add","insert","delete","clear","rename"],
+        enum: actions,
         description: "Operation to perform."
       },
       path:  { type: "string",  description: "Target path (JSON Pointer). For mutations, must be a single concrete path." },
-      paths: { type: "array",   items: { type: "string" }, description: "Multiple targets (allowed only for view/hide)." },
+      paths: { type: "array",   items: { type: "string" }, description: `Multiple targets (allowed only for view${staticMode ? '' : '/hide'}).` },
       value: { description: "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}." },
       index: { type: "integer", minimum: 0, description: "Array index for insert/upsert on arrays." },
       key:   { type: "string",  description: "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)." },
@@ -1231,7 +1239,7 @@ export function renderMemoryVisualization(
   const lines: string[] = [];
   if (!options?.onlyRenderPaths || options.onlyRenderPaths.length === 0) {
     if (!options?.suppressHeader) {
-      lines.push(getMemoryToolInstructions());
+      lines.push(getMemoryToolInstructions(state.staticPromptMode));
       lines.push('=== Current Memory ===');
     }
     for (const f of memoryFields) lines.push(...renderOneTop(f));
@@ -1794,15 +1802,21 @@ export function processMemoryToolResponse(
           }
         } else {
         // action === 'hide'
-        const mutated: string[] = [];
-        for (const p of allExpanded) {
-          closePathAndDescendants(state, p);
-          mutated.push(p);
-        }
-        
-        // Only push success result if no wildcard expansion errors occurred
-        if (!hadWildcardErrors) {
-          results.push({ target: rawTargets.join(','), action, ok: true, mutatedPaths: mutated });
+        // In static prompt mode, hiding is a no-op — hide is removed from the tool
+        // schema, but the AI might still call it from cached history. Just succeed silently.
+        if (state.staticPromptMode) {
+          results.push({ target: rawTargets.join(','), action, ok: true, mutatedPaths: [] });
+        } else {
+          const mutated: string[] = [];
+          for (const p of allExpanded) {
+            closePathAndDescendants(state, p);
+            mutated.push(p);
+          }
+
+          // Only push success result if no wildcard expansion errors occurred
+          if (!hadWildcardErrors) {
+            results.push({ target: rawTargets.join(','), action, ok: true, mutatedPaths: mutated });
+          }
         }
       }
       return;

@@ -103,6 +103,14 @@ export class ChatStreamController {
         });
       };
 
+      // File re-upload callback - tells client to re-send expired media files
+      const onFilesNeeded = (files: Array<{ fileId: string; filename: string }>) => {
+        sendSSEEvent(res, "files_needed", {
+          files,
+          timestamp: Date.now(),
+        });
+      };
+
       const messagesWithTimestamp =
         messages?.map((msg) => ({
           ...msg,
@@ -134,6 +142,7 @@ export class ChatStreamController {
             onThinkingUpdate,
             onNavigate,
             onSelectStudent,
+            onFilesNeeded,
             signal: abortController.signal,
           });
 
@@ -175,6 +184,7 @@ export class ChatStreamController {
           onThinkingUpdate,
           onNavigate,
           onSelectStudent,
+          onFilesNeeded,
         });
 
         // Send final response (strip memoryValues to reduce payload size)

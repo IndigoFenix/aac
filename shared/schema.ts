@@ -17,6 +17,8 @@ import {
   // Enums needed by public tables
   instituteTypeEnum,
   instituteInviteStatusEnum,
+  verificationStatusEnum,
+  identityProviderProtocolEnum,
   gradeEnum,
   apiTypeEnum,
   chatSessionStatusEnum,
@@ -88,6 +90,47 @@ export const adminUsers = pgTable("admin_users", {
 });
 
 // =============================================================================
+// PUBLIC TABLES — Identity Providers
+// =============================================================================
+
+// External identity providers (OIDC/OAuth2) for federated authentication
+export const identityProviders = pgTable("identity_providers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(), // e.g. "Ministry of Education", "Google"
+  protocol: identityProviderProtocolEnum("protocol").notNull(),
+  discoveryUrl: text("discovery_url"), // OIDC discovery URL
+  authorizationUrl: text("authorization_url"), // For OAuth2 without discovery
+  tokenUrl: text("token_url"), // For OAuth2 without discovery
+  userinfoUrl: text("userinfo_url"), // For OAuth2 without discovery
+  clientId: text("client_id").notNull(),
+  clientSecret: text("client_secret").notNull(), // Encrypted
+  scopes: text("scopes").default("openid email profile"),
+  claimMappings: jsonb("claim_mappings").default({}), // Maps provider claims to user/institute fields
+  instituteIdType: text("institute_id_type"), // null = global (e.g. Google), 'MOE' = institute-specific
+  reverificationDays: integer("reverification_days"), // null = never re-verify
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Links users to their external identities (Google, MoE, etc.)
+export const userExternalIdentities = pgTable("user_external_identities", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  providerId: varchar("provider_id").references(() => identityProviders.id).notNull(),
+  externalId: text("external_id").notNull(), // The ID from the external provider
+  email: text("email"), // Email from external provider (may differ from user's email)
+  claims: jsonb("claims").default({}), // Full claims from the provider
+  verifiedAt: timestamp("verified_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_uei_provider_external_id").on(table.providerId, table.externalId),
+  index("idx_uei_user_id").on(table.userId),
+  index("idx_uei_provider_id").on(table.providerId),
+]);
+
+// =============================================================================
 // PUBLIC TABLES — Organization
 // =============================================================================
 
@@ -108,6 +151,9 @@ export const institutes = pgTable("institutes", {
   externalStorage: varchar("external_storage"),
   // Preferred operational language (e.g. 'en', 'he') — used for report defaults and AI prompts
   language: text("language"),
+
+  // Verification status — whether this institute has been verified by its claimed authority (e.g. MoE)
+  verificationStatus: verificationStatusEnum("verification_status").default("unverified").notNull(),
 
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -518,6 +564,25 @@ export const instituteSymbolAssociations = pgTable("institute_symbol_association
 // INSERT/UPDATE SCHEMAS (Public tables)
 // =============================================================================
 
+// Identity provider schemas
+export const insertIdentityProviderSchema = createInsertSchema(identityProviders).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateIdentityProviderSchema = createInsertSchema(identityProviders).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).partial();
+
+export const insertUserExternalIdentitySchema = createInsertSchema(userExternalIdentities).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Institute schemas
 export const insertInstituteSchema = createInsertSchema(institutes).omit({
   id: true,
@@ -817,6 +882,13 @@ export const insertApiProviderSchemaWithValidation = insertApiProviderSchema.ext
 
 export type AdminUser = typeof adminUsers.$inferSelect;
 export type UpsertAdminUser = typeof adminUsers.$inferInsert;
+
+// Identity provider types
+export type IdentityProvider = typeof identityProviders.$inferSelect;
+export type InsertIdentityProvider = z.infer<typeof insertIdentityProviderSchema>;
+export type UpdateIdentityProvider = z.infer<typeof updateIdentityProviderSchema>;
+export type UserExternalIdentity = typeof userExternalIdentities.$inferSelect;
+export type InsertUserExternalIdentity = z.infer<typeof insertUserExternalIdentitySchema>;
 
 // Institute types
 export type Institute = typeof institutes.$inferSelect;

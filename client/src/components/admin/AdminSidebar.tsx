@@ -17,12 +17,13 @@ import {
   Mail,
   KeyRound,
   ClipboardList,
+  ShieldCheck,
 } from 'lucide-react';
 import logoImage from '@assets/aivota_icon.png';
 import { cn } from '@/lib/utils';
 import { useLocation } from 'wouter';
 
-type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts' | 'licenses' | 'activity-log';
+type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts' | 'licenses' | 'identity-providers' | 'activity-log';
 
 type AdminSidebarProps = {
   activeSection: AdminSection;
@@ -76,6 +77,12 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
       label: 'Licenses',
       section: 'licenses' as AdminSection,
       testId: 'admin-nav-licenses',
+    },
+    {
+      icon: ShieldCheck,
+      label: 'Identity Providers',
+      section: 'identity-providers' as AdminSection,
+      testId: 'admin-nav-identity-providers',
     },
     {
       icon: ClipboardList,

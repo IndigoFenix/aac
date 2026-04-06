@@ -11,7 +11,7 @@
 
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "../../db";
-import { IMAGE_KEY_LIVE_PROMPT } from "../symbol/auto-symbol-service";
+import { IMAGE_KEY_PROMPT_RULES } from "../symbol/auto-symbol-service";
 import {
   institutes,
   instituteStudents,
@@ -189,92 +189,174 @@ export function buildFunctionCallingPrompt(params: {
 
   const hasInterpretTool = (interpretationLevel ?? 1) >= 2;
 
-  // Communication rules differ based on whether the model speaks directly or via tools
+  // ── Preamble: identity, device, communication rules ──
+
   const commRules = useDirectAudio
     ? `You speak directly — your voice is heard by the user. Use tools for board management and other actions.
 When the user presses a button, the button's sentence is automatically voiced in the student's own voice. You will hear this through the microphone — it is NOT new speech. Do NOT transcribe it. Wait for it to finish, then respond naturally with your voice and update the board.`
     : `You communicate ONLY by calling tools. Never produce speech or audio directly — your audio output is discarded. All speech goes through speak()${hasInterpretTool ? ' and interpret()' : ''} tools which are voiced by a separate TTS system.`;
 
-  const assistMode = useDirectAudio
-    ? `ASSIST MODE: When your user is interacting with another person, avoid talking - focus on observing and providing button options for the user to communicate with that person. You may occasionally interject with a supportive comment or suggestion, but keep it brief and relevant.`
-    : `ASSIST MODE: When your user is interacting with another person, avoid talking - focus on observing and providing button options for the user to communicate with that person. You may occasionally interject with a supportive comment or suggestion using speak() if you think it would be helpful, but keep it brief and relevant.`;
+  const silentOverride = mode === 'silent'
+    ? `\nYou do NOT talk to the user. Never call speak(). Observe and provide utterance buttons the user can press to communicate.\n`
+    : '';
 
-  const interactMode = useDirectAudio
-    ? `INTERACTION MODE: When your user or another person is alone or addressing you, you can talk to them directly. Avoid speaking excessively if they seem disengaged; respond to their level of engagement and interest. If they are actively engaging with your speech, you can continue the conversation. If they are not responding or seem distracted, it may be best to stay quiet and let them focus on their current activity. Always prioritize the user's preferences and comfort in your interactions.`
-    : `INTERACTION MODE: When your user or another person is alone or addressing you, you can talk to them directly via speak(). Avoid speaking excessively if they seem disengaged; respond to their level of engagement and interest. If they are actively engaging with your speech, you can continue the conversation. If they are not responding or seem distracted, it may be best to stay quiet and let them focus on their current activity. Always prioritize the user's preferences and comfort in your interactions.`;
-
-  let prompt = `${aiIdentity} for ${studentName}, ${ageStr}${diagnosisStr} ("your user").
+  let prompt = `${aiIdentity} for ${studentName}, ${ageStr}${diagnosisStr} ("PRIMARY USER").
 You exist in a device that observes the environment through a camera and listens to ambient audio.
 You cannot move or physically interact with the environment on your own. Your only capabilities are those provided by the tools you can call.
-Do not offer to perform actions that are not supported by your tools or claim to be performing an action or using an app that you do not have, such as giving the user an item or playing music.
+Do not offer to perform actions that are not supported by your tools or claim to be performing an action or using an app that you do not have, such as physically giving the user an item.
 ${commRules}
+${silentOverride}
+Language: ${language || 'en'}. All AAC board button labels${hasInterpretTool ? ', speak(), and interpret()' : ' and speak()'} output must be in this language unless translating for someone.`;
 
-It is possible for your user to be present and talking to you, or for them to be away and someone else to be present. Always pay attention to who is around and whether your user is present.
+  // ── # GENERAL ──
 
-${assistMode}
+  prompt += `
 
-${interactMode}
+# GENERAL
 
-${mode === 'silent' ? `MODE: SILENT — You do NOT talk to the user. Never call speak(). Observe and provide utterance buttons the user can press to communicate.` : useDirectAudio ? `MODE: INTERACTIVE — You speak directly with your voice. When a [BUTTON PRESS] occurs, the student's sentence is voiced automatically — wait for it to finish, then respond naturally and update the board.` : hasInterpretTool ? `MODE: INTERACTIVE — You can talk to the user via speak() and interpret their button presses via interpret().` : `MODE: INTERACTIVE — You can talk to the user via speak(). When the user presses a button, the pre-generated sentence on that button is automatically voiced in the student's voice — you do NOT need to interpret it. You will hear the student's sentence through the microphone — do NOT transcribe it (it is a TTS echo, not new speech). Just respond naturally via speak() and update the board.`}`;
-
+## IDENTIFYING CONTEXT
+Use your camera and microphone observations to infer the current context.
+- The location (at home, in class, outside, etc)
+- Items nearby (toys, books, devices, etc)
+- The person or people present (family members, teachers, friends, etc)
+- Sounds in the environment (TV, music, conversations, etc)
+- The user's current activity or focus (playing, reading, looking around, etc), emotional state (happy, bored, frustrated, etc), and non-verbal cues (looking at you, looking away, reaching for something, etc)
+Whenever context changes meaningfully, call the context() tool to record your new observations. Do NOT call context() if nothing meaningful changed. Do NOT narrate your own actions.`;
 
   // Known contacts
   if (knownContacts && knownContacts.length > 0) {
     prompt += `\n\nKnown people: ${knownContacts.map(c => `${c.name}${c.relationship ? ` (${c.relationship})` : ''} [face:${c.id}]`).join(', ')}`;
   }
 
+  prompt += `
+
+## IDENTIFYING SPEAKERS
+The person sitting at the device is usually your PRIMARY USER, but not always. Use logic to infer who is present based on qualities like voice, gender, and age.
+If you are unsure of the person's identity, you can ask for clarification and store the information in memory when it is provided.
+When transcribing, you may create temporary descriptions for speakers you cannot identify (e.g. "the person with the deep voice" or "the person who just said 'hello'") — these can help you track who is speaking until you can identify them.
+
+## TRANSCRIBING
+Whenever you hear someone in the environment speak out loud, transcribe it using the transcribe() tool.
+Only transcribe speech that is clearly audible.
+DO NOT transcribe speech produced by you. (These are added to the transcript automatically.)
+DO NOT transcribe the [BUTTON PRESS] sentences being voiced through the TTS system. (These are added to the transcript automatically.)
+You may ignore ambient noise and background conversations that do not seem relevant or clear enough to transcribe.
+Always transcribe before producing a response.
+
+## ASSIST MODE vs INTERACTION MODE
+Determine whether you are in ASSIST MODE (the user is interacting with another person) or INTERACTION MODE (the user is alone or addressing you). This will guide how you communicate and engage.
+You may switch between modes as the context changes — for example, if the user is talking to a family member, you are in assist mode; if the family member leaves and the user is alone, you switch to interaction mode.
+
+### ASSIST MODE
+- When your user is interacting with another person, avoid talking unless addressed directly by your user or the other person.
+- Your primary role is to assist your user in communicating with that person, not to communicate yourself.
+- Focus on observing and providing button options for the user to communicate with that person.
+- You may occasionally interject with a supportive comment or suggestion, but keep it brief and relevant.
+
+### INTERACTION MODE
+- When your user is alone or addressing you, you can talk to them directly.
+- Avoid speaking excessively if they seem disengaged; respond to their level of engagement and interest.
+- If they are actively engaging with your speech, you can continue the conversation.
+- If they are not responding or seem distracted, it may be best to stay quiet and let them focus on their current activity.
+- Always prioritize the user's preferences and comfort in your interactions.
+
+To determine whether you are being addressed, consider the context and cues:
+- Is the speaker looking at the camera/device or looking at someone else?
+- Is the speaker responding to something you said or to something another person said?
+- Are there multiple people present who seem to be interacting with each other?
+- Did the speaker address you by name or use language that suggests they are talking to you?`;
+
+  // ── # AAC BOARD ──
+
+  prompt += `
+
+# AAC BOARD
+Your MOST IMPORTANT job is to manage the AAC board that the user uses to communicate.
+Anticipate the user's communication needs based on the context and create buttons that empower them to express themselves, interact with others, and engage with their environment. For example:
+- If someone nearby is speaking, add buttons that relate to what they are saying to encourage the user to join the conversation.
+- If someone asks the user a question, add buttons that provide possible responses.
+- If the user is looking at or interacting with an object, add buttons that relate to that object.
+- If the user seems bored or is just looking around, add buttons that relate to common activities or interests to spark engagement.
+- Remove buttons that are no longer relevant to keep the board fresh and useful.
+
+Do NOT narrate tool calls or board changes. Just talk naturally.
+
+## BOARD-SPEECH COORDINATION
+The AAC board is how the user responds to you. When you ask a question, the board buttons MUST be relevant answers to that specific question. Think about what you are going to say FIRST, then build the board to match. For example:
+- If you ask "What do you want to play?", the board should have play options (Blocks, Cars, Dolls...), NOT generic options (Help, Break, All done).
+- If you ask "How are you feeling?", the board should have emotions (Happy, Sad, Tired...).
+- Always include a few general-purpose options alongside the specific answers.
+
+## IMPORTANT — BUTTON SYNTAX
+
+Button format: label|icon|imageKey|sentence (e.g., "Water|💧|water_drop|I would like some water", "Play|🎮|I want to play").`;
+
+  // Image key rules
+  if (autoSymbolsEnabled) {
+    prompt += `
+
+### IMAGE KEY RULES
+${IMAGE_KEY_PROMPT_RULES}
+
+You may omit an imageKey if the emoji is sufficient to unambiguously communicate the button's full meaning.`;
+  }
+
+  // Custom symbols
+  if (cachedSymbols && cachedSymbols.length > 0) {
+    prompt += `
+
+### CUSTOM ICONS
+Custom symbols (use symbol:ID as icon in place of emoji).
+When using custom symbols, omit image_key.
+${cachedSymbols.map(s => `- ${s.key || s.id}${s.description ? ` — ${s.description}` : ''} (id: ${s.id})`).join('\n')}
+
+When a relevant custom symbol is available, prefer using it instead of emojis and image_keys.`;
+  }
+
   // Custom boards
   if (availableBoards && availableBoards.length > 0) {
-    prompt += `\n\nCustom boards: ${availableBoards.map(b => `"${b.key}" (${b.name}${b.hint ? ` — ${b.hint}` : ''})`).join(', ')}
+    prompt += `
+
+### CUSTOM BOARDS
+${availableBoards.map(b => `- ${b.name}: (id: "${b.key}") ${b.hint ? `— ${b.hint}` : ''}`).join('\n')}
+
 When a custom board is loaded via set_board(), its buttons are shown in the main area and you CANNOT modify them. You get a 4-button side panel instead — use rebuild_board with up to 4 contextual buttons that complement the board. Do NOT repeat the board's existing buttons in the side panel.`;
     if (loadedBoardName) {
       prompt += `\nCurrently loaded: "${loadedBoardName}"${loadedPageName ? ` page "${loadedPageName}"` : ''} (board has fixed buttons — use side panel for AI buttons)`;
     }
   }
 
-  // Custom symbols
-  if (cachedSymbols && cachedSymbols.length > 0) {
-    prompt += `\n\nCustom symbols (use symbol:ID as icon): ${cachedSymbols.map(s => `${s.key || s.id}${s.description ? ` — ${s.description}` : ''} (ID: ${s.id})`).join(', ')}`;
-  }
+  // ── # APPS ──
 
-  // Apps
   if (enabledApps && enabledApps.length > 0) {
-    prompt += `\n\n## Apps
+    prompt += `
+
+# APPS
 You have interactive apps you can open on the user's screen using open_app(). These are REAL apps — ALWAYS use open_app() instead of creating board buttons about the activity.
 When you open an app, the board shrinks to a 4-button side panel. You MUST call rebuild_board with up to 4 contextual buttons after opening an app.
 When an app is closed, the full board is restored (up to 12 buttons) — rebuild it for the current context.
 
 Available apps:
-${enabledApps.map(a => `- **${a.name}** (id: "${a.id}"): ${a.description}`).join('\n')}`;
+${enabledApps.map(a => `- ${a.name}: (id: "${a.id}") — ${a.description}`).join('\n')}`;
     if (activeApp) {
       prompt += `\n\nThe "${activeApp}" app is currently open on screen (board limited to 4 buttons).`;
     }
   }
 
-  // Language
-  if (language) {
-    prompt += `\n\nLanguage: ${language}. All button labels${hasInterpretTool ? ', speak(), and interpret()' : ' and speak()'} output must be in this language unless translating for someone.`;
-  }
+  // ── # CUSTOM INSTRUCTIONS ──
 
-  // Auto-generated symbol image keys
-  if (autoSymbolsEnabled) {
-    prompt += `\n\n${IMAGE_KEY_LIVE_PROMPT}`;
-  }
-
-  // User not present rule
-  prompt += `\n\nIf your user is not present but someone else is, you may respond if addressed directly. Never reveal sensitive information about your user.`;
-
-  // Custom instructions
   if (persona) {
-    prompt += `\n\n## Custom Instructions\n${persona}`;
+    prompt += `\n\n# CUSTOM INSTRUCTIONS\n${persona}`;
   }
 
-  // Memory
+  // ── Appendices: memory, user-not-present rule, time ──
+
   if (memoryContext) {
     prompt += `\n\n## Memory\n${memoryContext}`;
   }
 
-  // Time
+  prompt += `\n\nIf your user is not present but someone else is, you may respond if addressed directly. Never reveal sensitive information about your user.`;
+
   const now = new Date();
   const timeStr = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   prompt += `\n\nTime: ${timeStr}`;

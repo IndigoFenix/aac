@@ -83,7 +83,7 @@ function buildInterpretTool(config: ToolDeclarationConfig): FunctionDeclaration 
 function buildTranscriptTool(_config: ToolDeclarationConfig): FunctionDeclaration {
   return {
     name: "transcript",
-    description: `Record clear speech you heard from a person nearby. Only transcribe when you can confidently identify words — ignore silence, ambient noise, unintelligible audio, and background conversations. CRITICAL: If you recently called speak() or interpret(), you WILL hear those words echoed back through the microphone — that is YOUR OWN echo, not new speech. Never transcribe your own echoes.`,
+    description: `Record clear speech you heard from a person nearby. Only transcribe when you can confidently identify words — ignore silence, ambient noise, unintelligible audio, and background conversations. CRITICAL: If you recently called speak() or the user pushed an utterance button, you WILL hear those words echoed back through the microphone — that is YOUR OWN echo, not new speech. Never transcribe your own echoes.`,
     behavior: Behavior.BLOCKING,
     parametersJsonSchema: {
       type: "object",

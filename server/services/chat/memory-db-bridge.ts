@@ -1320,6 +1320,12 @@ export async function processMemoryToolWithDB(
   // reading the current memoryValues. If a field is lazy-loaded and hasn't been
   // populated yet, the wildcard expansion finds null and returns empty paths.
   // Loading the data here ensures wildcards can expand correctly.
+  //
+  // IMPORTANT: We must add each viewed path to the visible set BEFORE calling
+  // populateMemoryFromDB, because that function only loads data for paths that
+  // are already visible. The in-memory processor's openPath() runs later, so
+  // without this the DB loader skips the path and the tool response is empty.
+  if (!memoryState) memoryState = { visible: [], page: {} };
   const preloadedPaths = new Set<string>();
   for (const op of ops) {
     if (op.action === 'view') {
@@ -1333,6 +1339,9 @@ export async function processMemoryToolWithDB(
           const resolution = resolveSchemaWithContext(fields, memoryValues, containerPath, baseContext);
           if (resolution.dbOps?.list || resolution.dbOps?.read) {
             try {
+              if (!memoryState.visible.includes(containerPath)) {
+                memoryState.visible.push(containerPath);
+              }
               await populateMemoryFromDB(
                 fields, memoryValues, memoryState,
                 loadState,

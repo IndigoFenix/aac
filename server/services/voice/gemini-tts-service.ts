@@ -13,7 +13,7 @@ export interface TTSOptions {
 // Gemini prebuilt voice names
 const VOICE_MAP: Record<string, string> = {
   man:   "Orus",
-  woman: "Kore",
+  woman: "Zephyr",
   boy:   "Puck",
   girl:  "Leda",
 };
@@ -48,7 +48,7 @@ function getClient(): GoogleGenAI {
 
 function getVoiceName(options: TTSOptions): string {
   if (options.voiceName) return options.voiceName;
-  return VOICE_MAP[options.voiceType || "woman"] || "Kore";
+  return VOICE_MAP[options.voiceType || "woman"] || "Zephyr";
 }
 
 /**

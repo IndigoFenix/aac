@@ -17,7 +17,7 @@ import type { EntityRef, TableTierConfig } from "./types";
  */
 export const SENSITIVE_FIELDS: Record<string, TableTierConfig> = {
   users: {
-    core: ["email", "firstName", "lastName", "fullName", "password", "googleId", "mfaSecret", "profileImageUrl"],
+    core: ["email", "firstName", "lastName", "fullName", "password", "mfaSecret", "profileImageUrl"],
     log: ["chatMemory"],
     biometric: ["faceEmbedding", "voiceEmbedding"],
   },

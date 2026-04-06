@@ -1,51 +1,97 @@
 
 ================================================================================
-[2026-04-01T10:04:34.258Z] SESSION START
+[2026-04-04T20:36:50.068Z] SESSION START
 ────────────────────────────────────────────────────────────────────────────────
-Session: c9bb1775-80db-463c-8194-2d18a30502d2
+Session: d8e8ce12-cf94-4435-92c0-3d12d311920f
 Student: 6b265de3-fd40-48a0-9e01-eb4d04a9d609
 Provider: gemini-live-ga
 Model: gemini-live-2.5-flash-native-audio
 Response Modality: AUDIO
 Interaction: interact
 Response: fast
-Startup: fast
+Startup: thorough
 
 ================================================================================
-[2026-04-01T10:04:34.259Z] SYSTEM PROMPT
+[2026-04-04T20:36:50.070Z] SYSTEM PROMPT
 ────────────────────────────────────────────────────────────────────────────────
-You are a companion AI for Gal Nolan, a 6 year old ("your user").
+You are a companion AI for Gal Nolan, a 6 year old ("PRIMARY USER").
 You exist in a device that observes the environment through a camera and listens to ambient audio.
 You cannot move or physically interact with the environment on your own. Your only capabilities are those provided by the tools you can call.
-Do not offer to perform actions that are not supported by your tools or claim to be performing an action or using an app that you do not have, such as giving the user an item or playing music.
+Do not offer to perform actions that are not supported by your tools or claim to be performing an action or using an app that you do not have, such as physically giving the user an item.
 You speak directly — your voice is heard by the user. Use tools for board management and other actions.
 When the user presses a button, the button's sentence is automatically voiced in the student's own voice. You will hear this through the microphone — it is NOT new speech. Do NOT transcribe it. Wait for it to finish, then respond naturally with your voice and update the board.
 
-It is possible for your user to be present and talking to you, or for them to be away and someone else to be present. Always pay attention to who is around and whether your user is present.
+Language: en. All AAC board button labels and speak() output must be in this language unless translating for someone.
 
-ASSIST MODE: When your user is interacting with another person, avoid talking - focus on observing and providing button options for the user to communicate with that person. You may occasionally interject with a supportive comment or suggestion, but keep it brief and relevant.
+# GENERAL
 
-INTERACTION MODE: When your user or another person is alone or addressing you, you can talk to them directly. Avoid speaking excessively if they seem disengaged; respond to their level of engagement and interest. If they are actively engaging with your speech, you can continue the conversation. If they are not responding or seem distracted, it may be best to stay quiet and let them focus on their current activity. Always prioritize the user's preferences and comfort in your interactions.
+## IDENTIFYING CONTEXT
+Use your camera and microphone observations to infer the current context.
+- The location (at home, in class, outside, etc)
+- Items nearby (toys, books, devices, etc)
+- The person or people present (family members, teachers, friends, etc)
+- Sounds in the environment (TV, music, conversations, etc)
+- The user's current activity or focus (playing, reading, looking around, etc), emotional state (happy, bored, frustrated, etc), and non-verbal cues (looking at you, looking away, reaching for something, etc)
+Whenever context changes meaningfully, call the context() tool to record your new observations. Do NOT call context() if nothing meaningful changed. Do NOT narrate your own actions.
 
-MODE: INTERACTIVE — You speak directly with your voice. When a [BUTTON PRESS] occurs, the student's sentence is voiced automatically — wait for it to finish, then respond naturally and update the board.
+## IDENTIFYING SPEAKERS
+The person sitting at the device is usually your PRIMARY USER, but not always. Use logic to infer who is present based on qualities like voice, gender, and age.
+If you are unsure of the person's identity, you can ask for clarification and store the information in memory when it is provided.
+When transcribing, you may create temporary descriptions for speakers you cannot identify (e.g. "the person with the deep voice" or "the person who just said 'hello'") — these can help you track who is speaking until you can identify them.
 
-Custom boards: "programming_activities" (Programming Activities — When discussing programming)
-When a custom board is loaded via set_board(), its buttons are shown in the main area and you CANNOT modify them. You get a 4-button side panel instead — use rebuild_board with up to 4 contextual buttons that complement the board. Do NOT repeat the board's existing buttons in the side panel.
+## TRANSCRIBING
+Whenever you hear someone in the environment speak out loud, transcribe it using the transcribe() tool.
+Only transcribe speech that is clearly audible.
+DO NOT transcribe speech produced by you. (These are added to the transcript automatically.)
+DO NOT transcribe the [BUTTON PRESS] sentences being voiced through the TTS system. (These are added to the transcript automatically.)
+You may ignore ambient noise and background conversations that do not seem relevant or clear enough to transcribe.
+Always transcribe before producing a response.
 
-Custom symbols (use symbol:ID as icon): pizza — pizza (ID: 8e675957-673c-4163-9c62-d23db64a64e8)
+## ASSIST MODE vs INTERACTION MODE
+Determine whether you are in ASSIST MODE (the user is interacting with another person) or INTERACTION MODE (the user is alone or addressing you). This will guide how you communicate and engage.
+You may switch between modes as the context changes — for example, if the user is talking to a family member, you are in assist mode; if the family member leaves and the user is alone, you switch to interaction mode.
 
-## Apps
-You have interactive apps you can open on the user's screen using open_app(). These are REAL apps — ALWAYS use open_app() instead of creating board buttons about the activity.
-When you open an app, the board shrinks to a 4-button side panel. You MUST call rebuild_board with up to 4 contextual buttons after opening an app.
-When an app is closed, the full board is restored (up to 12 buttons) — rebuild it for the current context.
+### ASSIST MODE
+- When your user is interacting with another person, avoid talking unless addressed directly by your user or the other person.
+- Your primary role is to assist your user in communicating with that person, not to communicate yourself.
+- Focus on observing and providing button options for the user to communicate with that person.
+- You may occasionally interject with a supportive comment or suggestion, but keep it brief and relevant.
 
-Available apps:
-- **Drawing** (id: "drawing"): Opens an interactive drawing canvas on the user's screen where they can draw with colors. ALWAYS use open_app to launch this when the user mentions drawing, coloring, or pictures — do NOT just create board buttons about drawing.
-- **Music Maker** (id: "music"): Opens an interactive piano on the user's screen where they can play musical notes. ALWAYS use open_app to launch this when the user wants to make music or play piano — do NOT just create board buttons about music.
+### INTERACTION MODE
+- When your user is alone or addressing you, you can talk to them directly.
+- Avoid speaking excessively if they seem disengaged; respond to their level of engagement and interest.
+- If they are actively engaging with your speech, you can continue the conversation.
+- If they are not responding or seem distracted, it may be best to stay quiet and let them focus on their current activity.
+- Always prioritize the user's preferences and comfort in your interactions.
 
-Language: en. All button labels and speak() output must be in this language unless translating for someone.
+To determine whether you are being addressed, consider the context and cues:
+- Is the speaker looking at the camera/device or looking at someone else?
+- Is the speaker responding to something you said or to something another person said?
+- Are there multiple people present who seem to be interacting with each other?
+- Did the speaker address you by name or use language that suggests they are talking to you?
 
-IMPORTANT — Button format: label|icon|imageKey|sentence (e.g., "Water|💧|water_drop|I would like some water", "Play|🎮|I want to play").
+# AAC BOARD
+Your MOST IMPORTANT job is to manage the AAC board that the user uses to communicate.
+Anticipate the user's communication needs based on the context and create buttons that empower them to express themselves, interact with others, and engage with their environment. For example:
+- If someone nearby is speaking, add buttons that relate to what they are saying to encourage the user to join the conversation.
+- If someone asks the user a question, add buttons that provide possible responses.
+- If the user is looking at or interacting with an object, add buttons that relate to that object.
+- If the user seems bored or is just looking around, add buttons that relate to common activities or interests to spark engagement.
+- Remove buttons that are no longer relevant to keep the board fresh and useful.
+
+Do NOT narrate tool calls or board changes. Just talk naturally.
+
+## BOARD-SPEECH COORDINATION
+The AAC board is how the user responds to you. When you ask a question, the board buttons MUST be relevant answers to that specific question. Think about what you are going to say FIRST, then build the board to match. For example:
+- If you ask "What do you want to play?", the board should have play options (Blocks, Cars, Dolls...), NOT generic options (Help, Break, All done).
+- If you ask "How are you feeling?", the board should have emotions (Happy, Sad, Tired...).
+- Always include a few general-purpose options alongside the specific answers.
+
+## IMPORTANT — BUTTON SYNTAX
+
+Button format: label|icon|imageKey|sentence (e.g., "Water|💧|water_drop|I would like some water", "Play|🎮|I want to play").
+
+### IMAGE KEY RULES
 The imageKey is an unambiguous English key used to generate symbol images.
 Image keys must follow these rules:
 - Always in English, unambiguous single concept
@@ -57,47 +103,69 @@ Image keys must follow these rules:
 - Omit imageKey for navigation/utility buttons (Back, Home)
 Image keys are used to auto-generate AAC symbol images. Emojis are used as a fallback option when image generation is unavailable, but the imageKey is the primary source for symbol generation.
 
+You may omit an imageKey if the emoji is sufficient to unambiguously communicate the button's full meaning.
+
+### CUSTOM ICONS
+Custom symbols (use symbol:ID as icon in place of emoji).
+When using custom symbols, omit image_key.
+- pizza — pizza (id: 8e675957-673c-4163-9c62-d23db64a64e8)
+
+When a relevant custom symbol is available, prefer using it instead of emojis and image_keys.
+
+### CUSTOM BOARDS
+- Programming Activities: (id: "programming_activities") — When discussing programming
+
+When a custom board is loaded via set_board(), its buttons are shown in the main area and you CANNOT modify them. You get a 4-button side panel instead — use rebuild_board with up to 4 contextual buttons that complement the board. Do NOT repeat the board's existing buttons in the side panel.
+
+# APPS
+You have interactive apps you can open on the user's screen using open_app(). These are REAL apps — ALWAYS use open_app() instead of creating board buttons about the activity.
+When you open an app, the board shrinks to a 4-button side panel. You MUST call rebuild_board with up to 4 contextual buttons after opening an app.
+When an app is closed, the full board is restored (up to 12 buttons) — rebuild it for the current context.
+
+Available apps:
+- Drawing: (id: "drawing") — Opens an interactive drawing canvas on the user's screen where they can draw with colors. ALWAYS use open_app to launch this when the user mentions drawing, coloring, or pictures — do NOT just create board buttons about drawing.
+- Music Maker: (id: "music") — Opens an interactive piano on the user's screen where they can play musical notes. ALWAYS use open_app to launch this when the user wants to make music or play piano — do NOT just create board buttons about music.
+
+# CUSTOM INSTRUCTIONS
+You are an advanced conversational AI designed to assist AAC (Augmentative and Alternative Communication) users.
+
+You are speaking with Gal, a 6-year-old boy who uses AAC to communicate. He speaks English and is curious, creative, and energetic.
+
+Gal's Interests and Strengths:
+Gal loves drawing, music, facts, and science. He is most engaged with interactive activities—drawing, music, interactive apps, and hands-on exploration. He has strong curiosity about how things work, experiments, chemistry, and weather.
+
+Important Behavioral Notes:
+Gal prefers interactive, hands-on activities over passive consumption. While he is interested in facts and science, he will quickly move away from passive reading or one-way information. When you offer learning or exploration, make it interactive and engaging. Let him lead and explore at his own pace rather than asking him to narrow down choices or sit with static content.
+
+How to Communicate with Gal:
+- Respond in a friendly, supportive, and enthusiastic manner
+- Keep responses concise and clear
+- Help expand on his symbol selections to form complete thoughts
+- Ask clarifying questions when needed, but be prepared for him to move to a different activity
+- Be patient and encouraging
+- Prioritize interactive activities: drawing, music, and hands-on exploration
+- When discussing science or facts, make it exploratory and action-oriented rather than instructional
+- Offer choices that let him take the lead
+- Celebrate his curiosity and creativity
+
+Current datetime: 2026-04-04T20:35:50.933Z
+
 If your user is not present but someone else is, you may respond if addressed directly. Never reveal sensitive information about your user.
 
-## Custom Instructions
-You are an advanced conversational AI designed to assist AAC (Augmentative and Alternative Communication) users.
-You should:
-- Respond in a friendly, supportive manner
-- Keep responses concise and clear
-- Help expand on the user's symbol selections to form complete thoughts
-- Ask clarifying questions when needed
-- Be patient and encouraging
-
-## Memory
-error:POLICY_VIOLATION
-
-Time: 1:04 PM
-
-CRITICAL — OUTPUT RULES:
-You speak directly — your voice is heard by the user. Do NOT narrate tool calls or board changes. Just talk naturally.
-Use your tools (rebuild_board, add_buttons, etc.) for board management, but your SPEECH is your natural audio output, not a tool call.
-
-BOARD-SPEECH COORDINATION:
-The AAC board is how the user responds to you. When you ask a question, the board buttons MUST be relevant answers to that specific question. Think about what you are going to say FIRST, then build the board to match. For example:
-- If you ask "What do you want to play?", the board should have play options (Blocks, Cars, Dolls...), NOT generic options (Help, Break, All done).
-- If you ask "How are you feeling?", the board should have emotions (Happy, Sad, Tired...).
-- Always include a few general-purpose options alongside the specific answers.
-
-BUTTON PRESS HANDLING:
-When you receive a [BUTTON PRESS] message, the student's sentence has already been voiced aloud via a separate TTS system. You will hear this through the microphone — it is NOT new speech from a person. Do NOT transcribe or repeat it. Wait a moment for the student's voice to finish, then respond naturally.
+Time: 11:36 PM
 
 AUDIO ECHO AWARENESS:
 You receive continuous microphone audio. You WILL hear your own voice echoed back through the speakers — never transcribe or respond to your own echoes. Also, button press sentences are voiced by a separate TTS system — those echoes are NOT new speech either.
 
 ================================================================================
-[2026-04-01T10:04:34.260Z] TOOL DECLARATIONS
+[2026-04-04T20:36:50.072Z] TOOL DECLARATIONS
 ────────────────────────────────────────────────────────────────────────────────
 [
   {
     "functionDeclarations": [
       {
         "name": "transcript",
-        "description": "Record clear speech you heard from a person nearby. Only transcribe when you can confidently identify words — ignore silence, ambient noise, unintelligible audio, and background conversations. CRITICAL: If you recently called speak() or interpret(), you WILL hear those words echoed back through the microphone — that is YOUR OWN echo, not new speech. Never transcribe your own echoes.",
+        "description": "Record clear speech you heard from a person nearby. Only transcribe when you can confidently identify words — ignore silence, ambient noise, unintelligible audio, and background conversations. CRITICAL: If you recently called speak() or the user pushed an utterance button, you WILL hear those words echoed back through the microphone — that is YOUR OWN echo, not new speech. Never transcribe your own echoes.",
         "behavior": "BLOCKING",
         "parametersJsonSchema": {
           "type": "object",
@@ -327,10 +395,10 @@ You receive continuous microphone audio. You WILL hear your own voice echoed bac
 ]
 
 ============================================================
-[2026-04-01T10:04:34.263Z] LiveRelay.initialize
+[2026-04-04T20:36:50.082Z] LiveRelay.initialize
 ----------------------------------------
 {
-  "sessionId": "c9bb1775-80db-463c-8194-2d18a30502d2",
+  "sessionId": "d8e8ce12-cf94-4435-92c0-3d12d311920f",
   "studentId": "6b265de3-fd40-48a0-9e01-eb4d04a9d609",
   "provider": "gemini-live-ga",
   "model": "gemini-live-2.5-flash-native-audio",
@@ -340,523 +408,48 @@ You receive continuous microphone audio. You WILL hear your own voice echoed bac
 }
 
 ================================================================================
-[2026-04-01T10:04:34.553Z] CLIENT → sendMessage
+[2026-04-04T20:36:50.375Z] CLIENT → sendMessage
 ────────────────────────────────────────────────────────────────────────────────
 role=user turnComplete=true text="Call rebuild_board() with 4-12 initial communication buttons, then greet the user."
 
 ================================================================================
-[2026-04-01T10:04:35.446Z] SERVER → toolCall
-────────────────────────────────────────────────────────────────────────────────
-functions=[rebuild_board] ids=[054ba0b4-86c0-4a9e-a515-77d07ed5525f]
-
-================================================================================
-[2026-04-01T10:04:35.450Z] RAW FUNCTION CALL: rebuild_board
-────────────────────────────────────────────────────────────────────────────────
-{
-  "full_board": true,
-  "buttons": "Snack|🍎|apple|I want a snack, Break|🛑|stop_sign|I need a break, Play|🎮|game_controller|I want to play, Help|🆘|life_saver|I need help"
-}
-
-================================================================================
-[2026-04-01T10:04:35.454Z] RELAY #1 handleToolCalls
-────────────────────────────────────────────────────────────────────────────────
-calls=[rebuild_board] turnStartTime=0 consecutiveModelTurns=0 turnProcessingBusy=false awaitingModelResponse=false
-
-============================================================
-[2026-04-01T10:04:35.456Z] LiveRelay.toolCall
-----------------------------------------
-{
-  "sessionId": "c9bb1775-80db-463c-8194-2d18a30502d2",
-  "name": "rebuild_board",
-  "args": {
-    "full_board": true,
-    "buttons": "Snack|🍎|apple|I want a snack, Break|🛑|stop_sign|I need a break, Play|🎮|game_controller|I want to play, Help|🆘|life_saver|I need help"
-  }
-}
-
-================================================================================
-[2026-04-01T10:04:35.459Z] TOOL CALL: rebuild_board
-────────────────────────────────────────────────────────────────────────────────
-{
-  "id": "054ba0b4-86c0-4a9e-a515-77d07ed5525f",
-  "args": {
-    "full_board": true,
-    "buttons": "Snack|🍎|apple|I want a snack, Break|🛑|stop_sign|I need a break, Play|🎮|game_controller|I want to play, Help|🆘|life_saver|I need help"
-  }
-}
-
-================================================================================
-[2026-04-01T10:04:35.849Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-outputTranscription("Hi Gal!")
-
-================================================================================
-[2026-04-01T10:04:35.914Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:36.035Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:36.096Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:36.098Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-outputTranscription(" What are")
-
-================================================================================
-[2026-04-01T10:04:36.115Z] TOOL RESPONSE: rebuild_board
-────────────────────────────────────────────────────────────────────────────────
-{
-  "output": "ok",
-  "board_state": "Board rebuilt. 4/12 buttons (8 available): Snack, Break, Play, Help"
-}
-
-================================================================================
-[2026-04-01T10:04:36.117Z] RELAY #1 SKIPPED tool response
-────────────────────────────────────────────────────────────────────────────────
-rebuild_board (non-blocking, direct audio mode)
-
-================================================================================
-[2026-04-01T10:04:36.142Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:36.143Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-outputTranscription(" you up")
-
-================================================================================
-[2026-04-01T10:04:36.251Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:36.280Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-outputTranscription(" to today?")
-
-================================================================================
-[2026-04-01T10:04:36.284Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:36.312Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:36.330Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:36.331Z] SERVER → serverContent
+[2026-04-04T20:36:51.331Z] SERVER → serverContent
 ────────────────────────────────────────────────────────────────────────────────
 outputTranscription("(empty)")
 
 ================================================================================
-[2026-04-01T10:04:36.333Z] SERVER → serverContent
+[2026-04-04T20:36:51.333Z] SERVER → serverContent
 ────────────────────────────────────────────────────────────────────────────────
 generationComplete
 
 ================================================================================
-[2026-04-01T10:04:36.335Z] SERVER → serverContent
+[2026-04-04T20:36:51.339Z] SERVER → serverContent
 ────────────────────────────────────────────────────────────────────────────────
 TURN_COMPLETE
 
 ================================================================================
-[2026-04-01T10:04:36.337Z] SERVER → TURN_COMPLETE
+[2026-04-04T20:36:51.341Z] SERVER → TURN_COMPLETE
 ────────────────────────────────────────────────────────────────────────────────
 (dispatching to relay)
 
 ================================================================================
-[2026-04-01T10:04:36.339Z] RELAY #2 handleProviderTurnComplete
+[2026-04-04T20:36:51.343Z] RELAY #1 handleProviderTurnComplete
 ────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=1775037875455 consecutiveModelTurns=0 accum=[speak=true, interpret=false, board=true]
-
-============================================================
-[2026-04-01T10:04:36.341Z] LiveRelay.turnComplete
-----------------------------------------
-{
-  "sessionId": "c9bb1775-80db-463c-8194-2d18a30502d2",
-  "elapsed": "885ms",
-  "toolCalls": "speak, board",
-  "speak": "Hi Gal! What are you up to today?",
-  "interpret": "(none)",
-  "transcript": "(none)",
-  "context": "(none)",
-  "board": {
-    "rebuilt": true,
-    "added": 4,
-    "removed": 0,
-    "addLabels": "Snack, Break, Play, Help",
-    "removeLabels": ""
-  },
-  "callMonitor": false,
-  "learnFace": false,
-  "setBoard": false,
-  "pressButton": false,
-  "openApp": false,
-  "closeApp": false,
-  "speechSuppressed": false
-}
+turnProcessingBusy=false turnStartTime=0 consecutiveModelTurns=0 accum=[speak=false, interpret=false, board=false]
 
 ================================================================================
-[2026-04-01T10:04:36.344Z] DIRECT AUDIO SENT
+[2026-04-04T20:36:51.345Z] RELAY #1 SKIPPED
 ────────────────────────────────────────────────────────────────────────────────
-8 chunks, 89834 bytes PCM, 89878 bytes WAV
+empty turn (no tool calls, text, or audio)
 
 ================================================================================
-[2026-04-01T10:04:36.349Z] RELAY #2 turnComplete DONE
+[2026-04-04T20:36:53.088Z] GREETING PROMPT
 ────────────────────────────────────────────────────────────────────────────────
-consecutiveModelTurns now=1
-
-================================================================================
-[2026-04-01T10:04:37.273Z] GREETING PROMPT
-────────────────────────────────────────────────────────────────────────────────
-Call rebuild_board() with 4-12 initial communication buttons, then greet the user with your voice. If a custom board from the Available Custom Boards list is appropriate for this student, use set_board() instead of rebuild_board().
+Call rebuild_board() with 4-12 initial communication buttons, then greet the user with your voice.
+Use the camera image to observe the environment and make the buttons contextually relevant. If a custom board from the Available Custom Boards list is appropriate for this student, use set_board() instead of rebuild_board().
 The student is Gal Nolan. Use their profile (in the system prompt) to personalize the board — reflect their interests, communication level, and needs.
 
 ================================================================================
-[2026-04-01T10:04:37.275Z] CLIENT → sendMessage
+[2026-04-04T20:36:53.090Z] CLIENT → sendFrameWithPrompt
 ────────────────────────────────────────────────────────────────────────────────
-role=user turnComplete=true text="Call rebuild_board() with 4-12 initial communication buttons, then greet the user with your voice. If a custom board fro"
-
-================================================================================
-[2026-04-01T10:04:38.142Z] SERVER → toolCall
-────────────────────────────────────────────────────────────────────────────────
-functions=[rebuild_board] ids=[6d0d027e-603d-4c12-a61e-ab07a55935b1]
-
-================================================================================
-[2026-04-01T10:04:38.143Z] RAW FUNCTION CALL: rebuild_board
-────────────────────────────────────────────────────────────────────────────────
-{
-  "full_board": true,
-  "buttons": "Snack|🍎|apple|I want a snack, Break|🛑|stop_sign|I need a break, Play|🎮|game_controller|I want to play, Help|🆘|life_saver|I need help"
-}
-
-================================================================================
-[2026-04-01T10:04:38.145Z] RELAY #3 handleToolCalls
-────────────────────────────────────────────────────────────────────────────────
-calls=[rebuild_board] turnStartTime=0 consecutiveModelTurns=1 turnProcessingBusy=false awaitingModelResponse=true
-
-================================================================================
-[2026-04-01T10:04:38.147Z] TOOL CALL DEDUP
-────────────────────────────────────────────────────────────────────────────────
-Suppressed duplicate: rebuild_board
-
-================================================================================
-[2026-04-01T10:04:38.149Z] CLIENT → sendToolResponse
-────────────────────────────────────────────────────────────────────────────────
-rebuild_board(SILENT): {"output":"already applied"}
-
-================================================================================
-[2026-04-01T10:04:38.472Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-outputTranscription("Hi Gal!")
-
-================================================================================
-[2026-04-01T10:04:38.571Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:38.594Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:38.676Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:38.756Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:38.757Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-outputTranscription(" What are")
-
-================================================================================
-[2026-04-01T10:04:38.808Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:38.809Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-outputTranscription(" you up")
-
-================================================================================
-[2026-04-01T10:04:38.822Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:38.823Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-outputTranscription(" to today?")
-
-================================================================================
-[2026-04-01T10:04:38.868Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:38.919Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:38.942Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-outputTranscription("(empty)")
-
-================================================================================
-[2026-04-01T10:04:38.951Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:38.953Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-generationComplete
-
-================================================================================
-[2026-04-01T10:04:38.954Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
-
-================================================================================
-[2026-04-01T10:04:38.955Z] SERVER → TURN_COMPLETE
-────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
-
-================================================================================
-[2026-04-01T10:04:38.957Z] RELAY #4 handleProviderTurnComplete
-────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=1775037878146 consecutiveModelTurns=1 accum=[speak=true, interpret=false, board=false]
-
-============================================================
-[2026-04-01T10:04:38.958Z] LiveRelay.turnComplete
-----------------------------------------
-{
-  "sessionId": "c9bb1775-80db-463c-8194-2d18a30502d2",
-  "elapsed": "811ms",
-  "toolCalls": "speak",
-  "speak": "Hi Gal! What are you up to today?",
-  "interpret": "(none)",
-  "transcript": "(none)",
-  "context": "(none)",
-  "board": "(no changes)",
-  "callMonitor": false,
-  "learnFace": false,
-  "setBoard": false,
-  "pressButton": false,
-  "openApp": false,
-  "closeApp": false,
-  "speechSuppressed": true
-}
-
-================================================================================
-[2026-04-01T10:04:38.960Z] RELAY #4 turnComplete DONE
-────────────────────────────────────────────────────────────────────────────────
-consecutiveModelTurns now=2
-
-================================================================================
-[2026-04-01T10:04:39.501Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-outputTranscription("Hi Gal!")
-
-================================================================================
-[2026-04-01T10:04:39.553Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:39.610Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:39.692Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:39.718Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-outputTranscription(" What are")
-
-================================================================================
-[2026-04-01T10:04:39.734Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:39.776Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-outputTranscription(" you up")
-
-================================================================================
-[2026-04-01T10:04:39.798Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:39.807Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-outputTranscription(" to today?")
-
-================================================================================
-[2026-04-01T10:04:39.863Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:39.906Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:39.956Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:39.979Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-outputTranscription("(empty)")
-
-================================================================================
-[2026-04-01T10:04:39.983Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-parts=[audio(audio/pcm)]
-
-================================================================================
-[2026-04-01T10:04:39.985Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-generationComplete
-
-================================================================================
-[2026-04-01T10:04:39.988Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
-
-================================================================================
-[2026-04-01T10:04:39.990Z] SERVER → TURN_COMPLETE
-────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
-
-================================================================================
-[2026-04-01T10:04:39.992Z] RELAY #5 handleProviderTurnComplete
-────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=1775037879553 consecutiveModelTurns=2 accum=[speak=true, interpret=false, board=false]
-
-============================================================
-[2026-04-01T10:04:39.995Z] LiveRelay.turnComplete
-----------------------------------------
-{
-  "sessionId": "c9bb1775-80db-463c-8194-2d18a30502d2",
-  "elapsed": "440ms",
-  "toolCalls": "speak",
-  "speak": "Hi Gal! What are you up to today?",
-  "interpret": "(none)",
-  "transcript": "(none)",
-  "context": "(none)",
-  "board": "(no changes)",
-  "callMonitor": false,
-  "learnFace": false,
-  "setBoard": false,
-  "pressButton": false,
-  "openApp": false,
-  "closeApp": false,
-  "speechSuppressed": true
-}
-
-================================================================================
-[2026-04-01T10:04:39.999Z] RELAY #5 turnComplete DONE
-────────────────────────────────────────────────────────────────────────────────
-consecutiveModelTurns now=3
-
-================================================================================
-[2026-04-01T10:04:50.741Z] CLIENT → sendFrameWithPrompt
-────────────────────────────────────────────────────────────────────────────────
-prompt="[VISUAL CHECK] Observe the scene. Update the AAC board if you see new objects, a" extraImages=0 turnComplete=true
-
-================================================================================
-[2026-04-01T10:04:51.412Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-outputTranscription("(empty)")
-
-================================================================================
-[2026-04-01T10:04:51.413Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-generationComplete
-
-================================================================================
-[2026-04-01T10:04:51.415Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
-
-================================================================================
-[2026-04-01T10:04:51.416Z] SERVER → TURN_COMPLETE
-────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
-
-================================================================================
-[2026-04-01T10:04:51.417Z] RELAY #6 handleProviderTurnComplete
-────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=0 consecutiveModelTurns=0 accum=[speak=false, interpret=false, board=false]
-
-================================================================================
-[2026-04-01T10:04:51.418Z] RELAY #6 SKIPPED
-────────────────────────────────────────────────────────────────────────────────
-empty turn (no tool calls, text, or audio)
-
-================================================================================
-[2026-04-01T10:05:07.190Z] CLIENT → sendFrameWithPrompt
-────────────────────────────────────────────────────────────────────────────────
-prompt="[VISUAL CHECK] Observe the scene. Update the AAC board if you see new objects, a" extraImages=0 turnComplete=true
-
-================================================================================
-[2026-04-01T10:05:07.731Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-outputTranscription("(empty)")
-
-================================================================================
-[2026-04-01T10:05:07.733Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-generationComplete
-
-================================================================================
-[2026-04-01T10:05:07.737Z] SERVER → serverContent
-────────────────────────────────────────────────────────────────────────────────
-TURN_COMPLETE
-
-================================================================================
-[2026-04-01T10:05:07.738Z] SERVER → TURN_COMPLETE
-────────────────────────────────────────────────────────────────────────────────
-(dispatching to relay)
-
-================================================================================
-[2026-04-01T10:05:07.740Z] RELAY #7 handleProviderTurnComplete
-────────────────────────────────────────────────────────────────────────────────
-turnProcessingBusy=false turnStartTime=0 consecutiveModelTurns=0 accum=[speak=false, interpret=false, board=false]
-
-================================================================================
-[2026-04-01T10:05:07.742Z] RELAY #7 SKIPPED
-────────────────────────────────────────────────────────────────────────────────
-empty turn (no tool calls, text, or audio)
+prompt="Call rebuild_board() with 4-12 initial communication buttons, then greet the use" extraImages=0 turnComplete=true

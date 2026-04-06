@@ -48,6 +48,8 @@ export interface UseLiveSessionOptions {
   onSymbolUpdate?: (data: { buttonLabel: string; symbolPath: string }) => void;
   onThinkingModeChange?: (thinking: boolean) => void;
   autoPlayAudio?: boolean;
+  /** Per-tag pitch shift in semitones. Keys are audio tags: "avatar" (AI voice), "interpret" (student voice). */
+  pitchByTag?: Record<string, number>;
   debugMode?: boolean;
   /** Function to capture a camera frame (used for initial image on startup) */
   captureFrame?: () => Promise<Blob | null>;
@@ -67,6 +69,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     onSymbolUpdate,
     onThinkingModeChange,
     autoPlayAudio = true,
+    pitchByTag,
     debugMode = false,
     captureFrame,
     captureHighResFrame,
@@ -172,6 +175,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Streaming audio player
   const audioPlayer = useStreamingAudioPlayer({
     autoPlay: autoPlayAudio,
+    pitchByTag,
     onPlaybackEnd: () => {
       // Show deferred yes/no overlay after TTS finishes
       if (pendingAskYesNoRef.current) {
@@ -706,6 +710,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     });
   }, [wsSend]);
 
+  /** Inject context into the AI without triggering a response turn */
+  const sendContextOnly = useCallback((text: string) => {
+    wsSend({ type: "context_injection", text });
+  }, [wsSend]);
+
   const sendVoice = useCallback(async (board?: ParsedBoardData) => {
     const audioBlob = await audioRecorder.stopRecording();
     if (!audioBlob) return;
@@ -930,6 +939,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // Actions
     initialize,
     sendMessage,
+    sendContextOnly,
     sendVoice,
     interpretButtons,
     startRecording: audioRecorder.startRecording,

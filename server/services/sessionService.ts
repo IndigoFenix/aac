@@ -157,6 +157,9 @@ import {
   STUDENT_MEMORY_FIELDS,
 } from "./memory-schema/student-memory-schema";
 import {
+  getAACSettingsMemoryFields,
+} from "./memory-schema/aac-settings-memory-schema";
+import {
   USER_MEMORY_FIELDS,
 } from "./memory-schema/user-memory-schema";
 import {
@@ -542,7 +545,9 @@ const AGENT_TEMPLATE_BASE: LocalAgentTemplate = {
   intelligence: 2,
   memory: 2,
   memoryFields: [...MASTER_MEMORY_FIELDS],
-  tools: {},
+  tools: {
+    mediaAnalysis: { enabled: true },
+  },
   library: [],
 }
 
@@ -805,6 +810,7 @@ interface GetMessageManagerInput {
   onThinkingUpdate?: (thinkingText: string) => void;
   onNavigate?: (feature: string) => void;
   onSelectStudent?: (studentId: string) => void;
+  onFilesNeeded?: (files: Array<{ fileId: string; filename: string }>) => void;
   vectorStoreId?: string;
   /** Base64 data URLs for inline images */
   images?: string[];
@@ -939,7 +945,7 @@ async function loadFlaggedCalendarEvents(
 }
 
 async function getMessageManager(input: GetMessageManagerInput): Promise<GetMessageManagerResult> {
-  const { userId, studentId, instituteId, sessionId, featureContext, persona, feature = "chat", onThinkingUpdate, onNavigate, onSelectStudent } = input;
+  const { userId, studentId, instituteId, sessionId, featureContext, persona, feature = "chat", onThinkingUpdate, onNavigate, onSelectStudent, onFilesNeeded } = input;
   const isAACFeature = (feature === 'aac');
 
   // Validate input - at least one identifier must be provided
@@ -1126,10 +1132,18 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
       allowReadReports: aacPrivacy?.allowReadReports ?? true,
     });
     contextMemoryFields.push(...aacFields);
-    console.log('[getMessageManager] AAC mode - added', studentFields.length, 'Student fields +', aacFields.length, 'AAC context fields');
+
+    // Add AAC settings fields (writable — AI can modify settings)
+    contextMemoryFields.push(...getAACSettingsMemoryFields());
+    console.log('[getMessageManager] AAC mode - added', studentFields.length, 'Student fields +', aacFields.length, 'AAC context fields + AAC settings fields');
   } else {
     // Non-AAC modes use chatContextManager fields (includes institute, library, progress, reports)
     contextMemoryFields.push(...chatContextManager.getMemoryFields());
+
+    // Add AAC settings fields when a student is selected (so clinician can modify settings via chat)
+    if (hasStudent) {
+      contextMemoryFields.push(...getAACSettingsMemoryFields());
+    }
 
     // Add progress system prompt
     const additionalPrompt = buildProgressSystemPrompt(accessPermissions, hasStudent, context.institute?.language);
@@ -1424,10 +1438,14 @@ Example button with custom symbol:
         allowReadProgress: aacPrivacy2?.allowReadProgress ?? true,
         allowReadReports: aacPrivacy2?.allowReadReports ?? true,
       }),
+      ...getAACSettingsMemoryFields(),
     ];
   } else {
     // Non-AAC modes: use chatContextManager fields (includes institute, library, progress, reports)
     fieldsForProcessor = chatContextManager.getMemoryFields();
+    if (hasStudent) {
+      fieldsForProcessor = [...fieldsForProcessor, ...getAACSettingsMemoryFields()];
+    }
 
     // Add BOARD_MEMORY_FIELD for boards mode
     if (feature === 'boards') {
@@ -1469,6 +1487,7 @@ Example button with custom symbol:
     onThinkingUpdate,
     onNavigate: !isAACFeature ? onNavigate : undefined,
     onSelectStudent: !isAACFeature ? onSelectStudent : undefined,
+    onFilesNeeded,
     memoryProcessor,
     vectorStoreId: input.vectorStoreId,
     images: input.images,
@@ -1567,7 +1586,7 @@ function extractContextFromMemoryValues(memoryValues: FlatMemoryValues): Record<
   // Extract all Context_ prefixed fields
   for (const [key, value] of Object.entries(memoryValues)) {
     if (key.startsWith(MEMORY_PREFIX.CONTEXT)) {
-      // Convert Context_Board to "board", Context_Document to "document", etc.
+      // Convert Context_Board to "board", Context_AACSettings to "aacsettings", etc.
       const contextKey = key.replace(MEMORY_PREFIX.CONTEXT, "").toLowerCase();
       contextData[contextKey] = value;
       console.log('[extractContextFromMemoryValues] Extracted:', key, '->', contextKey);
@@ -1623,6 +1642,7 @@ export interface OnMessageStreamingInput extends OnMessageInput {
   onNavigate?: (feature: string) => void;
   /** Callback for real-time student selection during tool calls */
   onSelectStudent?: (studentId: string) => void;
+  onFilesNeeded?: (files: Array<{ fileId: string; filename: string }>) => void;
 }
 
 function isCreditLimitError(error: any): boolean {
@@ -1741,7 +1761,7 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
  */
 export async function onMessageStreaming(input: OnMessageStreamingInput): Promise<MessageResponse> {
   try {
-    const { userId, studentId, instituteId, sessionId, activeFeature, persona, messages, replyType, featureContext, onThinkingUpdate, onNavigate, onSelectStudent, vectorStoreId, images, documents, currentImage, systemPromptOverride } = input;
+    const { userId, studentId, instituteId, sessionId, activeFeature, persona, messages, replyType, featureContext, onThinkingUpdate, onNavigate, onSelectStudent, onFilesNeeded, vectorStoreId, images, documents, currentImage, systemPromptOverride } = input;
 
     const { manager: messageManager, memoryValues } = await getMessageManager({
       userId,
@@ -1754,6 +1774,7 @@ export async function onMessageStreaming(input: OnMessageStreamingInput): Promis
       onThinkingUpdate, // Pass the callback through to ChatMessageManager
       onNavigate,
       onSelectStudent,
+      onFilesNeeded,
       vectorStoreId,
       images,
       documents,
@@ -1832,6 +1853,7 @@ export interface OnMessageMdStreamingInput extends OnMessageInput {
   onThinkingUpdate?: (thinkingText: string) => void;
   onNavigate?: (feature: string) => void;
   onSelectStudent?: (studentId: string) => void;
+  onFilesNeeded?: (files: Array<{ fileId: string; filename: string }>) => void;
   signal?: AbortSignal;
 }
 
@@ -1864,8 +1886,8 @@ export async function* onMessageMdStreaming(
   try {
     const {
       userId, studentId, instituteId, sessionId, activeFeature, persona, messages,
-      featureContext, onThinkingUpdate, onNavigate, onSelectStudent, vectorStoreId, images, documents,
-      currentImage, systemPromptOverride,
+      featureContext, onThinkingUpdate, onNavigate, onSelectStudent, onFilesNeeded,
+      vectorStoreId, images, documents, currentImage, systemPromptOverride,
     } = input;
 
     const { manager: messageManager, memoryValues } = await getMessageManager({
@@ -1879,6 +1901,7 @@ export async function* onMessageMdStreaming(
       onThinkingUpdate,
       onNavigate,
       onSelectStudent,
+      onFilesNeeded,
       vectorStoreId,
       images,
       documents,

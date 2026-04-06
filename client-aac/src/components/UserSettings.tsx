@@ -73,6 +73,8 @@ export default function UserSettings({
   const [elevenlabsApiKey, setElevenlabsApiKey] = useState("");
   const [elevenlabsAiVoiceId, setElevenlabsAiVoiceId] = useState("");
   const [elevenlabsStudentVoiceId, setElevenlabsStudentVoiceId] = useState("");
+  const [aiVoicePitch, setAiVoicePitch] = useState(0);
+  const [studentVoicePitch, setStudentVoicePitch] = useState(0);
 
   // Fetch active ElevenLabs voices
   const { data: activeVoices } = useQuery({
@@ -183,6 +185,8 @@ export default function UserSettings({
       setElevenlabsApiKey(aac?.elevenlabsApiKey || "");
       setElevenlabsAiVoiceId(aac?.elevenlabsAiVoiceId || "");
       setElevenlabsStudentVoiceId(aac?.elevenlabsStudentVoiceId || "");
+      setAiVoicePitch(aac?.aiVoicePitch ?? 0);
+      setStudentVoicePitch(aac?.studentVoicePitch ?? 0);
       const itr = aac?.iconTextRatio ?? 3;
       const il = aac?.interpretationLevel ?? 2;
       const sm = aac?.startupMode ?? 0;
@@ -282,6 +286,8 @@ export default function UserSettings({
       elevenlabsApiKey: elevenlabsApiKey.trim() || undefined,
       elevenlabsAiVoiceId: elevenlabsAiVoiceId.trim() || undefined,
       elevenlabsStudentVoiceId: elevenlabsStudentVoiceId.trim() || undefined,
+      aiVoicePitch,
+      studentVoicePitch,
       iconTextRatio,
       interpretationLevel,
       startupMode,
@@ -303,6 +309,8 @@ export default function UserSettings({
     setElevenlabsApiKey("");
     setElevenlabsAiVoiceId("");
     setElevenlabsStudentVoiceId("");
+    setAiVoicePitch(0);
+    setStudentVoicePitch(0);
     setIconTextRatio(3);
     setInterpretationLevel(2);
     setStartupMode(0);
@@ -497,7 +505,7 @@ export default function UserSettings({
 
                   <div className="space-y-2">
                     <Label className="text-xs font-medium text-gray-500">{t("settings.studentVoice")}</Label>
-                    <Select value={geminiStudentVoice || "_default"} onValueChange={(v) => setGeminiStudentVoice(v === "_default" ? "" : v)}>
+                    <Select value={geminiStudentVoice || "_default"} onValueChange={(v) => { setGeminiStudentVoice(v === "_default" ? "" : v); if (v === "_default") setStudentVoicePitch(0); }}>
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="Default" />
                       </SelectTrigger>
@@ -517,7 +525,7 @@ export default function UserSettings({
 
                   <div className="space-y-2">
                     <Label className="text-xs font-medium text-gray-500">{t("settings.aiVoice")}</Label>
-                    <Select value={geminiAiVoice || "_default"} onValueChange={(v) => setGeminiAiVoice(v === "_default" ? "" : v)}>
+                    <Select value={geminiAiVoice || "_default"} onValueChange={(v) => { setGeminiAiVoice(v === "_default" ? "" : v); if (v === "_default") setAiVoicePitch(0); }}>
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="Default" />
                       </SelectTrigger>
@@ -535,6 +543,48 @@ export default function UserSettings({
                     </Select>
                   </div>
                 </div>
+
+                {/* Voice Pitch Adjustment — only shown when at least one voice is explicitly set */}
+                {(geminiStudentVoice || geminiAiVoice) && (
+                <div className="space-y-3 mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+                  <Label className="text-sm font-semibold">{t("settings.voicePitch")}</Label>
+                  <p className="text-xs text-gray-500">{t("settings.voicePitchDesc")}</p>
+
+                  {geminiStudentVoice && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-medium text-gray-500">{t("settings.studentVoice")}</Label>
+                      <span className="text-xs text-gray-500">{studentVoicePitch > 0 ? `+${studentVoicePitch}` : studentVoicePitch}</span>
+                    </div>
+                    <Slider
+                      min={-6}
+                      max={6}
+                      step={1}
+                      value={[studentVoicePitch]}
+                      onValueChange={(v) => setStudentVoicePitch(v[0])}
+                      className="w-full"
+                    />
+                  </div>
+                  )}
+
+                  {geminiAiVoice && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-medium text-gray-500">{t("settings.aiVoice")}</Label>
+                      <span className="text-xs text-gray-500">{aiVoicePitch > 0 ? `+${aiVoicePitch}` : aiVoicePitch}</span>
+                    </div>
+                    <Slider
+                      min={-6}
+                      max={6}
+                      step={1}
+                      value={[aiVoicePitch]}
+                      onValueChange={(v) => setAiVoicePitch(v[0])}
+                      className="w-full"
+                    />
+                  </div>
+                  )}
+                </div>
+                )}
 
                 {/* Local Browser TTS */}
                 <div className="space-y-2 mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">

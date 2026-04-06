@@ -9,6 +9,8 @@ import { User as SelectUser } from "@shared/schema";
 import { storage } from "./storage";
 import { pool } from "./db";
 import createMemoryStore from "memorystore";
+import { identityProviderRepository } from "./repositories/identityProviderRepository";
+import { identityService } from "./services/identityService";
 
 const MemoryStore = createMemoryStore(session);
 
@@ -90,8 +92,7 @@ export async function setupUserAuth(app: Express) {
 
   // Google OAuth Strategy (only set up if credentials are provided)
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-    // Use production domain or fallback to Replit URL for development
-    const callbackURL = process.env.GOOGLE_OAUTH_CALLBACK_URL || 
+    const callbackURL = process.env.GOOGLE_OAUTH_CALLBACK_URL ||
                         "https://aivota.ai/auth/google/callback";
     console.log('Setting up Google OAuth strategy with callback URL:', callbackURL);
     passport.use(new GoogleStrategy({
@@ -101,62 +102,82 @@ export async function setupUserAuth(app: Express) {
       },
     async (accessToken, refreshToken, profile, done) => {
       try {
-        console.log('Google OAuth strategy callback - profile:', profile.id, profile.emails?.[0]?.value);
-        
-        // Check if user exists by Google ID
-        let user = await storage.getUserByGoogleId(profile.id);
-        console.log('Existing user by Google ID:', user ? 'found' : 'not found');
-        
-        if (user) {
-          // Update last active time
-          await storage.updateUser(user.id, { lastActiveAt: new Date() });
-          console.log('Returning existing Google user:', user.id);
-          return done(null, user);
+        const email = profile.emails?.[0]?.value;
+
+        // Find or create the Google identity provider row
+        let googleProvider = await identityProviderRepository.getByInstituteIdType("__google__");
+        if (!googleProvider) {
+          // Auto-create the Google provider entry (no discovery needed since we use passport-google-oauth20)
+          const { encrypt } = await import("./services/encryption");
+          googleProvider = await identityProviderRepository.create({
+            name: "Google",
+            protocol: "oauth2",
+            clientId: process.env.GOOGLE_CLIENT_ID!,
+            clientSecret: await encrypt(process.env.GOOGLE_CLIENT_SECRET!),
+            scopes: "openid email profile",
+            instituteIdType: "__google__", // sentinel value — not a real institute ID type
+            isActive: true,
+          });
         }
 
-        // Check if user exists by email
-        const email = profile.emails?.[0]?.value;
-        console.log('Google profile email:', email);
-        
-        if (email) {
-          user = await storage.getUserByEmail(email);
-          console.log('Existing user by email:', user ? 'found' : 'not found');
-          
+        // Check if user exists by external identity
+        const existingIdentity = await identityService.findUserByExternalId(
+          googleProvider.id,
+          profile.id,
+        );
+
+        if (existingIdentity) {
+          const user = await storage.getUser(existingIdentity.userId);
           if (user) {
-            // Link Google account to existing user
-            console.log('Linking Google account to existing user:', user.id);
-            // Filter out base64 data URLs that can cause database corruption
-            const profileImageUrl = profile.photos?.[0]?.value;
-            const validImageUrl = profileImageUrl && (profileImageUrl.startsWith('http://') || profileImageUrl.startsWith('https://')) ? profileImageUrl : null;
-            
-            await storage.updateUser(user.id, { 
-              googleId: profile.id,
-              profileImageUrl: validImageUrl,
-              lastActiveAt: new Date()
-            });
+            await storage.updateUser(user.id, { lastActiveAt: new Date() });
             return done(null, user);
           }
         }
 
-        // Create new user
+        // Check if user exists by email
         if (email) {
-          console.log('Creating new Google user for email:', email);
-          // Filter out base64 data URLs that can cause database corruption
+          let user = await storage.getUserByEmail(email);
+
+          if (user) {
+            // Link Google identity to existing user
+            const profileImageUrl = profile.photos?.[0]?.value;
+            const validImageUrl = profileImageUrl && (profileImageUrl.startsWith('http://') || profileImageUrl.startsWith('https://')) ? profileImageUrl : null;
+
+            await storage.updateUser(user.id, {
+              profileImageUrl: validImageUrl,
+              lastActiveAt: new Date()
+            });
+            await identityService.linkIdentity(
+              user.id,
+              googleProvider.id,
+              profile.id,
+              email,
+              { name: profile.displayName },
+            );
+            return done(null, user);
+          }
+
+          // Create new user + link identity
           const profileImageUrl = profile.photos?.[0]?.value;
           const validImageUrl = profileImageUrl && (profileImageUrl.startsWith('http://') || profileImageUrl.startsWith('https://')) ? profileImageUrl : undefined;
-          
-          user = await storage.createGoogleUser({
+
+          user = await storage.createUser({
             email,
             firstName: profile.name?.givenName,
             lastName: profile.name?.familyName,
-            googleId: profile.id,
-            profileImageUrl: validImageUrl
+            profileImageUrl: validImageUrl,
+            authProvider: "google",
           });
-          console.log('Created new Google user:', user.id);
+          await identityService.linkIdentity(
+            user.id,
+            googleProvider.id,
+            profile.id,
+            email,
+            { name: profile.displayName },
+          );
           return done(null, user);
         }
 
-        console.error('No email found in Google profile');
         return done(new Error('No email provided by Google'));
       } catch (error) {
         return done(error);

@@ -317,6 +317,14 @@ export function ChatFeature() {
   };
 
   // Helper to extract display content from message
+  // Rewrite relative /api/ URLs to point at the backend (needed when frontend and backend are on different ports)
+  const apiBase = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, "") ?? "";
+  const rewriteApiUrls = (html: string): string => {
+    if (!apiBase) return html;
+    // Rewrite src="/api/..." and href="/api/..." to use the backend base URL
+    return html.replace(/(src|href)="\/api\//g, `$1="${apiBase}/api/`);
+  };
+
   const getMessageContent = (message: ChatMessage): string => {
     let text: string;
     if (typeof message.content === 'string') {
@@ -324,7 +332,7 @@ export function ChatFeature() {
     } else {
       const content = message.content as ChatMessageContent;
       if (content.md) {
-        return marked.parse(content.md) as string;
+        return rewriteApiUrls(marked.parse(content.md) as string);
       }
       text = content.html || content.text || '';
     }
@@ -332,7 +340,7 @@ export function ChatFeature() {
     if (text.startsWith('error:')) {
       return t(`errors.${text.slice(6)}`);
     }
-    return text;
+    return rewriteApiUrls(text);
   };
 
   // Helper to detect if a string contains HTML markup

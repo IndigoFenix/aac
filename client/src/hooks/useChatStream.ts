@@ -20,7 +20,7 @@ function withBase(path: string): string {
 /**
  * SSE event types sent by the server
  */
-export type SSEEventType = 'thinking' | 'navigate' | 'select_student' | 'text_delta' | 'file_extracted' | 'complete' | 'error' | 'close';
+export type SSEEventType = 'thinking' | 'navigate' | 'select_student' | 'text_delta' | 'file_extracted' | 'files_needed' | 'complete' | 'error' | 'close';
 
 /**
  * Thinking event data
@@ -44,6 +44,8 @@ export interface StreamCallbacks {
   onTextDelta?: (text: string) => void;
   /** Called when the server has extracted text from an uploaded file */
   onFileExtracted?: (filename: string, extractedText: string) => void;
+  /** Called when the server needs the client to re-upload expired media files */
+  onFilesNeeded?: (files: Array<{ fileId: string; filename: string }>) => void;
   /** Called when the final response is ready */
   onComplete: (response: any) => void;
   /** Called when an error occurs */
@@ -207,6 +209,10 @@ export function useChatStream(): UseChatStreamResult {
 
               case 'file_extracted':
                 callbacks.onFileExtracted?.(parsed.filename, parsed.extractedText);
+                break;
+
+              case 'files_needed':
+                callbacks.onFilesNeeded?.(parsed.files);
                 break;
 
               case 'complete':
