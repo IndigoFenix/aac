@@ -7,6 +7,10 @@ import { processMemoryToolResponse } from "./memory-system";
 import { memDebug, memDebugSeparator } from "./memory-debug-log";
 import { ArticleResponse, fetchPage, SearchItem, webSearch } from "./tools/search-engine";
 import { getDistance } from "./tools/map-data";
+import { analyzeMedia } from "./tools/gemini-media-analyzer";
+import { generateImage } from "./tools/image-generator";
+import { extractFrame } from "./tools/video-frame-extractor";
+import { getFile, refreshFile, storeFile } from "./tools/media-file-cache";
 import { AgentAPIEndpoint } from "@shared/schema";
 
 const API_PREFIX = "api_";
@@ -48,9 +52,12 @@ export interface ToolRegistry {
   setRooms: (args: { roomIds: string[] }) => Promise<any>;
   spawn: (args: { subAgentId: string }) => Promise<any>;
   despawn: (args: { subAgentId: string }) => Promise<any>;
-  pruneMessages: (args: { forget: number[]; summary: string }) => Promise<any>;
+  pruneMessages: (args: { forget: number[]; summary: string; closePaths?: string[] }) => Promise<any>;
   navigateToFeature: (args: { feature: string }) => Promise<any>;
   selectStudent: (args: { studentId: string }) => Promise<any>;
+  analyzeMedia: (args: { instruction: string; context?: string; files: string[] }) => Promise<any>;
+  extractVideoFrame: (args: { fileId: string; timestampSeconds: number }) => Promise<any>;
+  generateImage: (args: { instruction: string; referenceImageFileId?: string }) => Promise<any>;
 }
 
 // ============================================================================
@@ -230,12 +237,13 @@ export interface ToolRegistryDeps {
   onThinkingUpdate?: (description: string) => void;
   onNavigate?: (feature: string) => void;
   onSelectStudent?: (studentId: string) => void;
+  onFilesNeeded?: (files: Array<{ fileId: string; filename: string }>) => void;
 
   /**
    * Optional callback for pruneMessages tool.
    * When provided, allows the AI to manually compress conversation history.
    */
-  onPruneMessages?: (forget: number[], summary: string) => Promise<{ removed: number; warnings: string[]; historyLength: number }>;
+  onPruneMessages?: (forget: number[], summary: string, closePaths?: string[]) => Promise<{ removed: number; warnings: string[]; historyLength: number }>;
 
   /**
    * Optional custom memory processor.
@@ -296,6 +304,36 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
         return { success: true, selectedStudentId: studentId };
       }
       return { success: false, reason: 'Student selection not available' };
+    },
+    analyzeMedia: async ({ instruction, context, files }) => {
+      const result = await analyzeMedia({ instruction, context, files });
+      // If files have expired, notify the client to re-upload them
+      if ((result as any).filesNeeded && deps.onFilesNeeded) {
+        deps.onFilesNeeded((result as any).filesNeeded);
+      }
+      return result;
+    },
+    extractVideoFrame: async ({ fileId, timestampSeconds }) => {
+      refreshFile(fileId);
+      const cached = getFile(fileId);
+      if (!cached) return { error: "File not found or expired" };
+      if (!cached.mimeType.startsWith("video/")) return { error: "File is not a video" };
+      const frameBuf = await extractFrame(cached.buffer, cached.mimeType, timestampSeconds);
+      const frameId = storeFile(frameBuf, "image/png", `frame_${timestampSeconds}s.png`);
+      // Only return the file ID — NOT the base64, to avoid bloating the conversation
+      return { frameFileId: frameId, timestampSeconds };
+    },
+    generateImage: async ({ instruction, referenceImageFileId }) => {
+      // Resolve file ID to base64 data URL for the API call
+      let referenceImage: string | undefined;
+      if (referenceImageFileId) {
+        refreshFile(referenceImageFileId);
+        const cached = getFile(referenceImageFileId);
+        if (cached) {
+          referenceImage = `data:${cached.mimeType};base64,${cached.buffer.toString("base64")}`;
+        }
+      }
+      return generateImage({ instruction, referenceImage });
     },
     apiCall: async (toolCall: GPTFunctionToolCall) => {
       const fnName = toolCall.name;
@@ -531,9 +569,9 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
       return result;
     },
 
-    pruneMessages: async (args: { forget: number[]; summary: string }) => {
+    pruneMessages: async (args: { forget: number[]; summary: string; closePaths?: string[] }) => {
       if (deps.onPruneMessages) {
-        return { success: true, ...(await deps.onPruneMessages(args.forget, args.summary)) };
+        return { success: true, ...(await deps.onPruneMessages(args.forget, args.summary, args.closePaths)) };
       }
       return { success: true, removed: 0 };
     },
@@ -851,6 +889,18 @@ export async function makeToolCalls(
               case "selectStudent":
                 response = await registry.selectStudent(args as { studentId: string });
                 insertToolCallResponse(toolCall, response);
+                break;
+              case "analyzeMedia":
+                response = await registry.analyzeMedia(args as { instruction: string; context?: string; files: string[] });
+                insertToolCallResponse(toolCall, response, response?.credits || 0);
+                break;
+              case "extractVideoFrame":
+                response = await registry.extractVideoFrame(args as { fileId: string; timestampSeconds: number });
+                insertToolCallResponse(toolCall, response);
+                break;
+              case "generateImage":
+                response = await registry.generateImage(args as { instruction: string; referenceImageFileId?: string });
+                insertToolCallResponse(toolCall, response, response?.credits || 0);
                 break;
               default:
                 insertToolCallResponse(toolCall, {

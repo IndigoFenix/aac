@@ -73,6 +73,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [elevenlabsStudentVoiceId, setElevenlabsStudentVoiceId] = useState('');
   const [geminiAiVoice, setGeminiAiVoice] = useState('');
   const [geminiStudentVoice, setGeminiStudentVoice] = useState('');
+  const [aiVoicePitch, setAiVoicePitch] = useState(0);
+  const [studentVoicePitch, setStudentVoicePitch] = useState(0);
   const [useLocalTts, setUseLocalTts] = useState(false);
   const [iconTextRatio, setIconTextRatio] = useState(3);
   const [interpretationLevel, setInterpretationLevel] = useState(2);
@@ -166,6 +168,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setElevenlabsStudentVoiceId(aac?.elevenlabsStudentVoiceId || '');
       setGeminiAiVoice(aac?.geminiAiVoice || '');
       setGeminiStudentVoice(aac?.geminiStudentVoice || '');
+      setAiVoicePitch(aac?.aiVoicePitch ?? 0);
+      setStudentVoicePitch(aac?.studentVoicePitch ?? 0);
       setUseLocalTts(aac?.useLocalTts ?? false);
       setIconTextRatio(aac?.iconTextRatio ?? 3);
       setInterpretationLevel(aac?.interpretationLevel ?? 2);
@@ -196,6 +200,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalElevenlabsStudentVoiceId = aac?.elevenlabsStudentVoiceId || '';
       const originalGeminiAiVoice = aac?.geminiAiVoice || '';
       const originalGeminiStudentVoice = aac?.geminiStudentVoice || '';
+      const originalAiVoicePitch = aac?.aiVoicePitch ?? 0;
+      const originalStudentVoicePitch = aac?.studentVoicePitch ?? 0;
       const originalUseLocalTts = aac?.useLocalTts ?? false;
       const originalIconTextRatio = aac?.iconTextRatio ?? 3;
       const originalInterpretationLevel = aac?.interpretationLevel ?? 2;
@@ -218,6 +224,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         elevenlabsStudentVoiceId !== originalElevenlabsStudentVoiceId ||
         geminiAiVoice !== originalGeminiAiVoice ||
         geminiStudentVoice !== originalGeminiStudentVoice ||
+        aiVoicePitch !== originalAiVoicePitch ||
+        studentVoicePitch !== originalStudentVoicePitch ||
         useLocalTts !== originalUseLocalTts ||
         iconTextRatio !== originalIconTextRatio ||
         interpretationLevel !== originalInterpretationLevel ||
@@ -233,7 +241,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         JSON.stringify(appConfig) !== JSON.stringify(originalAppConfig)
       );
     }
-  }, [aiName, chatAgentPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, useLocalTts, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, allowReadProgress, allowReadReports, allowNotes, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, student]);
+  }, [aiName, chatAgentPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, allowReadProgress, allowReadReports, allowNotes, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -246,6 +254,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       elevenlabsStudentVoiceId?: string;
       geminiAiVoice?: string;
       geminiStudentVoice?: string;
+      aiVoicePitch?: number;
+      studentVoicePitch?: number;
       useLocalTts?: boolean;
       iconTextRatio: number;
       interpretationLevel: number;
@@ -293,6 +303,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       elevenlabsStudentVoiceId: elevenlabsStudentVoiceId.trim() || undefined,
       geminiAiVoice: geminiAiVoice || undefined,
       geminiStudentVoice: geminiStudentVoice || undefined,
+      aiVoicePitch,
+      studentVoicePitch,
       useLocalTts,
       iconTextRatio,
       interpretationLevel,
@@ -321,6 +333,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setElevenlabsStudentVoiceId(aac?.elevenlabsStudentVoiceId || '');
       setGeminiAiVoice(aac?.geminiAiVoice || '');
       setGeminiStudentVoice(aac?.geminiStudentVoice || '');
+      setAiVoicePitch(aac?.aiVoicePitch ?? 0);
+      setStudentVoicePitch(aac?.studentVoicePitch ?? 0);
       setUseLocalTts(aac?.useLocalTts ?? false);
       setIconTextRatio(aac?.iconTextRatio ?? 3);
       setInterpretationLevel(aac?.interpretationLevel ?? 2);
@@ -441,7 +455,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
 
                 <div className="flex items-center justify-between">
                   <Label className="text-sm text-muted-foreground">{t('aacSettings.aiVoice')}</Label>
-                  <Select value={geminiAiVoice || "_default"} onValueChange={(v) => setGeminiAiVoice(v === "_default" ? "" : v)}>
+                  <Select value={geminiAiVoice || "_default"} onValueChange={(v) => { setGeminiAiVoice(v === "_default" ? "" : v); if (v === "_default") setAiVoicePitch(0); }}>
                     <SelectTrigger className="w-full md:w-[200px]">
                       <SelectValue placeholder="Default" />
                     </SelectTrigger>
@@ -461,7 +475,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
 
                 <div className="flex items-center justify-between">
                   <Label className="text-sm text-muted-foreground">{t('aacSettings.studentVoice')}</Label>
-                  <Select value={geminiStudentVoice || "_default"} onValueChange={(v) => setGeminiStudentVoice(v === "_default" ? "" : v)}>
+                  <Select value={geminiStudentVoice || "_default"} onValueChange={(v) => { setGeminiStudentVoice(v === "_default" ? "" : v); if (v === "_default") setStudentVoicePitch(0); }}>
                     <SelectTrigger className="w-full md:w-[200px]">
                       <SelectValue placeholder="Default" />
                     </SelectTrigger>
@@ -479,6 +493,50 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </Select>
                 </div>
               </div>
+
+              {/* Voice Pitch Adjustment — only shown when at least one voice is explicitly set */}
+              {(geminiAiVoice || geminiStudentVoice) && (
+              <div className="pt-4 border-t space-y-3">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-medium">{t('aacSettings.voicePitch')}</Label>
+                  <p className="text-sm text-muted-foreground">{t('aacSettings.voicePitchDesc')}</p>
+                </div>
+
+                {geminiAiVoice && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm text-muted-foreground">{t('aacSettings.aiVoice')}</Label>
+                    <span className="text-sm text-muted-foreground">{aiVoicePitch > 0 ? `+${aiVoicePitch}` : aiVoicePitch}</span>
+                  </div>
+                  <Slider
+                    min={-6}
+                    max={6}
+                    step={1}
+                    value={[aiVoicePitch]}
+                    onValueChange={(v: number[]) => setAiVoicePitch(v[0])}
+                    className="w-full"
+                  />
+                </div>
+                )}
+
+                {geminiStudentVoice && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm text-muted-foreground">{t('aacSettings.studentVoice')}</Label>
+                    <span className="text-sm text-muted-foreground">{studentVoicePitch > 0 ? `+${studentVoicePitch}` : studentVoicePitch}</span>
+                  </div>
+                  <Slider
+                    min={-6}
+                    max={6}
+                    step={1}
+                    value={[studentVoicePitch]}
+                    onValueChange={(v: number[]) => setStudentVoicePitch(v[0])}
+                    className="w-full"
+                  />
+                </div>
+                )}
+              </div>
+              )}
 
               {/* Local Browser TTS */}
               <div className="pt-4 border-t space-y-2">

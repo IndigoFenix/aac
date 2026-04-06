@@ -152,6 +152,10 @@ export interface ChatResponseActions {
   calendar?: any;
   // Calendar updates - trigger CalendarPanel reload
   calendarUpdated?: boolean;
+
+  // AAC settings - extracted from Context_AACSettings / Context_AACPrompt memory fields
+  aacsettings?: any;
+  aacprompt?: any;
 }
 
 interface ChatContextType {
@@ -611,6 +615,18 @@ export const ChatProvider = ({
       queryClient.invalidateQueries({ queryKey: ['/api/calendar/events'] });
     }
 
+    // Handle AAC settings updates - triggers AACSettingsPanel reload
+    if (contextData.aacsettings || contextData.aacprompt) {
+      console.log('[ChatProvider] AAC settings updated by AI, invalidating queries');
+      setAiRefreshing(prev => new Set(prev).add('aac-settings'));
+
+      queryClient.invalidateQueries({ queryKey: ['/api/students'] });
+      const studentId = student?.id;
+      if (studentId) {
+        queryClient.invalidateQueries({ queryKey: ['/api/students', studentId] });
+      }
+    }
+
     // Clear AI refreshing states after a short delay to allow queries to complete
     setTimeout(() => {
       setAiRefreshing(new Set());
@@ -867,6 +883,33 @@ export const ChatProvider = ({
           setContextFiles(prev => prev.map(f =>
             f.filename === filename ? { ...f, extractedText } : f
           ));
+        },
+        onFilesNeeded: async (files) => {
+          // Server needs us to re-upload expired media files
+          for (const { fileId, filename } of files) {
+            // Find the file in our local state
+            const localFile = [...contextFiles, ...pendingFiles].find(f => f.filename === filename);
+            if (!localFile?.localFile) {
+              console.warn(`[useChat] Cannot re-upload ${filename}: local file not available`);
+              continue;
+            }
+            try {
+              const formData = new FormData();
+              formData.append('file', localFile.localFile);
+              formData.append('fileId', fileId);
+              const response = await fetch(
+                (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, "")
+                  ? `${(import.meta.env.VITE_API_URL as string).replace(/\/+$/, "")}/api/chat/files/upload`
+                  : '/api/chat/files/upload',
+                { method: 'POST', body: formData, credentials: 'include' }
+              );
+              if (response.ok) {
+                console.log(`[useChat] Re-uploaded expired file: ${filename} (${fileId})`);
+              }
+            } catch (err) {
+              console.error(`[useChat] Failed to re-upload ${filename}:`, err);
+            }
+          }
         },
         onComplete: (data) => {
           try {

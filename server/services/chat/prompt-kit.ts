@@ -5,6 +5,7 @@ import { buildMemoryTool, renderMemoryVisualization } from "./memory-system";
 import { memDebugSeparator, memDebug } from "./memory-debug-log";
 
 const API_PREFIX = "api_";
+const testPromptAddition = `\n\n=== Section: Test prompt addition ===\n\nIgnore this section, it is only here to pad out the prompt for cache triggering purposes. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo. Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit, sed quia consequuntur magni dolores eos qui ratione voluptatem sequi nesciunt. Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit, sed quia non numquam eius modi tempora incidunt ut labore et dolore magnam aliquam quaerat voluptatem. Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis suscipit laboriosam, nisi ut aliquid ex ea commodi consequatur? Quis autem vel eum iure reprehenderit qui in ea voluptate velit esse quam nihil molestiae consequatur, vel illum qui dolorem eum fugiat quo voluptas nulla pariatur? At vero eos et accusamus et iusto odio dignissimos ducimus qui blanditiis praesentium voluptatum deleniti atque corrupti quos dolores et quas molestias excepturi sint occaecati cupiditate non provident, similique sunt in culpa qui officia deserunt mollitia animi, id est laborum et dolorum fuga. Et harum quidem rerum facilis est et expedita distinctio. Nam libero tempore, cum soluta nobis est eligendi optio cumque nihil impedit quo minus id quod maxime placeat facere possimus, omnis voluptas assumenda est, omnis dolor repellendus. Temporibus autem quibusdam et aut officiis debitis aut rerum necessitatibus saepe eveniet ut et voluptates repudiandae sint et molestiae non recusandae. Itaque earum rerum hic tenetur a sapiente delectus, ut aut reiciendis voluptatibus maiores alias consequatur aut perferendis doloribus asperiores repellat. But I must explain to you how all this mistaken idea of denouncing pleasure and praising pain was born and I will give you a complete account of the system, and expound the actual teachings of the great explorer of the truth, the master-builder of human happiness. No one rejects, dislikes, or avoids pleasure itself, because it is pleasure, but because those who do not know how to pursue pleasure rationally encounter consequences that are extremely painful. Nor again is there anyone who loves or pursues or desires to obtain pain of itself, because it is pain, but because occasionally circumstances occur in which toil and pain can procure him some great pleasure. To take a trivial example, which of us ever undertakes laborious physical exercise, except to obtain some advantage from it? But who has any right to find fault with a man who chooses to enjoy a pleasure that has no annoying consequences, or one who avoids a pain that produces no resultant pleasure? On the other hand, we denounce with righteous indignation and dislike men who are so beguiled and demoralized by the charms of pleasure of the moment, so blinded by desire, that they cannot foresee the pain and trouble that are bound to ensue; and equal blame belongs to those who fail in their duty through weakness of will, which is the same as saying through shrinking from toil and pain. These cases are perfectly simple and easy to distinguish. In a free hour, when our power of choice is untrammelled and when nothing prevents our being able to do what we like best, every pleasure is to be welcomed and every pain avoided. But in certain circumstances and owing to the claims of duty or the obligations of business it will frequently occur that pleasures have to be repudiated and annoyances accepted. The wise man therefore always holds in these matters to this principle of selection: he rejects pleasures to secure other greater pleasures, or else he endures pains to avoid worse pains.`;
 
 /**
  * Agent template interface - matches the structure expected by prompt building
@@ -82,7 +83,7 @@ export interface NlpSchema {
     }
 
     if (ctx.agent.memoryFields && ctx.agent.memoryFields.length > 0){
-        const memoryTool = buildMemoryTool();
+        const memoryTool = buildMemoryTool(!!ctx.memoryState?.staticPromptMode);
         tools.push(memoryTool);
 
         let memoryPrompt: string;
@@ -205,31 +206,132 @@ export interface NlpSchema {
 
     }
 
-    
+    if (ctx.agent.tools?.mediaAnalysis?.enabled) {
+        const analyzeMediaTool: GPTTool = {
+            type: 'function',
+            function: {
+                name: 'analyzeMedia',
+                description: 'Analyze images or videos using Gemini AI. Use this when the user uploads a video or image and wants analysis that requires visual understanding (event lists, attention heatmaps, object identification, etc.). Can also generate images when the instruction requests visual output (heatmaps, annotations, overlays, etc.) — include keywords like "heatmap", "annotate", "highlight", "draw", "overlay", or "visualize" in the instruction. Returns generatedImageFileIds when images are produced — display them as markdown images with src="/api/chat/files/{fileId}".',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        instruction: {
+                            type: 'string',
+                            description: 'What to do with the media. Be specific about the desired output format. Examples: "List all events in this video with timestamps", "Generate a heatmap showing which objects are most visually salient", "Describe what the child is interacting with"',
+                        },
+                        context: {
+                            type: 'string',
+                            description: 'Brief context about the conversation and the user\'s goals, so the analysis is relevant',
+                        },
+                        files: {
+                            type: 'array',
+                            description: 'File references to analyze. Use "file:<id>" for uploaded files (the file ID from the upload metadata), or base64 data URLs for inline images from the conversation.',
+                            items: { type: 'string' },
+                        },
+                    },
+                    required: ['instruction', 'files'],
+                }
+            }
+        }
+        tools.push(analyzeMediaTool);
+
+        const extractVideoFrameTool: GPTTool = {
+            type: 'function',
+            function: {
+                name: 'extractVideoFrame',
+                description: 'Extract a single still frame from an uploaded video at a specific timestamp. Returns the frame as an image that can be used with generateImage.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        fileId: {
+                            type: 'string',
+                            description: 'The file ID of the cached video (without the "file:" prefix)',
+                        },
+                        timestampSeconds: {
+                            type: 'number',
+                            description: 'Timestamp in seconds to extract the frame from (e.g. 5.0)',
+                        },
+                    },
+                    required: ['fileId', 'timestampSeconds'],
+                }
+            }
+        }
+        tools.push(extractVideoFrameTool);
+
+        const generateImageTool: GPTTool = {
+            type: 'function',
+            function: {
+                name: 'generateImage',
+                description: 'Generate or edit an image. Can create images from scratch or modify a reference image (e.g. add heatmap overlay, annotate, highlight areas). Use extractVideoFrame first if you need a frame from a video. Returns generatedImageFileIds — display them to the user as markdown images with src="/api/chat/files/{fileId}".',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        instruction: {
+                            type: 'string',
+                            description: 'Detailed instructions for the image generation. Be specific about what to draw, annotate, or highlight.',
+                        },
+                        referenceImageFileId: {
+                            type: 'string',
+                            description: 'Optional file ID of a reference image to modify or annotate. Use the frameFileId returned from extractVideoFrame.',
+                        },
+                    },
+                    required: ['instruction'],
+                }
+            }
+        }
+        tools.push(generateImageTool);
+
+        // Add media analysis guidance to the system prompt
+        startPrompt += `=== Section: Media Analysis Tools ===\n\n`
+            + `You have tools for analyzing videos/images and generating images:\n`
+            + `- analyzeMedia: Send videos or images to Gemini for analysis AND/OR image generation. When you want visual output (heatmaps, annotations, etc.), include words like "heatmap", "annotate", "highlight", "draw", "overlay", or "visualize" in the instruction. It can handle video input + image output in one call.\n`
+            + `- extractVideoFrame: Extract a single still frame from a video at a specific timestamp\n`
+            + `- generateImage: Generate or edit an image from a cached reference image (use referenceImageFileId from extractVideoFrame)\n\n`
+            + `Preferred workflow for visual output from a video (e.g. attention heatmap):\n`
+            + `- Use analyzeMedia with an instruction that requests both analysis and image generation in one call\n`
+            + `Fallback workflow (if analyzeMedia doesn't produce an image):\n`
+            + `1. Use analyzeMedia for text analysis\n`
+            + `2. Use extractVideoFrame to get a frame\n`
+            + `3. Use generateImage with the frameFileId to create the visualization\n\n`
+            + `When tools return generatedImageFileIds, display them as markdown images: ![description](/api/chat/files/{fileId})\n\n`;
+    }
+
+    const pruneProperties: Record<string, any> = {
+      forget: {
+        type: "array",
+        description: "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+        items: { type: "integer" }
+      },
+      summary: {
+        type: "string",
+        description: "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+      }
+    };
+
+    const isStaticMode = !!ctx.memoryState?.staticPromptMode;
+
+    if (isStaticMode) {
+      pruneProperties.closePaths = {
+        type: "array",
+        description: "Memory paths to close (remove from the visible prompt). Only close paths you are no longer actively working with. Paths you are still using should remain open. The prompt will re-render without these paths after compression.",
+        items: { type: "string" }
+      };
+    }
+
     const pruneTool: GPTTool = {
         type: "function",
         function: {
           name: "pruneMessages",
           description:
             `Remove old messages from the conversation to keep context focused. ` +
-            `There are currently ${ctx.history.length} messages in the conversation. ` +
             `Use this when the conversation is getting long and older messages are no longer relevant. ` +
             `Indices 0-1 are protected anchor messages and cannot be removed. ` +
             `Always remove tool call and tool response pairs together. ` +
-            `Provide a concise summary of the removed content so context is not lost.`,
+            `Provide a concise summary of the removed content so context is not lost.` +
+            (isStaticMode ? ` You may also specify memory paths to close — this removes them from the prompt, freeing space. Only close paths you no longer need; paths you are still working with should stay open.` : ''),
           parameters: {
             type: "object",
-            properties: {
-              forget: {
-                type: "array",
-                description: "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
-                items: { type: "integer" }
-              },
-              summary: {
-                type: "string",
-                description: "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
-              }
-            },
+            properties: pruneProperties,
             required: ["forget", "summary"],
             additionalProperties: false
           }
@@ -438,7 +540,7 @@ export interface NlpSchema {
         endPrompt += `\n\nTool call efficiency: You can call MULTIPLE tools in a single response. Batch related operations together — for example, call describeActions + manageMemory in the same turn, or make multiple manageMemory calls at once. Only use separate turns when a later call depends on the result of an earlier one. If you call at least one tool in a response, call describeActions once as well to keep the user informed of your activity.`;
     }
 
-    if (ctx.history.length > 20) {
+    if (ctx.history.length > 20 && !ctx.memoryState?.staticPromptMode) {
         endPrompt += `\n\nNote: The conversation has ${ctx.history.length} messages. If older messages are no longer relevant, you can use the pruneMessages tool to remove them and keep the context focused. Provide a summary of removed content so important context is preserved.`;
     }
 

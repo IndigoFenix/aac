@@ -27,6 +27,7 @@ import "./i18n";
 import { ChatProvider } from "./hooks/useChat";
 import { FeaturePanelProvider } from "@/contexts/FeaturePanelContext";
 import { InstituteProvider } from "./hooks/useInstitute";
+import { IdentityVerificationDialog } from "./components/IdentityVerificationDialog";
 import ForgotPasswordPage from "./pages/forgotPasswordPage";
 import MfaRecoveryPage from "./pages/MfaRecoveryPage";
 import { AdminDashboard } from "./pages/AdminDashboard";
@@ -282,6 +283,7 @@ function App() {
           <SoundProvider>
             <AuthProvider>
               <InstituteProvider>
+                <IdentityVerificationDialog />
                 <StudentLabelSync />
                 <StudentProvider>
                   <FeaturePanelProvider>

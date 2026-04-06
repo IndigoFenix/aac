@@ -9,7 +9,7 @@ import type {
   PendingMessage,
   DualAgentConfig,
 } from "./types";
-import { studentRepository } from "../../repositories";
+import { studentRepository, calendarRepository, settingsRepository } from "../../repositories";
 import type { StudentWithAacSettings } from "@shared/schema";
 import type { AACInteractionMode, AACAppDefinition } from "./types";
 import {
@@ -17,6 +17,7 @@ import {
   AAC_MEMORY_PROMPT,
   buildMonitorSystemPrompt,
 } from "../memory-schema/aac-memory-schema";
+import { GPT, type GPTInputItem } from "../chat/gpt";
 
 /**
  * Monitor Agent
@@ -92,11 +93,11 @@ export class MonitorAgent {
       allowNotes: aac?.allowNotes ?? true,
     };
 
-    // Branch on startup mode: 0=fast (no LLM), 1=thorough (preload + LLM summary)
+    // Branch on startup mode: 0=fast (no LLM), 1=thorough (single LLM call with pre-loaded data)
     const startupMode = aac?.startupMode ?? 0;
     console.log("[MonitorAgent] Startup mode:", startupMode === 0 ? "fast" : "thorough");
     const contextResult = startupMode === 1
-      ? await this.longInitializeContext(student)
+      ? await this.thoroughStartup(student)
       : await this.fastInitializeContext(student);
 
     // Store the session ID if we created one
@@ -147,9 +148,151 @@ export class MonitorAgent {
   }
 
   /**
-   * Thorough startup (mode 1): Use the monitor's memory system (with tool access
-   * to Context_ paths) to analyze the student's data and generate an enhanced
-   * custom prompt for the Interactive Agent. Falls back to fast mode on error.
+   * Thorough startup (mode 1): Pre-load student data, events, and the current
+   * AAC prompt, then make a single LLM call to generate an enhanced prompt.
+   * No tool calls needed — everything is passed in the prompt directly.
+   * Falls back to fast mode on error.
+   */
+  private async thoroughStartup(student: any): Promise<{
+    sessionId: string;
+    additionalContext?: string;
+    enhancedPrompt?: string;
+  }> {
+    try {
+      const sessionId = this.sessionId || `aac-${Date.now()}`;
+      const memory = (student.chatMemory as Record<string, any>) || {};
+      const aac = student.aacSettings;
+      const personaPrompt = aac?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
+
+      // ── Gather student data ──
+      const studentDataParts: string[] = [];
+
+      studentDataParts.push(`Name: ${student.name}`);
+      if (student.birthDate) {
+        const age = Math.floor((Date.now() - new Date(student.birthDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+        studentDataParts.push(`Age: ${age}`);
+      }
+      if (student.gender) studentDataParts.push(`Gender: ${student.gender}`);
+      if (student.primaryLanguage) studentDataParts.push(`Language: ${student.primaryLanguage}`);
+
+      if (memory.Student_Notes?.length > 0 && this.privacyOptions.allowNotes) {
+        studentDataParts.push(`Notes: ${JSON.stringify(memory.Student_Notes)}`);
+      }
+      if (memory.Student_Interests?.length > 0) {
+        studentDataParts.push(`Interests: ${JSON.stringify(memory.Student_Interests)}`);
+      }
+      if (memory.Student_People?.length > 0) {
+        studentDataParts.push(`Important people: ${JSON.stringify(memory.Student_People)}`);
+      }
+      if (memory.Student_CommunicationStyle && Object.keys(memory.Student_CommunicationStyle).length > 0) {
+        studentDataParts.push(`Communication style: ${JSON.stringify(memory.Student_CommunicationStyle)}`);
+      }
+      if (memory.Student_Preferences && Object.keys(memory.Student_Preferences).length > 0) {
+        studentDataParts.push(`Preferences: ${JSON.stringify(memory.Student_Preferences)}`);
+      }
+
+      // ── Load upcoming/recent events ──
+      let eventsSection = "";
+      try {
+        const now = new Date();
+        const yesterday = new Date(now);
+        yesterday.setDate(yesterday.getDate() - 1);
+        yesterday.setHours(0, 0, 0, 0);
+        const threeDaysOut = new Date(now);
+        threeDaysOut.setDate(threeDaysOut.getDate() + 3);
+        threeDaysOut.setHours(23, 59, 59, 999);
+
+        const attendeeKeys = [{ type: 'student', id: this.studentId }];
+        const rawEvents = await calendarRepository.getEventsForAttendees(attendeeKeys, yesterday, threeDaysOut);
+        const expanded = calendarRepository.expandRecurringEvents(rawEvents, yesterday, threeDaysOut);
+
+        if (expanded.length > 0) {
+          const eventLines = expanded.slice(0, 10).map(({ event: ev, date }) => {
+            const occStart = new Date(date);
+            const evStart = new Date(ev.startTime);
+            occStart.setHours(evStart.getHours(), evStart.getMinutes());
+            return `- ${ev.title} (${occStart.toLocaleDateString()} ${occStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})${ev.description ? `: ${ev.description}` : ''}`;
+          });
+          eventsSection = `\n\n## Upcoming & Recent Events\n${eventLines.join('\n')}`;
+        }
+      } catch (err) {
+        console.warn("[MonitorAgent] Failed to load calendar events for startup:", err);
+      }
+
+      // ── Build the LLM prompt ──
+      const systemPrompt = `You are preparing an enhanced prompt for an AAC session with ${student.name}.
+The Interactive Agent uses this prompt to guide real-time interaction with the student.
+You will also check in periodically during the session to provide context-specific updates.
+
+## Student Data
+${studentDataParts.join('\n')}
+${eventsSection}
+
+## Current AAC Prompt
+${personaPrompt}
+
+## Your Task
+Update the AAC prompt to reflect the student's current data and context.
+- Preserve the intent and tone of the current prompt
+- Weave in any relevant student data (interests, preferences, important people, communication style)
+- Incorporate upcoming events if relevant (e.g. "Today the student has a music therapy session")
+- Be concise — no more than 500 words
+- Skip areas with no data
+- Plain text only, dashes (-) for bullet points
+- You may include instructions for when the Interactive Agent should consult you for more context
+
+If the current prompt is already adequate and no updates are needed, return it unchanged.
+
+## Output Format
+Output ONLY the enhanced prompt between [ENHANCED_PROMPT] and [/ENHANCED_PROMPT] tags. Nothing else outside the tags.`;
+
+      // ── Single LLM call — no tools ──
+      const llmConfig = await settingsRepository.getLLMConfig('aac_moderator');
+      const gpt = new GPT({
+        provider: llmConfig?.provider || 'claude',
+        model: llmConfig?.model || 'claude-haiku-4-5-20251001',
+      });
+
+      const inputItems: GPTInputItem[] = [{
+        type: 'message',
+        role: 'user',
+        content: 'Generate the enhanced prompt for this AAC session.',
+      }];
+
+      const response = await gpt.getStructuredResponse(
+        inputItems,
+        'startup-prompt',
+        undefined, // no schema — plain text
+        [],         // no tools
+        2048,
+        0,          // intelligence level (cheapest model)
+        { temperature: 0.5 },
+        false, 1,
+        systemPrompt,
+      );
+
+      const responseText = response.content || '';
+      const promptMatch = responseText.match(/\[ENHANCED_PROMPT\]([\s\S]*?)\[\/ENHANCED_PROMPT\]/);
+      const enhancedPrompt = promptMatch?.[1]?.trim();
+
+      if (enhancedPrompt) {
+        console.log("[MonitorAgent] Thorough startup generated enhanced prompt (" + enhancedPrompt.length + " chars)");
+        return { sessionId, enhancedPrompt };
+      }
+
+      console.warn("[MonitorAgent] Thorough startup: no [ENHANCED_PROMPT] tags in response, using as context");
+      return { sessionId, additionalContext: responseText || undefined };
+    } catch (error) {
+      console.error("[MonitorAgent] Thorough startup failed, falling back to fast:", error);
+      return this.fastInitializeContext(student);
+    }
+  }
+
+  /**
+   * [UNUSED] Legacy thorough startup (mode 1): Uses the monitor's memory system
+   * with tool access to browse Context_ paths. Replaced by thoroughStartup() which
+   * pre-loads all data and makes a single LLM call without tools.
+   * Kept for reference — may be useful for a future "deep analysis" mode.
    */
   private async longInitializeContext(student: any): Promise<{
     sessionId: string;
@@ -161,33 +304,33 @@ export class MonitorAgent {
 
       // Use the monitor's memory system — the LLM gets tool access to Context_ paths
       // (medical, educational, progress, classmates, etc.) and Student_ memory fields.
-      const systemPromptOverride = `You are the Monitor Agent preparing for a new AAC session with ${student.name}.
+      const systemPromptOverride = `You are preparing an enhanced prompt for an AAC session with ${student.name}.
+You are the Monitor Agent, responsible for memory management and analysis.
+The Interactive Agent is a separate agent capable of real-time multimodal interaction with the student, but it does not have direct access to the database or memory tools — it relies on you to provide relevant context.
+The Interactive Agent will use the enhanced prompt you generate to guide its interactions with the student during the session.
+The Interactive Agent can call you to request additional context or updates as needed. You will also automatically check in every few minutes to provide context-specific updates.
 
 ${AAC_MEMORY_PROMPT}
 
 ## Your Task
-Create an enhanced custom prompt for the Interactive Agent using the student's data.
+Create an enhanced custom prompt for the Interactive Agent by reviewing the student's data.
 
-**IMPORTANT: Be efficient.** You have a limited number of tool calls. Follow this procedure:
-
-1. Make ONE manageMemory call to view the top-level summaries of all relevant paths at once:
-   Context_MedicalInfo, Context_EducationalInfo, Context_Progress, Context_Classmates, Context_FunctionalInfo, Student_Notes, Student_Interests, Student_People, Student_Preferences
-
-2. If a path is empty or says "Path not found", SKIP it entirely — do NOT drill deeper into empty paths.
-
-3. Only drill into a path (view children) if the summary indicates it contains actual data.
-
-4. After at most 2-3 tool calls, you MUST output the enhanced prompt. Do not continue exploring.
-
-5. If the student is new and has little or no data, that is fine — output a prompt based on what you do know (name, age, language, diagnosis if available) and the original custom prompt below.
+## Procedure — FOLLOW STRICTLY
+- Look up information about the student that is relevant to understanding their needs, preferences, and context for this session.
+- Important info: Student's medical alerts, communication style, interests, goals, important people, and upcoming events.
+- DO NOT look up information that is not directly relevant to assisting the student. Be conservative with tool calls.
+- Minimize the number of manageMemory calls you are making. Rather than looking up paths separately, view every relevant path together in a single call.
+- Do NOT drill into empty paths or paths marked "Path not found".
+- Do NOT explore paths unrelated to THIS student (e.g. do not browse the library for conditions the student does not have).
+- If the student has little or no data, that is fine — use what you know (name, age, diagnosis) plus the original prompt.
 
 ## Enhanced Prompt Requirements
-- Preserve the intent and tone of the original prompt
-- Weave in any student-specific data you found (medical alerts, goals, interests, important people)
+- Preserve the intent and tone of the original custom prompt below
+- Weave in student-specific data you found (medical alerts, goals, interests, important people, upcoming events)
 - Be concise — no more than 500 words
 - Skip areas with no data
-- Use plain text only — no markdown headers, no HTML, no bold/italic
-- Use dashes (-) for bullet points if needed
+- Plain text only, dashes (-) for bullet points
+- You may provide instructions for when the Interactive Agent should consult the Monitor for more context during the session. Keep in mind that you think slowly and the Interactive Agent thinks quickly.
 
 ## Output Format
 Output ONLY the enhanced prompt between [ENHANCED_PROMPT] and [/ENHANCED_PROMPT] tags. Nothing else outside the tags.

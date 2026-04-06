@@ -111,6 +111,7 @@ export interface UseDualAgentReturn {
   // Actions
   initialize: () => Promise<void>;
   sendMessage: (message: string, board?: ParsedBoardData) => Promise<void>;
+  sendContextOnly: (text: string) => void;
   sendVoice: (board?: ParsedBoardData) => Promise<void>;
   interpretButtons: (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => Promise<void>;
   startRecording: () => Promise<void>;

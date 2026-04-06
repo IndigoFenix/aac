@@ -53,6 +53,7 @@ import { calendarController } from "./controllers/calendarController";
 import { registerDropboxRoutes } from "./services/dropboxRoutes";
 import { activityLogService } from "./services/activityLogService";
 import { activityLogController } from "./controllers/activityLogController";
+import { identityController } from "./controllers/identityController";
 
 // Configure multer for image uploads
 const upload = multer({
@@ -185,6 +186,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // MFA recovery complete (public)
   app.post("/auth/mfa/recovery/complete", (req, res) =>
     authController.mfaRecoveryComplete(req, res)
+  );
+
+  // ============= IDENTITY / EXTERNAL AUTH ROUTES =============
+  app.get("/api/identity/status", requireAuth, (req, res) =>
+    identityController.getStatus(req, res)
+  );
+  app.get("/api/identity/user", requireAuth, (req, res) =>
+    identityController.getUserIdentities(req, res)
+  );
+  app.get("/api/identity/link/:providerId", requireAuth, (req, res) =>
+    identityController.initiateLink(req, res)
+  );
+  app.get("/api/identity/callback/:providerId", requireAuth, (req, res) =>
+    identityController.handleCallback(req, res)
+  );
+  app.delete("/api/identity/link/:providerId", requireAuth, (req, res) =>
+    identityController.unlinkIdentity(req, res)
   );
 
   // ============= PROFILE ROUTES =============
@@ -875,6 +893,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     chatFileUpload.single("file"),
     (req, res) => fileUploadController.uploadFile(req, res)
   );
+  // Get a cached file (generated images, extracted frames, etc.)
+  app.get("/api/chat/files/:fileId", optionalAuth, (req, res) =>
+    fileUploadController.getFileHandler(req, res)
+  );
   // Delete a cached file
   app.delete("/api/chat/files/:fileId", optionalAuth, (req, res) =>
     fileUploadController.deleteFileHandler(req, res)
@@ -1237,6 +1259,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.post("/api/admin/licenses/:id/resend-invite", requireAuth, requireSystemAdmin, (req, res) =>
     licenseController.resendInvite(req, res)
+  );
+
+  // Identity providers (system admin)
+  app.get("/api/admin/identity-providers", requireAuth, requireSystemAdmin, (req, res) =>
+    identityController.getProviders(req, res)
+  );
+  app.get("/api/admin/identity-providers/:id", requireAuth, requireSystemAdmin, (req, res) =>
+    identityController.getProvider(req, res)
+  );
+  app.post("/api/admin/identity-providers", requireAuth, requireSystemAdmin, (req, res) =>
+    identityController.createProvider(req, res)
+  );
+  app.patch("/api/admin/identity-providers/:id", requireAuth, requireSystemAdmin, (req, res) =>
+    identityController.updateProvider(req, res)
+  );
+  app.delete("/api/admin/identity-providers/:id", requireAuth, requireSystemAdmin, (req, res) =>
+    identityController.deleteProvider(req, res)
   );
 
   // Customer support (system admin)

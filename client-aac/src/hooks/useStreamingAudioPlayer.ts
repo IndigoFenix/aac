@@ -2,6 +2,7 @@
 // Hook for playing streaming audio chunks from SSE responses
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import { pitchShift, semitonesToFactor } from "@/lib/pitchShifter";
 
 export interface AudioChunk {
   chunk: string; // Base64 encoded audio data
@@ -37,6 +38,12 @@ export interface UseStreamingAudioPlayerOptions {
   onPlaybackEnd?: () => void;
   onError?: (error: string) => void;
   autoPlay?: boolean;
+  /**
+   * Per-tag pitch shift in semitones.  Keys are audio tags (e.g. "avatar", "interpret").
+   * Untagged chunks or tags not in the map are played without pitch shift.
+   * Example: { avatar: 3, interpret: -2 }
+   */
+  pitchByTag?: Record<string, number>;
 }
 
 /**
@@ -53,6 +60,7 @@ export function useStreamingAudioPlayer(
     onPlaybackEnd,
     onError,
     autoPlay = true,
+    pitchByTag,
   } = options;
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -60,10 +68,10 @@ export function useStreamingAudioPlayer(
   const [error, setError] = useState<string | null>(null);
   const [speakingVolume, setSpeakingVolume] = useState(0);
 
-  // Single audio element for all playback
+  // Single audio element for non-pitch-shifted playback
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  // Queue of blob URLs to play, with optional source tag
-  const queueRef = useRef<{ url: string; tag?: string }[]>([]);
+  // Queue of items to play
+  const queueRef = useRef<{ url?: string; buffer?: ArrayBuffer; format: string; tag?: string }[]>([]);
   // Tag of the chunk currently playing
   const [currentTag, setCurrentTag] = useState<string | null>(null);
   // Track if we're currently playing (to prevent concurrent plays)
@@ -85,7 +93,12 @@ export function useStreamingAudioPlayer(
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  // Currently-playing AudioBufferSourceNode (pitch-shifted path)
+  const bufferSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const volumeRafRef = useRef<number>(0);
+  // Keep latest pitch map in a ref so playNext doesn't need to re-render
+  const pitchByTagRef = useRef(pitchByTag);
+  pitchByTagRef.current = pitchByTag;
 
   // Initialize audio element + AudioContext analyser
   useEffect(() => {
@@ -115,6 +128,8 @@ export function useStreamingAudioPlayer(
         audioRef.current.src = "";
         audioRef.current = null;
       }
+      bufferSourceRef.current?.stop();
+      bufferSourceRef.current = null;
       if (volumeRafRef.current) cancelAnimationFrame(volumeRafRef.current);
       if (busyTailTimerRef.current) clearTimeout(busyTailTimerRef.current);
       try { audioContextRef.current?.close(); } catch { /* ignore */ }
@@ -123,7 +138,7 @@ export function useStreamingAudioPlayer(
       sourceRef.current = null;
       busyRef.current = false;
       // Clean up any remaining blob URLs
-      queueRef.current.forEach((e) => URL.revokeObjectURL(e.url));
+      queueRef.current.forEach((e) => { if (e.url) URL.revokeObjectURL(e.url); });
       queueRef.current = [];
     };
   }, []);
@@ -179,6 +194,54 @@ export function useStreamingAudioPlayer(
     [getMimeType]
   );
 
+  // Play a pitch-shifted chunk via AudioBufferSourceNode
+  const playPitchShifted = useCallback(async (
+    entry: { buffer: ArrayBuffer; format: string; tag?: string },
+    semitones: number,
+    onDone: () => void,
+    onFail: (err: any) => void,
+  ) => {
+    const ctx = audioContextRef.current;
+    const analyser = analyserRef.current;
+    if (!ctx || !analyser) { onFail(new Error("No AudioContext")); return; }
+
+    try {
+      // Resume AudioContext if suspended (autoplay policy)
+      if (ctx.state === "suspended") await ctx.resume();
+
+      // Decode compressed audio → AudioBuffer
+      const audioBuffer = await ctx.decodeAudioData(entry.buffer.slice(0)); // slice to avoid detach
+
+      // Apply WSOLA pitch shift to every channel
+      const factor = semitonesToFactor(semitones);
+      const shifted = ctx.createBuffer(
+        audioBuffer.numberOfChannels,
+        audioBuffer.length,
+        audioBuffer.sampleRate,
+      );
+      for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
+        const raw = audioBuffer.getChannelData(ch);
+        const processed = pitchShift(raw, factor, audioBuffer.sampleRate);
+        shifted.getChannelData(ch).set(processed);
+      }
+
+      // Create one-shot source → analyser → destination
+      const src = ctx.createBufferSource();
+      src.buffer = shifted;
+      src.connect(analyser); // analyser is already connected to destination
+      bufferSourceRef.current = src;
+
+      src.onended = () => {
+        src.disconnect();
+        bufferSourceRef.current = null;
+        onDone();
+      };
+      src.start();
+    } catch (err) {
+      onFail(err);
+    }
+  }, []);
+
   // Play the next chunk in the queue
   const playNext = useCallback(async () => {
     // Don't play if stopped or already playing
@@ -217,8 +280,38 @@ export function useStreamingAudioPlayer(
 
     // Get next entry from queue
     const entry = queueRef.current.shift()!;
-    const url = entry.url;
     setCurrentTag(entry.tag ?? null);
+
+    // ── Pitch-shifted path: decode → WSOLA → AudioBufferSourceNode ──
+    if (entry.buffer) {
+      const markPlaying = () => {
+        if (!playbackStartedRef.current) {
+          playbackStartedRef.current = true;
+          setIsPlaying(true);
+          setIsBuffering(false);
+          onPlaybackStart?.();
+        }
+      };
+
+      markPlaying();
+      const tagPitch = (entry.tag && pitchByTagRef.current?.[entry.tag]) || 0;
+      playPitchShifted(
+        entry as { buffer: ArrayBuffer; format: string; tag?: string },
+        tagPitch,
+        () => { playingRef.current = false; playNext(); },       // onDone
+        (err) => {                                                // onFail
+          console.error("[StreamingAudioPlayer] Pitch-shifted playback error:", err);
+          playingRef.current = false;
+          setError("Pitch-shifted playback failed");
+          onError?.("Pitch-shifted playback failed");
+          playNext();
+        },
+      );
+      return;
+    }
+
+    // ── Standard path: blob URL → <audio> element ──
+    const url = entry.url!;
 
     // Set up event handlers
     const handleEnded = () => {
@@ -285,7 +378,17 @@ export function useStreamingAudioPlayer(
         playNext();
       }
     }
-  }, [onPlaybackEnd, onPlaybackStart, onError]);
+  }, [onPlaybackEnd, onPlaybackStart, onError, playPitchShifted]);
+
+  // Convert base64 string to ArrayBuffer (for pitch-shifted path)
+  const base64ToArrayBuffer = useCallback((base64: string): ArrayBuffer => {
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes.buffer;
+  }, []);
 
   // Queue a new audio chunk
   const queueChunk = useCallback(
@@ -301,8 +404,16 @@ export function useStreamingAudioPlayer(
           busyTailTimerRef.current = null;
         }
 
-        const url = base64ToBlobUrl(chunk.chunk, chunk.format);
-        queueRef.current.push({ url, tag: chunk.tag });
+        const tagPitch = chunk.tag && pitchByTagRef.current?.[chunk.tag];
+        if (tagPitch && tagPitch !== 0) {
+          // Pitch-shifted path: store raw ArrayBuffer for decodeAudioData later
+          const buffer = base64ToArrayBuffer(chunk.chunk);
+          queueRef.current.push({ buffer, format: chunk.format, tag: chunk.tag });
+        } else {
+          // Standard path: create blob URL
+          const url = base64ToBlobUrl(chunk.chunk, chunk.format);
+          queueRef.current.push({ url, format: chunk.format, tag: chunk.tag });
+        }
 
         console.log(
           `[StreamingAudioPlayer] Queued chunk (${chunk.tag || "untagged"}), queue size: ${queueRef.current.length}`
@@ -321,7 +432,7 @@ export function useStreamingAudioPlayer(
         onError?.(errorMessage);
       }
     },
-    [autoPlay, base64ToBlobUrl, playNext, onError]
+    [autoPlay, base64ToBlobUrl, base64ToArrayBuffer, playNext, onError]
   );
 
   // Manual play (useful when autoplay is blocked)
@@ -344,6 +455,9 @@ export function useStreamingAudioPlayer(
       audioRef.current.pause();
       audioRef.current.src = "";
     }
+    // Stop pitch-shifted source if playing
+    try { bufferSourceRef.current?.stop(); } catch { /* may already be stopped */ }
+    bufferSourceRef.current = null;
 
     // Start tail timer for busyRef (cover echo even when manually stopped)
     if (busyTailTimerRef.current) clearTimeout(busyTailTimerRef.current);
@@ -361,7 +475,7 @@ export function useStreamingAudioPlayer(
   const clear = useCallback(() => {
     stop();
     // Clean up blob URLs
-    queueRef.current.forEach((e) => URL.revokeObjectURL(e.url));
+    queueRef.current.forEach((e) => { if (e.url) URL.revokeObjectURL(e.url); });
     queueRef.current = [];
     console.log("[StreamingAudioPlayer] Queue cleared");
   }, [stop]);

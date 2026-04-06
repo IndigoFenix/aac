@@ -23,6 +23,7 @@ export interface Institute {
   logoUrl?: string;
   instituteIdNumber?: string;
   instituteIdType?: string;
+  verificationStatus?: 'unverified' | 'pending' | 'verified';
   language?: string;
   isActive: boolean;
   isAdmin?: boolean;
@@ -34,6 +35,13 @@ export interface Institute {
   trialExpiresAt?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface IdentityVerificationStatus {
+  required: boolean;
+  linked: boolean;
+  expired: boolean;
+  provider?: { id: string; name: string };
 }
 
 export interface InstituteMember {
@@ -226,6 +234,12 @@ interface InstituteContextType {
   // Student's institutes
   getStudentInstitutes: (studentId: string) => Promise<StudentInstitute[]>;
 
+  // Identity verification
+  identityVerification: IdentityVerificationStatus | null;
+  initiateIdentityLink: () => void;
+  dismissIdentityPrompt: () => void;
+  showIdentityPrompt: boolean;
+
   // Refetch
   refetchInstitutes: () => void;
 }
@@ -308,6 +322,43 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
       }
     }
   }, [institutes, currentInstitute, storageKey]);
+
+  // =============================================================================
+  // IDENTITY VERIFICATION
+  // =============================================================================
+
+  const [showIdentityPrompt, setShowIdentityPrompt] = useState(false);
+
+  // Check identity verification status when current institute changes
+  const { data: identityVerification } = useQuery<IdentityVerificationStatus | null>({
+    queryKey: ['/api/identity/status', currentInstitute?.instituteIdType],
+    queryFn: async () => {
+      if (!currentInstitute?.instituteIdType) return null;
+      const response = await apiRequest('GET', `/api/identity/status?instituteIdType=${currentInstitute.instituteIdType}`);
+      return response.json();
+    },
+    enabled: !!user && !!currentInstitute?.instituteIdType,
+  });
+
+  // Show identity prompt when switching to a verified institute that requires linking
+  useEffect(() => {
+    if (!identityVerification) return;
+    if (!identityVerification.required) return;
+    if (identityVerification.linked && !identityVerification.expired) return;
+    // Only prompt for verified institutes
+    if (currentInstitute?.verificationStatus !== 'verified') return;
+    setShowIdentityPrompt(true);
+  }, [identityVerification, currentInstitute?.verificationStatus]);
+
+  const initiateIdentityLink = useCallback(() => {
+    if (!identityVerification?.provider?.id) return;
+    const returnUrl = encodeURIComponent(window.location.pathname);
+    window.location.href = `/api/identity/link/${identityVerification.provider.id}?returnUrl=${returnUrl}`;
+  }, [identityVerification]);
+
+  const dismissIdentityPrompt = useCallback(() => {
+    setShowIdentityPrompt(false);
+  }, []);
 
   // =============================================================================
   // INSTITUTE OPERATIONS
@@ -806,7 +857,13 @@ export const InstituteProvider = ({ children }: { children: ReactNode }) => {
     updateInstituteStudent,
     removeStudentFromInstitute,
     getStudentInstitutes,
-    
+
+    // Identity verification
+    identityVerification: identityVerification ?? null,
+    initiateIdentityLink,
+    dismissIdentityPrompt,
+    showIdentityPrompt,
+
     // Refetch
     refetchInstitutes: () => refetchInstitutes(),
   };

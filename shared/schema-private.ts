@@ -191,6 +191,9 @@ export const CLASSROOM_ROLES = [
 export type InstituteRole = typeof INSTITUTE_ROLES[number]["value"];
 export type ClassroomRole = typeof CLASSROOM_ROLES[number]["value"];
 
+export const verificationStatusEnum = pgEnum("verification_status", ["unverified", "pending", "verified"]);
+export const identityProviderProtocolEnum = pgEnum("identity_provider_protocol", ["oidc", "oauth2"]);
+
 export const activityEventTypeEnum = pgEnum("activity_event_type", [
   "create", "update", "delete", "link", "unlink", "view", "finalize", "revision"
 ]);
@@ -353,6 +356,10 @@ export const aacSettings = pgTable("aac_settings", {
   // Gemini TTS voice settings
   geminiAiVoice: text("gemini_ai_voice"), // Gemini prebuilt voice for AI (e.g. "Kore", "Orus")
   geminiStudentVoice: text("gemini_student_voice"), // Gemini prebuilt voice for student (e.g. "Puck", "Leda")
+
+  // Voice pitch adjustment (semitones, 0 = no change)
+  aiVoicePitch: integer("ai_voice_pitch").default(0), // AI voice pitch shift in semitones
+  studentVoicePitch: integer("student_voice_pitch").default(0), // Student voice pitch shift in semitones
 
   // Local browser TTS fallback
   useLocalTts: boolean("use_local_tts").default(false), // Use browser speechSynthesis instead of server TTS

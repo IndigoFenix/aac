@@ -215,6 +215,9 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   // When set, the main area shows the prebuilt board and AI board updates go to a side panel
   const [prebuiltBoardData, setPrebuiltBoardData] = useState<ParsedBoardData | null>(null);
 
+  // Last set board — stored so user can return to it via "return" quick action
+  const [lastSetBoard, setLastSetBoard] = useState<{ board: ParsedBoardData; name: string; boardId: string } | null>(null);
+
   // Board patch state — from detection (incremental add/remove)
   const [boardPatchData, setBoardPatchData] = useState<import("@/hooks/dual-agent-types").BoardPatch | null>(null);
 
@@ -672,6 +675,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const handleSetBoard = useCallback((data: { board: ParsedBoardData; name: string; boardId: string }) => {
     console.log('[Home] Prebuilt board loaded:', data.name);
     setPrebuiltBoardData(data.board);
+    setLastSetBoard(data);
     // Clear AI side-panel board so it starts fresh
     setBoardData(null);
     boardHistoryRef.current = [];
@@ -1112,8 +1116,21 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
               if (interpretFnRef.current) {
                 interpretFnRef.current(["[MORE]"]);
               }
+            } else if (action === "home") {
+              // "Home" = return to home page, send special message to AI (no speech)
+              if (interpretFnRef.current) {
+                interpretFnRef.current(["[HOME]"]);
+              }
+            } else if (action === "exit") {
+              // "Exit" = close the active app
+              dismissAppRef.current();
+            } else if (action === "return") {
+              // "Return" = re-open the last set board
+              if (lastSetBoard) {
+                handleSetBoard(lastSetBoard);
+              }
             } else {
-              // Yes/No/Help — voice the text in the student's language and send as button press
+              // Yes/No — voice the text in the student's language and send as button press
               speak(text, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
               if (interpretFnRef.current) {
                 interpretFnRef.current([text], { [text]: text });
@@ -1128,6 +1145,9 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             }
           }}
           boardMode={boardMode}
+          hasActiveApp={!!activeApp}
+          hasStoredBoard={!!lastSetBoard}
+          hasPrebuiltBoard={!!prebuiltBoardData}
         />
 
         {/* Pause Overlay — covers board and quick actions when paused */}
@@ -1243,6 +1263,10 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
         <DualAgentProvider
           studentId={studentId}
           language={currentLanguage}
+          pitchByTag={{
+            ...(userProfile?.aacSettings?.aiVoicePitch ? { avatar: userProfile.aacSettings.aiVoicePitch } : {}),
+            ...(userProfile?.aacSettings?.studentVoicePitch ? { interpret: userProfile.aacSettings.studentVoicePitch } : {}),
+          }}
           captureFrame={async () => {
             // Try multiCamera first
             const userCamera = getUserCamera();

@@ -52,6 +52,7 @@ interface DualAgentContextType {
   // Actions
   initialize: () => Promise<void>;
   sendMessage: (message: string) => Promise<void>;
+  sendContextOnly: (text: string) => void;
   interpretButtons: (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => Promise<void>;
   startVoiceRecording: () => Promise<void>;
   stopVoiceRecording: () => Promise<void>;
@@ -159,6 +160,8 @@ interface DualAgentProviderProps {
   debugMode?: boolean;
   /** Client-side face image cache lookup */
   getFaceImage?: (contactId: string) => string | null;
+  /** Per-tag pitch shift in semitones. Keys are audio tags: "avatar" (AI voice), "interpret" (student voice). */
+  pitchByTag?: Record<string, number>;
 }
 
 export function DualAgentProvider(props: DualAgentProviderProps) {
@@ -179,6 +182,7 @@ function DualAgentProviderInner({
   onBoardPatch: onBoardPatchProp,
   debugMode,
   getFaceImage: getFaceImageProp,
+  pitchByTag,
 }: DualAgentProviderProps) {
   const [currentBoard, setCurrentBoard] = React.useState<ParsedBoardData | null>(null);
   const [boardPatch, setBoardPatch] = React.useState<BoardPatch | null>(null);
@@ -288,6 +292,7 @@ function DualAgentProviderInner({
     onAiButtonPress: handleAiButtonPress,
     onSymbolUpdate: handleSymbolUpdate,
     autoPlayAudio: true,
+    pitchByTag,
     debugMode,
     captureFrame,
     captureHighResFrame,
@@ -410,6 +415,16 @@ function DualAgentProviderInner({
     []
   );
 
+  const liveAgentSendContextOnlyRef = useRef(liveAgent.sendContextOnly);
+  liveAgentSendContextOnlyRef.current = liveAgent.sendContextOnly;
+
+  const sendContextOnly = useCallback(
+    (text: string) => {
+      liveAgentSendContextOnlyRef.current(text);
+    },
+    []
+  );
+
   const liveAgentSendVoiceRef = useRef(liveAgent.sendVoice);
   liveAgentSendVoiceRef.current = liveAgent.sendVoice;
 
@@ -451,6 +466,7 @@ function DualAgentProviderInner({
       setOnSetBoard={setOnSetBoard}
       setOnUnloadBoard={setOnUnloadBoard}
       sendMessage={sendMessage}
+      sendContextOnly={sendContextOnly}
       stopVoiceRecording={stopVoiceRecording}
       registerAppCanvasCapture={registerAppCanvasCapture}
       getFaceImage={getFaceImageProp ?? (() => null)}
@@ -479,6 +495,7 @@ interface ProviderShellProps {
   setOnSetBoard: (callback: ((data: { board: ParsedBoardData; name: string; boardId: string }) => void) | null) => void;
   setOnUnloadBoard: (callback: (() => void) | null) => void;
   sendMessage: (message: string) => Promise<void>;
+  sendContextOnly: (text: string) => void;
   stopVoiceRecording: () => Promise<void>;
   registerAppCanvasCapture: (fn: (() => Promise<Blob | null>) | null) => void;
   getFaceImage: (contactId: string) => string | null;
@@ -511,6 +528,7 @@ function ProviderShell({
   setOnSetBoard,
   setOnUnloadBoard,
   sendMessage,
+  sendContextOnly,
   stopVoiceRecording,
   registerAppCanvasCapture,
   getFaceImage,
@@ -551,6 +569,7 @@ function ProviderShell({
 
     initialize: agent.initialize,
     sendMessage,
+    sendContextOnly,
     interpretButtons: agent.interpretButtons,
     startVoiceRecording: agent.startRecording,
     stopVoiceRecording,

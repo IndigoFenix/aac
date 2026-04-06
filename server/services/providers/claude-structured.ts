@@ -70,6 +70,12 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
       ? [{ type: "text" as const, text: systemPrompt, ...(useCache ? { cache_control: { type: "ephemeral" as const } } : {}) }]
       : undefined;
 
+    // Also mark the last tool with cache_control so the system+tools prefix stays
+    // within the 20-block lookback window even as messages grow
+    if (useCache && tools.length > 0) {
+      (tools[tools.length - 1] as any).cache_control = { type: "ephemeral" as const };
+    }
+
     const params: any = {
       model,
       system: systemBlock,
@@ -80,7 +86,7 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
       tool_choice: tools.length > 0 ? { type: "any" as const } : undefined,
     };
 
-    // Log full system prompt + usage to file for cache debugging
+    // Dump COMPLETE request params to file for cache debugging
     if (useCache) {
       try {
         const fs = await import('fs');
@@ -88,7 +94,12 @@ export class ClaudeStructuredProvider implements StructuredLLMProvider {
         const { fileURLToPath } = await import('url');
         const __fn = fileURLToPath(import.meta.url);
         const logFile = join(dirname(__fn), '..', '..', 'claude-cache-debug.log');
-        fs.appendFileSync(logFile, `\n${'='.repeat(80)}\n[${new Date().toISOString()}] msgs=${messages.length}\n${'='.repeat(80)}\n${systemPrompt}\n${'─'.repeat(80)}\n`);
+        // Truncate system text to avoid massive logs, but keep everything else complete
+        const logParams = JSON.parse(JSON.stringify(params));
+        if (Array.isArray(logParams.system) && logParams.system[0]?.text?.length > 200) {
+          logParams.system[0].text = logParams.system[0].text.slice(0, 100) + `... [${logParams.system[0].text.length} chars] ...` + logParams.system[0].text.slice(-100);
+        }
+        fs.appendFileSync(logFile, `\n${'='.repeat(80)}\n[${new Date().toISOString()}]\n${'='.repeat(80)}\n${JSON.stringify(logParams, null, 2)}\n${'─'.repeat(80)}\n`);
       } catch {}
     }
 

@@ -365,6 +365,20 @@
       "when": 1775029299519,
       "tag": "0051_glossy_human_robot",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1775218022578,
+      "tag": "0052_aromatic_yellowjacket",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1775391820816,
+      "tag": "0053_magenta_saracen",
+      "breakpoints": true
     }
   ]
 }

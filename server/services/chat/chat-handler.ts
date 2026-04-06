@@ -22,6 +22,7 @@ import {
   import type { ChatMessage as ProviderChatMessage, ChatTool, StreamChunk } from "../providers/streaming-provider";
   import type { LLMProviderKey } from "@shared/llm-options";
   import { extractDocument } from "./file-extractor";
+  import { storeFile } from "./tools/media-file-cache";
 
   const isProd = process.env.NODE_ENV === 'production';
   
@@ -122,6 +123,7 @@ import {
       onThinkingUpdate?: (thinkingText: string) => void;
       onNavigate?: (feature: string) => void;
       onSelectStudent?: (studentId: string) => void;
+      onFilesNeeded?: (files: Array<{ fileId: string; filename: string }>) => void;
       loopDetectionConfig?: LoopDetectionConfig;
       memoryProcessor?: MemoryProcessor;
       toolRegistry: ToolRegistry;
@@ -159,6 +161,7 @@ import {
           onThinkingUpdate?: (thinkingText: string) => void,
           onNavigate?: (feature: string) => void,
           onSelectStudent?: (studentId: string) => void,
+          onFilesNeeded?: (files: Array<{ fileId: string; filename: string }>) => void,
           memoryProcessor?: MemoryProcessor,
           vectorStoreId?: string,
           loopDetectionConfig?: LoopDetectionConfig;
@@ -190,6 +193,7 @@ import {
           this.onThinkingUpdate = settings.onThinkingUpdate;
           this.onNavigate = settings.onNavigate;
           this.onSelectStudent = settings.onSelectStudent;
+          this.onFilesNeeded = settings.onFilesNeeded;
           this.loopDetectionConfig = settings.loopDetectionConfig;
 
           this.toolRegistry = defaultToolRegistry({
@@ -204,8 +208,9 @@ import {
               onThinkingUpdate: this.onThinkingUpdate,
               onNavigate: this.onNavigate,
               onSelectStudent: this.onSelectStudent,
+              onFilesNeeded: this.onFilesNeeded,
               loopDetectionConfig: this.loopDetectionConfig,
-              onPruneMessages: (forget, summary) => this.compressHistory(forget, summary),
+              onPruneMessages: (forget, summary, closePaths) => this.compressHistory(forget, summary, closePaths),
           });
   
           this.agent = settings.agent;
@@ -262,6 +267,36 @@ import {
                       console.log(`[ChatMsgMgr] reusing client-cached extraction for ${doc.filename}`);
                       continue;
                   }
+
+                  // Check if this is a video or large media file — store in server cache
+                  // and provide a file reference instead of inlining
+                  const mimeMatch = doc.dataUrl?.match(/^data:([^;]+);base64,/);
+                  const mime = mimeMatch?.[1] || '';
+                  if (mime.startsWith('video/') || mime.startsWith('audio/')) {
+                      const base64Data = doc.dataUrl.replace(/^data:[^;]+;base64,/, '');
+                      const buffer = Buffer.from(base64Data, 'base64');
+                      const fileId = storeFile(buffer, mime, doc.filename);
+                      this.contextFiles.set(doc.filename, {
+                          dataUrl: '',
+                          filename: doc.filename,
+                          extractedText: `[Uploaded ${mime.startsWith('video/') ? 'video' : 'audio'}: ${doc.filename}]\nTo analyze this file, use the analyzeMedia tool with files: ["file:${fileId}"]`,
+                      });
+                      console.log(`[ChatMsgMgr] stored ${mime} file ${doc.filename} in cache as file:${fileId} (${buffer.length} bytes)`);
+                      continue;
+                  }
+
+                  // Check for server-cached file reference (from /api/chat/files/upload)
+                  if ((doc as any).fileId) {
+                      const fileId = (doc as any).fileId;
+                      this.contextFiles.set(doc.filename, {
+                          dataUrl: '',
+                          filename: doc.filename,
+                          extractedText: `[Uploaded file: ${doc.filename}]\nTo analyze this file, use the analyzeMedia tool with files: ["file:${fileId}"]`,
+                      });
+                      console.log(`[ChatMsgMgr] using pre-uploaded file reference file:${fileId} for ${doc.filename}`);
+                      continue;
+                  }
+
                   try {
                       const result = await extractDocument(doc.dataUrl, doc.filename);
                       if (result.extracted && result.text) {
@@ -414,6 +449,9 @@ import {
                   if (message.metadata?.files) {
                       item._filesMeta = message.metadata.files;
                   }
+                  if (message.metadata?.files) {
+                      console.log(`[ChatMsgMgr] Message has _filesMeta:`, message.metadata.files);
+                  }
                   items.push(item);
               }
           }
@@ -449,9 +487,32 @@ import {
                   }
                   if (!attached) orphanedFiles.push(docPart);
               }
-              if (orphanedFiles.length > 0 && items.length > 0 && items[0].type === 'message' && items[0].role === 'system') {
-                  const sysText = typeof items[0].content === 'string' ? items[0].content : '';
-                  items[0].content = [{ type: 'input_text' as const, text: sysText }, ...orphanedFiles];
+              if (orphanedFiles.length > 0) {
+                  console.log(`[ChatMsgMgr] ${orphanedFiles.length} orphaned file(s) not matched to any message — attaching as fallback`);
+                  // Try the first system message
+                  let injected = false;
+                  if (items.length > 0 && items[0].type === 'message' && items[0].role === 'system') {
+                      const sysText = typeof items[0].content === 'string' ? items[0].content : '';
+                      items[0].content = [{ type: 'input_text' as const, text: sysText }, ...orphanedFiles];
+                      injected = true;
+                  }
+                  // Fallback: inject into the last user message so the LLM always sees them
+                  if (!injected) {
+                      for (let i = items.length - 1; i >= 0; i--) {
+                          const item = items[i] as any;
+                          if (item.type === 'message' && item.role === 'user') {
+                              const existing: GPTContentPart[] = typeof item.content === 'string'
+                                  ? [{ type: 'input_text', text: item.content }]
+                                  : (item.content as GPTContentPart[]);
+                              item.content = [...existing, ...orphanedFiles];
+                              injected = true;
+                              break;
+                          }
+                      }
+                  }
+                  if (!injected) {
+                      console.warn(`[ChatMsgMgr] Could not inject orphaned files — no system or user message found`);
+                  }
               }
           }
 
@@ -532,7 +593,7 @@ import {
        * Protects the first 2 anchor messages (indices 0-1).
        * Always removes paired tool-call/tool-response messages together.
        */
-      async compressHistory(forget: number[], summary: string): Promise<{ removed: number; warnings: string[]; historyLength: number }> {
+      async compressHistory(forget: number[], summary: string, closePaths?: string[]): Promise<{ removed: number; warnings: string[]; historyLength: number }> {
           const warnings: string[] = [];
           const history = this.chatState.history;
 
@@ -584,19 +645,31 @@ import {
 
           // Append summary
           if (summary) {
-              const existing = this.chatState.conversationSummary || '';
-              const combined = existing ? `${existing}\n\n${summary}` : summary;
-              if (combined.length > 2000) {
-                  this.chatState.conversationSummary = await this.resummarize(combined);
+              if (this.chatState.memoryState?.staticPromptMode) {
+                  // Static mode: keep the system prompt stable for prompt caching.
+                  // Inject the summary as a system message in the history instead
+                  // of changing conversationSummary (which is in the system prompt).
+                  this.chatState.history.splice(2, 0, {
+                      role: 'system',
+                      content: `[Conversation summary of removed messages]\n${summary}`,
+                      timestamp: Date.now(),
+                  });
+                  // Close requested paths but preserve the frozen memory prompt
+                  if (closePaths && closePaths.length > 0) {
+                      const toClose = new Set(closePaths.map(p => p.startsWith('/') ? p : '/' + p));
+                      this.chatState.memoryState.visible = this.chatState.memoryState.visible.filter(
+                          p => !toClose.has(p) && ![...toClose].some(cp => p.startsWith(cp + '/'))
+                      );
+                  }
               } else {
-                  this.chatState.conversationSummary = combined;
+                  const existing = this.chatState.conversationSummary || '';
+                  const combined = existing ? `${existing}\n\n${summary}` : summary;
+                  if (combined.length > 2000) {
+                      this.chatState.conversationSummary = await this.resummarize(combined);
+                  } else {
+                      this.chatState.conversationSummary = combined;
+                  }
               }
-          }
-
-          // In static prompt mode, clear the cached prompt so it re-renders
-          // with current data on the next LLM call (incorporating any new opened fields).
-          if (this.chatState.memoryState?.staticPromptMode) {
-              delete this.chatState.memoryState._cachedPrompt;
           }
 
           return { removed: removalSet.size, warnings, historyLength: history.length };
@@ -738,7 +811,7 @@ import {
   
       // Updates the conversation after confirming that the bot should interact
       // toolRound tracks recursive depth — safety limit to prevent runaway tool loops
-      private static readonly MAX_TOOL_ROUNDS = 20;
+      private static readonly MAX_TOOL_ROUNDS = 30;
       async updateConversation(totalCreditsUsed: number = 0, responseType: 'text' | 'html' | 'md', apiValues?: { [key: string]: any }, toolRound: number = 0): Promise<ChatResponse> {
           const maxToolRoundsReached = toolRound >= ChatMessageManager.MAX_TOOL_ROUNDS;
           if (maxToolRoundsReached) {
@@ -763,6 +836,15 @@ import {
           });
 
           const instructionsText = promptBuild.instructions + (promptBuild.endInstructions ? ('\n' + promptBuild.endInstructions) : '');
+
+          // Debug: detect system prompt changes between tool rounds
+          if (this.chatState.memoryState?.staticPromptMode) {
+            const hash = instructionsText.length; // cheap proxy for change detection
+            if ((this as any)._lastInstructionsHash !== undefined && (this as any)._lastInstructionsHash !== hash) {
+              console.warn(`[ChatMsgMgr] ⚠ STATIC MODE: instructions changed between rounds! prev=${(this as any)._lastInstructionsHash} now=${hash} round=${toolRound}`);
+            }
+            (this as any)._lastInstructionsHash = hash;
+          }
 
           // Strip tools when max rounds reached so the LLM cannot make more tool calls
           const tools = maxToolRoundsReached ? [] : promptBuild.tools;
@@ -1115,11 +1197,17 @@ import {
 
               const orphanedParts: any[] = [];
               for (const [filename, doc] of this.contextFiles) {
-                  const mimeMatch = doc.dataUrl.match(/^data:([^;]+);/);
+                  const mimeMatch = doc.dataUrl?.match(/^data:([^;]+);/);
                   const mime = mimeMatch?.[1] || '';
-                  const docPart = mime.startsWith('image/')
-                      ? { type: 'image_url', image_url: { url: doc.dataUrl } }
-                      : { type: 'input_document', data_url: doc.dataUrl, filename };
+                  let docPart: any;
+                  if (doc.extractedText) {
+                      // Use extracted text (includes video/audio file references)
+                      docPart = { type: 'text', text: `[File: ${filename}]\n${doc.extractedText}` };
+                  } else if (mime.startsWith('image/')) {
+                      docPart = { type: 'image_url', image_url: { url: doc.dataUrl } };
+                  } else {
+                      docPart = { type: 'input_document', data_url: doc.dataUrl, filename };
+                  }
                   let attached = false;
                   // Scan backwards for a message tagged with this file
                   for (let i = messages.length - 1; i >= 0; i--) {
@@ -1140,9 +1228,24 @@ import {
                       console.log(`[ChatMsgMgr]   orphaned "${filename}" → system prompt`);
                   }
               }
-              if (orphanedParts.length > 0 && messages.length > 0 && messages[0].role === 'system') {
-                  const sysText = typeof messages[0].content === 'string' ? messages[0].content : '';
-                  messages[0].content = [{ type: 'text', text: sysText }, ...orphanedParts];
+              if (orphanedParts.length > 0) {
+                  let injected = false;
+                  if (messages.length > 0 && messages[0].role === 'system') {
+                      const sysText = typeof messages[0].content === 'string' ? messages[0].content : '';
+                      messages[0].content = [{ type: 'text', text: sysText }, ...orphanedParts];
+                      injected = true;
+                  }
+                  if (!injected) {
+                      for (let i = messages.length - 1; i >= 0; i--) {
+                          if (messages[i].role === 'user') {
+                              const existing: any[] = typeof messages[i].content === 'string'
+                                  ? [{ type: 'text', text: messages[i].content }]
+                                  : Array.isArray(messages[i].content) ? messages[i].content as any[] : [];
+                              messages[i].content = [...existing, ...orphanedParts];
+                              break;
+                          }
+                      }
+                  }
               }
           }
 
