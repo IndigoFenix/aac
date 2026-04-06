@@ -18,10 +18,12 @@ import {
   KeyRound,
   ClipboardList,
   ShieldCheck,
+  LogOut,
 } from 'lucide-react';
 import logoImage from '@assets/aivota_icon.png';
 import { cn } from '@/lib/utils';
 import { useLocation } from 'wouter';
+import { useAuth } from '@/hooks/useAuth';
 
 type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts' | 'licenses' | 'identity-providers' | 'activity-log';
 
@@ -33,6 +35,7 @@ type AdminSidebarProps = {
 export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarProps) {
   const { theme, setTheme } = useTheme();
   const { t, isRTL } = useLanguage();
+  const { logout } = useAuth();
   const [, navigate] = useLocation();
 
   const navItems = [
@@ -173,6 +176,15 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
           <span className="ms-2">
             {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
           </span>
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start text-destructive hover:text-destructive"
+          onClick={() => logout()}
+        >
+          <LogOut className="w-4 h-4" />
+          <span className="ms-2">{t('auth.logout')}</span>
         </Button>
       </div>
     </div>
