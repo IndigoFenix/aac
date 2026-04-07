@@ -106,6 +106,8 @@ export interface LiveProvider {
   ): void;
   /** Send raw audio data */
   sendAudio(audioBase64: string, mimeType?: string): void;
+  /** Send a brief silence to trigger audio VAD and kick the model into responding */
+  sendAudioNudge(): void;
   /** Send a text message as a conversation turn */
   sendMessage(text: string, role?: "user" | "model", turnComplete?: boolean): void;
   /** Inject context without triggering a model response */

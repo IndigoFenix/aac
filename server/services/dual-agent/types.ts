@@ -104,9 +104,6 @@ export interface DualAgentSessionState {
   // Interaction mode
   interactionMode: AACInteractionMode;
 
-  // Interpretation aggressiveness level (0-4)
-  interpretationLevel: AACInterpretationLevel;
-
   // Board state
   currentBoard?: ParsedBoardData;
   boardButtonLabels: string[]; // Server-side tracking of current button labels for limit enforcement

@@ -419,7 +419,6 @@ export class DualAgentService {
         availableBoards: availableBoards.length > 0 ? availableBoards : undefined,
         cachedSymbols: cachedSymbols.length > 0 ? cachedSymbols : undefined,
         enabledApps: enabledAppDefs.map(a => ({ id: a.id, name: a.name, description: a.description })),
-        interpretationLevel: student.aacSettings?.interpretationLevel ?? 2,
         autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
       });
     }
@@ -446,7 +445,6 @@ export class DualAgentService {
       messages: [],
       pendingMessages: [],
       interactionMode,
-      interpretationLevel: (aacSt?.interpretationLevel ?? 2) as import("./types").AACInterpretationLevel,
       appState: { enabledApps: getEnabledAppsFromConfig(aacSt?.appConfig as AppConfig | null), activeApp: null },
       currentEmote: "happy",
       boardButtonLabels: [],
@@ -577,7 +575,6 @@ export class DualAgentService {
         messages: chatState?.history || [],
         pendingMessages: (session.pendingMessages as PendingMessage[]) || [],
         interactionMode: chatState?.interactionMode || 'interact',
-        interpretationLevel: chatState?.interpretationLevel ?? 2,
         appState: { enabledApps: getDefaultEnabledApps(), activeApp: null }, // Updated with appConfig below
         currentEmote: "neutral",
         boardButtonLabels: [],
@@ -671,7 +668,6 @@ export class DualAgentService {
           currentEmote: state.currentEmote,
           activeApp: state.appState.activeApp,
           enabledApps: enabledApps.map(a => ({ id: a.id, name: a.name, description: a.description })),
-          interpretationLevel: state.interpretationLevel,
           autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
         });
       }

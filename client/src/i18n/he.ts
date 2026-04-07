@@ -1977,6 +1977,8 @@ export const he = {
     appDrawingDesc: "ציור על קנבס עם צבעים",
     appMusic: "יוצר מוזיקה",
     appMusicDesc: "נגינת תווים על פסנתר",
+    appSandboxGame: "חוות ארגז חול",
+    appSandboxGameDesc: "גדל צמחים ובנה חווה",
     spotifyConnected: "ספוטיפיי מחובר",
     spotifyConnect: "חבר",
     spotifyDisconnect: "נתק",

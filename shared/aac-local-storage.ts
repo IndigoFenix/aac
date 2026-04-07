@@ -39,8 +39,8 @@ export interface AacSessionSnapshot {
   interactionMode: "interact" | "silent";
   /** Current response mode */
   responseMode?: "fast" | "analyze";
-  /** Interpretation aggressiveness level */
-  interpretationLevel: number;
+  /** @deprecated Interpretation level is now always 1 (server-side). Kept for snapshot compat. */
+  interpretationLevel?: number;
   /** Current board state */
   currentBoard?: ParsedBoardData | null;
   /** Server-tracked button labels */

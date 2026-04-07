@@ -1230,6 +1230,23 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   }
                 />
               </div>
+
+              {/* Sandbox Farm */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🌱</span>
+                  <div>
+                    <Label className="text-sm font-medium">{t('aacSettings.appSandboxGame')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('aacSettings.appSandboxGameDesc')}</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={appConfig.sandbox_game?.enabled ?? false}
+                  onCheckedChange={(checked) =>
+                    setAppConfig(prev => ({ ...prev, sandbox_game: { ...prev.sandbox_game, enabled: checked } }))
+                  }
+                />
+              </div>
             </CardContent>
           </Card>
 

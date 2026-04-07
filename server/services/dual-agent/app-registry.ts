@@ -48,6 +48,13 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     icon: "🎵",
     enabledByDefault: true,
   },
+  {
+    id: "sandbox_game",
+    name: "Sandbox Farm",
+    description: "Opens an idle farming sandbox game on the user's screen. The user places soil, water, seeds, and flowers on a grid and watches them grow over time. ALWAYS use open_app to launch this when the user wants to play the farm game, garden game, or sandbox game — do NOT just create board buttons about it.",
+    icon: "🌱",
+    enabledByDefault: false,
+  },
 ];
 
 /**
