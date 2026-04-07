@@ -1761,6 +1761,7 @@ import {
       email: { id: "email", type: "string" },
       website: { id: "website", type: "string" },
       isActive: { id: "isActive", type: "boolean" },
+      language: { id: "language", type: "string", description: "Primary language of the institute (e.g., 'en', 'he')" },
       membership: {
         id: "membership",
         type: "object",
