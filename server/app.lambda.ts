@@ -184,12 +184,9 @@ async function initializeApp(): Promise<void> {
     // Step 1: Wait for database
     await waitForDatabase();
 
-    // Step 2: Run migrations only during deployment (triggered by RUN_MIGRATIONS env var)
-    if (process.env.RUN_MIGRATIONS === "true") {
-      await runMigrations();
-    } else {
-      log("Skipping migrations (not a deployment run)");
-    }
+    // Step 2: Run migrations on every cold start
+    // Advisory lock prevents concurrent runs, and drizzle only applies pending migrations
+    await runMigrations();
 
     // Step 3: Register routes
     log("Registering routes...");
