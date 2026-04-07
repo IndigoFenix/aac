@@ -11,7 +11,6 @@ import {
   Volume2,
   Cpu,
   History,
-  ArrowLeft,
   Moon,
   Sun,
   Mail,
@@ -134,21 +133,6 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
           <span className="text-lg font-semibold text-foreground">CliniAACian</span>
           <span className="text-xs text-muted-foreground">System Admin</span>
         </div>
-      </div>
-
-      <Separator />
-
-      {/* Back to Dashboard */}
-      <div className="p-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full justify-start text-muted-foreground hover:text-foreground"
-          onClick={() => navigate('/overview')}
-        >
-          <ArrowLeft className="w-4 h-4 mirror-rtl" />
-          <span className="ms-2">Back to Dashboard</span>
-        </Button>
       </div>
 
       <Separator />
