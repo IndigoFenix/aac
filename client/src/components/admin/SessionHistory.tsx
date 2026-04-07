@@ -391,8 +391,8 @@ function ChatTab() {
                 <TableHead>Status</TableHead>
                 <TableHead>Started</TableHead>
                 <TableHead>Duration</TableHead>
-                <TableHead className="text-right">Credits</TableHead>
-                <TableHead className="text-right">Credits/min</TableHead>
+                <TableHead className="text-right">Cost</TableHead>
+                <TableHead className="text-right">Cost/min</TableHead>
                 <TableHead className="w-16" />
               </TableRow>
             </TableHeader>
@@ -421,9 +421,9 @@ function ChatTab() {
                         <span className="text-xs text-muted-foreground ms-1">(active)</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right">{s.creditsUsed.toFixed(2)}</TableCell>
+                    <TableCell className="text-right">${s.creditsUsed.toFixed(2)}</TableCell>
                     <TableCell className="text-right">
-                      {formatCostPerMin(s.creditsUsed, s.started, null, s.lastUpdate)}
+                      ${formatCostPerMin(s.creditsUsed, s.started, null, s.lastUpdate)}
                     </TableCell>
                     <TableCell>
                       <Button variant="ghost" size="icon" onClick={() => setLogSession(s.id)}>

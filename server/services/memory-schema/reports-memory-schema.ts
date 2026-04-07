@@ -1104,7 +1104,7 @@ export const REPORTS_CONTEXT_FIELD: AgentMemoryFieldObjectWithDB = {
   id: "Context_Reports",
   type: "object",
   title: "Student Reports",
-  description: "Medical, functional, and educational reports for the student. Current reports can be viewed and edited. Archived reports are read-only.",
+  description: "Medical, functional, and educational reports for the student. Current reports can be viewed and edited. Archived reports are read-only. Use the selected institute's language when editing reports unless instructed otherwise.",
   opened: true, // AUTO-LOAD: This ensures reports are loaded during initialization
   properties: {
     medicalRecord: createMedicalRecordField(false),
