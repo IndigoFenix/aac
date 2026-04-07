@@ -150,6 +150,8 @@ export const he: Translations = {
     appDrawingDesc: "ציור על קנבס עם צבעים",
     appMusic: "יוצר מוזיקה",
     appMusicDesc: "נגינת תווים על פסנתר",
+    appSandboxGame: "חוות ארגז חול",
+    appSandboxGameDesc: "גדל צמחים ובנה חווה",
 
     developerOptions: "אפשרויות מפתח",
     debugMode: "מצב ניפוי באגים",

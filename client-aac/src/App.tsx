@@ -3,6 +3,7 @@ import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Home from "@/pages/home";
+import SandboxGameApp from "@/components/apps/sandbox-game";
 import { CameraProvider } from "@/components/CameraProvider";
 import LoginModal from "@/components/LoginModal";
 import StudentSelector from "@/components/StudentSelector";
@@ -30,6 +31,15 @@ function MainApp() {
     () => localStorage.getItem('synapse_student_id')
   );
   const { t, isRTL, direction, language } = useLanguage();
+
+  // Direct route: /aac/sandbox-app bypasses auth and AAC system
+  if (window.location.pathname.replace(/\/$/, '').endsWith('/sandbox-app')) {
+    return (
+      <div className="h-screen w-screen">
+        <SandboxGameApp onClose={() => { window.location.href = '/aac'; }} studentId={selectedStudentId || 'guest'} />
+      </div>
+    );
+  }
 
   const { data: authData, isLoading, error, refetch } = useQuery<AuthResponse>({
     queryKey: ["/auth/user"],

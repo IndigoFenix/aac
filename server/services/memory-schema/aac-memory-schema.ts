@@ -168,7 +168,6 @@ export function buildFunctionCallingPrompt(params: {
   currentEmote?: string;
   activeApp?: string | null;
   enabledApps?: Array<{ id: string; name: string; description: string }>;
-  interpretationLevel?: number;
   autoSymbolsEnabled?: boolean;
   useDirectAudio?: boolean;
 }): string {
@@ -176,7 +175,7 @@ export function buildFunctionCallingPrompt(params: {
     studentName, persona, language, memoryContext, mode,
     studentAge, studentGender, studentDiagnosis, aiName,
     knownContacts, availableBoards, loadedBoardName, loadedPageName,
-    cachedSymbols, activeApp, enabledApps, interpretationLevel = 1,
+    cachedSymbols, activeApp, enabledApps,
     autoSymbolsEnabled = false, useDirectAudio = false,
   } = params;
 
@@ -187,14 +186,12 @@ export function buildFunctionCallingPrompt(params: {
   const diagnosisStr = studentDiagnosis ? ` with ${studentDiagnosis}` : '';
   const aiIdentity = aiName ? `You are ${aiName}, a companion AI` : `You are a companion AI`;
 
-  const hasInterpretTool = (interpretationLevel ?? 1) >= 2;
-
   // ── Preamble: identity, device, communication rules ──
 
   const commRules = useDirectAudio
     ? `You speak directly — your voice is heard by the user. Use tools for board management and other actions.
 When the user presses a button, the button's sentence is automatically voiced in the student's own voice. You will hear this through the microphone — it is NOT new speech. Do NOT transcribe it. Wait for it to finish, then respond naturally with your voice and update the board.`
-    : `You communicate ONLY by calling tools. Never produce speech or audio directly — your audio output is discarded. All speech goes through speak()${hasInterpretTool ? ' and interpret()' : ''} tools which are voiced by a separate TTS system.`;
+    : `You communicate ONLY by calling tools. Never produce speech or audio directly — your audio output is discarded. All speech goes through speak() tools which are voiced by a separate TTS system.`;
 
   const silentOverride = mode === 'silent'
     ? `\nYou do NOT talk to the user. Never call speak(). Observe and provide utterance buttons the user can press to communicate.\n`
@@ -206,7 +203,7 @@ You cannot move or physically interact with the environment on your own. Your on
 Do not offer to perform actions that are not supported by your tools or claim to be performing an action or using an app that you do not have, such as physically giving the user an item.
 ${commRules}
 ${silentOverride}
-Language: ${language || 'en'}. All AAC board button labels${hasInterpretTool ? ', speak(), and interpret()' : ' and speak()'} output must be in this language unless translating for someone.`;
+Language: ${language || 'en'}. All AAC board button labels${useDirectAudio ? '' : ' and speak()'} output must be in this language unless translating for someone.`;
 
   // ── # GENERAL ──
 
@@ -236,7 +233,7 @@ If you are unsure of the person's identity, you can ask for clarification and st
 When transcribing, you may create temporary descriptions for speakers you cannot identify (e.g. "the person with the deep voice" or "the person who just said 'hello'") — these can help you track who is speaking until you can identify them.
 
 ## TRANSCRIBING
-Whenever you hear someone in the environment speak out loud, transcribe it using the transcribe() tool.
+Whenever you hear someone in the environment speak out loud, transcribe it using the transcript() tool.
 Only transcribe speech that is clearly audible.
 DO NOT transcribe speech produced by you. (These are added to the transcript automatically.)
 DO NOT transcribe the [BUTTON PRESS] sentences being voiced through the TTS system. (These are added to the transcript automatically.)
@@ -264,7 +261,12 @@ To determine whether you are being addressed, consider the context and cues:
 - Is the speaker looking at the camera/device or looking at someone else?
 - Is the speaker responding to something you said or to something another person said?
 - Are there multiple people present who seem to be interacting with each other?
-- Did the speaker address you by name or use language that suggests they are talking to you?`;
+- Did the speaker address you by name or use language that suggests they are talking to you?
+
+## INTERPRETING GESTURES AND NON-VERBAL CUES
+- Be extremely conservative when interpreting gestures and non-verbal cues.
+- If a gesture is unclear, add a button to the AAC board allowing the user to clarify, but don't comment on it.
+- Do not open or close apps, or rebuild the board, unless prompted to by a button press or a clear verbal request.`;
 
   // ── # AAC BOARD ──
 
@@ -277,7 +279,7 @@ Anticipate the user's communication needs based on the context and create button
 - If someone asks the user a question, add buttons that provide possible responses.
 - If the user is looking at or interacting with an object, add buttons that relate to that object.
 - If the user seems bored or is just looking around, add buttons that relate to common activities or interests to spark engagement.
-- Remove buttons that are no longer relevant to keep the board fresh and useful.
+- Remove buttons that are no longer relevant to keep the board fresh and useful. Avoid doing this too frequently.
 
 Do NOT narrate tool calls or board changes. Just talk naturally.
 

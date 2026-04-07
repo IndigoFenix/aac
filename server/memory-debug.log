@@ -1,73 +1,70 @@
-[20:44:07.872] memoryValues.Student_People (0 items)
+[18:56:30.138] memoryValues.Student_Notes (1 items)
+[
+  "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+]
+[18:56:30.140] memoryValues.Student_People (0 items)
 []
-[20:44:07.873] memoryValues.Student_Interests (0 items)
-[]
-[20:44:07.874] memoryValues.Student_Notes (0 items)
-[]
-[20:44:07.875] memoryVisualization — data section (119 lines)
+[18:56:30.142] memoryValues.Student_Interests (4 items)
+[
+  "facts",
+  "drawing",
+  "music",
+  "science"
+]
+[18:56:30.143] memoryValues.Student_Preferences
+{
+  "FavoriteActivities": [
+    "drawing",
+    "music",
+    "interactive apps",
+    "interactive exploration"
+  ]
+}
+[18:56:30.145] memoryValues.Student_CommunicationStyle
+{
+  "PrimaryMethod": "AAC"
+}
+[18:56:30.146] memoryVisualization — data section (67 lines)
 === Current Memory ===
-• /User_AiPersonalityPreferences (string) — User's preferences for how the AI should communicate (tone, style, etc.) null
-• /User_Language (string) — User's preferred language for communication "Hebrew"
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
   ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 0 items) — Things the student enjoys or is interested in 
-  (may contain items - view "/Student_Interests" to load from database)
-  ↪ To append: action "add" at "/Student_Interests" with value.
+• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
+  - [0]: "facts"
+  - [1]: "drawing"
+  - [2]: "music"
+  - [3]: "science"
+  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
 • /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: <string> — verbal, nonverbal, AAC, or mixed (empty)
+  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
   - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
   ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
 • /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (empty)
+  - FavoriteActivities: {array} (hidden)
   - RewardPreferences: {array} (empty)
   - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
   ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive) 
-  (may contain items - view "/Student_Notes" to load from database)
-  ↪ To append: action "add" at "/Student_Notes" with value.
-• /Relationship_Notes (array, 0 items) — General notes about sessions with this student (non-sensitive) — hidden; view to list items
-• /Context_Institutes (map, 0 keys) — Organizations (schools or clinics) that the user is a member of. Target entries by name. 
-  (may contain items - view "/Context_Institutes" to load from database)
-  ↪ Add: action "add" at "/Context_Institutes" with key + value.
-• /Context_Students (map, 1 keys) — Students (AAC users) that the user has access to. Target entries by first name. 
-  - Gal: {object} (view to expand)
-  ↪ Add: action "add" at "/Context_Students" with key + value. Rename: action "rename" on child path.
-• /Context_Calendar (map, 1 keys) — Calendar events for the next 90 days, with recurring events expanded into individual occurrences. Each entry has an occurrenceDate showing when it actually happens. Use Context_CalendarAlerts for today's priority events. 
-  - Hebrew class: {object} (view to expand)
-  ↪ Add: action "add" at "/Context_Calendar" with key + value. Rename: action "rename" on child path.
-• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  - Articles on Rett Syndrome: {object} (view to expand)
-  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
-  - Preschool SLP Goals Bank: {object} (view to expand)
-• /Context_Program (object) — The current educational program for the student 
-  - id: <string> (empty)
-  - framework: <string> ["tala" | "us_iep"] — TALA (Israel) or US IEP framework (empty; required)
-  - title: <string> (empty)
-  - status: <string> ["draft" | "active" | "archived"] (empty)
-  - startDate: <string> (empty)
-  - endDate: <string> (empty)
-  - dueDate: <string> (empty)
-  - approvalDate: <string> (empty)
-  - leastRestrictiveEnvironment: <string> (empty)
-  - notes: <string> (empty)
-  - profileDomains: {map} — Functional profile / PLAAFP documentation (keyed by domain type). Unless requested, there should only be one domain per type. (empty)
-  - goals: {map} — Annual goals with objectives. Goals are linked to domains through their objectives (each objective can have a profileDomainId). Goals should be defined using S.M.A.R.T criteria. (empty)
-  ↪ To expand: view "/Context_Program/*". To modify: action "set" on "/Context_Program" or "/Context_Program/<property>".
-• /Context_Reports (object) — Available reports: Medical records (editable), Functional reports (editable), Educational reports (editable). 
-  - medicalRecord: {object} — Current medical record for the student. Contains diagnoses, allergies, medications, and medical alerts. (empty)
-  - archivedMedicalRecords: {array} — Previously finalized medical records (read-only). View these to see historical medical information. (empty)
-  - functionalReport: {object} — Current functional report for the student. Contains mobility, ADL status, sensory profile, and safety risks. (empty)
-  - archivedFunctionalReports: {array} — Previously finalized functional reports (read-only). (empty)
-  - educationalReport: {object} — Current educational report for the student. Contains communication modes, language abilities, technology used, and behavioral strategies. (empty)
-  - archivedEducationalReports: {array} — Previously finalized educational reports (read-only). (empty)
-  ↪ To expand: view "/Context_Reports/*". To modify: action "set" on "/Context_Reports" or "/Context_Reports/<property>".
+• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
+  - [0]: "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
+• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
+  (may contain items - view "/Context_Library" to load from database)
+• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
+  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
+• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
+• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
+• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
+• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
+• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
+• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
+• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
+  ↪ To expand: view "/Context_Progress/*". (read-only)
 • /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
   - prompt: <string> — The full custom prompt text (empty)
   ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
 • /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
 
-Allowed roots & types: /User_AiPersonalityPreferences{string}, /User_Language{string}, /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Relationship_Notes{array}, /Context_Institutes{map}, /Context_Students{map}, /Context_Calendar{map}, /Context_Library{map}, /Context_Program{object}, /Context_Reports{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
+Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
 Operate only on visible paths or their parent container. To reveal children:
   manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
 Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
@@ -87,38 +84,135 @@ Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a co
   e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
 • /Student_Notes — ARRAY of string
   e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Context_Institutes — MAP<string, object>
-  value.required: [name, type]
-  value.props: id:string, name:string, type:string [enum: "school", "clinic"], description:string, address:string, phone:string, email:string, website:string, isActive:boolean, membership:{object}, members:map<string, object>, students:map<string, object> … +2 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Institutes","key":"<key>","value": {"name":"text","type":"text"} }] }
-• /Context_Students — MAP<string, object>
-  value.required: [firstName, instituteIds, name]
-  value.props: id:string, name:string, firstName:string, lastName:string, gender:string [enum: "male", "female", "other"], birthDate:string [format YYYY-MM-DD], framework:string [enum: "tala", "us_iep"], country:string [enum: "IL", "US"], primaryLanguage:string [enum: "he", "en"], additionalLanguages:array<string>, instituteIds:array<string>, isActive:boolean … +5 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Students","key":"<key>","value": {"firstName":"text","instituteIds":[],"name":"text"} }] }
-• /Context_Calendar — MAP<string, object>
-  value.required: [title, startTime, endTime]
-  value.props: id:string, title:string, description:string, occurrenceDate:string [format ISO 8601 datetime], startTime:string [format ISO 8601 datetime], endTime:string [format ISO 8601 datetime], allDay:boolean, repeatType:string [enum: "none", "daily", "weekly", "monthly_date", "monthly_weekday"], repeatInterval:number, repeatDays:array<number>, repeatMonthWeek:number, repeatEndDate:string [format ISO 8601 datetime]
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Calendar","key":"<key>","value": {"title":"text","startTime":"text","endTime":"text"} }] }
 • /Context_Library — MAP<string, object>
   value.props: id:string, title:string, content:string, subtopics:map<string, object>
   e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-• /Context_Program/profileDomains — MAP<string, object>
-  value.required: [domainType]
-  value.props: id:string, domainType:string [enum: "cognitive_academic", "communication_language", "social_emotional_behavioral", "motor_sensory", "life_skills_preparation", "other"], customName:string, strengths:string, needs:string, impactStatement:string, adverseEffectStatement:string, sortOrder:integer, baselineMeasurements:array<object>, assessmentSources:array<object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/profileDomains","key":"<key>","value": {"domainType":"text"} }] }
-• /Context_Program/goals — MAP<string, object>
-  value.required: [goalStatement]
-  value.props: id:string, goalStatement:string, status:string [enum: "draft", "active", "achieved", "modified", "discontinued"], progress:integer [min 0; max 100], targetDate:string [format YYYY-MM-DD], achievedDate:string [format YYYY-MM-DD], targetBehavior:string, criteria:string, methods:string, measurementMethod:string, relevance:string, interventionLevel:string [enum: "activity", "function", "participation"] … +3 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/goals","key":"<key>","value": {"goalStatement":"text"} }] }
-• /Context_Reports/archivedMedicalRecords — ARRAY of object
-  item.props: id:string, status:string [enum: "draft", "pending_review", "final", "superseded"], primaryDiagnosis:string, primaryDiagnosisCode:string, coMorbidities:array<string>, secondaryDiagnoses:array<string>, alertsAllergies:array<string>, alertsSeizures:array<string>, alertsCardiac:array<string>, medications:array<string>, medicalEquipment:array<string>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedMedicalRecords","value": {} }] }
-• /Context_Reports/archivedFunctionalReports — ARRAY of object
-  item.props: id:string, status:string [enum: "draft", "pending_review", "final", "superseded"], mobilityStatus:array<string>, adlStatus:array<string>, sensoryProfile:array<string>, safetyRisks:array<string>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedFunctionalReports","value": {} }] }
-• /Context_Reports/archivedEducationalReports — ARRAY of object
-  item.props: id:string, status:string [enum: "draft", "pending_review", "final", "superseded"], communicationMode:array<string>, receptiveLanguage:array<string>, assistiveTechnologyUsed:array<string>, reinforcers:array<string>, preferredActivities:array<string>, behavioralStrategies:array<string>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedEducationalReports","value": {} }] }
+
+Notes:
+- When item/value is an OBJECT, include all listed "required" keys when creating it.
+- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
+- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
+
+============================================================
+  manageMemory called
+============================================================
+[18:56:31.151] INPUT
+{
+  "ops": [
+    {
+      "action": "view",
+      "path": "/Context_Progress"
+    }
+  ]
+}
+[18:56:31.937] RESULTS
+[
+  {
+    "target": "/Context_Progress",
+    "action": "view",
+    "ok": true,
+    "message": "• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \\n  ↪ To expand: view \"/Context_Progress/*\". (read-only)",
+    "mutatedPaths": [
+      "/Context_Progress"
+    ],
+    "summary": "Path not found or not loaded"
+  }
+]
+
+============================================================
+  buildPromptAndTools — AI memory view
+============================================================
+[18:56:31.949] memoryValues.Student_Notes (1 items)
+[
+  "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+]
+[18:56:31.951] memoryValues.Student_People (0 items)
+[]
+[18:56:31.952] memoryValues.Student_Interests (4 items)
+[
+  "facts",
+  "drawing",
+  "music",
+  "science"
+]
+[18:56:31.954] memoryValues.Student_Preferences
+{
+  "FavoriteActivities": [
+    "drawing",
+    "music",
+    "interactive apps",
+    "interactive exploration"
+  ]
+}
+[18:56:31.956] memoryValues.Student_CommunicationStyle
+{
+  "PrimaryMethod": "AAC"
+}
+[18:56:31.958] memoryVisualization — data section (69 lines)
+=== Current Memory ===
+• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
+  (may contain items - view "/Student_People" to load from database)
+  ↪ To append: action "add" at "/Student_People" with value.
+• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
+  - [0]: "facts"
+  - [1]: "drawing"
+  - [2]: "music"
+  - [3]: "science"
+  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
+• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
+  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
+  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
+  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
+• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
+  - FavoriteActivities: {array} (hidden)
+  - RewardPreferences: {array} (empty)
+  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
+  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
+• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
+  - [0]: "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
+• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
+  - Articles on Rett Syndrome: {object} (view to expand)
+  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
+  - Preschool SLP Goals Bank: {object} (view to expand)
+• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
+  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
+• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
+• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
+• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
+• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
+• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
+• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
+• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
+  ↪ To expand: view "/Context_Progress/*". (read-only)
+• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
+  - prompt: "You are an advanced conversational AI designed to assist AAC (Augmentative and Alternative Communication) users.\nYou should:\n- Respond in a friendly, supportive manner\n- Keep responses concise and clear\n- Help expand on the user's symbol selections to form complete thoughts\n- Ask clarifying questions when needed\n- Be patient and encouraging" — The full custom prompt text
+  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
+• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
+
+Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
+Operate only on visible paths or their parent container. To reveal children:
+  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
+Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
+
+=== Schema Hints (add/insert/upsert in current scope) ===
+• /Student_People — ARRAY of object
+  item.required: [Name]
+  item.props: Name:string, Relationship:string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
+• /Student_Interests — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
+• /Student_Preferences/FavoriteActivities — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
+• /Student_Preferences/RewardPreferences — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
+• /Student_Preferences/AvoidTopics — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
+• /Student_Notes — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
+• /Context_Library — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, object>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
 
 Notes:
 - When item/value is an OBJECT, include all listed "required" keys when creating it.
@@ -128,76 +222,73 @@ Notes:
 ============================================================
   buildPromptAndTools — AI memory view
 ============================================================
-[20:46:37.865] memoryValues.Student_People (0 items)
+[18:58:54.431] memoryValues.Student_Notes (1 items)
+[
+  "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+]
+[18:58:54.433] memoryValues.Student_People (0 items)
 []
-[20:46:37.866] memoryValues.Student_Interests (0 items)
-[]
-[20:46:37.867] memoryValues.Student_Notes (0 items)
-[]
-[20:46:37.869] memoryVisualization — data section (119 lines)
+[18:58:54.434] memoryValues.Student_Interests (4 items)
+[
+  "facts",
+  "drawing",
+  "music",
+  "science"
+]
+[18:58:54.436] memoryValues.Student_Preferences
+{
+  "FavoriteActivities": [
+    "drawing",
+    "music",
+    "interactive apps",
+    "interactive exploration"
+  ]
+}
+[18:58:54.438] memoryValues.Student_CommunicationStyle
+{
+  "PrimaryMethod": "AAC"
+}
+[18:58:54.439] memoryVisualization — data section (67 lines)
 === Current Memory ===
-• /User_AiPersonalityPreferences (string) — User's preferences for how the AI should communicate (tone, style, etc.) null
-• /User_Language (string) — User's preferred language for communication "Hebrew"
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
   ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 0 items) — Things the student enjoys or is interested in 
-  (may contain items - view "/Student_Interests" to load from database)
-  ↪ To append: action "add" at "/Student_Interests" with value.
+• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
+  - [0]: "facts"
+  - [1]: "drawing"
+  - [2]: "music"
+  - [3]: "science"
+  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
 • /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: <string> — verbal, nonverbal, AAC, or mixed (empty)
+  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
   - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
   ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
 • /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (empty)
+  - FavoriteActivities: {array} (hidden)
   - RewardPreferences: {array} (empty)
   - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
   ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 0 items) — General notes about the student (non-sensitive) 
-  (may contain items - view "/Student_Notes" to load from database)
-  ↪ To append: action "add" at "/Student_Notes" with value.
-• /Relationship_Notes (array, 0 items) — General notes about sessions with this student (non-sensitive) — hidden; view to list items
-• /Context_Institutes (map, 0 keys) — Organizations (schools or clinics) that the user is a member of. Target entries by name. 
-  (may contain items - view "/Context_Institutes" to load from database)
-  ↪ Add: action "add" at "/Context_Institutes" with key + value.
-• /Context_Students (map, 1 keys) — Students (AAC users) that the user has access to. Target entries by first name. 
-  - Gal: {object} (view to expand)
-  ↪ Add: action "add" at "/Context_Students" with key + value. Rename: action "rename" on child path.
-• /Context_Calendar (map, 1 keys) — Calendar events for the next 90 days, with recurring events expanded into individual occurrences. Each entry has an occurrenceDate showing when it actually happens. Use Context_CalendarAlerts for today's priority events. 
-  - Hebrew class: {object} (view to expand)
-  ↪ Add: action "add" at "/Context_Calendar" with key + value. Rename: action "rename" on child path.
-• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  - Articles on Rett Syndrome: {object} (view to expand)
-  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
-  - Preschool SLP Goals Bank: {object} (view to expand)
-• /Context_Program (object) — The current educational program for the student 
-  - id: <string> (empty)
-  - framework: <string> ["tala" | "us_iep"] — TALA (Israel) or US IEP framework (empty; required)
-  - title: <string> (empty)
-  - status: <string> ["draft" | "active" | "archived"] (empty)
-  - startDate: <string> (empty)
-  - endDate: <string> (empty)
-  - dueDate: <string> (empty)
-  - approvalDate: <string> (empty)
-  - leastRestrictiveEnvironment: <string> (empty)
-  - notes: <string> (empty)
-  - profileDomains: {map} — Functional profile / PLAAFP documentation (keyed by domain type). Unless requested, there should only be one domain per type. (empty)
-  - goals: {map} — Annual goals with objectives. Goals are linked to domains through their objectives (each objective can have a profileDomainId). Goals should be defined using S.M.A.R.T criteria. (empty)
-  ↪ To expand: view "/Context_Program/*". To modify: action "set" on "/Context_Program" or "/Context_Program/<property>".
-• /Context_Reports (object) — Available reports: Medical records (editable), Functional reports (editable), Educational reports (editable). 
-  - medicalRecord: {object} — Current medical record for the student. Contains diagnoses, allergies, medications, and medical alerts. (empty)
-  - archivedMedicalRecords: {array} — Previously finalized medical records (read-only). View these to see historical medical information. (empty)
-  - functionalReport: {object} — Current functional report for the student. Contains mobility, ADL status, sensory profile, and safety risks. (empty)
-  - archivedFunctionalReports: {array} — Previously finalized functional reports (read-only). (empty)
-  - educationalReport: {object} — Current educational report for the student. Contains communication modes, language abilities, technology used, and behavioral strategies. (empty)
-  - archivedEducationalReports: {array} — Previously finalized educational reports (read-only). (empty)
-  ↪ To expand: view "/Context_Reports/*". To modify: action "set" on "/Context_Reports" or "/Context_Reports/<property>".
+• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
+  - [0]: "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
+• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
+  (may contain items - view "/Context_Library" to load from database)
+• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
+  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
+• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
+• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
+• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
+• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
+• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
+• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
+• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
+  ↪ To expand: view "/Context_Progress/*". (read-only)
 • /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
   - prompt: <string> — The full custom prompt text (empty)
   ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
 • /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
 
-Allowed roots & types: /User_AiPersonalityPreferences{string}, /User_Language{string}, /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Relationship_Notes{array}, /Context_Institutes{map}, /Context_Students{map}, /Context_Calendar{map}, /Context_Library{map}, /Context_Program{object}, /Context_Reports{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
+Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
 Operate only on visible paths or their parent container. To reveal children:
   manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
 Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
@@ -217,38 +308,587 @@ Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a co
   e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
 • /Student_Notes — ARRAY of string
   e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Context_Institutes — MAP<string, object>
-  value.required: [name, type]
-  value.props: id:string, name:string, type:string [enum: "school", "clinic"], description:string, address:string, phone:string, email:string, website:string, isActive:boolean, membership:{object}, members:map<string, object>, students:map<string, object> … +2 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Institutes","key":"<key>","value": {"name":"text","type":"text"} }] }
-• /Context_Students — MAP<string, object>
-  value.required: [firstName, instituteIds, name]
-  value.props: id:string, name:string, firstName:string, lastName:string, gender:string [enum: "male", "female", "other"], birthDate:string [format YYYY-MM-DD], framework:string [enum: "tala", "us_iep"], country:string [enum: "IL", "US"], primaryLanguage:string [enum: "he", "en"], additionalLanguages:array<string>, instituteIds:array<string>, isActive:boolean … +5 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Students","key":"<key>","value": {"firstName":"text","instituteIds":[],"name":"text"} }] }
-• /Context_Calendar — MAP<string, object>
-  value.required: [title, startTime, endTime]
-  value.props: id:string, title:string, description:string, occurrenceDate:string [format ISO 8601 datetime], startTime:string [format ISO 8601 datetime], endTime:string [format ISO 8601 datetime], allDay:boolean, repeatType:string [enum: "none", "daily", "weekly", "monthly_date", "monthly_weekday"], repeatInterval:number, repeatDays:array<number>, repeatMonthWeek:number, repeatEndDate:string [format ISO 8601 datetime]
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Calendar","key":"<key>","value": {"title":"text","startTime":"text","endTime":"text"} }] }
 • /Context_Library — MAP<string, object>
   value.props: id:string, title:string, content:string, subtopics:map<string, object>
   e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-• /Context_Program/profileDomains — MAP<string, object>
-  value.required: [domainType]
-  value.props: id:string, domainType:string [enum: "cognitive_academic", "communication_language", "social_emotional_behavioral", "motor_sensory", "life_skills_preparation", "other"], customName:string, strengths:string, needs:string, impactStatement:string, adverseEffectStatement:string, sortOrder:integer, baselineMeasurements:array<object>, assessmentSources:array<object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/profileDomains","key":"<key>","value": {"domainType":"text"} }] }
-• /Context_Program/goals — MAP<string, object>
-  value.required: [goalStatement]
-  value.props: id:string, goalStatement:string, status:string [enum: "draft", "active", "achieved", "modified", "discontinued"], progress:integer [min 0; max 100], targetDate:string [format YYYY-MM-DD], achievedDate:string [format YYYY-MM-DD], targetBehavior:string, criteria:string, methods:string, measurementMethod:string, relevance:string, interventionLevel:string [enum: "activity", "function", "participation"] … +3 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/goals","key":"<key>","value": {"goalStatement":"text"} }] }
-• /Context_Reports/archivedMedicalRecords — ARRAY of object
-  item.props: id:string, status:string [enum: "draft", "pending_review", "final", "superseded"], primaryDiagnosis:string, primaryDiagnosisCode:string, coMorbidities:array<string>, secondaryDiagnoses:array<string>, alertsAllergies:array<string>, alertsSeizures:array<string>, alertsCardiac:array<string>, medications:array<string>, medicalEquipment:array<string>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedMedicalRecords","value": {} }] }
-• /Context_Reports/archivedFunctionalReports — ARRAY of object
-  item.props: id:string, status:string [enum: "draft", "pending_review", "final", "superseded"], mobilityStatus:array<string>, adlStatus:array<string>, sensoryProfile:array<string>, safetyRisks:array<string>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedFunctionalReports","value": {} }] }
-• /Context_Reports/archivedEducationalReports — ARRAY of object
-  item.props: id:string, status:string [enum: "draft", "pending_review", "final", "superseded"], communicationMode:array<string>, receptiveLanguage:array<string>, assistiveTechnologyUsed:array<string>, reinforcers:array<string>, preferredActivities:array<string>, behavioralStrategies:array<string>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedEducationalReports","value": {} }] }
+
+Notes:
+- When item/value is an OBJECT, include all listed "required" keys when creating it.
+- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
+- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
+
+============================================================
+  manageMemory called
+============================================================
+[18:58:55.769] INPUT
+{
+  "ops": [
+    {
+      "action": "view",
+      "path": "/Context_Progress/*"
+    }
+  ]
+}
+[18:58:56.711] RESULTS
+[
+  {
+    "target": "/Context_Progress/*",
+    "action": "view",
+    "ok": true,
+    "message": "• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \\n  ↪ To expand: view \"/Context_Progress/*\". (read-only)",
+    "mutatedPaths": [],
+    "summary": "Path not found or not loaded"
+  }
+]
+
+============================================================
+  buildPromptAndTools — AI memory view
+============================================================
+[18:58:56.718] memoryValues.Student_Notes (1 items)
+[
+  "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+]
+[18:58:56.721] memoryValues.Student_People (0 items)
+[]
+[18:58:56.722] memoryValues.Student_Interests (4 items)
+[
+  "facts",
+  "drawing",
+  "music",
+  "science"
+]
+[18:58:56.724] memoryValues.Student_Preferences
+{
+  "FavoriteActivities": [
+    "drawing",
+    "music",
+    "interactive apps",
+    "interactive exploration"
+  ]
+}
+[18:58:56.725] memoryValues.Student_CommunicationStyle
+{
+  "PrimaryMethod": "AAC"
+}
+[18:58:56.727] memoryVisualization — data section (69 lines)
+=== Current Memory ===
+• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
+  (may contain items - view "/Student_People" to load from database)
+  ↪ To append: action "add" at "/Student_People" with value.
+• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
+  - [0]: "facts"
+  - [1]: "drawing"
+  - [2]: "music"
+  - [3]: "science"
+  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
+• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
+  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
+  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
+  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
+• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
+  - FavoriteActivities: {array} (hidden)
+  - RewardPreferences: {array} (empty)
+  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
+  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
+• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
+  - [0]: "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
+• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
+  - Articles on Rett Syndrome: {object} (view to expand)
+  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
+  - Preschool SLP Goals Bank: {object} (view to expand)
+• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
+  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
+• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
+• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
+• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
+• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
+• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
+• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
+• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
+  ↪ To expand: view "/Context_Progress/*". (read-only)
+• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
+  - prompt: "You are an advanced conversational AI designed to assist AAC (Augmentative and Alternative Communication) users.\nYou should:\n- Respond in a friendly, supportive manner\n- Keep responses concise and clear\n- Help expand on the user's symbol selections to form complete thoughts\n- Ask clarifying questions when needed\n- Be patient and encouraging" — The full custom prompt text
+  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
+• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
+
+Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
+Operate only on visible paths or their parent container. To reveal children:
+  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
+Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
+
+=== Schema Hints (add/insert/upsert in current scope) ===
+• /Student_People — ARRAY of object
+  item.required: [Name]
+  item.props: Name:string, Relationship:string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
+• /Student_Interests — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
+• /Student_Preferences/FavoriteActivities — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
+• /Student_Preferences/RewardPreferences — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
+• /Student_Preferences/AvoidTopics — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
+• /Student_Notes — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
+• /Context_Library — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, object>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
+
+Notes:
+- When item/value is an OBJECT, include all listed "required" keys when creating it.
+- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
+- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
+
+============================================================
+  buildPromptAndTools — AI memory view
+============================================================
+[19:00:04.086] memoryValues.Student_Notes (1 items)
+[
+  "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+]
+[19:00:04.088] memoryValues.Student_People (0 items)
+[]
+[19:00:04.089] memoryValues.Student_Interests (4 items)
+[
+  "facts",
+  "drawing",
+  "music",
+  "science"
+]
+[19:00:04.091] memoryValues.Student_Preferences
+{
+  "FavoriteActivities": [
+    "drawing",
+    "music",
+    "interactive apps",
+    "interactive exploration"
+  ]
+}
+[19:00:04.092] memoryValues.Student_CommunicationStyle
+{
+  "PrimaryMethod": "AAC"
+}
+[19:00:04.096] memoryVisualization — data section (67 lines)
+=== Current Memory ===
+• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
+  (may contain items - view "/Student_People" to load from database)
+  ↪ To append: action "add" at "/Student_People" with value.
+• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
+  - [0]: "facts"
+  - [1]: "drawing"
+  - [2]: "music"
+  - [3]: "science"
+  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
+• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
+  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
+  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
+  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
+• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
+  - FavoriteActivities: {array} (hidden)
+  - RewardPreferences: {array} (empty)
+  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
+  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
+• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
+  - [0]: "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
+• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
+  (may contain items - view "/Context_Library" to load from database)
+• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
+  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
+• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
+• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
+• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
+• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
+• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
+• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
+• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
+  ↪ To expand: view "/Context_Progress/*". (read-only)
+• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
+  - prompt: <string> — The full custom prompt text (empty)
+  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
+• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
+
+Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
+Operate only on visible paths or their parent container. To reveal children:
+  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
+Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
+
+=== Schema Hints (add/insert/upsert in current scope) ===
+• /Student_People — ARRAY of object
+  item.required: [Name]
+  item.props: Name:string, Relationship:string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
+• /Student_Interests — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
+• /Student_Preferences/FavoriteActivities — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
+• /Student_Preferences/RewardPreferences — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
+• /Student_Preferences/AvoidTopics — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
+• /Student_Notes — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
+• /Context_Library — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, object>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
+
+Notes:
+- When item/value is an OBJECT, include all listed "required" keys when creating it.
+- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
+- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
+
+============================================================
+  manageMemory called
+============================================================
+[19:00:05.630] INPUT
+{
+  "ops": [
+    {
+      "action": "view",
+      "path": "/Context_Progress"
+    }
+  ]
+}
+[19:00:06.288] RESULTS
+[
+  {
+    "target": "/Context_Progress",
+    "action": "view",
+    "ok": true,
+    "message": "• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \\n  ↪ To expand: view \"/Context_Progress/*\". (read-only)",
+    "mutatedPaths": [
+      "/Context_Progress"
+    ],
+    "summary": "Path not found or not loaded"
+  }
+]
+
+============================================================
+  buildPromptAndTools — AI memory view
+============================================================
+[19:00:06.296] memoryValues.Student_Notes (1 items)
+[
+  "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+]
+[19:00:06.298] memoryValues.Student_People (0 items)
+[]
+[19:00:06.299] memoryValues.Student_Interests (4 items)
+[
+  "facts",
+  "drawing",
+  "music",
+  "science"
+]
+[19:00:06.300] memoryValues.Student_Preferences
+{
+  "FavoriteActivities": [
+    "drawing",
+    "music",
+    "interactive apps",
+    "interactive exploration"
+  ]
+}
+[19:00:06.302] memoryValues.Student_CommunicationStyle
+{
+  "PrimaryMethod": "AAC"
+}
+[19:00:06.303] memoryVisualization — data section (69 lines)
+=== Current Memory ===
+• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
+  (may contain items - view "/Student_People" to load from database)
+  ↪ To append: action "add" at "/Student_People" with value.
+• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
+  - [0]: "facts"
+  - [1]: "drawing"
+  - [2]: "music"
+  - [3]: "science"
+  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
+• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
+  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
+  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
+  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
+• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
+  - FavoriteActivities: {array} (hidden)
+  - RewardPreferences: {array} (empty)
+  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
+  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
+• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
+  - [0]: "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
+• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
+  - Articles on Rett Syndrome: {object} (view to expand)
+  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
+  - Preschool SLP Goals Bank: {object} (view to expand)
+• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
+  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
+• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
+• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
+• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
+• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
+• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
+• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
+• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
+  ↪ To expand: view "/Context_Progress/*". (read-only)
+• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
+  - prompt: "You are an advanced conversational AI designed to assist AAC (Augmentative and Alternative Communication) users.\nYou should:\n- Respond in a friendly, supportive manner\n- Keep responses concise and clear\n- Help expand on the user's symbol selections to form complete thoughts\n- Ask clarifying questions when needed\n- Be patient and encouraging" — The full custom prompt text
+  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
+• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
+
+Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
+Operate only on visible paths or their parent container. To reveal children:
+  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
+Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
+
+=== Schema Hints (add/insert/upsert in current scope) ===
+• /Student_People — ARRAY of object
+  item.required: [Name]
+  item.props: Name:string, Relationship:string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
+• /Student_Interests — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
+• /Student_Preferences/FavoriteActivities — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
+• /Student_Preferences/RewardPreferences — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
+• /Student_Preferences/AvoidTopics — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
+• /Student_Notes — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
+• /Context_Library — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, object>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
+
+Notes:
+- When item/value is an OBJECT, include all listed "required" keys when creating it.
+- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
+- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
+
+============================================================
+  buildPromptAndTools — AI memory view
+============================================================
+[19:00:34.189] memoryValues.Student_Notes (1 items)
+[
+  "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+]
+[19:00:34.191] memoryValues.Student_People (0 items)
+[]
+[19:00:34.192] memoryValues.Student_Interests (4 items)
+[
+  "facts",
+  "drawing",
+  "music",
+  "science"
+]
+[19:00:34.193] memoryValues.Student_Preferences
+{
+  "FavoriteActivities": [
+    "drawing",
+    "music",
+    "interactive apps",
+    "interactive exploration"
+  ]
+}
+[19:00:34.194] memoryValues.Student_CommunicationStyle
+{
+  "PrimaryMethod": "AAC"
+}
+[19:00:34.195] memoryVisualization — data section (67 lines)
+=== Current Memory ===
+• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
+  (may contain items - view "/Student_People" to load from database)
+  ↪ To append: action "add" at "/Student_People" with value.
+• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
+  - [0]: "facts"
+  - [1]: "drawing"
+  - [2]: "music"
+  - [3]: "science"
+  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
+• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
+  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
+  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
+  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
+• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
+  - FavoriteActivities: {array} (hidden)
+  - RewardPreferences: {array} (empty)
+  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
+  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
+• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
+  - [0]: "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
+• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
+  (may contain items - view "/Context_Library" to load from database)
+• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
+  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
+• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
+• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
+• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
+• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
+• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
+• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
+• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
+  ↪ To expand: view "/Context_Progress/*". (read-only)
+• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
+  - prompt: <string> — The full custom prompt text (empty)
+  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
+• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
+
+Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
+Operate only on visible paths or their parent container. To reveal children:
+  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
+Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
+
+=== Schema Hints (add/insert/upsert in current scope) ===
+• /Student_People — ARRAY of object
+  item.required: [Name]
+  item.props: Name:string, Relationship:string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
+• /Student_Interests — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
+• /Student_Preferences/FavoriteActivities — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
+• /Student_Preferences/RewardPreferences — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
+• /Student_Preferences/AvoidTopics — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
+• /Student_Notes — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
+• /Context_Library — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, object>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
+
+Notes:
+- When item/value is an OBJECT, include all listed "required" keys when creating it.
+- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
+- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
+
+============================================================
+  manageMemory called
+============================================================
+[19:00:35.488] INPUT
+{
+  "ops": [
+    {
+      "action": "view",
+      "path": "/Student_Notes"
+    }
+  ]
+}
+[19:00:35.489] BEFORE view /Student_Notes — Student_Notes array (1 items)
+[
+  "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+]
+[19:00:35.494] RESULTS
+[
+  {
+    "target": "/Student_Notes",
+    "action": "view",
+    "ok": true,
+    "message": "• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) \\n  - [0]: \"Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games.\"\\n  ↪ To append: action \"add\" at \"/Student_Notes\" with value. To update item: action \"set\" at \"/Student_Notes/<index>\".",
+    "mutatedPaths": [
+      "/Student_Notes"
+    ],
+    "summary": "Array with 1 item(s)"
+  }
+]
+[19:00:35.495] AFTER view /Student_Notes — Student_Notes array (1 items)
+[
+  "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+]
+
+============================================================
+  buildPromptAndTools — AI memory view
+============================================================
+[19:00:35.501] memoryValues.Student_Notes (1 items)
+[
+  "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+]
+[19:00:35.502] memoryValues.Student_People (0 items)
+[]
+[19:00:35.504] memoryValues.Student_Interests (4 items)
+[
+  "facts",
+  "drawing",
+  "music",
+  "science"
+]
+[19:00:35.505] memoryValues.Student_Preferences
+{
+  "FavoriteActivities": [
+    "drawing",
+    "music",
+    "interactive apps",
+    "interactive exploration"
+  ]
+}
+[19:00:35.507] memoryValues.Student_CommunicationStyle
+{
+  "PrimaryMethod": "AAC"
+}
+[19:00:35.508] memoryVisualization — data section (67 lines)
+=== Current Memory ===
+• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
+  (may contain items - view "/Student_People" to load from database)
+  ↪ To append: action "add" at "/Student_People" with value.
+• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
+  - [0]: "facts"
+  - [1]: "drawing"
+  - [2]: "music"
+  - [3]: "science"
+  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
+• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
+  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
+  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
+  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
+• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
+  - FavoriteActivities: {array} (hidden)
+  - RewardPreferences: {array} (empty)
+  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
+  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
+• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
+  - [0]: "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
+• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
+  (may contain items - view "/Context_Library" to load from database)
+• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
+  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
+• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
+• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
+• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
+• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
+• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
+• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
+• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
+  ↪ To expand: view "/Context_Progress/*". (read-only)
+• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
+  - prompt: <string> — The full custom prompt text (empty)
+  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
+• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
+
+Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
+Operate only on visible paths or their parent container. To reveal children:
+  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
+Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
+
+=== Schema Hints (add/insert/upsert in current scope) ===
+• /Student_People — ARRAY of object
+  item.required: [Name]
+  item.props: Name:string, Relationship:string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
+• /Student_Interests — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
+• /Student_Preferences/FavoriteActivities — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
+• /Student_Preferences/RewardPreferences — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
+• /Student_Preferences/AvoidTopics — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
+• /Student_Notes — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
+• /Context_Library — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, object>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
 
 Notes:
 - When item/value is an OBJECT, include all listed "required" keys when creating it.

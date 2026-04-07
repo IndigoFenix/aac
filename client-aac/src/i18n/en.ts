@@ -148,6 +148,8 @@ export const en = {
     appDrawingDesc: "Draw on a canvas with colors",
     appMusic: "Music Maker",
     appMusicDesc: "Play musical notes on a piano",
+    appSandboxGame: "Sandbox Farm",
+    appSandboxGameDesc: "Grow plants and build a farm",
 
     developerOptions: "Developer Options",
     debugMode: "Debug Mode",

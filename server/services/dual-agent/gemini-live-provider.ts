@@ -2,7 +2,7 @@
 // Gemini Live API provider — wraps the @google/genai SDK's Live session.
 // Uses native-audio model with function calling. Audio output is discarded (ElevenLabs TTS used).
 
-import { GoogleGenAI, Modality, FunctionResponse, FunctionResponseScheduling, ActivityHandling } from "@google/genai";
+import { GoogleGenAI, Modality, FunctionResponse, FunctionResponseScheduling } from "@google/genai";
 import type { Session, LiveServerMessage, FunctionCall, Tool } from "@google/genai";
 import type {
   LiveProvider,
@@ -116,20 +116,13 @@ export class GeminiLiveProvider implements LiveProvider {
               targetTokens: String(targetTokens),
             },
           },
-          // Realtime input config: prevent audio VAD from interrupting tool call turns.
-          // Without this, background noise or TTS echo triggers VAD mid-turn, causing
-          // the model to start new turns and repeat the same tool calls.
-          realtimeInputConfig: {
-            automaticActivityDetection: {
-              disabled: false,
-              silenceDurationMs: 2000,   // Wait 2s of silence before end-of-speech
-              prefixPaddingMs: 500,      // 500ms of speech required before start-of-speech
-            },
-            activityHandling: ActivityHandling.NO_INTERRUPTION,
-          },
-          // Native audio features (from config)
-          ...(config.enableAffectiveDialog ? { enableAffectiveDialog: true } : {}),
-          ...(config.proactiveAudio !== undefined ? { proactivity: { proactiveAudio: config.proactiveAudio } } : {}),
+          // proactiveAudio: false prevents the model from speaking unprompted.
+          // Without this, continuous mic audio causes the model to keep generating
+          // turns and repeating itself. The model still responds to explicit prompts
+          // (sendClientContent with turnComplete=true) and detected speech.
+          // NOTE: Do NOT add realtimeInputConfig or activityHandling — those cause
+          // empty turns for text input (see feedback_gemini_live_config.md).
+          proactivity: { proactiveAudio: false },
           // Voice selection for native audio output
           ...(config.voiceName ? { speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: config.voiceName } } } } : {}),
         },
@@ -143,6 +136,15 @@ export class GeminiLiveProvider implements LiveProvider {
             const keys = Object.keys(msg).filter(k => (msg as any)[k] != null);
             if (keys.length > 0 && !keys.every(k => k === "serverContent")) {
               console.log(`[GeminiLiveProvider] Server message keys: ${keys.join(", ")}`);
+            }
+            // DIAGNOSTIC: Log ALL raw server messages to session log
+            if (keys.length > 0) {
+              const sc = msg.serverContent;
+              const hasParts = !!(sc as any)?.modelTurn?.parts?.length;
+              const hasAudio = hasParts && (sc as any).modelTurn.parts.some((p: any) => p.inlineData);
+              const hasText = hasParts && (sc as any).modelTurn.parts.some((p: any) => p.text);
+              const hasFC = hasParts && (sc as any).modelTurn.parts.some((p: any) => p.functionCall);
+              logLiveSession("RAW_MSG", `keys=[${keys.join(",")}] hasParts=${hasParts} hasAudio=${hasAudio} hasText=${hasText} hasFC=${hasFC} toolCall=${!!msg.toolCall} setupComplete=${!!msg.setupComplete}`);
             }
             this.handleServerMessage(msg);
           },
@@ -191,7 +193,7 @@ export class GeminiLiveProvider implements LiveProvider {
       });
 
       this.startReconnectTimer();
-      console.log(`[GeminiLiveProvider] Session established, model=${config.model}`);
+      console.log(`[GeminiLiveProvider] Session established, model=${config.model}, vertexAI=${this.useVertexAI}`);
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       console.error("[GeminiLiveProvider] Failed to connect:", error.message);
@@ -303,6 +305,23 @@ export class GeminiLiveProvider implements LiveProvider {
     }
   }
 
+  /**
+   * Signal end-of-activity to the model via sendRealtimeInput.
+   * Native audio models with automaticActivityDetection use VAD to determine
+   * when the user is done speaking. When input is text-only (via sendClientContent),
+   * the VAD never fires. Sending activityEnd explicitly tells the model
+   * "the user is done, respond now."
+   */
+  sendAudioNudge(): void {
+    if (!this.session || !this.connected) return;
+    try {
+      this.session.sendRealtimeInput({ activityEnd: {} });
+      logLiveSession("ACTIVITY_END", `Sent activityEnd to trigger model response after text input`);
+    } catch (err) {
+      console.error("[GeminiLiveProvider] Failed to send activityEnd:", err);
+    }
+  }
+
   sendMessage(text: string, role: "user" | "model" = "user", turnComplete = true): void {
     if (!this.session || !this.connected) return;
     try {
@@ -378,6 +397,7 @@ export class GeminiLiveProvider implements LiveProvider {
   private handleServerMessage(msg: LiveServerMessage): void {
     if (msg.setupComplete) {
       console.log("[GeminiLiveProvider] Setup complete — ready to send data");
+      logLiveSession("SETUP_COMPLETE", `connected=${this.connected} timestamp=${Date.now()}`);
       this.callbacks.onReady?.();
       return;
     }

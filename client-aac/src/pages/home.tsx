@@ -29,6 +29,7 @@ import YouTubeApp from "@/components/apps/YouTubeApp";
 import DrawingApp from "@/components/apps/DrawingApp";
 import MusicApp from "@/components/apps/MusicApp";
 import SpotifyApp from "@/components/apps/SpotifyApp";
+import SandboxGameApp from "@/components/apps/sandbox-game";
 import AppMiniBoard from "@/components/AppMiniBoard";
 import { CameraAttentivenessWrapper } from "@/components/CameraAttentivenessWrapper";
 import { CameraFrameCollector } from "@/lib/cameraFrameCollector";
@@ -152,6 +153,9 @@ function renderAppContent(
   }
   if (activeApp.appId === "spotify") {
     return <SpotifyApp trackId={activeApp.appData?.trackId || ""} title={activeApp.appData?.title || activeApp.appData?.query || "Music"} artist={activeApp.appData?.artist || ""} studentId={studentId} onClose={dismissApp} />;
+  }
+  if (activeApp.appId === "sandbox_game") {
+    return <SandboxGameApp onClose={dismissApp} studentId={studentId} />;
   }
   return null;
 }
@@ -1046,8 +1050,13 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
               dismissYesNoRef.current?.();
               setYesNoActive(false);
               const translatedChoice = t(choice === "Yes" ? "quickActions.yes" : "quickActions.no");
-              speak(translatedChoice, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
-              interpretFnRef.current?.([translatedChoice], { [translatedChoice]: translatedChoice });
+              if (interpretFnRef.current) {
+                // AI session active — server handles TTS via pre-generated student voice
+                interpretFnRef.current([translatedChoice], { [translatedChoice]: translatedChoice });
+              } else {
+                // No AI session — use client-side speech
+                speak(translatedChoice, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
+              }
             }}
             onDismiss={() => {
               dismissYesNoRef.current?.();
@@ -1130,10 +1139,11 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
                 handleSetBoard(lastSetBoard);
               }
             } else {
-              // Yes/No — voice the text in the student's language and send as button press
-              speak(text, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
+              // Yes/No — send as button press (server handles TTS if AI session active)
               if (interpretFnRef.current) {
                 interpretFnRef.current([text], { [text]: text });
+              } else {
+                speak(text, currentLanguage, userProfile?.aacSettings?.studentVoiceType || 'boy');
               }
             }
           }}
