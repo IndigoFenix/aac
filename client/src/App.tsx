@@ -257,6 +257,11 @@ function Router() {
           <AdminDashboard />
         </SystemAdminRoute>
       </Route>
+      <Route path="/admin/identity-providers">
+        <SystemAdminRoute>
+          <AdminDashboard />
+        </SystemAdminRoute>
+      </Route>
       <Route path="/admin">
         <SystemAdminRoute>
           <AdminDashboard />

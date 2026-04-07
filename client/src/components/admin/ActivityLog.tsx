@@ -155,7 +155,7 @@ export function ActivityLog() {
   const pagination = data?.pagination ?? { total: 0, limit: 25, offset: 0, hasMore: false };
 
   const updateFilter = (key: keyof ActivityLogFilters, value: string | undefined) => {
-    setFilters((f) => ({ ...f, [key]: value || undefined, offset: 0 }));
+    setFilters((f) => ({ ...f, [key]: value === "__all__" ? undefined : (value || undefined), offset: 0 }));
   };
 
   return (
@@ -172,7 +172,7 @@ export function ActivityLog() {
             <SelectValue placeholder={t("admin.activityLog.filters.allEvents")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">{t("admin.activityLog.filters.allEvents")}</SelectItem>
+            <SelectItem value="__all__">{t("admin.activityLog.filters.allEvents")}</SelectItem>
             {EVENT_TYPES.map((et) => (
               <SelectItem key={et} value={et}>{t(`admin.activityLog.eventTypes.${et}`)}</SelectItem>
             ))}
@@ -184,7 +184,7 @@ export function ActivityLog() {
             <SelectValue placeholder={t("admin.activityLog.filters.allSubjects")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">{t("admin.activityLog.filters.allSubjects")}</SelectItem>
+            <SelectItem value="__all__">{t("admin.activityLog.filters.allSubjects")}</SelectItem>
             {SUBJECT_TYPES.map((st) => (
               <SelectItem key={st} value={st}>{formatSubjectType(st)}</SelectItem>
             ))}
@@ -196,7 +196,7 @@ export function ActivityLog() {
             <SelectValue placeholder={t("admin.activityLog.filters.allSources")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">{t("admin.activityLog.filters.allSources")}</SelectItem>
+            <SelectItem value="__all__">{t("admin.activityLog.filters.allSources")}</SelectItem>
             <SelectItem value="true">{t("admin.activityLog.filters.aiOnly")}</SelectItem>
             <SelectItem value="false">{t("admin.activityLog.filters.humanOnly")}</SelectItem>
           </SelectContent>
