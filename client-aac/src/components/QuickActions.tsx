@@ -7,11 +7,12 @@ interface QuickActionsProps {
   boardMode: 'ai' | 'db';
   voiceType?: string;
   hasActiveApp?: boolean;
-  hasStoredBoard?: boolean;
   hasPrebuiltBoard?: boolean;
+  currentTier?: "home" | "context" | "latest";
+  isGuessingMode?: boolean;
 }
 
-export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp, hasStoredBoard, hasPrebuiltBoard }: QuickActionsProps) {
+export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp, currentTier = "latest", isGuessingMode = false }: QuickActionsProps) {
   const { t } = useLanguage();
 
   const quickActions = [
@@ -24,15 +25,23 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
     onAction(action.id, label);
   };
 
-  // Determine what the last button should be
+  // Determine what the last button should be based on navigation tier
   const getEndButton = () => {
     if (hasActiveApp) {
       return { id: "exit", labelKey: "quickActions.exit", emoji: "✖️", color: "#FCA5A5" };
     }
-    if (!hasPrebuiltBoard && hasStoredBoard) {
-      return { id: "return", labelKey: "quickActions.return", emoji: "↩️", color: "#C4B5FD" };
+    if (isGuessingMode) {
+      return { id: "home", labelKey: "quickActions.back", emoji: "↩️", color: "#C4B5FD" };
     }
-    return { id: "home", labelKey: "quickActions.home", emoji: "🏠", color: "#DBEAFE" };
+    switch (currentTier) {
+      case "home":
+        return { id: "home", labelKey: "quickActions.back", emoji: "↩️", color: "#C4B5FD" };
+      case "context":
+        return { id: "home", labelKey: "quickActions.home", emoji: "🏠", color: "#DBEAFE" };
+      case "latest":
+      default:
+        return { id: "home", labelKey: "quickActions.board", emoji: "📋", color: "#E0E7FF" };
+    }
   };
 
   const endButton = getEndButton();
@@ -86,7 +95,7 @@ export default function QuickActions({ onAction, onBack, boardMode, hasActiveApp
         </motion.button>
       ))}
 
-      {/* 4th button: Home / Exit / Return */}
+      {/* 4th button: Home / Back / Board / Exit */}
       <motion.button
         data-dwell
         onClick={() => onAction(endButton.id, t(endButton.labelKey))}

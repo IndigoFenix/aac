@@ -112,6 +112,8 @@ export interface UseDualAgentReturn {
   initialize: () => Promise<void>;
   sendMessage: (message: string, board?: ParsedBoardData) => Promise<void>;
   sendContextOnly: (text: string) => void;
+  /** Send a board exit message (exit/exitBoard button pressed on loaded board) */
+  sendBoardExit: (label: string, instruction: string) => void;
   sendVoice: (board?: ParsedBoardData) => Promise<void>;
   interpretButtons: (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => Promise<void>;
   startRecording: () => Promise<void>;
@@ -139,6 +141,10 @@ export interface UseDualAgentReturn {
   // Pause state
   paused: boolean;
   setPaused: (paused: boolean) => void;
+
+  // Guessing mode
+  /** True when the AI is in guessing mode (narrowing down user's thought) */
+  guessingMode?: boolean;
 
   // Reconnection state (Live API only)
   /** Whether the server is currently reconnecting to Gemini */

@@ -55,6 +55,10 @@ import {
   X,
 } from 'lucide-react';
 
+// Import i18n for institute-language reports
+import { translations, SUPPORTED_LANGUAGES, type LanguageCode } from '@/i18n';
+import { adaptStudentLabel } from '@/lib/studentLabel';
+
 // Import types from shared schema
 import type {
   MedicalRecord,
@@ -107,6 +111,30 @@ type ReportType = 'medical' | 'functional' | 'educational';
 // =============================================================================
 // PRINTABLE REPORT
 // =============================================================================
+
+/** Build a translator for a specific language code (used for institute-language reports) */
+function buildTranslator(lang: LanguageCode): { t: (key: string, params?: Record<string, string | number>) => string; isRTL: boolean } {
+  const langInfo = SUPPORTED_LANGUAGES.find(l => l.code === lang);
+  const isRTL = langInfo?.direction === 'rtl';
+  const t = (key: string, params?: Record<string, string | number>): string => {
+    const get = (obj: any, path: string): string | undefined => {
+      let cur = obj;
+      for (const k of path.split('.')) {
+        if (cur == null) return undefined;
+        cur = cur[k];
+      }
+      return typeof cur === 'string' ? cur : undefined;
+    };
+    let value = get(translations[lang], key);
+    if (value === undefined && lang !== 'en') value = get(translations.en, key);
+    if (value === undefined) return key;
+    if (params) {
+      value = Object.entries(params).reduce((s, [k, v]) => s.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v)), value);
+    }
+    return adaptStudentLabel(value);
+  };
+  return { t, isRTL };
+}
 
 function getArrayField(field: unknown): string[] {
   if (Array.isArray(field)) return field as string[];
@@ -313,7 +341,9 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
   };
 
   const handleViewReport = (report: MedicalRecord | FunctionalReport | EducationalReport, type: ReportType) => {
-    openPrintableReport(report, type, student, currentInstitute, t, isRTL);
+    const lang = (currentInstitute?.language || 'en') as LanguageCode;
+    const { t: reportT, isRTL: reportRTL } = buildTranslator(lang);
+    openPrintableReport(report, type, student, currentInstitute, reportT, reportRTL);
   };
 
   const handleEditReport = (report: MedicalRecord | FunctionalReport | EducationalReport, type: ReportType) => {

@@ -34,3 +34,7 @@ Whenever the term "student" is used, we use ts() instead, which swaps "student" 
 If you add any strings to the client, add their translations.
 If you see any missing translations on the client while working, add them.
 The english and hebrew translation files should have identical keys on identical lines. If you see something that doesn't line up, fix it.
+
+## General Behaviors
+Use logs whenever needed - preferably logging to a file rather than the console.
+If you try to fix an error and fail, don't hesitate to create a log that will help uncover the issue. The log can always be removed when the issue is fixed.

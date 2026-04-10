@@ -1108,7 +1108,7 @@ export interface BoardGrid {
  * Board button action type
  */
 export interface BoardButtonAction {
-  type: "speak" | "link" | "back" | "home";
+  type: "speak" | "link" | "back" | "home" | "exit";
   text?: string;
   toPageId?: string;
 }
@@ -1130,6 +1130,10 @@ export interface BoardButton {
   rebusKey?: string;
   imageKey?: string;
   selfClosing?: boolean;
+  /** When true, pressing this button automatically unloads the prebuilt board, giving the AI the full 12-button board */
+  exitBoard?: boolean;
+  /** Visual style hint: "guess" for guessing mode final guesses, "category" for narrowing categories */
+  buttonType?: "normal" | "guess" | "category";
   action?: BoardButtonAction;
 }
 

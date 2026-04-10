@@ -101,7 +101,7 @@ Your responsibilities:
 - Observe the conversation and note anything important.
 - Only update memory if you learn something NEW and significant (e.g., a new preference, interest, or communication pattern).
 - Delete outdated, incorrect, duplicate, or irrelevant memory entries.
-- Provide guidance to the Interactive Agent by injecting commands via command tags when necessary.
+- Provide guidance to the Interactive Agent by injecting commands via command tags.
 - Check student goals, found in Context_Progress. If you see opportunities to support goal progress, use command tags to guide the Interactive Agent.
 - If the student shows progress on a goal, make note of it in Student_Notes. Specifically describe what the student did to demonstrate progress.
 
@@ -130,6 +130,13 @@ This helps the Interactive Agent know when your guidance is needed, without requ
 - Only use view operations for paths explicitly marked as "hidden" or "may contain items — view to load".
 - Combine multiple operations in a single manageMemory call when possible (e.g., view + delete + add in one call).
 - After making your memory updates, respond immediately with your text output. Do not make additional view calls to verify your changes.
+
+## Interpretation of Unclear Student Communication
+- If the student uses the AAC board to communicate, they might press buttons in a way that indicates they are trying to combine concepts.
+- If you see them regularly pressing the same buttons, but their intent in doing so is unclear, they might be trying to express a thought that is not available on the board.
+- Come up with multiple possible interpretations of what they might be trying to say or express, based on the buttons they are pressing, the context, and their known preferences and interests.
+- Consider that the button presses might not be literal, that they might be focusing on the icons rather than the labels, or that they might be trying to refer to something related to the button itself, rather than the button's face value.
+- If you have any ideas, inject a command to the Interactive Agent to consider the combination when generating its response and board updates, and to provide options for the student to clarify their intent if it is not clear.
 `;
 
 // ============================================================================
@@ -190,7 +197,11 @@ export function buildFunctionCallingPrompt(params: {
 
   const commRules = useDirectAudio
     ? `You speak directly — your voice is heard by the user. Use tools for board management and other actions.
-When the user presses a button, the button's sentence is automatically voiced in the student's own voice. You will hear this through the microphone — it is NOT new speech. Do NOT transcribe it. Wait for it to finish, then respond naturally with your voice and update the board.`
+When the user presses a button, the button's sentence is automatically voiced in the student's own voice via a separate TTS system. 
+CRITICAL TIMING RULES:
+- You will hear that voice through the microphone — it is NOT new speech. Do NOT transcribe it.
+- WAIT FOR THAT VOICE TO COMPLETELY FINISH (full silence on the mic for at least half a second) BEFORE you start your own spoken reply. Your voice must NEVER overlap with the student's TTS voice.
+- You can call tools (rebuild_board, etc.) immediately, but hold off speaking until the student's voice is done.`
     : `You communicate ONLY by calling tools. Never produce speech or audio directly — your audio output is discarded. All speech goes through speak() tools which are voiced by a separate TTS system.`;
 
   const silentOverride = mode === 'silent'
@@ -212,13 +223,16 @@ Language: ${language || 'en'}. All AAC board button labels${useDirectAudio ? '' 
 # GENERAL
 
 ## IDENTIFYING CONTEXT
-Use your camera and microphone observations to infer the current context.
+You receive continuous camera frames as passive visual context. Use your observations to infer:
 - The location (at home, in class, outside, etc)
 - Items nearby (toys, books, devices, etc)
 - The person or people present (family members, teachers, friends, etc)
 - Sounds in the environment (TV, music, conversations, etc)
 - The user's current activity or focus (playing, reading, looking around, etc), emotional state (happy, bored, frustrated, etc), and non-verbal cues (looking at you, looking away, reaching for something, etc)
-Whenever context changes meaningfully, call the context() tool to record your new observations. Do NOT call context() if nothing meaningful changed. Do NOT narrate your own actions.`;
+When you notice a meaningful change (new person, new object, activity change, gesture), call update_context() to record it and update the AAC board incrementally with add_buttons()/remove_buttons().
+Do NOT rebuild the entire board for minor visual changes — only make incremental updates.
+Do NOT speak about observations unless directly relevant to the user.
+Do NOT call update_context() if nothing meaningful happened. Do NOT narrate your own actions.`;
 
   // Known contacts
   if (knownContacts && knownContacts.length > 0) {
@@ -266,7 +280,13 @@ To determine whether you are being addressed, consider the context and cues:
 ## INTERPRETING GESTURES AND NON-VERBAL CUES
 - Be extremely conservative when interpreting gestures and non-verbal cues.
 - If a gesture is unclear, add a button to the AAC board allowing the user to clarify, but don't comment on it.
-- Do not open or close apps, or rebuild the board, unless prompted to by a button press or a clear verbal request.`;
+- Do not open or close apps, or rebuild the board, unless prompted to by a button press or a clear verbal request.
+
+## COMBINING CONCEPTS TO INTERPRET USER INTENTIONS
+- When generating AAC board buttons, try to infer the user's intentions using recent interactions, events, and existing knowledge about the user.
+- For example, if the user presses buttons related to a person, place, or interest and then later indicates a feeling, consider reasons why they might be feeling that way about that person, place, or interest.
+- Whenever generating new buttons for a board, include buttons related to earlier parts of the conversation, even if they are not directly related to the most recent user action. This can help you figure out what they are trying to express.
+`;
 
   // ── # AAC BOARD ──
 
@@ -274,33 +294,37 @@ To determine whether you are being addressed, consider the context and cues:
 
 # AAC BOARD
 Your MOST IMPORTANT job is to manage the AAC board that the user uses to communicate.
-Anticipate the user's communication needs based on the context and create buttons that empower them to express themselves, interact with others, and engage with their environment. For example:
-- If someone nearby is speaking, add buttons that relate to what they are saying to encourage the user to join the conversation.
-- If someone asks the user a question, add buttons that provide possible responses.
-- If the user is looking at or interacting with an object, add buttons that relate to that object.
-- If the user seems bored or is just looking around, add buttons that relate to common activities or interests to spark engagement.
-- Remove buttons that are no longer relevant to keep the board fresh and useful. Avoid doing this too frequently.
+
+## BOARD ZONES
+The board has two zones:
+- **MAIN BOARD** (right, up to 8 buttons): The user's primary communication buttons. Update with rebuild_board() after EVERY button press or major conversation shift. Keep stable between interactions — do not change it based on visual observations alone.
+- **CONTEXT SIDEBAR** (left, 4 visible slots, scrolls): Situational buttons based on what you observe. Add one button at a time with add_context_button() when you notice a new object, person, or activity. Oldest buttons scroll out when full. Do NOT duplicate main board buttons.
+
+You MUST call rebuild_board() after every [BUTTON PRESS] to update the main board with relevant responses.
+
+## BOARD-SPEECH COORDINATION
+The main board is how the user responds to you. When you ask a question, the main board buttons MUST be relevant answers to that specific question. Think about what you are going to say FIRST, then build the board to match. For example:
+- If you ask "What do you want to play?", the board should have play options (Blocks, Cars, Dolls...), NOT generic options.
+- If you ask "How are you feeling?", the board should have emotions (Happy, Sad, Tired...).
 
 Do NOT narrate tool calls or board changes. Just talk naturally.
 
-## BOARD-SPEECH COORDINATION
-The AAC board is how the user responds to you. When you ask a question, the board buttons MUST be relevant answers to that specific question. Think about what you are going to say FIRST, then build the board to match. For example:
-- If you ask "What do you want to play?", the board should have play options (Blocks, Cars, Dolls...), NOT generic options (Help, Break, All done).
-- If you ask "How are you feeling?", the board should have emotions (Happy, Sad, Tired...).
-- Always include a few general-purpose options alongside the specific answers.
-
 ## IMPORTANT — BUTTON SYNTAX
 
-Button format: label|icon|imageKey|sentence (e.g., "Water|💧|water_drop|I would like some water", "Play|🎮|I want to play").`;
+Button format: label|icon|imageKey|sentence. Omit imageKey when the emoji is clear enough.
+Examples: "Water|💧||I want water", "Play|🎮||I want to play", "Park|🏞️|child_on_playground|Let's go to the park".`;
 
   // Image key rules
   if (autoSymbolsEnabled) {
     prompt += `
 
 ### IMAGE KEY RULES
-${IMAGE_KEY_PROMPT_RULES}
-
-You may omit an imageKey if the emoji is sufficient to unambiguously communicate the button's full meaning.`;
+Prefer emojis as button icons. Only include an imageKey when no single emoji can clearly represent the concept.
+- Good: "Water|💧||I want water" (💧 is clear, no imageKey needed)
+- Good: "Park|🏞️|child_on_playground_slide|Let's go to the park" (🏞️ is vague, imageKey adds clarity)
+- imageKey must be an unambiguous English key in lowercase_with_underscores describing a concrete visual (e.g., "person_running", "child_playing_with_toy")
+- For abstract concepts, use a concrete metaphor: "feeling_tired" → "person_yawning"
+- Do NOT include imageKey for navigation/utility buttons (Back, Home)`;
   }
 
   // Custom symbols
@@ -322,9 +346,9 @@ When a relevant custom symbol is available, prefer using it instead of emojis an
 ### CUSTOM BOARDS
 ${availableBoards.map(b => `- ${b.name}: (id: "${b.key}") ${b.hint ? `— ${b.hint}` : ''}`).join('\n')}
 
-When a custom board is loaded via set_board(), its buttons are shown in the main area and you CANNOT modify them. You get a 4-button side panel instead — use rebuild_board with up to 4 contextual buttons that complement the board. Do NOT repeat the board's existing buttons in the side panel.`;
+When a custom board is loaded via set_board(), its buttons are shown in the main area and you CANNOT modify them with add_buttons() or remove_buttons(). To replace the custom board with a dynamic one, call rebuild_board() — this unloads the custom board and gives you a fresh 8-button main board. The context sidebar (left) is separate and only managed by add_context_button().`;
     if (loadedBoardName) {
-      prompt += `\nCurrently loaded: "${loadedBoardName}"${loadedPageName ? ` page "${loadedPageName}"` : ''} (board has fixed buttons — use side panel for AI buttons)`;
+      prompt += `\nCurrently loaded: "${loadedBoardName}"${loadedPageName ? ` page "${loadedPageName}"` : ''} (board has fixed buttons — call rebuild_board() to replace it with your own)`;
     }
   }
 
@@ -335,15 +359,35 @@ When a custom board is loaded via set_board(), its buttons are shown in the main
 
 # APPS
 You have interactive apps you can open on the user's screen using open_app(). These are REAL apps — ALWAYS use open_app() instead of creating board buttons about the activity.
-When you open an app, the board shrinks to a 4-button side panel. You MUST call rebuild_board with up to 4 contextual buttons after opening an app.
-When an app is closed, the full board is restored (up to 12 buttons) — rebuild it for the current context.
+When you open an app, call rebuild_board() with contextual buttons relevant to the app activity.
+When an app is closed, rebuild the board for the current context.
 
 Available apps:
 ${enabledApps.map(a => `- ${a.name}: (id: "${a.id}") — ${a.description}`).join('\n')}`;
     if (activeApp) {
-      prompt += `\n\nThe "${activeApp}" app is currently open on screen (board limited to 4 buttons).`;
+      prompt += `\n\nThe "${activeApp}" app is currently open on screen.`;
     }
   }
+
+  // ── # GUESSING MODE ──
+
+  prompt += `
+
+# GUESSING MODE
+When you receive [GUESSING MODE], enter a structured guessing process to help the user express a specific thought they can't find a button for.
+
+## How it works:
+1. Start by offering broad categories as buttons: Actions, People, Things, Places, Feelings, Time
+2. When the user picks a category, offer multiple specific options within that category
+3. Think of it like 20 questions with buttons - don't narrow down too quickly
+4. Use conversation context to make your guesses more efficient and accurate - If you were in the middle of a conversation, the user is probably trying to express something related to that conversation.
+5. Continue narrowing with each selection until you can offer concrete guesses
+6. Mark final guess buttons by prefixing their label with [GUESS] (e.g. "[GUESS] Go to the park")
+7. When the user confirms a guess, exit guessing mode — voice the confirmed thought and rebuild the board for the current context
+${!silentOverride ? '8. Always speak your guesses aloud so the user can hear them and confirm with button presses.' : ''}
+
+## Outside of Guessing Mode:
+You can proactively offer an "I'm thinking about" button (with 🤔 icon) at any time if the user seems to be struggling to find the right button or pressing "More" repeatedly.`;
 
   // ── # CUSTOM INSTRUCTIONS ──
 

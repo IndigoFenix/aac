@@ -276,6 +276,7 @@ export const en = {
     selectBoard: "Select a board",
     noBoards: "No boards available",
     pageOf: "Page {current} of {total}",
+    guessingMode: "Guessing...",
   },
 
   chat: {
@@ -304,6 +305,7 @@ export const en = {
     back: "Back",
     help: "Help",
     home: "Home",
+    board: "Board",
     exit: "Exit",
     return: "Return",
     quiet: "Quiet",

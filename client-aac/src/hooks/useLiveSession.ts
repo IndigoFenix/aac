@@ -41,6 +41,7 @@ export interface UseLiveSessionOptions {
   studentId: string;
   language?: string;
   onBoardUpdate?: (board: ParsedBoardData) => void;
+  onContextBoardUpdate?: (board: ParsedBoardData) => void;
   onBoardPatch?: (patch: BoardPatch) => void;
   onSetBoard?: (data: { board: ParsedBoardData; name: string; boardId: string }) => void;
   onUnloadBoard?: () => void;
@@ -62,6 +63,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     studentId,
     language = "en",
     onBoardUpdate,
+    onContextBoardUpdate,
     onBoardPatch,
     onSetBoard,
     onUnloadBoard,
@@ -137,6 +139,9 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // App canvas capture ref (for drawing app, etc.)
   const captureAppCanvasRef = useRef<(() => Promise<Blob | null>) | null>(null);
 
+  // Guessing mode state
+  const [guessingMode, setGuessingMode] = useState(false);
+
   // Avatar emote state
   const [emote, setEmote] = useState<"happy" | "sad" | "neutral">("happy");
 
@@ -191,6 +196,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Stable refs for callbacks
   const onBoardUpdateRef = useRef(onBoardUpdate);
   onBoardUpdateRef.current = onBoardUpdate;
+  const onContextBoardUpdateRef = useRef(onContextBoardUpdate);
+  onContextBoardUpdateRef.current = onContextBoardUpdate;
   const onBoardPatchRef = useRef(onBoardPatch);
   onBoardPatchRef.current = onBoardPatch;
   const onSetBoardRef = useRef(onSetBoard);
@@ -281,9 +288,6 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           break;
 
         case "text":
-          // New speech arriving — stop any playing audio from a previous turn
-          // (skip clear when pre-generated student TTS is still playing)
-          if (!msg.noAudioClear) audioPlayer.clear();
           // Accumulate streamed text — keep the same message ID to avoid re-triggering animations
           textAccumRef.current += msg.data;
           setCurrentMessage(prev => ({
@@ -295,9 +299,6 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           break;
 
         case "interpret":
-          // New interpretation arriving — stop any playing audio from a previous turn
-          // (skip clear when pre-generated student TTS is already playing)
-          if (!msg.noAudioClear) audioPlayer.clear();
           setInterpretationText(prev => (prev || "") + (msg.text || ""));
           if (msg.confidence) setInterpretConfidence(msg.confidence);
           break;
@@ -322,6 +323,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
         case "board":
           onBoardUpdateRef.current?.(msg.data);
+          break;
+
+        case "context_button_add":
+          onContextBoardUpdateRef.current?.(msg.data);
           break;
 
         case "board_patch": {
@@ -544,9 +549,14 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           }
           break;
 
+        case "guessing_mode":
+          setGuessingMode(msg.active ?? false);
+          break;
+
         case "complete":
-          // Turn complete — reset accumulator, finalize audio
-          textAccumRef.current = "";
+          // Turn complete — keep text visible. Mark that the next "text" message
+          // should start a fresh accumulation instead of appending.
+          textAccumRef.current = ""; // Reset accumulator but don't clear display
           // Fallback: if deferred ask_yes_no is pending but no TTS is playing
           // (e.g. silent mode), show overlay immediately
           if (pendingAskYesNoRef.current && !audioPlayer.isPlaying) {
@@ -598,15 +608,20 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       // In dev: VITE_API_URL="http://localhost:5000" → "ws://localhost:5000/ws/live"
       // In prod: VITE_API_URL="" or unset → same origin as page
       const apiBase = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, "") ?? "";
+      // Append ?test=1 if the page URL has ?test=1 — routes to the MinimalLiveRelay
+      // on the server, bypassing tools, system prompt, and state machine.
+      const isTestMode = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("test") === "1";
+      const queryString = isTestMode ? "?test=1" : "";
       let wsUrl: string;
       if (apiBase) {
         // Replace http(s) with ws(s)
-        wsUrl = apiBase.replace(/^http/, "ws") + "/ws/live";
+        wsUrl = apiBase.replace(/^http/, "ws") + "/ws/live" + queryString;
       } else {
         // Same origin
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        wsUrl = `${protocol}//${window.location.host}/ws/live`;
+        wsUrl = `${protocol}//${window.location.host}/ws/live${queryString}`;
       }
+      if (isTestMode) console.log("[useLiveSession] TEST MODE — using minimal relay");
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
@@ -713,6 +728,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   /** Inject context into the AI without triggering a response turn */
   const sendContextOnly = useCallback((text: string) => {
     wsSend({ type: "context_injection", text });
+  }, [wsSend]);
+
+  const sendBoardExit = useCallback((label: string, instruction: string) => {
+    wsSend({ type: "board_exit", label, instruction });
   }, [wsSend]);
 
   const sendVoice = useCallback(async (board?: ParsedBoardData) => {
@@ -940,6 +959,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     initialize,
     sendMessage,
     sendContextOnly,
+    sendBoardExit,
     sendVoice,
     interpretButtons,
     startRecording: audioRecorder.startRecording,
@@ -957,6 +977,9 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // Pause state
     paused,
     setPaused,
+
+    // Guessing mode
+    guessingMode,
 
     // Reconnection state
     reconnecting,

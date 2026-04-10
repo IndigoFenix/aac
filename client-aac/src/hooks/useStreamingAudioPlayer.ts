@@ -300,8 +300,9 @@ export function useStreamingAudioPlayer(
         tagPitch,
         () => { playingRef.current = false; playNext(); },       // onDone
         (err) => {                                                // onFail
-          console.error("[StreamingAudioPlayer] Pitch-shifted playback error:", err);
           playingRef.current = false;
+          if (stoppedRef.current) return; // Expected when clear() was called during playback
+          console.error("[StreamingAudioPlayer] Pitch-shifted playback error:", err);
           setError("Pitch-shifted playback failed");
           onError?.("Pitch-shifted playback failed");
           playNext();
@@ -324,12 +325,15 @@ export function useStreamingAudioPlayer(
     };
 
     const handleError = (e: Event) => {
-      console.error("[StreamingAudioPlayer] Playback error:", e);
       URL.revokeObjectURL(url);
       audio.removeEventListener("ended", handleEnded);
       audio.removeEventListener("error", handleError);
       playingRef.current = false;
 
+      // If we were stopped/cleared, the error is expected (URL was revoked) — don't report
+      if (stoppedRef.current) return;
+
+      console.error("[StreamingAudioPlayer] Playback error:", e);
       const errorMessage = "Audio playback failed";
       setError(errorMessage);
       onError?.(errorMessage);
@@ -355,11 +359,17 @@ export function useStreamingAudioPlayer(
         onPlaybackStart?.();
       }
     } catch (err: any) {
-      console.error("[StreamingAudioPlayer] Play failed:", err);
       URL.revokeObjectURL(url);
       audio.removeEventListener("ended", handleEnded);
       audio.removeEventListener("error", handleError);
       playingRef.current = false;
+
+      // AbortError when stopped/cleared during play() — expected, ignore silently
+      if (stoppedRef.current || err.name === "AbortError") {
+        return;
+      }
+
+      console.error("[StreamingAudioPlayer] Play failed:", err);
 
       // NotAllowedError means autoplay was blocked - need user interaction
       if (err.name === "NotAllowedError") {

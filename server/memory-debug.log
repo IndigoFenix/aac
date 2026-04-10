@@ -1,17 +1,23 @@
-[18:56:30.138] memoryValues.Student_Notes (1 items)
+[15:22:37.504] memoryValues.Student_Notes (7 items)
 [
-  "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain.",
+  "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear.",
+  "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings.",
+  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue.",
+  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided."
 ]
-[18:56:30.140] memoryValues.Student_People (0 items)
+[15:22:37.505] memoryValues.Student_People (0 items)
 []
-[18:56:30.142] memoryValues.Student_Interests (4 items)
+[15:22:37.507] memoryValues.Student_Interests (4 items)
 [
   "facts",
   "drawing",
   "music",
   "science"
 ]
-[18:56:30.143] memoryValues.Student_Preferences
+[15:22:37.509] memoryValues.Student_Preferences
 {
   "FavoriteActivities": [
     "drawing",
@@ -20,11 +26,11 @@
     "interactive exploration"
   ]
 }
-[18:56:30.145] memoryValues.Student_CommunicationStyle
+[15:22:37.511] memoryValues.Student_CommunicationStyle
 {
   "PrimaryMethod": "AAC"
 }
-[18:56:30.146] memoryVisualization — data section (67 lines)
+[15:22:37.513] memoryVisualization — data section (73 lines)
 === Current Memory ===
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
@@ -44,8 +50,14 @@
   - RewardPreferences: {array} (empty)
   - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
   ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
-  - [0]: "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+• /Student_Notes (array, 7 items) — General notes about the student (non-sensitive) 
+  - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
+  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection."
+  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain."
+  - [3]: "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear."
+  - [4]: "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings."
+  - [5]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue."
+  - [6]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided."
   ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
 • /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
   (may contain items - view "/Context_Library" to load from database)
@@ -96,231 +108,7 @@ Notes:
 ============================================================
   manageMemory called
 ============================================================
-[18:56:31.151] INPUT
-{
-  "ops": [
-    {
-      "action": "view",
-      "path": "/Context_Progress"
-    }
-  ]
-}
-[18:56:31.937] RESULTS
-[
-  {
-    "target": "/Context_Progress",
-    "action": "view",
-    "ok": true,
-    "message": "• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \\n  ↪ To expand: view \"/Context_Progress/*\". (read-only)",
-    "mutatedPaths": [
-      "/Context_Progress"
-    ],
-    "summary": "Path not found or not loaded"
-  }
-]
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[18:56:31.949] memoryValues.Student_Notes (1 items)
-[
-  "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
-]
-[18:56:31.951] memoryValues.Student_People (0 items)
-[]
-[18:56:31.952] memoryValues.Student_Interests (4 items)
-[
-  "facts",
-  "drawing",
-  "music",
-  "science"
-]
-[18:56:31.954] memoryValues.Student_Preferences
-{
-  "FavoriteActivities": [
-    "drawing",
-    "music",
-    "interactive apps",
-    "interactive exploration"
-  ]
-}
-[18:56:31.956] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[18:56:31.958] memoryVisualization — data section (69 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
-  - [0]: "facts"
-  - [1]: "drawing"
-  - [2]: "music"
-  - [3]: "science"
-  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (hidden)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
-  - [0]: "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
-  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
-• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  - Articles on Rett Syndrome: {object} (view to expand)
-  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
-  - Preschool SLP Goals Bank: {object} (view to expand)
-• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
-  - prompt: "You are an advanced conversational AI designed to assist AAC (Augmentative and Alternative Communication) users.\nYou should:\n- Respond in a friendly, supportive manner\n- Keep responses concise and clear\n- Help expand on the user's symbol selections to form complete thoughts\n- Ask clarifying questions when needed\n- Be patient and encouraging" — The full custom prompt text
-  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
-• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[18:58:54.431] memoryValues.Student_Notes (1 items)
-[
-  "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
-]
-[18:58:54.433] memoryValues.Student_People (0 items)
-[]
-[18:58:54.434] memoryValues.Student_Interests (4 items)
-[
-  "facts",
-  "drawing",
-  "music",
-  "science"
-]
-[18:58:54.436] memoryValues.Student_Preferences
-{
-  "FavoriteActivities": [
-    "drawing",
-    "music",
-    "interactive apps",
-    "interactive exploration"
-  ]
-}
-[18:58:54.438] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[18:58:54.439] memoryVisualization — data section (67 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
-  - [0]: "facts"
-  - [1]: "drawing"
-  - [2]: "music"
-  - [3]: "science"
-  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (hidden)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
-  - [0]: "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
-  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
-• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  (may contain items - view "/Context_Library" to load from database)
-• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
-  - prompt: <string> — The full custom prompt text (empty)
-  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
-• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  manageMemory called
-============================================================
-[18:58:55.769] INPUT
+[15:22:39.425] INPUT
 {
   "ops": [
     {
@@ -329,7 +117,7 @@ Notes:
     }
   ]
 }
-[18:58:56.711] RESULTS
+[15:22:40.503] RESULTS
 [
   {
     "target": "/Context_Progress/*",
@@ -344,20 +132,26 @@ Notes:
 ============================================================
   buildPromptAndTools — AI memory view
 ============================================================
-[18:58:56.718] memoryValues.Student_Notes (1 items)
+[15:22:40.549] memoryValues.Student_Notes (7 items)
 [
-  "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain.",
+  "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear.",
+  "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings.",
+  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue.",
+  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided."
 ]
-[18:58:56.721] memoryValues.Student_People (0 items)
+[15:22:40.551] memoryValues.Student_People (0 items)
 []
-[18:58:56.722] memoryValues.Student_Interests (4 items)
+[15:22:40.553] memoryValues.Student_Interests (4 items)
 [
   "facts",
   "drawing",
   "music",
   "science"
 ]
-[18:58:56.724] memoryValues.Student_Preferences
+[15:22:40.554] memoryValues.Student_Preferences
 {
   "FavoriteActivities": [
     "drawing",
@@ -366,11 +160,11 @@ Notes:
     "interactive exploration"
   ]
 }
-[18:58:56.725] memoryValues.Student_CommunicationStyle
+[15:22:40.558] memoryValues.Student_CommunicationStyle
 {
   "PrimaryMethod": "AAC"
 }
-[18:58:56.727] memoryVisualization — data section (69 lines)
+[15:22:40.561] memoryVisualization — data section (75 lines)
 === Current Memory ===
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
@@ -390,8 +184,14 @@ Notes:
   - RewardPreferences: {array} (empty)
   - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
   ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
-  - [0]: "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+• /Student_Notes (array, 7 items) — General notes about the student (non-sensitive) 
+  - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
+  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection."
+  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain."
+  - [3]: "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear."
+  - [4]: "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings."
+  - [5]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue."
+  - [6]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided."
   ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
 • /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
   - Articles on Rett Syndrome: {object} (view to expand)
@@ -442,378 +242,75 @@ Notes:
 - For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
 
 ============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[19:00:04.086] memoryValues.Student_Notes (1 items)
-[
-  "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
-]
-[19:00:04.088] memoryValues.Student_People (0 items)
-[]
-[19:00:04.089] memoryValues.Student_Interests (4 items)
-[
-  "facts",
-  "drawing",
-  "music",
-  "science"
-]
-[19:00:04.091] memoryValues.Student_Preferences
-{
-  "FavoriteActivities": [
-    "drawing",
-    "music",
-    "interactive apps",
-    "interactive exploration"
-  ]
-}
-[19:00:04.092] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[19:00:04.096] memoryVisualization — data section (67 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
-  - [0]: "facts"
-  - [1]: "drawing"
-  - [2]: "music"
-  - [3]: "science"
-  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (hidden)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
-  - [0]: "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
-  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
-• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  (may contain items - view "/Context_Library" to load from database)
-• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
-  - prompt: <string> — The full custom prompt text (empty)
-  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
-• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
   manageMemory called
 ============================================================
-[19:00:05.630] INPUT
+[15:22:43.623] INPUT
 {
   "ops": [
     {
-      "action": "view",
-      "path": "/Context_Progress"
+      "action": "add",
+      "path": "/Student_Notes",
+      "value": "April 10 Session (continued): Gal pressed 'Help' button after navigating back to Home from the space/rockets exploration. This may indicate: (1) uncertainty about what to do next, (2) need for assistance with navigation, or (3) genuine need for support. Monitor whether Help button becomes a pattern for re-engagement when Gal cycles through menus."
     }
   ]
 }
-[19:00:06.288] RESULTS
+[15:22:43.626] BEFORE add /Student_Notes — Student_Notes array (7 items)
 [
-  {
-    "target": "/Context_Progress",
-    "action": "view",
-    "ok": true,
-    "message": "• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \\n  ↪ To expand: view \"/Context_Progress/*\". (read-only)",
-    "mutatedPaths": [
-      "/Context_Progress"
-    ],
-    "summary": "Path not found or not loaded"
-  }
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain.",
+  "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear.",
+  "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings.",
+  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue.",
+  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided."
 ]
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[19:00:06.296] memoryValues.Student_Notes (1 items)
-[
-  "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
-]
-[19:00:06.298] memoryValues.Student_People (0 items)
-[]
-[19:00:06.299] memoryValues.Student_Interests (4 items)
-[
-  "facts",
-  "drawing",
-  "music",
-  "science"
-]
-[19:00:06.300] memoryValues.Student_Preferences
-{
-  "FavoriteActivities": [
-    "drawing",
-    "music",
-    "interactive apps",
-    "interactive exploration"
-  ]
-}
-[19:00:06.302] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[19:00:06.303] memoryVisualization — data section (69 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
-  - [0]: "facts"
-  - [1]: "drawing"
-  - [2]: "music"
-  - [3]: "science"
-  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (hidden)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
-  - [0]: "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
-  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
-• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  - Articles on Rett Syndrome: {object} (view to expand)
-  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
-  - Preschool SLP Goals Bank: {object} (view to expand)
-• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
-  - prompt: "You are an advanced conversational AI designed to assist AAC (Augmentative and Alternative Communication) users.\nYou should:\n- Respond in a friendly, supportive manner\n- Keep responses concise and clear\n- Help expand on the user's symbol selections to form complete thoughts\n- Ask clarifying questions when needed\n- Be patient and encouraging" — The full custom prompt text
-  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
-• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[19:00:34.189] memoryValues.Student_Notes (1 items)
-[
-  "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
-]
-[19:00:34.191] memoryValues.Student_People (0 items)
-[]
-[19:00:34.192] memoryValues.Student_Interests (4 items)
-[
-  "facts",
-  "drawing",
-  "music",
-  "science"
-]
-[19:00:34.193] memoryValues.Student_Preferences
-{
-  "FavoriteActivities": [
-    "drawing",
-    "music",
-    "interactive apps",
-    "interactive exploration"
-  ]
-}
-[19:00:34.194] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[19:00:34.195] memoryVisualization — data section (67 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
-  - [0]: "facts"
-  - [1]: "drawing"
-  - [2]: "music"
-  - [3]: "science"
-  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (hidden)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
-  - [0]: "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
-  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
-• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  (may contain items - view "/Context_Library" to load from database)
-• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
-  - prompt: <string> — The full custom prompt text (empty)
-  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
-• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  manageMemory called
-============================================================
-[19:00:35.488] INPUT
-{
-  "ops": [
-    {
-      "action": "view",
-      "path": "/Student_Notes"
-    }
-  ]
-}
-[19:00:35.489] BEFORE view /Student_Notes — Student_Notes array (1 items)
-[
-  "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
-]
-[19:00:35.494] RESULTS
+[15:22:43.669] ADD to array /Student_Notes — array has 7 items, adding
+April 10 Session (continued): Gal pressed 'Help' button after navigating back to Home from the space/rockets exploration. This may indicate: (1) uncertainty about what to do next, (2) need for assistance with navigation, or (3) genuine need for support. Monitor whether Help button becomes a pattern for re-engagement when Gal cycles through menus.
+[15:22:43.671] ADD OK /Student_Notes — array now has 8 items
+[15:22:43.870] RESULTS
 [
   {
     "target": "/Student_Notes",
-    "action": "view",
-    "ok": true,
-    "message": "• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) \\n  - [0]: \"Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games.\"\\n  ↪ To append: action \"add\" at \"/Student_Notes\" with value. To update item: action \"set\" at \"/Student_Notes/<index>\".",
-    "mutatedPaths": [
-      "/Student_Notes"
-    ],
-    "summary": "Array with 1 item(s)"
+    "action": "add",
+    "ok": true
   }
 ]
-[19:00:35.495] AFTER view /Student_Notes — Student_Notes array (1 items)
+[15:22:43.872] AFTER add /Student_Notes — Student_Notes array (8 items)
 [
-  "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain.",
+  "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear.",
+  "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings.",
+  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue.",
+  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided.",
+  "April 10 Session (continued): Gal pressed 'Help' button after navigating back to Home from the space/rockets exploration. This may indicate: (1) uncertainty about what to do next, (2) need for assistance with navigation, or (3) genuine need for support. Monitor whether Help button becomes a pattern for re-engagement when Gal cycles through menus."
 ]
 
 ============================================================
   buildPromptAndTools — AI memory view
 ============================================================
-[19:00:35.501] memoryValues.Student_Notes (1 items)
+[15:22:43.893] memoryValues.Student_Notes (8 items)
 [
-  "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain.",
+  "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear.",
+  "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings.",
+  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue.",
+  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided.",
+  "April 10 Session (continued): Gal pressed 'Help' button after navigating back to Home from the space/rockets exploration. This may indicate: (1) uncertainty about what to do next, (2) need for assistance with navigation, or (3) genuine need for support. Monitor whether Help button becomes a pattern for re-engagement when Gal cycles through menus."
 ]
-[19:00:35.502] memoryValues.Student_People (0 items)
+[15:22:43.895] memoryValues.Student_People (0 items)
 []
-[19:00:35.504] memoryValues.Student_Interests (4 items)
+[15:22:43.897] memoryValues.Student_Interests (4 items)
 [
   "facts",
   "drawing",
   "music",
   "science"
 ]
-[19:00:35.505] memoryValues.Student_Preferences
+[15:22:43.899] memoryValues.Student_Preferences
 {
   "FavoriteActivities": [
     "drawing",
@@ -822,11 +319,11 @@ Notes:
     "interactive exploration"
   ]
 }
-[19:00:35.507] memoryValues.Student_CommunicationStyle
+[15:22:43.901] memoryValues.Student_CommunicationStyle
 {
   "PrimaryMethod": "AAC"
 }
-[19:00:35.508] memoryVisualization — data section (67 lines)
+[15:22:43.903] memoryVisualization — data section (76 lines)
 === Current Memory ===
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
@@ -846,8 +343,369 @@ Notes:
   - RewardPreferences: {array} (empty)
   - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
   ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
-  - [0]: "Gal strongly prefers interactive apps (drawing, music) over passive activities and consistently chooses the iPad as his device of choice. He engages well with 'Facts' and 'Science' interests through hands-on exploration (experiments, how things work, chemistry, weather) and farm games."
+• /Student_Notes (array, 8 items) — General notes about the student (non-sensitive) 
+  - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
+  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection."
+  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain."
+  - [3]: "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear."
+  - [4]: "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings."
+  - [5]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue."
+  - [6]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided."
+  - [7]: "April 10 Session (continued): Gal pressed 'Help' button after navigating back to Home from the space/rockets exploration. This may indicate: (1) uncertainty about what to do next, (2) need for assistance with navigation, or (3) genuine need for support. Monitor whether Help button becomes a pattern for re-engagement when Gal cycles through menus."
+  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
+• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
+  - Articles on Rett Syndrome: {object} (view to expand)
+  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
+  - Preschool SLP Goals Bank: {object} (view to expand)
+• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
+  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
+• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
+• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
+• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
+• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
+• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
+• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
+• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
+  ↪ To expand: view "/Context_Progress/*". (read-only)
+• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
+  - prompt: "You are an advanced conversational AI designed to assist AAC (Augmentative and Alternative Communication) users.\nYou should:\n- Respond in a friendly, supportive manner\n- Keep responses concise and clear\n- Help expand on the user's symbol selections to form complete thoughts\n- Ask clarifying questions when needed\n- Be patient and encouraging" — The full custom prompt text
+  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
+• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
+
+Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
+Operate only on visible paths or their parent container. To reveal children:
+  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
+Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
+
+=== Schema Hints (add/insert/upsert in current scope) ===
+• /Student_People — ARRAY of object
+  item.required: [Name]
+  item.props: Name:string, Relationship:string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
+• /Student_Interests — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
+• /Student_Preferences/FavoriteActivities — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
+• /Student_Preferences/RewardPreferences — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
+• /Student_Preferences/AvoidTopics — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
+• /Student_Notes — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
+• /Context_Library — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, object>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
+
+Notes:
+- When item/value is an OBJECT, include all listed "required" keys when creating it.
+- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
+- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
+
+============================================================
+  buildPromptAndTools — AI memory view
+============================================================
+[15:22:52.914] memoryValues.Student_Notes (8 items)
+[
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain.",
+  "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear.",
+  "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings.",
+  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue.",
+  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided.",
+  "April 10 Session (continued): Gal pressed 'Help' button after navigating back to Home from the space/rockets exploration. This may indicate: (1) uncertainty about what to do next, (2) need for assistance with navigation, or (3) genuine need for support. Monitor whether Help button becomes a pattern for re-engagement when Gal cycles through menus."
+]
+[15:22:52.916] memoryValues.Student_People (0 items)
+[]
+[15:22:52.917] memoryValues.Student_Interests (4 items)
+[
+  "facts",
+  "drawing",
+  "music",
+  "science"
+]
+[15:22:52.919] memoryValues.Student_Preferences
+{
+  "FavoriteActivities": [
+    "drawing",
+    "music",
+    "interactive apps",
+    "interactive exploration"
+  ]
+}
+[15:22:52.921] memoryValues.Student_CommunicationStyle
+{
+  "PrimaryMethod": "AAC"
+}
+[15:22:52.922] memoryVisualization — data section (74 lines)
+=== Current Memory ===
+• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
+  (may contain items - view "/Student_People" to load from database)
+  ↪ To append: action "add" at "/Student_People" with value.
+• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
+  - [0]: "facts"
+  - [1]: "drawing"
+  - [2]: "music"
+  - [3]: "science"
+  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
+• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
+  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
+  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
+  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
+• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
+  - FavoriteActivities: {array} (hidden)
+  - RewardPreferences: {array} (empty)
+  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
+  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
+• /Student_Notes (array, 8 items) — General notes about the student (non-sensitive) 
+  - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
+  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection."
+  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain."
+  - [3]: "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear."
+  - [4]: "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings."
+  - [5]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue."
+  - [6]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided."
+  - [7]: "April 10 Session (continued): Gal pressed 'Help' button after navigating back to Home from the space/rockets exploration. This may indicate: (1) uncertainty about what to do next, (2) need for assistance with navigation, or (3) genuine need for support. Monitor whether Help button becomes a pattern for re-engagement when Gal cycles through menus."
+  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
+• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
+  (may contain items - view "/Context_Library" to load from database)
+• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
+  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
+• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
+• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
+• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
+• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
+• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
+• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
+• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
+  ↪ To expand: view "/Context_Progress/*". (read-only)
+• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
+  - prompt: <string> — The full custom prompt text (empty)
+  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
+• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
+
+Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
+Operate only on visible paths or their parent container. To reveal children:
+  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
+Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
+
+=== Schema Hints (add/insert/upsert in current scope) ===
+• /Student_People — ARRAY of object
+  item.required: [Name]
+  item.props: Name:string, Relationship:string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
+• /Student_Interests — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
+• /Student_Preferences/FavoriteActivities — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
+• /Student_Preferences/RewardPreferences — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
+• /Student_Preferences/AvoidTopics — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
+• /Student_Notes — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
+• /Context_Library — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, object>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
+
+Notes:
+- When item/value is an OBJECT, include all listed "required" keys when creating it.
+- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
+- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
+
+============================================================
+  manageMemory called
+============================================================
+[15:22:56.665] INPUT
+{
+  "ops": "[{\"action\": \"add\", \"path\": \"/Student_Notes\", \"value\": \"April 10 Session (continued): Gal pressed 'Help', then entered guessing mode by pressing 'Thinking' twice in succession. This may indicate: (1) genuine uncertainty about what activity to engage in, (2) need for reassurance or support, or (3) continued cycling pattern. Gal is not selecting a specific category (Actions, People, Things, Places, Feelings, Time) but repeating the 'Thinking' button. Monitor for engagement or frustration.\"}]\n</invoke>"
+}
+
+============================================================
+  buildPromptAndTools — AI memory view
+============================================================
+[15:22:56.677] memoryValues.Student_Notes (8 items)
+[
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain.",
+  "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear.",
+  "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings.",
+  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue.",
+  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided.",
+  "April 10 Session (continued): Gal pressed 'Help' button after navigating back to Home from the space/rockets exploration. This may indicate: (1) uncertainty about what to do next, (2) need for assistance with navigation, or (3) genuine need for support. Monitor whether Help button becomes a pattern for re-engagement when Gal cycles through menus."
+]
+[15:22:56.679] memoryValues.Student_People (0 items)
+[]
+[15:22:56.681] memoryValues.Student_Interests (4 items)
+[
+  "facts",
+  "drawing",
+  "music",
+  "science"
+]
+[15:22:56.683] memoryValues.Student_Preferences
+{
+  "FavoriteActivities": [
+    "drawing",
+    "music",
+    "interactive apps",
+    "interactive exploration"
+  ]
+}
+[15:22:56.685] memoryValues.Student_CommunicationStyle
+{
+  "PrimaryMethod": "AAC"
+}
+[15:22:56.687] memoryVisualization — data section (74 lines)
+=== Current Memory ===
+• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
+  (may contain items - view "/Student_People" to load from database)
+  ↪ To append: action "add" at "/Student_People" with value.
+• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
+  - [0]: "facts"
+  - [1]: "drawing"
+  - [2]: "music"
+  - [3]: "science"
+  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
+• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
+  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
+  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
+  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
+• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
+  - FavoriteActivities: {array} (hidden)
+  - RewardPreferences: {array} (empty)
+  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
+  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
+• /Student_Notes (array, 8 items) — General notes about the student (non-sensitive) 
+  - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
+  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection."
+  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain."
+  - [3]: "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear."
+  - [4]: "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings."
+  - [5]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue."
+  - [6]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided."
+  - [7]: "April 10 Session (continued): Gal pressed 'Help' button after navigating back to Home from the space/rockets exploration. This may indicate: (1) uncertainty about what to do next, (2) need for assistance with navigation, or (3) genuine need for support. Monitor whether Help button becomes a pattern for re-engagement when Gal cycles through menus."
+  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
+• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
+  (may contain items - view "/Context_Library" to load from database)
+• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
+  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
+• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
+• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
+• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
+• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
+• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
+• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
+• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
+  ↪ To expand: view "/Context_Progress/*". (read-only)
+• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
+  - prompt: <string> — The full custom prompt text (empty)
+  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
+• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
+
+Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
+Operate only on visible paths or their parent container. To reveal children:
+  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
+Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
+
+=== Schema Hints (add/insert/upsert in current scope) ===
+• /Student_People — ARRAY of object
+  item.required: [Name]
+  item.props: Name:string, Relationship:string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
+• /Student_Interests — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
+• /Student_Preferences/FavoriteActivities — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
+• /Student_Preferences/RewardPreferences — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
+• /Student_Preferences/AvoidTopics — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
+• /Student_Notes — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
+• /Context_Library — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, object>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
+
+Notes:
+- When item/value is an OBJECT, include all listed "required" keys when creating it.
+- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
+- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
+
+============================================================
+  manageMemory called
+============================================================
+[15:22:58.572] INPUT
+{
+  "ops": "[{\"action\": \"add\", \"path\": \"/Student_Notes\", \"value\": \"April 10 Session (continued): Gal pressed 'Help', then entered guessing mode by pressing 'Thinking' twice in succession. This may indicate: (1) genuine uncertainty about what activity to engage in, (2) need for reassurance or support, or (3) continued cycling pattern. Gal is not selecting a specific category (Actions, People, Things, Places, Feelings, Time) but repeating the 'Thinking' button. Monitor for engagement or frustration.\"}]\n</invoke>"
+}
+
+============================================================
+  buildPromptAndTools — AI memory view
+============================================================
+[15:22:58.583] memoryValues.Student_Notes (8 items)
+[
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain.",
+  "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear.",
+  "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings.",
+  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue.",
+  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided.",
+  "April 10 Session (continued): Gal pressed 'Help' button after navigating back to Home from the space/rockets exploration. This may indicate: (1) uncertainty about what to do next, (2) need for assistance with navigation, or (3) genuine need for support. Monitor whether Help button becomes a pattern for re-engagement when Gal cycles through menus."
+]
+[15:22:58.587] memoryValues.Student_People (0 items)
+[]
+[15:22:58.588] memoryValues.Student_Interests (4 items)
+[
+  "facts",
+  "drawing",
+  "music",
+  "science"
+]
+[15:22:58.590] memoryValues.Student_Preferences
+{
+  "FavoriteActivities": [
+    "drawing",
+    "music",
+    "interactive apps",
+    "interactive exploration"
+  ]
+}
+[15:22:58.591] memoryValues.Student_CommunicationStyle
+{
+  "PrimaryMethod": "AAC"
+}
+[15:22:58.593] memoryVisualization — data section (74 lines)
+=== Current Memory ===
+• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
+  (may contain items - view "/Student_People" to load from database)
+  ↪ To append: action "add" at "/Student_People" with value.
+• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
+  - [0]: "facts"
+  - [1]: "drawing"
+  - [2]: "music"
+  - [3]: "science"
+  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
+• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
+  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
+  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
+  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
+• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
+  - FavoriteActivities: {array} (hidden)
+  - RewardPreferences: {array} (empty)
+  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
+  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
+• /Student_Notes (array, 8 items) — General notes about the student (non-sensitive) 
+  - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
+  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection."
+  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain."
+  - [3]: "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear."
+  - [4]: "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings."
+  - [5]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue."
+  - [6]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided."
+  - [7]: "April 10 Session (continued): Gal pressed 'Help' button after navigating back to Home from the space/rockets exploration. This may indicate: (1) uncertainty about what to do next, (2) need for assistance with navigation, or (3) genuine need for support. Monitor whether Help button becomes a pattern for re-engagement when Gal cycles through menus."
   ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
 • /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
   (may contain items - view "/Context_Library" to load from database)

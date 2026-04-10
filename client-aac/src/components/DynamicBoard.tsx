@@ -385,6 +385,12 @@ export default function DynamicBoard({
         return;
       }
 
+      // Handle exit action or exitBoard flag — send to server for unloading
+      if (action?.type === "exit" || (button as any).exitBoard) {
+        onButtonClick(button, button.label);
+        return;
+      }
+
       // Default: speak action
       const textToSpeak = button.spokenText || button.label;
       if (!suppressLocalSpeech) {
@@ -449,7 +455,11 @@ export default function DynamicBoard({
     const isLinkButton = actionType === "link";
     const isBackButton = actionType === "back" || actionType === "home";
 
-    const borderClass = isLinkButton
+    const isGuessButton = (button as any).buttonType === "guess";
+
+    const borderClass = isGuessButton
+      ? "border-amber-400 border-2 ring-2 ring-amber-300/50"
+      : isLinkButton
       ? "border-blue-400 border-2"
       : isBackButton
         ? "border-amber-400 border-2"
@@ -492,12 +502,12 @@ export default function DynamicBoard({
     const imgStyle = { maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", objectFit: "contain" as const };
     const emojiStyle = { fontSize: iconFontSize, lineHeight: 1 };
 
-    const renderLoadingOverlay = (emoji: string) => (
-      <span style={{ ...emojiStyle, position: "relative" as const, display: "inline-block" }}>
+    const renderLoadingOverlay = (emoji: string, halfSize = false) => (
+      <span style={{ ...emojiStyle, ...(halfSize ? { fontSize: `calc(${iconFontSize} * 0.5)` } : {}), position: "relative" as const, display: "inline-block" }}>
         {emoji}
         <span style={{
           position: "absolute", top: -2, right: -6, width: 10, height: 10, borderRadius: "50%",
-          border: "2px solid rgba(255,255,255,0.5)", borderTopColor: "transparent",
+          border: "2px solid rgba(59,130,246,0.5)", borderTopColor: "transparent",
           display: "inline-block",
           animation: "dynamic-board-spin 1s linear infinite",
         }} />
@@ -524,10 +534,12 @@ export default function DynamicBoard({
     // Show emoji with loading spinner while symbol is being generated
     if ((button as any).imageKey) {
       const emoji = button.iconRef && isDisplayableIcon(button.iconRef) ? button.iconRef : getEmojiForLabel(button.label);
-      return renderLoadingOverlay(emoji);
+      return renderLoadingOverlay(emoji, emoji.length > 2);
     }
     if (button.iconRef && isDisplayableIcon(button.iconRef)) {
-      return <span style={emojiStyle}>{button.iconRef}</span>;
+      // If icon contains multiple emojis (e.g. "🏞️🌳"), halve the font size
+      const style = button.iconRef.length > 2 ? { ...emojiStyle, fontSize: `calc(${iconFontSize} * 0.5)` } : emojiStyle;
+      return <span style={style}>{button.iconRef}</span>;
     }
     if (button.iconRef) {
       return <i className={button.iconRef} style={emojiStyle} />;

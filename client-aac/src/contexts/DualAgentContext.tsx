@@ -36,6 +36,7 @@ interface DualAgentContextType {
 
   // Board state
   currentBoard: ParsedBoardData | null;
+  contextButtons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: string }>;
 
   // Interaction mode
   interactionMode: 'interact' | 'silent';
@@ -53,6 +54,7 @@ interface DualAgentContextType {
   initialize: () => Promise<void>;
   sendMessage: (message: string) => Promise<void>;
   sendContextOnly: (text: string) => void;
+  sendBoardExit: (label: string, instruction: string) => void;
   interpretButtons: (recentButtons: string[], sentences?: Record<string, string>, board?: ParsedBoardData) => Promise<void>;
   startVoiceRecording: () => Promise<void>;
   stopVoiceRecording: () => Promise<void>;
@@ -125,6 +127,9 @@ interface DualAgentContextType {
   /** Transient safety block indicator (auto-clears after 5s) */
   safetyBlocked: boolean;
 
+  // Guessing mode
+  guessingMode: boolean;
+
   // PCM gating debug (Live API only)
   pcmDebug: {
     /** Whether mic PCM is currently blocked (isBusyRef from audio player) */
@@ -185,6 +190,8 @@ function DualAgentProviderInner({
   pitchByTag,
 }: DualAgentProviderProps) {
   const [currentBoard, setCurrentBoard] = React.useState<ParsedBoardData | null>(null);
+  // Context sidebar: queue of buttons, last 4 visible. New buttons push oldest out.
+  const [contextButtons, setContextButtons] = React.useState<Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: string }>>([]);
   const [boardPatch, setBoardPatch] = React.useState<BoardPatch | null>(null);
   const [symbolUpdate, setSymbolUpdate] = React.useState<{ buttonLabel: string; symbolPath: string } | null>(null);
   const [aiButtonPress, setAiButtonPress] = React.useState<{ label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] } | null>(null);
@@ -286,6 +293,13 @@ function DualAgentProviderInner({
     studentId,
     language,
     onBoardUpdate: handleBoardUpdate,
+    onContextBoardUpdate: useCallback((buttonData: any) => {
+      setContextButtons(prev => {
+        const next = [...prev, buttonData];
+        // Keep last 4 visible (but store all for potential scroll-back)
+        return next.slice(-4);
+      });
+    }, []),
     onBoardPatch: handleBoardPatch,
     onSetBoard: handleSetBoard,
     onUnloadBoard: handleUnloadBoard,
@@ -458,6 +472,7 @@ function DualAgentProviderInner({
       studentId={studentId}
       agent={liveAgent}
       currentBoard={currentBoard}
+      contextButtons={contextButtons}
       setCurrentBoard={setCurrentBoard}
       boardPatch={boardPatch}
       symbolUpdate={symbolUpdate}
@@ -467,6 +482,7 @@ function DualAgentProviderInner({
       setOnUnloadBoard={setOnUnloadBoard}
       sendMessage={sendMessage}
       sendContextOnly={sendContextOnly}
+      sendBoardExit={liveAgent.sendBoardExit}
       stopVoiceRecording={stopVoiceRecording}
       registerAppCanvasCapture={registerAppCanvasCapture}
       getFaceImage={getFaceImageProp ?? (() => null)}
@@ -487,6 +503,7 @@ interface ProviderShellProps {
   studentId: string;
   agent: UseDualAgentReturn;
   currentBoard: ParsedBoardData | null;
+  contextButtons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: string }>;
   setCurrentBoard: (board: ParsedBoardData | null) => void;
   boardPatch: BoardPatch | null;
   symbolUpdate: { buttonLabel: string; symbolPath: string } | null;
@@ -496,6 +513,7 @@ interface ProviderShellProps {
   setOnUnloadBoard: (callback: (() => void) | null) => void;
   sendMessage: (message: string) => Promise<void>;
   sendContextOnly: (text: string) => void;
+  sendBoardExit: (label: string, instruction: string) => void;
   stopVoiceRecording: () => Promise<void>;
   registerAppCanvasCapture: (fn: (() => Promise<Blob | null>) | null) => void;
   getFaceImage: (contactId: string) => string | null;
@@ -520,6 +538,7 @@ function ProviderShell({
   studentId,
   agent,
   currentBoard,
+  contextButtons,
   setCurrentBoard,
   boardPatch,
   symbolUpdate,
@@ -529,6 +548,7 @@ function ProviderShell({
   setOnUnloadBoard,
   sendMessage,
   sendContextOnly,
+  sendBoardExit,
   stopVoiceRecording,
   registerAppCanvasCapture,
   getFaceImage,
@@ -557,6 +577,7 @@ function ProviderShell({
     recordingDuration: agent.recordingDuration,
 
     currentBoard,
+    contextButtons,
 
     interactionMode: agent.interactionMode,
     setInteractionMode: agent.setInteractionMode,
@@ -570,6 +591,7 @@ function ProviderShell({
     initialize: agent.initialize,
     sendMessage,
     sendContextOnly,
+    sendBoardExit,
     interpretButtons: agent.interpretButtons,
     startVoiceRecording: agent.startRecording,
     stopVoiceRecording,
@@ -623,6 +645,8 @@ function ProviderShell({
 
     reconnecting: agent.reconnecting ?? false,
     safetyBlocked: agent.safetyBlocked ?? false,
+
+    guessingMode: agent.guessingMode ?? false,
 
     pcmDebug: pcmDebugProp ?? { audioBusy: false, isPlaying: false, sentCount: 0, gatedCount: 0 },
   };
