@@ -16,6 +16,7 @@ import type {
 import { GeminiLiveProvider } from "./gemini-live-provider";
 import { parseBoardButtons } from "./interactive-agent";
 import { getAppDefinition, APP_REGISTRY } from "./app-registry";
+import { buildDefaultHomeBoard, HOME_BOARD_KEY } from "./default-home-board";
 import type {
   AACInteractionMode,
   AACResponseMode,
@@ -58,12 +59,23 @@ function extractStringArg(args: Record<string, any>, declaredName: string, fallb
   return fallback;
 }
 
+/** Stringify a WebSocket message for logging. Truncates large base64 strings inline
+ *  but keeps the rest of the object structure intact so we see real content. */
+function stringifyMsg(msg: any): string {
+  return JSON.stringify(msg, (_key, value) => {
+    if (typeof value === "string" && value.length > 200) {
+      return `[${value.length} chars]`;
+    }
+    return value;
+  });
+}
+
 /** Convert tool-call button args to internal format.
  *  Accepts multiple formats the model may produce:
  *  - String (preferred):  "Play|🎮, Water|💧, Help|face:abc123"  (parseBoardButtons format)
  *  - Array of strings:    ["Play|🎮", "Water|💧"]  (fallback — join and parse)
  *  - Object array:        [{label, icon}]  (OpenAI / legacy) */
-function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string }> {
+function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: "guess" | "category" }> {
   // String — the expected format from native audio models: "label|icon, label|icon"
   if (typeof raw === "string") {
     return parseBoardButtons(raw as string);
@@ -140,6 +152,7 @@ export type ClientMessage =
   | { type: "user_message"; text: string }
   | { type: "voice_audio"; data: string; mimeType?: string }       // base64 webm (ignored in live mode — Gemini hears PCM directly)
   | { type: "button_press"; buttons: string[]; sentences?: Record<string, string>; board?: any }
+  | { type: "board_exit"; label: string; instruction: string }  // exit button pressed on loaded board
   | { type: "gesture_context"; data: string }
   | { type: "person_context"; data: any }
   | { type: "board_state"; data: any }
@@ -190,6 +203,8 @@ export type ServerMessage =
   | { type: "focus_request"; data: { reason: string } }  // AI requests a high-res focus frame
   | { type: "session_snapshot"; snapshot: import("@shared/aac-local-storage").AacSessionSnapshot; config: import("@shared/aac-local-storage").AacLocalStorageConfig }
   | { type: "symbol_update"; data: { buttonLabel: string; symbolPath: string } }  // Auto-generated symbol ready — update button
+  | { type: "context_button_add"; data: any }                 // Add one button to context sidebar (scrolls oldest out)
+  | { type: "guessing_mode"; active: boolean }              // Guessing mode entered/exited
   | { type: "complete"; data?: any };
 
 // ---------------------------------------------------------------------------
@@ -272,6 +287,15 @@ export class LiveRelay {
   private static readonly PING_INTERVAL_MS = 30_000;
   private static readonly SNAPSHOT_INTERVAL_MS = 30_000;
 
+  // Default home board data (virtual — not stored in DB)
+  private homeBoardData: import("@shared/schema").ParsedBoardData | null = null;
+
+  // Context sidebar buttons (server-side tracking, last 4 visible)
+  private contextButtonLabels: string[] = [];
+
+  // Guessing mode tracking
+  private guessingMode = false;
+
   // Pre-generated student TTS (for button presses)
   private preGenTtsPromise: Promise<void> | null = null;
 
@@ -279,6 +303,33 @@ export class LiveRelay {
   private directAudioChunks: string[] = [];
   private directAudioFlushTimer: ReturnType<typeof setTimeout> | null = null;
   private static readonly AUDIO_FLUSH_INTERVAL_MS = 250;
+  // Track when the last audio chunk arrived — visual checks are suppressed during active speech
+  private lastAudioChunkAt = 0;
+  private static readonly AUDIO_COOLDOWN_MS = 3000;
+
+  // Silence keepalive — Gemini's native audio model expects a continuous stream.
+  // When the client isn't sending PCM (e.g. mic not yet started, mic muted), we
+  // send silent PCM to keep the model from hallucinating spontaneous turns.
+  private lastClientPcmAt = 0;
+  private silenceKeepaliveTimer: ReturnType<typeof setInterval> | null = null;
+  private static readonly SILENCE_KEEPALIVE_MS = 100;     // ~100ms chunks
+  private static readonly CLIENT_PCM_TIMEOUT_MS = 200;    // send silence if no client PCM for 200ms
+  // 100ms of silent 16kHz mono Int16 PCM = 1600 samples * 2 bytes = 3200 bytes (zeroed)
+  private static readonly SILENCE_PCM_BASE64 = Buffer.alloc(3200).toString("base64");
+
+  // Pending queue for client messages received while the AI is generating.
+  // Without this queue, button presses during in_turn/processing_turn states are
+  // silently dropped, causing buttons to "fail" while the AI is responding.
+  private pendingClientMessages: ClientMessage[] = [];
+
+  // When true, the next model turn is a debug introspection response (the model
+  // is telling us what it just tried to call). We capture the text and don't
+  // forward audio to the client.
+  private awaitingMalformedDebugResponse = false;
+  private malformedDebugBuffer = "";
+  // Number of times we've asked the model to retry a malformed call.
+  private malformedRetryCount = 0;
+  private static readonly MALFORMED_MAX_RETRIES = 2;
 
   constructor(ws: WebSocket) {
     this.ws = ws;
@@ -286,6 +337,8 @@ export class LiveRelay {
     ws.on("message", (raw) => {
       try {
         const msg: ClientMessage = JSON.parse(raw.toString());
+        // Log every incoming client message — truncate only base64 audio/image strings, keep objects intact
+        logLiveSession("CLIENT → SERVER", `state=${this.state} ${stringifyMsg(msg)}`);
         this.handleClientMessage(msg);
       } catch (err) {
         console.error("[LiveRelay] Invalid client message:", err);
@@ -314,8 +367,22 @@ export class LiveRelay {
   // -------------------------------------------------------------------------
 
   private setState(newState: RelayState): void {
-    logLiveSession("STATE", `${this.state} -> ${newState}`);
+    const prev = this.state;
+    logLiveSession("STATE", `${prev} -> ${newState}`);
     this.state = newState;
+    // When state transitions to idle, drain any queued client messages.
+    // Process them on the next tick so the current call stack unwinds first.
+    if (newState === "idle" && prev !== "idle" && this.pendingClientMessages.length > 0) {
+      setImmediate(() => this.drainPendingMessages());
+    }
+  }
+
+  private drainPendingMessages(): void {
+    if (this.pendingClientMessages.length === 0) return;
+    if (this.state !== "idle" && this.state !== "awaiting_turn") return;
+    const next = this.pendingClientMessages.shift()!;
+    logLiveSession("DRAIN queued", `type=${next.type} remaining=${this.pendingClientMessages.length}`);
+    this.handleClientMessage(next);
   }
 
   // -------------------------------------------------------------------------
@@ -331,8 +398,8 @@ export class LiveRelay {
         }
       },
 
-      onTurnComplete: () => {
-        this.handleTurnComplete().catch(err => {
+      onTurnComplete: (reason?: string) => {
+        this.handleTurnComplete(reason).catch(err => {
           console.error("[LiveRelay] handleTurnComplete error:", err);
         });
       },
@@ -352,9 +419,13 @@ export class LiveRelay {
       },
 
       onAudioData: (data) => {
+        // Don't forward audio during debug introspection — it's for us, not the user
+        if (this.awaitingMalformedDebugResponse) return;
         if (this.useDirectAudio) {
           this.directAudioChunks.push(data.data);
           this.hasGreeted = true;
+          this.lastAudioChunkAt = Date.now();
+          logLiveSession("GEMINI → audioChunk", `state=${this.state} chunkLength=${data.data.length} totalChunks=${this.directAudioChunks.length}`);
           // Schedule a flush — accumulate chunks for smoother playback
           if (!this.directAudioFlushTimer) {
             this.directAudioFlushTimer = setTimeout(() => {
@@ -365,6 +436,12 @@ export class LiveRelay {
       },
 
       onOutputTranscription: (text) => {
+        logLiveSession("GEMINI → outputTranscription", `state=${this.state} text="${text}"`);
+        // Capture into debug buffer instead of forwarding when introspecting
+        if (this.awaitingMalformedDebugResponse) {
+          if (text.trim()) this.malformedDebugBuffer += text;
+          return;
+        }
         if (this.useDirectAudio && text.trim()) {
           this.turnAccum.speakText += (this.turnAccum.speakText ? " " : "") + text.trim();
           this.send({ type: "text", data: text, noAudioClear: true });
@@ -384,6 +461,12 @@ export class LiveRelay {
       onReady: () => {
         console.log("[LiveRelay] Provider session ready");
         this.reconnectAttempts = 0;
+
+        // Start silence keepalive — Gemini's native audio model expects a continuous
+        // input stream, and hallucinates spontaneous turns when it gets nothing.
+        if (this.useDirectAudio) {
+          this.startSilenceKeepalive();
+        }
 
         if (!this.initialConnectionDone) {
           // Initial connection
@@ -413,7 +496,7 @@ export class LiveRelay {
           console.log("[LiveRelay] Reconnected before greeting — re-prompting");
           const prompt = this.interactionMode === "silent"
             ? `Generate 4-12 contextual utterance buttons using rebuild_board().`
-            : `Call rebuild_board() with 4-12 initial communication buttons, then greet the user.`;
+            : `The home board is loaded. Greet the user with your voice. Wait for them to press a button before changing the board.`;
           this.setState("awaiting_turn");
           this.provider!.sendMessage(prompt, "user");
         } else {
@@ -497,27 +580,21 @@ export class LiveRelay {
 
         case "frame_grid": {
           if (this.paused) break;
-          // Only send frames when idle
-          if (this.state !== "idle") {
-            logLiveSession("FRAME_GRID SUPPRESSED", `state=${this.state}`);
-            break;
+          // Send frame as passive context (turnComplete=false) — model absorbs it
+          // without generating audio. In direct audio mode, any turnComplete=true
+          // causes the model to speak its response aloud.
+          this.provider!.sendFrame(msg.data, false);
+          if (this.latestAppCanvas) {
+            this.provider!.sendFrame(this.latestAppCanvas, false);
           }
-
-          this.setState("awaiting_turn");
-          const extraImages = this.latestAppCanvas
-            ? [{ data: this.latestAppCanvas, mimeType: "image/png", label: "The student is using the Drawing app. This image shows their current drawing. You may update buttons to reflect what the student is currently drawing." }]
-            : undefined;
-          this.provider!.sendFrameWithPrompt(
-            msg.data,
-            `[VISUAL CHECK] Observe the scene. Update the AAC board if you see new objects, activities, or communication opportunities. Stay silent if nothing important changed.`,
-            extraImages,
-          );
           break;
         }
 
         case "pcm_audio": {
-          // PCM audio ALWAYS flows — never gated by state
+          // PCM audio ALWAYS flows — never gated by state.
+          // Don't remove this, the model is designed to ignore echoes so this shouldn't be the cause of bugs.
           if (this.paused) break;
+          this.lastClientPcmAt = Date.now();
           this.provider!.sendAudio(msg.data);
           break;
         }
@@ -531,7 +608,7 @@ export class LiveRelay {
           this.setState("awaiting_turn");
           this.provider!.sendFrameWithPrompt(
             msg.data,
-            `[FOCUS FRAME] This is a HIGH-RESOLUTION single frame captured at your request. Analyze the image carefully for fine details, text, labels, faces, or objects you couldn't identify before. Report findings via context() tool and update the board if needed.`,
+            `[FOCUS FRAME] This is a HIGH-RESOLUTION single frame captured at your request. Analyze the image carefully for fine details, text, labels, faces, or objects you couldn't identify before. Report findings via update_context() tool and update the board if needed.`,
           );
           console.log("[LiveRelay] Focus frame sent to Gemini");
           break;
@@ -539,7 +616,11 @@ export class LiveRelay {
 
         case "user_message": {
           if (this.paused) break;
-          if (this.state !== "idle" && this.state !== "awaiting_turn") break;
+          if (this.state !== "idle" && this.state !== "awaiting_turn") {
+            logLiveSession("QUEUED user_message", `state=${this.state} text="${msg.text.substring(0, 60)}"`);
+            this.pendingClientMessages.push(msg);
+            break;
+          }
           this.setState("awaiting_turn");
 
           // Record user message in session state for monitor context + persist to DB
@@ -565,10 +646,79 @@ export class LiveRelay {
 
         case "button_press": {
           if (this.paused) break;
-          // Buttons can interrupt a pending visual check
-          if (this.state !== "idle" && this.state !== "awaiting_turn") break;
+          if (this.state !== "idle" && this.state !== "awaiting_turn") {
+            logLiveSession("QUEUED button_press", `state=${this.state} buttons=[${msg.buttons.join(", ")}]`);
+            this.pendingClientMessages.push(msg);
+            break;
+          }
           this.setState("awaiting_turn");
           this.handleButtonPress(msg.buttons, msg.sentences, msg.board);
+          break;
+        }
+
+        case "board_exit": {
+          // Exit button pressed on loaded board — client sends the action directly
+          if (this.paused) break;
+          if (this.state !== "idle" && this.state !== "awaiting_turn") {
+            logLiveSession("QUEUED board_exit", `state=${this.state} label="${msg.label}"`);
+            this.pendingClientMessages.push(msg);
+            break;
+          }
+
+          // Detect Home button press — server loads the home board directly
+          // (no AI tool call required) to avoid the rebuild_board side-panel
+          // truncation loop. The AI is informed via context injection.
+          const isHomePress = msg.label === "Home" ||
+            (msg.instruction && /set_board\(["']home["']\)|load.*home board/i.test(msg.instruction));
+
+          if (isHomePress) {
+            this.loadHomeBoardInternal();
+            if (this.sessionId) {
+              dualAgentService.addPendingMessage(this.sessionId, {
+                role: "user",
+                content: `[BUTTON PRESS] Home`,
+                timestamp: Date.now(),
+              }).catch(console.error);
+            }
+            this.provider!.sendContextInjection(
+              `[CONTEXT] The user pressed Home. The home board is now loaded with its native navigation buttons. Wait for them to press one of the home buttons before changing the board.`
+            );
+            break;
+          }
+
+          this.setState("awaiting_turn");
+
+          const exitState = this.sessionCache?.state;
+          if (exitState) {
+            exitState.loadedBoardId = null;
+            exitState.loadedBoardData = undefined;
+            exitState.currentPageId = null;
+            exitState.pageHistory = [];
+            exitState.aiAddedButtonLabels = [];
+            exitState.boardButtonLabels = [];
+            exitState.maxBoardItems = 12;
+          }
+          this.send({ type: "unload_board", data: {} });
+
+          // Detect guessing mode
+          if (msg.instruction.includes("[GUESSING MODE]") && !this.guessingMode) {
+            this.guessingMode = true;
+            this.send({ type: "guessing_mode", active: true });
+            logLiveSession("GUESSING_MODE", "Entered via board exit button");
+          }
+
+          if (this.sessionId) {
+            dualAgentService.addPendingMessage(this.sessionId, {
+              role: "user",
+              content: `[BUTTON PRESS] ${msg.label}`,
+              timestamp: Date.now(),
+            }).catch(console.error);
+          }
+
+          const exitInstruction = msg.instruction
+            ? `Board exited. The user pressed "${msg.label}". ${msg.instruction}`
+            : `Board exited. The user pressed "${msg.label}". Use rebuild_board() to create a new board for the current context.`;
+          this.provider!.sendMessage(exitInstruction, "user");
           break;
         }
 
@@ -638,7 +788,11 @@ export class LiveRelay {
 
         case "app_dismissed": {
           this.latestAppCanvas = null;
-          if (this.state !== "idle" && this.state !== "awaiting_turn") break;
+          if (this.state !== "idle" && this.state !== "awaiting_turn") {
+            logLiveSession("QUEUED app_dismissed", `state=${this.state} appId="${msg.appId}"`);
+            this.pendingClientMessages.push(msg);
+            break;
+          }
           this.setState("awaiting_turn");
           this.provider!.sendMessage(
             `[APP CLOSED] The user closed the "${msg.appId}" app and returned to the AAC board. The full board is now restored (up to 12 buttons). Comment briefly on what they were doing in the app, then use rebuild_board() to create a fresh set of communication buttons for the current context.`,
@@ -783,6 +937,17 @@ export class LiveRelay {
         }
       }
 
+      // 5b. Build the default home board (virtual — not stored in DB).
+      // The server manages the home board directly: it loads on init and on
+      // Home button press, without AI involvement. The AI is informed via
+      // context injection but cannot call set_board("home") — it's not in
+      // availableBoards. This avoids the loop where the AI tries to call
+      // set_board("home") and rebuild_board with too many buttons.
+      const studentLang = cached.monitorAgent.getStudent?.()?.primaryLanguage || "en";
+      this.homeBoardData = buildDefaultHomeBoard(studentLang);
+      // Load the home board immediately into session state
+      this.loadHomeBoardInternal(state);
+
       // 6. Build tools
       const toolConfig: ToolDeclarationConfig = {
         enabledApps: (cached.state.appState?.enabledApps || [])
@@ -857,11 +1022,15 @@ export class LiveRelay {
       const greetingPrompt = isSilent
         ? `Generate 4-12 contextual utterance buttons — complete phrases the user might want to say. Use the student's profile and interests from the system prompt to make them relevant.${imageHint} Use rebuild_board() to create the initial board.${boardHint}${personaHint}`
         : this.useDirectAudio
-        ? `Call rebuild_board() with 4-12 initial communication buttons, then greet the user with your voice.${imageHint}${boardHint}${personaHint}`
-        : `IMPORTANT: You communicate ONLY through function calls. Call rebuild_board() with 4-12 initial communication buttons, then call speak() to greet the user. Both must be function calls — do NOT output plain text.${imageHint}${boardHint}${personaHint}`;
+        ? `The home board is loaded with its native navigation buttons. Greet the user with your voice. Wait for them to press a button before changing the board.${imageHint}${personaHint}`
+        : `IMPORTANT: You communicate ONLY through function calls. The home board is loaded. Call speak() to greet the user. Wait for them to press a button before changing the board.${imageHint}${personaHint}`;
 
       this.hasGreeted = false;
-      this.pendingGreeting = { prompt: greetingPrompt, frame: msg.initialFrame || undefined };
+      // Do NOT include the initial frame in the greeting prompt — sending it via
+      // sendFrameWithPrompt consistently triggers MALFORMED_FUNCTION_CALL on the
+      // first turn. The frame will be sent separately as passive context shortly
+      // after via frame_grid.
+      this.pendingGreeting = { prompt: greetingPrompt };
 
       // Resolve local storage config
       const aacStudentSettings = cached.monitorAgent.getStudent?.()?.aacSettings;
@@ -969,17 +1138,18 @@ The user pressed "More" — they can't find the button they need on the current 
     // In direct audio mode, wait for student TTS to finish BEFORE sending the
     // prompt to Gemini. Otherwise Gemini's native audio response streams to the
     // client while the student voice is still playing, causing overlap.
+    const currentLabels = this.sessionCache?.state?.boardButtonLabels?.join(", ") || "none";
     const sendPrompt = () => {
       if (singleSentence) {
         this.provider!.sendMessage(`[BUTTON PRESS] ${buttonList}
-The student said: "${singleSentence}" (already voiced via TTS — do NOT transcribe this when you hear it through the mic).
-Respond if relevant. IMPORTANT: Use rebuild_board() (or set_board()) NOW to update the board.
-`, "user");
+The student said: "${singleSentence}" — this is being voiced RIGHT NOW in the student's own voice via TTS. You will hear it through the mic but it is NOT new speech. Do NOT transcribe it. WAIT UNTIL THE TTS PLAYBACK FINISHES (silence on the mic) BEFORE you start speaking your own response — your voice must not overlap with the student's voice.
+CURRENT MAIN BOARD: ${currentLabels}
+You MUST call rebuild_board() with new buttons that respond to this choice. Also use add_context_button() if you notice something relevant in the environment.`, "user");
       } else {
         this.provider!.sendMessage(`[BUTTON PRESS] ${buttonList}
 The user pressed the above button(s). Interpret this as a user message and respond accordingly.
-IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the board with new buttons or content.
-`, "user");
+CURRENT MAIN BOARD: ${currentLabels}
+You MUST call rebuild_board() with new buttons that respond to this. Also use add_context_button() if you notice something relevant in the environment.`, "user");
       }
     };
 
@@ -999,16 +1169,24 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
     const callNames = calls.map(c => c.name).join(", ");
     logLiveSession("handleToolCalls", `calls=[${callNames}] state=${this.state}`);
 
-    // If we're in processing_turn (duplicate turn), send minimal responses
+    // While waiting for malformed-debug response, the model is supposed to
+    // answer in plain text. If it tries another function call, capture the
+    // attempt and acknowledge via context injection so it doesn't get stuck.
+    // (See note further down about why we don't use sendToolResponse here.)
+    if (this.awaitingMalformedDebugResponse) {
+      const callDetail = JSON.stringify(calls.map(c => ({ name: c.name, args: c.args })));
+      logLiveSession("MALFORMED DEBUG: tool call instead of text", callDetail);
+      this.malformedDebugBuffer += `\n[Model called tools instead of answering in text: ${callDetail}]`;
+      this.provider?.sendContextInjection(`[FUNCTION RESULTS]\n${calls.map(c => `${c.name}: {"output":"ok"}`).join("\n")}`);
+      return;
+    }
+
+    // If we're in processing_turn (duplicate turn), acknowledge via context
+    // injection so the model knows the call was received but we don't trigger
+    // another generation cycle.
     if (this.state === "processing_turn") {
       logLiveSession("DUPLICATE TURN", `Suppressed ${callNames} — state=processing_turn`);
-      const suppressedResponses: ToolResponse[] = calls.map(c => ({
-        id: c.id,
-        name: c.name,
-        response: { output: "already handled" },
-        scheduling: "SILENT" as const,
-      }));
-      this.provider!.sendToolResponse(suppressedResponses);
+      this.provider?.sendContextInjection(`[FUNCTION RESULTS]\n${calls.map(c => `${c.name}: {"output":"already handled"}`).join("\n")}`);
       return;
     }
 
@@ -1036,20 +1214,40 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
       }
     }
 
-    // In direct audio mode, only send responses for BLOCKING tools
-    const responsesToSend = this.useDirectAudio
-      ? responses.filter(r => {
-          const isBlocking = ["speak", "interpret", "transcript", "context", "set_board", "press_button"].includes(r.name);
-          if (!isBlocking) logLiveSession("SKIPPED tool response", `${r.name} (non-blocking, direct audio mode)`);
-          return isBlocking;
-        })
-      : responses;
-
-    // Send responses with SILENT scheduling
-    if (responsesToSend.length > 0) {
-      const withScheduling = responsesToSend.map(r => ({ ...r, scheduling: "SILENT" as const }));
-      logLiveSession("sending tool responses", `count=${withScheduling.length} names=[${withScheduling.map(r => r.name).join(", ")}]`);
-      this.provider!.sendToolResponse(withScheduling);
+    // ────────────────────────────────────────────────────────────────────────
+    // Tool result delivery — IMPORTANT
+    //
+    // We DO NOT use sendToolResponse() here. On Vertex Live (gemini-live-2.5-
+    // flash-native-audio), the SDK rejects `behavior: NON_BLOCKING` on tool
+    // declarations, so every tool we declare is treated as BLOCKING. The
+    // `scheduling: "SILENT"` field is only honored for NON_BLOCKING tools per
+    // the SDK docs — for BLOCKING tools it is silently ignored. The result is
+    // that every sendToolResponse triggers the model to generate a NEW turn
+    // with new audio, producing the duplicate-response pattern (the model
+    // says one thing, gets the tool result, then says essentially the same
+    // thing again because the response prompted it to generate more output).
+    //
+    // The workaround: deliver tool results via sendClientContent with
+    // turnComplete=false (i.e. context injection). The model still receives
+    // the result in its conversation context but does NOT generate a new
+    // turn from it. We've verified this works in the minimal-live-relay test
+    // setup — duplication disappears entirely with this approach.
+    //
+    // NOTE FOR THE FUTURE: A future Gemini Live model release may properly
+    // honor SILENT scheduling for blocking tools, or allow NON_BLOCKING on
+    // Vertex. When that happens, switch back to sendToolResponse — it's the
+    // protocol-correct path. For now, this is a deliberate workaround.
+    // ────────────────────────────────────────────────────────────────────────
+    if (responses.length > 0 && this.provider) {
+      const lines = responses.map(r => {
+        const body = r.response?.error
+          ? `error: ${JSON.stringify(r.response.error)}`
+          : JSON.stringify(r.response ?? { output: "ok" });
+        return `${r.name}: ${body}`;
+      });
+      const text = `[FUNCTION RESULTS]\n${lines.join("\n")}`;
+      logLiveSession("delivering tool results via context injection", `count=${responses.length} names=[${responses.map(r => r.name).join(", ")}]`);
+      this.provider.sendContextInjection(text);
     }
   }
 
@@ -1099,23 +1297,68 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
         return { id: call.id, name, response: { output: "ok" } };
       }
 
-      case "context": {
+      case "update_context": {
         const text = extractStringArg(args, "text");
         this.send({ type: "context", data: text });
         this.turnAccum.contextText += (this.turnAccum.contextText ? " " : "") + text;
         return { id: call.id, name, response: { output: "ok" } };
       }
 
+      case "add_context_button": {
+        // Add ONE button to the context sidebar. Oldest scrolls out when full.
+        const ctxButtons = toolArgsToButtons(args.button);
+        if (ctxButtons.length === 0) {
+          return { id: call.id, name, response: { error: "No valid button provided" } };
+        }
+        const btn = ctxButtons[0];
+
+        // Deduplicate: if a button with the same label already exists, skip it
+        const existingIdx = this.contextButtonLabels.findIndex(
+          l => l.toLowerCase() === btn.label.toLowerCase()
+        );
+        if (existingIdx >= 0) {
+          return { id: call.id, name, response: {
+            output: "already exists",
+            current_context_buttons: this.contextButtonLabels.join(", "),
+          }};
+        }
+
+        const unresolvedKeys = await this.resolveExistingSymbols([btn]);
+        this.queueMissingSymbolGeneration([btn], unresolvedKeys);
+
+        // Track server-side and send to client
+        this.contextButtonLabels.push(btn.label);
+        if (this.contextButtonLabels.length > 4) {
+          this.contextButtonLabels.shift(); // oldest scrolls out
+        }
+
+        this.send({ type: "context_button_add", data: {
+          label: btn.label,
+          iconRef: btn.iconRef,
+          symbolPath: btn.symbolPath,
+          imageKey: btn.imageKey,
+          sentence: btn.sentence,
+          buttonType: btn.buttonType,
+        }});
+        logLiveSession("CONTEXT_BUTTON", `Added: ${btn.label} | Visible: [${this.contextButtonLabels.join(", ")}]`);
+
+        return { id: call.id, name, response: {
+          output: "ok",
+          added: btn.label,
+          current_context_buttons: this.contextButtonLabels.join(", "),
+        }};
+      }
+
       case "add_buttons": {
         const buttons = toolArgsToButtons(args.buttons);
-        const maxSlots = state?.maxBoardItems || 12;
+        const maxSlots = state?.maxBoardItems || 8;
 
         // When a prebuilt board is loaded, redirect to rebuild_board for the side panel
         if (state?.loadedBoardId) {
           return {
             id: call.id,
             name,
-            response: { error: "Cannot add buttons to a prebuilt board. Use rebuild_board() to update the 4-button side panel instead." },
+            response: { error: "Cannot add buttons to a prebuilt board. Call rebuild_board() to replace it with a dynamic board, or use add_context_button() to add to the context sidebar." },
           };
         }
 
@@ -1160,7 +1403,7 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
           return {
             id: call.id,
             name,
-            response: { error: "Cannot remove buttons from a prebuilt board. Use rebuild_board() to update the 4-button side panel instead." },
+            response: { error: "Cannot remove buttons from a prebuilt board. Call rebuild_board() to replace it with a dynamic board." },
           };
         }
 
@@ -1184,21 +1427,20 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
       }
 
       case "rebuild_board": {
-        const fullBoard = args.full_board === true;
-        const isPrebuiltLoaded = !!state?.loadedBoardId;
-        const useSidePanel = isPrebuiltLoaded && !fullBoard;
-        const maxSlots = useSidePanel ? 4 : 12;
+        // rebuild_board ALWAYS replaces the main board (max 8 buttons). If a custom
+        // board is currently loaded, it's unloaded first. The side panel (context
+        // sidebar) is separate and managed only by add_context_button.
+        const wasPrebuiltLoaded = !!state?.loadedBoardId;
+        const maxSlots = 8;
         const buttons = toolArgsToButtons(args.buttons).slice(0, maxSlots);
 
         if (state) {
-          if (!useSidePanel) {
-            state.loadedBoardId = null;
-            state.loadedBoardData = undefined;
-            state.currentPageId = null;
-            state.pageHistory = [];
-            state.maxBoardItems = 12;
-            state.aiAddedButtonLabels = [];
-          }
+          state.loadedBoardId = null;
+          state.loadedBoardData = undefined;
+          state.currentPageId = null;
+          state.pageHistory = [];
+          state.maxBoardItems = maxSlots;
+          state.aiAddedButtonLabels = [];
           state.boardButtonLabels = buttons.map(b => b.label);
         }
 
@@ -1206,7 +1448,7 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
         this.queueMissingSymbolGeneration(buttons, unresolvedKeys);
 
         this.lastBoardUpdateTime = Date.now();
-        if (isPrebuiltLoaded && fullBoard) {
+        if (wasPrebuiltLoaded) {
           this.send({ type: "unload_board", data: {} });
         }
         this.send({ type: "board", data: this.buildBoardFromButtons(buttons) });
@@ -1220,9 +1462,14 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
         this.turnAccum.boardRebuilt = true;
         this.turnAccum.boardAddLabels.push(...buttons.map(b => b.label));
 
-        const stateMsg = useSidePanel
-          ? `Side panel rebuilt. ${buttons.length}/4 buttons: ${buttons.map(b => b.label).join(", ")}`
-          : `Board rebuilt. ${buttons.length}/12 buttons (${12 - buttons.length} available): ${buttons.map(b => b.label).join(", ")}`;
+        // Guessing mode: exit if no [GUESS] buttons in the rebuild
+        if (this.guessingMode && !buttons.some(b => b.buttonType === "guess")) {
+          this.guessingMode = false;
+          this.send({ type: "guessing_mode", active: false });
+          logLiveSession("GUESSING_MODE", "Exited — rebuild_board has no [GUESS] buttons");
+        }
+
+        const stateMsg = `Main board rebuilt. ${buttons.length}/${maxSlots} buttons: ${buttons.map(b => b.label).join(", ")}`;
         return { id: call.id, name, response: { output: "ok", board_state: stateMsg } };
       }
 
@@ -1238,11 +1485,17 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
         }
 
         try {
-          const fullBoard = await boardRepository.getBoard(match.id);
-          if (!fullBoard?.irData) {
-            return { id: call.id, name, response: { error: "Board has no data" } };
+          // Virtual home board is in memory, not the DB
+          let boardData: any;
+          if (match.key === HOME_BOARD_KEY && this.homeBoardData) {
+            boardData = this.homeBoardData;
+          } else {
+            const fullBoard = await boardRepository.getBoard(match.id);
+            if (!fullBoard?.irData) {
+              return { id: call.id, name, response: { error: "Board has no data" } };
+            }
+            boardData = fullBoard.irData as any;
           }
-          const boardData = fullBoard.irData as any;
           state.loadedBoardId = match.id;
           state.loadedBoardData = boardData;
           state.currentPageId = boardData.pages?.[0]?.id || null;
@@ -1266,7 +1519,7 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
               board_name: match.name,
               pages: boardData.pages?.length || 1,
               board_buttons: nativeLabels.join(", "),
-              note: "Board loaded. The board's buttons are shown in the main area (you CANNOT modify them). You have a 4-button side panel — use rebuild_board with up to 4 contextual buttons. Do NOT repeat the board's existing buttons.",
+              note: "Board loaded. Its buttons are shown in the main area and cannot be modified by add_buttons/remove_buttons. To replace this board with a dynamic one, call rebuild_board(). The context sidebar (left) is separate — use add_context_button() for environment observations.",
             },
           };
         } catch (err) {
@@ -1322,7 +1575,7 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
         return {
           id: call.id,
           name,
-          response: { output: "ok. The app is now open on screen. IMPORTANT: The board now has only 4 button slots shown in a small side panel next to the app. You MUST call rebuild_board now with up to 4 contextual buttons relevant to this app activity." },
+          response: { output: "ok. The app is now open on screen. Call rebuild_board() with contextual buttons relevant to this app activity." },
         };
       }
 
@@ -1464,6 +1717,34 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
       return { output: "ok", page: homePage.name || homePage.id, buttons: buttonLabels };
     }
 
+    if (action.type === "exit") {
+      // Unload the board and return to the dynamic board
+      state.loadedBoardId = null;
+      state.loadedBoardData = undefined;
+      state.currentPageId = null;
+      state.pageHistory = [];
+      state.aiAddedButtonLabels = [];
+      state.boardButtonLabels = [];
+      state.maxBoardItems = 12;
+
+      this.send({ type: "unload_board", data: {} });
+
+      const instruction = action.text || "";
+
+      // Detect guessing mode entry
+      if (instruction.includes("[GUESSING MODE]") && !this.guessingMode) {
+        this.guessingMode = true;
+        this.send({ type: "guessing_mode", active: true });
+        logLiveSession("GUESSING_MODE", "Entered via home board button");
+      }
+
+      const message = instruction
+        ? `Board exited. The user pressed "${btn.label}". ${instruction}`
+        : `Board exited. The user pressed "${btn.label}". Use rebuild_board() to create a new board or set_board() to load another.`;
+
+      return { output: message };
+    }
+
     return { error: `Unknown action type: ${action.type}` };
   }
 
@@ -1471,8 +1752,67 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
   // Turn lifecycle
   // -------------------------------------------------------------------------
 
-  private async handleTurnComplete(): Promise<void> {
-    logLiveSession("handleTurnComplete", `state=${this.state} accum=[speak=${!!this.turnAccum.speakText}, interpret=${!!this.turnAccum.interpretText}, board=${this.turnAccum.boardChanged}, directAudioChunks=${this.directAudioChunks.length}]`);
+  private async handleTurnComplete(reason?: string): Promise<void> {
+    logLiveSession("handleTurnComplete", `state=${this.state} reason=${reason || "normal"} accum=[speak=${!!this.turnAccum.speakText}, interpret=${!!this.turnAccum.interpretText}, board=${this.turnAccum.boardChanged}, directAudioChunks=${this.directAudioChunks.length}]`);
+
+    // If we were waiting for a malformed-debug response, capture it and either
+    // ask the model to retry the call (up to MAX_RETRIES times) or give up.
+    if (this.awaitingMalformedDebugResponse) {
+      this.awaitingMalformedDebugResponse = false;
+      const debugAnswer = this.malformedDebugBuffer.trim();
+      this.malformedDebugBuffer = "";
+      logLiveSession("MALFORMED DEBUG RESPONSE", debugAnswer || "(empty)");
+      // Discard any audio from the debug turn — it was for us, not the user
+      if (this.directAudioFlushTimer) { clearTimeout(this.directAudioFlushTimer); this.directAudioFlushTimer = null; }
+      this.directAudioChunks = [];
+      this.turnAccum = createEmptyAccumulator();
+      this.send({ type: "audio_interrupt" });
+
+      // Ask the model to retry, providing its own description of what it tried.
+      if (this.malformedRetryCount < LiveRelay.MALFORMED_MAX_RETRIES && this.provider) {
+        this.malformedRetryCount++;
+        this.setState("awaiting_turn");
+        const retryPrompt = `[RETRY ${this.malformedRetryCount}/${LiveRelay.MALFORMED_MAX_RETRIES}] You said you were trying to: ${debugAnswer || "(no description)"}. Try that function call again now, paying careful attention to the function name and the schema for its arguments. Only call ONE function this turn.`;
+        logLiveSession("MALFORMED RETRY PROMPT", retryPrompt);
+        this.provider.sendMessage(retryPrompt, "user");
+        return;
+      }
+
+      // Out of retries — give up and return to idle.
+      logLiveSession("MALFORMED RETRY EXHAUSTED", `Gave up after ${this.malformedRetryCount} retries`);
+      this.malformedRetryCount = 0;
+      this.setState("idle");
+      return;
+    }
+
+    // Abnormal turn ends (RESPONSE_REJECTED, MALFORMED_FUNCTION_CALL, etc.) —
+    // discard any partial audio that streamed before the rejection. Otherwise the
+    // user hears half-words from rejected responses, perceived as duplication.
+    const isAbnormal = reason && reason !== "STOP" && reason !== "normal";
+    if (isAbnormal) {
+      logLiveSession("DISCARDING TURN", `reason=${reason} chunks=${this.directAudioChunks.length}`);
+      if (this.directAudioFlushTimer) { clearTimeout(this.directAudioFlushTimer); this.directAudioFlushTimer = null; }
+      this.directAudioChunks = [];
+      this.turnAccum = createEmptyAccumulator();
+      // Tell the client to stop any audio it's currently playing from this rejected turn
+      this.send({ type: "audio_interrupt" });
+
+      // On MALFORMED_FUNCTION_CALL, ask the model to introspect: what was it
+      // trying to call? The model's response will tell us the function name and
+      // arguments, which Gemini doesn't expose otherwise.
+      if (reason === "MALFORMED_FUNCTION_CALL" && this.provider) {
+        this.awaitingMalformedDebugResponse = true;
+        this.malformedDebugBuffer = "";
+        this.setState("awaiting_turn");
+        const debugQuery = `[DEBUG] Your last function call was rejected as MALFORMED. In a single sentence of plain text (no function calls), tell me: 1) the function name you tried to call, 2) the arguments you tried to pass. Do NOT call any function in your response — only plain text.`;
+        logLiveSession("MALFORMED DEBUG QUERY", debugQuery);
+        this.provider.sendMessage(debugQuery, "user");
+        return;
+      }
+
+      this.setState("idle");
+      return;
+    }
 
     // Empty turn — no tool calls happened and no direct audio
     if (this.state === "awaiting_turn") {
@@ -1506,20 +1846,13 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
       console.error("[LiveRelay] processTurnEnd error:", (err as Error).message);
       this.send({ type: "error", data: "error:TURN_FAILED" });
     } finally {
-      // Inject turn summary so the model remembers what it just did.
-      // In direct audio mode, the model's native audio is not captured as text in its
-      // context, so without this it repeats itself. The summary also records tool calls.
-      const summary = this.buildTurnSummary(this.turnAccum);
-      if (summary && this.provider) {
-        this.provider.sendMessage(summary, "model", false);
-        logLiveSession("TURN SUMMARY", summary);
-      }
-
       this.turnAccum = createEmptyAccumulator();
       // Flush any remaining buffered audio before clearing
       this.flushDirectAudio();
       this.directAudioChunks = [];
       this.preGenTtsPromise = null;
+      // Reset retry counter on successful turn — only count consecutive failures
+      this.malformedRetryCount = 0;
       this.setState("idle");
     }
   }
@@ -1809,6 +2142,7 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
       const pcmBuf = Buffer.concat(chunks.map(c => Buffer.from(c, "base64")));
       if (pcmBuf.length === 0) return;
       const wavBuf = pcmToWav(pcmBuf);
+      logLiveSession("flushDirectAudio", `state=${this.state} chunks=${chunks.length} pcmBytes=${pcmBuf.length} wavBytes=${wavBuf.length}`);
       this.send({ type: "avatar_audio", data: wavBuf.toString("base64"), format: "wav" });
     } catch (err) {
       console.error("[LiveRelay] Direct audio flush error:", (err as Error).message);
@@ -1941,14 +2275,15 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
 
     queueSymbolGeneration(unresolvedKeys, (imageKey, symbol) => {
       const label = keyToLabel.get(imageKey) || imageKey;
+      logLiveSession("SYMBOL_READY", `imageKey=${imageKey} label=${label} symbolId=${symbol.id} wsOpen=${this.ws.readyState === 1}`);
       this.send({ type: "symbol_update", data: { buttonLabel: label, symbolPath: `__SYMBOL__:${symbol.id}` } });
     });
   }
 
-  private buildBoardFromButtons(buttons: Array<{ label: string; iconRef: string; symbolPath?: string; sentence?: string }>): any {
+  private buildBoardFromButtons(buttons: Array<{ label: string; iconRef: string; symbolPath?: string; sentence?: string; buttonType?: "guess" | "category" }>): any {
     const pageId = `page-${Date.now()}`;
     const cols = 4;
-    const rows = Math.max(3, Math.ceil(buttons.length / cols));
+    const rows = Math.max(2, Math.ceil(buttons.length / cols));
 
     return {
       grid: { rows, cols },
@@ -1960,6 +2295,7 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
           label: b.label,
           spokenText: b.label,
           ...(b.sentence ? { sentence: b.sentence } : {}),
+          ...(b.buttonType ? { buttonType: b.buttonType } : {}),
           row: Math.floor(i / cols),
           col: i % cols,
           action: { type: "speak" as const, text: b.label },
@@ -2072,8 +2408,11 @@ IMPORTANT: Use rebuild_board() (or set_board(), if relevant) NOW to update the b
         parts.push(`remove_buttons(${accum.boardRemoveLabels.join(", ")})`);
       }
     }
-    if (accum.speakText.trim() && !this.useDirectAudio) {
-      parts.push(`speak("${accum.speakText.trim()}")`);
+    if (accum.speakText.trim()) {
+      // In direct audio mode, speakText comes from outputTranscription — record it
+      // so the model has a text record of what it said (native audio context alone
+      // isn't enough for complex multi-turn reasoning).
+      parts.push(`[I said: "${accum.speakText.trim()}"]`);
     }
     if (accum.setBoardName) {
       parts.push(`set_board("${accum.setBoardName}")`);
@@ -2250,8 +2589,11 @@ When a button is pressed, the student's pre-generated sentence is also voiced vi
       );
     } else {
       const available = maxSlots - labels.length;
+      const ctxInfo = this.contextButtonLabels.length > 0
+        ? ` | Context sidebar: ${this.contextButtonLabels.join(", ")}`
+        : "";
       this.provider!.sendContextInjection(
-        `[BOARD STATE REMINDER] Current buttons (${labels.length}/${maxSlots}, ${available} slots available): ${labels.join(", ") || "none"}`,
+        `[BOARD STATE REMINDER] Main board (${labels.length}/${maxSlots}, ${available} slots available): ${labels.join(", ") || "none"}${ctxInfo}`,
       );
     }
   }
@@ -2327,7 +2669,10 @@ When a button is pressed, the student's pre-generated sentence is also voiced vi
   private send(msg: ServerMessage): void {
     try {
       if (this.ws.readyState === WebSocket.OPEN) {
+        logLiveSession("SERVER → CLIENT", `state=${this.state} ${stringifyMsg(msg)}`);
         this.ws.send(JSON.stringify(msg));
+      } else {
+        logLiveSession("SERVER → CLIENT (WS CLOSED)", `state=${this.state} type=${msg.type}`);
       }
     } catch (err) {
       console.error("[LiveRelay] send() failed:", (err as Error).message, "msgType:", msg.type);
@@ -2370,9 +2715,51 @@ When a button is pressed, the student's pre-generated sentence is also voiced vi
     });
   }
 
+  /**
+   * Load the home board directly (server-side, no AI tool call required).
+   * Called on session init and when the user presses Home. The AI is informed
+   * via context injection and can use rebuild_board() to add side panel buttons.
+   */
+  private loadHomeBoardInternal(state?: import("./types").DualAgentSessionState): void {
+    const targetState = state || this.sessionCache?.state;
+    if (!targetState || !this.homeBoardData) return;
+    targetState.loadedBoardId = "__home__";
+    targetState.loadedBoardData = this.homeBoardData as any;
+    targetState.currentPageId = this.homeBoardData.pages?.[0]?.id || null;
+    targetState.pageHistory = [];
+    targetState.maxBoardItems = (this.homeBoardData.grid?.rows || 3) * (this.homeBoardData.grid?.cols || 4);
+    targetState.aiAddedButtonLabels = [];
+    const nativeLabels = this.getNativePageButtonLabels(targetState);
+    targetState.boardButtonLabels = [...nativeLabels];
+    this.send({ type: "set_board", data: { board: this.homeBoardData, name: this.homeBoardData.name, boardId: "__home__" } });
+    logLiveSession("HOME_BOARD_LOADED", `server-side load — buttons: ${nativeLabels.join(", ")}`);
+  }
+
+  private startSilenceKeepalive(): void {
+    if (this.silenceKeepaliveTimer) return;
+    logLiveSession("SILENCE_KEEPALIVE", `started — ${LiveRelay.SILENCE_KEEPALIVE_MS}ms intervals`);
+    this.silenceKeepaliveTimer = setInterval(() => {
+      // Skip if client PCM has arrived recently — real audio takes priority
+      if (Date.now() - this.lastClientPcmAt < LiveRelay.CLIENT_PCM_TIMEOUT_MS) return;
+      // Skip if paused or no provider
+      if (this.paused || !this.provider) return;
+      this.provider.sendAudio(LiveRelay.SILENCE_PCM_BASE64);
+    }, LiveRelay.SILENCE_KEEPALIVE_MS);
+  }
+
+  private stopSilenceKeepalive(): void {
+    if (this.silenceKeepaliveTimer) {
+      clearInterval(this.silenceKeepaliveTimer);
+      this.silenceKeepaliveTimer = null;
+      logLiveSession("SILENCE_KEEPALIVE", "stopped");
+    }
+  }
+
   private cleanup(): void {
     this.setState("closed");
     this.stopTimers();
+    this.stopSilenceKeepalive();
+    this.pendingClientMessages = [];
     if (this.directAudioFlushTimer) { clearTimeout(this.directAudioFlushTimer); this.directAudioFlushTimer = null; }
 
     // Remove context injection callback to prevent leaks
@@ -2423,17 +2810,28 @@ When a button is pressed, the student's pre-generated sentence is also voiced vi
 export function setupLiveWebSocket(server: import("http").Server): void {
   const wss = new WebSocketServer({ noServer: true });
 
-  server.on("upgrade", (req: IncomingMessage, socket, head) => {
+  server.on("upgrade", async (req: IncomingMessage, socket, head) => {
     const url = new URL(req.url || "", `http://${req.headers.host}`);
 
     // Only handle /ws/live path
     if (url.pathname !== "/ws/live") return;
 
-    wss.handleUpgrade(req, socket as any, head as any, (ws) => {
-      console.log("[LiveRelay] New WebSocket connection");
-      new LiveRelay(ws);
+    // ?test=1 routes to the minimal pass-through relay (no tools, no system
+    // prompt, no state machine — used to isolate Gemini behavior from our
+    // production middleware).
+    const useMinimal = url.searchParams.get("test") === "1";
+
+    wss.handleUpgrade(req, socket as any, head as any, async (ws) => {
+      if (useMinimal) {
+        console.log("[LiveRelay] New MINIMAL WebSocket connection (test mode)");
+        const { MinimalLiveRelay } = await import("./minimal-live-relay");
+        new MinimalLiveRelay(ws as any);
+      } else {
+        console.log("[LiveRelay] New WebSocket connection");
+        new LiveRelay(ws);
+      }
     });
   });
 
-  console.log("[LiveRelay] WebSocket server ready on /ws/live");
+  console.log("[LiveRelay] WebSocket server ready on /ws/live (append ?test=1 for minimal relay)");
 }

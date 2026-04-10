@@ -60,7 +60,7 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for interpret/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onInitializedChange, onYesNoChange, onRestartSessionReady, onPausedChange, onActiveAppChange }: {
+function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onBoardExitReady, onGuessingModeChange, onContextButtonsChange, onInitializedChange, onYesNoChange, onRestartSessionReady, onPausedChange, onActiveAppChange }: {
   onModeChange: (mode: 'interact' | 'silent') => void;
   onInterpretReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
   onDetectionChange?: (enabled: boolean) => void;
@@ -73,8 +73,11 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
   onRestartSessionReady?: (fn: (() => void) | null) => void;
   onPausedChange?: (paused: boolean, setPaused: (p: boolean) => void) => void;
   onActiveAppChange?: (app: import("@/hooks/dual-agent-types").ActiveAppData | null, dismissApp: () => void, registerCapture: (fn: (() => Promise<Blob | null>) | null) => void) => void;
+  onBoardExitReady?: (fn: ((label: string, instruction: string) => void) | null) => void;
+  onGuessingModeChange?: (active: boolean) => void;
+  onContextButtonsChange?: (buttons: Array<{ label: string; iconRef: string; symbolPath?: string; sentence?: string }>) => void;
 }) {
-  const { interactionMode, interpretButtons, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, isInitialized, yesNoActive, dismissYesNo, clearSession, initialize, paused, setPaused, activeApp, dismissApp, registerAppCanvasCapture, studentId } = useDualAgentContext();
+  const { interactionMode, interpretButtons, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendBoardExit, isInitialized, yesNoActive, dismissYesNo, clearSession, initialize, paused, setPaused, activeApp, dismissApp, registerAppCanvasCapture, studentId, guessingMode, contextButtons: contextButtonsFromCtx } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(interactionMode);
@@ -105,6 +108,19 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
     onSendMessageReady?.((msg: string) => sendMessage(msg));
     return () => onSendMessageReady?.(null);
   }, [sendMessage, onSendMessageReady]);
+
+  useEffect(() => {
+    onBoardExitReady?.(sendBoardExit);
+    return () => onBoardExitReady?.(null);
+  }, [sendBoardExit, onBoardExitReady]);
+
+  useEffect(() => {
+    onGuessingModeChange?.(guessingMode);
+  }, [guessingMode, onGuessingModeChange]);
+
+  useEffect(() => {
+    onContextButtonsChange?.(contextButtonsFromCtx);
+  }, [contextButtonsFromCtx, onContextButtonsChange]);
 
   useEffect(() => {
     onInitializedChange?.(isInitialized);
@@ -219,8 +235,14 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   // When set, the main area shows the prebuilt board and AI board updates go to a side panel
   const [prebuiltBoardData, setPrebuiltBoardData] = useState<ParsedBoardData | null>(null);
 
-  // Last set board — stored so user can return to it via "return" quick action
-  const [lastSetBoard, setLastSetBoard] = useState<{ board: ParsedBoardData; name: string; boardId: string } | null>(null);
+  // 3-tier navigation: Home Page ↔ Context Board Home ↔ Latest Page
+  // - contextBoard: the last non-home board loaded via set_board (null if none)
+  // - latestPage: snapshot of the last dynamic board before navigating away (null if none)
+  // - currentTier: which tier the user is currently on
+  type NavTier = "home" | "context" | "latest";
+  const [contextBoard, setContextBoard] = useState<{ board: ParsedBoardData; name: string; boardId: string } | null>(null);
+  const [latestPage, setLatestPage] = useState<ParsedBoardData | null>(null);
+  const [currentTier, setCurrentTier] = useState<NavTier>("home");
 
   // Board patch state — from detection (incremental add/remove)
   const [boardPatchData, setBoardPatchData] = useState<import("@/hooks/dual-agent-types").BoardPatch | null>(null);
@@ -235,12 +257,16 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const [recentButtonPresses, setRecentButtonPresses] = useState<string[]>([]);
 
 
+  // Context sidebar buttons (from AI's add_context_button tool)
+  const [contextButtons, setContextButtons] = useState<Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: string }>>([]);
+
   // Board mode: 'ai' shows DynamicBoard, 'db' shows PrebuiltBoardSection
   const [boardMode, setBoardMode] = useState<'ai' | 'db'>('ai');
 
   // Dual-agent mode bridged from context
   const [dualAgentMode, setDualAgentMode] = useState<'interact' | 'silent'>('interact');
   const [aiSessionActive, setAiSessionActive] = useState(false);
+  const [isGuessingMode, setIsGuessingMode] = useState(false);
 
   // Active app state (bridged from DualAgentContext)
   const [activeApp, setActiveApp] = useState<import("@/hooks/dual-agent-types").ActiveAppData | null>(null);
@@ -251,6 +277,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const [yesNoActive, setYesNoActive] = useState(false);
   const dismissYesNoRef = useRef<(() => void) | null>(null);
   const interpretFnRef = useRef<((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null>(null);
+  const sendBoardExitRef = useRef<((label: string, instruction: string) => void) | null>(null);
   const sendMessageFnRef = useRef<((msg: string) => Promise<void>) | null>(null);
   const restartSessionFnRef = useRef<(() => void) | null>(null);
 
@@ -637,6 +664,21 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
 
   // Handle AAC board button click — send immediately to server
   const handleBoardButtonClick = useCallback((button: BoardButton, spokenText: string) => {
+    // Exit/exitBoard buttons: send directly as board_exit (no speech, no interpretation)
+    if (button.action?.type === "exit" || (button as any).exitBoard) {
+      const instruction = button.action?.text || "";
+      // Save current page as latestPage when entering guessing mode from non-home tier
+      if (instruction.includes("[GUESSING MODE]") && currentTier !== "home") {
+        if (boardData) setLatestPage(boardData);
+      }
+      // Save current page when leaving non-home tier for any exit button
+      if (currentTier !== "home" && !isGuessingMode) {
+        if (boardData) setLatestPage(boardData);
+      }
+      sendBoardExitRef.current?.(button.label, instruction);
+      return;
+    }
+
     // Track for interpret feature (keep last 10)
     setRecentButtonPresses(prev => [...prev.slice(-9), spokenText]);
 
@@ -679,7 +721,15 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const handleSetBoard = useCallback((data: { board: ParsedBoardData; name: string; boardId: string }) => {
     console.log('[Home] Prebuilt board loaded:', data.name);
     setPrebuiltBoardData(data.board);
-    setLastSetBoard(data);
+
+    // Track tier: home board is special, everything else is a context board
+    if (data.boardId === "__home__") {
+      setCurrentTier("home");
+    } else {
+      setContextBoard(data);
+      setCurrentTier("context");
+    }
+
     // Clear AI side-panel board so it starts fresh
     setBoardData(null);
     boardHistoryRef.current = [];
@@ -689,6 +739,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const handleUnloadBoard = useCallback(() => {
     console.log('[Home] Prebuilt board unloaded, returning to dynamic board');
     setPrebuiltBoardData(null);
+    setCurrentTier("latest");
   }, []);
 
   const handleBoardBack = useCallback(() => {
@@ -1041,7 +1092,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
         </motion.div>
 
         {/* Board Area — fills all remaining space */}
-        <div className={`flex-1 min-h-0 overflow-hidden relative ${(activeApp || prebuiltBoardData) ? `flex ${isRTL ? 'flex-row-reverse' : 'flex-row'}` : ''}`}
+        <div className={`flex-1 min-h-0 overflow-hidden relative flex ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}
           data-dwell-trap={activeApp ? true : undefined}
         >
           <YesNoOverlay
@@ -1063,23 +1114,49 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
               setYesNoActive(false);
             }}
           />
-          {/* Side panel for AI buttons — shown when an app is open or a prebuilt board is loaded */}
-          {(activeApp || prebuiltBoardData) && (
-            <AppMiniBoard
-              board={boardData}
-              onButtonClick={handleBoardButtonClick}
-              language={currentLanguage}
-              voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
-              suppressLocalSpeech={aiSessionActive}
-            />
-          )}
+          {/* Context sidebar — always visible on the left */}
+          {(() => {
+            // When app/prebuilt board loaded, sidebar shows AI-generated side panel buttons
+            // Otherwise, show context buttons from add_context_button()
+            const sidebarBoard: ParsedBoardData | null = (activeApp || prebuiltBoardData)
+              ? boardData
+              : contextButtons.length > 0
+                ? {
+                    name: "Context",
+                    grid: { rows: 4, cols: 1 },
+                    pages: [{
+                      id: "ctx",
+                      name: "Context",
+                      buttons: contextButtons.map((b, i) => ({
+                        id: `ctx-${i}`,
+                        row: i,
+                        col: 0,
+                        label: b.label,
+                        iconRef: b.iconRef,
+                        symbolPath: b.symbolPath,
+                        sentence: b.sentence,
+                        action: { type: "speak" as const, text: b.label },
+                      })),
+                    }],
+                  }
+                : null;
+            return (
+              <AppMiniBoard
+                board={sidebarBoard}
+                onButtonClick={handleBoardButtonClick}
+                language={currentLanguage}
+                voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
+                suppressLocalSpeech={aiSessionActive}
+              />
+            );
+          })()}
           {/* App content — replaces board when an app is active */}
           {activeApp ? (
             <div className="flex-1 min-w-0 h-full">
               {renderAppContent(activeApp, dismissAppRef.current, registerAppCanvasCaptureRef.current, studentId)}
             </div>
           ) : boardMode === 'ai' ? (
-            <div className={(activeApp || prebuiltBoardData) ? "flex-1 min-w-0 h-full" : "h-full"}>
+            <div className="flex-1 min-w-0 h-full">
               <DynamicBoard
                 board={prebuiltBoardData || boardData}
                 boardPatch={prebuiltBoardData ? null : boardPatchData}
@@ -1126,18 +1203,39 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
                 interpretFnRef.current(["[MORE]"]);
               }
             } else if (action === "home") {
-              // "Home" = return to home page, send special message to AI (no speech)
-              if (interpretFnRef.current) {
-                interpretFnRef.current(["[HOME]"]);
+              // 3-tier Home button navigation
+              if (isGuessingMode) {
+                // Guessing mode: always return to latest page
+                if (latestPage) {
+                  setPrebuiltBoardData(null);
+                  setBoardData(latestPage);
+                  setCurrentTier("latest");
+                  // Tell the AI the user exited guessing mode
+                  sendBoardExitRef.current?.("Back", "The user exited guessing mode and returned to their conversation. Continue naturally.");
+                }
+              } else if (currentTier === "latest") {
+                // On latest page → go to context board home if exists, otherwise home
+                if (boardData) setLatestPage(boardData);
+                if (contextBoard) {
+                  handleSetBoard(contextBoard);
+                } else {
+                  // Load home board — tell server to load it
+                  sendBoardExitRef.current?.("Home", "The user pressed Home. Call set_board(\"home\") to load the home board.");
+                }
+              } else if (currentTier === "context") {
+                // On context board → go to home page
+                sendBoardExitRef.current?.("Home", "The user pressed Home. Call set_board(\"home\") to load the home board.");
+              } else {
+                // On home page → go to latest page (don't save home as latest)
+                if (latestPage) {
+                  setPrebuiltBoardData(null);
+                  setBoardData(latestPage);
+                  setCurrentTier("latest");
+                }
               }
             } else if (action === "exit") {
               // "Exit" = close the active app
               dismissAppRef.current();
-            } else if (action === "return") {
-              // "Return" = re-open the last set board
-              if (lastSetBoard) {
-                handleSetBoard(lastSetBoard);
-              }
             } else {
               // Yes/No — send as button press (server handles TTS if AI session active)
               if (interpretFnRef.current) {
@@ -1156,8 +1254,9 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           }}
           boardMode={boardMode}
           hasActiveApp={!!activeApp}
-          hasStoredBoard={!!lastSetBoard}
           hasPrebuiltBoard={!!prebuiltBoardData}
+          currentTier={currentTier}
+          isGuessingMode={isGuessingMode}
         />
 
         {/* Pause Overlay — covers board and quick actions when paused */}
@@ -1345,6 +1444,9 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             onSymbolUpdateChange={setSymbolUpdateData}
             onAiButtonPressChange={setAiButtonPressData}
             onSendMessageReady={(fn) => { sendMessageFnRef.current = fn; }}
+            onBoardExitReady={(fn) => { sendBoardExitRef.current = fn; }}
+            onGuessingModeChange={setIsGuessingMode}
+            onContextButtonsChange={setContextButtons}
             onInitializedChange={setAiSessionActive}
             onYesNoChange={(active, dismiss) => { setYesNoActive(active); dismissYesNoRef.current = dismiss; }}
             onRestartSessionReady={(fn) => { restartSessionFnRef.current = fn; }}

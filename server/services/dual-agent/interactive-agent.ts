@@ -16,8 +16,8 @@ import type {
  *   "Water|💧|water_drop|I would like some water, Play|🎮|game_controller|Let's play"
  *   "Water|💧||I would like some water"  (no image_key, but sentence)
  */
-export function parseBoardButtons(content: string): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string }> {
-  const buttons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string }> = [];
+export function parseBoardButtons(content: string): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: "guess" | "category" }> {
+  const buttons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: "guess" | "category" }> = [];
   const items = content.split(',');
 
   for (const item of items) {
@@ -28,8 +28,15 @@ export function parseBoardButtons(content: string): Array<{ label: string; iconR
     const pipeIndex = trimmed.indexOf('|');
     if (pipeIndex > 0) {
       const parts = trimmed.split('|');
-      const label = parts[0].trim();
+      let label = parts[0].trim();
       let iconRef = parts[1].trim();
+
+      // Detect [GUESS] prefix for guessing mode final guesses
+      let buttonType: "guess" | "category" | undefined;
+      if (label.startsWith("[GUESS]")) {
+        label = label.substring(7).trim();
+        buttonType = "guess";
+      }
       const imageKey = parts[2]?.trim() || undefined;
       const sentence = parts[3]?.trim() || undefined;
       let symbolPath: string | undefined;
@@ -60,6 +67,7 @@ export function parseBoardButtons(content: string): Array<{ label: string; iconR
           // Only include imageKey if no custom symbol is set and icon isn't a plain character
           imageKey: (symbolPath || isSingleChar) ? undefined : imageKey,
           sentence,
+          buttonType,
         });
       }
     } else {

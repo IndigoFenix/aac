@@ -278,6 +278,7 @@ export const he: Translations = {
     selectBoard: "בחר לוח",
     noBoards: "אין לוחות זמינים",
     pageOf: "עמוד {current} מתוך {total}",
+    guessingMode: "מנחש...",
   },
 
   chat: {
@@ -306,6 +307,7 @@ export const he: Translations = {
     back: "חזרה",
     help: "עזרה",
     home: "בית",
+    board: "לוח",
     exit: "יציאה",
     return: "חזרה",
     quiet: "שקט",

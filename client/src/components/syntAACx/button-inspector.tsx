@@ -515,6 +515,9 @@ export function ButtonInspector() {
                 <SelectItem value="youtube" className={isDark ? "text-slate-200" : "text-gray-800"}>
                   {t("button.actionYoutube")}
                 </SelectItem>
+                <SelectItem value="exit" className={isDark ? "text-slate-200" : "text-gray-800"}>
+                  {t("button.actionExit")}
+                </SelectItem>
               </SelectContent>
             </Select>
 
@@ -705,6 +708,28 @@ export function ButtonInspector() {
             <Switch
               checked={!!(selectedBtn as any).selfClosing}
               onCheckedChange={(checked) => handleUpdate("selfClosing", checked)}
+            />
+          </div>
+
+          {/* Exit Board */}
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className={cn(
+                "text-xs",
+                isDark ? "text-slate-400" : "text-gray-600"
+              )}>
+                {t("button.exitBoard")}
+              </Label>
+              <p className={cn(
+                "text-[10px] mt-0.5",
+                isDark ? "text-slate-500" : "text-gray-500"
+              )}>
+                {t("button.exitBoardDescription")}
+              </p>
+            </div>
+            <Switch
+              checked={!!(selectedBtn as any).exitBoard}
+              onCheckedChange={(checked) => handleUpdate("exitBoard", checked)}
             />
           </div>
 

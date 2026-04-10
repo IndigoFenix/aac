@@ -28,8 +28,8 @@ export interface ToolResponse {
 export interface LiveProviderCallbacks {
   /** Incremental text from the model (stray text or output transcriptions) */
   onText: (text: string) => void;
-  /** Model finished its turn */
-  onTurnComplete: () => void;
+  /** Model finished its turn. reason is set when the turn ended abnormally (e.g. "MALFORMED_FUNCTION_CALL") */
+  onTurnComplete: (reason?: string) => void;
   /** Model was interrupted by new user input */
   onInterrupted: () => void;
   /** Model wants to call tools — normalized from provider-specific format */

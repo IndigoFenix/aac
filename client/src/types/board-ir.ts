@@ -7,6 +7,7 @@ export type ActionIR =
   | { type: "back"; }
   | { type: "bookmark"; }
   | { type: "home"; }
+  | { type: "exit"; text?: string }
   | { type: "youtube"; videoId: string; title: string };
 
 export type ActionLinkIR = { type: "link"; toPageId: string; toBoardId?: string; };
