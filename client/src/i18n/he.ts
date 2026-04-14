@@ -187,6 +187,7 @@ export const he = {
     instituteManagement: 'ניהול ארגונים',
     noStudentSelected: "אין {{STUDENT}} נבחר",
     calendar: "לוח שנה",
+    userChat: "הודעות",
   },
 
   // ============================================================================
@@ -260,8 +261,6 @@ export const he = {
     instituteAssignFailed: "ה{{STUDENT}} נוצר אך השיוך לארגון נכשל.",
     warning: "אזהרה",
     grades: {
-      pre_k: "גן",
-      k: "כיתה א׳",
       1: "כיתה א׳",
       2: "כיתה ב׳",
       3: "כיתה ג׳",
@@ -274,6 +273,8 @@ export const he = {
       10: "כיתה י׳",
       11: "כיתה י״א",
       12: "כיתה י״ב",
+      pre_k: "גן",
+      k: "כיתה א׳",
       special_ed: "חינוך מיוחד",
       adult_ed: "חינוך מבוגרים"
     },
@@ -310,6 +311,7 @@ export const he = {
     speakMessage: "קרא בקול",
     copyMessage: "העתק",
     copied: "הועתק!",
+    copyWatermark: "נוצר ע\"י Aivota",
 
     sendMessage: "שלח הודעה",
     suggestions: {
@@ -424,6 +426,8 @@ export const he = {
     position: "מיקום",
     row: "שורה",
     column: "עמודה",
+    rowSpan: "טווח שורות",
+    colSpan: "טווח עמודות",
     duplicate: "שכפל",
     rebusKey: "סמל Rebus",
     rebusKeyPlaceholder: "למשל happy, mum, ice cream",
@@ -812,7 +816,28 @@ export const he = {
     updating: "מעדכן...",
     firstNameIsRequired: "שם פרטי נדרש",
     selectValidImage: "נא לבחור קובץ תמונה תקין (JPG, PNG, GIF)",
-    imageSizeLimit: "גודל התמונה חייב להיות פחות מ-10MB"
+    imageSizeLimit: "גודל התמונה חייב להיות פחות מ-10MB",
+    accessibility: "נגישות",
+    accessibilityDesc: "התאם הגדרות תצוגה לשימושיות טובה יותר",
+    fontSize: "גודל גופן",
+    fontSizeDesc: "שנה את גודל הטקסט בממשק",
+    contrastMode: "ניגודיות גבוהה",
+    contrastModeDesc: "הגבר את ניגודיות הצבעים לקריאות טובה יותר",
+    reduceAnimations: "הפחת אנימציות",
+    reduceAnimationsDesc: "מזער אפקטי תנועה בכל הממשק",
+    enhancedFocus: "מחוון מיקוד מוגבר",
+    enhancedFocusDesc: "הצג מסגרת חזקה יותר סביב אלמנטים ממוקדים לניווט מקלדת",
+  },
+
+  // ============================================================================
+  // COOKIE CONSENT
+  // ============================================================================
+  cookieConsent: {
+    title: "אנחנו משתמשים בעוגיות",
+    description: "אנו משתמשים בעוגיות חיוניות כדי לשמור אותך מחובר ובעוגיות פונקציונליות לזכירת ההעדפות שלך. בחר מה לאשר.",
+    acceptAll: "אשר הכל",
+    rejectNonEssential: "דחה לא הכרחיים",
+    learnMore: "למד עוד",
   },
 
   // ============================================================================
@@ -829,6 +854,15 @@ export const he = {
   language: {
     english: "English",
     hebrew: "עברית",
+    spanish: "Español",
+    portuguese: "Português",
+    french: "Français",
+    russian: "Русский",
+    german: "Deutsch",
+    arabic: "العربية",
+    mandarin: "中文",
+    cantonese: "粵語",
+    korean: "한국어",
   },
 
   // ============================================================================
@@ -1538,8 +1572,6 @@ export const he = {
       observer: "משקיף/ה"
     },
     grades: {
-      pre_k: "גן",
-      k: "כיתה א׳",
       1: "כיתה א׳",
       2: "כיתה ב׳",
       3: "כיתה ג׳",
@@ -1552,6 +1584,8 @@ export const he = {
       10: "כיתה י׳",
       11: "כיתה י״א",
       12: "כיתה י״ב",
+      pre_k: "גן",
+      k: "כיתה א׳",
       special_ed: "חינוך מיוחד",
       adult_ed: "חינוך מבוגרים"
     }
@@ -2015,6 +2049,9 @@ export const he = {
     sendFailed: "שליחת ההודעה נכשלה",
   },
 
+  // ============================================================================
+  // CONSENT
+  // ============================================================================
   errors: {
     POLICY_VIOLATION: "תגובה זו נחסמה עקב הפרת מדיניות.",
     NO_RESPONSE: "אירעה שגיאה בעיבוד התגובה.",
@@ -2349,6 +2386,24 @@ export const he = {
     created: "האירוע נוצר בהצלחה",
     updated: "האירוע עודכן בהצלחה",
     deleted: "האירוע נמחק בהצלחה",
+  },
+
+  userChat: {
+    title: "הודעות",
+    newChat: "צ'אט חדש",
+    noRooms: "אין עדיין שיחות",
+    noContacts: "לא נמצאו אנשי קשר",
+    noInstitute: "הצטרף לארגון כדי להתחיל לשוחח",
+    selectRoomHint: "בחר שיחה כדי להתחיל להתכתב",
+    participants: "משתתפים",
+    unknownUser: "משתמש לא ידוע",
+    composerPlaceholder: "הקלד הודעה…",
+    loadingOlder: "טוען הודעות ישנות…",
+    scrollForOlder: "גלול למעלה להודעות ישנות",
+    searchContacts: "חיפוש אנשי קשר",
+    groupName: "שם הקבוצה",
+    groupNamePlaceholder: "תן שם לקבוצה זו",
+    create: "צור",
   },
 
 };

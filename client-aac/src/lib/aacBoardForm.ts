@@ -32,6 +32,8 @@ export interface FormValues {
 export interface ButtonFormValue {
   row: number;
   col: number;
+  rowSpan?: number;
+  colSpan?: number;
   label: string;
   spokenText?: string;
   color?: string;
@@ -80,6 +82,14 @@ Use clear, simple labels. Consider the user's abilities and preferences.`,
               type: 'string',
               instructions: 'Icon: a single emoji (e.g., "🏠"). Required for every button.',
             },
+            rowSpan: {
+              type: 'number',
+              instructions: 'Number of rows this button spans (default 1). Use for important buttons.',
+            },
+            colSpan: {
+              type: 'number',
+              instructions: 'Number of columns this button spans (default 1). Use for important buttons.',
+            },
           },
         },
       },
@@ -110,6 +120,8 @@ export function boardDataToFormValues(
   const buttons: ButtonFormValue[] = currentPage.buttons.map(button => ({
     row: button.row,
     col: button.col,
+    ...(button.rowSpan && button.rowSpan > 1 ? { rowSpan: button.rowSpan } : {}),
+    ...(button.colSpan && button.colSpan > 1 ? { colSpan: button.colSpan } : {}),
     label: button.label,
     spokenText: button.spokenText || undefined,
     color: button.color || undefined,
@@ -177,6 +189,8 @@ export function applySetValuesToBoard(
       id: `btn-${btn.row}-${btn.col}`,
       row: btn.row ?? 0,
       col: btn.col ?? 0,
+      ...(btn.rowSpan && btn.rowSpan > 1 ? { rowSpan: btn.rowSpan } : {}),
+      ...(btn.colSpan && btn.colSpan > 1 ? { colSpan: btn.colSpan } : {}),
       label: btn.label,
       spokenText: btn.spokenText || btn.label,
       color: btn.color || '#3B82F6',

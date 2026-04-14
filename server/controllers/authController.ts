@@ -111,12 +111,13 @@ export class AuthController {
           });
         }
 
-        const { rememberMe } = req.body;
-        if (rememberMe) {
-          req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
-        } else {
-          req.session.cookie.maxAge = 24 * 60 * 60 * 1000; // 1 day
+        const { rememberMe, aacClient } = req.body;
+        if (!aacClient) {
+          req.session.cookie.maxAge = rememberMe
+            ? 30 * 24 * 60 * 60 * 1000 // 30 days
+            : 24 * 60 * 60 * 1000;      // 1 day
         }
+        // aacClient: no maxAge → session cookie, no timeout
 
         res.json({
           success: true,
@@ -500,7 +501,7 @@ export class AuthController {
    */
   async mfaVerifySetupWithToken(req: Request, res: Response): Promise<void> {
     try {
-      const { mfaToken, code, rememberMe } = req.body;
+      const { mfaToken, code, rememberMe, aacClient } = req.body;
 
       if (!mfaToken) {
         res.status(400).json({
@@ -568,10 +569,10 @@ export class AuthController {
           });
         }
 
-        if (rememberMe) {
-          req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
-        } else {
-          req.session.cookie.maxAge = 24 * 60 * 60 * 1000;
+        if (!aacClient) {
+          req.session.cookie.maxAge = rememberMe
+            ? 30 * 24 * 60 * 60 * 1000
+            : 24 * 60 * 60 * 1000;
         }
 
         res.json({
@@ -661,7 +662,7 @@ export class AuthController {
    */
   async mfaVerify(req: Request, res: Response): Promise<void> {
     try {
-      const { mfaToken, code, rememberMe } = req.body;
+      const { mfaToken, code, rememberMe, aacClient } = req.body;
 
       if (!mfaToken) {
         res.status(400).json({
@@ -718,10 +719,10 @@ export class AuthController {
           });
         }
 
-        if (rememberMe) {
-          req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
-        } else {
-          req.session.cookie.maxAge = 24 * 60 * 60 * 1000;
+        if (!aacClient) {
+          req.session.cookie.maxAge = rememberMe
+            ? 30 * 24 * 60 * 60 * 1000
+            : 24 * 60 * 60 * 1000;
         }
 
         res.json({
@@ -884,7 +885,9 @@ export class AuthController {
           });
         }
 
-        req.session.cookie.maxAge = 24 * 60 * 60 * 1000;
+        if (!req.body.aacClient) {
+          req.session.cookie.maxAge = 24 * 60 * 60 * 1000;
+        }
 
         res.json({
           success: true,

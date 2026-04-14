@@ -266,6 +266,24 @@ export const he: Translations = {
 
     language: "שפה",
     selectLanguage: "בחר שפה",
+
+    accessibility: "נגישות",
+    fontSize: "גודל גופן",
+    fontSizeDesc: "שנה את גודל הטקסט בממשק",
+    contrastMode: "ניגודיות גבוהה",
+    contrastModeDesc: "הגבר את ניגודיות הצבעים לקריאות טובה יותר",
+    reduceAnimations: "הפחת אנימציות",
+    reduceAnimationsDesc: "מזער אפקטי תנועה בכל הממשק",
+    enhancedFocus: "מחוון מיקוד מוגבר",
+    enhancedFocusDesc: "הצג מסגרת חזקה יותר סביב אלמנטים ממוקדים לניווט מקלדת",
+  },
+
+  cookieConsent: {
+    title: "אנחנו משתמשים בעוגיות",
+    description: "אנו משתמשים בעוגיות חיוניות כדי לשמור אותך מחובר ובעוגיות פונקציונליות לזכירת ההעדפות שלך. בחר מה לאשר.",
+    acceptAll: "אשר הכל",
+    rejectNonEssential: "דחה לא הכרחיים",
+    learnMore: "למד עוד",
   },
 
   board: {

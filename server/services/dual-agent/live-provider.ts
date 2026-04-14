@@ -116,6 +116,13 @@ export interface LiveProvider {
   sendConversationHistory(turns: Array<{ role: "user" | "model"; text: string }>): void;
   /** Send tool responses back to the model after processing function calls */
   sendToolResponse(responses: ToolResponse[]): void;
+  /**
+   * Deliver tool responses as protocol-correct functionResponse parts via
+   * sendClientContent (turnComplete=false). Resolves the open functionCall
+   * without triggering a new turn — workaround for Vertex Live, where
+   * sendToolResponse on BLOCKING tools always triggers generation.
+   */
+  sendToolResponseAsContent(responses: ToolResponse[]): void;
 
   // --- State inspection (for relay error handling) ---
 

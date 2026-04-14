@@ -38,6 +38,7 @@ import {
   AppWindow,
   Link,
   Unlink,
+  Accessibility,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -89,6 +90,10 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [useUnapprovedSymbols, setUseUnapprovedSymbols] = useState(false);
   const [dynamicBoardsEnabled, setDynamicBoardsEnabled] = useState(false);
   const [appConfig, setAppConfig] = useState<Record<string, any>>({});
+  const [accessFontSize, setAccessFontSize] = useState(100);
+  const [accessHighContrast, setAccessHighContrast] = useState(false);
+  const [accessReduceAnimations, setAccessReduceAnimations] = useState(false);
+  const [accessEnhancedFocus, setAccessEnhancedFocus] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
 
   // Fetch ElevenLabs voices when API key is present
@@ -184,6 +189,11 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setDynamicBoardsEnabled(aac?.dynamicBoardsEnabled ?? false);
       setUseUnapprovedSymbols(aac?.useUnapprovedSymbols ?? false);
       setAppConfig(aac?.appConfig || {});
+      const acc = aac?.accessibility || {};
+      setAccessFontSize(acc.fontSize ?? 100);
+      setAccessHighContrast(acc.highContrast ?? false);
+      setAccessReduceAnimations(acc.reduceAnimations ?? false);
+      setAccessEnhancedFocus(acc.enhancedFocusIndicator ?? false);
       setHasChanges(false);
     }
   }, [student]);
@@ -215,6 +225,11 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalUseApprovedSymbols = aac?.useApprovedSymbols ?? false;
       const originalUseUnapprovedSymbols = aac?.useUnapprovedSymbols ?? false;
       const originalAppConfig = aac?.appConfig || {};
+      const origAcc = aac?.accessibility || {};
+      const origAccessFontSize = origAcc.fontSize ?? 100;
+      const origAccessHighContrast = origAcc.highContrast ?? false;
+      const origAccessReduceAnimations = origAcc.reduceAnimations ?? false;
+      const origAccessEnhancedFocus = origAcc.enhancedFocusIndicator ?? false;
       setHasChanges(
         aiName !== originalAiName ||
         chatAgentPrompt !== originalPrompt ||
@@ -238,10 +253,14 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         generateSymbols !== originalGenerateSymbols ||
         useApprovedSymbols !== originalUseApprovedSymbols ||
         useUnapprovedSymbols !== originalUseUnapprovedSymbols ||
-        JSON.stringify(appConfig) !== JSON.stringify(originalAppConfig)
+        JSON.stringify(appConfig) !== JSON.stringify(originalAppConfig) ||
+        accessFontSize !== origAccessFontSize ||
+        accessHighContrast !== origAccessHighContrast ||
+        accessReduceAnimations !== origAccessReduceAnimations ||
+        accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, allowReadProgress, allowReadReports, allowNotes, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, student]);
+  }, [aiName, chatAgentPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, allowReadProgress, allowReadReports, allowNotes, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -270,6 +289,7 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       useUnapprovedSymbols: boolean;
       dynamicBoardsEnabled: boolean;
       appConfig?: Record<string, any>;
+      accessibility?: Record<string, any>;
     }) => {
       const response = await apiRequest('PATCH', `/api/students/${student?.id}`, data);
       return response.json();
@@ -319,6 +339,12 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       useUnapprovedSymbols,
       dynamicBoardsEnabled,
       appConfig,
+      accessibility: {
+        fontSize: accessFontSize,
+        highContrast: accessHighContrast,
+        reduceAnimations: accessReduceAnimations,
+        enhancedFocusIndicator: accessEnhancedFocus,
+      },
     });
   };
 
@@ -349,6 +375,11 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setDynamicBoardsEnabled(aac?.dynamicBoardsEnabled ?? false);
       setUseUnapprovedSymbols(aac?.useUnapprovedSymbols ?? false);
       setAppConfig(aac?.appConfig || {});
+      const accR = aac?.accessibility || {};
+      setAccessFontSize(accR.fontSize ?? 100);
+      setAccessHighContrast(accR.highContrast ?? false);
+      setAccessReduceAnimations(accR.reduceAnimations ?? false);
+      setAccessEnhancedFocus(accR.enhancedFocusIndicator ?? false);
     }
   };
 
@@ -916,6 +947,64 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   </div>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Accessibility */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Accessibility className="w-5 h-5" />
+                {t('settings.accessibility')}
+              </CardTitle>
+              <CardDescription>
+                {t('settings.accessibilityDesc')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Font Size */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-base font-medium">{t('settings.fontSize')}</Label>
+                  <span className="text-sm text-muted-foreground">{accessFontSize}%</span>
+                </div>
+                <Slider
+                  min={75}
+                  max={200}
+                  step={25}
+                  value={[accessFontSize]}
+                  onValueChange={(v) => setAccessFontSize(v[0])}
+                  className="w-full"
+                />
+                <p className="text-sm text-muted-foreground">{t('settings.fontSizeDesc')}</p>
+              </div>
+
+              {/* High Contrast */}
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-medium">{t('settings.contrastMode')}</Label>
+                  <p className="text-sm text-muted-foreground">{t('settings.contrastModeDesc')}</p>
+                </div>
+                <Switch checked={accessHighContrast} onCheckedChange={setAccessHighContrast} />
+              </div>
+
+              {/* Reduce Animations */}
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-medium">{t('settings.reduceAnimations')}</Label>
+                  <p className="text-sm text-muted-foreground">{t('settings.reduceAnimationsDesc')}</p>
+                </div>
+                <Switch checked={accessReduceAnimations} onCheckedChange={setAccessReduceAnimations} />
+              </div>
+
+              {/* Enhanced Focus Indicator */}
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-0.5">
+                  <Label className="text-base font-medium">{t('settings.enhancedFocus')}</Label>
+                  <p className="text-sm text-muted-foreground">{t('settings.enhancedFocusDesc')}</p>
+                </div>
+                <Switch checked={accessEnhancedFocus} onCheckedChange={setAccessEnhancedFocus} />
+              </div>
             </CardContent>
           </Card>
 

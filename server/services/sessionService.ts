@@ -146,7 +146,6 @@ import {
   LoopDetectionConfig,
 } from "./chat/tool-router";
 import {
-  AAC_SYSTEM_PROMPT,
   AAC_DEFAULT_PERSONA_PROMPT,
   getAACMemoryFields,
 } from "./memory-schema/aac-memory-schema";
@@ -309,8 +308,7 @@ async function buildAACPersonaSystemPrompt(
   framework: string | null
 ): Promise<string> {
   // Get the base general prompt for AAC
-  let prompt = AAC_SYSTEM_PROMPT;
-  prompt += `=== Guidelines for interacting with ${student.name} ===\n`;
+  let prompt = `=== Guidelines for interacting with ${student.name} ===\n`;
   const chatAgentPrompt = (student as StudentWithAacSettings).aacSettings?.chatAgentPrompt;
   if (chatAgentPrompt && chatAgentPrompt.trim().length > 0) {
     prompt += processPersonaPrompt(chatAgentPrompt, framework);
@@ -547,13 +545,14 @@ const AGENT_TEMPLATE_BASE: LocalAgentTemplate = {
   memoryFields: [...MASTER_MEMORY_FIELDS],
   tools: {
     mediaAnalysis: { enabled: true },
+    fdaLookup: { enabled: true },
   },
   library: [],
 }
 
 const AAC_TEMPLATE_BASE: LocalAgentTemplate = {
   name: "CliniAACian AAC Assistant",
-  corePrompt: AAC_SYSTEM_PROMPT,
+  corePrompt: '', // Built dynamically based on student persona or default AAC prompt
   greeting: "Hello! I'm CliniAACian, your AAC communication assistant. How can I support you today?",
   intelligence: 2,
   memory: 2,

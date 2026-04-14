@@ -20,6 +20,8 @@ interface ButtonIR {
   id: string;
   row: number;
   col: number;
+  rowSpan?: number;
+  colSpan?: number;
   label: string;
   spokenText?: string;
   color?: string;

@@ -60,18 +60,24 @@ function validatePage(page: PageIR, gridSize: { rows: number; cols: number }, pa
 
   // Button validation
   const occupiedPositions = new Set<string>();
-  
+
   page.buttons.forEach((button, buttonIndex) => {
     const buttonErrors = validateButton(button, gridSize, pageIndex, buttonIndex);
     errors.push(...buttonErrors.errors);
     warnings.push(...buttonErrors.warnings);
 
-    // Check for position conflicts
-    const positionKey = `${button.row}-${button.col}`;
-    if (occupiedPositions.has(positionKey)) {
-      errors.push(`Page ${pageIndex + 1}: Multiple buttons at position (${button.row}, ${button.col})`);
-    } else {
-      occupiedPositions.add(positionKey);
+    // Check for position conflicts considering spans
+    const rSpan = button.rowSpan ?? 1;
+    const cSpan = button.colSpan ?? 1;
+    for (let r = button.row; r < button.row + rSpan; r++) {
+      for (let c = button.col; c < button.col + cSpan; c++) {
+        const positionKey = `${r}-${c}`;
+        if (occupiedPositions.has(positionKey)) {
+          errors.push(`Page ${pageIndex + 1}: Overlapping buttons at position (${r}, ${c})`);
+        } else {
+          occupiedPositions.add(positionKey);
+        }
+      }
     }
   });
 
@@ -106,6 +112,22 @@ function validateButton(button: ButtonIR, gridSize: { rows: number; cols: number
 
   if (button.col < 0 || button.col >= gridSize.cols) {
     errors.push(`Page ${pageIndex + 1}, Button "${button.label}": Column ${button.col} is outside grid bounds (0-${gridSize.cols - 1})`);
+  }
+
+  // Span validation
+  const rSpan = button.rowSpan ?? 1;
+  const cSpan = button.colSpan ?? 1;
+  if (rSpan < 1) {
+    errors.push(`Page ${pageIndex + 1}, Button "${button.label}": rowSpan must be at least 1`);
+  }
+  if (cSpan < 1) {
+    errors.push(`Page ${pageIndex + 1}, Button "${button.label}": colSpan must be at least 1`);
+  }
+  if (button.row + rSpan > gridSize.rows) {
+    errors.push(`Page ${pageIndex + 1}, Button "${button.label}": rowSpan ${rSpan} exceeds grid bounds at row ${button.row} (grid has ${gridSize.rows} rows)`);
+  }
+  if (button.col + cSpan > gridSize.cols) {
+    errors.push(`Page ${pageIndex + 1}, Button "${button.label}": colSpan ${cSpan} exceeds grid bounds at col ${button.col} (grid has ${gridSize.cols} cols)`);
   }
 
   // Color validation

@@ -598,6 +598,15 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
                 <SelectContent>
                   <SelectItem value="en">English</SelectItem>
                   <SelectItem value="he">עברית (Hebrew)</SelectItem>
+                  <SelectItem value="es">Español (Spanish)</SelectItem>
+                  <SelectItem value="pt">Português (Portuguese)</SelectItem>
+                  <SelectItem value="fr">Français (French)</SelectItem>
+                  <SelectItem value="ru">Русский (Russian)</SelectItem>
+                  <SelectItem value="de">Deutsch (German)</SelectItem>
+                  <SelectItem value="ar">العربية (Arabic)</SelectItem>
+                  <SelectItem value="zh">中文 (Mandarin)</SelectItem>
+                  <SelectItem value="yue">粵語 (Cantonese)</SelectItem>
+                  <SelectItem value="ko">한국어 (Korean)</SelectItem>
                 </SelectContent>
               </Select>
             </div>

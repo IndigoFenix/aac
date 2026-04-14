@@ -307,8 +307,9 @@ export function ChatFeature() {
   const handleCopyMessage = async (message: ChatMessage, index: number) => {
     const content = getMessageContent(message);
     const plainText = containsHtmlTags(content) ? htmlToPlainText(content) : content;
+    const watermarked = plainText + "\n\n" + t("chat.copyWatermark");
     try {
-      await navigator.clipboard.writeText(plainText);
+      await navigator.clipboard.writeText(watermarked);
       setCopiedMessageIndex(index);
       setTimeout(() => setCopiedMessageIndex(null), 2000);
     } catch {

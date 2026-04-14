@@ -22,7 +22,7 @@ import type {
 import { DEFAULT_CONFIG } from "./types";
 import {
   AAC_DEFAULT_PERSONA_PROMPT,
-  buildFunctionCallingPrompt,
+  buildInteractiveAgentPrompt,
 } from "../memory-schema/aac-memory-schema";
 import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
 import { voiceRecordRepository } from "../../repositories/voiceRecordRepository";
@@ -243,13 +243,20 @@ export class DualAgentService {
         elevenlabsVoiceId: elEnabled ? (aac?.elevenlabsAiVoiceId || undefined) : undefined,
         geminiVoiceName: (aac as any)?.geminiAiVoice || defaultAiGeminiVoice,
       },
+      // Student voice uses Google Cloud TTS (fast, ~200-500ms) instead of
+      // Gemini TTS (~2.5s connection overhead per request due to fresh HTTP
+      // connection). Google Cloud TTS voice quality is lower (Standard/Neural2).
+      //
+      // TO UPGRADE TO GEMINI VOICES: Use a dedicated Gemini Live API session
+      // for TTS (persistent WebSocket = no reconnection latency). The regular
+      // generateContent API creates a new HTTP connection per call, adding
+      // ~2-2.5s of overhead that dwarfs the ~300ms generation time.
+      // A Live session would give ~300-500ms latency with better voice quality.
+      // Cost is comparable — see conversation notes from 2026-04-13.
       studentVoice: {
         fallbackType: studentFallback as any,
         customVoice: studentCustom || null,
         language: student?.primaryLanguage || "en",
-        elevenlabsApiKey: elEnabled ? (aac?.elevenlabsApiKey || undefined) : undefined,
-        elevenlabsVoiceId: elEnabled ? (aac?.elevenlabsStudentVoiceId || undefined) : undefined,
-        geminiVoiceName: (aac as any)?.geminiStudentVoice || defaultStudentGeminiVoice,
       },
     };
   }
@@ -405,7 +412,7 @@ export class DualAgentService {
     if (student) {
       const rawPersona = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
       const persona = initResult.enhancedPrompt || rawPersona;
-      interactivePrompt = buildFunctionCallingPrompt({
+      interactivePrompt = buildInteractiveAgentPrompt({
         studentName: student.firstName || student.name?.split(' ')[0] || "",
         persona,
         language: student.primaryLanguage || undefined,
@@ -652,7 +659,7 @@ export class DualAgentService {
           } catch { state.availableBoards = []; }
         }
 
-        state.interactivePrompt = buildFunctionCallingPrompt({
+        state.interactivePrompt = buildInteractiveAgentPrompt({
           studentName: student.firstName || student.name.split(' ')[0] || "",
           persona: personaPrompt,
           language: student.primaryLanguage || undefined,

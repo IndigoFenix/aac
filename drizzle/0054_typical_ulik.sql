@@ -1,0 +1,1 @@
+ALTER TABLE "aac_settings" ADD COLUMN "accessibility" jsonb DEFAULT '{}'::jsonb;

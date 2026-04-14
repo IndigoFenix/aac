@@ -4,6 +4,10 @@ import multer from "multer";
 import path from "path";
 import { stringify } from "csv-stringify";
 import { setupLiveWebSocket } from "./services/dual-agent/live-relay";
+import { setupRealtimeServer, registerRealtimeHandler } from "./services/realtime/realtime-server";
+import { subscribe } from "./services/realtime/room-registry";
+import { userChatController } from "./controllers/userChatController";
+import { userChatService } from "./services/userChat/userChatService";
 
 import {
   authController,
@@ -1125,6 +1129,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     calendarController.removeAttendee(req, res)
   );
 
+  // ============= USER CHAT ROUTES =============
+  app.get("/api/user-chat/contacts", requireAuth, (req, res) =>
+    userChatController.getContacts(req, res),
+  );
+  app.get("/api/user-chat/rooms", requireAuth, (req, res) =>
+    userChatController.getRooms(req, res),
+  );
+  app.post("/api/user-chat/rooms", requireAuth, (req, res) =>
+    userChatController.createRoom(req, res),
+  );
+  app.get("/api/user-chat/rooms/:id/messages", requireAuth, (req, res) =>
+    userChatController.getMessages(req, res),
+  );
+  app.post("/api/user-chat/rooms/:id/messages", requireAuth, (req, res) =>
+    userChatController.sendMessage(req, res),
+  );
+  app.post("/api/user-chat/rooms/:id/read", requireAuth, (req, res) =>
+    userChatController.markRead(req, res),
+  );
+  app.post("/api/user-chat/push-register", requireAuth, (req, res) =>
+    userChatController.registerPush(req, res),
+  );
+
   // ============= ADMIN ROUTES =============
   // Institutes (admin lookup)
   app.get("/api/admin/institutes", requireAuth, requireSystemAdmin, (req, res) =>
@@ -1335,6 +1362,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Set up WebSocket for Gemini Live API relay
   setupLiveWebSocket(httpServer);
+
+  // Set up generic realtime server (path-based routing) and register handlers.
+  setupRealtimeServer(httpServer);
+  registerRealtimeHandler({
+    path: "/ws/user-chat",
+    onConnect: async (socket, user) => {
+      const topics = await userChatService.initialTopicsForUser(user.id);
+      for (const topic of topics) subscribe(socket, topic);
+      socket.send(JSON.stringify({ type: "userChat:ready", topics }));
+    },
+  });
 
   return httpServer;
 }

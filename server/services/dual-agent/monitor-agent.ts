@@ -4,7 +4,6 @@
 import { onMessage } from "../sessionService";
 import type { ChatMessage, ParsedBoardData, ChatPersona } from "@shared/schema";
 import type {
-  MonitorMessage,
   MonitorResponse,
   PendingMessage,
   DualAgentConfig,
@@ -14,7 +13,6 @@ import type { StudentWithAacSettings } from "@shared/schema";
 import type { AACInteractionMode, AACAppDefinition } from "./types";
 import {
   AAC_DEFAULT_PERSONA_PROMPT,
-  AAC_MEMORY_PROMPT,
   buildMonitorSystemPrompt,
 } from "../memory-schema/aac-memory-schema";
 import { GPT, type GPTInputItem } from "../chat/gpt";
@@ -289,99 +287,6 @@ Output ONLY the enhanced prompt between [ENHANCED_PROMPT] and [/ENHANCED_PROMPT]
   }
 
   /**
-   * [UNUSED] Legacy thorough startup (mode 1): Uses the monitor's memory system
-   * with tool access to browse Context_ paths. Replaced by thoroughStartup() which
-   * pre-loads all data and makes a single LLM call without tools.
-   * Kept for reference — may be useful for a future "deep analysis" mode.
-   */
-  private async longInitializeContext(student: any): Promise<{
-    sessionId: string;
-    additionalContext?: string;
-    enhancedPrompt?: string;
-  }> {
-    try {
-      const personaPrompt = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
-
-      // Use the monitor's memory system — the LLM gets tool access to Context_ paths
-      // (medical, educational, progress, classmates, etc.) and Student_ memory fields.
-      const systemPromptOverride = `You are preparing an enhanced prompt for an AAC session with ${student.name}.
-You are the Monitor Agent, responsible for memory management and analysis.
-The Interactive Agent is a separate agent capable of real-time multimodal interaction with the student, but it does not have direct access to the database or memory tools — it relies on you to provide relevant context.
-The Interactive Agent will use the enhanced prompt you generate to guide its interactions with the student during the session.
-The Interactive Agent can call you to request additional context or updates as needed. You will also automatically check in every few minutes to provide context-specific updates.
-
-${AAC_MEMORY_PROMPT}
-
-## Your Task
-Create an enhanced custom prompt for the Interactive Agent by reviewing the student's data.
-
-## Procedure — FOLLOW STRICTLY
-- Look up information about the student that is relevant to understanding their needs, preferences, and context for this session.
-- Important info: Student's medical alerts, communication style, interests, goals, important people, and upcoming events.
-- DO NOT look up information that is not directly relevant to assisting the student. Be conservative with tool calls.
-- Minimize the number of manageMemory calls you are making. Rather than looking up paths separately, view every relevant path together in a single call.
-- Do NOT drill into empty paths or paths marked "Path not found".
-- Do NOT explore paths unrelated to THIS student (e.g. do not browse the library for conditions the student does not have).
-- If the student has little or no data, that is fine — use what you know (name, age, diagnosis) plus the original prompt.
-
-## Enhanced Prompt Requirements
-- Preserve the intent and tone of the original custom prompt below
-- Weave in student-specific data you found (medical alerts, goals, interests, important people, upcoming events)
-- Be concise — no more than 500 words
-- Skip areas with no data
-- Plain text only, dashes (-) for bullet points
-- You may provide instructions for when the Interactive Agent should consult the Monitor for more context during the session. Keep in mind that you think slowly and the Interactive Agent thinks quickly.
-
-## Output Format
-Output ONLY the enhanced prompt between [ENHANCED_PROMPT] and [/ENHANCED_PROMPT] tags. Nothing else outside the tags.
-
-## Current Custom Prompt
-${personaPrompt}`;
-
-      // Use "md" replyType to get raw text back (not JSON-wrapped html/text).
-      const result = await onMessage({
-        userId: this.userId,
-        studentId: this.studentId,
-        sessionId: this.sessionId,
-        activeFeature: "aac",
-        persona: "aac-assistant" as ChatPersona,
-        messages: [{
-          role: "user",
-          content: "Prepare the session startup. View the student's context data and generate an enhanced prompt for the Interactive Agent.",
-          timestamp: Date.now(),
-        }],
-        featureContext: {},
-        replyType: "md",
-        systemPromptOverride,
-      });
-
-      // Extract text from response — content shape depends on replyType:
-      // "md" → { md: string }, "text"/"html" → { text?: string, html?: string }
-      const content = result.message?.content;
-      const responseText = typeof content === 'string'
-        ? content
-        : (content as any)?.md || (content as any)?.text || '';
-      const sessionId = result.sessionId || this.sessionId || `aac-${Date.now()}`;
-
-      // Extract enhanced prompt from response
-      const promptMatch = responseText.match(/\[ENHANCED_PROMPT\]([\s\S]*?)\[\/ENHANCED_PROMPT\]/);
-      const enhancedPrompt = promptMatch?.[1]?.trim();
-
-      if (enhancedPrompt) {
-        console.log("[MonitorAgent] Thorough startup generated enhanced prompt (" + enhancedPrompt.length + " chars)");
-        return { sessionId, enhancedPrompt };
-      }
-
-      // Fallback: no tags found — use the raw response as additional context
-      console.warn("[MonitorAgent] Thorough startup: no [ENHANCED_PROMPT] tags in response, using as context");
-      return { sessionId, additionalContext: responseText || undefined };
-    } catch (error) {
-      console.error("[MonitorAgent] Thorough startup failed, falling back to fast:", error);
-      return this.fastInitializeContext(student);
-    }
-  }
-
-  /**
    * Process pending messages that have accumulated while Monitor was busy
    * This syncs the Interactive Agent's messages with the database
    */
@@ -424,7 +329,7 @@ ${personaPrompt}`;
     try {
       // Build monitor prompt for dual mode
       const systemPromptOverride = this.student
-        ? buildMonitorSystemPrompt(this.student, this.framework, interactionMode, interactivePrompt, availableBoards)
+        ? buildMonitorSystemPrompt(this.student, interactionMode, interactivePrompt, availableBoards)
         : undefined;
 
       // Process through sessionService for memory updates

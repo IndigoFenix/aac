@@ -411,6 +411,53 @@ export class GeminiLiveProvider implements LiveProvider {
     }
   }
 
+  /**
+   * Deliver tool responses as protocol-correct functionResponse parts wrapped
+   * in a Content with role="user", via sendClientContent(turnComplete=false).
+   *
+   * Why this exists:
+   *   - sendToolResponse() is the "correct" path, but on Vertex Live the SDK
+   *     forbids `behavior: NON_BLOCKING` on tool declarations, so all tools
+   *     are BLOCKING. For BLOCKING tools `scheduling: SILENT` is silently
+   *     ignored, so every sendToolResponse triggers a new turn — that's the
+   *     duplication bug we hit earlier (see duplication_root_cause.md).
+   *   - sendContextInjection() avoids the new turn, but it sends free text
+   *     that does NOT resolve the open functionCall in the model's state →
+   *     RESPONSE_REJECTED on the next generation because the protocol is
+   *     malformed.
+   *   - sendClientContent with proper functionResponse parts and
+   *     turnComplete=false closes the loop: the model gets a structured
+   *     response that resolves its functionCall, AND no new turn is
+   *     generated (turnComplete:false suppresses generation).
+   *
+   * The SDK's tLiveClientContent serializer accepts arbitrary parts inside
+   * `turns`, including functionResponse parts — verified in
+   * @google/genai/dist/node/index.mjs.
+   */
+  sendToolResponseAsContent(responses: ToolResponse[]): void {
+    if (!this.session || !this.connected) return;
+    if (responses.length === 0) return;
+    try {
+      const parts = responses.map(r => ({
+        functionResponse: {
+          id: r.id,
+          name: r.name,
+          response: r.response,
+        },
+      }));
+      logLiveSession(
+        "CLIENT → sendToolResponseAsContent",
+        `count=${responses.length} names=[${responses.map(r => r.name).join(", ")}] turnComplete=false`,
+      );
+      this.session.sendClientContent({
+        turns: [{ role: "user", parts }],
+        turnComplete: false,
+      });
+    } catch (err) {
+      console.error("[GeminiLiveProvider] Failed to send tool response as content:", err);
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Server message handling
   // -------------------------------------------------------------------------

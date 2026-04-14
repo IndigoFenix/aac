@@ -96,15 +96,52 @@ export async function synthesize(
 }
 
 /**
- * Synthesize as a stream (yields single buffer).
+ * Synthesize as a stream, yielding audio chunks as they arrive.
+ * Uses generateContentStream for true streaming — audio chunks are
+ * yielded incrementally instead of waiting for the full response.
  */
 export async function* synthesizeStream(
   text: string,
   language: string,
   options: TTSOptions = {}
 ): AsyncGenerator<Buffer> {
-  const buffer = await synthesize(text, language, options);
-  yield buffer;
+  const voiceName = getVoiceName(options);
+
+  console.log(
+    `[GeminiTTS] Streaming: "${text.substring(0, 50)}..." (voice: ${voiceName}, lang: ${language})`
+  );
+
+  const ai = getClient();
+  const t0 = Date.now();
+  const stream = await ai.models.generateContentStream({
+    model: "gemini-2.5-flash-preview-tts",
+    contents: `Say the following in ${language}, exactly as written, with natural intonation. Do not add anything else:\n\n${text}`,
+    config: {
+      responseModalities: [Modality.AUDIO],
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: { voiceName },
+        },
+      },
+    },
+  });
+  console.log(`[GeminiTTS] Stream connected in ${Date.now() - t0}ms (via ${process.env.GOOGLE_CLOUD_PROJECT ? "VertexAI" : "APIKey"})`);
+
+  let totalBytes = 0;
+  let chunkCount = 0;
+  for await (const chunk of stream) {
+    const part = chunk.candidates?.[0]?.content?.parts?.[0];
+    if (part?.inlineData?.data) {
+      chunkCount++;
+      const pcm = Buffer.from(part.inlineData.data, "base64");
+      const wav = pcmToWav(pcm);
+      totalBytes += wav.length;
+      console.log(`[GeminiTTS] Chunk ${chunkCount} at +${Date.now() - t0}ms: ${wav.length} bytes`);
+      yield wav;
+    }
+  }
+
+  console.log(`[GeminiTTS] Stream complete: ${chunkCount} chunks, ${totalBytes} bytes in ${Date.now() - t0}ms`);
 }
 
 /** Convert raw PCM (24kHz 16-bit LE mono) to WAV */

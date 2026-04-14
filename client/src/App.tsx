@@ -7,6 +7,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import { AccessibilityProvider } from "@/contexts/AccessibilityContext";
+import { CookieConsent } from "@/components/CookieConsent";
 import { SoundProvider } from "@/contexts/SoundContext";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { StudentProvider, useStudent } from "@/hooks/useStudent";
@@ -27,6 +29,7 @@ import "./i18n";
 import { ChatProvider } from "./hooks/useChat";
 import { FeaturePanelProvider } from "@/contexts/FeaturePanelContext";
 import { InstituteProvider } from "./hooks/useInstitute";
+import { UserChatProvider } from "./features/userChat/UserChatContext";
 import { IdentityVerificationDialog } from "./components/IdentityVerificationDialog";
 import ForgotPasswordPage from "./pages/forgotPasswordPage";
 import MfaRecoveryPage from "./pages/MfaRecoveryPage";
@@ -207,7 +210,8 @@ function Router() {
       <Route path="/institute" component={ProtectedDashboard} />
       <Route path="/reports" component={ProtectedDashboard} />
       <Route path="/calendar" component={ProtectedDashboard} />
-      
+      <Route path="/userchat" component={ProtectedDashboard} />
+
       {/* Settings */}
       <Route path="/settings" component={ProtectedDashboard} />
 
@@ -291,16 +295,21 @@ function App() {
                 <IdentityVerificationDialog />
                 <StudentLabelSync />
                 <StudentProvider>
+                  <UserChatProvider>
                   <FeaturePanelProvider>
                     <ChatProvider>
                       <ThemeProvider defaultTheme="dark">
-                        <TooltipProvider>
-                          <Toaster />
-                          <Router />
-                        </TooltipProvider>
+                        <AccessibilityProvider>
+                          <TooltipProvider>
+                            <Toaster />
+                            <Router />
+                            <CookieConsent />
+                          </TooltipProvider>
+                        </AccessibilityProvider>
                       </ThemeProvider>
                     </ChatProvider>
                   </FeaturePanelProvider>
+                  </UserChatProvider>
                 </StudentProvider>
               </InstituteProvider>
             </AuthProvider>

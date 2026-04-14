@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, User, Save, Volume2, MessageSquare, LogOut, Sun, Moon, Crosshair, LayoutGrid, Brain, Zap, Search, RotateCcw, RefreshCw, Target, Play, Loader2 } from "lucide-react";
+import { X, User, Save, Volume2, MessageSquare, LogOut, Sun, Moon, Crosshair, LayoutGrid, Brain, Zap, Search, RotateCcw, RefreshCw, Target, Play, Loader2, Accessibility } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -121,6 +121,12 @@ export default function UserSettings({
   const [eyegazeTimeout, setEyegazeTimeout] = useState(2000);
   const [eyegazeProvider, setEyegazeProvider] = useState<EyeGazeProviderType | "auto">("auto");
 
+  // Accessibility (stored in DB as JSON blob)
+  const [accessFontSize, setAccessFontSize] = useState(100);
+  const [accessHighContrast, setAccessHighContrast] = useState(false);
+  const [accessReduceAnimations, setAccessReduceAnimations] = useState(false);
+  const [accessEnhancedFocus, setAccessEnhancedFocus] = useState(false);
+
   // Track whether restart-required settings have changed since last save
   const [needsRestart, setNeedsRestart] = useState(false);
   const savedValuesRef = useRef<Record<string, any>>({});
@@ -202,6 +208,12 @@ export default function UserSettings({
       setEyegazeEnabled(ee);
       setEyegazeTimeout(et);
       setEyegazeProvider(ep);
+
+      const acc = aac?.accessibility || {};
+      setAccessFontSize(acc.fontSize ?? 100);
+      setAccessHighContrast(acc.highContrast ?? false);
+      setAccessReduceAnimations(acc.reduceAnimations ?? false);
+      setAccessEnhancedFocus(acc.enhancedFocusIndicator ?? false);
 
       // Store saved values for dirty detection
       savedValuesRef.current = { il, sm, cap };
@@ -295,6 +307,12 @@ export default function UserSettings({
       eyegazeEnabled,
       eyegazeTimeout,
       eyegazeProvider,
+      accessibility: {
+        fontSize: accessFontSize,
+        highContrast: accessHighContrast,
+        reduceAnimations: accessReduceAnimations,
+        enhancedFocusIndicator: accessEnhancedFocus,
+      },
     });
   };
 
@@ -318,6 +336,10 @@ export default function UserSettings({
     setEyegazeEnabled(false);
     setEyegazeTimeout(2000);
     setEyegazeProvider("auto");
+    setAccessFontSize(100);
+    setAccessHighContrast(false);
+    setAccessReduceAnimations(false);
+    setAccessEnhancedFocus(false);
   };
 
   const handleRestartConfirm = () => {
@@ -433,6 +455,58 @@ export default function UserSettings({
                       {t("settings.dark")}
                     </Button>
                   </div>
+                </div>
+              </div>
+
+              {/* Accessibility */}
+              <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <Accessibility className="h-5 w-5" />
+                  {t("settings.accessibility")}
+                </h3>
+
+                {/* Font Size */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">{t("settings.fontSize")}</Label>
+                    <span className="text-sm text-gray-500">{accessFontSize}%</span>
+                  </div>
+                  <Slider
+                    min={75}
+                    max={200}
+                    step={25}
+                    value={[accessFontSize]}
+                    onValueChange={(v) => setAccessFontSize(v[0])}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-gray-500">{t("settings.fontSizeDesc")}</p>
+                </div>
+
+                {/* High Contrast */}
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <Label className="text-sm font-medium">{t("settings.contrastMode")}</Label>
+                    <p className="text-xs text-gray-500">{t("settings.contrastModeDesc")}</p>
+                  </div>
+                  <Switch checked={accessHighContrast} onCheckedChange={setAccessHighContrast} />
+                </div>
+
+                {/* Reduce Animations */}
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <Label className="text-sm font-medium">{t("settings.reduceAnimations")}</Label>
+                    <p className="text-xs text-gray-500">{t("settings.reduceAnimationsDesc")}</p>
+                  </div>
+                  <Switch checked={accessReduceAnimations} onCheckedChange={setAccessReduceAnimations} />
+                </div>
+
+                {/* Enhanced Focus Indicator */}
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <Label className="text-sm font-medium">{t("settings.enhancedFocus")}</Label>
+                    <p className="text-xs text-gray-500">{t("settings.enhancedFocusDesc")}</p>
+                  </div>
+                  <Switch checked={accessEnhancedFocus} onCheckedChange={setAccessEnhancedFocus} />
                 </div>
               </div>
 

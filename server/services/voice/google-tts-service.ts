@@ -41,6 +41,36 @@ const VOICE_MAP: Record<string, { languageCode: string; name: string }> = {
   "fr-woman": { languageCode: "fr-FR", name: "fr-FR-Neural2-A" },
   "fr-boy": { languageCode: "fr-FR", name: "fr-FR-Neural2-B" },
   "fr-girl": { languageCode: "fr-FR", name: "fr-FR-Neural2-A" },
+
+  // German voices (Neural2)
+  "de-man": { languageCode: "de-DE", name: "de-DE-Neural2-B" },
+  "de-woman": { languageCode: "de-DE", name: "de-DE-Neural2-A" },
+  "de-boy": { languageCode: "de-DE", name: "de-DE-Neural2-B" },
+  "de-girl": { languageCode: "de-DE", name: "de-DE-Neural2-A" },
+
+  // Portuguese voices (Neural2)
+  "pt-man": { languageCode: "pt-BR", name: "pt-BR-Neural2-B" },
+  "pt-woman": { languageCode: "pt-BR", name: "pt-BR-Neural2-A" },
+  "pt-boy": { languageCode: "pt-BR", name: "pt-BR-Neural2-B" },
+  "pt-girl": { languageCode: "pt-BR", name: "pt-BR-Neural2-C" },
+
+  // Mandarin Chinese voices (Neural2)
+  "zh-man": { languageCode: "cmn-CN", name: "cmn-CN-Neural2-B" },
+  "zh-woman": { languageCode: "cmn-CN", name: "cmn-CN-Neural2-A" },
+  "zh-boy": { languageCode: "cmn-CN", name: "cmn-CN-Neural2-B" },
+  "zh-girl": { languageCode: "cmn-CN", name: "cmn-CN-Neural2-A" },
+
+  // Cantonese voices (Standard)
+  "yue-man": { languageCode: "yue-HK", name: "yue-HK-Standard-B" },
+  "yue-woman": { languageCode: "yue-HK", name: "yue-HK-Standard-A" },
+  "yue-boy": { languageCode: "yue-HK", name: "yue-HK-Standard-B" },
+  "yue-girl": { languageCode: "yue-HK", name: "yue-HK-Standard-A" },
+
+  // Korean voices (Neural2)
+  "ko-man": { languageCode: "ko-KR", name: "ko-KR-Neural2-C" },
+  "ko-woman": { languageCode: "ko-KR", name: "ko-KR-Neural2-A" },
+  "ko-boy": { languageCode: "ko-KR", name: "ko-KR-Neural2-C" },
+  "ko-girl": { languageCode: "ko-KR", name: "ko-KR-Neural2-B" },
 };
 
 export type VoiceType = "man" | "woman" | "boy" | "girl";
@@ -92,6 +122,12 @@ function getVoiceConfig(language: string, voiceType: VoiceType): { languageCode:
     spanish: "es",
     russian: "ru",
     french: "fr",
+    german: "de",
+    portuguese: "pt",
+    mandarin: "zh",
+    chinese: "zh",
+    cantonese: "yue",
+    korean: "ko",
   };
   langCode = langMap[langCode] || langCode;
 

@@ -171,12 +171,30 @@ export default function AACBoard({ board, onButtonClick, language = "en", voiceT
             const row = Math.floor(index / cols);
             const col = index % cols;
 
+            // Check for spanning button covering this cell
+            const spanningButton = currentPage.buttons.find(
+              (b) =>
+                ((b.rowSpan ?? 1) > 1 || (b.colSpan ?? 1) > 1) &&
+                row >= b.row &&
+                row < b.row + (b.rowSpan ?? 1) &&
+                col >= b.col &&
+                col < b.col + (b.colSpan ?? 1)
+            );
+
+            // If this cell is covered by a spanning button but is not its origin, skip it
+            if (spanningButton && (row !== spanningButton.row || col !== spanningButton.col)) {
+              return null;
+            }
+
             // Find button at this position
             const button = currentPage.buttons.find(
               (b) => b.row === row && b.col === col
             );
 
             if (button) {
+              const btnRowSpan = button.rowSpan ?? 1;
+              const btnColSpan = button.colSpan ?? 1;
+              const isSpanning = btnRowSpan > 1 || btnColSpan > 1;
               return (
                 <motion.button
                   key={button.id}
@@ -194,6 +212,10 @@ export default function AACBoard({ board, onButtonClick, language = "en", voiceT
                   style={{
                     backgroundColor: getButtonColor(button.color),
                     minHeight: "80px",
+                    ...(isSpanning ? {
+                      gridColumn: `span ${btnColSpan}`,
+                      gridRow: `span ${btnRowSpan}`,
+                    } : {}),
                   }}
                 >
                   {/* Symbol/Icon */}

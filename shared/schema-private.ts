@@ -399,6 +399,9 @@ export const aacSettings = pgTable("aac_settings", {
   // App configuration — per-app settings stored as JSON (e.g. { youtube: { enabled: true }, spotify: { enabled: true } })
   appConfig: jsonb("app_config").default({}),
 
+  // Accessibility — single JSON blob so new options don't require migrations
+  accessibility: jsonb("accessibility").default({}), // { fontSize?: number, highContrast?: boolean, reduceAnimations?: boolean, enhancedFocusIndicator?: boolean }
+
   // Recognition
   knownPeople: jsonb("known_people").default([]), // Array of known people for recognition
 
@@ -1152,6 +1155,60 @@ export const chatSessions = pgTable("chat_sessions", {
   index("idx_chat_sessions_status").on(table.status),
 ]);
 
+// =============================================================================
+// USER CHAT — Clinician-to-clinician messaging scoped to a shared institute.
+// instituteId stored as varchar (no FK) to avoid circular import with schema.ts;
+// app-level authorization enforces the same-institute predicate.
+// =============================================================================
+
+export const userChatRooms = pgTable("user_chat_rooms", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  instituteId: varchar("institute_id").notNull(),
+  name: text("name"),
+  isDirect: boolean("is_direct").default(false).notNull(),
+  createdBy: varchar("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  lastMessageAt: timestamp("last_message_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_user_chat_rooms_institute_id").on(table.instituteId),
+  index("idx_user_chat_rooms_last_message_at").on(table.lastMessageAt),
+]);
+
+export const userChatRoomParticipants = pgTable("user_chat_room_participants", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  roomId: varchar("room_id").references(() => userChatRooms.id, { onDelete: "cascade" }).notNull(),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  joinedAt: timestamp("joined_at").defaultNow().notNull(),
+  lastReadAt: timestamp("last_read_at"),
+  leftAt: timestamp("left_at"),
+}, (table) => [
+  uniqueIndex("idx_user_chat_room_participants_room_user").on(table.roomId, table.userId),
+  index("idx_user_chat_room_participants_user_id").on(table.userId),
+]);
+
+export const userChats = pgTable("user_chats", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  roomId: varchar("room_id").references(() => userChatRooms.id, { onDelete: "cascade" }).notNull(),
+  senderId: varchar("sender_id").references(() => users.id).notNull(),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  editedAt: timestamp("edited_at"),
+  deletedAt: timestamp("deleted_at"),
+}, (table) => [
+  index("idx_user_chats_room_created").on(table.roomId, table.createdAt),
+  index("idx_user_chats_sender_id").on(table.senderId),
+]);
+
+export const userChatPushTokens = pgTable("user_chat_push_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  token: text("token").notNull(),
+  platform: text("platform").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_user_chat_push_tokens_user_token").on(table.userId, table.token),
+]);
+
 export const boards = pgTable("boards", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").references(() => users.id).notNull(),
@@ -1645,6 +1702,14 @@ export type Student = typeof students.$inferSelect;
 export type InsertStudent = z.infer<typeof insertStudentSchema>;
 export type UpdateStudent = z.infer<typeof updateStudentSchema>;
 
+// Accessibility options stored inside aacSettings.accessibility jsonb column
+export interface AccessibilitySettings {
+  fontSize?: number;              // percentage 75–200, default 100
+  highContrast?: boolean;         // high-contrast color scheme
+  reduceAnimations?: boolean;     // disable/reduce UI animations
+  enhancedFocusIndicator?: boolean; // stronger outline for keyboard/eyegaze navigation
+}
+
 // AAC settings types
 export type AacSettings = typeof aacSettings.$inferSelect;
 export type InsertAacSettings = z.infer<typeof insertAacSettingsSchema>;
@@ -1798,3 +1863,13 @@ export type ActivityEventType = (typeof activityEventTypeEnum.enumValues)[number
 export type ActivitySubjectType = (typeof activitySubjectTypeEnum.enumValues)[number];
 export type ActivityLog = typeof activityLogs.$inferSelect;
 export type InsertActivityLog = typeof activityLogs.$inferInsert;
+
+// User chat types
+export type UserChatRoom = typeof userChatRooms.$inferSelect;
+export type InsertUserChatRoom = typeof userChatRooms.$inferInsert;
+export type UserChatRoomParticipant = typeof userChatRoomParticipants.$inferSelect;
+export type InsertUserChatRoomParticipant = typeof userChatRoomParticipants.$inferInsert;
+export type UserChat = typeof userChats.$inferSelect;
+export type InsertUserChat = typeof userChats.$inferInsert;
+export type UserChatPushToken = typeof userChatPushTokens.$inferSelect;
+export type InsertUserChatPushToken = typeof userChatPushTokens.$inferInsert;

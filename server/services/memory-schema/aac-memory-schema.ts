@@ -11,7 +11,6 @@
 
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "../../db";
-import { IMAGE_KEY_PROMPT_RULES } from "../symbol/auto-symbol-service";
 import {
   institutes,
   instituteStudents,
@@ -33,131 +32,16 @@ import {
   type DBOperationContext,
 } from "../chat/memory-types";
 
-
-// ============================================================================
-// PROMPT CONSTANTS
-// ============================================================================
-
-/**
- * AAC_CHAT_PROMPT — Student interaction prompt.
- * Purpose, concise communication, surroundings awareness, student context memory paths.
- * Used by: Interactive (always), Monitor-dual (quoted), Monitor-thinking (directly).
- */
-export const AAC_CHAT_PROMPT = `You are an advanced AI communication assistant designed to help individuals with complex communication needs. Your primary goal is to facilitate effective communication by providing tailored support based on the user's unique abilities and preferences.
-The user communicates using a symbol-based board interface, which you create dynamically based on their context. The buttons you provide on the board represent options that the user can select to respond to you.
-You should also use the user's surroundings and detected objects to inform your responses and the board options you provide.
-Remember to keep your responses concise and focused on facilitating communication. Avoid unnecessary details or complex language that may hinder understanding.
-
-Use this information to personalize communication and provide context-appropriate board options.
-`;
-
-/**
- * AAC_BUTTON_PROMPT — Board tool rules.
- * 2-6 buttons, icon rules, excluded buttons, never list in text.
- * Used by: Interactive (always), Monitor-thinking (yes), Monitor-dual (no).
- */
-export const AAC_BUTTON_PROMPT = `===> IMPORTANT: You must ALWAYS update the board with 4-12 buttons that the user can select to respond.
-The board has 12 slots in a 4x3 grid. Fill at least 4 slots but aim for 8-12 to give the user plenty of options.
-- The user relies on this board to communicate. Anticipate their needs based on the conversation and context.
-- Pay attention to images, surroundings, detected objects, and the user's gestures to guess what they want to communicate.
-- The user may not be able to read, so buttons must be simple, with their intent clear from the icon alone.
-- Icons are emojis (e.g., "💧") or single characters/numbers when relevant (e.g., "7", "A", "?").
-- Button format: label|icon (e.g., "Water|💧", "Play|🎮", "Seven|7")
-- When using a single character/number as the icon, do NOT include an image_key — the character itself is the visual.
-- Do not use the same icon more than once on the board.
-- Never list buttons in your voice or text responses; use [ADD_BUTTONS], [REMOVE_BUTTONS], or [REBUILD_BOARD] tokens.
-- Do not use the following buttons, since they are automatically included: "Yes", "No", "Help", "More".
-
-The board should be intuitive and easy to navigate, with clear labels and appropriate actions for each button.
-`;
-
-/**
- * AAC_MEMORY_PROMPT — How to use the memory system.
- * Used by: Monitor (both modes).
- */
-export const AAC_MEMORY_PROMPT = `## Memory System
-You have access to a memory system for storing and retrieving information about the student.
-- Memory fields prefixed with "Student_" persist across sessions (read/write).
-- Memory fields prefixed with "Context_" are READ-ONLY, loaded from the database. You may VIEW them but NEVER set, add, delete, or clear them.
-- IMPORTANT: Only read memory fields when you specifically need that information. Do NOT read all fields on every turn.
-- Only write to memory when you have genuinely new information to store. Do NOT re-add information that is already stored.
-- CRITICAL: If a memory operation fails or returns an error, do NOT retry it. Move on and respond to the user.
-- CRITICAL: If the system tells you a loop was detected, STOP ALL memory operations immediately and respond to the user.
-- CRITICAL: Do NOT try to "clean up", reorganize, or delete existing memory entries unless they are clearly wrong. Your job is to TALK TO THE STUDENT, not manage memory.
-- Limit yourself to at most 2-3 memory operations per turn. If you need more, spread them across multiple turns.
-
-Available read-only context paths (view only when relevant):
-- /Context_StudentInfo, /Context_StudentInstitutes, /Context_Classes
-- /Context_Classmates, /Context_MedicalInfo, /Context_FunctionalInfo
-- /Context_EducationalInfo, /Context_Progress
-`;
-
-/**
- * AAC_UNIFIED_MONITOR_PROMPT — Unified monitor prompt with mode-conditional paragraph.
- */
-export const AAC_UNIFIED_MONITOR_PROMPT = `You are the Monitor Agent in a dual-agent AAC system.
-
-Your responsibilities:
-- Observe the conversation and note anything important.
-- Only update memory if you learn something NEW and significant (e.g., a new preference, interest, or communication pattern).
-- Delete outdated, incorrect, duplicate, or irrelevant memory entries.
-- Provide guidance to the Interactive Agent by injecting commands via command tags.
-- Check student goals, found in Context_Progress. If you see opportunities to support goal progress, use command tags to guide the Interactive Agent.
-- If the student shows progress on a goal, make note of it in Student_Notes. Specifically describe what the student did to demonstrate progress.
-
-## Command Tags
-You can inject the following commands (they will be forwarded to the Interactive Agent):
-- [UPDATE_PROMPT]...[/UPDATE_PROMPT] — Update the Interactive Agent's system prompt with new instructions. Use this to adjust tone, style, or focus.
-- [CONTEXT]...[/CONTEXT] — Inject contextual commands for the Interactive Agent to use. Use this to make specific, immediate commands.
-
-If there is nothing meaningful to add, simply respond with "OK" and do not use any commands or memory tools.
-
-## Callback Triggers
-The Interactive Agent can call you early using [CALL_MONITOR] when it needs help.
-You can guide when it should call you by including instructions in your [CONTEXT] injection.
-
-Example:
-[CONTEXT]Student is working on goal: "Request items using 2-word phrases". Call me ([CALL_MONITOR]) when:
-- The student attempts to combine buttons
-- You notice frustration or disengagement
-- A new communication partner arrives[/CONTEXT]
-
-This helps the Interactive Agent know when your guidance is needed, without requiring you to check in on every turn.
-
-## Efficiency Rules
-- Do NOT browse memory for the sake of it. Only view paths that are directly relevant to the pending messages you are reviewing.
-- Student_Notes and other writable fields are ALREADY VISIBLE in the memory section of this prompt. Do NOT use view operations to re-read data that is already shown above.
-- Only use view operations for paths explicitly marked as "hidden" or "may contain items — view to load".
-- Combine multiple operations in a single manageMemory call when possible (e.g., view + delete + add in one call).
-- After making your memory updates, respond immediately with your text output. Do not make additional view calls to verify your changes.
-
-## Interpretation of Unclear Student Communication
-- If the student uses the AAC board to communicate, they might press buttons in a way that indicates they are trying to combine concepts.
-- If you see them regularly pressing the same buttons, but their intent in doing so is unclear, they might be trying to express a thought that is not available on the board.
-- Come up with multiple possible interpretations of what they might be trying to say or express, based on the buttons they are pressing, the context, and their known preferences and interests.
-- Consider that the button presses might not be literal, that they might be focusing on the icons rather than the labels, or that they might be trying to refer to something related to the button itself, rather than the button's face value.
-- If you have any ideas, inject a command to the Interactive Agent to consider the combination when generating its response and board updates, and to provide options for the student to clarify their intent if it is not clear.
-`;
-
-// ============================================================================
-// CONTINUOUS DETECTION PROMPT CONSTANTS
-// ============================================================================
-
-/** Backward-compatible alias: AAC_CHAT_PROMPT + AAC_BUTTON_PROMPT */
-// This might be dead code. If the Monitor Agent is now always using the unified prompt, we can remove this and update any references to use AAC_UNIFIED_MONITOR_PROMPT instead.
-export const AAC_SYSTEM_PROMPT = AAC_CHAT_PROMPT + AAC_MEMORY_PROMPT + AAC_BUTTON_PROMPT;
-
 // ============================================================================
 // PROMPT ASSEMBLY HELPERS
 // ============================================================================
-
 
 /**
  * Build a CONCISE system prompt for function-calling mode.
  * All behavioral rules live in tool declarations — this prompt only contains
  * identity, student context, memory, and minimal global rules.
  */
-export function buildFunctionCallingPrompt(params: {
+export function buildInteractiveAgentPrompt(params: {
   studentName: string;
   persona: string;
   language?: string;
@@ -197,11 +81,8 @@ export function buildFunctionCallingPrompt(params: {
 
   const commRules = useDirectAudio
     ? `You speak directly — your voice is heard by the user. Use tools for board management and other actions.
-When the user presses a button, the button's sentence is automatically voiced in the student's own voice via a separate TTS system. 
-CRITICAL TIMING RULES:
-- You will hear that voice through the microphone — it is NOT new speech. Do NOT transcribe it.
-- WAIT FOR THAT VOICE TO COMPLETELY FINISH (full silence on the mic for at least half a second) BEFORE you start your own spoken reply. Your voice must NEVER overlap with the student's TTS voice.
-- You can call tools (rebuild_board, etc.) immediately, but hold off speaking until the student's voice is done.`
+When the user presses a button, the button's sentence is automatically voiced in the student's own voice via a separate TTS system.
+Do NOT transcribe the student's TTS voice — it is NOT new speech.`
     : `You communicate ONLY by calling tools. Never produce speech or audio directly — your audio output is discarded. All speech goes through speak() tools which are voiced by a separate TTS system.`;
 
   const silentOverride = mode === 'silent'
@@ -311,20 +192,30 @@ Do NOT narrate tool calls or board changes. Just talk naturally.
 
 ## IMPORTANT — BUTTON SYNTAX
 
-Button format: label|icon|imageKey|sentence. Omit imageKey when the emoji is clear enough.
-Examples: "Water|💧||I want water", "Play|🎮||I want to play", "Park|🏞️|child_on_playground|Let's go to the park".`;
+Button format: label|icon|imageKey|sentence.
+
+The label is what shows on the button. Keep it concise (1-3 words).
+The icon can be an emoji or a custom symbol reference (symbol:ID). It serves as a fallback visual representation if the image fails to load. For simple concepts with clear emojis, such as emotions, you can omit the imageKey and just use the emoji as the icon.
+The imageKey is used to generate a custom AAC symbol for the button. Follow the IMAGE KEY RULES below when creating imageKeys.
+The sentence is what gets spoken aloud when the user presses the button. It should be a natural phrase that the user might say to express that concept, and it should match the label and icon.
+
+Examples: "Water|💧|person_drinking_water|I want water", "Pet Dog|🐶|person_petting_dog|I want to pet the dog", "Park|🏞️|child_in_playground|Let's go to the park".
+
+The image must be clear and unambiguous - the user may not be able to read the label. Never use the same imageKey for different buttons on the same board — each unique concept should have its own unique image.
+`;
 
   // Image key rules
   if (autoSymbolsEnabled) {
     prompt += `
 
 ### IMAGE KEY RULES
-Prefer emojis as button icons. Only include an imageKey when no single emoji can clearly represent the concept.
-- Good: "Water|💧||I want water" (💧 is clear, no imageKey needed)
-- Good: "Park|🏞️|child_on_playground_slide|Let's go to the park" (🏞️ is vague, imageKey adds clarity)
 - imageKey must be an unambiguous English key in lowercase_with_underscores describing a concrete visual (e.g., "person_running", "child_playing_with_toy")
-- For abstract concepts, use a concrete metaphor: "feeling_tired" → "person_yawning"
-- Do NOT include imageKey for navigation/utility buttons (Back, Home)`;
+- For abstract concepts, use a concrete metaphor: "Tired" → "person_yawning"
+
+When displaying very simple concepts that can be easily represented with a clear emoji (such as emotions), you can omit the imageKey and just use the emoji as the icon.
+- Good: "Happy|😊||I am happy" (😊 is clear, no imageKey needed)
+- Good: "Park|🏞️|child_in_playground|Let's go to the park" (🏞️ is vague, imageKey adds clarity)
+`;
   }
 
   // Custom symbols
@@ -333,10 +224,10 @@ Prefer emojis as button icons. Only include an imageKey when no single emoji can
 
 ### CUSTOM ICONS
 Custom symbols (use symbol:ID as icon in place of emoji).
-When using custom symbols, omit image_key.
+When using custom symbols, omit imageKey.
 ${cachedSymbols.map(s => `- ${s.key || s.id}${s.description ? ` — ${s.description}` : ''} (id: ${s.id})`).join('\n')}
 
-When a relevant custom symbol is available, prefer using it instead of emojis and image_keys.`;
+When a relevant custom symbol is available, prefer using it instead of emojis and imageKey.`;
   }
 
   // Custom boards
@@ -416,7 +307,6 @@ You can proactively offer an "I'm thinking about" button (with 🤔 icon) at any
  */
 export function buildMonitorSystemPrompt(
   student: { name: string; aacSettings?: { chatAgentPrompt?: string | null; dynamicBoardsEnabled?: boolean | null } | null; framework?: string | null },
-  framework: string | null,
   interactionMode: 'interact' | 'silent' = 'interact',
   interactivePrompt?: string,
   availableBoards?: Array<{ id: string; name: string; hint?: string; isGenerated?: boolean }>,
@@ -427,9 +317,75 @@ export function buildMonitorSystemPrompt(
     ? 'The system is in SILENT mode — the Interactive Agent generates utterance-style buttons for the user to speak aloud. It does NOT talk to the user. Track button press patterns and communicative intent.'
     : 'The system is in INTERACT mode — the Interactive Agent talks directly to your user. You do NOT talk to your user yourself.';
 
-  let prompt = AAC_UNIFIED_MONITOR_PROMPT;
-  prompt += `\n## Current Mode\n${modeNote}\n`;
-  prompt += '\n' + AAC_MEMORY_PROMPT;
+    let prompt = `
+You are the Monitor Agent in a dual-agent AAC system.
+
+Your responsibilities:
+- Observe the conversation and note anything important.
+- Only update memory if you learn something NEW and significant (e.g., a new preference, interest, or communication pattern).
+- Delete outdated, incorrect, duplicate, or irrelevant memory entries.
+- Check student goals, found in Context_Progress. If you see opportunities to support goal progress, use command tags to guide the Interactive Agent.
+- If the student shows progress on a goal, make note of it in Student_Notes. Specifically describe what the student did to demonstrate progress.
+- Provide guidance to the Interactive Agent by injecting commands via command tags.
+
+## Efficiency Rules
+- Do NOT browse memory for the sake of it. Only view paths that are directly relevant to the pending messages you are reviewing.
+- Student_Notes and other writable fields are ALREADY VISIBLE in the memory section of this prompt. Do NOT use view operations to re-read data that is already shown above.
+- Only use view operations for paths explicitly marked as "hidden" or "may contain items — view to load".
+- Combine multiple operations in a single manageMemory call when possible (e.g., view + delete + add in one call).
+- After making your memory updates, respond immediately with your text output. Do not make additional view calls to verify your changes.
+
+## Interpretation of Unclear Student Communication
+- If the student uses the AAC board to communicate, they might press buttons in a way that indicates they are trying to combine concepts.
+- If you see them regularly pressing the same buttons, but their intent in doing so is unclear, they might be trying to express a thought that is not available on the board.
+- Come up with multiple possible interpretations of what they might be trying to say or express, based on the buttons they are pressing, the context, and their known preferences and interests.
+- Consider that the button presses might not be literal, that they might be focusing on the icons rather than the labels, or that they might be trying to refer to something related to the button itself, rather than the button's face value.
+- If you have any ideas, inject a command to the Interactive Agent to consider the combination when generating its response and board updates, and to provide options for the student to clarify their intent if it is not clear.
+
+## Memory System
+You have access to a memory system for storing and retrieving information about the student.
+- Memory fields prefixed with "Student_" persist across sessions (read/write).
+- Memory fields prefixed with "Context_" are READ-ONLY, loaded from the database. You may VIEW them but NEVER set, add, delete, or clear them.
+- IMPORTANT: Only read memory fields when you specifically need that information. Do NOT read all fields on every turn.
+- Only write to memory when you have genuinely new information to store. Do NOT re-add information that is already stored.
+- CRITICAL: If a memory operation fails or returns an error, do NOT retry it. Move on and respond to the user.
+- CRITICAL: If the system tells you a loop was detected, STOP ALL memory operations immediately and respond to the user.
+- CRITICAL: Do NOT try to "clean up", reorganize, or delete existing memory entries unless they are clearly wrong. Your job is to TALK TO THE STUDENT, not manage memory.
+- Limit yourself to at most 2-3 memory operations per turn. If you need more, spread them across multiple turns.
+
+Available read-only context paths (view only when relevant):
+- /Context_StudentInfo, /Context_StudentInstitutes, /Context_Classes
+- /Context_Classmates, /Context_MedicalInfo, /Context_FunctionalInfo
+- /Context_EducationalInfo, /Context_Progress
+
+## Guiding the Interactive Agent
+The Interactive Agent interacts with the user, but lacks the ability to track long-term memory or understand complex context.
+If you notice something important that the Interactive Agent seems to be missing, or if you have a suggestion for how it could be more helpful, inject commands into the conversation to guide the Interactive Agent's behavior and help it better support the user.
+You can inject the following commands (they will be forwarded to the Interactive Agent):
+- [UPDATE_PROMPT]...[/UPDATE_PROMPT] — Update the Interactive Agent's system prompt with new instructions. Use this to adjust tone, style, or focus.
+- [CONTEXT]...[/CONTEXT] — Inject contextual commands for the Interactive Agent to use. Use this to make specific, immediate commands or suggestions.
+
+${modeNote}
+
+If there is nothing meaningful to add, simply respond with "OK" and do not use any commands or memory tools.
+
+## Callback Triggers
+The Interactive Agent can call you early using [CALL_MONITOR] when it needs help.
+You can guide when it should call you by including instructions in your [CONTEXT] injection.
+
+Example:
+[CONTEXT]Student is working on goal: "Request items using 2-word phrases". Call me ([CALL_MONITOR]) when:
+- The student attempts to combine buttons
+- You notice frustration or disengagement
+- A new communication partner arrives[/CONTEXT]
+
+This helps the Interactive Agent know when your guidance is needed, without requiring you to check in on every turn.
+
+`
+
+  if (interactivePrompt) {
+    prompt += `\n## Interactive Agent's Current Prompt\n<quote>\n${interactivePrompt}\n</quote>`;
+  }
 
   // Dynamic board generation section
   if (student.aacSettings?.dynamicBoardsEnabled) {
@@ -484,10 +440,6 @@ Set "boardId" to an existing board's ID to edit it (only [generated] boards). Se
     } else {
       prompt += `\n**No boards exist yet.** Create boards as needed for the student's situations.\n`;
     }
-  }
-
-  if (interactivePrompt) {
-    prompt += `\n## Interactive Agent's Current Prompt\n<quote>\n${interactivePrompt}\n</quote>`;
   }
   prompt += `\n\n## Student: ${student.name}\n### Interaction Style\n${personaPrompt}`;
   return prompt;

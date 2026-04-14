@@ -9,6 +9,7 @@ import LoginModal from "@/components/LoginModal";
 import StudentSelector from "@/components/StudentSelector";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { LanguageProvider, useLanguage } from "@/contexts/LanguageContext";
+import { CookieConsent } from "@/components/CookieConsent";
 import { AppInitializationProvider } from "@/contexts/AppInitializationContext";
 import { BoardsProvider } from "@/contexts/BoardsContext";
 import { ConversationProvider } from "@/contexts/ConversationContext";
@@ -134,6 +135,7 @@ function App() {
             <TooltipProvider>
               <Toaster />
               <MainApp />
+              <CookieConsent />
             </TooltipProvider>
           </ServerStatusGuard>
         </LanguageProvider>

@@ -1,23 +1,22 @@
-[15:22:37.504] memoryValues.Student_Notes (7 items)
+[20:56:17.088] memoryValues.Student_Notes (6 items)
 [
   "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
-  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection.",
-  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain.",
-  "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear.",
-  "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings.",
-  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue.",
-  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided."
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration.",
+  "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities.",
+  "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests."
 ]
-[15:22:37.505] memoryValues.Student_People (0 items)
+[20:56:17.090] memoryValues.Student_People (0 items)
 []
-[15:22:37.507] memoryValues.Student_Interests (4 items)
+[20:56:17.091] memoryValues.Student_Interests (4 items)
 [
   "facts",
   "drawing",
   "music",
   "science"
 ]
-[15:22:37.509] memoryValues.Student_Preferences
+[20:56:17.096] memoryValues.Student_Preferences
 {
   "FavoriteActivities": [
     "drawing",
@@ -26,11 +25,11 @@
     "interactive exploration"
   ]
 }
-[15:22:37.511] memoryValues.Student_CommunicationStyle
+[20:56:17.098] memoryValues.Student_CommunicationStyle
 {
   "PrimaryMethod": "AAC"
 }
-[15:22:37.513] memoryVisualization — data section (73 lines)
+[20:56:17.100] memoryVisualization — data section (72 lines)
 === Current Memory ===
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
@@ -50,14 +49,13 @@
   - RewardPreferences: {array} (empty)
   - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
   ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 7 items) — General notes about the student (non-sensitive) 
+• /Student_Notes (array, 6 items) — General notes about the student (non-sensitive) 
   - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
-  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection."
-  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain."
-  - [3]: "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear."
-  - [4]: "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings."
-  - [5]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue."
-  - [6]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided."
+  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts."
+  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated."
+  - [3]: "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration."
+  - [4]: "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities."
+  - [5]: "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests."
   ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
 • /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
   (may contain items - view "/Context_Library" to load from database)
@@ -108,166 +106,29 @@ Notes:
 ============================================================
   manageMemory called
 ============================================================
-[15:22:39.425] INPUT
-{
-  "ops": [
-    {
-      "action": "view",
-      "path": "/Context_Progress/*"
-    }
-  ]
-}
-[15:22:40.503] RESULTS
-[
-  {
-    "target": "/Context_Progress/*",
-    "action": "view",
-    "ok": true,
-    "message": "• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \\n  ↪ To expand: view \"/Context_Progress/*\". (read-only)",
-    "mutatedPaths": [],
-    "summary": "Path not found or not loaded"
-  }
-]
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[15:22:40.549] memoryValues.Student_Notes (7 items)
-[
-  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
-  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection.",
-  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain.",
-  "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear.",
-  "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings.",
-  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue.",
-  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided."
-]
-[15:22:40.551] memoryValues.Student_People (0 items)
-[]
-[15:22:40.553] memoryValues.Student_Interests (4 items)
-[
-  "facts",
-  "drawing",
-  "music",
-  "science"
-]
-[15:22:40.554] memoryValues.Student_Preferences
-{
-  "FavoriteActivities": [
-    "drawing",
-    "music",
-    "interactive apps",
-    "interactive exploration"
-  ]
-}
-[15:22:40.558] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[15:22:40.561] memoryVisualization — data section (75 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
-  - [0]: "facts"
-  - [1]: "drawing"
-  - [2]: "music"
-  - [3]: "science"
-  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (hidden)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 7 items) — General notes about the student (non-sensitive) 
-  - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
-  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection."
-  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain."
-  - [3]: "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear."
-  - [4]: "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings."
-  - [5]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue."
-  - [6]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided."
-  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
-• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  - Articles on Rett Syndrome: {object} (view to expand)
-  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
-  - Preschool SLP Goals Bank: {object} (view to expand)
-• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
-  - prompt: "You are an advanced conversational AI designed to assist AAC (Augmentative and Alternative Communication) users.\nYou should:\n- Respond in a friendly, supportive manner\n- Keep responses concise and clear\n- Help expand on the user's symbol selections to form complete thoughts\n- Ask clarifying questions when needed\n- Be patient and encouraging" — The full custom prompt text
-  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
-• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  manageMemory called
-============================================================
-[15:22:43.623] INPUT
+[20:56:20.295] INPUT
 {
   "ops": [
     {
       "action": "add",
       "path": "/Student_Notes",
-      "value": "April 10 Session (continued): Gal pressed 'Help' button after navigating back to Home from the space/rockets exploration. This may indicate: (1) uncertainty about what to do next, (2) need for assistance with navigation, or (3) genuine need for support. Monitor whether Help button becomes a pattern for re-engagement when Gal cycles through menus."
+      "value": "Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest."
     }
   ]
 }
-[15:22:43.626] BEFORE add /Student_Notes — Student_Notes array (7 items)
+[20:56:20.297] BEFORE add /Student_Notes — Student_Notes array (6 items)
 [
   "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
-  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection.",
-  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain.",
-  "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear.",
-  "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings.",
-  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue.",
-  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided."
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration.",
+  "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities.",
+  "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests."
 ]
-[15:22:43.669] ADD to array /Student_Notes — array has 7 items, adding
-April 10 Session (continued): Gal pressed 'Help' button after navigating back to Home from the space/rockets exploration. This may indicate: (1) uncertainty about what to do next, (2) need for assistance with navigation, or (3) genuine need for support. Monitor whether Help button becomes a pattern for re-engagement when Gal cycles through menus.
-[15:22:43.671] ADD OK /Student_Notes — array now has 8 items
-[15:22:43.870] RESULTS
+[20:56:20.346] ADD to array /Student_Notes — array has 6 items, adding
+Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest.
+[20:56:20.347] ADD OK /Student_Notes — array now has 7 items
+[20:56:20.514] RESULTS
 [
   {
     "target": "/Student_Notes",
@@ -275,42 +136,40 @@ April 10 Session (continued): Gal pressed 'Help' button after navigating back to
     "ok": true
   }
 ]
-[15:22:43.872] AFTER add /Student_Notes — Student_Notes array (8 items)
+[20:56:20.515] AFTER add /Student_Notes — Student_Notes array (7 items)
 [
   "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
-  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection.",
-  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain.",
-  "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear.",
-  "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings.",
-  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue.",
-  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided.",
-  "April 10 Session (continued): Gal pressed 'Help' button after navigating back to Home from the space/rockets exploration. This may indicate: (1) uncertainty about what to do next, (2) need for assistance with navigation, or (3) genuine need for support. Monitor whether Help button becomes a pattern for re-engagement when Gal cycles through menus."
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration.",
+  "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities.",
+  "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests.",
+  "Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest."
 ]
 
 ============================================================
   buildPromptAndTools — AI memory view
 ============================================================
-[15:22:43.893] memoryValues.Student_Notes (8 items)
+[20:56:20.523] memoryValues.Student_Notes (7 items)
 [
   "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
-  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection.",
-  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain.",
-  "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear.",
-  "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings.",
-  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue.",
-  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided.",
-  "April 10 Session (continued): Gal pressed 'Help' button after navigating back to Home from the space/rockets exploration. This may indicate: (1) uncertainty about what to do next, (2) need for assistance with navigation, or (3) genuine need for support. Monitor whether Help button becomes a pattern for re-engagement when Gal cycles through menus."
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration.",
+  "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities.",
+  "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests.",
+  "Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest."
 ]
-[15:22:43.895] memoryValues.Student_People (0 items)
+[20:56:20.526] memoryValues.Student_People (0 items)
 []
-[15:22:43.897] memoryValues.Student_Interests (4 items)
+[20:56:20.528] memoryValues.Student_Interests (4 items)
 [
   "facts",
   "drawing",
   "music",
   "science"
 ]
-[15:22:43.899] memoryValues.Student_Preferences
+[20:56:20.529] memoryValues.Student_Preferences
 {
   "FavoriteActivities": [
     "drawing",
@@ -319,11 +178,11 @@ April 10 Session (continued): Gal pressed 'Help' button after navigating back to
     "interactive exploration"
   ]
 }
-[15:22:43.901] memoryValues.Student_CommunicationStyle
+[20:56:20.531] memoryValues.Student_CommunicationStyle
 {
   "PrimaryMethod": "AAC"
 }
-[15:22:43.903] memoryVisualization — data section (76 lines)
+[20:56:20.533] memoryVisualization — data section (73 lines)
 === Current Memory ===
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
@@ -343,129 +202,14 @@ April 10 Session (continued): Gal pressed 'Help' button after navigating back to
   - RewardPreferences: {array} (empty)
   - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
   ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 8 items) — General notes about the student (non-sensitive) 
+• /Student_Notes (array, 7 items) — General notes about the student (non-sensitive) 
   - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
-  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection."
-  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain."
-  - [3]: "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear."
-  - [4]: "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings."
-  - [5]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue."
-  - [6]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided."
-  - [7]: "April 10 Session (continued): Gal pressed 'Help' button after navigating back to Home from the space/rockets exploration. This may indicate: (1) uncertainty about what to do next, (2) need for assistance with navigation, or (3) genuine need for support. Monitor whether Help button becomes a pattern for re-engagement when Gal cycles through menus."
-  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
-• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  - Articles on Rett Syndrome: {object} (view to expand)
-  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
-  - Preschool SLP Goals Bank: {object} (view to expand)
-• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
-  - prompt: "You are an advanced conversational AI designed to assist AAC (Augmentative and Alternative Communication) users.\nYou should:\n- Respond in a friendly, supportive manner\n- Keep responses concise and clear\n- Help expand on the user's symbol selections to form complete thoughts\n- Ask clarifying questions when needed\n- Be patient and encouraging" — The full custom prompt text
-  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
-• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[15:22:52.914] memoryValues.Student_Notes (8 items)
-[
-  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
-  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection.",
-  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain.",
-  "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear.",
-  "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings.",
-  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue.",
-  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided.",
-  "April 10 Session (continued): Gal pressed 'Help' button after navigating back to Home from the space/rockets exploration. This may indicate: (1) uncertainty about what to do next, (2) need for assistance with navigation, or (3) genuine need for support. Monitor whether Help button becomes a pattern for re-engagement when Gal cycles through menus."
-]
-[15:22:52.916] memoryValues.Student_People (0 items)
-[]
-[15:22:52.917] memoryValues.Student_Interests (4 items)
-[
-  "facts",
-  "drawing",
-  "music",
-  "science"
-]
-[15:22:52.919] memoryValues.Student_Preferences
-{
-  "FavoriteActivities": [
-    "drawing",
-    "music",
-    "interactive apps",
-    "interactive exploration"
-  ]
-}
-[15:22:52.921] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[15:22:52.922] memoryVisualization — data section (74 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
-  - [0]: "facts"
-  - [1]: "drawing"
-  - [2]: "music"
-  - [3]: "science"
-  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (hidden)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 8 items) — General notes about the student (non-sensitive) 
-  - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
-  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection."
-  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain."
-  - [3]: "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear."
-  - [4]: "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings."
-  - [5]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue."
-  - [6]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided."
-  - [7]: "April 10 Session (continued): Gal pressed 'Help' button after navigating back to Home from the space/rockets exploration. This may indicate: (1) uncertainty about what to do next, (2) need for assistance with navigation, or (3) genuine need for support. Monitor whether Help button becomes a pattern for re-engagement when Gal cycles through menus."
+  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts."
+  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated."
+  - [3]: "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration."
+  - [4]: "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities."
+  - [5]: "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests."
+  - [6]: "Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest."
   ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
 • /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
   (may contain items - view "/Context_Library" to load from database)
@@ -516,35 +260,69 @@ Notes:
 ============================================================
   manageMemory called
 ============================================================
-[15:22:56.665] INPUT
+[20:56:23.411] INPUT
 {
-  "ops": "[{\"action\": \"add\", \"path\": \"/Student_Notes\", \"value\": \"April 10 Session (continued): Gal pressed 'Help', then entered guessing mode by pressing 'Thinking' twice in succession. This may indicate: (1) genuine uncertainty about what activity to engage in, (2) need for reassurance or support, or (3) continued cycling pattern. Gal is not selecting a specific category (Actions, People, Things, Places, Feelings, Time) but repeating the 'Thinking' button. Monitor for engagement or frustration.\"}]\n</invoke>"
+  "ops": [
+    {
+      "action": "set",
+      "path": "/Student_Notes/7",
+      "value": "Current Session (April 13, 8:56 PM - ongoing): Gal is repeating the same sequence of button presses multiple times: Interact → Space → Planets → Mars. This repetition pattern (now seen three times in succession) may indicate: (1) Gal is really enjoying Mars and wants to keep talking about it, (2) Gal is testing the system or exploring the navigation, or (3) Gal may be looking for something specific about Mars that isn't available on the current board. Monitor for signs of frustration or attempt to express something more specific. Consider offering expanded Mars-related options (e.g., 'Mars Facts', 'Draw Mars', 'Mars Rovers') or using guessing mode to help Gal clarify intent."
+    }
+  ]
 }
+[20:56:23.413] BEFORE set /Student_Notes/7 — Student_Notes array (7 items)
+[
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration.",
+  "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities.",
+  "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests.",
+  "Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest."
+]
+[20:56:23.593] RESULTS
+[
+  {
+    "target": "/Student_Notes/7",
+    "action": "set",
+    "ok": false,
+    "message": "Array index 7 out of bounds (length: 7)"
+  }
+]
+[20:56:23.595] AFTER set /Student_Notes/7 — Student_Notes array (7 items)
+[
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration.",
+  "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities.",
+  "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests.",
+  "Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest."
+]
 
 ============================================================
   buildPromptAndTools — AI memory view
 ============================================================
-[15:22:56.677] memoryValues.Student_Notes (8 items)
+[20:56:23.604] memoryValues.Student_Notes (7 items)
 [
   "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
-  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection.",
-  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain.",
-  "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear.",
-  "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings.",
-  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue.",
-  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided.",
-  "April 10 Session (continued): Gal pressed 'Help' button after navigating back to Home from the space/rockets exploration. This may indicate: (1) uncertainty about what to do next, (2) need for assistance with navigation, or (3) genuine need for support. Monitor whether Help button becomes a pattern for re-engagement when Gal cycles through menus."
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration.",
+  "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities.",
+  "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests.",
+  "Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest."
 ]
-[15:22:56.679] memoryValues.Student_People (0 items)
+[20:56:23.606] memoryValues.Student_People (0 items)
 []
-[15:22:56.681] memoryValues.Student_Interests (4 items)
+[20:56:23.607] memoryValues.Student_Interests (4 items)
 [
   "facts",
   "drawing",
   "music",
   "science"
 ]
-[15:22:56.683] memoryValues.Student_Preferences
+[20:56:23.609] memoryValues.Student_Preferences
 {
   "FavoriteActivities": [
     "drawing",
@@ -553,11 +331,11 @@ Notes:
     "interactive exploration"
   ]
 }
-[15:22:56.685] memoryValues.Student_CommunicationStyle
+[20:56:23.610] memoryValues.Student_CommunicationStyle
 {
   "PrimaryMethod": "AAC"
 }
-[15:22:56.687] memoryVisualization — data section (74 lines)
+[20:56:23.612] memoryVisualization — data section (73 lines)
 === Current Memory ===
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
@@ -577,15 +355,14 @@ Notes:
   - RewardPreferences: {array} (empty)
   - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
   ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 8 items) — General notes about the student (non-sensitive) 
+• /Student_Notes (array, 7 items) — General notes about the student (non-sensitive) 
   - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
-  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection."
-  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain."
-  - [3]: "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear."
-  - [4]: "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings."
-  - [5]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue."
-  - [6]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided."
-  - [7]: "April 10 Session (continued): Gal pressed 'Help' button after navigating back to Home from the space/rockets exploration. This may indicate: (1) uncertainty about what to do next, (2) need for assistance with navigation, or (3) genuine need for support. Monitor whether Help button becomes a pattern for re-engagement when Gal cycles through menus."
+  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts."
+  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated."
+  - [3]: "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration."
+  - [4]: "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities."
+  - [5]: "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests."
+  - [6]: "Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest."
   ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
 • /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
   (may contain items - view "/Context_Library" to load from database)
@@ -636,35 +413,73 @@ Notes:
 ============================================================
   manageMemory called
 ============================================================
-[15:22:58.572] INPUT
+[20:56:25.395] INPUT
 {
-  "ops": "[{\"action\": \"add\", \"path\": \"/Student_Notes\", \"value\": \"April 10 Session (continued): Gal pressed 'Help', then entered guessing mode by pressing 'Thinking' twice in succession. This may indicate: (1) genuine uncertainty about what activity to engage in, (2) need for reassurance or support, or (3) continued cycling pattern. Gal is not selecting a specific category (Actions, People, Things, Places, Feelings, Time) but repeating the 'Thinking' button. Monitor for engagement or frustration.\"}]\n</invoke>"
+  "ops": [
+    {
+      "action": "add",
+      "path": "/Student_Notes",
+      "value": "Current Session (April 13, 8:56 PM - ongoing): Gal is repeating the same sequence of button presses multiple times: Interact → Space → Planets → Mars. This repetition pattern (now seen three times in succession) may indicate: (1) Gal is really enjoying Mars and wants to keep talking about it, (2) Gal is testing the system or exploring the navigation, or (3) Gal may be looking for something specific about Mars that isn't available on the current board. Monitor for signs of frustration or attempt to express something more specific. Consider offering expanded Mars-related options (e.g., 'Mars Facts', 'Draw Mars', 'Mars Rovers') or using guessing mode to help Gal clarify intent."
+    }
+  ]
 }
+[20:56:25.397] BEFORE add /Student_Notes — Student_Notes array (7 items)
+[
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration.",
+  "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities.",
+  "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests.",
+  "Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest."
+]
+[20:56:25.405] ADD to array /Student_Notes — array has 7 items, adding
+Current Session (April 13, 8:56 PM - ongoing): Gal is repeating the same sequence of button presses multiple times: Interact → Space → Planets → Mars. This repetition pattern (now seen three times in succession) may indicate: (1) Gal is really enjoying Mars and wants to keep talking about it, (2) Gal is testing the system or exploring the navigation, or (3) Gal may be looking for something specific about Mars that isn't available on the current board. Monitor for signs of frustration or attempt to express something more specific. Consider offering expanded Mars-related options (e.g., 'Mars Facts', 'Draw Mars', 'Mars Rovers') or using guessing mode to help Gal clarify intent.
+[20:56:25.407] ADD OK /Student_Notes — array now has 8 items
+[20:56:25.581] RESULTS
+[
+  {
+    "target": "/Student_Notes",
+    "action": "add",
+    "ok": true
+  }
+]
+[20:56:25.583] AFTER add /Student_Notes — Student_Notes array (8 items)
+[
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration.",
+  "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities.",
+  "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests.",
+  "Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest.",
+  "Current Session (April 13, 8:56 PM - ongoing): Gal is repeating the same sequence of button presses multiple times: Interact → Space → Planets → Mars. This repetition pattern (now seen three times in succession) may indicate: (1) Gal is really enjoying Mars and wants to keep talking about it, (2) Gal is testing the system or exploring the navigation, or (3) Gal may be looking for something specific about Mars that isn't available on the current board. Monitor for signs of frustration or attempt to express something more specific. Consider offering expanded Mars-related options (e.g., 'Mars Facts', 'Draw Mars', 'Mars Rovers') or using guessing mode to help Gal clarify intent."
+]
 
 ============================================================
   buildPromptAndTools — AI memory view
 ============================================================
-[15:22:58.583] memoryValues.Student_Notes (8 items)
+[20:56:25.589] memoryValues.Student_Notes (8 items)
 [
   "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
-  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection.",
-  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain.",
-  "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear.",
-  "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings.",
-  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue.",
-  "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided.",
-  "April 10 Session (continued): Gal pressed 'Help' button after navigating back to Home from the space/rockets exploration. This may indicate: (1) uncertainty about what to do next, (2) need for assistance with navigation, or (3) genuine need for support. Monitor whether Help button becomes a pattern for re-engagement when Gal cycles through menus."
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration.",
+  "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities.",
+  "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests.",
+  "Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest.",
+  "Current Session (April 13, 8:56 PM - ongoing): Gal is repeating the same sequence of button presses multiple times: Interact → Space → Planets → Mars. This repetition pattern (now seen three times in succession) may indicate: (1) Gal is really enjoying Mars and wants to keep talking about it, (2) Gal is testing the system or exploring the navigation, or (3) Gal may be looking for something specific about Mars that isn't available on the current board. Monitor for signs of frustration or attempt to express something more specific. Consider offering expanded Mars-related options (e.g., 'Mars Facts', 'Draw Mars', 'Mars Rovers') or using guessing mode to help Gal clarify intent."
 ]
-[15:22:58.587] memoryValues.Student_People (0 items)
+[20:56:25.594] memoryValues.Student_People (0 items)
 []
-[15:22:58.588] memoryValues.Student_Interests (4 items)
+[20:56:25.596] memoryValues.Student_Interests (4 items)
 [
   "facts",
   "drawing",
   "music",
   "science"
 ]
-[15:22:58.590] memoryValues.Student_Preferences
+[20:56:25.598] memoryValues.Student_Preferences
 {
   "FavoriteActivities": [
     "drawing",
@@ -673,11 +488,11 @@ Notes:
     "interactive exploration"
   ]
 }
-[15:22:58.591] memoryValues.Student_CommunicationStyle
+[20:56:25.599] memoryValues.Student_CommunicationStyle
 {
   "PrimaryMethod": "AAC"
 }
-[15:22:58.593] memoryVisualization — data section (74 lines)
+[20:56:25.601] memoryVisualization — data section (74 lines)
 === Current Memory ===
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
@@ -699,13 +514,443 @@ Notes:
   ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
 • /Student_Notes (array, 8 items) — General notes about the student (non-sensitive) 
   - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
-  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. Shows a consistent pattern of browsing options (pressing 'Interact', 'Interests', 'Feelings') then returning to 'Home' without committing to an activity. This pattern has intensified—Gal is now cycling through these menus repeatedly without selecting activities. May indicate: (1) testing/exploring the interface, (2) uncertainty about what to do, (3) preference for proactive activity suggestions, or (4) fatigue. Monitor for actual fatigue signs (yawning, rubbing eyes, reduced engagement). Frequently expresses tiredness via guessing mode. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw?' or 'Let's make music') rather than waiting for menu selection."
-  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) Monitor for frustration; offer guessing mode or suggest specific activities when engagement seems uncertain."
-  - [3]: "April 10 Session: Gal expressed hunger (pressed 'Eat' multiple times in guessing mode). Later confirmed interest in yogurt. Navigated Interests menu and selected Space → Planets → Solar System, demonstrating sustained interest in space topics. Pattern of browsing before committing to activities continues; proactive suggestions remain effective. Unknown person briefly greeted Gal early in session—identity unclear."
-  - [4]: "April 10 Session (continued): Gal explored space topics with sustained interest—selected Rockets and asked 'How do they fly?' Engaged in a multi-turn conversation about gravity, thrust, and fuel, demonstrating curiosity and ability to follow conceptual discussions. After exploring rockets, Gal navigated back to Home and then selected Feelings, indicating a shift to emotional engagement. This pattern (interest exploration followed by emotional check-in) is consistent with Gal's communication style of alternating between topics and feelings."
-  - [5]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' twice in succession. This is the third documented instance of expressed fear. Previous notes indicate fear is a recurring concern and Gal seeks home/safety when scared. Monitor for patterns and triggers. Remain alert and reassuring. Facilitator consultation may be needed if fear episodes continue."
-  - [6]: "April 10 Session (continued): Gal expressed fear again—pressed 'Feelings' → 'Scared' → 'Alone' → 'Someone else' (repeating cycle). This is the fourth documented instance of expressed fear in this session alone. Pattern shows: fear → desire for company → cycling between 'Alone' and 'Someone else' buttons without selecting a specific person. This suggests Gal may be experiencing significant distress and uncertainty about what he needs. The repeating cycle indicates possible anxiety or distress that requires immediate facilitator intervention. Gal has not yet selected a specific person (Mom, Dad, Teacher, Friend) from the options provided."
-  - [7]: "April 10 Session (continued): Gal pressed 'Help' button after navigating back to Home from the space/rockets exploration. This may indicate: (1) uncertainty about what to do next, (2) need for assistance with navigation, or (3) genuine need for support. Monitor whether Help button becomes a pattern for re-engagement when Gal cycles through menus."
+  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts."
+  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated."
+  - [3]: "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration."
+  - [4]: "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities."
+  - [5]: "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests."
+  - [6]: "Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest."
+  - [7]: "Current Session (April 13, 8:56 PM - ongoing): Gal is repeating the same sequence of button presses multiple times: Interact → Space → Planets → Mars. This repetition pattern (now seen three times in succession) may indicate: (1) Gal is really enjoying Mars and wants to keep talking about it, (2) Gal is testing the system or exploring the navigation, or (3) Gal may be looking for something specific about Mars that isn't available on the current board. Monitor for signs of frustration or attempt to express something more specific. Consider offering expanded Mars-related options (e.g., 'Mars Facts', 'Draw Mars', 'Mars Rovers') or using guessing mode to help Gal clarify intent."
+  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
+• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
+  (may contain items - view "/Context_Library" to load from database)
+• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
+  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
+• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
+• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
+• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
+• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
+• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
+• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
+• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
+  ↪ To expand: view "/Context_Progress/*". (read-only)
+• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
+  - prompt: <string> — The full custom prompt text (empty)
+  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
+• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
+
+Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
+Operate only on visible paths or their parent container. To reveal children:
+  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
+Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
+
+=== Schema Hints (add/insert/upsert in current scope) ===
+• /Student_People — ARRAY of object
+  item.required: [Name]
+  item.props: Name:string, Relationship:string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
+• /Student_Interests — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
+• /Student_Preferences/FavoriteActivities — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
+• /Student_Preferences/RewardPreferences — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
+• /Student_Preferences/AvoidTopics — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
+• /Student_Notes — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
+• /Context_Library — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, object>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
+
+Notes:
+- When item/value is an OBJECT, include all listed "required" keys when creating it.
+- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
+- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
+
+============================================================
+  buildPromptAndTools — AI memory view
+============================================================
+[20:59:04.970] memoryValues.Student_Notes (8 items)
+[
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration.",
+  "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities.",
+  "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests.",
+  "Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest.",
+  "Current Session (April 13, 8:56 PM - ongoing): Gal is repeating the same sequence of button presses multiple times: Interact → Space → Planets → Mars. This repetition pattern (now seen three times in succession) may indicate: (1) Gal is really enjoying Mars and wants to keep talking about it, (2) Gal is testing the system or exploring the navigation, or (3) Gal may be looking for something specific about Mars that isn't available on the current board. Monitor for signs of frustration or attempt to express something more specific. Consider offering expanded Mars-related options (e.g., 'Mars Facts', 'Draw Mars', 'Mars Rovers') or using guessing mode to help Gal clarify intent."
+]
+[20:59:04.973] memoryValues.Student_People (0 items)
+[]
+[20:59:04.975] memoryValues.Student_Interests (4 items)
+[
+  "facts",
+  "drawing",
+  "music",
+  "science"
+]
+[20:59:04.977] memoryValues.Student_Preferences
+{
+  "FavoriteActivities": [
+    "drawing",
+    "music",
+    "interactive apps",
+    "interactive exploration"
+  ]
+}
+[20:59:04.979] memoryValues.Student_CommunicationStyle
+{
+  "PrimaryMethod": "AAC"
+}
+[20:59:04.981] memoryVisualization — data section (74 lines)
+=== Current Memory ===
+• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
+  (may contain items - view "/Student_People" to load from database)
+  ↪ To append: action "add" at "/Student_People" with value.
+• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
+  - [0]: "facts"
+  - [1]: "drawing"
+  - [2]: "music"
+  - [3]: "science"
+  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
+• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
+  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
+  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
+  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
+• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
+  - FavoriteActivities: {array} (hidden)
+  - RewardPreferences: {array} (empty)
+  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
+  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
+• /Student_Notes (array, 8 items) — General notes about the student (non-sensitive) 
+  - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
+  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts."
+  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated."
+  - [3]: "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration."
+  - [4]: "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities."
+  - [5]: "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests."
+  - [6]: "Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest."
+  - [7]: "Current Session (April 13, 8:56 PM - ongoing): Gal is repeating the same sequence of button presses multiple times: Interact → Space → Planets → Mars. This repetition pattern (now seen three times in succession) may indicate: (1) Gal is really enjoying Mars and wants to keep talking about it, (2) Gal is testing the system or exploring the navigation, or (3) Gal may be looking for something specific about Mars that isn't available on the current board. Monitor for signs of frustration or attempt to express something more specific. Consider offering expanded Mars-related options (e.g., 'Mars Facts', 'Draw Mars', 'Mars Rovers') or using guessing mode to help Gal clarify intent."
+  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
+• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
+  (may contain items - view "/Context_Library" to load from database)
+• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
+  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
+• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
+• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
+• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
+• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
+• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
+• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
+• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
+  ↪ To expand: view "/Context_Progress/*". (read-only)
+• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
+  - prompt: <string> — The full custom prompt text (empty)
+  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
+• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
+
+Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
+Operate only on visible paths or their parent container. To reveal children:
+  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
+Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
+
+=== Schema Hints (add/insert/upsert in current scope) ===
+• /Student_People — ARRAY of object
+  item.required: [Name]
+  item.props: Name:string, Relationship:string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
+• /Student_Interests — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
+• /Student_Preferences/FavoriteActivities — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
+• /Student_Preferences/RewardPreferences — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
+• /Student_Preferences/AvoidTopics — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
+• /Student_Notes — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
+• /Context_Library — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, object>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
+
+Notes:
+- When item/value is an OBJECT, include all listed "required" keys when creating it.
+- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
+- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
+
+============================================================
+  manageMemory called
+============================================================
+[20:59:08.591] INPUT
+{
+  "ops": [
+    {
+      "action": "set",
+      "path": "/Student_Notes/7",
+      "value": "Current Session (April 13, 8:56 PM - ongoing): Gal has now pressed the same sequence (Interact → Space → Planets → Mars) multiple times, followed by requesting 'More Options' and navigating to 'Home' and 'My Day'. This pattern suggests: (1) Gal may be looking for something specific about Mars that isn't on the current board, or (2) Gal is exploring the navigation system and cycling through menus. The shift to 'My Day' after Mars suggests Gal may want to talk about their day rather than continue with Mars facts. Monitor for clarification of intent and consider offering guessing mode if Gal continues cycling without selecting a specific activity."
+    }
+  ]
+}
+[20:59:08.592] BEFORE set /Student_Notes/7 — Student_Notes array (8 items)
+[
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration.",
+  "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities.",
+  "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests.",
+  "Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest.",
+  "Current Session (April 13, 8:56 PM - ongoing): Gal is repeating the same sequence of button presses multiple times: Interact → Space → Planets → Mars. This repetition pattern (now seen three times in succession) may indicate: (1) Gal is really enjoying Mars and wants to keep talking about it, (2) Gal is testing the system or exploring the navigation, or (3) Gal may be looking for something specific about Mars that isn't available on the current board. Monitor for signs of frustration or attempt to express something more specific. Consider offering expanded Mars-related options (e.g., 'Mars Facts', 'Draw Mars', 'Mars Rovers') or using guessing mode to help Gal clarify intent."
+]
+[20:59:08.958] RESULTS
+[
+  {
+    "target": "/Student_Notes/7",
+    "action": "set",
+    "ok": true
+  }
+]
+[20:59:08.959] AFTER set /Student_Notes/7 — Student_Notes array (8 items)
+[
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration.",
+  "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities.",
+  "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests.",
+  "Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest.",
+  "Current Session (April 13, 8:56 PM - ongoing): Gal has now pressed the same sequence (Interact → Space → Planets → Mars) multiple times, followed by requesting 'More Options' and navigating to 'Home' and 'My Day'. This pattern suggests: (1) Gal may be looking for something specific about Mars that isn't on the current board, or (2) Gal is exploring the navigation system and cycling through menus. The shift to 'My Day' after Mars suggests Gal may want to talk about their day rather than continue with Mars facts. Monitor for clarification of intent and consider offering guessing mode if Gal continues cycling without selecting a specific activity."
+]
+
+============================================================
+  buildPromptAndTools — AI memory view
+============================================================
+[20:59:08.968] memoryValues.Student_Notes (8 items)
+[
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration.",
+  "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities.",
+  "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests.",
+  "Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest.",
+  "Current Session (April 13, 8:56 PM - ongoing): Gal has now pressed the same sequence (Interact → Space → Planets → Mars) multiple times, followed by requesting 'More Options' and navigating to 'Home' and 'My Day'. This pattern suggests: (1) Gal may be looking for something specific about Mars that isn't on the current board, or (2) Gal is exploring the navigation system and cycling through menus. The shift to 'My Day' after Mars suggests Gal may want to talk about their day rather than continue with Mars facts. Monitor for clarification of intent and consider offering guessing mode if Gal continues cycling without selecting a specific activity."
+]
+[20:59:08.973] memoryValues.Student_People (0 items)
+[]
+[20:59:08.975] memoryValues.Student_Interests (4 items)
+[
+  "facts",
+  "drawing",
+  "music",
+  "science"
+]
+[20:59:08.977] memoryValues.Student_Preferences
+{
+  "FavoriteActivities": [
+    "drawing",
+    "music",
+    "interactive apps",
+    "interactive exploration"
+  ]
+}
+[20:59:08.978] memoryValues.Student_CommunicationStyle
+{
+  "PrimaryMethod": "AAC"
+}
+[20:59:08.980] memoryVisualization — data section (74 lines)
+=== Current Memory ===
+• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
+  (may contain items - view "/Student_People" to load from database)
+  ↪ To append: action "add" at "/Student_People" with value.
+• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
+  - [0]: "facts"
+  - [1]: "drawing"
+  - [2]: "music"
+  - [3]: "science"
+  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
+• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
+  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
+  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
+  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
+• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
+  - FavoriteActivities: {array} (hidden)
+  - RewardPreferences: {array} (empty)
+  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
+  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
+• /Student_Notes (array, 8 items) — General notes about the student (non-sensitive) 
+  - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
+  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts."
+  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated."
+  - [3]: "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration."
+  - [4]: "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities."
+  - [5]: "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests."
+  - [6]: "Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest."
+  - [7]: "Current Session (April 13, 8:56 PM - ongoing): Gal has now pressed the same sequence (Interact → Space → Planets → Mars) multiple times, followed by requesting 'More Options' and navigating to 'Home' and 'My Day'. This pattern suggests: (1) Gal may be looking for something specific about Mars that isn't on the current board, or (2) Gal is exploring the navigation system and cycling through menus. The shift to 'My Day' after Mars suggests Gal may want to talk about their day rather than continue with Mars facts. Monitor for clarification of intent and consider offering guessing mode if Gal continues cycling without selecting a specific activity."
+  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
+• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
+  (may contain items - view "/Context_Library" to load from database)
+• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
+  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
+• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
+• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
+• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
+• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
+• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
+• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
+• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
+  ↪ To expand: view "/Context_Progress/*". (read-only)
+• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
+  - prompt: <string> — The full custom prompt text (empty)
+  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
+• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
+
+Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
+Operate only on visible paths or their parent container. To reveal children:
+  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
+Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
+
+=== Schema Hints (add/insert/upsert in current scope) ===
+• /Student_People — ARRAY of object
+  item.required: [Name]
+  item.props: Name:string, Relationship:string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
+• /Student_Interests — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
+• /Student_Preferences/FavoriteActivities — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
+• /Student_Preferences/RewardPreferences — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
+• /Student_Preferences/AvoidTopics — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
+• /Student_Notes — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
+• /Context_Library — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, object>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
+
+Notes:
+- When item/value is an OBJECT, include all listed "required" keys when creating it.
+- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
+- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
+
+============================================================
+  manageMemory called
+============================================================
+[20:59:11.191] INPUT
+{
+  "ops": [
+    {
+      "action": "add",
+      "path": "/Student_Notes",
+      "value": "Current Session (April 13, 8:59 PM): Gal continues cycling pattern—pressed the same sequence (Interact → Space → Planets → Mars) multiple times, then More Options → Home → My Day twice. This suggests Gal may want to talk about their day. Gal has now cycled through Mars and My Day options without selecting a specific activity. Consider offering guessing mode or direct activity suggestions (e.g., 'Want to tell me about school?' or 'Want to draw something from your day?') to help clarify intent and re-engage with a specific focus."
+    }
+  ]
+}
+[20:59:11.192] BEFORE add /Student_Notes — Student_Notes array (8 items)
+[
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration.",
+  "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities.",
+  "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests.",
+  "Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest.",
+  "Current Session (April 13, 8:56 PM - ongoing): Gal has now pressed the same sequence (Interact → Space → Planets → Mars) multiple times, followed by requesting 'More Options' and navigating to 'Home' and 'My Day'. This pattern suggests: (1) Gal may be looking for something specific about Mars that isn't on the current board, or (2) Gal is exploring the navigation system and cycling through menus. The shift to 'My Day' after Mars suggests Gal may want to talk about their day rather than continue with Mars facts. Monitor for clarification of intent and consider offering guessing mode if Gal continues cycling without selecting a specific activity."
+]
+[20:59:11.208] ADD to array /Student_Notes — array has 8 items, adding
+Current Session (April 13, 8:59 PM): Gal continues cycling pattern—pressed the same sequence (Interact → Space → Planets → Mars) multiple times, then More Options → Home → My Day twice. This suggests Gal may want to talk about their day. Gal has now cycled through Mars and My Day options without selecting a specific activity. Consider offering guessing mode or direct activity suggestions (e.g., 'Want to tell me about school?' or 'Want to draw something from your day?') to help clarify intent and re-engage with a specific focus.
+[20:59:11.210] ADD OK /Student_Notes — array now has 9 items
+[20:59:11.400] RESULTS
+[
+  {
+    "target": "/Student_Notes",
+    "action": "add",
+    "ok": true
+  }
+]
+[20:59:11.402] AFTER add /Student_Notes — Student_Notes array (9 items)
+[
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration.",
+  "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities.",
+  "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests.",
+  "Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest.",
+  "Current Session (April 13, 8:56 PM - ongoing): Gal has now pressed the same sequence (Interact → Space → Planets → Mars) multiple times, followed by requesting 'More Options' and navigating to 'Home' and 'My Day'. This pattern suggests: (1) Gal may be looking for something specific about Mars that isn't on the current board, or (2) Gal is exploring the navigation system and cycling through menus. The shift to 'My Day' after Mars suggests Gal may want to talk about their day rather than continue with Mars facts. Monitor for clarification of intent and consider offering guessing mode if Gal continues cycling without selecting a specific activity.",
+  "Current Session (April 13, 8:59 PM): Gal continues cycling pattern—pressed the same sequence (Interact → Space → Planets → Mars) multiple times, then More Options → Home → My Day twice. This suggests Gal may want to talk about their day. Gal has now cycled through Mars and My Day options without selecting a specific activity. Consider offering guessing mode or direct activity suggestions (e.g., 'Want to tell me about school?' or 'Want to draw something from your day?') to help clarify intent and re-engage with a specific focus."
+]
+
+============================================================
+  buildPromptAndTools — AI memory view
+============================================================
+[20:59:11.457] memoryValues.Student_Notes (9 items)
+[
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration.",
+  "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities.",
+  "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests.",
+  "Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest.",
+  "Current Session (April 13, 8:56 PM - ongoing): Gal has now pressed the same sequence (Interact → Space → Planets → Mars) multiple times, followed by requesting 'More Options' and navigating to 'Home' and 'My Day'. This pattern suggests: (1) Gal may be looking for something specific about Mars that isn't on the current board, or (2) Gal is exploring the navigation system and cycling through menus. The shift to 'My Day' after Mars suggests Gal may want to talk about their day rather than continue with Mars facts. Monitor for clarification of intent and consider offering guessing mode if Gal continues cycling without selecting a specific activity.",
+  "Current Session (April 13, 8:59 PM): Gal continues cycling pattern—pressed the same sequence (Interact → Space → Planets → Mars) multiple times, then More Options → Home → My Day twice. This suggests Gal may want to talk about their day. Gal has now cycled through Mars and My Day options without selecting a specific activity. Consider offering guessing mode or direct activity suggestions (e.g., 'Want to tell me about school?' or 'Want to draw something from your day?') to help clarify intent and re-engage with a specific focus."
+]
+[20:59:11.459] memoryValues.Student_People (0 items)
+[]
+[20:59:11.463] memoryValues.Student_Interests (4 items)
+[
+  "facts",
+  "drawing",
+  "music",
+  "science"
+]
+[20:59:11.464] memoryValues.Student_Preferences
+{
+  "FavoriteActivities": [
+    "drawing",
+    "music",
+    "interactive apps",
+    "interactive exploration"
+  ]
+}
+[20:59:11.467] memoryValues.Student_CommunicationStyle
+{
+  "PrimaryMethod": "AAC"
+}
+[20:59:11.470] memoryVisualization — data section (75 lines)
+=== Current Memory ===
+• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
+  (may contain items - view "/Student_People" to load from database)
+  ↪ To append: action "add" at "/Student_People" with value.
+• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
+  - [0]: "facts"
+  - [1]: "drawing"
+  - [2]: "music"
+  - [3]: "science"
+  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
+• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
+  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
+  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
+  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
+• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
+  - FavoriteActivities: {array} (hidden)
+  - RewardPreferences: {array} (empty)
+  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
+  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
+• /Student_Notes (array, 9 items) — General notes about the student (non-sensitive) 
+  - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
+  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts."
+  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated."
+  - [3]: "Session Pattern (April 10-13): Early sessions showed menu cycling (Interact → Feelings → Home) without committing to activities. Recent sessions show significant improvement: Gal is now engaging in sustained multi-turn conversations about space concepts (Stars, Planets, Rockets), selecting Drawing when offered creative expression options, and responding positively to specific activity suggestions. Demonstrates focused interest and ability to follow conceptual discussions. This shift indicates growing engagement and commitment to activities rather than menu exploration."
+  - [4]: "Current Session (April 13): Gal navigated Interact → Space → Feelings, selected Happy twice, then requested more options and selected Robot. This session demonstrates: (1) Gal is engaging with specific interests (Space, Robot programming), (2) continuing pattern of emotional check-ins (Happy selections), and (3) responding positively to expanded activity options. Gal is showing improved commitment to activities rather than menu cycling. Continue offering specific, interest-based prompts and monitor for sustained engagement with hands-on activities."
+  - [5]: "Current Session (April 13, 3:38 PM): Gal engaged in focused exploration of space topics. Session flow: Interact → Space (pressed twice) → Stars, Planets → Back → Space menu. Demonstrates sustained interest in space concepts and ability to navigate menus with intention. Pattern shows Gal is committing to specific topics rather than cycling aimlessly. No frustration or fear expressed this session. Continues to show strong engagement with space-related interests."
+  - [6]: "Current Session (April 13, 8:56 PM): Gal engaged in sustained exploration of space topics. Session flow: Interact → Space → Planets → Mars (repeated twice in same sequence). Demonstrates continued strong engagement with space concepts, particularly Mars. No frustration or fear expressed. Pattern shows Gal is committing to specific topics with intention and interest."
+  - [7]: "Current Session (April 13, 8:56 PM - ongoing): Gal has now pressed the same sequence (Interact → Space → Planets → Mars) multiple times, followed by requesting 'More Options' and navigating to 'Home' and 'My Day'. This pattern suggests: (1) Gal may be looking for something specific about Mars that isn't on the current board, or (2) Gal is exploring the navigation system and cycling through menus. The shift to 'My Day' after Mars suggests Gal may want to talk about their day rather than continue with Mars facts. Monitor for clarification of intent and consider offering guessing mode if Gal continues cycling without selecting a specific activity."
+  - [8]: "Current Session (April 13, 8:59 PM): Gal continues cycling pattern—pressed the same sequence (Interact → Space → Planets → Mars) multiple times, then More Options → Home → My Day twice. This suggests Gal may want to talk about their day. Gal has now cycled through Mars and My Day options without selecting a specific activity. Consider offering guessing mode or direct activity suggestions (e.g., 'Want to tell me about school?' or 'Want to draw something from your day?') to help clarify intent and re-engage with a specific focus."
   ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
 • /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
   (may contain items - view "/Context_Library" to load from database)

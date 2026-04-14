@@ -283,12 +283,15 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         case "initialized":
           setSessionId(msg.sessionId);
           setIsInitialized(true);
-          setIsLoading(false);
+          // Don't clear isLoading yet — wait until the first board arrives
+          // so the loading screen stays up until the home page is ready.
           setError(null);
           break;
 
         case "text":
           // Accumulate streamed text — keep the same message ID to avoid re-triggering animations
+          // Skip empty/whitespace-only text to avoid clearing the display
+          if (!msg.data || !msg.data.trim()) break;
           textAccumRef.current += msg.data;
           setCurrentMessage(prev => ({
             id: prev?.role === "assistant" ? prev.id : `msg-${Date.now()}`,
@@ -323,6 +326,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
         case "board":
           onBoardUpdateRef.current?.(msg.data);
+          setIsLoading(false);
           break;
 
         case "context_button_add":
@@ -360,6 +364,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         case "set_board":
           // AI selected a pre-built board — notify parent (handled separately from regular board updates)
           onSetBoardRef.current?.(msg.data);
+          setIsLoading(false);
           break;
 
         case "unload_board":
@@ -384,7 +389,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         case "interpretation_audio":
           // Student voice audio chunk — tagged so avatar stays still
           if (audioEnabled) {
-            audioPlayer.queueChunk({ chunk: msg.data, format: "mp3", tag: "interpret" });
+            audioPlayer.queueChunk({ chunk: msg.data, format: msg.format || "mp3", tag: "interpret" });
           }
           break;
 

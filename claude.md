@@ -5,7 +5,7 @@ This is a project to help students with special needs communicate, interact with
 Currently we are focusing on an AAC platform for children with Rett's Syndrome. We plan to expand this to serve a wide variety of educational needs.
 
 ## Structure
-The platform contains two separate clients: The regular client, used by clinicians and caretakers, and the AAC client, used by the students themselves. Both share a common server.
+The platform contains two separate clients: The regular (clinician) client, used by clinicians and caretakers, and the AAC client, used by the students themselves. Both share a common server.
 All calls to the API from the client need to use the apiRequest function.
 The project uses ES Modules, don't use __dirname
 
@@ -15,6 +15,9 @@ This operates through a standard web-based interface containing an AI chat. The 
 ## AAC Client
 We are using the dynamic button system to generate AAC boards in real time.
 The chat uses the live-relay system with Gemini, combined with a monitor agent that periodically evaluates the conversation, records notes, and provides guidance. The monitor agent can read personal information about the student such as goals, objectives, and medical information, but cannot directly edit it except for the low-security memory features such as notes.
+
+## AAC Settings
+All AAC settings should be able to be managed from both the Clinician client and the AAC client.
 
 ## Database strategy
 We update the database schema using npm run db:generate, followed by db:migrate.
@@ -29,11 +32,12 @@ We have 2 separate AWS systems which are served from github actions. Currently w
 There are 2 different deployment paths in Terraform. The lightweight one we are using now is to save costs. There is also a path with higher security (HIPAA compliance) that we will enable once we are ready to move to production. Keep both in mind when handling AWS systems.
 
 ## Translations
-The client (both of them) uses i18n translations with a t() function for English and Hebrew.
+Both the clinician and AAC clients use i18n translations with a t() function for multilingual support.
 Whenever the term "student" is used, we use ts() instead, which swaps "student" for "child" when relevant.
 If you add any strings to the client, add their translations.
 If you see any missing translations on the client while working, add them.
-The english and hebrew translation files should have identical keys on identical lines. If you see something that doesn't line up, fix it.
+All translation files should have identical keys on identical lines.
+Use the scripts/validate-i18n.ts to check for this after editing translation files.
 
 ## General Behaviors
 Use logs whenever needed - preferably logging to a file rather than the console.
