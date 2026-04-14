@@ -1,7 +1,7 @@
 // client-aac/src/components/DualAgentConversationBox.tsx
 // Conversation UI for the dual-agent AAC system
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Volume2,
@@ -24,7 +24,6 @@ import {
   Moon,
   Zap,
   ScanSearch,
-  MoonStar,
 } from "lucide-react";
 // Emotion-based avatar body images
 import avatarHappy from "@assets/axolotl-happy.png";
@@ -40,6 +39,9 @@ import mouthSadOpen from "@assets/axolotl-mouth-sad-open.png";
 import mouthNeutralOpen from "@assets/axolotl-mouth-neutral-open.png";
 // Sleep image
 import avatarSleep from "@assets/axolotl-sleep.png";
+// Cave images (sleep toggle)
+import caveEmpty from "@assets/axolotl-cave-empty.png";
+import caveSleep from "@assets/axolotl-cave-sleep.png";
 // Error image
 import avatarError from "@assets/axolotl-error.png";
 // Glasses overlay (focus frame)
@@ -140,7 +142,6 @@ export function DualAgentConversationBox({
     setVideoCaptureEnabled,
     initialize,
     sendMessage,
-    sendContextOnly,
     clearSession,
     setAudioEnabled,
     setVoiceEnabled,
@@ -247,32 +248,48 @@ export function DualAgentConversationBox({
     clearSession();
   };
 
-  // Avatar click: in silent mode → wake up. In interact mode → send contextual message.
+  // Avatar dwell suppression — eyegaze users naturally look at the avatar while
+  // it's talking, so we don't want that to start a new turn. Suppress dwell while
+  // the avatar is speaking and for 3s after it stops. Tap/click are unaffected.
+  const [avatarDwellSuppressed, setAvatarDwellSuppressed] = useState(false);
+  useEffect(() => {
+    if (isPlaying) {
+      setAvatarDwellSuppressed(true);
+      return;
+    }
+    if (!avatarDwellSuppressed) return;
+    const timer = setTimeout(() => setAvatarDwellSuppressed(false), 3000);
+    return () => clearTimeout(timer);
+  }, [isPlaying, avatarDwellSuppressed]);
+
+  // Avatar click: send an attention message in interact mode.
+  // (When in silent mode the avatar is hidden and the cave handles waking.)
   const handleAvatarClick = useCallback((e: React.MouseEvent) => {
+    if (interactionMode === 'silent' || !isInitialized) return;
+    // Determine input method: eyegaze dwell triggers .click() programmatically
+    if (dwellMode === 'eyegaze') {
+      // Eyegaze dwell completed — triggers a new turn (suppression handled at the
+      // data-dwell attribute level so this only fires once the grace period ends).
+      sendMessage("[system: the user is looking at you]");
+    } else if (e.nativeEvent instanceof PointerEvent && e.nativeEvent.pointerType === 'touch') {
+      sendMessage("[system: the user touched you]");
+    } else {
+      sendMessage("[system: the user clicked you]");
+    }
+  }, [interactionMode, isInitialized, dwellMode, sendMessage]);
+
+  // Cave click: toggles sleep mode. Sleeping → wake & greet. Awake → sleep & stop audio.
+  const handleCaveClick = useCallback(() => {
     if (interactionMode === 'silent') {
-      // Switching to interact mode — trigger a greeting
       setInteractionMode('interact');
       if (isInitialized) {
         sendMessage("[system: the device has been switched to interactive mode, greet the user]");
       }
-    } else if (isInitialized) {
-      // Determine input method: eyegaze dwell triggers .click() programmatically
-      if (dwellMode === 'eyegaze') {
-        // Eyegaze focus — context only, no conversation update
-        sendContextOnly("[system: the user is focusing on you]");
-      } else if (e.nativeEvent instanceof PointerEvent && e.nativeEvent.pointerType === 'touch') {
-        sendMessage("[system: the user touched you]");
-      } else {
-        sendMessage("[system: the user clicked you]");
-      }
+    } else {
+      setInteractionMode('silent');
+      stopAudio();
     }
-  }, [interactionMode, isInitialized, dwellMode, setInteractionMode, sendMessage, sendContextOnly]);
-
-  // Quiet button: enter silent mode
-  const handleQuiet = useCallback(() => {
-    setInteractionMode('silent');
-    stopAudio();
-  }, [setInteractionMode, stopAudio]);
+  }, [interactionMode, isInitialized, setInteractionMode, sendMessage, stopAudio]);
 
   // Determine if avatar should show asleep
   const isAsleep = interactionMode === 'silent';
@@ -293,87 +310,78 @@ export function DualAgentConversationBox({
         } text-white`}
       >
         <div className="px-4 py-2">
-          {/* Two-row grid: avatar spans both rows on left, buttons top-right, text bottom-right */}
+          {/* Two-row grid: cave + avatar on left, buttons top-right, text bottom-right */}
           <div className="flex items-stretch gap-3">
-            {/* Avatar + Quiet button column */}
-            <div className="shrink-0 self-center flex flex-col items-center gap-1">
-            {/* Animated Avatar — click to wake (silent mode) or send attention message (interact mode) */}
+            {/* Cave (sleep toggle) — left of avatar (right in RTL) */}
             <button
               data-dwell
-              onClick={handleAvatarClick}
-              className="relative shrink-0 w-20 cursor-pointer hover:opacity-90 transition-opacity select-none"
-              title={interactionMode === 'silent' ? "Switch to interact mode (device talks back)" : "Tap to get attention"}
+              onClick={handleCaveClick}
+              className="relative shrink-0 self-center w-20 cursor-pointer hover:opacity-90 transition-opacity select-none"
+              title={isAsleep ? "Wake up (switch to interact mode)" : "Sleep (switch to silent mode)"}
             >
-                <>
-                  {error ? (
-                    <img
-                      src={avatarError}
-                      alt="Error"
-                      className="w-full h-full object-contain"
-                    />
-                  ) : isAsleep ? (
-                    <img
-                      src={avatarSleep}
-                      alt="Sleeping"
-                      className="w-full h-full object-contain"
-                    />
-                  ) : (
-                    <img
-                      src={AVATAR_BODY[emote] || AVATAR_BODY.happy}
-                      alt={`Avatar (${emote})`}
-                      className="w-full h-full object-contain"
-                    />
-                  )}
-                  {!error && (
-                    <img
-                      src={isMouthOpen
-                        ? (MOUTH_OPEN[emote] || MOUTH_OPEN.happy)
-                        : (MOUTH_CLOSED[emote] || MOUTH_CLOSED.happy)
-                      }
+              <img
+                src={isAsleep ? caveSleep : caveEmpty}
+                alt={isAsleep ? "Cave (sleeping)" : "Cave (empty)"}
+                className="w-full h-full object-contain"
+              />
+            </button>
+
+            {/* Animated Avatar — hidden when sleeping. Click to send attention message in interact mode.
+                data-dwell is omitted while the avatar is talking + 3s grace period so eyegaze
+                doesn't accidentally start new turns when the user is just listening. */}
+            {!isAsleep && (
+              <button
+                {...(avatarDwellSuppressed ? {} : { "data-dwell": "" })}
+                onClick={handleAvatarClick}
+                className="relative shrink-0 self-center w-20 cursor-pointer hover:opacity-90 transition-opacity select-none"
+                title="Tap to get attention"
+              >
+                {error ? (
+                  <img
+                    src={avatarError}
+                    alt="Error"
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  <img
+                    src={AVATAR_BODY[emote] || AVATAR_BODY.happy}
+                    alt={`Avatar (${emote})`}
+                    className="w-full h-full object-contain"
+                  />
+                )}
+                {!error && (
+                  <img
+                    src={isMouthOpen
+                      ? (MOUTH_OPEN[emote] || MOUTH_OPEN.happy)
+                      : (MOUTH_CLOSED[emote] || MOUTH_CLOSED.happy)
+                    }
+                    alt=""
+                    className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+                  />
+                )}
+                {/* Glasses overlay — briefly shown when AI requests a focus frame */}
+                <AnimatePresence>
+                  {focusActive && (
+                    <motion.img
+                      key="focus-glasses"
+                      src={avatarGlasses}
                       alt=""
+                      initial={{ opacity: 0, scale: 1.3 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.9 }}
+                      transition={{ duration: 0.3 }}
                       className="absolute inset-0 w-full h-full object-contain pointer-events-none"
                     />
                   )}
-                  {/* Glasses overlay — briefly shown when AI requests a focus frame */}
-                  <AnimatePresence>
-                    {focusActive && (
-                      <motion.img
-                        key="focus-glasses"
-                        src={avatarGlasses}
-                        alt=""
-                        initial={{ opacity: 0, scale: 1.3 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.9 }}
-                        transition={{ duration: 0.3 }}
-                        className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-                      />
-                    )}
-                  </AnimatePresence>
-                </>
-            </button>
-            </div>
+                </AnimatePresence>
+              </button>
+            )}
 
-            {/* Right side: two rows */}
-            <div className="flex-1 min-w-0 flex flex-col justify-center gap-1">
-              {/* Top row: menu buttons */}
+            {/* Right side: two rows. relative+z so buttons stack in front of the avatar sprite. */}
+            <div className="relative z-10 flex-1 min-w-0 flex flex-col justify-center gap-1">
+              {/* Top row: menu buttons — aligned to end */}
               <div className="flex items-center gap-1 flex-wrap">
-                {/* Quiet button — visible only when in interact mode, aligned to start */}
-                <div className="flex items-center justify-start gap-1 flex-wrap">
-                  
-                  {interactionMode !== 'silent' && (
-                    <button
-                      data-dwell
-                      onClick={handleQuiet}
-                      className="flex items-center justify-center w-12 h-6 rounded-full bg-indigo-800/60 hover:bg-indigo-700/80 transition-colors cursor-pointer select-none"
-                      title={t("quickActions.quiet")}
-                    >
-                      <MoonStar className="w-3.5 h-3.5 text-white/80" />
-                      <span className="text-[10px] text-white/80 ml-0.5 font-medium">{t("quickActions.quiet")}</span>
-                    </button>
-                  )}
-                </div>
-                {/* Menu buttons — aligned to end */}
-                <div className="flex items-center justify-end gap-1 flex-wrap">
+                <div className="flex items-center justify-end gap-1 flex-wrap ml-auto">
                   {/* Board Mode Toggle */}
                   <Button
                     variant="ghost"
@@ -593,9 +601,7 @@ export function DualAgentConversationBox({
                         </Button>
                       </div>
                     </div>
-                  ) : (
-                    <p className="text-white/80 text-sm">Starting conversation...</p>
-                  )}
+                  ) : null}
                 </div>
               ) : (
                 /* Silent mode: show recent button presses + Speak button */

@@ -286,3 +286,43 @@
     inset: -1px;
   }
 }
+
+/* ===== Accessibility settings (controlled via AccessibilityContext) ===== */
+
+/* Font scaling — --font-scale is set on :root by AccessibilityContext */
+:root { --font-scale: 1; }
+html { font-size: calc(16px * var(--font-scale)); }
+
+/* High contrast mode (.high-contrast on :root) */
+.high-contrast {
+  --foreground: 0 0% 0%;
+  --muted-foreground: 0 0% 15%;
+  --background: 0 0% 100%;
+  --border: 0 0% 30%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 0%;
+}
+.high-contrast.dark {
+  --foreground: 0 0% 100%;
+  --muted-foreground: 0 0% 90%;
+  --background: 0 0% 0%;
+  --border: 0 0% 70%;
+  --card: 0 0% 5%;
+  --card-foreground: 0 0% 100%;
+}
+
+/* Reduce animations (.reduce-animations on :root) */
+.reduce-animations *,
+.reduce-animations *::before,
+.reduce-animations *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+
+/* Enhanced focus indicator (.enhanced-focus on :root) */
+.enhanced-focus *:focus-visible {
+  outline: 3px solid hsl(var(--primary)) !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 6px hsl(var(--primary) / 0.25) !important;
+}

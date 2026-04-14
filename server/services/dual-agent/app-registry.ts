@@ -36,7 +36,7 @@ export const APP_REGISTRY: AACAppDefinition[] = [
   {
     id: "drawing",
     name: "Drawing",
-    description: "Opens an interactive drawing canvas on the user's screen where they can draw with colors. ALWAYS use open_app to launch this when the user mentions drawing, coloring, or pictures — do NOT just create board buttons about drawing.",
+    description: "Opens an interactive drawing canvas on the user's screen where they can draw with colors. ALWAYS use open_app to launch this when the user mentions drawing, coloring, or pictures. As the user draws, add context buttons related to what they seem to be drawing.",
     icon: "🎨",
     enabledByDefault: true,
     supportsDetectionCapture: true,
@@ -44,14 +44,14 @@ export const APP_REGISTRY: AACAppDefinition[] = [
   {
     id: "music",
     name: "Music Maker",
-    description: "Opens an interactive piano on the user's screen where they can play musical notes. ALWAYS use open_app to launch this when the user wants to make music or play piano — do NOT just create board buttons about music.",
+    description: "Opens an interactive piano on the user's screen where they can play musical notes. ALWAYS use open_app to launch this when the user wants to make music or play piano.",
     icon: "🎵",
     enabledByDefault: true,
   },
   {
     id: "sandbox_game",
     name: "Sandbox Farm",
-    description: "Opens an idle farming sandbox game on the user's screen. The user places soil, water, seeds, and flowers on a grid and watches them grow over time. ALWAYS use open_app to launch this when the user wants to play the farm game, garden game, or sandbox game — do NOT just create board buttons about it.",
+    description: "Opens an idle farming sandbox game on the user's screen. The user places soil, water, seeds, and flowers on a grid and watches them grow over time. ALWAYS use open_app to launch this when the user wants to play the farm game, garden game, or sandbox game.",
     icon: "🌱",
     enabledByDefault: false,
   },

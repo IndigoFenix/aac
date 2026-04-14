@@ -35,10 +35,13 @@ import {
   Check,
   Loader2,
   Unlink,
+  Accessibility,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { apiRequest } from '@/lib/queryClient';
 import { BiometricEnrollment } from '@/components/BiometricEnrollment';
+import { useAccessibility } from '@/contexts/AccessibilityContext';
+import { Slider } from '@/components/ui/slider';
 
 type SystemType = 'tala' | 'us_iep';
 
@@ -47,6 +50,7 @@ export function SettingsPanel() {
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const { fontSize, highContrast, reduceAnimations, enhancedFocusIndicator, setFontSize, setHighContrast, setReduceAnimations, setEnhancedFocusIndicator } = useAccessibility();
 
   // System type state (affects workflow and default language)
   const [systemType, setSystemType] = useState<SystemType>('us_iep');
@@ -249,8 +253,17 @@ export function SettingsPanel() {
                     <SelectValue placeholder="Select Language" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="en">English</SelectItem>
                     <SelectItem value="he">עברית (Hebrew)</SelectItem>
-                    <SelectItem value="en">English (אנגלית)</SelectItem>
+                    <SelectItem value="es">Español (Spanish)</SelectItem>
+                    <SelectItem value="pt">Português (Portuguese)</SelectItem>
+                    <SelectItem value="fr">Français (French)</SelectItem>
+                    <SelectItem value="ru">Русский (Russian)</SelectItem>
+                    <SelectItem value="de">Deutsch (German)</SelectItem>
+                    <SelectItem value="ar">العربية (Arabic)</SelectItem>
+                    <SelectItem value="zh">中文 (Mandarin)</SelectItem>
+                    <SelectItem value="yue">粵語 (Cantonese)</SelectItem>
+                    <SelectItem value="ko">한국어 (Korean)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -295,6 +308,110 @@ export function SettingsPanel() {
                 <Switch
                   checked={theme === "dark"}
                   onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Accessibility */}
+          <Card>
+            <CardHeader>
+              <CardTitle className={cn(
+                "flex items-center gap-2",
+                isRTL && "flex-row-reverse"
+              )}>
+                <Accessibility className="w-5 h-5" />
+                {t('settings.accessibility')}
+              </CardTitle>
+              <CardDescription>{t('settings.accessibilityDesc')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Font Size */}
+              <div className="space-y-3">
+                <div className={cn(
+                  "flex items-center justify-between",
+                  isRTL && "flex-row-reverse"
+                )}>
+                  <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                    <Label className="text-base font-medium">
+                      {t('settings.fontSize')}
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      {t('settings.fontSizeDesc')}
+                    </p>
+                  </div>
+                  <span className="text-sm text-muted-foreground font-medium">{fontSize}%</span>
+                </div>
+                <Slider
+                  min={75}
+                  max={200}
+                  step={25}
+                  value={[fontSize]}
+                  onValueChange={(v) => setFontSize(v[0])}
+                  className="w-full"
+                />
+              </div>
+
+              <Separator />
+
+              {/* High Contrast */}
+              <div className={cn(
+                "flex items-center justify-between",
+                isRTL && "flex-row-reverse"
+              )}>
+                <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                  <Label className="text-base font-medium">
+                    {t('settings.contrastMode')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('settings.contrastModeDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={highContrast}
+                  onCheckedChange={setHighContrast}
+                />
+              </div>
+
+              <Separator />
+
+              {/* Reduce Animations */}
+              <div className={cn(
+                "flex items-center justify-between",
+                isRTL && "flex-row-reverse"
+              )}>
+                <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                  <Label className="text-base font-medium">
+                    {t('settings.reduceAnimations')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('settings.reduceAnimationsDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={reduceAnimations}
+                  onCheckedChange={setReduceAnimations}
+                />
+              </div>
+
+              <Separator />
+
+              {/* Enhanced Focus Indicator */}
+              <div className={cn(
+                "flex items-center justify-between",
+                isRTL && "flex-row-reverse"
+              )}>
+                <div className={cn("space-y-0.5", isRTL && "text-right")}>
+                  <Label className="text-base font-medium">
+                    {t('settings.enhancedFocus')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('settings.enhancedFocusDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={enhancedFocusIndicator}
+                  onCheckedChange={setEnhancedFocusIndicator}
                 />
               </div>
             </CardContent>

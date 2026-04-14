@@ -48,8 +48,8 @@ class CustomSymbolController {
       const { description } = req.body;
       if (!description) return res.status(400).json({ message: "Description required" });
 
-      const imageBuffer = await generateSymbolImage(description);
-      const base64 = imageBuffer.toString("base64");
+      const result = await generateSymbolImage(description);
+      const base64 = result.imageBuffer.toString("base64");
 
       res.json({ image: `data:image/png;base64,${base64}`, description });
     } catch (error: any) {

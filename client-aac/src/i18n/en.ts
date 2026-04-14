@@ -264,6 +264,24 @@ export const en = {
 
     language: "Language",
     selectLanguage: "Select language",
+
+    accessibility: "Accessibility",
+    fontSize: "Font Size",
+    fontSizeDesc: "Scale text size across the interface",
+    contrastMode: "High Contrast",
+    contrastModeDesc: "Increase color contrast for better readability",
+    reduceAnimations: "Reduce Animations",
+    reduceAnimationsDesc: "Minimize motion effects throughout the interface",
+    enhancedFocus: "Enhanced Focus Indicator",
+    enhancedFocusDesc: "Show a stronger outline around focused elements for keyboard navigation",
+  },
+
+  cookieConsent: {
+    title: "We use cookies",
+    description: "We use essential cookies to keep you signed in and functional cookies to remember your preferences. Choose what you want to allow.",
+    acceptAll: "Accept all",
+    rejectNonEssential: "Reject non-essential",
+    learnMore: "Learn more",
   },
 
   board: {

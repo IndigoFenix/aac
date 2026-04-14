@@ -17,6 +17,8 @@ export interface ButtonIR {
   id: string;
   row: number;
   col: number;
+  rowSpan?: number;  // Number of rows this button spans (default 1)
+  colSpan?: number;  // Number of columns this button spans (default 1)
   label: string;
   spokenText?: string;
   color?: string;

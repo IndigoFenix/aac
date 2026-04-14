@@ -2001,7 +2001,7 @@ import {
         description: "Educational framework: TALA (Israel) or US IEP",
       },
       country: { id: "country", type: "string", enum: ["IL", "US"], default: "IL", description: "IL (Israel) or US (United States)" },
-      primaryLanguage: { id: "primaryLanguage", type: "string", enum: ["he", "en"], default: "he", description: "he (Hebrew) or en (English)" },
+      primaryLanguage: { id: "primaryLanguage", type: "string", enum: ["he", "en", "es", "pt", "fr", "ru", "de", "ar", "zh", "yue", "ko"], default: "he", description: "Language code: he, en, es, pt, fr, ru, de, ar, zh, yue, ko" },
       additionalLanguages: {
         id: "additionalLanguages",
         type: "array",

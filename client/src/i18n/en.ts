@@ -187,6 +187,7 @@ export const en = {
     instituteManagement: 'Organization Management',
     noStudentSelected: "No {{STUDENT}} Selected",
     calendar: "Calendar",
+    userChat: "Messages",
   },
 
   // ============================================================================
@@ -310,6 +311,7 @@ export const en = {
     speakMessage: "Read aloud",
     copyMessage: "Copy",
     copied: "Copied!",
+    copyWatermark: "Created by Aivota",
 
     sendMessage: "Send message",
     suggestions: {
@@ -424,6 +426,8 @@ export const en = {
     position: "Position",
     row: "Row",
     column: "Column",
+    rowSpan: "Row Span",
+    colSpan: "Col Span",
     duplicate: "Duplicate",
     rebusKey: "Rebus Symbol",
     rebusKeyPlaceholder: "e.g. happy, mum, ice cream",
@@ -812,7 +816,28 @@ export const en = {
     updating: "Updating...",
     firstNameIsRequired: "First name is required",
     selectValidImage: "Please select a valid image file (JPG, PNG, GIF)",
-    imageSizeLimit: "Image size must be less than 10MB"
+    imageSizeLimit: "Image size must be less than 10MB",
+    accessibility: "Accessibility",
+    accessibilityDesc: "Adjust display settings for better usability",
+    fontSize: "Font Size",
+    fontSizeDesc: "Scale text size across the interface",
+    contrastMode: "High Contrast",
+    contrastModeDesc: "Increase color contrast for better readability",
+    reduceAnimations: "Reduce Animations",
+    reduceAnimationsDesc: "Minimize motion effects throughout the interface",
+    enhancedFocus: "Enhanced Focus Indicator",
+    enhancedFocusDesc: "Show a stronger outline around focused elements for keyboard navigation",
+  },
+
+  // ============================================================================
+  // COOKIE CONSENT
+  // ============================================================================
+  cookieConsent: {
+    title: "We use cookies",
+    description: "We use essential cookies to keep you signed in and functional cookies to remember your preferences. Choose what you want to allow.",
+    acceptAll: "Accept all",
+    rejectNonEssential: "Reject non-essential",
+    learnMore: "Learn more",
   },
 
   // ============================================================================
@@ -829,6 +854,15 @@ export const en = {
   language: {
     english: "English",
     hebrew: "Hebrew",
+    spanish: "Spanish",
+    portuguese: "Portuguese",
+    french: "French",
+    russian: "Russian",
+    german: "German",
+    arabic: "Arabic",
+    mandarin: "Mandarin",
+    cantonese: "Cantonese",
+    korean: "Korean",
   },
 
   // ============================================================================
@@ -2349,6 +2383,24 @@ export const en = {
     created: "Event created successfully",
     updated: "Event updated successfully",
     deleted: "Event deleted successfully",
+  },
+
+  userChat: {
+    title: "Messages",
+    newChat: "New chat",
+    noRooms: "No conversations yet",
+    noContacts: "No contacts found",
+    noInstitute: "Join an organization to start chatting",
+    selectRoomHint: "Select a conversation to start messaging",
+    participants: "participants",
+    unknownUser: "Unknown user",
+    composerPlaceholder: "Type a message…",
+    loadingOlder: "Loading older messages…",
+    scrollForOlder: "Scroll up for older messages",
+    searchContacts: "Search contacts",
+    groupName: "Group name",
+    groupNamePlaceholder: "Name this group",
+    create: "Create",
   },
 
 };

@@ -1,0 +1,393 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
+import { useInstitute } from "@/hooks/useInstitute";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFooter } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
+import { MessagesSquare, Plus, Users as UsersIcon, Send } from "lucide-react";
+import { useUserChat } from "./UserChatContext";
+import { fetchContacts, type UserChatContact, type UserChatRoomListEntry, type UserChatMessageDTO } from "./api";
+
+interface UserChatPanelProps {
+  isOpen?: boolean;
+}
+
+function displayNameFor(p: { firstName: string | null; lastName: string | null; email: string }): string {
+  const full = [p.firstName, p.lastName].filter(Boolean).join(" ").trim();
+  return full || p.email;
+}
+
+function roomTitle(entry: UserChatRoomListEntry, currentUserId: string | undefined): string {
+  if (entry.room.name) return entry.room.name;
+  const others = entry.participants.filter((p) => p.userId !== currentUserId);
+  if (others.length === 0) return entry.participants.map(displayNameFor).join(", ");
+  return others.map(displayNameFor).join(", ");
+}
+
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  return sameDay
+    ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleDateString();
+}
+
+export function UserChatPanel({ isOpen }: UserChatPanelProps) {
+  const { user } = useAuth();
+  const { t } = useLanguage();
+  const { institutes, currentInstitute } = useInstitute();
+  const {
+    rooms,
+    activeRoomId,
+    messagesByRoom,
+    hasMoreByRoom,
+    loadingMoreByRoom,
+    refreshRooms,
+    openRoom,
+    loadOlder,
+    send,
+    createDirect,
+    createGroup,
+  } = useUserChat();
+
+  const [newChatOpen, setNewChatOpen] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) refreshRooms();
+  }, [isOpen, refreshRooms]);
+
+  const activeEntry = useMemo(
+    () => rooms.find((r) => r.room.id === activeRoomId) ?? null,
+    [rooms, activeRoomId],
+  );
+
+  return (
+    <div className="flex h-full w-full min-h-0 bg-background">
+      {/* Room list */}
+      <div className="w-72 border-r border-border flex flex-col min-h-0">
+        <div className="p-3 border-b border-border flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <MessagesSquare className="w-4 h-4" />
+            <span className="font-semibold">{t("userChat.title")}</span>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => setNewChatOpen(true)} data-testid="user-chat-new">
+            <Plus className="w-4 h-4 mr-1" /> {t("userChat.newChat")}
+          </Button>
+        </div>
+        <ScrollArea className="flex-1">
+          {rooms.length === 0 && (
+            <div className="p-4 text-sm text-muted-foreground">{t("userChat.noRooms")}</div>
+          )}
+          {rooms.map((entry) => (
+            <button
+              key={entry.room.id}
+              onClick={() => openRoom(entry.room.id)}
+              className={cn(
+                "w-full text-start px-3 py-2 border-b border-border hover:bg-muted transition-colors",
+                activeRoomId === entry.room.id && "bg-muted",
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-medium truncate">{roomTitle(entry, user?.id)}</span>
+                {entry.unreadCount > 0 && (
+                  <span className="ml-2 text-xs px-2 py-0.5 bg-primary text-primary-foreground rounded-full">
+                    {entry.unreadCount}
+                  </span>
+                )}
+              </div>
+              {entry.lastMessage && (
+                <div className="text-xs text-muted-foreground truncate mt-1">
+                  {entry.lastMessage.body}
+                </div>
+              )}
+            </button>
+          ))}
+        </ScrollArea>
+      </div>
+
+      {/* Active room */}
+      <div className="flex-1 flex flex-col min-h-0">
+        {activeEntry ? (
+          <RoomView
+            entry={activeEntry}
+            currentUserId={user?.id}
+            messages={messagesByRoom[activeEntry.room.id] ?? []}
+            hasMore={hasMoreByRoom[activeEntry.room.id] ?? false}
+            loadingMore={!!loadingMoreByRoom[activeEntry.room.id]}
+            onLoadOlder={() => loadOlder(activeEntry.room.id)}
+            onSend={(body) => send(activeEntry.room.id, body)}
+          />
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-muted-foreground">
+            {t("userChat.selectRoomHint")}
+          </div>
+        )}
+      </div>
+
+      <NewChatDialog
+        open={newChatOpen}
+        onClose={() => setNewChatOpen(false)}
+        currentInstituteId={currentInstitute?.id ?? institutes[0]?.id ?? null}
+        onCreateDirect={async (instituteId, otherUserId) => {
+          const id = await createDirect(instituteId, otherUserId);
+          await openRoom(id);
+        }}
+        onCreateGroup={async (instituteId, participantIds, name) => {
+          const id = await createGroup(instituteId, participantIds, name);
+          await openRoom(id);
+        }}
+      />
+    </div>
+  );
+}
+
+function RoomView(props: {
+  entry: UserChatRoomListEntry;
+  currentUserId: string | undefined;
+  messages: UserChatMessageDTO[];
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadOlder: () => void;
+  onSend: (body: string) => Promise<void>;
+}) {
+  const { t } = useLanguage();
+  const { entry, currentUserId, messages, hasMore, loadingMore, onLoadOlder, onSend } = props;
+  const [draft, setDraft] = useState("");
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const lastLengthRef = useRef(messages.length);
+
+  const participantsById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of entry.participants) map.set(p.userId, displayNameFor(p));
+    return map;
+  }, [entry.participants]);
+
+  // Scroll to bottom when a new message arrives (not on history prepend).
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const grew = messages.length > lastLengthRef.current;
+    lastLengthRef.current = messages.length;
+    if (grew) {
+      // If the most recent message is appended (sent or received), stick to bottom.
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [messages]);
+
+  // Intersection observer on the "load older" sentinel.
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || !hasMore) return;
+    const obs = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (e.isIntersecting && !loadingMore) onLoadOlder();
+      }
+    });
+    obs.observe(sentinel);
+    return () => obs.disconnect();
+  }, [hasMore, loadingMore, onLoadOlder]);
+
+  const handleSend = async () => {
+    const body = draft.trim();
+    if (!body) return;
+    setDraft("");
+    try {
+      await onSend(body);
+    } catch (err) {
+      console.error(err);
+      setDraft(body); // restore on failure
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-full min-h-0">
+      <div className="px-4 py-3 border-b border-border">
+        <div className="font-semibold">{entry.room.name || entry.participants.filter((p) => p.userId !== currentUserId).map(displayNameFor).join(", ")}</div>
+        <div className="text-xs text-muted-foreground flex items-center gap-1">
+          <UsersIcon className="w-3 h-3" /> {entry.participants.length} {t("userChat.participants")}
+        </div>
+      </div>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+        {hasMore && (
+          <div ref={sentinelRef} className="text-center text-xs text-muted-foreground py-2">
+            {loadingMore ? t("userChat.loadingOlder") : t("userChat.scrollForOlder")}
+          </div>
+        )}
+        {messages.map((m) => {
+          const isMe = m.senderId === currentUserId;
+          return (
+            <div key={m.id} className={cn("flex", isMe ? "justify-end" : "justify-start")}>
+              <div className={cn(
+                "max-w-[70%] rounded-lg px-3 py-2",
+                isMe ? "bg-primary text-primary-foreground" : "bg-muted",
+              )}>
+                {!isMe && (
+                  <div className="text-xs font-medium mb-0.5">
+                    {participantsById.get(m.senderId) ?? t("userChat.unknownUser")}
+                  </div>
+                )}
+                <div className="whitespace-pre-wrap break-words">{m.body}</div>
+                <div className={cn("text-[10px] mt-1 opacity-70", isMe ? "text-right" : "")}>
+                  {formatTime(m.createdAt)}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="border-t border-border p-3 flex gap-2">
+        <Input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              handleSend();
+            }
+          }}
+          placeholder={t("userChat.composerPlaceholder")}
+          data-testid="user-chat-composer"
+        />
+        <Button onClick={handleSend} disabled={!draft.trim()} data-testid="user-chat-send">
+          <Send className="w-4 h-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function NewChatDialog(props: {
+  open: boolean;
+  onClose: () => void;
+  currentInstituteId: string | null;
+  onCreateDirect: (instituteId: string, otherUserId: string) => Promise<void>;
+  onCreateGroup: (instituteId: string, participantIds: string[], name: string) => Promise<void>;
+}) {
+  const { t } = useLanguage();
+  const { open, onClose, currentInstituteId, onCreateDirect, onCreateGroup } = props;
+  const [contacts, setContacts] = useState<UserChatContact[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [name, setName] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setSelected(new Set());
+    setName("");
+    setSearch("");
+    if (currentInstituteId) {
+      fetchContacts(currentInstituteId).then(setContacts).catch((err) => {
+        console.error("[userChat] fetchContacts:", err);
+        setContacts([]);
+      });
+    } else {
+      setContacts([]);
+    }
+  }, [open, currentInstituteId]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return contacts;
+    return contacts.filter((c) => {
+      const label = `${c.firstName ?? ""} ${c.lastName ?? ""} ${c.email}`.toLowerCase();
+      return label.includes(q);
+    });
+  }, [contacts, search]);
+
+  const toggle = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const canSubmit = !!currentInstituteId && selected.size >= 1 && (selected.size === 1 || name.trim().length > 0);
+
+  const submit = async () => {
+    if (!currentInstituteId || submitting || !canSubmit) return;
+    setSubmitting(true);
+    try {
+      const ids = Array.from(selected);
+      if (ids.length === 1) {
+        await onCreateDirect(currentInstituteId, ids[0]);
+      } else {
+        await onCreateGroup(currentInstituteId, ids, name.trim());
+      }
+      onClose();
+    } catch (err) {
+      console.error("[userChat] create room:", err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t("userChat.newChat")}</DialogTitle>
+        </DialogHeader>
+        <DialogBody className="space-y-3">
+          {!currentInstituteId && (
+            <div className="text-sm text-muted-foreground">{t("userChat.noInstitute")}</div>
+          )}
+          {currentInstituteId && (
+            <>
+              <Input
+                placeholder={t("userChat.searchContacts")}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <ScrollArea className="h-64 border rounded-md">
+                {filtered.length === 0 && (
+                  <div className="p-3 text-sm text-muted-foreground">{t("userChat.noContacts")}</div>
+                )}
+                {filtered.map((c) => (
+                  <label
+                    key={c.id}
+                    className="flex items-center gap-3 px-3 py-2 border-b last:border-b-0 cursor-pointer hover:bg-muted"
+                  >
+                    <Checkbox
+                      checked={selected.has(c.id)}
+                      onCheckedChange={() => toggle(c.id)}
+                    />
+                    <div>
+                      <div className="font-medium">{displayNameFor(c)}</div>
+                      <div className="text-xs text-muted-foreground">{c.email}</div>
+                    </div>
+                  </label>
+                ))}
+              </ScrollArea>
+              {selected.size > 1 && (
+                <div>
+                  <Label htmlFor="user-chat-group-name">{t("userChat.groupName")}</Label>
+                  <Input
+                    id="user-chat-group-name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder={t("userChat.groupNamePlaceholder")}
+                  />
+                </div>
+              )}
+            </>
+          )}
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>{t("common.cancel")}</Button>
+          <Button disabled={!canSubmit || submitting} onClick={submit}>
+            {t("userChat.create")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

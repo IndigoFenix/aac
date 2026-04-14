@@ -317,7 +317,7 @@ All fixes below have been implemented:
 4. **Interpretation level branching removed**: All code paths now use level 1 behavior.
    - `interpret()` tool removed from tool declarations
    - `interpretationLevel` removed from `ToolDeclarationConfig`, `DualAgentSessionState`,
-     `buildFunctionCallingPrompt`, session creation, behavioral reminders
+     `buildInteractiveAgentPrompt`, session creation, behavioral reminders
    - Buttons always include sentences (level 1 format: `label|icon|imageKey|sentence`)
    - Pre-generated student TTS always active on button press
    - Echo awareness simplified (no interpret tool references)

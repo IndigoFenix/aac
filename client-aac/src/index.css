@@ -161,3 +161,46 @@
   min-width: 44px;
   min-height: 44px;
 }
+
+/* ===== Accessibility settings (controlled via AccessibilityContext) ===== */
+
+/* Font scaling — --font-scale is set on :root by AccessibilityContext */
+:root { --font-scale: 1; }
+html { font-size: calc(16px * var(--font-scale)); }
+
+/* High contrast mode (.high-contrast on :root) */
+.high-contrast {
+  --foreground: 0 0% 0%;
+  --text-primary: 0 0% 0%;
+  --text-secondary: 0 0% 20%;
+  --background: 0 0% 100%;
+  --muted-foreground: 0 0% 15%;
+  --border: 0 0% 30%;
+}
+.high-contrast.dark {
+  --foreground: 0 0% 100%;
+  --text-primary: 0 0% 100%;
+  --text-secondary: 0 0% 85%;
+  --background: 0 0% 0%;
+  --muted-foreground: 0 0% 90%;
+  --border: 0 0% 70%;
+}
+.high-contrast .symbol-item {
+  border: 2px solid hsl(var(--text-primary));
+}
+
+/* Reduce animations (.reduce-animations on :root) */
+.reduce-animations *,
+.reduce-animations *::before,
+.reduce-animations *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+
+/* Enhanced focus indicator (.enhanced-focus on :root) */
+.enhanced-focus *:focus-visible {
+  outline: 3px solid hsl(var(--primary)) !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 6px hsl(var(--primary) / 0.25) !important;
+}

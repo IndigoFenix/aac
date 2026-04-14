@@ -20,6 +20,7 @@ import { SettingsPanel } from '@/features/SettingsPanel';
 import { AACSettingsPanel } from '@/features/AACSettingsPanel';
 import { SymbolsPanel } from '@/features/SymbolsPanel';
 import { CalendarPanel } from '@/features/CalendarPanel';
+import { UserChatPanel } from '@/features/userChat/UserChatPanel';
 import { Button } from '@/components/ui/button';
 import { MessageCircle, Maximize2, Minimize2, X } from 'lucide-react';
 
@@ -136,6 +137,8 @@ export function MainLayout() {
         return <SymbolsPanel isOpen={isPanelOpen} />;
       case 'calendar':
         return <CalendarPanel isOpen={isPanelOpen} />;
+      case 'userchat':
+        return <UserChatPanel isOpen={isPanelOpen} />;
       default:
         return null;
     }

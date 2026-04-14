@@ -35,7 +35,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
   // Login mutation
   const loginMutation = useMutation({
     mutationFn: async (credentials: { email: string; password: string }) => {
-      const response = await apiRequest("POST", "/auth/login", credentials);
+      const response = await apiRequest("POST", "/auth/login", { ...credentials, aacClient: true });
       return response.json();
     },
     onSuccess: (data) => {
@@ -108,7 +108,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
     if (!impersonateEmail.trim()) return;
     setIsImpersonating(true);
     try {
-      const response = await apiRequest('POST', '/auth/impersonate', { email: impersonateEmail });
+      const response = await apiRequest('POST', '/auth/impersonate', { email: impersonateEmail, aacClient: true });
       const data = await response.json();
       if (data.success && data.user) {
         localStorage.removeItem('aac_signed_out');
@@ -219,7 +219,16 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="en">English</SelectItem>
-                      <SelectItem value="he">Hebrew</SelectItem>
+                      <SelectItem value="he">עברית (Hebrew)</SelectItem>
+                      <SelectItem value="es">Español (Spanish)</SelectItem>
+                      <SelectItem value="pt">Português (Portuguese)</SelectItem>
+                      <SelectItem value="fr">Français (French)</SelectItem>
+                      <SelectItem value="ru">Русский (Russian)</SelectItem>
+                      <SelectItem value="de">Deutsch (German)</SelectItem>
+                      <SelectItem value="ar">العربية (Arabic)</SelectItem>
+                      <SelectItem value="zh">中文 (Mandarin)</SelectItem>
+                      <SelectItem value="yue">粵語 (Cantonese)</SelectItem>
+                      <SelectItem value="ko">한국어 (Korean)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

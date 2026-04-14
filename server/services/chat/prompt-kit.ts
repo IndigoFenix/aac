@@ -206,6 +206,29 @@ export interface NlpSchema {
 
     }
 
+    if (ctx.agent.tools?.fdaLookup?.enabled) {
+        const fdaOrangeBookTool: GPTTool = {
+            type: 'function',
+            function: {
+                name: 'fdaOrangeBook',
+                description: 'Look up drug information in the FDA Orange Book (Drugs@FDA). Returns approved drug applications, active ingredients, dosage forms, routes, therapeutic equivalence codes, marketing status, and approval history. Use when the user asks about a specific drug, generic alternatives, or FDA approval details.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        brandName: { type: 'string', description: 'Brand/trade name (e.g. "Lipitor", "Advil")' },
+                        genericName: { type: 'string', description: 'Generic name (e.g. "Atorvastatin Calcium", "Ibuprofen")' },
+                        applicationNumber: { type: 'string', description: 'NDA/ANDA/BLA number (e.g. "NDA020702")' },
+                        sponsorName: { type: 'string', description: 'Manufacturer/sponsor name (e.g. "PFIZER")' },
+                        activeIngredient: { type: 'string', description: 'Active ingredient name' },
+                        exactMatch: { type: 'boolean', description: 'If true (default), uses exact phrase matching. Set to false for fuzzy/tokenized search when exact matching returns no results.' },
+                        limit: { type: 'number', description: 'Max results to return (1-25, default 10)' },
+                    },
+                }
+            }
+        }
+        tools.push(fdaOrangeBookTool);
+    }
+
     if (ctx.agent.tools?.mediaAnalysis?.enabled) {
         const analyzeMediaTool: GPTTool = {
             type: 'function',

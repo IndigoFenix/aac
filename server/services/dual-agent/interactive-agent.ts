@@ -15,9 +15,11 @@ import type {
  * The optional fourth pipe-delimited field is a pre-generated interpreted sentence:
  *   "Water|💧|water_drop|I would like some water, Play|🎮|game_controller|Let's play"
  *   "Water|💧||I would like some water"  (no image_key, but sentence)
+ * The optional fifth and sixth fields are rowSpan and colSpan (default 1):
+ *   "Big Button|🎯||Press me|2|2"  (spans 2 rows and 2 columns)
  */
-export function parseBoardButtons(content: string): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: "guess" | "category" }> {
-  const buttons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: "guess" | "category" }> = [];
+export function parseBoardButtons(content: string): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: "guess" | "category"; rowSpan?: number; colSpan?: number }> {
+  const buttons: Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: "guess" | "category"; rowSpan?: number; colSpan?: number }> = [];
   const items = content.split(',');
 
   for (const item of items) {
@@ -37,8 +39,16 @@ export function parseBoardButtons(content: string): Array<{ label: string; iconR
         label = label.substring(7).trim();
         buttonType = "guess";
       }
-      const imageKey = parts[2]?.trim() || undefined;
-      const sentence = parts[3]?.trim() || undefined;
+      // imageKey is only valid if there are 4+ parts and the 3rd part is non-empty;
+      // otherwise the AI omitted the image key and parts[2] is actually the sentence
+      const hasImageKey = parts.length >= 4 && parts[2]?.trim() !== "";
+      const imageKey = hasImageKey ? parts[2].trim() : undefined;
+      const sentence = hasImageKey ? (parts[3]?.trim() || undefined) : (parts[2]?.trim() || undefined);
+      const spanOffset = hasImageKey ? 4 : 3;
+      const rawRowSpan = parseInt(parts[spanOffset]?.trim(), 10);
+      const rawColSpan = parseInt(parts[spanOffset + 1]?.trim(), 10);
+      const rowSpan = rawRowSpan >= 2 ? rawRowSpan : undefined;
+      const colSpan = rawColSpan >= 2 ? rawColSpan : undefined;
       let symbolPath: string | undefined;
 
       // Handle face:contactId references
@@ -49,7 +59,7 @@ export function parseBoardButtons(content: string): Array<{ label: string; iconR
         console.log(`[InteractiveAgent] Parsed face button: "${label}" → face:${contactId}`);
       }
 
-      // Handle symbol:symbolId references — skip image_key when custom symbol is used
+      // Handle symbol:symbolId references ��� skip image_key when custom symbol is used
       if (iconRef.startsWith("symbol:")) {
         const symbolId = iconRef.substring(7).trim();
         symbolPath = `__SYMBOL__:${symbolId}`;
@@ -68,6 +78,8 @@ export function parseBoardButtons(content: string): Array<{ label: string; iconR
           imageKey: (symbolPath || isSingleChar) ? undefined : imageKey,
           sentence,
           buttonType,
+          rowSpan,
+          colSpan,
         });
       }
     } else {

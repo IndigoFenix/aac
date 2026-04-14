@@ -601,18 +601,37 @@ export function BoardCanvas() {
                     return null;
                   }
 
+                  // Check for spanning button covering this cell
+                  const spanningButton = currentPage.buttons.find(
+                    (b: any) =>
+                      ((b.rowSpan ?? 1) > 1 || (b.colSpan ?? 1) > 1) &&
+                      row >= b.row &&
+                      row < b.row + (b.rowSpan ?? 1) &&
+                      col >= b.col &&
+                      col < b.col + (b.colSpan ?? 1)
+                  );
+
+                  // If this cell is covered by a spanning button but is not its origin, skip it
+                  if (spanningButton && (row !== spanningButton.row || col !== spanningButton.col)) {
+                    return null;
+                  }
+
                   // Check for button
                   const button = currentPage.buttons.find(
                     (b: any) => b.row === row && b.col === col
                   );
 
                   if (button) {
+                    const btnRowSpan = (button as any).rowSpan ?? 1;
+                    const btnColSpan = (button as any).colSpan ?? 1;
+                    const isSpanning = btnRowSpan > 1 || btnColSpan > 1;
                     return (
                       <button
                         key={button.id}
                         onClick={(e) => handleButtonClick(button, e)}
                         className={cn(
-                          "aspect-square rounded-xl flex flex-col items-center justify-center p-2 transition-all text-white font-medium text-sm shadow-lg relative",
+                          "rounded-xl flex flex-col items-center justify-center p-2 transition-all text-white font-medium text-sm shadow-lg relative",
+                          !isSpanning && "aspect-square",
                           button.action?.type === "link" ? "border-2 border-blue-400" :
                           button.action?.type === "back" || button.action?.type === "home" ? "border-2 border-amber-400" :
                           "",
@@ -626,6 +645,10 @@ export function BoardCanvas() {
                         )}
                         style={{
                           backgroundColor: getButtonColor(button.color),
+                          ...(isSpanning ? {
+                            gridColumn: `span ${btnColSpan}`,
+                            gridRow: `span ${btnRowSpan}`,
+                          } : {}),
                         }}
                       >
                         {(() => {

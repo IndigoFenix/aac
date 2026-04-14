@@ -38,9 +38,9 @@ export interface ToolDeclarationConfig {
 // Button format description (shared by add_buttons and rebuild_board)
 // ---------------------------------------------------------------------------
 
-const BUTTON_FORMAT_ADD = "Comma-separated buttons: label|icon|imageKey|sentence. Sentence is a short phrase the user means - write from the user's perspective, not your own. Prefer emojis — only add imageKey when no emoji captures the concept. Example: \"Water|💧||I want water, Play|🎮||I want to play, Park|🏞️|child_on_playground|Let's go to the park\"";
+const BUTTON_FORMAT_ADD = "Comma-separated buttons: label|icon|imageKey|sentence|rowSpan|colSpan. Sentence is a short phrase the user means - write from the user's perspective, not your own. Prefer emojis — only add imageKey when no emoji captures the concept. rowSpan/colSpan are optional (default 1) — use to make important buttons span multiple grid cells. Example: \"Water|💧||I want water, Play|🎮||I want to play, Park|🏞️|child_on_playground|Let's go to the park\"";
 
-const BUTTON_FORMAT_REBUILD = "Comma-separated buttons: label|icon|imageKey|sentence. Sentence is a short phrase the user means - write from the user's perspective, not your own. Prefer emojis — only add imageKey when no emoji captures the concept. Example: \"Play|🎮||I want to play, Music|🎵||Put on some music, Draw|✏️||I want to draw, Tired|😴||I am tired\"";
+const BUTTON_FORMAT_REBUILD = "Comma-separated buttons: label|icon|imageKey|sentence|rowSpan|colSpan. Sentence is a short phrase the user means - write from the user's perspective, not your own. Prefer emojis — only add imageKey when no emoji captures the concept. rowSpan/colSpan are optional (default 1) — use to make important buttons span multiple grid cells. Example: \"Play|🎮||I want to play, Music|🎵||Put on some music, Draw|✏️||I want to draw, Tired|😴||I am tired\"";
 
 // ---------------------------------------------------------------------------
 // Tool factory functions
@@ -301,6 +301,22 @@ function buildAddContextButtonTool(_config: ToolDeclarationConfig): FunctionDecl
   };
 }
 
+// Debug message — used by the system when a turn is rejected. The model calls
+// this to tell us what it was trying to do, bypassing the audio safety filter
+// that would otherwise RESPONSE_REJECT the explanation itself.
+const DEBUG_MESSAGE: FunctionDeclaration = {
+  name: "debug_message",
+  description: "System diagnostic tool. When the system tells you a response was rejected or malformed and asks what you were trying to do, call this function with your explanation. Do NOT call this unless explicitly asked by a [DEBUG] system message.",
+  behavior: Behavior.NON_BLOCKING,
+  parametersJsonSchema: {
+    type: "object",
+    properties: {
+      message: { type: "string", description: "What you were trying to do — the function you were calling and/or what you were going to say." },
+    },
+    required: ["message"],
+  },
+};
+
 // ---------------------------------------------------------------------------
 // Builder — conditionally includes tools based on session config
 // ---------------------------------------------------------------------------
@@ -347,6 +363,7 @@ export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
   declarations.push(YES_NO);
   declarations.push(ASK_YES_NO);
   declarations.push(buildRequestFocusTool(config));
+  declarations.push(DEBUG_MESSAGE);
 
   return [{ functionDeclarations: declarations }];
 }

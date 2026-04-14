@@ -17,7 +17,7 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { customSymbolRepository } from "../../repositories/customSymbolRepository";
 import { customSymbolService } from "./custom-symbol-service";
-import { generateSymbolImage } from "./symbol-generator";
+import { generateSymbolImage, type SymbolGenerationCost } from "./symbol-generator";
 import type { CustomSymbol } from "@shared/schema";
 
 // ---------------------------------------------------------------------------
@@ -44,6 +44,20 @@ function debugLog(section: string, message: string): void {
     const ts = new Date().toISOString();
     fs.appendFileSync(LOG_FILE, `[${ts}] [${section}] ${message}\n`);
   } catch { /* ignore */ }
+}
+
+// ---------------------------------------------------------------------------
+// Cost logging — logs generation costs to the debug file
+// ---------------------------------------------------------------------------
+
+function logCost(imageKey: string, cost: SymbolGenerationCost): void {
+  const { promptRefinement: pr, imageGeneration: ig } = cost;
+  const prCached = pr.cachedTokens > 0 ? ` (${pr.cachedTokens} cached)` : "";
+  debugLog("COST", [
+    `imageKey="${imageKey}"`,
+    `refinement: ${pr.provider}/${pr.model} in=${pr.inputTokens}${prCached} out=${pr.outputTokens}`,
+    `image: ${ig.provider}/${ig.model} in=${ig.inputTokens} out=${ig.outputTokens}`,
+  ].join(" | "));
 }
 
 // ---------------------------------------------------------------------------
@@ -193,16 +207,19 @@ async function processQueue(): Promise<void> {
       }
 
       debugLog("processQueue", `Generating "${job.imageKey}"...`);
-      const imageBuffer = await generateSymbolImage(job.imageKey.replace(/_/g, " "));
-      const symbol = await customSymbolService.createSymbol(imageBuffer, {
+      const result = await generateSymbolImage(job.imageKey);
+      const symbol = await customSymbolService.createSymbol(result.imageBuffer, {
         key: job.imageKey,
         description: job.imageKey.replace(/_/g, " "),
         isPublic: true,
         isApproved: false,
       });
       generated++;
+      logCost(job.imageKey, result.cost);
       debugLog("processQueue", `Generated "${job.imageKey}" → ${symbol.id} (${generated} total)`);
+      debugLog("processQueue", `FULL REFINED PROMPT for "${job.imageKey}": ${result.refinedPrompt}`);
       console.log(`[AutoSymbolService] Generated "${job.imageKey}" → ${symbol.id} (${generated} total)`);
+      console.log(`[AutoSymbolService] Refined prompt for "${job.imageKey}": ${result.refinedPrompt}`);
       job.onReady?.(job.imageKey, symbol);
       symbolEvents.emit("symbol:ready", {
         imageKey: job.imageKey,

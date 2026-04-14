@@ -232,14 +232,25 @@ export default function PrebuiltBoardSection({
     );
   }
 
-  // Create grid cells
-  const cells: (ButtonIR | null)[][] = Array(grid.rows)
+  // Create grid cells — "spanned" marks cells covered by a multi-span button (not its origin)
+  const cells: (ButtonIR | null | "spanned")[][] = Array(grid.rows)
     .fill(null)
     .map(() => Array(grid.cols).fill(null));
 
   currentPage.buttons.forEach((button) => {
     if (button.row < grid.rows && button.col < grid.cols) {
       cells[button.row][button.col] = button;
+      const rSpan = button.rowSpan ?? 1;
+      const cSpan = button.colSpan ?? 1;
+      if (rSpan > 1 || cSpan > 1) {
+        for (let r = button.row; r < Math.min(button.row + rSpan, grid.rows); r++) {
+          for (let c = button.col; c < Math.min(button.col + cSpan, grid.cols); c++) {
+            if (r !== button.row || c !== button.col) {
+              cells[r][c] = "spanned";
+            }
+          }
+        }
+      }
     }
   });
 
@@ -274,8 +285,9 @@ export default function PrebuiltBoardSection({
             gridTemplateRows: `repeat(${grid.rows}, minmax(0, 1fr))`,
           }}
         >
-          {cells.flat().map((button, index) => {
-            if (!button) {
+          {cells.flat().map((cell, index) => {
+            if (cell === "spanned") return null;
+            if (!cell) {
               return (
                 <div
                   key={`empty-${index}`}
@@ -284,14 +296,24 @@ export default function PrebuiltBoardSection({
               );
             }
 
+            const button = cell;
             const isLink = button.action?.type === "link";
+            const btnRowSpan = button.rowSpan ?? 1;
+            const btnColSpan = button.colSpan ?? 1;
+            const isSpanning = btnRowSpan > 1 || btnColSpan > 1;
 
             return (
               <motion.button
                 key={button.id}
                 onClick={() => handleButtonClick(button)}
                 className="flex flex-col items-center justify-center p-1 rounded-lg shadow-sm border border-gray-200 dark:border-gray-600 relative overflow-hidden min-h-0"
-                style={{ backgroundColor: getButtonColor(button.color) }}
+                style={{
+                  backgroundColor: getButtonColor(button.color),
+                  ...(isSpanning ? {
+                    gridColumn: `span ${btnColSpan}`,
+                    gridRow: `span ${btnRowSpan}`,
+                  } : {}),
+                }}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.95 }}
               >

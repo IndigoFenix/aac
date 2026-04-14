@@ -12,6 +12,7 @@ import { generateImage } from "./tools/image-generator";
 import { extractFrame } from "./tools/video-frame-extractor";
 import { getFile, refreshFile, storeFile } from "./tools/media-file-cache";
 import { AgentAPIEndpoint } from "@shared/schema";
+import { lookupOrangeBook, OrangeBookQuery } from "../fda/orange-book-service";
 
 const API_PREFIX = "api_";
 const isProduction = process.env.NODE_ENV === 'production';
@@ -58,6 +59,7 @@ export interface ToolRegistry {
   analyzeMedia: (args: { instruction: string; context?: string; files: string[] }) => Promise<any>;
   extractVideoFrame: (args: { fileId: string; timestampSeconds: number }) => Promise<any>;
   generateImage: (args: { instruction: string; referenceImageFileId?: string }) => Promise<any>;
+  fdaOrangeBook: (args: OrangeBookQuery) => Promise<any>;
 }
 
 // ============================================================================
@@ -569,6 +571,10 @@ export function defaultToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
       return result;
     },
 
+    fdaOrangeBook: async (args: OrangeBookQuery) => {
+      return lookupOrangeBook(args);
+    },
+
     pruneMessages: async (args: { forget: number[]; summary: string; closePaths?: string[] }) => {
       if (deps.onPruneMessages) {
         return { success: true, ...(await deps.onPruneMessages(args.forget, args.summary, args.closePaths)) };
@@ -901,6 +907,10 @@ export async function makeToolCalls(
               case "generateImage":
                 response = await registry.generateImage(args as { instruction: string; referenceImageFileId?: string });
                 insertToolCallResponse(toolCall, response, response?.credits || 0);
+                break;
+              case "fdaOrangeBook":
+                response = await registry.fdaOrangeBook(args as OrangeBookQuery);
+                insertToolCallResponse(toolCall, response);
                 break;
               default:
                 insertToolCallResponse(toolCall, {

@@ -31,7 +31,7 @@ import { searchSpotify } from "../spotify/spotify-search";
 import { createContact, findSimilarContact, updateContact, getContactsByStudent } from "../biometric";
 import { logDualAgent, logLiveSession } from "./dual-agent-logger";
 import { dualAgentService, type SessionCache } from "./dual-agent-service";
-import { buildFunctionCallingPrompt, AAC_DEFAULT_PERSONA_PROMPT } from "../memory-schema/aac-memory-schema";
+import { buildInteractiveAgentPrompt, AAC_DEFAULT_PERSONA_PROMPT } from "../memory-schema/aac-memory-schema";
 import { boardRepository } from "../../repositories/boardRepository";
 import { settingsRepository } from "../../repositories/settingsRepository";
 import { aacSettingsRepository } from "../../repositories/aacSettingsRepository";
@@ -75,7 +75,7 @@ function stringifyMsg(msg: any): string {
  *  - String (preferred):  "Play|🎮, Water|💧, Help|face:abc123"  (parseBoardButtons format)
  *  - Array of strings:    ["Play|🎮", "Water|💧"]  (fallback — join and parse)
  *  - Object array:        [{label, icon}]  (OpenAI / legacy) */
-function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: "guess" | "category" }> {
+function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: "guess" | "category"; rowSpan?: number; colSpan?: number }> {
   // String — the expected format from native audio models: "label|icon, label|icon"
   if (typeof raw === "string") {
     return parseBoardButtons(raw as string);
@@ -96,6 +96,10 @@ function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string
     let symbolPath: string | undefined;
     const imageKey = (typeof b?.image_key === "string" ? b.image_key : "").trim() || undefined;
     const sentence = (typeof b?.sentence === "string" ? b.sentence : "").trim() || undefined;
+    const rawRowSpan = typeof b?.row_span === "number" ? b.row_span : parseInt(b?.row_span, 10);
+    const rawColSpan = typeof b?.col_span === "number" ? b.col_span : parseInt(b?.col_span, 10);
+    const rowSpan = rawRowSpan >= 2 ? rawRowSpan : undefined;
+    const colSpan = rawColSpan >= 2 ? rawColSpan : undefined;
     if (iconRef.startsWith("face:")) {
       symbolPath = `__FACE__:${iconRef.substring(5).trim()}`;
       iconRef = "👤";
@@ -103,7 +107,7 @@ function toolArgsToButtons(raw: unknown): Array<{ label: string; iconRef: string
       symbolPath = `__SYMBOL__:${iconRef.substring(7).trim()}`;
       iconRef = "🖼️";
     }
-    return { label, iconRef, symbolPath, imageKey: symbolPath ? undefined : imageKey, sentence };
+    return { label, iconRef, symbolPath, imageKey: symbolPath ? undefined : imageKey, sentence, rowSpan, colSpan };
   });
 }
 
@@ -299,6 +303,10 @@ export class LiveRelay {
   // Pre-generated student TTS (for button presses)
   private preGenTtsPromise: Promise<void> | null = null;
 
+  // Pending button press prompt — if the model produces an empty turn after a
+  // button press, we retry with this prompt (proactiveAudio can swallow turns).
+  private pendingButtonPrompt: string | null = null;
+
   // Direct audio buffering — chunks accumulate and flush every 250ms as WAV
   private directAudioChunks: string[] = [];
   private directAudioFlushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -322,14 +330,20 @@ export class LiveRelay {
   // silently dropped, causing buttons to "fail" while the AI is responding.
   private pendingClientMessages: ClientMessage[] = [];
 
-  // When true, the next model turn is a debug introspection response (the model
-  // is telling us what it just tried to call). We capture the text and don't
-  // forward audio to the client.
-  private awaitingMalformedDebugResponse = false;
-  private malformedDebugBuffer = "";
-  // Number of times we've asked the model to retry a malformed call.
-  private malformedRetryCount = 0;
-  private static readonly MALFORMED_MAX_RETRIES = 2;
+  // When true, the next model turn is a debug introspection response — the
+  // model is telling us, in plain text, what it just tried to do (after a
+  // MALFORMED_FUNCTION_CALL). We capture the text into debugResponseBuffer
+  // and don't forward audio to the client.
+  private awaitingDebugResponse = false;
+  private debugResponseBuffer = "";
+  // Number of times we've asked the model to retry after an abnormal turn.
+  private debugRetryCount = 0;
+  private static readonly DEBUG_MAX_RETRIES = 2;
+  // Cooldown after RESPONSE_REJECTED exhaustion — prevents frame_grid from
+  // immediately re-triggering and causing the model to repeat the same
+  // rejected content in a tight loop.
+  private rejectionCooldownUntil = 0;
+  private static readonly REJECTION_COOLDOWN_MS = 15_000;
 
   constructor(ws: WebSocket) {
     this.ws = ws;
@@ -419,8 +433,9 @@ export class LiveRelay {
       },
 
       onAudioData: (data) => {
-        // Don't forward audio during debug introspection — it's for us, not the user
-        if (this.awaitingMalformedDebugResponse) return;
+        // During debug introspection, let audio generate (so the model doesn't
+        // get RESPONSE_REJECTED for modality violations) but don't forward it.
+        if (this.awaitingDebugResponse) return;
         if (this.useDirectAudio) {
           this.directAudioChunks.push(data.data);
           this.hasGreeted = true;
@@ -438,8 +453,8 @@ export class LiveRelay {
       onOutputTranscription: (text) => {
         logLiveSession("GEMINI → outputTranscription", `state=${this.state} text="${text}"`);
         // Capture into debug buffer instead of forwarding when introspecting
-        if (this.awaitingMalformedDebugResponse) {
-          if (text.trim()) this.malformedDebugBuffer += text;
+        if (this.awaitingDebugResponse) {
+          if (text.trim()) this.debugResponseBuffer += text;
           return;
         }
         if (this.useDirectAudio && text.trim()) {
@@ -469,9 +484,11 @@ export class LiveRelay {
         }
 
         if (!this.initialConnectionDone) {
-          // Initial connection
+          // Initial connection — now tell the client we're ready
           this.initialConnectionDone = true;
           logLiveSession("ON_READY (initial)", `Sending greeting prompt, timestamp=${Date.now()}`);
+          this.send({ type: "initialized", sessionId: this.sessionCache?.state?.sessionId || "" });
+          this.sendSessionSnapshot();
 
           if (this.pendingGreeting && this.provider) {
             this.setState("awaiting_turn");
@@ -496,7 +513,7 @@ export class LiveRelay {
           console.log("[LiveRelay] Reconnected before greeting — re-prompting");
           const prompt = this.interactionMode === "silent"
             ? `Generate 4-12 contextual utterance buttons using rebuild_board().`
-            : `The home board is loaded. Greet the user with your voice. Wait for them to press a button before changing the board.`;
+            : `The home board is loaded. This is a session start — you may greet the user or wait. Do NOT change the board until the user presses a button.`;
           this.setState("awaiting_turn");
           this.provider!.sendMessage(prompt, "user");
         } else {
@@ -580,13 +597,48 @@ export class LiveRelay {
 
         case "frame_grid": {
           if (this.paused) break;
-          // Send frame as passive context (turnComplete=false) — model absorbs it
-          // without generating audio. In direct audio mode, any turnComplete=true
-          // causes the model to speak its response aloud.
-          this.provider!.sendFrame(msg.data, false);
-          if (this.latestAppCanvas) {
-            this.provider!.sendFrame(this.latestAppCanvas, false);
+          // PROACTIVITY EXPERIMENT (2026-04-12) — REVERTIBLE.
+          //
+          // The client already runs motion detection and only emits a frame_grid
+          // when something visually interesting happens (the timestamps[] array
+          // is a burst of frames around the event). So each frame_grid IS an
+          // event the model should get a chance to react to.
+          //
+          // While idle, deliver the frame via sendFrameWithPrompt
+          // (sendClientContent + turnComplete=true) so the model gets an actual
+          // turn opportunity. The "[scene update] ... stay silent unless..."
+          // prompt + proactiveAudio:true is what keeps the model from speaking
+          // on every tick — it can choose to call tools (add_context_button,
+          // update_context, save transcripts, etc.) and end the turn silently.
+          //
+          // While in_turn / processing_turn / awaiting_turn, just drop the
+          // frame. The model already has visual context from earlier in the
+          // turn, and the next frame_grid after we return to idle will pick up
+          // any new motion.
+          //
+          // ⚠️ TO REVERT: replace the whole branch with the prior fire-and-
+          // forget version using `this.provider!.sendFrame(msg.data, false)`
+          // (and the same for latestAppCanvas). We're switching off that path
+          // because (a) it never gave the model a chance to act and (b) the
+          // memory note about visual responsiveness suggested sendRealtimeInput
+          // .video might be slowing visual updates anyway.
+          if (this.state !== "idle") {
+            logLiveSession("FRAME_GRID DROPPED", `state=${this.state}`);
+            break;
           }
+          if (Date.now() < this.rejectionCooldownUntil) {
+            logLiveSession("FRAME_GRID DROPPED", `rejection cooldown (${this.rejectionCooldownUntil - Date.now()}ms remaining)`);
+            break;
+          }
+          this.setState("awaiting_turn");
+          const extraImages = this.latestAppCanvas
+            ? [{ data: this.latestAppCanvas, mimeType: "image/jpeg", label: "[app canvas]" }]
+            : undefined;
+          this.provider!.sendFrameWithPrompt(
+            msg.data,
+            "[scene update] React only if something here calls for action — add or update context buttons, take notes, save transcripts, update memory. If you are having difficulty identifying a new object, you may call focus_frame() to see it better. Stay silent unless there's a concrete reason to speak.",
+            extraImages,
+          );
           break;
         }
 
@@ -891,17 +943,10 @@ export class LiveRelay {
         console.warn("[LiveRelay] Voice resolution failed, using defaults:", err);
       }
 
-      // Local TTS mode
-      const aac = cached.monitorAgent.getStudent?.()?.aacSettings;
-      this.useLocalTts = !!(aac as any)?.useLocalTts;
-      if (this.useLocalTts) {
-        console.log("[LiveRelay] Local TTS mode enabled — browser will synthesize speech");
-      }
-
       // 4. Determine direct audio mode
-      const aiVoiceHasElevenLabs = !!(this.aiVoice?.elevenlabsApiKey && this.aiVoice?.elevenlabsVoiceId)
-        || !!(this.aiVoice?.customVoice?.active);
-      this.useDirectAudio = !this.useLocalTts && !aiVoiceHasElevenLabs;
+      // Always use direct audio — Gemini native audio for AI voice,
+      // Gemini TTS service for student voice (streamed server-side).
+      this.useDirectAudio = true;
       if (this.useDirectAudio) {
         console.log("[LiveRelay] Direct audio mode enabled — model speaks directly via native audio");
       }
@@ -917,7 +962,7 @@ export class LiveRelay {
             const age = Math.floor((Date.now() - new Date(bd).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
             return age > 0 ? String(age) : undefined;
           };
-          state.interactivePrompt = buildFunctionCallingPrompt({
+          state.interactivePrompt = buildInteractiveAgentPrompt({
             studentName: student.name,
             persona,
             language: student.primaryLanguage || undefined,
@@ -938,15 +983,19 @@ export class LiveRelay {
       }
 
       // 5b. Build the default home board (virtual — not stored in DB).
-      // The server manages the home board directly: it loads on init and on
-      // Home button press, without AI involvement. The AI is informed via
-      // context injection but cannot call set_board("home") — it's not in
-      // availableBoards. This avoids the loop where the AI tries to call
-      // set_board("home") and rebuild_board with too many buttons.
+      // The home board is loaded on init and on Home button press. The AI
+      // can also load it explicitly via set_board("home") — it's included
+      // in availableBoards so the AI understands when it's loaded and can
+      // return to it deliberately.
       const studentLang = cached.monitorAgent.getStudent?.()?.primaryLanguage || "en";
       this.homeBoardData = buildDefaultHomeBoard(studentLang);
       // Load the home board immediately into session state
       this.loadHomeBoardInternal(state);
+      // Add home to available boards so the AI can call set_board("home")
+      if (!state.availableBoards) state.availableBoards = [];
+      if (!state.availableBoards.some(b => b.key === HOME_BOARD_KEY)) {
+        state.availableBoards.unshift({ key: HOME_BOARD_KEY, name: "Home", id: "__home__" } as any);
+      }
 
       // 6. Build tools
       const toolConfig: ToolDeclarationConfig = {
@@ -1019,11 +1068,12 @@ export class LiveRelay {
       const boardHint = state.availableBoards && state.availableBoards.length > 0
         ? ` If a custom board from the Available Custom Boards list is appropriate for this student, use set_board() instead of rebuild_board().`
         : "";
+      const homeBoardButtons = this.getNativePageButtonLabels(state);
       const greetingPrompt = isSilent
         ? `Generate 4-12 contextual utterance buttons — complete phrases the user might want to say. Use the student's profile and interests from the system prompt to make them relevant.${imageHint} Use rebuild_board() to create the initial board.${boardHint}${personaHint}`
         : this.useDirectAudio
-        ? `The home board is loaded with its native navigation buttons. Greet the user with your voice. Wait for them to press a button before changing the board.${imageHint}${personaHint}`
-        : `IMPORTANT: You communicate ONLY through function calls. The home board is loaded. Call speak() to greet the user. Wait for them to press a button before changing the board.${imageHint}${personaHint}`;
+        ? `The home board "${this.homeBoardData.name}" is loaded with buttons: ${homeBoardButtons.join(", ")}. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.${imageHint}${personaHint}`
+        : `IMPORTANT: You communicate ONLY through function calls. The home board is loaded with buttons: ${homeBoardButtons.join(", ")}. Call speak() to greet the user. Wait for them to press a button before changing the board.${imageHint}${personaHint}`;
 
       this.hasGreeted = false;
       // Do NOT include the initial frame in the greeting prompt — sending it via
@@ -1056,9 +1106,9 @@ export class LiveRelay {
       // 10. Start timers
       this.startTimers();
 
-      // 11. Send initialized to client
-      this.send({ type: "initialized", sessionId: state.sessionId });
-      this.sendSessionSnapshot();
+      // 11. "initialized" is sent when the provider's onReady fires (see
+      // onReady callback) so the client keeps showing the loading screen
+      // until the Gemini connection is actually established.
 
       logDualAgent("LiveRelay.initialize", {
         sessionId: state.sessionId,
@@ -1104,26 +1154,11 @@ The user pressed "More" — they can't find the button they need on the current 
     // For a single button press, use the pre-generated sentence directly.
     const singleSentence = (buttons.length === 1 && sentences?.[buttons[0]]) || "";
 
-    // Pre-generate student voice TTS immediately (runs in parallel with Gemini)
-    if (singleSentence && this.studentVoice) {
-      // Send interpretation to client for UI display
+    // Send interpretation to client for UI display
+    if (singleSentence) {
       this.send({ type: "interpret", text: singleSentence, confidence: "high", noAudioClear: false });
-
-      // Set turnAccum so processTurnEnd records the message and skips redundant TTS
       this.turnAccum.interpretText = singleSentence;
       this.turnAccum.interpretConfidence = "high";
-
-      // Start student voice TTS immediately
-      this.preGenTtsPromise = this.streamTtsWithTimeout(
-        singleSentence,
-        this.studentVoice,
-        "interpretation_audio",
-        "Student",
-      ).catch(err => {
-        console.error("[LiveRelay] Pre-generated student TTS error:", (err as Error).message);
-      });
-
-      console.log(`[LiveRelay] Pre-generated TTS started: "${singleSentence}"`);
     }
 
     // Record button press as a user message in session log
@@ -1135,29 +1170,35 @@ The user pressed "More" — they can't find the button they need on the current 
       }).catch(err => console.error("[LiveRelay] Failed to persist button press:", err));
     }
 
-    // In direct audio mode, wait for student TTS to finish BEFORE sending the
-    // prompt to Gemini. Otherwise Gemini's native audio response streams to the
-    // client while the student voice is still playing, causing overlap.
     const currentLabels = this.sessionCache?.state?.boardButtonLabels?.join(", ") || "none";
-    const sendPrompt = () => {
-      if (singleSentence) {
-        this.provider!.sendMessage(`[BUTTON PRESS] ${buttonList}
-The student said: "${singleSentence}" — this is being voiced RIGHT NOW in the student's own voice via TTS. You will hear it through the mic but it is NOT new speech. Do NOT transcribe it. WAIT UNTIL THE TTS PLAYBACK FINISHES (silence on the mic) BEFORE you start speaking your own response — your voice must not overlap with the student's voice.
+    const prompt = singleSentence
+      ? `[BUTTON PRESS] ${buttonList}
+The student said: "${singleSentence}". Respond to what the student said.
 CURRENT MAIN BOARD: ${currentLabels}
-You MUST call rebuild_board() with new buttons that respond to this choice. Also use add_context_button() if you notice something relevant in the environment.`, "user");
-      } else {
-        this.provider!.sendMessage(`[BUTTON PRESS] ${buttonList}
+You MUST call rebuild_board() with new buttons that respond to this choice. Also use add_context_button() if you notice something relevant in the environment.`
+      : `[BUTTON PRESS] ${buttonList}
 The user pressed the above button(s). Interpret this as a user message and respond accordingly.
 CURRENT MAIN BOARD: ${currentLabels}
-You MUST call rebuild_board() with new buttons that respond to this. Also use add_context_button() if you notice something relevant in the environment.`, "user");
-      }
-    };
+You MUST call rebuild_board() with new buttons that respond to this. Also use add_context_button() if you notice something relevant in the environment.`;
 
-    if (this.useDirectAudio && this.preGenTtsPromise) {
-      // Wait for student TTS, then send prompt
-      this.preGenTtsPromise.then(() => sendPrompt()).catch(() => sendPrompt());
-    } else {
-      sendPrompt();
+    // Send prompt with turnComplete=true immediately. Student TTS runs in
+    // parallel. With Google Cloud TTS (~300ms) and AI response time (~1s),
+    // the student voice finishes before the AI starts speaking.
+    //
+    // Track the prompt so we can retry if proactiveAudio swallows the turn.
+    this.pendingButtonPrompt = prompt;
+    this.provider!.sendMessage(prompt, "user");
+
+    // Stream student voice TTS in parallel
+    if (singleSentence && this.studentVoice) {
+      this.preGenTtsPromise = this.streamTtsWithTimeout(
+        singleSentence,
+        this.studentVoice,
+        "interpretation_audio",
+        "Student",
+      ).catch(err => {
+        console.error("[LiveRelay] Student TTS error:", (err as Error).message);
+      });
     }
   }
 
@@ -1169,85 +1210,79 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
     const callNames = calls.map(c => c.name).join(", ");
     logLiveSession("handleToolCalls", `calls=[${callNames}] state=${this.state}`);
 
-    // While waiting for malformed-debug response, the model is supposed to
-    // answer in plain text. If it tries another function call, capture the
-    // attempt and acknowledge via context injection so it doesn't get stuck.
-    // (See note further down about why we don't use sendToolResponse here.)
-    if (this.awaitingMalformedDebugResponse) {
-      const callDetail = JSON.stringify(calls.map(c => ({ name: c.name, args: c.args })));
-      logLiveSession("MALFORMED DEBUG: tool call instead of text", callDetail);
-      this.malformedDebugBuffer += `\n[Model called tools instead of answering in text: ${callDetail}]`;
-      this.provider?.sendContextInjection(`[FUNCTION RESULTS]\n${calls.map(c => `${c.name}: {"output":"ok"}`).join("\n")}`);
+    // During debug introspection: check if the model called debug_message
+    // (the intended way to report what it tried). If so, capture the message.
+    // Any other tool calls during debug are acknowledged but not executed.
+    if (this.awaitingDebugResponse) {
+      for (const call of calls) {
+        if (call.name === "debug_message") {
+          const msg = extractStringArg(call.args, "message");
+          if (msg) this.debugResponseBuffer += msg;
+          logLiveSession("DEBUG: debug_message received", msg || "(empty)");
+        } else {
+          logLiveSession("DEBUG: non-debug tool call suppressed", `${call.name}(${JSON.stringify(call.args)})`);
+          this.debugResponseBuffer += `\n[Also tried to call: ${call.name}(${JSON.stringify(call.args)})]`;
+        }
+      }
+      this.provider?.sendToolResponseAsContent(
+        calls.map(c => ({ id: c.id, name: c.name || "unknown", response: { output: "ok" } })),
+      );
       return;
     }
 
-    // If we're in processing_turn (duplicate turn), acknowledge via context
-    // injection so the model knows the call was received but we don't trigger
-    // another generation cycle.
+    // If we're in processing_turn (duplicate turn), resolve the open
+    // functionCall(s) with a structured "already handled" response so the
+    // model's state stays consistent without triggering another generation.
     if (this.state === "processing_turn") {
       logLiveSession("DUPLICATE TURN", `Suppressed ${callNames} — state=processing_turn`);
-      this.provider?.sendContextInjection(`[FUNCTION RESULTS]\n${calls.map(c => `${c.name}: {"output":"already handled"}`).join("\n")}`);
+      this.provider?.sendToolResponseAsContent(
+        calls.map(c => ({ id: c.id, name: c.name || "unknown", response: { output: "already handled" } })),
+      );
       return;
     }
 
-    // Move to in_turn state
+    // Move to in_turn state — model is responding to the button press
     this.setState("in_turn");
     this.consecutiveSafetyBlocks = 0;
+    this.rejectionCooldownUntil = 0;
+    this.pendingButtonPrompt = null;  // model responded — no retry needed
 
-    const responses: ToolResponse[] = [];
+    // ────────────────────────────────────────────────────────────────────────
+    // Tool result delivery — CRITICAL TIMING
+    //
+    // Send tool responses IMMEDIATELY before processing (board building,
+    // symbol lookup, etc.). The model waits for the functionResponse before
+    // continuing to generate audio — if we process the tools first (which
+    // can take 500ms+ for symbol lookups), the model times out and completes
+    // its turn with zero audio output.
+    //
+    // We use sendToolResponseAsContent (protocol-correct functionResponse
+    // parts via sendClientContent with turnComplete=false) because:
+    // - sendToolResponse triggers a new turn (duplication bug on Vertex)
+    // - sendContextInjection leaves the functionCall unresolved → malformed
+    // ────────────────────────────────────────────────────────────────────────
+    if (this.provider) {
+      this.provider.sendToolResponseAsContent(
+        calls.map(c => ({
+          id: c.id,
+          name: c.name || "unknown",
+          response: { output: "ok" },
+        })),
+      );
+    }
+
+    // Now process tools (board building, symbol lookup, etc.) — the model
+    // is already continuing to generate audio in parallel.
     for (const call of calls) {
       try {
         logDualAgent("LiveRelay.toolCall", { sessionId: this.sessionId, name: call.name, args: call.args });
         logLiveSession(`TOOL CALL: ${call.name}`, JSON.stringify({ id: call.id, args: call.args }, null, 2));
-        const resp = await this.handleSingleToolCall(call);
-        logLiveSession(`TOOL RESPONSE: ${call.name}`, JSON.stringify(resp.response, null, 2));
-        responses.push(resp);
+        await this.handleSingleToolCall(call);
       } catch (err) {
         const errMsg = (err as Error).message;
         console.error(`[LiveRelay] Tool call "${call.name}" failed:`, errMsg);
         logLiveSession(`TOOL ERROR: ${call.name}`, errMsg);
-        responses.push({
-          id: call.id,
-          name: call.name || "unknown",
-          response: { error: errMsg },
-        });
       }
-    }
-
-    // ────────────────────────────────────────────────────────────────────────
-    // Tool result delivery — IMPORTANT
-    //
-    // We DO NOT use sendToolResponse() here. On Vertex Live (gemini-live-2.5-
-    // flash-native-audio), the SDK rejects `behavior: NON_BLOCKING` on tool
-    // declarations, so every tool we declare is treated as BLOCKING. The
-    // `scheduling: "SILENT"` field is only honored for NON_BLOCKING tools per
-    // the SDK docs — for BLOCKING tools it is silently ignored. The result is
-    // that every sendToolResponse triggers the model to generate a NEW turn
-    // with new audio, producing the duplicate-response pattern (the model
-    // says one thing, gets the tool result, then says essentially the same
-    // thing again because the response prompted it to generate more output).
-    //
-    // The workaround: deliver tool results via sendClientContent with
-    // turnComplete=false (i.e. context injection). The model still receives
-    // the result in its conversation context but does NOT generate a new
-    // turn from it. We've verified this works in the minimal-live-relay test
-    // setup — duplication disappears entirely with this approach.
-    //
-    // NOTE FOR THE FUTURE: A future Gemini Live model release may properly
-    // honor SILENT scheduling for blocking tools, or allow NON_BLOCKING on
-    // Vertex. When that happens, switch back to sendToolResponse — it's the
-    // protocol-correct path. For now, this is a deliberate workaround.
-    // ────────────────────────────────────────────────────────────────────────
-    if (responses.length > 0 && this.provider) {
-      const lines = responses.map(r => {
-        const body = r.response?.error
-          ? `error: ${JSON.stringify(r.response.error)}`
-          : JSON.stringify(r.response ?? { output: "ok" });
-        return `${r.name}: ${body}`;
-      });
-      const text = `[FUNCTION RESULTS]\n${lines.join("\n")}`;
-      logLiveSession("delivering tool results via context injection", `count=${responses.length} names=[${responses.map(r => r.name).join(", ")}]`);
-      this.provider.sendContextInjection(text);
     }
   }
 
@@ -1453,10 +1488,6 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
         }
         this.send({ type: "board", data: this.buildBoardFromButtons(buttons) });
 
-        // In direct audio mode, send placeholder text so client exits "Starting conversation"
-        if (this.useDirectAudio && !this.hasGreeted) {
-          this.send({ type: "text", data: " ", noAudioClear: true });
-        }
 
         this.turnAccum.boardChanged = true;
         this.turnAccum.boardRebuilt = true;
@@ -1620,6 +1651,13 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
         return { id: call.id, name, response: { output: "ok" } };
       }
 
+      case "debug_message": {
+        // Outside of debug context this is a no-op. During debug, the message
+        // is captured by the handleToolCalls guard above, not here.
+        logLiveSession("IGNORED TOOL CALL", `debug_message outside debug context`);
+        return { id: call.id, name, response: { output: "ok" } };
+      }
+
       default:
         console.warn(`[LiveRelay] Unknown tool call: ${name}`);
         return { id: call.id, name, response: { error: `Unknown tool: ${name}` } };
@@ -1755,13 +1793,13 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
   private async handleTurnComplete(reason?: string): Promise<void> {
     logLiveSession("handleTurnComplete", `state=${this.state} reason=${reason || "normal"} accum=[speak=${!!this.turnAccum.speakText}, interpret=${!!this.turnAccum.interpretText}, board=${this.turnAccum.boardChanged}, directAudioChunks=${this.directAudioChunks.length}]`);
 
-    // If we were waiting for a malformed-debug response, capture it and either
-    // ask the model to retry the call (up to MAX_RETRIES times) or give up.
-    if (this.awaitingMalformedDebugResponse) {
-      this.awaitingMalformedDebugResponse = false;
-      const debugAnswer = this.malformedDebugBuffer.trim();
-      this.malformedDebugBuffer = "";
-      logLiveSession("MALFORMED DEBUG RESPONSE", debugAnswer || "(empty)");
+    // If we were waiting for a debug-introspection response (the model calls
+    // debug_message() to tell us what it tried), capture it and retry.
+    if (this.awaitingDebugResponse) {
+      this.awaitingDebugResponse = false;
+      const debugAnswer = this.debugResponseBuffer.trim();
+      this.debugResponseBuffer = "";
+      logLiveSession("DEBUG RESPONSE", debugAnswer || "(empty)");
       // Discard any audio from the debug turn — it was for us, not the user
       if (this.directAudioFlushTimer) { clearTimeout(this.directAudioFlushTimer); this.directAudioFlushTimer = null; }
       this.directAudioChunks = [];
@@ -1769,18 +1807,20 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
       this.send({ type: "audio_interrupt" });
 
       // Ask the model to retry, providing its own description of what it tried.
-      if (this.malformedRetryCount < LiveRelay.MALFORMED_MAX_RETRIES && this.provider) {
-        this.malformedRetryCount++;
+      if (this.debugRetryCount < LiveRelay.DEBUG_MAX_RETRIES && this.provider) {
+        this.debugRetryCount++;
         this.setState("awaiting_turn");
-        const retryPrompt = `[RETRY ${this.malformedRetryCount}/${LiveRelay.MALFORMED_MAX_RETRIES}] You said you were trying to: ${debugAnswer || "(no description)"}. Try that function call again now, paying careful attention to the function name and the schema for its arguments. Only call ONE function this turn.`;
-        logLiveSession("MALFORMED RETRY PROMPT", retryPrompt);
+        const retryPrompt = `[RETRY ${this.debugRetryCount}/${LiveRelay.DEBUG_MAX_RETRIES}] You said you were trying to: ${debugAnswer || "(no description)"}. Try again now. If you were calling a tool, double-check the function name and argument schema and call ONLY ONE function this turn. If you were speaking, rephrase simply.`;
+        logLiveSession("DEBUG RETRY PROMPT", retryPrompt);
         this.provider.sendMessage(retryPrompt, "user");
         return;
       }
 
-      // Out of retries — give up and return to idle.
-      logLiveSession("MALFORMED RETRY EXHAUSTED", `Gave up after ${this.malformedRetryCount} retries`);
-      this.malformedRetryCount = 0;
+      // Out of retries — give up and return to idle with a cooldown so
+      // frame_grid doesn't immediately re-trigger the same cycle.
+      logLiveSession("DEBUG RETRY EXHAUSTED", `Gave up after ${this.debugRetryCount} retries — cooldown ${LiveRelay.REJECTION_COOLDOWN_MS}ms`);
+      this.debugRetryCount = 0;
+      this.rejectionCooldownUntil = Date.now() + LiveRelay.REJECTION_COOLDOWN_MS;
       this.setState("idle");
       return;
     }
@@ -1790,6 +1830,24 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
     // user hears half-words from rejected responses, perceived as duplication.
     const isAbnormal = reason && reason !== "STOP" && reason !== "normal";
     if (isAbnormal) {
+      const hadOutput = this.directAudioChunks.length > 0 || this.turnAccum.speakText.trim().length > 0 || this.turnAccum.boardChanged;
+
+      // RESPONSE_REJECTED with zero output = proactiveAudio decided not to
+      // respond. This is normal "nothing to say" behavior, NOT a safety block.
+      if (reason === "RESPONSE_REJECTED" && !hadOutput) {
+        // If a button press is pending, retry it
+        if (this.pendingButtonPrompt && this.provider) {
+          logLiveSession("BUTTON RETRY", "RESPONSE_REJECTED after button press — resending prompt");
+          this.setState("awaiting_turn");
+          this.provider.sendMessage(this.pendingButtonPrompt, "user");
+          return;
+        }
+        logLiveSession("PROACTIVE_SKIP", `RESPONSE_REJECTED with no output — model chose not to respond`);
+        this.debugRetryCount = 0;
+        this.setState("idle");
+        return;
+      }
+
       logLiveSession("DISCARDING TURN", `reason=${reason} chunks=${this.directAudioChunks.length}`);
       if (this.directAudioFlushTimer) { clearTimeout(this.directAudioFlushTimer); this.directAudioFlushTimer = null; }
       this.directAudioChunks = [];
@@ -1797,15 +1855,16 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
       // Tell the client to stop any audio it's currently playing from this rejected turn
       this.send({ type: "audio_interrupt" });
 
-      // On MALFORMED_FUNCTION_CALL, ask the model to introspect: what was it
-      // trying to call? The model's response will tell us the function name and
-      // arguments, which Gemini doesn't expose otherwise.
-      if (reason === "MALFORMED_FUNCTION_CALL" && this.provider) {
-        this.awaitingMalformedDebugResponse = true;
-        this.malformedDebugBuffer = "";
+      // On MALFORMED_FUNCTION_CALL or RESPONSE_REJECTED (with partial output),
+      // ask the model to introspect via the debug_message() tool.
+      if ((reason === "MALFORMED_FUNCTION_CALL" || reason === "RESPONSE_REJECTED") && this.provider) {
+        this.awaitingDebugResponse = true;
+        this.debugResponseBuffer = "";
         this.setState("awaiting_turn");
-        const debugQuery = `[DEBUG] Your last function call was rejected as MALFORMED. In a single sentence of plain text (no function calls), tell me: 1) the function name you tried to call, 2) the arguments you tried to pass. Do NOT call any function in your response — only plain text.`;
-        logLiveSession("MALFORMED DEBUG QUERY", debugQuery);
+        const debugQuery = reason === "RESPONSE_REJECTED"
+          ? `[DEBUG] Your last response was rejected by the system. Call debug_message() with a description of what you were trying to do — what you were going to say and/or which function you were going to call with what arguments.`
+          : `[DEBUG] Your last function call was rejected as MALFORMED. Call debug_message() with: 1) the function name you tried to call, 2) the arguments you tried to pass.`;
+        logLiveSession(`${reason} DEBUG QUERY`, debugQuery);
         this.provider.sendMessage(debugQuery, "user");
         return;
       }
@@ -1818,6 +1877,13 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
     if (this.state === "awaiting_turn") {
       const hasDirectAudio = this.useDirectAudio && this.directAudioChunks.length > 0;
       if (!hasDirectAudio) {
+        // If a button press prompt is pending, the model was swallowed by a
+        // proactive-audio empty turn. Retry the prompt.
+        if (this.pendingButtonPrompt && this.provider) {
+          logLiveSession("BUTTON RETRY", "Empty turn after button press — resending prompt");
+          this.provider.sendMessage(this.pendingButtonPrompt, "user");
+          return;  // stay in awaiting_turn
+        }
         this.setState("idle");
         return;
       }
@@ -1852,20 +1918,27 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
       this.directAudioChunks = [];
       this.preGenTtsPromise = null;
       // Reset retry counter on successful turn — only count consecutive failures
-      this.malformedRetryCount = 0;
+      this.debugRetryCount = 0;
       this.setState("idle");
     }
   }
 
   private handleInterrupted(): void {
-    this.send({ type: "audio_interrupt" });
+    // Only tell the client to stop playback if we actually sent audio during
+    // THIS turn. If the model interrupts an empty turn (e.g. a frame_grid
+    // tick that produced nothing), the client may still be playing audio from
+    // the PREVIOUS turn — interrupting that would cut the user off mid-sentence.
+    const hasSentAudio = this.directAudioChunks.length > 0 || this.turnAccum.speakText.trim().length > 0;
+    if (hasSentAudio) {
+      this.send({ type: "audio_interrupt" });
+    }
+    logLiveSession("INTERRUPTED", `hasSentAudio=${hasSentAudio} chunks=${this.directAudioChunks.length} state=${this.state}`);
     this.turnAccum = createEmptyAccumulator();
     // Cancel pending flush and discard buffered audio
     if (this.directAudioFlushTimer) { clearTimeout(this.directAudioFlushTimer); this.directAudioFlushTimer = null; }
     this.directAudioChunks = [];
     this.preGenTtsPromise = null;
     this.setState("idle");
-    console.log("[LiveRelay] Model interrupted by new input");
   }
 
   // -------------------------------------------------------------------------
@@ -2154,9 +2227,8 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
   }
 
   /**
-   * Stream TTS with a timeout guard. Prevents infinite hangs if the TTS
-   * service stalls. If the voice is client-side ElevenLabs, sends a
-   * lightweight client_tts message so the browser can call ElevenLabs directly.
+   * Stream TTS with a timeout guard. Streams audio chunks to the client
+   * as they arrive from the Gemini TTS service.
    */
   private async streamTtsWithTimeout(
     text: string,
@@ -2165,32 +2237,6 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
     label: string,
     timeoutMs = 15_000,
   ): Promise<void> {
-    // Local browser TTS: send text only, browser uses speechSynthesis
-    if (this.useLocalTts) {
-      const voiceRole = msgType === "avatar_audio" ? "ai" as const : "student" as const;
-      this.send({
-        type: "client_local_tts",
-        data: { text, language: voice.language || "en", voiceRole },
-      });
-      return;
-    }
-
-    // Client-side TTS: send config to browser instead of synthesizing server-side
-    if (this.isClientTts(voice)) {
-      const voiceRole = msgType === "avatar_audio" ? "ai" as const : "student" as const;
-      this.send({
-        type: "client_tts",
-        data: {
-          text,
-          voiceId: voice.elevenlabsVoiceId!,
-          apiKey: voice.elevenlabsApiKey!,
-          language: voice.language || "en",
-          voiceRole,
-        },
-      });
-      return;
-    }
-
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new Error(`${label} TTS timed out after ${timeoutMs}ms`)), timeoutMs);
@@ -2204,14 +2250,7 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
       })();
       await Promise.race([streamPromise, timeoutPromise]);
     } catch (err) {
-      // Auto-switch to local TTS on timeout/failure
-      console.warn(`[LiveRelay] TTS failed, auto-switching to local TTS:`, (err as Error).message);
-      this.useLocalTts = true;
-      const voiceRole = msgType === "avatar_audio" ? "ai" as const : "student" as const;
-      this.send({
-        type: "client_local_tts",
-        data: { text, language: voice.language || "en", voiceRole },
-      });
+      console.error(`[LiveRelay] ${label} TTS failed:`, (err as Error).message);
     } finally {
       if (timer) clearTimeout(timer);
     }
@@ -2280,7 +2319,7 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
     });
   }
 
-  private buildBoardFromButtons(buttons: Array<{ label: string; iconRef: string; symbolPath?: string; sentence?: string; buttonType?: "guess" | "category" }>): any {
+  private buildBoardFromButtons(buttons: Array<{ label: string; iconRef: string; symbolPath?: string; sentence?: string; buttonType?: "guess" | "category"; rowSpan?: number; colSpan?: number }>): any {
     const pageId = `page-${Date.now()}`;
     const cols = 4;
     const rows = Math.max(2, Math.ceil(buttons.length / cols));
@@ -2296,6 +2335,8 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
           spokenText: b.label,
           ...(b.sentence ? { sentence: b.sentence } : {}),
           ...(b.buttonType ? { buttonType: b.buttonType } : {}),
+          ...(b.rowSpan && b.rowSpan > 1 ? { rowSpan: b.rowSpan } : {}),
+          ...(b.colSpan && b.colSpan > 1 ? { colSpan: b.colSpan } : {}),
           row: Math.floor(i / cols),
           col: i % cols,
           action: { type: "speak" as const, text: b.label },

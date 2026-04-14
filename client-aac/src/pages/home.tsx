@@ -9,6 +9,7 @@ import type { ParsedBoardData, BoardButton } from "@shared/schema";
 import ChatLog from "@/components/ChatLog";
 import ProfileSetup from "@/components/ProfileSetup";
 import UserSettings from "@/components/UserSettings";
+import { AccessibilityProvider } from "@/contexts/AccessibilityContext";
 import { ConversationBox } from "@/components/ConversationBox";
 import { DualAgentConversationBox } from "@/components/DualAgentConversationBox";
 import { DualAgentProvider, useDualAgentContext } from "@/contexts/DualAgentContext";
@@ -1027,6 +1028,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   }
 
   return (
+    <AccessibilityProvider settings={userProfile?.aacSettings?.accessibility}>
     <CameraAttentivenessWrapper autoStart={true} cameraType="user">
     <EyeTrackingDwellProvider
       mode={!eyegazeSettings.enabled ? "off" : rawFaces.length === 0 ? "off" : isCursorControlMode ? "mouse" : "eyegaze"}
@@ -1114,32 +1116,28 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
               setYesNoActive(false);
             }}
           />
-          {/* Context sidebar — always visible on the left */}
+          {/* Context sidebar — always shows context buttons from add_context_button() */}
           {(() => {
-            // When app/prebuilt board loaded, sidebar shows AI-generated side panel buttons
-            // Otherwise, show context buttons from add_context_button()
-            const sidebarBoard: ParsedBoardData | null = (activeApp || prebuiltBoardData)
-              ? boardData
-              : contextButtons.length > 0
-                ? {
+            const sidebarBoard: ParsedBoardData | null = contextButtons.length > 0
+              ? {
+                  name: "Context",
+                  grid: { rows: 4, cols: 1 },
+                  pages: [{
+                    id: "ctx",
                     name: "Context",
-                    grid: { rows: 4, cols: 1 },
-                    pages: [{
-                      id: "ctx",
-                      name: "Context",
-                      buttons: contextButtons.map((b, i) => ({
-                        id: `ctx-${i}`,
-                        row: i,
-                        col: 0,
-                        label: b.label,
-                        iconRef: b.iconRef,
-                        symbolPath: b.symbolPath,
-                        sentence: b.sentence,
-                        action: { type: "speak" as const, text: b.label },
-                      })),
-                    }],
-                  }
-                : null;
+                    buttons: contextButtons.map((b, i) => ({
+                      id: `ctx-${i}`,
+                      row: i,
+                      col: 0,
+                      label: b.label,
+                      iconRef: b.iconRef,
+                      symbolPath: b.symbolPath,
+                      sentence: b.sentence,
+                      action: { type: "speak" as const, text: b.label },
+                    })),
+                  }],
+                }
+              : null;
             return (
               <AppMiniBoard
                 board={sidebarBoard}
@@ -1558,5 +1556,6 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
     <GazeCalibrationOverlay />
     </EyeTrackingDwellProvider>
     </CameraAttentivenessWrapper>
+    </AccessibilityProvider>
   );
 }

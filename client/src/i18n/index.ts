@@ -3,8 +3,17 @@
 
 import { en } from './en';
 import { he } from './he';
+import { es } from './es';
+import { pt } from './pt';
+import { fr } from './fr';
+import { ru } from './ru';
+import { de } from './de';
+import { ar } from './ar';
+import { zh } from './zh';
+import { yue } from './yue';
+import { ko } from './ko';
 
-export type LanguageCode = 'en' | 'he' | 'ar' | 'es' | 'fr' | 'de' | 'zh' | 'ja' | 'ru' | 'pt';
+export type LanguageCode = 'en' | 'he' | 'es' | 'pt' | 'fr' | 'ru' | 'de' | 'ar' | 'zh' | 'yue' | 'ko';
 
 export interface Language {
   code: LanguageCode;
@@ -16,15 +25,15 @@ export interface Language {
 export const SUPPORTED_LANGUAGES: Language[] = [
   { code: 'en', name: 'English', nativeName: 'English', direction: 'ltr' },
   { code: 'he', name: 'Hebrew', nativeName: 'עברית', direction: 'rtl' },
-/*  { code: 'ar', name: 'Arabic', nativeName: 'العربية', direction: 'rtl' },
   { code: 'es', name: 'Spanish', nativeName: 'Español', direction: 'ltr' },
-  { code: 'fr', name: 'French', nativeName: 'Français', direction: 'ltr' },
-  { code: 'de', name: 'German', nativeName: 'Deutsch', direction: 'ltr' },
-  { code: 'zh', name: 'Chinese', nativeName: '中文', direction: 'ltr' },
-  { code: 'ja', name: 'Japanese', nativeName: '日本語', direction: 'ltr' },
-  { code: 'ru', name: 'Russian', nativeName: 'Русский', direction: 'ltr' },
   { code: 'pt', name: 'Portuguese', nativeName: 'Português', direction: 'ltr' },
-*/
+  { code: 'fr', name: 'French', nativeName: 'Français', direction: 'ltr' },
+  { code: 'ru', name: 'Russian', nativeName: 'Русский', direction: 'ltr' },
+  { code: 'de', name: 'German', nativeName: 'Deutsch', direction: 'ltr' },
+  { code: 'ar', name: 'Arabic', nativeName: 'العربية', direction: 'rtl' },
+  { code: 'zh', name: 'Mandarin', nativeName: '中文', direction: 'ltr' },
+  { code: 'yue', name: 'Cantonese', nativeName: '粵語', direction: 'ltr' },
+  { code: 'ko', name: 'Korean', nativeName: '한국어', direction: 'ltr' },
 ];
 
 // Type for nested translations
@@ -34,15 +43,15 @@ export type Translations = typeof en;
 export const translations: Record<LanguageCode, Translations> = {
   en,
   he,
-  // Fallback to English for languages not yet translated
-  ar: en, // TODO: Add Arabic translations
-  es: en, // TODO: Add Spanish translations
-  fr: en, // TODO: Add French translations
-  de: en, // TODO: Add German translations
-  zh: en, // TODO: Add Chinese translations
-  ja: en, // TODO: Add Japanese translations
-  ru: en, // TODO: Add Russian translations
-  pt: en, // TODO: Add Portuguese translations
+  es,
+  pt,
+  fr,
+  ru,
+  de,
+  ar,
+  zh,
+  yue,
+  ko,
 };
 
-export { en, he };
+export { en, he, es, pt, fr, ru, de, ar, zh, yue, ko };

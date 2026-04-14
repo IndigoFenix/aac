@@ -30,6 +30,7 @@ import {
   Image,
   CalendarDays,
   MessageCircleQuestion,
+  MessagesSquare,
 } from 'lucide-react';
 import { useState } from 'react';
 import logoImage from '@assets/aivota_icon.png';
@@ -40,6 +41,7 @@ import { cn } from '@/lib/utils';
 import { FeatureType } from '@shared/schema';
 import { FeedbackDialog } from '@/components/FeedbackDialog';
 import { useStudentLabel } from '@/hooks/useStudentLabel';
+import { useUserChat } from '@/features/userChat/UserChatContext';
 
 type SidebarProps = {
   isCollapsed?: boolean;
@@ -67,6 +69,8 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
   const perms = currentPermissions;
   const hasInstitute = institutes.length > 0;
   const maxStudents = perms?.maxStudents ?? 0;
+  const { totalUnread } = useUserChat();
+  const userChatUnreadBadge = totalUnread > 0 ? String(totalUnread) : undefined;
   const hasStudentAccess = maxStudents === -1 || maxStudents > 0;
 
   // ── Section 1: Workspace ──
@@ -99,6 +103,13 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
       feature: 'calendar' as FeatureType,
       testId: 'nav-calendar',
       badge: undefined as string | undefined,
+    }] : []),
+    ...(hasInstitute ? [{
+      icon: MessagesSquare,
+      labelKey: 'nav.userChat',
+      feature: 'userchat' as FeatureType,
+      testId: 'nav-userchat',
+      badge: userChatUnreadBadge,
     }] : []),
   ];
   // Hide Workspace entirely if user has no institutes AND maxStudents=0

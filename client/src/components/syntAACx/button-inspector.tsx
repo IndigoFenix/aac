@@ -758,7 +758,7 @@ export function ButtonInspector() {
                   }
                   className={cn(
                     "h-8 text-sm",
-                    isDark 
+                    isDark
                       ? "bg-slate-800 border-slate-700 text-slate-200"
                       : "bg-white border-gray-300 text-gray-800"
                   )}
@@ -780,7 +780,53 @@ export function ButtonInspector() {
                   }
                   className={cn(
                     "h-8 text-sm",
-                    isDark 
+                    isDark
+                      ? "bg-slate-800 border-slate-700 text-slate-200"
+                      : "bg-white border-gray-300 text-gray-800"
+                  )}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className={cn(
+                  "text-[10px]",
+                  isDark ? "text-slate-500" : "text-gray-500"
+                )}>
+                  {t("button.rowSpan")}
+                </Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={(selectedBtn as any).rowSpan ?? 1}
+                  onChange={(e) =>
+                    handleUpdate("rowSpan", Math.max(1, parseInt(e.target.value, 10) || 1))
+                  }
+                  className={cn(
+                    "h-8 text-sm",
+                    isDark
+                      ? "bg-slate-800 border-slate-700 text-slate-200"
+                      : "bg-white border-gray-300 text-gray-800"
+                  )}
+                />
+              </div>
+              <div>
+                <Label className={cn(
+                  "text-[10px]",
+                  isDark ? "text-slate-500" : "text-gray-500"
+                )}>
+                  {t("button.colSpan")}
+                </Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={(selectedBtn as any).colSpan ?? 1}
+                  onChange={(e) =>
+                    handleUpdate("colSpan", Math.max(1, parseInt(e.target.value, 10) || 1))
+                  }
+                  className={cn(
+                    "h-8 text-sm",
+                    isDark
                       ? "bg-slate-800 border-slate-700 text-slate-200"
                       : "bg-white border-gray-300 text-gray-800"
                   )}
