@@ -170,6 +170,7 @@ export const de = {
     interpret: "Kommunikation interpretieren",
     aacsettings: "AAC-Einstellungen",
     boards: "AAC-Tafeln generieren",
+    customApps: "Spiele & benutzerdefinierte Apps",
     docuslp: "Berichte erstellen",
     settings: "Einstellungen",
     workspace: "Arbeitsbereich",
@@ -636,6 +637,29 @@ export const de = {
   // ============================================================================
   // BOARD (SyntAACx)
   // ============================================================================
+  customApps: {
+    title: "Games & Custom Apps",
+    newBlank: "— New —",
+    save: "Save",
+    saved: "Saved",
+    saveError: "Failed to save",
+    invalidDefinition: "Definition is invalid",
+    loadError: "Failed to load app",
+    deleted: "Deleted",
+    delete: "Delete",
+    deleteError: "Failed to delete",
+    confirmDelete: "Delete this game? This cannot be undone.",
+    discardUnsavedPrompt: "Discard unsaved changes?",
+    assign: "Assign",
+    unassign: "Unassign",
+    assigned: "Assigned",
+    unassigned: "Unassigned",
+    assignError: "Failed to assign",
+    unassignError: "Failed to unassign",
+    emptyTitle: "No game loaded",
+    emptyDescription: "Ask the AI to design a game, or pick an existing one from the dropdown above.",
+  },
+
   board: {
     title: "SyntAACx-Tafeln",
     valid: "Gültig",
@@ -2000,6 +2024,15 @@ export const de = {
     useApprovedSymbolsDesc: "Genehmigte generierte Symbole auf AAC-Schaltflächen anzeigen",
     useUnapprovedSymbols: "Nicht genehmigte Symbole verwenden",
     useUnapprovedSymbolsDesc: "Auch neu generierte Symbole anzeigen, bevor sie überprüft und genehmigt wurden",
+    // Custom Apps (Games) Assignment
+    customApps: {
+      title: "Spiele & benutzerdefinierte Apps",
+      description: "Wähle, welche Spiele für diesen Schüler verfügbar sind. Es werden nur Apps aus den Einrichtungen des Schülers angezeigt.",
+      loading: "Lade Apps...",
+      loadError: "Benutzerdefinierte Apps konnten nicht geladen werden.",
+      empty: "Für die Einrichtungen dieses Schülers sind keine benutzerdefinierten Apps verfügbar.",
+      updateError: "Zuweisung konnte nicht aktualisiert werden",
+    },
     // Dynamic Boards
     dynamicBoards: "Dynamische Tafeln",
     dynamicBoardsDesc: "Der KI erlauben, AAC-Tafeln basierend auf der Situation zu erstellen und zu bearbeiten.",
@@ -2245,6 +2278,7 @@ export const de = {
       unlimited: "Unbegrenzt",
       aacEnabled: "AAC aktiviert",
       boardMakerEnabled: "Board Maker",
+      customAppsEnabled: "Benutzerdefinierte Apps",
       unrestrictedAI: "Unbeschränkte KI",
       calendar: "Kalender",
       dashboardLevel: "Dashboard-Stufe",
@@ -2401,6 +2435,9 @@ export const de = {
     groupName: "Gruppenname",
     groupNamePlaceholder: "Name dieser Gruppe",
     create: "Erstellen",
+    statusSending: "Senden",
+    statusSent: "Gesendet",
+    statusFailed: "Senden fehlgeschlagen",
   },
 
 };

@@ -7,6 +7,23 @@ import type { RealtimeEventEnvelope } from "@shared/realtime-events";
 type Subscribers = Map<WebSocket, Set<string>>; // socket → topics it subscribed to
 const socketTopics: Subscribers = new Map();
 const topicSockets: Map<string, Set<WebSocket>> = new Map();
+const userSockets: Map<string, Set<WebSocket>> = new Map();
+
+export function registerUserSocket(userId: string, socket: WebSocket): void {
+  if (!userSockets.has(userId)) userSockets.set(userId, new Set());
+  userSockets.get(userId)!.add(socket);
+  (socket as any).__userId = userId;
+}
+
+export function socketsForUser(userId: string): WebSocket[] {
+  return Array.from(userSockets.get(userId) ?? []);
+}
+
+export function subscribeUserToTopic(userId: string, topic: string): void {
+  for (const socket of socketsForUser(userId)) {
+    subscribe(socket, topic);
+  }
+}
 
 export function subscribe(socket: WebSocket, topic: string): void {
   if (!socketTopics.has(socket)) socketTopics.set(socket, new Set());
@@ -30,6 +47,11 @@ export function removeSocket(socket: WebSocket): void {
     }
   }
   socketTopics.delete(socket);
+  const userId: string | undefined = (socket as any).__userId;
+  if (userId) {
+    userSockets.get(userId)?.delete(socket);
+    if (userSockets.get(userId)?.size === 0) userSockets.delete(userId);
+  }
 }
 
 export function publish(topic: string, event: RealtimeEventEnvelope): void {

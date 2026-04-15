@@ -8,6 +8,7 @@ import { useInstitute } from './useInstitute';
 import { useAuth } from './useAuth';
 import { useFeaturePanel, useSharedState } from '@/contexts/FeaturePanelContext';
 import { useBoardStore } from '@/store/board-store';
+import { useCustomAppStore } from '@/store/custom-app-store';
 import { ChatMessage, FeatureType, ChatSession } from '@shared/schema';
 import { useChatStream } from './useChatStream';
 import { toast } from '@/hooks/use-toast';
@@ -110,6 +111,7 @@ export interface ChatResponseActions {
   
   // Board/feature specific data
   board?: any;
+  customapp?: any;
   interpret?: any;
   program?: any;
   programUpdated?: {
@@ -502,6 +504,14 @@ export const ChatProvider = ({
           board: contextData.board
         }
       });
+    }
+
+    // Handle custom app (game) data from response — update store directly so
+    // the panel doesn't need to be mounted to receive updates from the AI.
+    if (contextData.customapp) {
+      console.log('[ChatProvider] Received custom app data from response');
+      useCustomAppStore.getState().setDefinition(contextData.customapp, { markDirty: true });
+      setSharedState({ customAppGeneratorData: { app: contextData.customapp } });
     }
 
     // Handle interpret data (future)

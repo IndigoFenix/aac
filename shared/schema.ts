@@ -945,7 +945,7 @@ export type InsertApiProvider = z.infer<typeof insertApiProviderSchema>;
 export type ApiProviderPricing = typeof apiProviderPricing.$inferSelect;
 export type InsertApiProviderPricing = z.infer<typeof insertApiProviderPricingSchema>;
 
-export type FeatureType = "chat" | "boards" | "interpret" | 'docuslp' | 'overview' | 'students' | 'institute' | 'progress' | 'reports' | 'settings' | 'aacsettings' | 'aac' | 'symbols' | 'calendar' | 'userchat';
+export type FeatureType = "chat" | "boards" | "customApps" | "interpret" | 'docuslp' | 'overview' | 'students' | 'institute' | 'progress' | 'reports' | 'settings' | 'aacsettings' | 'aac' | 'symbols' | 'calendar' | 'userchat';
 
 export type ChatPersona = 'assistant' | 'coach' | 'clinical' | 'teacher' | 'pediatric_physical_therapist' | 'speech_language_pathologist' | 'occupational_therapist' | 'behavioral_specialist';
 

@@ -170,6 +170,7 @@ export const yue = {
     interpret: "解讀溝通",
     aacsettings: "AAC 設定",
     boards: "生成 AAC 板",
+    customApps: "遊戲同自訂應用",
     docuslp: "建立報告",
     settings: "設定",
     workspace: "工作區",
@@ -636,6 +637,29 @@ export const yue = {
   // ============================================================================
   // BOARD (SyntAACx)
   // ============================================================================
+  customApps: {
+    title: "Games & Custom Apps",
+    newBlank: "— New —",
+    save: "Save",
+    saved: "Saved",
+    saveError: "Failed to save",
+    invalidDefinition: "Definition is invalid",
+    loadError: "Failed to load app",
+    deleted: "Deleted",
+    delete: "Delete",
+    deleteError: "Failed to delete",
+    confirmDelete: "Delete this game? This cannot be undone.",
+    discardUnsavedPrompt: "Discard unsaved changes?",
+    assign: "Assign",
+    unassign: "Unassign",
+    assigned: "Assigned",
+    unassigned: "Unassigned",
+    assignError: "Failed to assign",
+    unassignError: "Failed to unassign",
+    emptyTitle: "No game loaded",
+    emptyDescription: "Ask the AI to design a game, or pick an existing one from the dropdown above.",
+  },
+
   board: {
     title: "SyntAACx 板",
     valid: "有效",
@@ -2000,6 +2024,15 @@ export const yue = {
     useApprovedSymbolsDesc: "喺 AAC 按鈕上面顯示已批准嘅生成符號",
     useUnapprovedSymbols: "用未批准符號",
     useUnapprovedSymbolsDesc: "喺審核同批准之前都顯示新生成嘅符號",
+    // Custom Apps (Games) Assignment
+    customApps: {
+      title: "遊戲同自訂應用",
+      description: "揀呢位學生可以用邊啲遊戲。只會顯示學生所屬機構嘅應用。",
+      loading: "載入緊...",
+      loadError: "載入自訂應用失敗。",
+      empty: "呢位學生嘅機構冇可用嘅自訂應用。",
+      updateError: "更新分配失敗",
+    },
     // Dynamic Boards
     dynamicBoards: "動態板",
     dynamicBoardsDesc: "允許 AI 根據情況建立同編輯 AAC 板。",
@@ -2245,6 +2278,7 @@ export const yue = {
       unlimited: "無限制",
       aacEnabled: "AAC 已啟用",
       boardMakerEnabled: "板製作器",
+      customAppsEnabled: "自訂應用",
       unrestrictedAI: "無限制 AI",
       calendar: "日曆",
       dashboardLevel: "儀表板級別",
@@ -2401,6 +2435,9 @@ export const yue = {
     groupName: "群組名稱",
     groupNamePlaceholder: "為呢個群組改名",
     create: "建立",
+    statusSending: "傳送中",
+    statusSent: "已傳送",
+    statusFailed: "傳送失敗",
   },
 
 };

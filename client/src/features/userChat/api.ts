@@ -85,8 +85,12 @@ export async function fetchMessages(
   return data.messages;
 }
 
-export async function sendMessage(roomId: string, body: string): Promise<UserChatMessageDTO> {
-  const res = await apiRequest("POST", `/api/user-chat/rooms/${roomId}/messages`, { body });
+export async function sendMessage(
+  roomId: string,
+  body: string,
+  clientId?: string,
+): Promise<UserChatMessageDTO> {
+  const res = await apiRequest("POST", `/api/user-chat/rooms/${roomId}/messages`, { body, clientId });
   const data = await jsonOrThrow<{ message: UserChatMessageDTO }>(res);
   return data.message;
 }

@@ -12,7 +12,8 @@ export interface RealtimeEventEnvelope<T = unknown> {
 export type UserChatEvent =
   | { type: "userChat:message"; topic: string; payload: UserChatMessagePayload }
   | { type: "userChat:roomUpdated"; topic: string; payload: UserChatRoomUpdatedPayload }
-  | { type: "userChat:unread"; topic: string; payload: UserChatUnreadPayload };
+  | { type: "userChat:unread"; topic: string; payload: UserChatUnreadPayload }
+  | { type: "userChat:roomCreated"; topic: string; payload: UserChatRoomCreatedPayload };
 
 export interface UserChatMessagePayload {
   id: string;
@@ -20,6 +21,7 @@ export interface UserChatMessagePayload {
   senderId: string;
   body: string;
   createdAt: string;
+  clientId?: string;
 }
 
 export interface UserChatRoomUpdatedPayload {
@@ -31,6 +33,10 @@ export interface UserChatRoomUpdatedPayload {
 export interface UserChatUnreadPayload {
   roomId: string;
   unreadCount: number;
+}
+
+export interface UserChatRoomCreatedPayload {
+  roomId: string;
 }
 
 // Client → server envelopes (subscribe/unsubscribe/ping)

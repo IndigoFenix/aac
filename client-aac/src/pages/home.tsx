@@ -31,6 +31,7 @@ import DrawingApp from "@/components/apps/DrawingApp";
 import MusicApp from "@/components/apps/MusicApp";
 import SpotifyApp from "@/components/apps/SpotifyApp";
 import SandboxGameApp from "@/components/apps/sandbox-game";
+import { CustomAppPlayer } from "@/components/CustomAppPlayer";
 import AppMiniBoard from "@/components/AppMiniBoard";
 import { CameraAttentivenessWrapper } from "@/components/CameraAttentivenessWrapper";
 import { CameraFrameCollector } from "@/lib/cameraFrameCollector";
@@ -157,6 +158,7 @@ function renderAppContent(
   dismissApp: () => void,
   registerCapture: (fn: (() => Promise<Blob | null>) | null) => void,
   studentId: string,
+  sendMessageToAi?: (msg: string) => void,
 ): React.ReactNode {
   if (!activeApp) return null;
   if (activeApp.appId === "youtube" && activeApp.appData?.videoId) {
@@ -173,6 +175,15 @@ function renderAppContent(
   }
   if (activeApp.appId === "sandbox_game") {
     return <SandboxGameApp onClose={dismissApp} studentId={studentId} />;
+  }
+  if (activeApp.appId === "custom_app" && activeApp.appData?.definition) {
+    return (
+      <CustomAppPlayer
+        definition={activeApp.appData.definition}
+        onClose={dismissApp}
+        sendMessageToAi={sendMessageToAi}
+      />
+    );
   }
   return null;
 }
@@ -1151,7 +1162,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           {/* App content — replaces board when an app is active */}
           {activeApp ? (
             <div className="flex-1 min-w-0 h-full">
-              {renderAppContent(activeApp, dismissAppRef.current, registerAppCanvasCaptureRef.current, studentId)}
+              {renderAppContent(activeApp, dismissAppRef.current, registerAppCanvasCaptureRef.current, studentId, (msg) => sendMessageFnRef.current?.(msg))}
             </div>
           ) : boardMode === 'ai' ? (
             <div className="flex-1 min-w-0 h-full">

@@ -4,7 +4,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import type { User } from "@shared/schema";
 import type { ClientRealtimeCommand } from "@shared/realtime-events";
 import { authenticateUpgrade } from "./ws-auth";
-import { subscribe, unsubscribe, removeSocket } from "./room-registry";
+import { subscribe, unsubscribe, removeSocket, registerUserSocket } from "./room-registry";
 
 export interface AuthenticatedSocket extends WebSocket {
   userId: string;
@@ -47,6 +47,7 @@ export function setupRealtimeServer(server: Server): void {
     wss!.handleUpgrade(req, socket, head, async (ws) => {
       const authed = ws as AuthenticatedSocket;
       authed.userId = user.id;
+      registerUserSocket(user.id, ws);
 
       ws.on("message", async (data) => {
         let parsed: ClientRealtimeCommand | Record<string, unknown>;

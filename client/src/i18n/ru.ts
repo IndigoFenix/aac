@@ -170,6 +170,7 @@ export const ru = {
     interpret: "Интерпретация общения",
     aacsettings: "Настройки AAC",
     boards: "Генерация AAC-досок",
+    customApps: "Игры и пользовательские приложения",
     docuslp: "Создание отчётов",
     settings: "Настройки",
     workspace: "Рабочее пространство",
@@ -636,6 +637,29 @@ export const ru = {
   // ============================================================================
   // BOARD (SyntAACx)
   // ============================================================================
+  customApps: {
+    title: "Games & Custom Apps",
+    newBlank: "— New —",
+    save: "Save",
+    saved: "Saved",
+    saveError: "Failed to save",
+    invalidDefinition: "Definition is invalid",
+    loadError: "Failed to load app",
+    deleted: "Deleted",
+    delete: "Delete",
+    deleteError: "Failed to delete",
+    confirmDelete: "Delete this game? This cannot be undone.",
+    discardUnsavedPrompt: "Discard unsaved changes?",
+    assign: "Assign",
+    unassign: "Unassign",
+    assigned: "Assigned",
+    unassigned: "Unassigned",
+    assignError: "Failed to assign",
+    unassignError: "Failed to unassign",
+    emptyTitle: "No game loaded",
+    emptyDescription: "Ask the AI to design a game, or pick an existing one from the dropdown above.",
+  },
+
   board: {
     title: "Доски SyntAACx",
     valid: "Валидна",
@@ -2000,6 +2024,15 @@ export const ru = {
     useApprovedSymbolsDesc: "Показывать одобренные сгенерированные символы на кнопках AAC",
     useUnapprovedSymbols: "Использовать неодобренные символы",
     useUnapprovedSymbolsDesc: "Также показывать новые сгенерированные символы до их проверки и одобрения",
+    // Custom Apps (Games) Assignment
+    customApps: {
+      title: "Игры и пользовательские приложения",
+      description: "Выберите, какие игры доступны этому ученику. Показаны только приложения из учреждений ученика.",
+      loading: "Загрузка приложений...",
+      loadError: "Не удалось загрузить пользовательские приложения.",
+      empty: "Для учреждений этого ученика нет доступных пользовательских приложений.",
+      updateError: "Не удалось обновить назначение",
+    },
     // Dynamic Boards
     dynamicBoards: "Динамические доски",
     dynamicBoardsDesc: "Разрешить ИИ создавать и редактировать AAC-доски в зависимости от ситуации.",
@@ -2245,6 +2278,7 @@ export const ru = {
       unlimited: "Без ограничений",
       aacEnabled: "AAC включён",
       boardMakerEnabled: "Конструктор досок",
+      customAppsEnabled: "Пользовательские приложения",
       unrestrictedAI: "Неограниченный ИИ",
       calendar: "Календарь",
       dashboardLevel: "Уровень панели управления",
@@ -2401,6 +2435,9 @@ export const ru = {
     groupName: "Название группы",
     groupNamePlaceholder: "Назовите эту группу",
     create: "Создать",
+    statusSending: "Отправка",
+    statusSent: "Отправлено",
+    statusFailed: "Не удалось отправить",
   },
 
 };

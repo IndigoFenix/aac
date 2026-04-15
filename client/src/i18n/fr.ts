@@ -170,6 +170,7 @@ export const fr = {
     interpret: "Interpréter la communication",
     aacsettings: "Paramètres AAC",
     boards: "Générer des tableaux AAC",
+    customApps: "Jeux et applications personnalisées",
     docuslp: "Créer des rapports",
     settings: "Paramètres",
     workspace: "Espace de travail",
@@ -636,6 +637,29 @@ export const fr = {
   // ============================================================================
   // BOARD (SyntAACx)
   // ============================================================================
+  customApps: {
+    title: "Games & Custom Apps",
+    newBlank: "— New —",
+    save: "Save",
+    saved: "Saved",
+    saveError: "Failed to save",
+    invalidDefinition: "Definition is invalid",
+    loadError: "Failed to load app",
+    deleted: "Deleted",
+    delete: "Delete",
+    deleteError: "Failed to delete",
+    confirmDelete: "Delete this game? This cannot be undone.",
+    discardUnsavedPrompt: "Discard unsaved changes?",
+    assign: "Assign",
+    unassign: "Unassign",
+    assigned: "Assigned",
+    unassigned: "Unassigned",
+    assignError: "Failed to assign",
+    unassignError: "Failed to unassign",
+    emptyTitle: "No game loaded",
+    emptyDescription: "Ask the AI to design a game, or pick an existing one from the dropdown above.",
+  },
+
   board: {
     title: "Tableaux SyntAACx",
     valid: "Valide",
@@ -2000,6 +2024,15 @@ export const fr = {
     useApprovedSymbolsDesc: "Afficher les symboles générés approuvés sur les boutons AAC",
     useUnapprovedSymbols: "Utiliser les symboles non approuvés",
     useUnapprovedSymbolsDesc: "Afficher aussi les symboles nouvellement générés avant qu'ils ne soient examinés et approuvés",
+    // Custom Apps (Games) Assignment
+    customApps: {
+      title: "Jeux et applications personnalisées",
+      description: "Choisissez les jeux disponibles pour cet élève. Seules les applications des institutions de l'élève sont affichées.",
+      loading: "Chargement...",
+      loadError: "Échec du chargement des applications personnalisées.",
+      empty: "Aucune application personnalisée disponible pour les institutions de cet élève.",
+      updateError: "Échec de la mise à jour de l'affectation",
+    },
     // Dynamic Boards
     dynamicBoards: "Tableaux dynamiques",
     dynamicBoardsDesc: "Permettre à l'IA de créer et modifier des tableaux AAC selon la situation.",
@@ -2245,6 +2278,7 @@ export const fr = {
       unlimited: "Illimité",
       aacEnabled: "AAC activé",
       boardMakerEnabled: "Créateur de tableaux",
+      customAppsEnabled: "Applications personnalisées",
       unrestrictedAI: "IA sans restriction",
       calendar: "Calendrier",
       dashboardLevel: "Niveau du tableau de bord",
@@ -2401,6 +2435,9 @@ export const fr = {
     groupName: "Nom du groupe",
     groupNamePlaceholder: "Nommez ce groupe",
     create: "Créer",
+    statusSending: "Envoi",
+    statusSent: "Envoyé",
+    statusFailed: "Échec de l'envoi",
   },
 
 };

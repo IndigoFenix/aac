@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useStudent } from '@/hooks/useStudent';
+import { AACSettingsCustomApps } from '@/components/AACSettingsCustomApps';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { apiRequest } from '@/lib/queryClient';
@@ -1121,6 +1122,9 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
               </div>
             </CardContent>
           </Card>
+
+          {/* Custom Apps (Games) Assignment */}
+          {student?.id && <AACSettingsCustomApps studentId={student.id} />}
 
           {/* Dynamic Boards */}
           <Card>

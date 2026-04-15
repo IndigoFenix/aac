@@ -31,6 +31,7 @@ import {
   CalendarDays,
   MessageCircleQuestion,
   MessagesSquare,
+  Gamepad2,
 } from 'lucide-react';
 import { useState } from 'react';
 import logoImage from '@assets/aivota_icon.png';
@@ -118,7 +119,8 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
   // ── Section 2: AAC Boards ──
   const boardsEnabled = !!perms?.boardMakerEnabled;
   const aacEnabled = !!perms?.aacEnabled;
-  const showAacSection = boardsEnabled || aacEnabled;
+  const customAppsEnabled = !!perms?.customAppsEnabled;
+  const showAacSection = boardsEnabled || aacEnabled || customAppsEnabled;
 
   const aacBoardItems = [
     // Generate AAC Boards — requires boardMakerEnabled
@@ -135,6 +137,14 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
       labelKey: 'nav.symbols',
       feature: 'symbols' as FeatureType,
       testId: 'nav-symbols',
+      badge: undefined as string | undefined,
+    }] : []),
+    // Custom apps / games — gated on customAppsEnabled license permission
+    ...(perms?.customAppsEnabled ? [{
+      icon: Gamepad2,
+      labelKey: 'nav.customApps',
+      feature: 'customApps' as FeatureType,
+      testId: 'nav-custom-apps',
       badge: undefined as string | undefined,
     }] : []),
     // AAC Settings — requires aacEnabled AND maxStudents > 0

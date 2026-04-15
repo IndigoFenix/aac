@@ -19,6 +19,7 @@ import {
   creditPackageController,
   interpretationController,
   boardController,
+  customAppController,
   onboardingController,
   slpClinicalController,
   programController,
@@ -34,6 +35,7 @@ import {
   requireAdmin,
   requireSystemAdmin,
   requireSLPPlan,
+  requireLicensePermission,
   validateCSRF,
 } from "./middleware";
 
@@ -858,6 +860,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/export/snappkg", requireAuth, (req, res) =>
     boardController.exportSnappkg(req, res)
+  );
+
+  // ============= CUSTOM APPS (GAMES) ROUTES =============
+  const requireCustomApps = requireLicensePermission("customAppsEnabled");
+  app.post("/api/custom-apps", requireAuth, requireCustomApps, (req, res) =>
+    customAppController.saveApp(req, res)
+  );
+  app.get("/api/custom-apps", requireAuth, requireCustomApps, (req, res) =>
+    customAppController.getUserApps(req, res)
+  );
+  app.get("/api/custom-apps/student/:studentId", requireAuth, requireCustomApps, (req, res) =>
+    customAppController.getStudentApps(req, res)
+  );
+  app.get("/api/custom-apps/student/:studentId/available", requireAuth, requireCustomApps, (req, res) =>
+    customAppController.getAvailableAppsForStudent(req, res)
+  );
+  app.get("/api/custom-apps/:id", requireAuth, requireCustomApps, (req, res) =>
+    customAppController.getApp(req, res)
+  );
+  app.patch("/api/custom-apps/:id", requireAuth, requireCustomApps, (req, res) =>
+    customAppController.updateApp(req, res)
+  );
+  app.delete("/api/custom-apps/:id", requireAuth, requireCustomApps, (req, res) =>
+    customAppController.deleteApp(req, res)
+  );
+  app.post("/api/custom-apps/:id/assignments", requireAuth, requireCustomApps, (req, res) =>
+    customAppController.assignToStudent(req, res)
+  );
+  app.delete("/api/custom-apps/:id/assignments/:studentId", requireAuth, requireCustomApps, (req, res) =>
+    customAppController.unassignFromStudent(req, res)
+  );
+  app.get("/api/custom-apps/:id/assignments", requireAuth, requireCustomApps, (req, res) =>
+    customAppController.getAssignments(req, res)
   );
 
   // ============= ONBOARDING ROUTES =============

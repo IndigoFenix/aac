@@ -33,6 +33,9 @@ import { logDualAgent, logLiveSession } from "./dual-agent-logger";
 import { dualAgentService, type SessionCache } from "./dual-agent-service";
 import { buildInteractiveAgentPrompt, AAC_DEFAULT_PERSONA_PROMPT } from "../memory-schema/aac-memory-schema";
 import { boardRepository } from "../../repositories/boardRepository";
+import { customAppRepository } from "../../repositories/customAppRepository";
+import { validateCustomAppDefinition } from "@shared/custom-app-validator";
+import { licenseService } from "../licenseService";
 import { settingsRepository } from "../../repositories/settingsRepository";
 import { aacSettingsRepository } from "../../repositories/aacSettingsRepository";
 import { resolveImageKeys, queueSymbolGeneration } from "../symbol/auto-symbol-service";
@@ -998,11 +1001,30 @@ export class LiveRelay {
       }
 
       // 6. Build tools
+      // Fetch custom apps assigned to this student — gated by license permission.
+      let availableCustomApps: Array<{ id: string; name: string; description?: string | null }> = [];
+      if (this.userId && this.studentId) {
+        try {
+          const perms = await licenseService.getUserPermissions(this.userId);
+          if (perms.customAppsEnabled) {
+            const apps = await customAppRepository.getStudentApps(this.userId, this.studentId);
+            availableCustomApps = apps.map((a) => ({
+              id: a.id,
+              name: a.name,
+              description: a.description,
+            }));
+          }
+        } catch (err) {
+          logLiveSession("CUSTOM_APPS_FETCH_FAILED", String(err));
+        }
+      }
+
       const toolConfig: ToolDeclarationConfig = {
         enabledApps: (cached.state.appState?.enabledApps || [])
           .map(id => getAppDefinition(id))
           .filter((a): a is import("./types").AACAppDefinition => !!a),
         availableBoards: (cached.state.availableBoards || []).map(b => ({ key: b.key, name: b.name })),
+        availableCustomApps,
         hasLoadedBoard: !!cached.state.loadedBoardId,
         faceRecognitionActive: (cached.state.cachedContacts?.length || 0) > 0 || this.unknownFaceDescriptors.length > 0,
         isSilentMode: this.interactionMode === "silent",
@@ -1614,6 +1636,44 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
         this.turnAccum.closeApp = true;
         this.send({ type: "app_close", data: {} });
         return { id: call.id, name, response: { output: "ok" } };
+      }
+
+      case "open_custom_app": {
+        const appId = extractStringArg(args, "app_id");
+        if (!this.userId) {
+          return { id: call.id, name, response: { output: "error: session has no user" } };
+        }
+        try {
+          const app = await customAppRepository.getApp(appId);
+          if (!app) {
+            return { id: call.id, name, response: { output: `error: custom app ${appId} not found` } };
+          }
+          const validation = validateCustomAppDefinition(app.definition);
+          if (!validation.ok) {
+            return {
+              id: call.id,
+              name,
+              response: { output: `error: custom app definition is invalid: ${validation.errors.slice(0, 2).join("; ")}` },
+            };
+          }
+          this.send({
+            type: "app_open",
+            data: {
+              appId: "custom_app",
+              appData: { id: app.id, definition: validation.data },
+            },
+          });
+          return {
+            id: call.id,
+            name,
+            response: {
+              output:
+                "ok. The game is now on screen. The student is playing. You will receive [GAME] context updates as they play — narrate, encourage, and guide.",
+            },
+          };
+        } catch (err) {
+          return { id: call.id, name, response: { output: `error: ${String(err)}` } };
+        }
       }
 
       case "learn_face": {
