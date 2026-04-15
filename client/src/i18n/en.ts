@@ -170,6 +170,7 @@ export const en = {
     interpret: "Interpret Communication",
     aacsettings: "AAC Settings",
     boards: "Generate AAC Boards",
+    customApps: "Games & Custom Apps",
     docuslp: "Create Reports",
     settings: "Settings",
     workspace: "Workspace",
@@ -636,6 +637,29 @@ export const en = {
   // ============================================================================
   // BOARD (SyntAACx)
   // ============================================================================
+  customApps: {
+    title: "Games & Custom Apps",
+    newBlank: "— New —",
+    save: "Save",
+    saved: "Saved",
+    saveError: "Failed to save",
+    invalidDefinition: "Definition is invalid",
+    loadError: "Failed to load app",
+    deleted: "Deleted",
+    delete: "Delete",
+    deleteError: "Failed to delete",
+    confirmDelete: "Delete this game? This cannot be undone.",
+    discardUnsavedPrompt: "Discard unsaved changes?",
+    assign: "Assign",
+    unassign: "Unassign",
+    assigned: "Assigned",
+    unassigned: "Unassigned",
+    assignError: "Failed to assign",
+    unassignError: "Failed to unassign",
+    emptyTitle: "No game loaded",
+    emptyDescription: "Ask the AI to design a game, or pick an existing one from the dropdown above.",
+  },
+
   board: {
     title: "SyntAACx Boards",
     valid: "Valid",
@@ -2000,6 +2024,15 @@ export const en = {
     useApprovedSymbolsDesc: "Show approved generated symbols on AAC buttons",
     useUnapprovedSymbols: "Use Unapproved Symbols",
     useUnapprovedSymbolsDesc: "Also show newly generated symbols before they are reviewed and approved",
+    // Custom Apps (Games) Assignment
+    customApps: {
+      title: "Games & Custom Apps",
+      description: "Toggle which games are available to this student. Only apps from the student's institutes are shown.",
+      loading: "Loading apps...",
+      loadError: "Failed to load custom apps.",
+      empty: "No custom apps are available for this student's institutes.",
+      updateError: "Failed to update assignment",
+    },
     // Dynamic Boards
     dynamicBoards: "Dynamic Boards",
     dynamicBoardsDesc: "Allow the AI to create and edit AAC boards based on the situation.",
@@ -2245,6 +2278,7 @@ export const en = {
       unlimited: "Unlimited",
       aacEnabled: "AAC Enabled",
       boardMakerEnabled: "Board Maker",
+      customAppsEnabled: "Custom Apps",
       unrestrictedAI: "Unrestricted AI",
       calendar: "Calendar",
       dashboardLevel: "Dashboard Level",
@@ -2401,6 +2435,9 @@ export const en = {
     groupName: "Group name",
     groupNamePlaceholder: "Name this group",
     create: "Create",
+    statusSending: "Sending",
+    statusSent: "Sent",
+    statusFailed: "Failed to send",
   },
 
 };

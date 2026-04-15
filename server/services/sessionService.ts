@@ -54,6 +54,7 @@ import {
 } from "./chat-context-integration";
 import {
   BOARD_SYSTEM_PROMPT,
+  CUSTOM_APP_SYSTEM_PROMPT,
   getSystemPrompt,
 } from "./system-prompts";
 import { customSymbolRepository } from "../repositories/customSymbolRepository";
@@ -531,6 +532,36 @@ const BOARD_MEMORY_FIELD: AgentMemoryField = {
   },
   required: ["name", "grid", "pages"],
 } as AgentMemoryField;
+
+/**
+ * Custom app (game) memory field. Holds the full game definition while
+ * the AI is authoring / editing it. Not persisted to DB via memory — the
+ * clinician saves via the app builder UI (POST /api/custom-apps).
+ *
+ * Top-level shape is kept loose; the detailed schema is enforced by
+ * shared/custom-app-validator.ts when saving, and described in
+ * CUSTOM_APP_SYSTEM_PROMPT for the AI.
+ */
+const CUSTOM_APP_MEMORY_FIELD: AgentMemoryField = {
+  id: "Context_CustomApp",
+  type: "object",
+  title: "Custom App (Game)",
+  description: "The game / custom app being authored or edited.",
+  opened: true,
+  properties: {
+    type: { id: "type", type: "string", title: "App Type" },
+    label: { id: "label", type: "string", title: "Name" },
+    description: { id: "description", type: "string", title: "Description" },
+    image: { id: "image", type: "string", title: "Cover Image Ref" },
+    ai_instructions: { id: "ai_instructions", type: "string", title: "AI Instructions" },
+    turn_based: { id: "turn_based", type: "boolean", title: "Turn-based" },
+    start_room: { id: "start_room", type: "string", title: "Starting Room" },
+    classes: { id: "classes", type: "array", title: "Classes" },
+    buttons: { id: "buttons", type: "array", title: "Buttons" },
+    rooms: { id: "rooms", type: "array", title: "Rooms" },
+  },
+  required: ["type", "label", "classes", "buttons", "rooms", "start_room"],
+} as unknown as AgentMemoryField;
 
 // ============================================================================
 // AGENT TEMPLATES
@@ -1188,6 +1219,12 @@ Example button with custom symbol:
       // Add BOARD_MEMORY_FIELD to contextMemoryFields for prompt rendering
       contextMemoryFields.push(BOARD_MEMORY_FIELD as AgentMemoryFieldWithDB);
     }
+
+    // === Custom Apps (Games) Mode Setup ===
+    if (feature === 'customApps') {
+      template.corePrompt = `${template.corePrompt}\n${CUSTOM_APP_SYSTEM_PROMPT}`;
+      contextMemoryFields.push(CUSTOM_APP_MEMORY_FIELD as AgentMemoryFieldWithDB);
+    }
   }
   template.memoryFields = contextMemoryFields as AgentMemoryField[];
 
@@ -1449,6 +1486,9 @@ Example button with custom symbol:
     // Add BOARD_MEMORY_FIELD for boards mode
     if (feature === 'boards') {
       fieldsForProcessor = [...fieldsForProcessor, BOARD_MEMORY_FIELD as AgentMemoryFieldWithDB];
+    }
+    if (feature === 'customApps') {
+      fieldsForProcessor = [...fieldsForProcessor, CUSTOM_APP_MEMORY_FIELD as AgentMemoryFieldWithDB];
     }
   }
 

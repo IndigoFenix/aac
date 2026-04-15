@@ -7,6 +7,7 @@ export { inviteCodeRepository, InviteCodeRepository } from "./inviteCodeReposito
 export { apiProviderRepository, ApiProviderRepository } from "./apiProviderRepository";
 export { savedLocationRepository, SavedLocationRepository } from "./savedLocationRepository";
 export { boardRepository, BoardRepository } from "./boardRepository";
+export { customAppRepository, CustomAppRepository } from "./customAppRepository";
 export { settingsRepository, SettingsRepository } from "./settingsRepository";
 export { programRepository, ProgramRepository } from "./programRepository";
 export { instituteRepository, InstituteRepository } from "./instituteRepository";

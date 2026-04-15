@@ -5,6 +5,7 @@ export interface LicensePermissions {
   maxStudents: number;
   aacEnabled: boolean;
   boardMakerEnabled: boolean;
+  customAppsEnabled: boolean;
   unrestrictedAI: boolean;
   calendar: boolean;
   dashboardLevel: 0 | 1 | 2 | -1; // 0=none, 1=basic, 2=advanced, -1=full
@@ -16,6 +17,7 @@ export const DEFAULT_LICENSE_PERMISSIONS: LicensePermissions = {
   maxStudents: 0,
   aacEnabled: false,
   boardMakerEnabled: false,
+  customAppsEnabled: false,
   unrestrictedAI: false,
   calendar: false,
   dashboardLevel: 0,
@@ -27,6 +29,7 @@ export const MAX_LICENSE_PERMISSIONS: LicensePermissions = {
   maxStudents: -1, // -1 = unlimited
   aacEnabled: true,
   boardMakerEnabled: true,
+  customAppsEnabled: true,
   unrestrictedAI: true,
   calendar: true,
   dashboardLevel: -1,
@@ -38,6 +41,7 @@ export const licensePermissionsSchema: z.ZodType<LicensePermissions> = z.object(
   maxStudents: z.number().int(),
   aacEnabled: z.boolean(),
   boardMakerEnabled: z.boolean(),
+  customAppsEnabled: z.boolean(),
   unrestrictedAI: z.boolean(),
   calendar: z.boolean(),
   dashboardLevel: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(-1)]),

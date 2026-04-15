@@ -86,6 +86,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
   const [maxStudentsUnlimited, setMaxStudentsUnlimited] = useState(false);
   const [aacEnabled, setAacEnabled] = useState(false);
   const [boardMakerEnabled, setBoardMakerEnabled] = useState(false);
+  const [customAppsEnabled, setCustomAppsEnabled] = useState(false);
   const [unrestrictedAI, setUnrestrictedAI] = useState(false);
   const [calendar, setCalendar] = useState(false);
   const [dashboardLevel, setDashboardLevel] = useState('0');
@@ -109,6 +110,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
           setMaxStudentsUnlimited(perms.maxStudents === -1);
           setAacEnabled(perms.aacEnabled ?? false);
           setBoardMakerEnabled(perms.boardMakerEnabled ?? false);
+          setCustomAppsEnabled(perms.customAppsEnabled ?? false);
           setUnrestrictedAI(perms.unrestrictedAI ?? false);
           setCalendar(perms.calendar ?? false);
           setDashboardLevel(String(perms.dashboardLevel ?? 0));
@@ -129,6 +131,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
     setMaxStudentsUnlimited(false);
     setAacEnabled(false);
     setBoardMakerEnabled(false);
+    setCustomAppsEnabled(false);
     setUnrestrictedAI(false);
     setCalendar(false);
     setDashboardLevel('0');
@@ -176,6 +179,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
         maxStudents: -1,
         aacEnabled: true,
         boardMakerEnabled: true,
+        customAppsEnabled: true,
         unrestrictedAI: true,
         calendar: true,
         dashboardLevel: -1 as -1,
@@ -187,6 +191,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
       maxStudents: maxStudentsUnlimited ? -1 : maxStudents,
       aacEnabled,
       boardMakerEnabled,
+      customAppsEnabled,
       unrestrictedAI,
       calendar,
       dashboardLevel: Number(dashboardLevel) as 0 | 1 | 2 | -1,
@@ -521,6 +526,10 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
                   <div className="flex items-center justify-between rounded-md border p-3">
                     <Label className="text-sm">{t('admin.licenses.boardMakerEnabled')}</Label>
                     <Switch checked={boardMakerEnabled} onCheckedChange={setBoardMakerEnabled} />
+                  </div>
+                  <div className="flex items-center justify-between rounded-md border p-3">
+                    <Label className="text-sm">{t('admin.licenses.customAppsEnabled')}</Label>
+                    <Switch checked={customAppsEnabled} onCheckedChange={setCustomAppsEnabled} />
                   </div>
                   <div className="flex items-center justify-between rounded-md border p-3">
                     <Label className="text-sm">{t('admin.licenses.unrestrictedAI')}</Label>

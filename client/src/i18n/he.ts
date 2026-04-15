@@ -170,6 +170,7 @@ export const he = {
     interpret: "פרש תקשורת",
     aacsettings: 'הגדרות תת"ח',
     boards: 'צור לוחות תת"ח',
+    customApps: "משחקים ואפליקציות מותאמות",
     docuslp: "צור דוחות",
     settings: "הגדרות",
     workspace: "סביבת עבודה",
@@ -636,6 +637,29 @@ export const he = {
   // ============================================================================
   // BOARD (SyntAACx)
   // ============================================================================
+  customApps: {
+    title: "Games & Custom Apps",
+    newBlank: "— New —",
+    save: "Save",
+    saved: "Saved",
+    saveError: "Failed to save",
+    invalidDefinition: "Definition is invalid",
+    loadError: "Failed to load app",
+    deleted: "Deleted",
+    delete: "Delete",
+    deleteError: "Failed to delete",
+    confirmDelete: "Delete this game? This cannot be undone.",
+    discardUnsavedPrompt: "Discard unsaved changes?",
+    assign: "Assign",
+    unassign: "Unassign",
+    assigned: "Assigned",
+    unassigned: "Unassigned",
+    assignError: "Failed to assign",
+    unassignError: "Failed to unassign",
+    emptyTitle: "No game loaded",
+    emptyDescription: "Ask the AI to design a game, or pick an existing one from the dropdown above.",
+  },
+
   board: {
     title: "לוחות סינטאאקס",
     valid: "תקין",
@@ -2000,6 +2024,15 @@ export const he = {
     useApprovedSymbolsDesc: "הצג סמלים מאושרים שנוצרו על כפתורי AAC",
     useUnapprovedSymbols: "השתמש בסמלים לא מאושרים",
     useUnapprovedSymbolsDesc: "הצג גם סמלים שנוצרו לאחרונה לפני שנבדקו ואושרו",
+    // Custom Apps (Games) Assignment
+    customApps: {
+      title: "משחקים ואפליקציות מותאמות",
+      description: "בחר אילו משחקים זמינים לתלמיד זה. מוצגות רק אפליקציות מהמוסדות של התלמיד.",
+      loading: "טוען אפליקציות...",
+      loadError: "טעינת האפליקציות נכשלה.",
+      empty: "אין אפליקציות זמינות למוסדות של תלמיד זה.",
+      updateError: "עדכון השיוך נכשל",
+    },
     // Dynamic Boards
     dynamicBoards: "לוחות דינמיים",
     dynamicBoardsDesc: "אפשר ל-AI ליצור ולערוך לוחות AAC בהתאם למצב.",
@@ -2248,6 +2281,7 @@ export const he = {
       unlimited: "ללא הגבלה",
       aacEnabled: "תקשורת חלופית",
       boardMakerEnabled: "יצירת לוחות",
+      customAppsEnabled: "אפליקציות מותאמות",
       unrestrictedAI: "AI ללא הגבלה",
       calendar: "לוח שנה",
       dashboardLevel: "רמת לוח מחוונים",
@@ -2404,6 +2438,9 @@ export const he = {
     groupName: "שם הקבוצה",
     groupNamePlaceholder: "תן שם לקבוצה זו",
     create: "צור",
+    statusSending: "שולח",
+    statusSent: "נשלח",
+    statusFailed: "השליחה נכשלה",
   },
 
 };

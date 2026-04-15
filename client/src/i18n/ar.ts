@@ -170,6 +170,7 @@ export const ar = {
     interpret: "تفسير التواصل",
     aacsettings: "إعدادات AAC",
     boards: "إنشاء لوحات AAC",
+    customApps: "الألعاب والتطبيقات المخصصة",
     docuslp: "إنشاء التقارير",
     settings: "الإعدادات",
     workspace: "مساحة العمل",
@@ -636,6 +637,29 @@ export const ar = {
   // ============================================================================
   // BOARD (SyntAACx)
   // ============================================================================
+  customApps: {
+    title: "Games & Custom Apps",
+    newBlank: "— New —",
+    save: "Save",
+    saved: "Saved",
+    saveError: "Failed to save",
+    invalidDefinition: "Definition is invalid",
+    loadError: "Failed to load app",
+    deleted: "Deleted",
+    delete: "Delete",
+    deleteError: "Failed to delete",
+    confirmDelete: "Delete this game? This cannot be undone.",
+    discardUnsavedPrompt: "Discard unsaved changes?",
+    assign: "Assign",
+    unassign: "Unassign",
+    assigned: "Assigned",
+    unassigned: "Unassigned",
+    assignError: "Failed to assign",
+    unassignError: "Failed to unassign",
+    emptyTitle: "No game loaded",
+    emptyDescription: "Ask the AI to design a game, or pick an existing one from the dropdown above.",
+  },
+
   board: {
     title: "لوحات SyntAACx",
     valid: "صالح",
@@ -2000,6 +2024,15 @@ export const ar = {
     useApprovedSymbolsDesc: "عرض الرموز المُنشأة المعتمدة على أزرار AAC",
     useUnapprovedSymbols: "استخدام الرموز غير المعتمدة",
     useUnapprovedSymbolsDesc: "عرض الرموز المُنشأة حديثاً أيضاً قبل مراجعتها والموافقة عليها",
+    // Custom Apps (Games) Assignment
+    customApps: {
+      title: "الألعاب والتطبيقات المخصصة",
+      description: "اختر الألعاب المتاحة لهذا الطالب. تظهر فقط التطبيقات من مؤسسات الطالب.",
+      loading: "جارٍ التحميل...",
+      loadError: "فشل تحميل التطبيقات المخصصة.",
+      empty: "لا توجد تطبيقات مخصصة متاحة لمؤسسات هذا الطالب.",
+      updateError: "فشل تحديث التعيين",
+    },
     // Dynamic Boards
     dynamicBoards: "اللوحات الديناميكية",
     dynamicBoardsDesc: "السماح للذكاء الاصطناعي بإنشاء وتعديل لوحات AAC بناءً على الموقف.",
@@ -2245,6 +2278,7 @@ export const ar = {
       unlimited: "غير محدود",
       aacEnabled: "AAC مفعّل",
       boardMakerEnabled: "صانع اللوحات",
+      customAppsEnabled: "التطبيقات المخصصة",
       unrestrictedAI: "ذكاء اصطناعي غير مقيد",
       calendar: "التقويم",
       dashboardLevel: "مستوى لوحة التحكم",
@@ -2401,6 +2435,9 @@ export const ar = {
     groupName: "اسم المجموعة",
     groupNamePlaceholder: "اسم هذه المجموعة",
     create: "إنشاء",
+    statusSending: "جارٍ الإرسال",
+    statusSent: "تم الإرسال",
+    statusFailed: "فشل الإرسال",
   },
 
 };

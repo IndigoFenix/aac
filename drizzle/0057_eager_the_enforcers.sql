@@ -1,0 +1,1 @@
+ALTER TYPE "public"."activity_subject_type" ADD VALUE 'custom_app';

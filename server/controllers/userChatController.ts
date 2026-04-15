@@ -87,12 +87,17 @@ export class UserChatController {
     try {
       const user = req.user as any;
       const roomId = req.params.id;
-      const { body } = req.body ?? {};
+      const { body, clientId } = req.body ?? {};
       if (typeof body !== "string" || !body.trim()) {
         res.status(400).json({ success: false, message: "Message body required" });
         return;
       }
-      const message = await userChatService.sendMessage({ requesterId: user.id, roomId, body });
+      const message = await userChatService.sendMessage({
+        requesterId: user.id,
+        roomId,
+        body,
+        clientId: typeof clientId === "string" ? clientId : undefined,
+      });
       res.json({ success: true, message });
     } catch (err: any) {
       if (err instanceof UserChatAuthorizationError) {

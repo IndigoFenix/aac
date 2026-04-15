@@ -203,7 +203,8 @@ export const activitySubjectTypeEnum = pgEnum("activity_subject_type", [
   "program", "goal", "objective", "service", "accommodation",
   "progress_report", "data_point", "team_member", "meeting",
   "medical_record", "functional_report", "educational_report",
-  "profile_domain", "invite", "consent_form", "transition_plan", "transition_goal"
+  "profile_domain", "invite", "consent_form", "transition_plan", "transition_goal",
+  "custom_app"
 ]);
 
 // =============================================================================
@@ -1226,6 +1227,40 @@ export const boards = pgTable("boards", {
   loadedAt: timestamp("loaded_at").defaultNow().notNull(),
 });
 
+// Custom apps (games and other AI-generated apps).
+// `definition` holds the full JSON spec (see shared/custom-app-types.ts).
+export const customApps = pgTable("custom_apps", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull(),
+  // Cross-schema FK: institutes.id lives in schema.ts — constraint enforced via migration
+  instituteId: varchar("institute_id"),
+  type: text("type").notNull().default("game"), // "game" for now; reserved for future app types
+  name: text("name").notNull(),
+  description: text("description"),
+  imageUrl: text("image_url"),
+  definition: jsonb("definition").notNull(),
+  language: text("language").default("en"),
+  isGenerated: boolean("is_generated").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  loadedAt: timestamp("loaded_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_custom_apps_user_id").on(table.userId),
+  index("idx_custom_apps_institute_id").on(table.instituteId),
+]);
+
+// Assignment join table: each row assigns one custom app to one student.
+export const customAppAssignments = pgTable("custom_app_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  appId: varchar("app_id").references(() => customApps.id, { onDelete: "cascade" }).notNull(),
+  studentId: varchar("student_id").references(() => students.id, { onDelete: "cascade" }).notNull(),
+  assignedByUserId: varchar("assigned_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("idx_custom_app_assignments_app_student").on(table.appId, table.studentId),
+  index("idx_custom_app_assignments_student_id").on(table.studentId),
+]);
+
 // Dropbox Connections table
 export const dropboxConnections = pgTable("dropbox_connections", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1634,6 +1669,19 @@ export const insertBoardSchema = createInsertSchema(boards).omit({
   updatedAt: true,
 });
 
+// Custom app schemas
+export const insertCustomAppSchema = createInsertSchema(customApps).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  loadedAt: true,
+});
+
+export const insertCustomAppAssignmentSchema = createInsertSchema(customAppAssignments).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Invite code schemas
 export const insertInviteCodeSchema = createInsertSchema(inviteCodes).omit({
   id: true,
@@ -1827,6 +1875,12 @@ export type InsertChatSession = z.infer<typeof insertChatSessionSchema>;
 // Board types
 export type Board = typeof boards.$inferSelect;
 export type InsertBoard = z.infer<typeof insertBoardSchema>;
+
+// Custom app types
+export type CustomApp = typeof customApps.$inferSelect;
+export type InsertCustomApp = z.infer<typeof insertCustomAppSchema>;
+export type CustomAppAssignment = typeof customAppAssignments.$inferSelect;
+export type InsertCustomAppAssignment = z.infer<typeof insertCustomAppAssignmentSchema>;
 
 // Content types
 export type InviteCode = typeof inviteCodes.$inferSelect;

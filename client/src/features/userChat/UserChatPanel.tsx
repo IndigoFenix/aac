@@ -9,9 +9,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFoo
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
-import { MessagesSquare, Plus, Users as UsersIcon, Send } from "lucide-react";
-import { useUserChat } from "./UserChatContext";
-import { fetchContacts, type UserChatContact, type UserChatRoomListEntry, type UserChatMessageDTO } from "./api";
+import { MessagesSquare, Plus, Users as UsersIcon, Send, Loader2, AlertCircle, Check } from "lucide-react";
+import { useUserChat, type ClientUserChatMessage } from "./UserChatContext";
+import { fetchContacts, type UserChatContact, type UserChatRoomListEntry } from "./api";
 
 interface UserChatPanelProps {
   isOpen?: boolean;
@@ -150,7 +150,7 @@ export function UserChatPanel({ isOpen }: UserChatPanelProps) {
 function RoomView(props: {
   entry: UserChatRoomListEntry;
   currentUserId: string | undefined;
-  messages: UserChatMessageDTO[];
+  messages: ClientUserChatMessage[];
   hasMore: boolean;
   loadingMore: boolean;
   onLoadOlder: () => void;
@@ -202,7 +202,6 @@ function RoomView(props: {
       await onSend(body);
     } catch (err) {
       console.error(err);
-      setDraft(body); // restore on failure
     }
   };
 
@@ -227,6 +226,8 @@ function RoomView(props: {
               <div className={cn(
                 "max-w-[70%] rounded-lg px-3 py-2",
                 isMe ? "bg-primary text-primary-foreground" : "bg-muted",
+                m.status === "sending" && "opacity-70",
+                m.status === "failed" && "ring-1 ring-destructive",
               )}>
                 {!isMe && (
                   <div className="text-xs font-medium mb-0.5">
@@ -234,8 +235,17 @@ function RoomView(props: {
                   </div>
                 )}
                 <div className="whitespace-pre-wrap break-words">{m.body}</div>
-                <div className={cn("text-[10px] mt-1 opacity-70", isMe ? "text-right" : "")}>
-                  {formatTime(m.createdAt)}
+                <div className={cn("text-[10px] mt-1 opacity-70 flex items-center gap-1", isMe ? "justify-end" : "")}>
+                  <span>{formatTime(m.createdAt)}</span>
+                  {isMe && m.status === "sending" && (
+                    <Loader2 className="w-3 h-3 animate-spin" aria-label={t("userChat.statusSending")} />
+                  )}
+                  {isMe && m.status === "sent" && (
+                    <Check className="w-3 h-3" aria-label={t("userChat.statusSent")} />
+                  )}
+                  {isMe && m.status === "failed" && (
+                    <AlertCircle className="w-3 h-3 text-destructive" aria-label={t("userChat.statusFailed")} />
+                  )}
                 </div>
               </div>
             </div>

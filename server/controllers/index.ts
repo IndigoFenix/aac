@@ -7,6 +7,7 @@ export { adminController, AdminController } from "./adminController";
 export { creditPackageController, CreditPackageController } from "./creditPackageController";
 export { interpretationController, InterpretationController } from "./interpretationController";
 export { boardController, BoardController } from "./boardController";
+export { customAppController, CustomAppController } from "./customAppController";
 export { onboardingController, OnboardingController } from "./onboardingController";
 export { slpClinicalController, SlpClinicalController } from "./slpClinicalController";
 export { programController, ProgramController } from "./programController";

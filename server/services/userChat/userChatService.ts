@@ -3,7 +3,7 @@
 // and publishes realtime events. Persistence lives in userChatRepository.
 
 import { userChatRepository } from "../../repositories/userChatRepository";
-import { publish } from "../realtime/room-registry";
+import { publish, subscribeUserToTopic } from "../realtime/room-registry";
 import { pushNotifier } from "./pushNotifier";
 import { storage } from "../../storage";
 import type { UserChat, UserChatRoom } from "@shared/schema";
@@ -63,19 +63,33 @@ export class UserChatService {
       if (existing) return existing;
     }
 
-    return userChatRepository.createRoom({
+    const room = await userChatRepository.createRoom({
       instituteId: input.instituteId,
       createdBy: input.requesterId,
       participantIds: participants,
       name: input.name ?? null,
       isDirect,
     });
+
+    // Subscribe each participant's currently-open sockets to the new room topic
+    // and notify them so clients can refresh their room list without a reload.
+    for (const userId of participants) {
+      subscribeUserToTopic(userId, ROOM_TOPIC(room.id));
+      publish(USER_TOPIC(userId), {
+        type: "userChat:roomCreated",
+        topic: USER_TOPIC(userId),
+        payload: { roomId: room.id },
+      });
+    }
+
+    return room;
   }
 
   async sendMessage(input: {
     requesterId: string;
     roomId: string;
     body: string;
+    clientId?: string;
   }): Promise<UserChat> {
     const body = input.body.trim();
     if (!body) throw new UserChatAuthorizationError("Message body is empty");
@@ -99,6 +113,7 @@ export class UserChatService {
         senderId: message.senderId,
         body: message.body,
         createdAt: message.createdAt.toISOString(),
+        clientId: input.clientId,
       },
     };
     publish(ROOM_TOPIC(input.roomId), event);

@@ -170,6 +170,7 @@ export const zh = {
     interpret: "解读沟通",
     aacsettings: "AAC 设置",
     boards: "生成 AAC 看板",
+    customApps: "游戏和自定义应用",
     docuslp: "创建报告",
     settings: "设置",
     workspace: "工作区",
@@ -636,6 +637,29 @@ export const zh = {
   // ============================================================================
   // BOARD (SyntAACx)
   // ============================================================================
+  customApps: {
+    title: "Games & Custom Apps",
+    newBlank: "— New —",
+    save: "Save",
+    saved: "Saved",
+    saveError: "Failed to save",
+    invalidDefinition: "Definition is invalid",
+    loadError: "Failed to load app",
+    deleted: "Deleted",
+    delete: "Delete",
+    deleteError: "Failed to delete",
+    confirmDelete: "Delete this game? This cannot be undone.",
+    discardUnsavedPrompt: "Discard unsaved changes?",
+    assign: "Assign",
+    unassign: "Unassign",
+    assigned: "Assigned",
+    unassigned: "Unassigned",
+    assignError: "Failed to assign",
+    unassignError: "Failed to unassign",
+    emptyTitle: "No game loaded",
+    emptyDescription: "Ask the AI to design a game, or pick an existing one from the dropdown above.",
+  },
+
   board: {
     title: "SyntAACx 看板",
     valid: "有效",
@@ -2000,6 +2024,15 @@ export const zh = {
     useApprovedSymbolsDesc: "在 AAC 按钮上显示已审批的生成符号",
     useUnapprovedSymbols: "使用未审批符号",
     useUnapprovedSymbolsDesc: "在审核和批准之前也显示新生成的符号",
+    // Custom Apps (Games) Assignment
+    customApps: {
+      title: "游戏和自定义应用",
+      description: "选择该学生可用的游戏。仅显示该学生所属机构的应用。",
+      loading: "加载中...",
+      loadError: "加载自定义应用失败。",
+      empty: "该学生的机构没有可用的自定义应用。",
+      updateError: "更新分配失败",
+    },
     // Dynamic Boards
     dynamicBoards: "动态看板",
     dynamicBoardsDesc: "允许 AI 根据情况创建和编辑 AAC 看板。",
@@ -2245,6 +2278,7 @@ export const zh = {
       unlimited: "无限制",
       aacEnabled: "AAC 已启用",
       boardMakerEnabled: "看板制作器",
+      customAppsEnabled: "自定义应用",
       unrestrictedAI: "无限制 AI",
       calendar: "日历",
       dashboardLevel: "仪表板级别",
@@ -2401,6 +2435,9 @@ export const zh = {
     groupName: "组名",
     groupNamePlaceholder: "为此组命名",
     create: "创建",
+    statusSending: "发送中",
+    statusSent: "已发送",
+    statusFailed: "发送失败",
   },
 
 };

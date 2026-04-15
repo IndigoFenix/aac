@@ -170,6 +170,7 @@ export const pt = {
     interpret: "Interpretar comunicação",
     aacsettings: "Configurações AAC",
     boards: "Gerar pranchas AAC",
+    customApps: "Jogos e aplicativos personalizados",
     docuslp: "Criar relatórios",
     settings: "Configurações",
     workspace: "Área de trabalho",
@@ -636,6 +637,29 @@ export const pt = {
   // ============================================================================
   // BOARD (SyntAACx)
   // ============================================================================
+  customApps: {
+    title: "Games & Custom Apps",
+    newBlank: "— New —",
+    save: "Save",
+    saved: "Saved",
+    saveError: "Failed to save",
+    invalidDefinition: "Definition is invalid",
+    loadError: "Failed to load app",
+    deleted: "Deleted",
+    delete: "Delete",
+    deleteError: "Failed to delete",
+    confirmDelete: "Delete this game? This cannot be undone.",
+    discardUnsavedPrompt: "Discard unsaved changes?",
+    assign: "Assign",
+    unassign: "Unassign",
+    assigned: "Assigned",
+    unassigned: "Unassigned",
+    assignError: "Failed to assign",
+    unassignError: "Failed to unassign",
+    emptyTitle: "No game loaded",
+    emptyDescription: "Ask the AI to design a game, or pick an existing one from the dropdown above.",
+  },
+
   board: {
     title: "Pranchas SyntAACx",
     valid: "Válido",
@@ -2000,6 +2024,15 @@ export const pt = {
     useApprovedSymbolsDesc: "Mostrar símbolos gerados aprovados nos botões AAC",
     useUnapprovedSymbols: "Usar símbolos não aprovados",
     useUnapprovedSymbolsDesc: "Também mostrar símbolos recém-gerados antes de serem revisados e aprovados",
+    // Custom Apps (Games) Assignment
+    customApps: {
+      title: "Jogos e aplicativos personalizados",
+      description: "Escolha quais jogos estão disponíveis para este aluno. Apenas apps das instituições do aluno são exibidos.",
+      loading: "Carregando apps...",
+      loadError: "Falha ao carregar apps personalizados.",
+      empty: "Nenhum app personalizado disponível para as instituições deste aluno.",
+      updateError: "Falha ao atualizar a atribuição",
+    },
     // Dynamic Boards
     dynamicBoards: "Pranchas dinâmicas",
     dynamicBoardsDesc: "Permitir que a IA crie e edite pranchas AAC com base na situação.",
@@ -2245,6 +2278,7 @@ export const pt = {
       unlimited: "Ilimitado",
       aacEnabled: "AAC ativado",
       boardMakerEnabled: "Criador de pranchas",
+      customAppsEnabled: "Aplicativos personalizados",
       unrestrictedAI: "IA sem restrições",
       calendar: "Calendário",
       dashboardLevel: "Nível do painel",
@@ -2401,6 +2435,9 @@ export const pt = {
     groupName: "Nome do grupo",
     groupNamePlaceholder: "Dê um nome a este grupo",
     create: "Criar",
+    statusSending: "Enviando",
+    statusSent: "Enviado",
+    statusFailed: "Falha ao enviar",
   },
 
 };

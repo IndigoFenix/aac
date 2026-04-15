@@ -254,12 +254,15 @@ export const STUDENT_NOTES_FIELD: AgentMemoryFieldArrayWithDB = {
 /**
  * All Student_* memory fields with database operations
  */
+import { STUDENT_CUSTOM_APPS_FIELD } from "./student-custom-apps-schema";
+
 export const STUDENT_MEMORY_FIELDS: AgentMemoryFieldWithDB[] = [
   STUDENT_PEOPLE_FIELD,
   STUDENT_INTERESTS_FIELD,
   STUDENT_COMMUNICATION_STYLE_FIELD,
   STUDENT_PREFERENCES_FIELD,
   STUDENT_NOTES_FIELD,
+  STUDENT_CUSTOM_APPS_FIELD,
 ];
 
 /**

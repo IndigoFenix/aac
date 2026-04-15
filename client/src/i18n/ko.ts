@@ -170,6 +170,7 @@ export const ko = {
     interpret: "의사소통 해석",
     aacsettings: "AAC 설정",
     boards: "AAC 보드 생성",
+    customApps: "게임 및 맞춤 앱",
     docuslp: "보고서 작성",
     settings: "설정",
     workspace: "작업 공간",
@@ -636,6 +637,29 @@ export const ko = {
   // ============================================================================
   // BOARD (SyntAACx)
   // ============================================================================
+  customApps: {
+    title: "Games & Custom Apps",
+    newBlank: "— New —",
+    save: "Save",
+    saved: "Saved",
+    saveError: "Failed to save",
+    invalidDefinition: "Definition is invalid",
+    loadError: "Failed to load app",
+    deleted: "Deleted",
+    delete: "Delete",
+    deleteError: "Failed to delete",
+    confirmDelete: "Delete this game? This cannot be undone.",
+    discardUnsavedPrompt: "Discard unsaved changes?",
+    assign: "Assign",
+    unassign: "Unassign",
+    assigned: "Assigned",
+    unassigned: "Unassigned",
+    assignError: "Failed to assign",
+    unassignError: "Failed to unassign",
+    emptyTitle: "No game loaded",
+    emptyDescription: "Ask the AI to design a game, or pick an existing one from the dropdown above.",
+  },
+
   board: {
     title: "SyntAACx 보드",
     valid: "유효",
@@ -2000,6 +2024,15 @@ export const ko = {
     useApprovedSymbolsDesc: "AAC 버튼에 승인된 생성 기호를 표시합니다",
     useUnapprovedSymbols: "미승인 기호 사용",
     useUnapprovedSymbolsDesc: "검토 및 승인 전에도 새로 생성된 기호를 표시합니다",
+    // Custom Apps (Games) Assignment
+    customApps: {
+      title: "게임 및 맞춤 앱",
+      description: "이 학생에게 사용 가능한 게임을 선택합니다. 학생의 기관에 있는 앱만 표시됩니다.",
+      loading: "앱 로딩 중...",
+      loadError: "맞춤 앱을 불러오지 못했습니다.",
+      empty: "이 학생의 기관에 사용 가능한 맞춤 앱이 없습니다.",
+      updateError: "할당 업데이트 실패",
+    },
     // Dynamic Boards
     dynamicBoards: "동적 보드",
     dynamicBoardsDesc: "AI가 상황에 따라 AAC 보드를 만들고 편집할 수 있도록 허용합니다.",
@@ -2245,6 +2278,7 @@ export const ko = {
       unlimited: "무제한",
       aacEnabled: "AAC 활성화됨",
       boardMakerEnabled: "보드 메이커",
+      customAppsEnabled: "맞춤 앱",
       unrestrictedAI: "무제한 AI",
       calendar: "캘린더",
       dashboardLevel: "대시보드 수준",
@@ -2401,6 +2435,9 @@ export const ko = {
     groupName: "그룹 이름",
     groupNamePlaceholder: "이 그룹의 이름",
     create: "만들기",
+    statusSending: "전송 중",
+    statusSent: "전송됨",
+    statusFailed: "전송 실패",
   },
 
 };

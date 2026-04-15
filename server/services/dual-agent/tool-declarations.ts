@@ -17,6 +17,8 @@ import type { AACAppDefinition } from "./types";
 export interface ToolDeclarationConfig {
   enabledApps: AACAppDefinition[];
   availableBoards: Array<{ key: string; name: string }>;
+  /** Custom apps (games) assigned to this student. */
+  availableCustomApps?: Array<{ id: string; name: string; description?: string | null }>;
   hasLoadedBoard: boolean;
   faceRecognitionActive: boolean;
   cachedSymbols?: Array<{ id: string; name: string }>;
@@ -211,6 +213,33 @@ function buildOpenAppTool(enabledApps: AACAppDefinition[]): FunctionDeclaration 
   };
 }
 
+function buildOpenCustomAppTool(
+  apps: NonNullable<ToolDeclarationConfig["availableCustomApps"]>,
+): FunctionDeclaration {
+  const list = apps
+    .map((a) => `- ${a.id}: ${a.name}${a.description ? ` — ${a.description}` : ""}`)
+    .join("\n");
+  return {
+    name: "open_custom_app",
+    description:
+      "Launch a custom game on the student's screen. Games are short rule-based activities authored by the clinician. " +
+      "Call when the student wants to play or when a game is a natural fit for the current activity. " +
+      `Available games:\n${list}`,
+    behavior: Behavior.NON_BLOCKING,
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        app_id: {
+          type: "string",
+          description: "The custom app id to launch.",
+          enum: apps.map((a) => a.id),
+        },
+      },
+      required: ["app_id"],
+    },
+  };
+}
+
 const CLOSE_APP: FunctionDeclaration = {
   name: "close_app",
   description: "Close the currently open app.",
@@ -353,6 +382,12 @@ export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
   if (config.enabledApps.length > 0) {
     declarations.push(buildOpenAppTool(config.enabledApps));
     declarations.push(CLOSE_APP);
+  }
+
+  if (config.availableCustomApps && config.availableCustomApps.length > 0) {
+    declarations.push(buildOpenCustomAppTool(config.availableCustomApps));
+    // close_app is reused for games too — only register it once.
+    if (config.enabledApps.length === 0) declarations.push(CLOSE_APP);
   }
 
   if (config.faceRecognitionActive) {

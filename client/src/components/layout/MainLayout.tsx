@@ -5,6 +5,7 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { ChatFeature } from '@/features/ChatFeature';
 import { ChatPopup } from '@/features/ChatPopup';
 import { SyntAACxPanel } from '@/features/SyntAACxPanel';
+import { CustomAppPanel } from '@/features/CustomAppPanel';
 import { CommuniAACtePanel } from '@/features/CommuniAACtePanel';
 import { DocuSLPPanel } from '@/features/DocuSLPPanel';
 import { useFeaturePanel } from '@/contexts/FeaturePanelContext';
@@ -115,6 +116,8 @@ export function MainLayout() {
     switch (activeFeature) {
       case 'boards':
         return <SyntAACxPanel isOpen={isPanelOpen} />;
+      case 'customApps':
+        return <CustomAppPanel isOpen={isPanelOpen} />;
       case 'interpret':
         return <CommuniAACtePanel isOpen={isPanelOpen} />;
       case 'docuslp':
