@@ -183,3 +183,41 @@ variable "enable_rds_enhanced_monitoring" {
   type        = bool
   default     = true
 }
+
+# =============================================================================
+# Redis / ElastiCache Variables
+# =============================================================================
+# Redis backs the cross-instance realtime fanout (server/services/realtime/
+# bus.ts). Until we run more than one ECS task we don't need it — Postgres
+# LISTEN/NOTIFY (REALTIME_BUS=postgres) is sufficient for the lean path.
+# Enable this when moving to multi-instance ECS / HIPAA mode.
+
+variable "enable_redis" {
+  description = "Provision ElastiCache for Redis (used as the realtime fanout bus). Off in lean mode; on for full ECS / HIPAA."
+  type        = bool
+  default     = false
+}
+
+variable "redis_node_type" {
+  description = "ElastiCache node type (e.g. cache.t4g.micro for low load, cache.m6g.large for production)"
+  type        = string
+  default     = "cache.t4g.micro"
+}
+
+variable "redis_num_cache_clusters" {
+  description = "Number of cache nodes (1 = single node, 2+ = primary + replicas with automatic failover)"
+  type        = number
+  default     = 2
+}
+
+variable "redis_engine_version" {
+  description = "Redis engine version"
+  type        = string
+  default     = "7.1"
+}
+
+variable "redis_snapshot_retention_days" {
+  description = "Days to retain Redis snapshots (0 disables backups; HIPAA generally wants >0 even though we treat Redis as ID-only)"
+  type        = number
+  default     = 7
+}

@@ -197,6 +197,7 @@ function Router() {
       {/* Dashboard feature routes - all protected */}
       {/* Core workspace features */}
       <Route path="/boards" component={ProtectedDashboard} />
+      <Route path="/custom-apps" component={ProtectedDashboard} />
       <Route path="/interpret" component={ProtectedDashboard} />
       <Route path="/interpret/sessions/:sessionId" component={ProtectedDashboard} />
       <Route path="/docuslp" component={ProtectedDashboard} />

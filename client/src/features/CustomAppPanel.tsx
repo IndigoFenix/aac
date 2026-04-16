@@ -8,16 +8,17 @@
 //   - Assign to / unassign from the active student
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useCustomAppStore } from "@/store/custom-app-store";
 import { useStudent } from "@/hooks/useStudent";
+import { useInstitute } from "@/hooks/useInstitute";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Loader2, Save, Trash2, UserPlus, UserMinus } from "lucide-react";
+import { Loader2, Save, Trash2, UserCheck, UserPlus } from "lucide-react";
 import { GameRuntime } from "@client-shared/game-runtime";
 import { validateCustomAppDefinition } from "@shared/custom-app-validator";
 import type { CustomApp } from "@shared/schema";
@@ -30,7 +31,9 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
   const { t } = useLanguage();
   const { theme } = useTheme();
   const { student } = useStudent();
+  const { currentInstitute } = useInstitute();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const isDark = theme === "dark";
 
   const {
@@ -73,6 +76,25 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
     }
   }, [fetchedApps, setApps]);
 
+  // --- Is the open app assigned to the currently-selected student?
+  const assignmentsQueryKey = useMemo(
+    () => ["customApp:assignments", dbId],
+    [dbId],
+  );
+  const { data: assignments } = useQuery({
+    queryKey: assignmentsQueryKey,
+    queryFn: async () => {
+      if (!dbId) return [] as Array<{ appId: string; studentId: string }>;
+      const res = await apiRequest("GET", `/api/custom-apps/${dbId}/assignments`);
+      if (!res.ok) throw new Error("Failed to load assignments");
+      return (await res.json()) as Array<{ appId: string; studentId: string }>;
+    },
+    enabled: !!dbId,
+  });
+  const isAssignedToCurrentStudent = !!(
+    student?.id && assignments?.some((a) => a.studentId === student.id)
+  );
+
   // --- Validation status of the current definition
   const validation = useMemo(() => {
     if (!definition) return { ok: true as const, errors: [] };
@@ -110,13 +132,16 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
     }
     setSaving(true);
     try {
-      const body = {
+      const body: Record<string, unknown> = {
         name: definition.label,
         description: definition.description,
         type: definition.type,
         definition,
         isGenerated: true,
       };
+      // Scope to the currently-selected institute so students in that institute
+      // can discover the app through the AAC-settings assignment UI.
+      if (currentInstitute?.id) body.instituteId = currentInstitute.id;
       if (dbId) {
         const res = await apiRequest("PATCH", `/api/custom-apps/${dbId}`, body);
         if (!res.ok) throw new Error((await res.json())?.error ?? "Save failed");
@@ -167,43 +192,45 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
     }
   }, [dbId, removeAppMeta, reset, t, toast]);
 
-  // --- Assignment
-  const handleAssign = useCallback(async () => {
+  // --- Assignment toggle
+  const toggleAssignment = useCallback(async () => {
     if (!dbId || !student?.id) return;
     setAssigning(true);
     try {
-      const res = await apiRequest("POST", `/api/custom-apps/${dbId}/assignments`, {
-        studentId: student.id,
-      });
-      if (!res.ok) throw new Error("Assign failed");
-      toast({ title: t("customApps.assigned") });
-    } catch (err) {
-      toast({ title: t("customApps.assignError"), description: String(err), variant: "destructive" });
-    } finally {
-      setAssigning(false);
-    }
-  }, [dbId, student?.id, t, toast]);
-
-  const handleUnassign = useCallback(async () => {
-    if (!dbId || !student?.id) return;
-    setAssigning(true);
-    try {
-      const res = await apiRequest(
-        "DELETE",
-        `/api/custom-apps/${dbId}/assignments/${student.id}`,
-      );
-      if (!res.ok) throw new Error("Unassign failed");
-      toast({ title: t("customApps.unassigned") });
+      if (isAssignedToCurrentStudent) {
+        const res = await apiRequest(
+          "DELETE",
+          `/api/custom-apps/${dbId}/assignments/${student.id}`,
+        );
+        if (!res.ok) throw new Error("Unassign failed");
+        toast({ title: t("customApps.unassigned") });
+      } else {
+        const res = await apiRequest("POST", `/api/custom-apps/${dbId}/assignments`, {
+          studentId: student.id,
+        });
+        if (!res.ok) throw new Error("Assign failed");
+        toast({ title: t("customApps.assigned") });
+      }
+      await queryClient.invalidateQueries({ queryKey: assignmentsQueryKey });
+      await queryClient.invalidateQueries({ queryKey: ["customApps:available", student.id] });
     } catch (err) {
       toast({
-        title: t("customApps.unassignError"),
+        title: t("customApps.assignError"),
         description: String(err),
         variant: "destructive",
       });
     } finally {
       setAssigning(false);
     }
-  }, [dbId, student?.id, t, toast]);
+  }, [
+    dbId,
+    student?.id,
+    isAssignedToCurrentStudent,
+    queryClient,
+    assignmentsQueryKey,
+    t,
+    toast,
+  ]);
 
   // --- New blank definition
   const handleNew = useCallback(() => {
@@ -246,26 +273,30 @@ export function CustomAppPanel(_props: CustomAppPanelProps) {
 
         {dbId && (
           <>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={!student?.id || assigning}
-              onClick={handleAssign}
-              title={t("customApps.assign")}
-            >
-              <UserPlus className="w-4 h-4 mr-1" />
-              {t("customApps.assign")}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={!student?.id || assigning}
-              onClick={handleUnassign}
-              title={t("customApps.unassign")}
-            >
-              <UserMinus className="w-4 h-4 mr-1" />
-              {t("customApps.unassign")}
-            </Button>
+            {student?.id ? (
+              <Button
+                variant={isAssignedToCurrentStudent ? "default" : "outline"}
+                size="sm"
+                disabled={assigning}
+                onClick={toggleAssignment}
+                title={
+                  isAssignedToCurrentStudent
+                    ? t("customApps.unassign")
+                    : t("customApps.assign")
+                }
+              >
+                {assigning ? (
+                  <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                ) : isAssignedToCurrentStudent ? (
+                  <UserCheck className="w-4 h-4 mr-1" />
+                ) : (
+                  <UserPlus className="w-4 h-4 mr-1" />
+                )}
+                {isAssignedToCurrentStudent
+                  ? t("customApps.assignedToStudent")
+                  : t("customApps.assignToStudent")}
+              </Button>
+            ) : null}
             <Button variant="ghost" size="sm" onClick={handleDelete} title={t("customApps.delete")}>
               <Trash2 className="w-4 h-4" />
             </Button>

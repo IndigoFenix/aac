@@ -3,14 +3,18 @@
 // and publishes realtime events. Persistence lives in userChatRepository.
 
 import { userChatRepository } from "../../repositories/userChatRepository";
-import { publish, subscribeUserToTopic } from "../realtime/room-registry";
 import { pushNotifier } from "./pushNotifier";
 import { storage } from "../../storage";
 import type { UserChat, UserChatRoom } from "@shared/schema";
-import type { UserChatEvent } from "@shared/realtime-events";
 import { db } from "../../db";
 import { userChatPushTokens, userChatRoomParticipants, users } from "@shared/schema";
 import { and, eq, isNull } from "drizzle-orm";
+import {
+  broadcastMessage,
+  broadcastRoomCreated,
+  broadcastSubscribeUser,
+  broadcastUnread,
+} from "./userChatFanout";
 
 export const ROOM_TOPIC = (roomId: string) => `userChat:room:${roomId}`;
 export const USER_TOPIC = (userId: string) => `userChat:user:${userId}`;
@@ -71,15 +75,12 @@ export class UserChatService {
       isDirect,
     });
 
-    // Subscribe each participant's currently-open sockets to the new room topic
-    // and notify them so clients can refresh their room list without a reload.
+    // Subscribe each participant's currently-open sockets (on any instance) to
+    // the new room topic, and notify them so clients can refresh their room
+    // list without a reload.
     for (const userId of participants) {
-      subscribeUserToTopic(userId, ROOM_TOPIC(room.id));
-      publish(USER_TOPIC(userId), {
-        type: "userChat:roomCreated",
-        topic: USER_TOPIC(userId),
-        payload: { roomId: room.id },
-      });
+      await broadcastSubscribeUser(userId, ROOM_TOPIC(room.id));
+      await broadcastRoomCreated(userId, room.id);
     }
 
     return room;
@@ -103,31 +104,16 @@ export class UserChatService {
       body,
     });
 
-    // Broadcast to room topic
-    const event: UserChatEvent = {
-      type: "userChat:message",
-      topic: ROOM_TOPIC(input.roomId),
-      payload: {
-        id: message.id,
-        roomId: message.roomId,
-        senderId: message.senderId,
-        body: message.body,
-        createdAt: message.createdAt.toISOString(),
-        clientId: input.clientId,
-      },
-    };
-    publish(ROOM_TOPIC(input.roomId), event);
+    // Broadcast the message to room subscribers on every instance. Only the
+    // message id crosses the bus; bodies are fetched from Postgres locally.
+    await broadcastMessage(input.roomId, message.id, input.clientId);
 
     // Update per-recipient unread counts via each recipient's personal topic.
     const participants = await userChatRepository.getRoomParticipants(input.roomId);
     for (const p of participants) {
       if (p.userId === input.requesterId) continue;
       const unread = await userChatRepository.countUnread(input.roomId, p.userId, p.lastReadAt);
-      publish(USER_TOPIC(p.userId), {
-        type: "userChat:unread",
-        topic: USER_TOPIC(p.userId),
-        payload: { roomId: input.roomId, unreadCount: unread },
-      });
+      await broadcastUnread(p.userId, input.roomId, unread);
     }
 
     // Fire-and-forget push (stub).
@@ -148,12 +134,7 @@ export class UserChatService {
     const isMember = await userChatRepository.isParticipant(input.roomId, input.requesterId);
     if (!isMember) throw new UserChatAuthorizationError("Not a participant in this room");
     await userChatRepository.markRead(input.roomId, input.requesterId);
-
-    publish(USER_TOPIC(input.requesterId), {
-      type: "userChat:unread",
-      topic: USER_TOPIC(input.requesterId),
-      payload: { roomId: input.roomId, unreadCount: 0 },
-    });
+    await broadcastUnread(input.requesterId, input.roomId, 0);
   }
 
   async getMessages(input: {

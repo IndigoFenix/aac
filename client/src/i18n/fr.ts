@@ -652,6 +652,8 @@ export const fr = {
     discardUnsavedPrompt: "Discard unsaved changes?",
     assign: "Assign",
     unassign: "Unassign",
+    assignToStudent: "Attribuer à l'élève",
+    assignedToStudent: "Attribué",
     assigned: "Assigned",
     unassigned: "Unassigned",
     assignError: "Failed to assign",

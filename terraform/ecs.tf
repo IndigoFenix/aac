@@ -104,26 +104,42 @@ resource "aws_ecs_task_definition" "main" {
         }
       ]
 
-      environment = [
-        {
-          name  = "NODE_ENV"
-          value = var.environment == "prod" ? "production" : var.environment
-        },
-        {
-          name  = "PORT"
-          value = tostring(var.container_port)
-        },
-        {
-          name  = "AWS_REGION"
-          value = var.aws_region
-        },
-        {
-          name  = "APP_URL"
-          value = var.domain_name != "" ? "https://app.${var.domain_name}" : ""
-        }
-      ]
+      environment = concat(
+        [
+          {
+            name  = "NODE_ENV"
+            value = var.environment == "prod" ? "production" : var.environment
+          },
+          {
+            name  = "PORT"
+            value = tostring(var.container_port)
+          },
+          {
+            name  = "AWS_REGION"
+            value = var.aws_region
+          },
+          {
+            name  = "APP_URL"
+            value = var.domain_name != "" ? "https://app.${var.domain_name}" : ""
+          },
+          {
+            # Realtime fanout selection. With Redis on, ID-only payloads cross
+            # the bus (see server/services/userChat/userChatFanout.ts); without
+            # it, falls back to Postgres LISTEN/NOTIFY.
+            name  = "REALTIME_BUS"
+            value = var.enable_redis ? "redis" : "postgres"
+          }
+        ]
+      )
 
-      secrets = [
+      secrets = concat(
+        var.enable_redis ? [
+          {
+            name      = "REDIS_URL"
+            valueFrom = "${aws_secretsmanager_secret.redis_auth[0].arn}:REDIS_URL::"
+          }
+        ] : [],
+        [
         # Database
         {
           name      = "DATABASE_URL"
@@ -192,7 +208,8 @@ resource "aws_ecs_task_definition" "main" {
           name      = "DROPBOX_CLIENT_SECRET"
           valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:DROPBOX_CLIENT_SECRET::"
         }
-      ]
+        ]
+      )
 
       logConfiguration = {
         logDriver = "awslogs"

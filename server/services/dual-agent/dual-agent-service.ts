@@ -1072,9 +1072,14 @@ export class DualAgentService {
       // ------------------------------------------------------------------
       // 8. Handle Monitor response
       // ------------------------------------------------------------------
+      console.log(`[DualAgentService] Monitor response: hasPrompt=${!!response.updatedPrompt} hasContext=${!!response.contextInjection} hasBoard=${!!response.generatedBoard}`);
+
       if (response.updatedPrompt) {
+        // NOTE: updatedPrompt only takes effect on reconnection for the Live API.
+        // For immediate guidance, the monitor should use [CONTEXT] instead.
         interactiveAgent.setSystemPrompt(response.updatedPrompt);
         state.interactivePrompt = response.updatedPrompt;
+        console.log(`[DualAgentService] Updated prompt (${response.updatedPrompt.length} chars) — takes effect on next reconnect for Live API`);
       }
 
       if (response.contextInjection) {
@@ -1087,6 +1092,7 @@ export class DualAgentService {
         dbLog.push(contextMessage);
 
         // Live API hook: forward context injection to Gemini session
+        console.log(`[DualAgentService] Injecting context (${response.contextInjection.length} chars): "${response.contextInjection.substring(0, 120)}..."`);
         state.onContextInjection?.(response.contextInjection);
       }
 

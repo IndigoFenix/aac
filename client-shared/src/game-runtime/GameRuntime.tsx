@@ -25,7 +25,7 @@ const LAYER_ORDER: Layer[] = ["background", "entity", "overlay"];
 
 export interface GameRuntimeHandle {
   /** Send an AI action (from the AI tool layer). */
-  sendAiAction: (action: Extract<EngineAction, { type: "ai_trigger" | "ai_create" }>) => void;
+  sendAiAction: (action: Extract<EngineAction, { type: "aiTrigger" | "aiCreate" }>) => void;
   /** Current runtime state (read-only). */
   getState: () => RuntimeState;
 }
@@ -61,6 +61,7 @@ export function GameRuntime({
   className,
 }: GameRuntimeProps) {
   const initial = useMemo(() => initState(def), [def]);
+  const lastEventsRef = useRef<EngineEvent[]>([]);
   const [state, dispatchLocal] = useReducer(
     (prev: RuntimeState, a: ReducerAction) => {
       const result = dispatch(prev, a.action, def);
@@ -69,7 +70,6 @@ export function GameRuntime({
     },
     initial,
   );
-  const lastEventsRef = useRef<EngineEvent[]>([]);
 
   // Surface engine events + drain AI instructions after each tick.
   useEffect(() => {
@@ -112,9 +112,9 @@ export function GameRuntime({
     const stack = sortStackBottomToTop(def, getEntitiesAtCell(def, state, cell));
     const top = stack[stack.length - 1];
     if (!top) return;
-    const topCls = getClass(def, top.class_id);
-    // Opening a container opens the inventory modal; still fire on_click too.
-    if (topCls.max_capacity !== undefined) setInventoryFor(top.uid);
+    const topCls = getClass(def, top.classId);
+    // Opening a container opens the inventory modal; still fire onClick too.
+    if (topCls.maxCapacity !== undefined) setInventoryFor(top.uid);
     sendAction({ type: "click", targetUid: top.uid });
   };
 
@@ -127,13 +127,13 @@ export function GameRuntime({
 
   const handleDropOnContainer = (containerUid: string) => {
     if (!dragging) return;
-    sendAction({ type: "drop_into_container", movingUid: dragging, containerUid });
+    sendAction({ type: "dropIntoContainer", movingUid: dragging, containerUid });
     setDragging(null);
     setHoverCell(null);
   };
 
   const handleButtonClick = (buttonId: string) => {
-    sendAction({ type: "button_press", buttonId });
+    sendAction({ type: "buttonPress", buttonId });
   };
 
   // ---------- Rendering ----------
@@ -261,8 +261,8 @@ function LayerGroup({
   onDropOnContainer: (uid: string) => void;
 }) {
   const entities = Object.values(state.entities).filter((e) => {
-    if (e.container_uid) return false;
-    const cls = getClass(def, e.class_id);
+    if (e.containerUid) return false;
+    const cls = getClass(def, e.classId);
     return (cls.layer ?? "entity") === layerName;
   });
   const sorted = sortStackBottomToTop(def, entities);
@@ -270,11 +270,11 @@ function LayerGroup({
   return (
     <>
       {sorted.map((e) => {
-        const cls = getClass(def, e.class_id);
+        const cls = getClass(def, e.classId);
         const hidden = (e.overrides.hidden ?? cls.hidden) === true;
         if (hidden) return null;
         const [w, h] = cls.size ?? [1, 1];
-        const isContainer = cls.max_capacity !== undefined;
+        const isContainer = cls.maxCapacity !== undefined;
         const movable = (e.overrides.movable ?? cls.movable) === true;
         return (
           <div
@@ -310,7 +310,7 @@ function LayerGroup({
               height: h * cellSize,
               boxSizing: "border-box",
               border: isContainer ? "2px dashed #94a3b8" : undefined,
-              background: resolveColor(e, cls, "tile_color") ?? undefined,
+              background: resolveColor(e, cls, "tileColor") ?? undefined,
               color: "#e2e8f0",
               fontSize: 12,
               display: "flex",
@@ -338,24 +338,25 @@ function EntityVisual({
   cls: ClassDef;
   resolveImage?: (ref: string) => string | undefined;
 }) {
-  const imageRef = (entity.overrides.image as string | undefined) ?? cls.image;
-  const imageColor = resolveColor(entity, cls, "image_color");
+  const symbolPath = (entity.overrides.symbolPath as string | undefined) ?? cls.symbolPath;
+  const iconRef = (entity.overrides.iconRef as string | undefined) ?? cls.iconRef;
+  const imageColor = resolveColor(entity, cls, "imageColor");
   const char = (entity.overrides.char as string | undefined) ?? cls.char;
   const label = resolveLabel(entity, cls);
 
-  const imageUrl = imageRef ? resolveImage?.(imageRef) : undefined;
-  if (imageUrl) {
+  // Priority: symbolPath (predefined) → resolved (via parent's resolveImage hook) → iconRef/char → label
+  if (symbolPath) {
+    const resolved = resolveImage?.(symbolPath) ?? symbolPath;
     return (
       <img
-        src={imageUrl}
+        src={resolved}
         alt={label ?? cls.id}
-        style={{
-          maxWidth: "80%",
-          maxHeight: "80%",
-          filter: imageColor ? `drop-shadow(0 0 0 ${imageColor})` : undefined,
-        }}
+        style={{ maxWidth: "80%", maxHeight: "80%" }}
       />
     );
+  }
+  if (iconRef) {
+    return <span style={{ fontSize: 24, color: imageColor ?? "#e2e8f0" }}>{iconRef}</span>;
   }
   if (char) {
     return <span style={{ fontSize: 24, color: imageColor ?? "#e2e8f0" }}>{char}</span>;
@@ -375,13 +376,14 @@ function SidebarButton({
   onClick: () => void;
   resolveImage?: (ref: string) => string | undefined;
 }) {
-  const imageUrl = button.image ? resolveImage?.(button.image) : undefined;
+  const symbolPath = button.symbolPath;
+  const imageUrl = symbolPath ? (resolveImage?.(symbolPath) ?? symbolPath) : undefined;
   return (
     <button
       onClick={onClick}
       style={{
         padding: 10,
-        background: button.button_color ?? "#334155",
+        background: button.buttonColor ?? "#334155",
         color: "#f1f5f9",
         border: "1px solid #475569",
         borderRadius: 6,
@@ -394,6 +396,8 @@ function SidebarButton({
     >
       {imageUrl ? (
         <img src={imageUrl} alt={button.label ?? button.id} style={{ width: 36, height: 36 }} />
+      ) : button.iconRef ? (
+        <span style={{ fontSize: 28 }}>{button.iconRef}</span>
       ) : null}
       <span>{button.label ?? button.id}</span>
     </button>
@@ -416,7 +420,7 @@ function InventoryModal({
   onDragStart: (uid: string) => void;
 }) {
   const container = state.entities[containerUid];
-  const cls = container ? getClass(def, container.class_id) : undefined;
+  const cls = container ? getClass(def, container.classId) : undefined;
   const contained = getContainedEntities(state, containerUid);
 
   return (
@@ -453,7 +457,7 @@ function InventoryModal({
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 56px)", gap: 8 }}>
             {contained.map((e) => {
-              const c = getClass(def, e.class_id);
+              const c = getClass(def, e.classId);
               const movable = (e.overrides.movable ?? c.movable) === true;
               return (
                 <div
@@ -472,7 +476,7 @@ function InventoryModal({
                     width: 56,
                     height: 56,
                     border: "1px solid #475569",
-                    background: resolveColor(e, c, "tile_color") ?? "#1e293b",
+                    background: resolveColor(e, c, "tileColor") ?? "#1e293b",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -495,7 +499,7 @@ function InventoryModal({
 // Helpers
 // ---------------------------------------------------------------------------
 
-function resolveColor(entity: EntityInstance, cls: ClassDef, prop: "tile_color" | "image_color"): string | undefined {
+function resolveColor(entity: EntityInstance, cls: ClassDef, prop: "tileColor" | "imageColor"): string | undefined {
   const v = (entity.overrides as Record<string, unknown>)[prop] ?? (cls as unknown as Record<string, unknown>)[prop];
   return typeof v === "string" ? v : undefined;
 }

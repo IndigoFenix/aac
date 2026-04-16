@@ -6,6 +6,8 @@ import { stringify } from "csv-stringify";
 import { setupLiveWebSocket } from "./services/dual-agent/live-relay";
 import { setupRealtimeServer, registerRealtimeHandler } from "./services/realtime/realtime-server";
 import { subscribe } from "./services/realtime/room-registry";
+import { initBus } from "./services/realtime/bus-factory";
+import { initUserChatFanout } from "./services/userChat/userChatFanout";
 import { userChatController } from "./controllers/userChatController";
 import { userChatService } from "./services/userChat/userChatService";
 
@@ -1400,6 +1402,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Set up generic realtime server (path-based routing) and register handlers.
   setupRealtimeServer(httpServer);
+
+  // Initialize the cross-instance fanout bus and wire the user-chat dispatcher
+  // into it. Selection (memory / postgres / redis) is via REALTIME_BUS env var.
+  await initBus();
+  initUserChatFanout();
+
   registerRealtimeHandler({
     path: "/ws/user-chat",
     onConnect: async (socket, user) => {

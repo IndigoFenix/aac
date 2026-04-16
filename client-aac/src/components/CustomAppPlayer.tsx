@@ -36,7 +36,7 @@ export function CustomAppPlayer({
     if (startedAtRef.current) return;
     startedAtRef.current = true;
     if (!sendMessageToAi) return;
-    const startRoom = definition.rooms.find((r) => r.id === definition.start_room);
+    const startRoom = definition.rooms.find((r) => r.id === definition.startRoom);
     const intro = buildIntroMessage(definition, startRoom);
     sendMessageToAi(intro);
     return () => {
@@ -87,11 +87,11 @@ function buildIntroMessage(def: GameDefinition, startRoom: RoomDef | undefined):
   const lines: string[] = [];
   lines.push(`[GAME STARTED] The student has opened a game called "${def.label}".`);
   if (def.description) lines.push(`Description: ${def.description}`);
-  if (def.ai_instructions) lines.push(`How you should behave during this game: ${def.ai_instructions}`);
+  if (def.aiInstructions) lines.push(`How you should behave during this game: ${def.aiInstructions}`);
   if (startRoom) {
     lines.push(`Starting room: ${startRoom.label ?? startRoom.id}.`);
-    if (startRoom.ai_instructions) {
-      lines.push(`Room-specific guidance: ${startRoom.ai_instructions}`);
+    if (startRoom.aiInstructions) {
+      lines.push(`Room-specific guidance: ${startRoom.aiInstructions}`);
     }
   }
   lines.push(
@@ -104,36 +104,36 @@ function summarizeEvents(events: EngineEvent[]): string | null {
   const parts: string[] = [];
   for (const e of events) {
     switch (e.type) {
-      case "entity_moved":
+      case "entityMoved":
         parts.push(`moved ${e.uid} to (${e.to[0]},${e.to[1]})`);
         break;
-      case "entity_destroyed":
-        parts.push(`${e.class_id} was removed`);
+      case "entityDestroyed":
+        parts.push(`${e.classId} was removed`);
         break;
-      case "entity_created":
-        parts.push(`new ${e.class_id} at (${e.position[0]},${e.position[1]})`);
+      case "entityCreated":
+        parts.push(`new ${e.classId} at (${e.position[0]},${e.position[1]})`);
         break;
-      case "entity_transformed":
-        parts.push(`${e.from_class} became ${e.to_class}`);
+      case "entityTransformed":
+        parts.push(`${e.fromClass} became ${e.toClass}`);
         break;
-      case "state_changed":
+      case "stateChanged":
         parts.push(`${e.uid} state → ${e.to}`);
         break;
-      case "counter_changed":
+      case "counterChanged":
         parts.push(`${e.counter}: ${e.from} → ${e.to}`);
         break;
-      case "signal_emitted":
+      case "signalEmitted":
         parts.push(`signal "${e.id}"`);
         break;
-      case "room_changed":
+      case "roomChanged":
         parts.push(`entered room "${e.to}"`);
         break;
-      case "turn_changed":
+      case "turnChanged":
         parts.push(`turn: ${e.to}`);
         break;
-      case "ai_instruction":
+      case "aiInstruction":
       case "error":
-      case "cascade_aborted":
+      case "cascadeAborted":
         // Handled separately or silenced.
         break;
     }

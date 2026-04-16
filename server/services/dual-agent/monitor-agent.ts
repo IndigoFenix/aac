@@ -350,7 +350,8 @@ Output ONLY the enhanced prompt between [ENHANCED_PROMPT] and [/ENHANCED_PROMPT]
       const responseText =
         typeof responseContent === "string"
           ? responseContent
-          : (responseContent as any)?.text || "";
+          : (responseContent as any)?.text || (responseContent as any)?.html || "";
+      console.log(`[MonitorAgent] Response extracted (${responseText.length} chars), hasContext=${responseText.includes("[CONTEXT]")}, hasPrompt=${responseText.includes("[UPDATE_PROMPT]")}`);
 
       // Check if Monitor wants to inject context or update prompt
       const response: MonitorResponse = {};

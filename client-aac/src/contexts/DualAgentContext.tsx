@@ -41,6 +41,7 @@ interface DualAgentContextType {
   // Interaction mode
   interactionMode: 'interact' | 'silent';
   setInteractionMode: (mode: 'interact' | 'silent') => void;
+  lastModeChange: { mode: 'interact' | 'assist' | 'silent'; reason?: string; source: 'ai' | 'user'; at: number } | null;
 
   // Response mode
   responseMode: 'fast' | 'analyze';
@@ -184,6 +185,7 @@ function DualAgentProviderInner({
   captureFrame: captureFrameProp,
   captureEnvFrame: captureEnvFrameProp,
   getUnmatchedFaceDescriptors,
+  getGestureContext,
   onBoardPatch: onBoardPatchProp,
   debugMode,
   getFaceImage: getFaceImageProp,
@@ -310,6 +312,7 @@ function DualAgentProviderInner({
     debugMode,
     captureFrame,
     captureHighResFrame,
+    getGestureContext,
   });
 
   const registerAppCanvasCapture = useCallback((fn: (() => Promise<Blob | null>) | null) => {
@@ -581,6 +584,7 @@ function ProviderShell({
 
     interactionMode: agent.interactionMode,
     setInteractionMode: agent.setInteractionMode,
+    lastModeChange: agent.lastModeChange,
 
     responseMode: agent.responseMode,
     setResponseMode: agent.setResponseMode,

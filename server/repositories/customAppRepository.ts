@@ -149,6 +149,31 @@ export class CustomAppRepository {
     return rows.map((r) => r.appId);
   }
 
+  /**
+   * Apps currently assigned to the student, with full metadata.
+   * Used by the AAC live session to show the AI what games it can launch.
+   */
+  async getAssignedAppsForStudent(studentId: string): Promise<CustomAppMetadata[]> {
+    const ids = await this.getAssignedAppIds(studentId);
+    if (ids.length === 0) return [];
+    return await db.select({
+      id: customApps.id,
+      userId: customApps.userId,
+      instituteId: customApps.instituteId,
+      type: customApps.type,
+      name: customApps.name,
+      description: customApps.description,
+      imageUrl: customApps.imageUrl,
+      language: customApps.language,
+      isGenerated: customApps.isGenerated,
+      createdAt: customApps.createdAt,
+      updatedAt: customApps.updatedAt,
+      loadedAt: customApps.loadedAt,
+    })
+      .from(customApps)
+      .where(inArray(customApps.id, ids));
+  }
+
   // --------------------------------------------------------------------------
   // Assignments
   // --------------------------------------------------------------------------
