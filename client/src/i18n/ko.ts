@@ -652,6 +652,8 @@ export const ko = {
     discardUnsavedPrompt: "Discard unsaved changes?",
     assign: "Assign",
     unassign: "Unassign",
+    assignToStudent: "학생에게 할당",
+    assignedToStudent: "할당됨",
     assigned: "Assigned",
     unassigned: "Unassigned",
     assignError: "Failed to assign",

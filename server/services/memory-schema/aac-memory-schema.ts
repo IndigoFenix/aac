@@ -59,6 +59,7 @@ export function buildInteractiveAgentPrompt(params: {
   currentEmote?: string;
   activeApp?: string | null;
   enabledApps?: Array<{ id: string; name: string; description: string }>;
+  availableCustomApps?: Array<{ id: string; name: string; description?: string | null }>;
   autoSymbolsEnabled?: boolean;
   useDirectAudio?: boolean;
 }): string {
@@ -66,7 +67,7 @@ export function buildInteractiveAgentPrompt(params: {
     studentName, persona, language, memoryContext, mode,
     studentAge, studentGender, studentDiagnosis, aiName,
     knownContacts, availableBoards, loadedBoardName, loadedPageName,
-    cachedSymbols, activeApp, enabledApps,
+    cachedSymbols, activeApp, enabledApps, availableCustomApps,
     autoSymbolsEnabled = false, useDirectAudio = false,
   } = params;
 
@@ -104,16 +105,24 @@ Language: ${language || 'en'}. All AAC board button labels${useDirectAudio ? '' 
 # GENERAL
 
 ## IDENTIFYING CONTEXT
-You receive continuous camera frames as passive visual context. Use your observations to infer:
-- The location (at home, in class, outside, etc)
-- Items nearby (toys, books, devices, etc)
-- The person or people present (family members, teachers, friends, etc)
-- Sounds in the environment (TV, music, conversations, etc)
-- The user's current activity or focus (playing, reading, looking around, etc), emotional state (happy, bored, frustrated, etc), and non-verbal cues (looking at you, looking away, reaching for something, etc)
-When you notice a meaningful change (new person, new object, activity change, gesture), call update_context() to record it and update the AAC board incrementally with add_buttons()/remove_buttons().
+You receive continuous camera frames as passive visual context. Build a persistent mental world model by logging observations via update_context(type, key, description).
+
+WHEN LOADED / FIRST FRAMES: log what you see — new_person for each person, new_object for notable objects, new_location for the room/setting, ambient_audio_started for ongoing sounds. This establishes a baseline.
+
+DURING THE SESSION: log any of these as they occur:
+- People: new_person, person_leaves, person_identified (you learned their name), set_person_as_user (identified the primary user), person_gesture, person_indicates_object
+- Voices: new_voice, voice_identified (matched to a person)
+- Environment: new_location, new_object, object_leaves
+- Sound: ambient_audio_started, ambient_audio_stopped, sound_detected (discrete events)
+- other: for anything else
+
+Each observation has a short key (name/identifier) and a description. Example:
+  update_context(type="new_person", key="woman with glasses", description="A woman with red glasses and a blue sweater entered from the left.")
+
+Use observations to update the AAC board incrementally with add_buttons()/remove_buttons() or add_context_button().
 Do NOT rebuild the entire board for minor visual changes — only make incremental updates.
 Do NOT speak about observations unless directly relevant to the user.
-Do NOT call update_context() if nothing meaningful happened. Do NOT narrate your own actions.`;
+Do NOT call update_context() if nothing meaningful changed. Do NOT narrate your own actions.`;
 
   // Known contacts
   if (knownContacts && knownContacts.length > 0) {
@@ -136,7 +145,7 @@ You may ignore ambient noise and background conversations that do not seem relev
 Always transcribe before producing a response.
 
 ## ASSIST MODE vs INTERACTION MODE
-Determine whether you are in ASSIST MODE (the user is interacting with another person) or INTERACTION MODE (the user is alone or addressing you). This will guide how you communicate and engage.
+Determine whether you are in ASSIST MODE (the user is interacting with another person, or is not actively engaging with you) or INTERACTION MODE (the user is alone or addressing you). This will guide how you communicate and engage.
 You may switch between modes as the context changes — for example, if the user is talking to a family member, you are in assist mode; if the family member leaves and the user is alone, you switch to interaction mode.
 
 ### ASSIST MODE
@@ -245,16 +254,30 @@ When a custom board is loaded via set_board(), its buttons are shown in the main
 
   // ── # APPS ──
 
-  if (enabledApps && enabledApps.length > 0) {
+  const hasBuiltInApps = !!(enabledApps && enabledApps.length > 0);
+  const hasCustomApps = !!(availableCustomApps && availableCustomApps.length > 0);
+  if (hasBuiltInApps || hasCustomApps) {
     prompt += `
 
 # APPS
 You have interactive apps you can open on the user's screen using open_app(). These are REAL apps — ALWAYS use open_app() instead of creating board buttons about the activity.
 When you open an app, call rebuild_board() with contextual buttons relevant to the app activity.
-When an app is closed, rebuild the board for the current context.
+When an app is closed, rebuild the board for the current context.`;
+
+    if (hasBuiltInApps) {
+      prompt += `
 
 Available apps:
-${enabledApps.map(a => `- ${a.name}: (id: "${a.id}") — ${a.description}`).join('\n')}`;
+${enabledApps!.map(a => `- ${a.name}: (id: "${a.id}") — ${a.description}`).join('\n')}`;
+    }
+
+    if (hasCustomApps) {
+      prompt += `
+
+Custom games (clinician-authored educational games — open with the same open_app tool, passing the app id):
+${availableCustomApps!.map(a => `- ${a.name}: (id: "${a.id}")${a.description ? ` — ${a.description}` : ""}`).join('\n')}`;
+    }
+
     if (activeApp) {
       prompt += `\n\nThe "${activeApp}" app is currently open on screen.`;
     }
@@ -362,8 +385,10 @@ Available read-only context paths (view only when relevant):
 The Interactive Agent interacts with the user, but lacks the ability to track long-term memory or understand complex context.
 If you notice something important that the Interactive Agent seems to be missing, or if you have a suggestion for how it could be more helpful, inject commands into the conversation to guide the Interactive Agent's behavior and help it better support the user.
 You can inject the following commands (they will be forwarded to the Interactive Agent):
-- [UPDATE_PROMPT]...[/UPDATE_PROMPT] — Update the Interactive Agent's system prompt with new instructions. Use this to adjust tone, style, or focus.
-- [CONTEXT]...[/CONTEXT] — Inject contextual commands for the Interactive Agent to use. Use this to make specific, immediate commands or suggestions.
+- [CONTEXT]...[/CONTEXT] — Inject guidance for the Interactive Agent. This is the PRIMARY way to influence its behavior. Use this for all instructions, corrections, and suggestions. Your context injections are sent directly to the AI during the live session.
+- [UPDATE_PROMPT]...[/UPDATE_PROMPT] — Update the Interactive Agent's system prompt. NOTE: This only takes effect after a reconnection, NOT immediately. For immediate guidance, ALWAYS use [CONTEXT] instead.
+
+IMPORTANT: Always use [CONTEXT] for actionable guidance. [UPDATE_PROMPT] is only for permanent changes that should persist across reconnections.
 
 ${modeNote}
 

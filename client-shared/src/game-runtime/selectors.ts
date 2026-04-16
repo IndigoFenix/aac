@@ -44,28 +44,28 @@ export function getProp<K extends OverridableProp>(
   prop: K,
 ): unknown {
   if (prop in entity.overrides) return entity.overrides[prop];
-  const cls = getClass(def, entity.class_id);
+  const cls = getClass(def, entity.classId);
   return (cls as unknown as Record<string, unknown>)[prop];
 }
 
 export function getLayer(def: GameDefinition, entity: EntityInstance): Layer {
-  const cls = getClass(def, entity.class_id);
+  const cls = getClass(def, entity.classId);
   return cls.layer ?? "entity";
 }
 
 export function isTile(def: GameDefinition, entity: EntityInstance): boolean {
-  const cls = getClass(def, entity.class_id);
-  return cls.is_tile ?? false;
+  const cls = getClass(def, entity.classId);
+  return cls.isTile ?? false;
 }
 
 export function isSolid(def: GameDefinition, entity: EntityInstance): boolean {
-  const v = getProp(def, entity, "is_solid");
+  const v = getProp(def, entity, "isSolid");
   return typeof v === "boolean" ? v : false;
 }
 
 /** All entities in the current room (excludes contained entities). */
 export function getRoomEntities(state: RuntimeState): EntityInstance[] {
-  return Object.values(state.entities).filter((e) => !e.container_uid);
+  return Object.values(state.entities).filter((e) => !e.containerUid);
 }
 
 /** Entities whose position overlaps the given cell. Contained entities are excluded. */
@@ -77,7 +77,7 @@ export function getEntitiesAtCell(
   const [cx, cy] = cell;
   const out: EntityInstance[] = [];
   for (const e of getRoomEntities(state)) {
-    const cls = getClass(def, e.class_id);
+    const cls = getClass(def, e.classId);
     const [w, h] = cls.size ?? [1, 1];
     const [x, y] = e.position;
     if (cx >= x && cx < x + w && cy >= y && cy < y + h) out.push(e);
@@ -87,7 +87,7 @@ export function getEntitiesAtCell(
 
 /** Entities currently contained inside the given uid. */
 export function getContainedEntities(state: RuntimeState, containerUid: string): EntityInstance[] {
-  return Object.values(state.entities).filter((e) => e.container_uid === containerUid);
+  return Object.values(state.entities).filter((e) => e.containerUid === containerUid);
 }
 
 /**
@@ -128,14 +128,14 @@ export function entityMatchesSpec(
   entity: EntityInstance,
   spec: MatchSpec,
 ): boolean {
-  const cls = getClass(def, entity.class_id);
+  const cls = getClass(def, entity.classId);
   const types = cls.types ?? [];
 
-  if (spec.class_id !== undefined && entity.class_id !== spec.class_id) return false;
+  if (spec.classId !== undefined && entity.classId !== spec.classId) return false;
   if (spec.states !== undefined && !spec.states.includes(entity.state)) return false;
   if (spec.types !== undefined && !spec.types.some((t) => types.includes(t))) return false;
-  if (spec.required_types !== undefined && !spec.required_types.every((t) => types.includes(t))) return false;
-  if (spec.forbidden_types !== undefined && spec.forbidden_types.some((t) => types.includes(t))) return false;
+  if (spec.requiredTypes !== undefined && !spec.requiredTypes.every((t) => types.includes(t))) return false;
+  if (spec.forbiddenTypes !== undefined && spec.forbiddenTypes.some((t) => types.includes(t))) return false;
 
   if (spec.counter !== undefined) {
     const val = entity.counters[spec.counter.id];
@@ -160,13 +160,12 @@ export function candidatesByPosition(
   self: EntityInstance,
   position: RelativePosition,
 ): EntityInstance[] {
-  const selfCls = getClass(def, self.class_id);
+  const selfCls = getClass(def, self.classId);
   const [w, h] = selfCls.size ?? [1, 1];
   const [sx, sy] = self.position;
 
   switch (position) {
-    case "same_cell": {
-      // Any entity sharing any cell of self's footprint, excluding self itself.
+    case "sameCell": {
       const seen = new Set<string>();
       const out: EntityInstance[] = [];
       for (let dx = 0; dx < w; dx++) {
@@ -182,7 +181,6 @@ export function candidatesByPosition(
       return out;
     }
     case "adjacent": {
-      // Orthogonally adjacent cells outside self's footprint.
       const seen = new Set<string>();
       const out: EntityInstance[] = [];
       const cells: GridCoord[] = [];
@@ -207,9 +205,9 @@ export function candidatesByPosition(
     case "inside":
       return getContainedEntities(state, self.uid);
     case "contains":
-      if (self.container_uid === undefined) return [];
+      if (self.containerUid === undefined) return [];
       {
-        const c = state.entities[self.container_uid];
+        const c = state.entities[self.containerUid];
         return c ? [c] : [];
       }
   }
@@ -225,7 +223,7 @@ export function resolveOther(
   self: EntityInstance,
   other: MatchSpec,
 ): EntityInstance | undefined {
-  const position = other.position ?? "same_cell";
+  const position = other.position ?? "sameCell";
   const candidates = candidatesByPosition(def, state, self, position);
   const filtered = candidates.filter((c) => entityMatchesSpec(def, c, other));
   const sorted = sortStackBottomToTop(def, filtered);
@@ -236,14 +234,14 @@ export function resolveOther(
 // Drop rule resolution
 // ---------------------------------------------------------------------------
 
-/** Can `entity` be dropped at `cell`? Considers is_solid, drop_rules, and footprint. */
+/** Can `entity` be dropped at `cell`? Considers isSolid, dropRules, and footprint. */
 export function canDropAt(
   def: GameDefinition,
   state: RuntimeState,
   entity: EntityInstance,
   cell: GridCoord,
 ): boolean {
-  const cls = getClass(def, entity.class_id);
+  const cls = getClass(def, entity.classId);
   const [w, h] = cls.size ?? [1, 1];
   const [cx, cy] = cell;
   const room = getRoom(def, state.currentRoomId);
@@ -253,7 +251,7 @@ export function canDropAt(
 
   // Allow drops back to the original position.
   const [ox, oy] = entity.position;
-  const isOriginal = ox === cx && oy === cy && entity.container_uid === undefined;
+  const isOriginal = ox === cx && oy === cy && entity.containerUid === undefined;
   if (isOriginal) return true;
 
   // Check solid collisions across footprint.
@@ -280,20 +278,20 @@ export function canDropAt(
     }
   }
 
-  // drop_rules check: the cell must match at least one rule.
-  if (!cls.drop_rules || cls.drop_rules.length === 0) return false;
+  // dropRules check: the cell must match at least one rule.
+  if (!cls.dropRules || cls.dropRules.length === 0) return false;
 
-  for (const rule of cls.drop_rules) {
-    if (rule.type === "same_cell") {
+  for (const rule of cls.dropRules) {
+    if (rule.type === "sameCell") {
       const here = getEntitiesAtCell(def, state, cell).filter((e) => e.uid !== entity.uid);
-      if (here.some((e) => rule.class_ids.includes(e.class_id))) return true;
-    } else if (rule.type === "adjacent_to") {
+      if (here.some((e) => rule.classIds.includes(e.classId))) return true;
+    } else if (rule.type === "adjacentTo") {
       const adj: GridCoord[] = [
         [cx - 1, cy], [cx + 1, cy], [cx, cy - 1], [cx, cy + 1],
       ];
       for (const a of adj) {
         const occ = getEntitiesAtCell(def, state, a).filter((e) => e.uid !== entity.uid);
-        if (occ.some((e) => rule.class_ids.includes(e.class_id))) return true;
+        if (occ.some((e) => rule.classIds.includes(e.classId))) return true;
       }
     }
     // "inside" is checked by canDropInsideContainer — not applicable for a cell drop.
@@ -309,23 +307,21 @@ export function canDropInsideContainer(
   entity: EntityInstance,
   container: EntityInstance,
 ): boolean {
-  const cls = getClass(def, entity.class_id);
-  if (!cls.can_be_contained) return false;
-  const containerCls = getClass(def, container.class_id);
-  if (containerCls.max_capacity === undefined) return false;
+  const cls = getClass(def, entity.classId);
+  if (!cls.canBeContained) return false;
+  const containerCls = getClass(def, container.classId);
+  if (containerCls.maxCapacity === undefined) return false;
 
-  // drop_rules must include an `inside` rule allowing this container class.
-  const rule = (cls.drop_rules ?? []).find(
-    (r) => r.type === "inside" && r.class_ids.includes(container.class_id),
+  const rule = (cls.dropRules ?? []).find(
+    (r) => r.type === "inside" && r.classIds.includes(container.classId),
   );
   if (!rule) return false;
 
-  // Capacity check.
   const containedNow = getContainedEntities(state, container.uid);
   const usedSize = containedNow.reduce((sum, e) => {
-    const ec = getClass(def, e.class_id);
-    return sum + (ec.contain_size ?? 1);
+    const ec = getClass(def, e.classId);
+    return sum + (ec.containSize ?? 1);
   }, 0);
-  const addSize = cls.contain_size ?? 1;
-  return usedSize + addSize <= containerCls.max_capacity;
+  const addSize = cls.containSize ?? 1;
+  return usedSize + addSize <= containerCls.maxCapacity;
 }

@@ -16,15 +16,15 @@ import type {
 export interface EntityInstance {
   /** Unique runtime id. Stable across ticks as long as the entity exists. */
   uid: string;
-  class_id: string;
+  classId: string;
   position: GridCoord;
   /** "_default" until a state change sets otherwise. */
   state: string;
   /** Flattened per-entity counter values, resolved from class defaults. */
   counters: Record<string, number>;
   /** uid of the container that currently holds this entity, if any. */
-  container_uid?: string;
-  /** Per-instance property overrides (from room def + state override_props merged in). */
+  containerUid?: string;
+  /** Per-instance property overrides (from room def + state overrideProps merged in). */
   overrides: Partial<Record<OverridableProp, unknown>>;
 }
 
@@ -32,17 +32,17 @@ export type Turn = "player" | "ai";
 
 /** Engine-surfaced event. Useful for logging, AI notifications, UI feedback. */
 export type EngineEvent =
-  | { type: "entity_created"; uid: string; class_id: string; position: GridCoord }
-  | { type: "entity_destroyed"; uid: string; class_id: string }
-  | { type: "entity_moved"; uid: string; from: GridCoord; to: GridCoord }
-  | { type: "entity_transformed"; uid: string; from_class: string; to_class: string }
-  | { type: "state_changed"; uid: string; from: string; to: string }
-  | { type: "counter_changed"; uid: string; counter: string; from: number; to: number }
-  | { type: "signal_emitted"; id: string }
-  | { type: "room_changed"; from: string; to: string }
-  | { type: "turn_changed"; from: Turn; to: Turn }
-  | { type: "ai_instruction"; message: string }
-  | { type: "cascade_aborted"; reason: string }
+  | { type: "entityCreated"; uid: string; classId: string; position: GridCoord }
+  | { type: "entityDestroyed"; uid: string; classId: string }
+  | { type: "entityMoved"; uid: string; from: GridCoord; to: GridCoord }
+  | { type: "entityTransformed"; uid: string; fromClass: string; toClass: string }
+  | { type: "stateChanged"; uid: string; from: string; to: string }
+  | { type: "counterChanged"; uid: string; counter: string; from: number; to: number }
+  | { type: "signalEmitted"; id: string }
+  | { type: "roomChanged"; from: string; to: string }
+  | { type: "turnChanged"; from: Turn; to: Turn }
+  | { type: "aiInstruction"; message: string }
+  | { type: "cascadeAborted"; reason: string }
   | { type: "error"; message: string };
 
 export interface RuntimeState {
@@ -66,17 +66,17 @@ export interface RuntimeState {
 export type EngineAction =
   | { type: "click"; targetUid: string }
   | { type: "move"; movingUid: string; to: GridCoord }
-  | { type: "drop_into_container"; movingUid: string; containerUid: string }
-  | { type: "button_press"; buttonId: string }
+  | { type: "dropIntoContainer"; movingUid: string; containerUid: string }
+  | { type: "buttonPress"; buttonId: string }
   | {
-      type: "ai_trigger";
+      type: "aiTrigger";
       classId: string;
       interactionIndex: number;
       selfUid: string;
       otherUid?: string;
     }
   | {
-      type: "ai_create";
+      type: "aiCreate";
       classId: string;
       position: GridCoord;
       overrides?: Partial<Record<OverridableProp, unknown>>;

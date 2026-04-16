@@ -200,10 +200,13 @@ resource "aws_iam_role_policy" "ecs_task_execution_secrets" {
         Action = [
           "secretsmanager:GetSecretValue"
         ]
-        Resource = [
-          aws_secretsmanager_secret.app_secrets.arn,
-          aws_secretsmanager_secret.database.arn
-        ]
+        Resource = concat(
+          [
+            aws_secretsmanager_secret.app_secrets.arn,
+            aws_secretsmanager_secret.database.arn,
+          ],
+          var.enable_redis ? [aws_secretsmanager_secret.redis_auth[0].arn] : [],
+        )
       },
       {
         Effect = "Allow"

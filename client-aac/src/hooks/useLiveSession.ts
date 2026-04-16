@@ -56,6 +56,8 @@ export interface UseLiveSessionOptions {
   captureFrame?: () => Promise<Blob | null>;
   /** Function to capture a high-resolution frame for focus analysis */
   captureHighResFrame?: () => Promise<Blob | null>;
+  /** Function to get serialized gesture/expression context (face + hand events) */
+  getGestureContext?: () => string | null;
 }
 
 export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentReturn {
@@ -123,6 +125,8 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
   // Interaction mode
   const [interactionMode, setInteractionModeState] = useState<"interact" | "silent">("interact");
+  // Last mode change — set by AI tool calls or user toggle, used to flash an indicator
+  const [lastModeChange, setLastModeChange] = useState<{ mode: "interact" | "assist" | "silent"; reason?: string; source: "ai" | "user"; at: number } | null>(null);
 
   // Response mode
   const [responseMode, setResponseModeState] = useState<"fast" | "analyze">("fast");
@@ -288,11 +292,20 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           setError(null);
           break;
 
-        case "text":
+        case "text": {
           // Accumulate streamed text — keep the same message ID to avoid re-triggering animations
           // Skip empty/whitespace-only text to avoid clearing the display
           if (!msg.data || !msg.data.trim()) break;
-          textAccumRef.current += msg.data;
+          // Strip any tag-like artifacts that occasionally leak from Gemini's
+          // output transcription (e.g. "<ctrl46>", "<end_of_turn>", "<unk>").
+          // Log them so we can see what the model is producing.
+          const tagMatches = msg.data.match(/<[^<>]+>/g);
+          if (tagMatches) {
+            console.log("[useLiveSession] Stripped tags from text:", tagMatches.join(", "), "| original:", msg.data);
+          }
+          const cleaned = msg.data.replace(/<[^<>]+>/g, "");
+          if (!cleaned.trim()) break;
+          textAccumRef.current += cleaned;
           setCurrentMessage(prev => ({
             id: prev?.role === "assistant" ? prev.id : `msg-${Date.now()}`,
             role: "assistant",
@@ -300,6 +313,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
             timestamp: prev?.role === "assistant" ? prev.timestamp : new Date().toISOString(),
           }));
           break;
+        }
 
         case "interpret":
           setInterpretationText(prev => (prev || "") + (msg.text || ""));
@@ -452,6 +466,12 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
         case "emote":
           setEmote(msg.data as "happy" | "sad" | "neutral");
+          break;
+
+        case "interaction_mode_changed":
+          // AI changed interaction mode — sync local state and flash indicator
+          setInteractionModeState(msg.data.mode);
+          setLastModeChange({ mode: msg.data.mode, reason: msg.data.reason, source: msg.data.source, at: Date.now() });
           break;
 
         case "video_play":
@@ -722,12 +742,16 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       wsSend({ type: "board_state", data: board });
     }
     wsSend({ type: "user_message", text: message });
-    setCurrentMessage({
-      id: `user-${Date.now()}`,
-      role: "user",
-      content: message,
-      timestamp: new Date().toISOString(),
-    });
+    // Don't display system messages ("[system: ...]") in the text UI —
+    // these are context signals to the AI, not user-facing content.
+    if (!message.startsWith("[system:")) {
+      setCurrentMessage({
+        id: `user-${Date.now()}`,
+        role: "user",
+        content: message,
+        timestamp: new Date().toISOString(),
+      });
+    }
   }, [wsSend]);
 
   /** Inject context into the AI without triggering a response turn */
@@ -795,6 +819,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     }
 
     // Convert grid JPEG to base64
+    const gestureContext = options.getGestureContext?.() || undefined;
     const reader = new FileReader();
     reader.onloadend = () => {
       const base64 = (reader.result as string).split(",")[1];
@@ -802,6 +827,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         type: "frame_grid",
         data: base64,
         timestamps: grid.timestamps,
+        ...(gestureContext ? { gestureContext } : {}),
       });
     };
     reader.readAsDataURL(grid.blob);
@@ -832,6 +858,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Interaction mode setter — also notify server
   const setInteractionMode = useCallback((mode: "interact" | "silent") => {
     setInteractionModeState(mode);
+    setLastModeChange({ mode, source: "user", at: Date.now() });
     wsSend({ type: "set_mode", mode });
   }, [wsSend]);
 
@@ -925,6 +952,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // Interaction mode
     interactionMode,
     setInteractionMode,
+    lastModeChange,
 
     // Response mode
     responseMode,

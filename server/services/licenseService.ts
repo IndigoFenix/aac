@@ -261,6 +261,32 @@ class LicenseService {
   }
 
   /**
+   * True if ANY of the user's institute licenses grants the given permission.
+   * Used by `requireLicensePermission` so a user whose selected-institute differs
+   * from the "first non-none" institute still gets through.
+   */
+  async userHasPermission(
+    userId: string,
+    permKey: keyof LicensePermissions,
+    isSystemAdmin?: boolean,
+  ): Promise<boolean> {
+    if (isSystemAdmin) return true;
+    const institutes = await instituteRepository.getInstitutesByUserId(userId);
+    for (const inst of institutes) {
+      const { permissions } = await this.getInstituteLicenseInfo(inst.id);
+      const value = permissions[permKey];
+      const granted =
+        typeof value === "boolean"
+          ? value
+          : typeof value === "number"
+            ? value > 0 || value === -1
+            : false;
+      if (granted) return true;
+    }
+    return false;
+  }
+
+  /**
    * Check if more students can be added to an institute based on its license.
    * Returns { allowed: true } or { allowed: false, reason: string }.
    */

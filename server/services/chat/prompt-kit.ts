@@ -453,7 +453,13 @@ export interface NlpSchema {
     schema_name = `nli-schema`;
 
     const schemaProperties: any = {};
-    Object.assign(schemaProperties, InteractionSchemaProperties);
+    // Use the correct reply field in the schema based on replyType.
+    // InteractionSchemaProperties has "html" — for "text" mode, override to "text".
+    if (ctx.replyType === 'text') {
+      schemaProperties.text = { type: ["string"] };
+    } else {
+      Object.assign(schemaProperties, InteractionSchemaProperties);
+    }
     if (ctx.agent.tools?.email?.enabled){
         schemaProperties.sendEmail = {
             type: ['boolean'],

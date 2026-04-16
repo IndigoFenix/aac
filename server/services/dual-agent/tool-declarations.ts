@@ -66,7 +66,7 @@ function buildSpeakTool(_config: ToolDeclarationConfig): FunctionDeclaration {
 function buildTranscriptTool(_config: ToolDeclarationConfig): FunctionDeclaration {
   return {
     name: "transcript",
-    description: `Record clear speech you heard from a person nearby. Only transcribe when you can confidently identify words — ignore silence, ambient noise, unintelligible audio, and background conversations. CRITICAL: If you recently spoke or the user pushed an utterance button, you WILL hear those words echoed back through the microphone — that is YOUR OWN echo, not new speech. Never transcribe your own echoes.`,
+    description: `Record clear speech you heard from a person nearby. Only transcribe when you can confidently identify words — ignore silence, ambient noise, unintelligible audio, and background conversations. CRITICAL: If you recently spoke or the user pushed an utterance button, you WILL hear those words echoed back through the microphone — that is the system's echo that has already been automatically transcribed, not new speech. Never transcribe system echoes.`,
     behavior: Behavior.BLOCKING,
     parametersJsonSchema: {
       type: "object",
@@ -83,14 +83,42 @@ function buildTranscriptTool(_config: ToolDeclarationConfig): FunctionDeclaratio
 function buildContextTool(_config: ToolDeclarationConfig): FunctionDeclaration {
   return {
     name: "update_context",
-    description: `Record environmental observations and context changes. Call when you notice new objects, people arriving/leaving, gestures, sounds, or changes in the user's attention. Do NOT call if nothing meaningful changed. Do NOT narrate your own actions.`,
-    behavior: Behavior.BLOCKING,
+    description: `Record a specific environmental observation. Log new people, audio, objects, locations, and events when you first notice them (including at the beginning of a new session). Do NOT narrate your own actions.
+
+Types:
+- new_person: Someone appears who you haven't seen this session.
+- new_voice: A new voice is heard that you haven't heard this session.
+- set_person_as_user: Identify which visible person is the primary user of this device.
+- person_identified: You recognize a previously unknown person (e.g. learned their name).
+- voice_identified: You recognize which person a previously unknown voice belongs to.
+- person_leaves: A previously-present person has left the frame.
+- new_location: The device appears to be in a new physical location/room.
+- new_object: A notable object appears in view.
+- object_leaves: A notable object is no longer in view.
+- person_gesture: A person makes a meaningful gesture (pointing, waving, nodding).
+- person_indicates_object: A person points at / looks at / otherwise indicates a specific object.
+- ambient_audio_started: Background sound begins (music, TV, traffic, conversation).
+- ambient_audio_stopped: Previously ongoing background sound has stopped.
+- sound_detected: A discrete sound event (doorbell, crash, bark, alarm).
+- other: Any other observation that doesn't fit the above.`,
+    behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
       properties: {
-        text: { type: "string", description: "What changed or what you observe." },
+        type: {
+          type: "string",
+          enum: [
+            "new_person", "new_voice", "set_person_as_user", "person_identified",
+            "voice_identified", "person_leaves", "new_location", "new_object",
+            "object_leaves", "person_gesture", "person_indicates_object",
+            "ambient_audio_started", "ambient_audio_stopped", "sound_detected", "other",
+          ],
+          description: "The category of observation.",
+        },
+        key: { type: "string", description: "Short identifier for the subject (e.g. person name or description, object name, location name, sound name)." },
+        description: { type: "string", description: "Detailed description of what you observed." },
       },
-      required: ["text"],
+      required: ["type", "key", "description"],
     },
   };
 }
@@ -196,44 +224,23 @@ function buildEmoteTool(config: ToolDeclarationConfig): FunctionDeclaration {
   };
 }
 
-function buildOpenAppTool(enabledApps: AACAppDefinition[]): FunctionDeclaration {
-  const appIds = enabledApps.map(a => a.id).join(", ");
+function buildOpenAppTool(
+  enabledApps: AACAppDefinition[],
+  customApps: NonNullable<ToolDeclarationConfig["availableCustomApps"]> = [],
+): FunctionDeclaration {
+  const builtInIds = enabledApps.map(a => a.id).join(", ");
+  const customIds = customApps.map(a => a.id).join(", ");
+  const sections = [builtInIds ? `Built-in app IDs: ${builtInIds}.` : ""];
+  if (customIds) sections.push(`Custom game IDs: ${customIds}.`);
   return {
     name: "open_app",
-    description: `Open an interactive app on the user's screen. See the "Apps" section in the system prompt for details. Available app IDs: ${appIds}.`,
+    description: `Open an interactive app or custom game on the user's screen. See the "Apps" section in the system prompt for details. ${sections.filter(Boolean).join(" ")}`,
     behavior: Behavior.NON_BLOCKING,
     parametersJsonSchema: {
       type: "object",
       properties: {
-        app_id: { type: "string", description: "The app ID to open." },
+        app_id: { type: "string", description: "The app ID to open (either a built-in app id or a custom game id)." },
         data: { type: "string", description: "Optional search query for media apps (YouTube/Spotify)." },
-      },
-      required: ["app_id"],
-    },
-  };
-}
-
-function buildOpenCustomAppTool(
-  apps: NonNullable<ToolDeclarationConfig["availableCustomApps"]>,
-): FunctionDeclaration {
-  const list = apps
-    .map((a) => `- ${a.id}: ${a.name}${a.description ? ` — ${a.description}` : ""}`)
-    .join("\n");
-  return {
-    name: "open_custom_app",
-    description:
-      "Launch a custom game on the student's screen. Games are short rule-based activities authored by the clinician. " +
-      "Call when the student wants to play or when a game is a natural fit for the current activity. " +
-      `Available games:\n${list}`,
-    behavior: Behavior.NON_BLOCKING,
-    parametersJsonSchema: {
-      type: "object",
-      properties: {
-        app_id: {
-          type: "string",
-          description: "The custom app id to launch.",
-          enum: apps.map((a) => a.id),
-        },
       },
       required: ["app_id"],
     },
@@ -330,6 +337,20 @@ function buildAddContextButtonTool(_config: ToolDeclarationConfig): FunctionDecl
   };
 }
 
+const SET_INTERACTION_MODE: FunctionDeclaration = {
+  name: "set_interaction_mode",
+  description: `Switch between interaction modes. "interact" = you speak and engage actively with the user, initiating conversation and commenting on observations. "assist" = you stay quiet and only respond when the user explicitly gets your attention. The avatar will appear sleepy. Use "assist" when the user seems disengaged, busy with something else, is interacting with another person, or is in a situation where proactive speech would be intrusive. Use "interact" to re-engage when the user shows interest.`,
+  behavior: Behavior.NON_BLOCKING,
+  parametersJsonSchema: {
+    type: "object",
+    properties: {
+      mode: { type: "string", enum: ["interact", "assist"], description: "The mode to switch to." },
+      reason: { type: "string", description: "Brief reason for the mode change." },
+    },
+    required: ["mode"],
+  },
+};
+
 // Debug message — used by the system when a turn is rejected. The model calls
 // this to tell us what it was trying to do, bypassing the audio safety filter
 // that would otherwise RESPONSE_REJECT the explanation itself.
@@ -379,15 +400,11 @@ export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
 
   declarations.push(buildEmoteTool(config));
 
-  if (config.enabledApps.length > 0) {
-    declarations.push(buildOpenAppTool(config.enabledApps));
+  const hasBuiltInApps = config.enabledApps.length > 0;
+  const hasCustomApps = (config.availableCustomApps?.length ?? 0) > 0;
+  if (hasBuiltInApps || hasCustomApps) {
+    declarations.push(buildOpenAppTool(config.enabledApps, config.availableCustomApps ?? []));
     declarations.push(CLOSE_APP);
-  }
-
-  if (config.availableCustomApps && config.availableCustomApps.length > 0) {
-    declarations.push(buildOpenCustomAppTool(config.availableCustomApps));
-    // close_app is reused for games too — only register it once.
-    if (config.enabledApps.length === 0) declarations.push(CLOSE_APP);
   }
 
   if (config.faceRecognitionActive) {
@@ -398,6 +415,7 @@ export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
   declarations.push(YES_NO);
   declarations.push(ASK_YES_NO);
   declarations.push(buildRequestFocusTool(config));
+  declarations.push(SET_INTERACTION_MODE);
   declarations.push(DEBUG_MESSAGE);
 
   return [{ functionDeclarations: declarations }];

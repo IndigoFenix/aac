@@ -211,6 +211,11 @@ export class UserChatRepository {
     });
   }
 
+  async getMessageById(messageId: string): Promise<UserChat | null> {
+    const [row] = await db.select().from(userChats).where(eq(userChats.id, messageId));
+    return row ?? null;
+  }
+
   async getMessages(roomId: string, before: Date | null, limit: number): Promise<UserChat[]> {
     const conditions = [eq(userChats.roomId, roomId), isNull(userChats.deletedAt)];
     if (before) conditions.push(lt(userChats.createdAt, before));

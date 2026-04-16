@@ -3,7 +3,7 @@
  *
  * Mirrors shared/custom-app-types.ts and enforces structural rules from
  * planning-docs/game-generator-plan.md (unique char, tiles dims match size,
- * whitelist for override_props, start_room references an existing room, etc.).
+ * whitelist for overrideProps, startRoom references an existing room, etc.).
  */
 
 import { z } from "zod";
@@ -34,7 +34,7 @@ const gridSizeSchema = z.tuple([
 const layerSchema = z.enum(["background", "entity", "overlay"]);
 
 const relativePositionSchema = z.enum([
-  "same_cell",
+  "sameCell",
   "adjacent",
   "inside",
   "contains",
@@ -43,12 +43,14 @@ const relativePositionSchema = z.enum([
 const counterOpSchema = z.enum(["gt", "lt", "eq", "gte", "lte"]);
 
 export const OVERRIDABLE_PROPS = [
-  "image",
-  "image_color",
-  "tile_color",
+  "iconRef",
+  "imageKey",
+  "symbolPath",
+  "imageColor",
+  "tileColor",
   "label",
   "hidden",
-  "is_solid",
+  "isSolid",
   "movable",
   "char",
 ] as const;
@@ -64,19 +66,19 @@ const counterConditionSchema = z.object({
 const matchSpecSchema = z
   .object({
     position: relativePositionSchema.optional(),
-    class_id: idSchema.optional(),
+    classId: idSchema.optional(),
     states: z.array(idSchema).optional(),
     types: z.array(z.string().min(1)).optional(),
-    required_types: z.array(z.string().min(1)).optional(),
-    forbidden_types: z.array(z.string().min(1)).optional(),
+    requiredTypes: z.array(z.string().min(1)).optional(),
+    forbiddenTypes: z.array(z.string().min(1)).optional(),
     counter: counterConditionSchema.optional(),
   })
   .strict();
 
-// `self` cannot have position or class_id (always refers to this entity)
+// `self` cannot have position or classId (always refers to this entity)
 const selfMatchSpecSchema = matchSpecSchema.refine(
-  (v) => v.position === undefined && v.class_id === undefined,
-  "`self` match_spec must not specify `position` or `class_id`",
+  (v) => v.position === undefined && v.classId === undefined,
+  "`self` match_spec must not specify `position` or `classId`",
 );
 
 // ---------------------------------------------------------------------------
@@ -84,33 +86,33 @@ const selfMatchSpecSchema = matchSpecSchema.refine(
 // ---------------------------------------------------------------------------
 
 const effectSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("change_state"), id: idSchema }).strict(),
-  z.object({ type: z.literal("change_state_other"), id: idSchema }).strict(),
-  z.object({ type: z.literal("emit_signal"), id: idSchema }).strict(),
+  z.object({ type: z.literal("changeState"), id: idSchema }).strict(),
+  z.object({ type: z.literal("changeStateOther"), id: idSchema }).strict(),
+  z.object({ type: z.literal("emitSignal"), id: idSchema }).strict(),
   z.object({
-    type: z.literal("increment_counter_self"),
+    type: z.literal("incrementCounterSelf"),
     id: idSchema,
     amount: z.number().int(),
   }).strict(),
   z.object({
-    type: z.literal("increment_counter_other"),
+    type: z.literal("incrementCounterOther"),
     id: idSchema,
     amount: z.number().int(),
   }).strict(),
-  z.object({ type: z.literal("destroy_self") }).strict(),
-  z.object({ type: z.literal("destroy_other") }).strict(),
-  z.object({ type: z.literal("transform_self"), id: idSchema }).strict(),
-  z.object({ type: z.literal("transform_other"), id: idSchema }).strict(),
+  z.object({ type: z.literal("destroySelf") }).strict(),
+  z.object({ type: z.literal("destroyOther") }).strict(),
+  z.object({ type: z.literal("transformSelf"), id: idSchema }).strict(),
+  z.object({ type: z.literal("transformOther"), id: idSchema }).strict(),
   z.object({
-    type: z.literal("set_room"),
+    type: z.literal("setRoom"),
     // Either a room id or the sentinel "_next"
     id: z.union([idSchema, z.literal("_next")]),
   }).strict(),
-  z.object({ type: z.literal("end_turn") }).strict(),
-  z.object({ type: z.literal("end_player_turn") }).strict(),
-  z.object({ type: z.literal("end_ai_turn") }).strict(),
+  z.object({ type: z.literal("endTurn") }).strict(),
+  z.object({ type: z.literal("endPlayerTurn") }).strict(),
+  z.object({ type: z.literal("endAiTurn") }).strict(),
   z.object({
-    type: z.literal("send_ai_instruction"),
+    type: z.literal("sendAiInstruction"),
     message: z.string().min(1),
   }).strict(),
 ]);
@@ -120,8 +122,8 @@ const overridesRecordSchema = z.record(overridablePropSchema, z.unknown());
 const buttonEffectSchema = z.union([
   effectSchema,
   z.object({
-    type: z.literal("create_entity"),
-    class_id: idSchema,
+    type: z.literal("createEntity"),
+    classId: idSchema,
     position: gridCoordSchema,
     overrides: overridesRecordSchema.optional(),
   }).strict(),
@@ -132,14 +134,14 @@ const buttonEffectSchema = z.union([
 // ---------------------------------------------------------------------------
 
 const triggerEventSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("on_moved") }).strict(),
-  z.object({ type: z.literal("on_click") }).strict(),
+  z.object({ type: z.literal("onMoved") }).strict(),
+  z.object({ type: z.literal("onClick") }).strict(),
   z.object({
-    type: z.literal("on_ai_trigger"),
+    type: z.literal("onAiTrigger"),
     instructions: z.string().min(1),
   }).strict(),
   z.object({
-    type: z.literal("on_signal_received"),
+    type: z.literal("onSignalReceived"),
     id: idSchema,
   }).strict(),
 ]);
@@ -151,7 +153,7 @@ const interactionSchema = z.object({
     other: matchSpecSchema.optional(),
   }).strict(),
   effects: z.array(effectSchema).min(1),
-  ai_instructions: z.string().optional(),
+  aiInstructions: z.string().optional(),
 }).strict();
 
 // ---------------------------------------------------------------------------
@@ -176,16 +178,16 @@ const counterDefSchema = z.object({
 
 const stateDefSchema = z.object({
   id: idSchema,
-  override_props: z.array(z.object({
+  overrideProps: z.array(z.object({
     prop: overridablePropSchema,
     value: z.unknown(),
   }).strict()).optional(),
 }).strict();
 
 const dropRuleSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("adjacent_to"), class_ids: z.array(idSchema).min(1) }).strict(),
-  z.object({ type: z.literal("same_cell"), class_ids: z.array(idSchema).min(1) }).strict(),
-  z.object({ type: z.literal("inside"), class_ids: z.array(idSchema).min(1) }).strict(),
+  z.object({ type: z.literal("adjacentTo"), classIds: z.array(idSchema).min(1) }).strict(),
+  z.object({ type: z.literal("sameCell"), classIds: z.array(idSchema).min(1) }).strict(),
+  z.object({ type: z.literal("inside"), classIds: z.array(idSchema).min(1) }).strict(),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -195,29 +197,31 @@ const dropRuleSchema = z.discriminatedUnion("type", [
 const classDefSchema = z.object({
   id: idSchema,
   types: z.array(z.string().min(1)).optional(),
-  image: z.string().optional(),
-  image_color: z.string().optional(),
-  tile_color: z.string().optional(),
+  iconRef: z.string().optional(),
+  imageKey: z.string().optional(),
+  symbolPath: z.string().optional(),
+  imageColor: z.string().optional(),
+  tileColor: z.string().optional(),
   label: z.string().optional(),
-  ai_instructions: z.string().optional(),
-  ai_hidden: z.boolean().optional(),
+  aiInstructions: z.string().optional(),
+  aiHidden: z.boolean().optional(),
   size: gridSizeSchema.optional(),
   layer: layerSchema.optional(),
   hidden: z.boolean().optional(),
-  is_tile: z.boolean().optional(),
+  isTile: z.boolean().optional(),
   char: z.string().length(1).optional(),
-  is_solid: z.boolean().optional(),
+  isSolid: z.boolean().optional(),
   movable: z.boolean().optional(),
-  drop_rules: z.array(dropRuleSchema).optional(),
+  dropRules: z.array(dropRuleSchema).optional(),
   counters: z.array(counterDefSchema).optional(),
-  can_be_contained: z.boolean().optional(),
-  contain_size: z.number().int().positive().optional(),
-  max_capacity: z.number().int().positive().optional(),
+  canBeContained: z.boolean().optional(),
+  containSize: z.number().int().positive().optional(),
+  maxCapacity: z.number().int().positive().optional(),
   states: z.array(stateDefSchema).optional(),
   interactions: z.array(interactionSchema).optional(),
-  ai_movable: z.boolean().optional(),
-  ai_creatable: z.boolean().optional(),
-  ai_creatable_properties: z.array(overridablePropSchema).optional(),
+  aiMovable: z.boolean().optional(),
+  aiCreatable: z.boolean().optional(),
+  aiCreatableProperties: z.array(overridablePropSchema).optional(),
 }).strict();
 
 // ---------------------------------------------------------------------------
@@ -227,11 +231,13 @@ const classDefSchema = z.object({
 const buttonDefSchema = z.object({
   id: idSchema,
   label: z.string().optional(),
-  image: z.string().optional(),
-  image_color: z.string().optional(),
-  button_color: z.string().optional(),
+  iconRef: z.string().optional(),
+  imageKey: z.string().optional(),
+  symbolPath: z.string().optional(),
+  imageColor: z.string().optional(),
+  buttonColor: z.string().optional(),
   effects: z.array(buttonEffectSchema).min(1),
-  enabled_by_default: z.boolean().optional(),
+  enabledByDefault: z.boolean().optional(),
 }).strict();
 
 // ---------------------------------------------------------------------------
@@ -239,7 +245,7 @@ const buttonDefSchema = z.object({
 // ---------------------------------------------------------------------------
 
 const roomEntityInstanceSchema = z.object({
-  class_id: idSchema,
+  classId: idSchema,
   position: gridCoordSchema,
   state: idSchema.optional(),
   overrides: overridesRecordSchema.optional(),
@@ -249,9 +255,9 @@ const roomEntityInstanceSchema = z.object({
 const roomDefSchema = z.object({
   id: idSchema,
   label: z.string().optional(),
-  ai_instructions: z.string().optional(),
+  aiInstructions: z.string().optional(),
   size: gridSizeSchema,
-  default_tile: z.string().length(1).optional(),
+  defaultTile: z.string().length(1).optional(),
   tiles: z.string().optional(),
   entities: z.array(roomEntityInstanceSchema).optional(),
   buttons: z.array(idSchema).optional(),
@@ -264,14 +270,16 @@ const roomDefSchema = z.object({
 const gameDefinitionSchemaBase = z.object({
   type: z.literal("game"),
   label: z.string().min(1),
-  image: z.string().optional(),
+  iconRef: z.string().optional(),
+  imageKey: z.string().optional(),
+  symbolPath: z.string().optional(),
   description: z.string().optional(),
-  ai_instructions: z.string().optional(),
-  turn_based: z.boolean().optional(),
+  aiInstructions: z.string().optional(),
+  turnBased: z.boolean().optional(),
   classes: z.array(classDefSchema),
   buttons: z.array(buttonDefSchema),
   rooms: z.array(roomDefSchema).min(1),
-  start_room: idSchema,
+  startRoom: idSchema,
 }).strict();
 
 /** Checks structural/cross-reference rules that Zod field-level validation can't express. */
@@ -301,12 +309,12 @@ function validateCrossRefs(
   const buttonIds = new Set(def.buttons.map((b) => b.id));
   const roomIds = new Set(def.rooms.map((r) => r.id));
 
-  // -- start_room must reference a real room
-  if (!roomIds.has(def.start_room)) {
+  // -- startRoom must reference a real room
+  if (!roomIds.has(def.startRoom)) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      path: ["start_room"],
-      message: `start_room "${def.start_room}" does not match any room id`,
+      path: ["startRoom"],
+      message: `startRoom "${def.startRoom}" does not match any room id`,
     });
   }
 
@@ -330,7 +338,6 @@ function validateCrossRefs(
     const stateIds = new Set((c.states ?? []).map((s) => s.id));
     const counterIds = new Set((c.counters ?? []).map((ct) => ct.id));
 
-    // state _default is implicit; forbid explicitly redefining it
     if (stateIds.has("_default")) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -339,20 +346,18 @@ function validateCrossRefs(
       });
     }
 
-    // drop_rules reference real classes
-    for (const rule of c.drop_rules ?? []) {
-      for (const ref of rule.class_ids) {
+    for (const rule of c.dropRules ?? []) {
+      for (const ref of rule.classIds) {
         if (!classIds.has(ref)) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             path: ["classes"],
-            message: `class "${c.id}" drop_rule references unknown class "${ref}"`,
+            message: `class "${c.id}" dropRule references unknown class "${ref}"`,
           });
         }
       }
     }
 
-    // interactions: self/other references, counter/state references
     for (const inter of c.interactions ?? []) {
       const { self, other } = inter.triggers;
       if (self?.counter && !counterIds.has(self.counter.id)) {
@@ -371,42 +376,42 @@ function validateCrossRefs(
           }
         }
       }
-      if (other?.class_id && !classIds.has(other.class_id)) {
+      if (other?.classId && !classIds.has(other.classId)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: `class "${c.id}" interaction's other.class_id "${other.class_id}" is unknown`,
+          message: `class "${c.id}" interaction's other.classId "${other.classId}" is unknown`,
         });
       }
 
       for (const e of inter.effects) {
-        if ((e.type === "change_state" || e.type === "transform_self") && e.type === "change_state" && !stateIds.has(e.id) && e.id !== "_default") {
+        if (e.type === "changeState" && !stateIds.has(e.id) && e.id !== "_default") {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            message: `class "${c.id}" change_state references unknown state "${e.id}"`,
+            message: `class "${c.id}" changeState references unknown state "${e.id}"`,
           });
         }
-        if (e.type === "transform_self" && !classIds.has(e.id)) {
+        if (e.type === "transformSelf" && !classIds.has(e.id)) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            message: `class "${c.id}" transform_self references unknown class "${e.id}"`,
+            message: `class "${c.id}" transformSelf references unknown class "${e.id}"`,
           });
         }
-        if (e.type === "transform_other" && !classIds.has(e.id)) {
+        if (e.type === "transformOther" && !classIds.has(e.id)) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            message: `class "${c.id}" transform_other references unknown class "${e.id}"`,
+            message: `class "${c.id}" transformOther references unknown class "${e.id}"`,
           });
         }
-        if (e.type === "increment_counter_self" && !counterIds.has(e.id)) {
+        if (e.type === "incrementCounterSelf" && !counterIds.has(e.id)) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            message: `class "${c.id}" increment_counter_self references unknown counter "${e.id}"`,
+            message: `class "${c.id}" incrementCounterSelf references unknown counter "${e.id}"`,
           });
         }
-        if (e.type === "set_room" && e.id !== "_next" && !roomIds.has(e.id)) {
+        if (e.type === "setRoom" && e.id !== "_next" && !roomIds.has(e.id)) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            message: `class "${c.id}" set_room references unknown room "${e.id}"`,
+            message: `class "${c.id}" setRoom references unknown room "${e.id}"`,
           });
         }
       }
@@ -417,7 +422,6 @@ function validateCrossRefs(
   for (const r of def.rooms) {
     const [w, h] = r.size;
 
-    // tiles dimensions must match size
     if (r.tiles !== undefined) {
       const lines = r.tiles.split("\n");
       if (lines.length !== h) {
@@ -437,12 +441,11 @@ function validateCrossRefs(
       }
     }
 
-    // entity instances reference valid classes; position inside size
     for (const e of r.entities ?? []) {
-      if (!classIds.has(e.class_id)) {
+      if (!classIds.has(e.classId)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: `room "${r.id}" entity references unknown class "${e.class_id}"`,
+          message: `room "${r.id}" entity references unknown class "${e.classId}"`,
         });
         continue;
       }
@@ -455,7 +458,6 @@ function validateCrossRefs(
       }
     }
 
-    // button refs must exist
     for (const bid of r.buttons ?? []) {
       if (!buttonIds.has(bid)) {
         ctx.addIssue({
@@ -466,19 +468,19 @@ function validateCrossRefs(
     }
   }
 
-  // -- buttons: create_entity references real classes; set_room refs real rooms
+  // -- buttons: createEntity references real classes; setRoom refs real rooms
   for (const b of def.buttons) {
     for (const e of b.effects) {
-      if (e.type === "create_entity" && !classIds.has(e.class_id)) {
+      if (e.type === "createEntity" && !classIds.has(e.classId)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: `button "${b.id}" create_entity references unknown class "${e.class_id}"`,
+          message: `button "${b.id}" createEntity references unknown class "${e.classId}"`,
         });
       }
-      if (e.type === "set_room" && e.id !== "_next" && !roomIds.has(e.id)) {
+      if (e.type === "setRoom" && e.id !== "_next" && !roomIds.has(e.id)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: `button "${b.id}" set_room references unknown room "${e.id}"`,
+          message: `button "${b.id}" setRoom references unknown room "${e.id}"`,
         });
       }
     }

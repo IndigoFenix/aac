@@ -138,6 +138,19 @@ resource "aws_security_group" "redis" {
     security_groups = [aws_security_group.ecs.id]
   }
 
+  # Lambda only joins this SG when use_lambda = true. Conditional ingress
+  # avoids referencing a non-existent SG in pure-ECS deployments.
+  dynamic "ingress" {
+    for_each = var.use_lambda ? [1] : []
+    content {
+      description     = "Redis from Lambda"
+      from_port       = 6379
+      to_port         = 6379
+      protocol        = "tcp"
+      security_groups = [aws_security_group.lambda[0].id]
+    }
+  }
+
   egress {
     from_port   = 0
     to_port     = 0

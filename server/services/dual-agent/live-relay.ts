@@ -153,7 +153,7 @@ const GEMINI_VOICE_MAP: Record<string, string> = {
 /** Messages from client → server */
 export type ClientMessage =
   | { type: "initialize"; studentId: string; userId?: string; sessionId?: string; interactionMode?: AACInteractionMode; responseMode?: AACResponseMode; debugMode?: boolean; initialFrame?: string }
-  | { type: "frame_grid"; data: string; timestamps?: number[] }    // base64 JPEG
+  | { type: "frame_grid"; data: string; timestamps?: number[]; gestureContext?: string }    // base64 JPEG
   | { type: "audio_clip"; data: string; mimeType?: string }        // base64 audio (ignored in live mode — Gemini hears PCM directly)
   | { type: "pcm_audio"; data: string }                            // base64 raw PCM Int16 16kHz — streamed directly to Gemini
   | { type: "user_message"; text: string }
@@ -185,6 +185,7 @@ export type ServerMessage =
   | { type: "transcript"; data: string; speaker?: string; confidence?: string }
   | { type: "context"; data: string }
   | { type: "emote"; data: string }
+  | { type: "interaction_mode_changed"; data: { mode: string; reason?: string; source: "ai" | "user" } }
   | { type: "video_play"; data: any }
   | { type: "app_open"; data: any }
   | { type: "app_close"; data: any }
@@ -306,9 +307,10 @@ export class LiveRelay {
   // Pre-generated student TTS (for button presses)
   private preGenTtsPromise: Promise<void> | null = null;
 
-  // Pending button press prompt — if the model produces an empty turn after a
-  // button press, we retry with this prompt (proactiveAudio can swallow turns).
-  private pendingButtonPrompt: string | null = null;
+  // Pending prompt — if the model produces an empty turn after a button press
+  // or user message, we retry with this prompt (proactiveAudio can swallow
+  // turns when audio-triggered generation coincides with our text message).
+  private pendingRetryPrompt: string | null = null;
 
   // Direct audio buffering — chunks accumulate and flush every 250ms as WAV
   private directAudioChunks: string[] = [];
@@ -637,9 +639,12 @@ export class LiveRelay {
           const extraImages = this.latestAppCanvas
             ? [{ data: this.latestAppCanvas, mimeType: "image/jpeg", label: "[app canvas]" }]
             : undefined;
+          const gestureNote = msg.gestureContext
+            ? `\n${msg.gestureContext}`
+            : "";
           this.provider!.sendFrameWithPrompt(
             msg.data,
-            "[scene update] React only if something here calls for action — add or update context buttons, take notes, save transcripts, update memory. If you are having difficulty identifying a new object, you may call focus_frame() to see it better. Stay silent unless there's a concrete reason to speak.",
+            `[scene update] React only if something here calls for action — add or update context buttons, take notes, save transcripts, update memory. If you are having difficulty identifying a new object, you may call focus_frame() to see it better. Stay silent unless there's a concrete reason to speak.${gestureNote}`,
             extraImages,
           );
           break;
@@ -686,6 +691,8 @@ export class LiveRelay {
               timestamp: Date.now(),
             }).catch(err => console.error("[LiveRelay] Failed to persist user message:", err));
           }
+          // Track for retry in case proactiveAudio swallows the turn
+          this.pendingRetryPrompt = msg.text;
           this.provider!.sendMessage(msg.text, "user");
           logDualAgent("LiveRelay.userMessage", {
             sessionId: this.sessionId,
@@ -929,8 +936,13 @@ export class LiveRelay {
 
       // Register context injection callback
       cached.state.onContextInjection = (text: string) => {
-        console.log("[LiveRelay] Monitor context injection ->", text.substring(0, 80));
-        this.provider?.sendContextInjection(`[Monitor Context]\n${text}`);
+        logLiveSession("MONITOR INJECTION", text);
+        if (this.provider?.isConnected) {
+          this.provider.sendContextInjection(`[Monitor Context]\n${text}`);
+          logLiveSession("MONITOR INJECTION SENT", `via sendContextInjection, provider connected=${this.provider.isConnected}`);
+        } else {
+          logLiveSession("MONITOR INJECTION FAILED", `provider not connected`);
+        }
         this.send({ type: "context", data: `[Monitor] ${text}` });
       };
 
@@ -941,6 +953,9 @@ export class LiveRelay {
           const voices = await (dualAgentService as any).resolveVoices(cached);
           this.aiVoice = voices?.aiVoice || null;
           this.studentVoice = voices?.studentVoice || null;
+          console.log(`[LiveRelay] Voices resolved — AI: ${this.aiVoice?.geminiVoiceName || this.aiVoice?.fallbackType || "none"}, Student: ${this.studentVoice?.fallbackType || "none"} (lang: ${this.studentVoice?.language || "?"}, gemini: ${this.studentVoice?.geminiVoiceName || "none"})`);
+        } else {
+          console.warn("[LiveRelay] No student found — voices not resolved");
         }
       } catch (err) {
         console.warn("[LiveRelay] Voice resolution failed, using defaults:", err);
@@ -955,6 +970,24 @@ export class LiveRelay {
       }
 
       // 5. If direct audio, rebuild prompt with useDirectAudio flag
+      // Fetch custom apps assigned to this student (gated by license permission).
+      let availableCustomApps: Array<{ id: string; name: string; description?: string | null }> = [];
+      if (this.userId && this.studentId) {
+        try {
+          const perms = await licenseService.getUserPermissions(this.userId);
+          if (perms.customAppsEnabled) {
+            const apps = await customAppRepository.getAssignedAppsForStudent(this.studentId);
+            availableCustomApps = apps.map((a) => ({
+              id: a.id,
+              name: a.name,
+              description: a.description,
+            }));
+          }
+        } catch (err) {
+          logLiveSession("CUSTOM_APPS_FETCH_FAILED", String(err));
+        }
+      }
+
       if (this.useDirectAudio && cached.monitorAgent.getStudent) {
         const student = cached.monitorAgent.getStudent();
         if (student) {
@@ -979,6 +1012,7 @@ export class LiveRelay {
             availableBoards: state.availableBoards?.length ? state.availableBoards : undefined,
             cachedSymbols: state.cachedSymbols?.length ? state.cachedSymbols : undefined,
             enabledApps: APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id)).map(a => ({ id: a.id, name: a.name, description: a.description })),
+            availableCustomApps,
             autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
             useDirectAudio: true,
           });
@@ -1000,25 +1034,7 @@ export class LiveRelay {
         state.availableBoards.unshift({ key: HOME_BOARD_KEY, name: "Home", id: "__home__" } as any);
       }
 
-      // 6. Build tools
-      // Fetch custom apps assigned to this student — gated by license permission.
-      let availableCustomApps: Array<{ id: string; name: string; description?: string | null }> = [];
-      if (this.userId && this.studentId) {
-        try {
-          const perms = await licenseService.getUserPermissions(this.userId);
-          if (perms.customAppsEnabled) {
-            const apps = await customAppRepository.getStudentApps(this.userId, this.studentId);
-            availableCustomApps = apps.map((a) => ({
-              id: a.id,
-              name: a.name,
-              description: a.description,
-            }));
-          }
-        } catch (err) {
-          logLiveSession("CUSTOM_APPS_FETCH_FAILED", String(err));
-        }
-      }
-
+      // 6. Build tools (availableCustomApps was fetched above for the prompt)
       const toolConfig: ToolDeclarationConfig = {
         enabledApps: (cached.state.appState?.enabledApps || [])
           .map(id => getAppDefinition(id))
@@ -1091,11 +1107,12 @@ export class LiveRelay {
         ? ` If a custom board from the Available Custom Boards list is appropriate for this student, use set_board() instead of rebuild_board().`
         : "";
       const homeBoardButtons = this.getNativePageButtonLabels(state);
+      const contextScan = ` IMPORTANT: Before doing anything else, scan the camera and call update_context() for everything you observe — use new_person for each person visible, new_location for the setting/room, new_object for notable objects, and ambient_audio_started for any ongoing sounds. This builds your world model.`;
       const greetingPrompt = isSilent
-        ? `Generate 4-12 contextual utterance buttons — complete phrases the user might want to say. Use the student's profile and interests from the system prompt to make them relevant.${imageHint} Use rebuild_board() to create the initial board.${boardHint}${personaHint}`
+        ? `Generate 4-12 contextual utterance buttons — complete phrases the user might want to say. Use the student's profile and interests from the system prompt to make them relevant.${imageHint} Use rebuild_board() to create the initial board.${boardHint}${personaHint}${contextScan}`
         : this.useDirectAudio
-        ? `The home board "${this.homeBoardData.name}" is loaded with buttons: ${homeBoardButtons.join(", ")}. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.${imageHint}${personaHint}`
-        : `IMPORTANT: You communicate ONLY through function calls. The home board is loaded with buttons: ${homeBoardButtons.join(", ")}. Call speak() to greet the user. Wait for them to press a button before changing the board.${imageHint}${personaHint}`;
+        ? `The home board "${this.homeBoardData?.name || "Home"}" is loaded with buttons: ${homeBoardButtons.join(", ")}. This is a session start. You may greet the user or wait — use your judgment based on context. Do NOT change the board until the user presses a button.${imageHint}${personaHint}${contextScan}`
+        : `IMPORTANT: You communicate ONLY through function calls. The home board is loaded with buttons: ${homeBoardButtons.join(", ")}. Call speak() to greet the user. Wait for them to press a button before changing the board.${imageHint}${personaHint}${contextScan}`;
 
       this.hasGreeted = false;
       // Do NOT include the initial frame in the greeting prompt — sending it via
@@ -1208,19 +1225,25 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
     // the student voice finishes before the AI starts speaking.
     //
     // Track the prompt so we can retry if proactiveAudio swallows the turn.
-    this.pendingButtonPrompt = prompt;
+    this.pendingRetryPrompt = prompt;
     this.provider!.sendMessage(prompt, "user");
 
     // Stream student voice TTS in parallel
     if (singleSentence && this.studentVoice) {
+      logLiveSession("STUDENT TTS START", `text="${singleSentence}" voice=${JSON.stringify({ fallbackType: this.studentVoice.fallbackType, language: this.studentVoice.language, hasGemini: !!this.studentVoice.geminiVoiceName, hasCustom: !!this.studentVoice.customVoice })}`);
       this.preGenTtsPromise = this.streamTtsWithTimeout(
         singleSentence,
         this.studentVoice,
         "interpretation_audio",
         "Student",
-      ).catch(err => {
+      ).then(() => {
+        logLiveSession("STUDENT TTS DONE", `text="${singleSentence}"`);
+      }).catch(err => {
+        logLiveSession("STUDENT TTS ERROR", (err as Error).message);
         console.error("[LiveRelay] Student TTS error:", (err as Error).message);
       });
+    } else {
+      logLiveSession("STUDENT TTS SKIPPED", `singleSentence=${!!singleSentence} studentVoice=${!!this.studentVoice}`);
     }
   }
 
@@ -1267,7 +1290,7 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
     this.setState("in_turn");
     this.consecutiveSafetyBlocks = 0;
     this.rejectionCooldownUntil = 0;
-    this.pendingButtonPrompt = null;  // model responded — no retry needed
+    this.pendingRetryPrompt = null;  // model responded — no retry needed
 
     // ────────────────────────────────────────────────────────────────────────
     // Tool result delivery — CRITICAL TIMING
@@ -1355,9 +1378,19 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
       }
 
       case "update_context": {
-        const text = extractStringArg(args, "text");
-        this.send({ type: "context", data: text });
-        this.turnAccum.contextText += (this.turnAccum.contextText ? " " : "") + text;
+        // Typed observations — build a structured world model over time.
+        // These are logged/displayed but don't trigger any side effects.
+        const obsType = extractStringArg(args, "type") || "other";
+        const key = extractStringArg(args, "key");
+        const description = extractStringArg(args, "description");
+        // Backwards-compat: if the model passes the old "text" arg, use it
+        const legacyText = extractStringArg(args, "text");
+        const formatted = description || legacyText
+          ? `[${obsType}${key ? `: ${key}` : ""}] ${description || legacyText}`
+          : `[${obsType}${key ? `: ${key}` : ""}]`;
+        logLiveSession("CONTEXT OBSERVATION", formatted);
+        this.send({ type: "context", data: formatted });
+        this.turnAccum.contextText += (this.turnAccum.contextText ? " " : "") + formatted;
         return { id: call.id, name, response: { output: "ok" } };
       }
 
@@ -1619,34 +1652,27 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
       case "open_app": {
         const appId = extractStringArg(args, "app_id");
         const data = args.data as string | undefined;
-        this.turnAccum.openAppData = { appId, data };
-        // Apps with a search query (youtube/spotify) are deferred to processTurnEnd for async search
-        const needsSearch = data && ["youtube", "spotify"].includes(appId);
-        if (!needsSearch) {
-          this.send({ type: "app_open", data: { appId, data } });
-        }
-        return {
-          id: call.id,
-          name,
-          response: { output: "ok. The app is now open on screen. Call rebuild_board() with contextual buttons relevant to this app activity." },
-        };
-      }
 
-      case "close_app": {
-        this.turnAccum.closeApp = true;
-        this.send({ type: "app_close", data: {} });
-        return { id: call.id, name, response: { output: "ok" } };
-      }
-
-      case "open_custom_app": {
-        const appId = extractStringArg(args, "app_id");
-        if (!this.userId) {
-          return { id: call.id, name, response: { output: "error: session has no user" } };
+        // If the id matches a built-in AAC app, use the existing flow.
+        const builtIn = getAppDefinition(appId);
+        if (builtIn) {
+          this.turnAccum.openAppData = { appId, data };
+          const needsSearch = data && ["youtube", "spotify"].includes(appId);
+          if (!needsSearch) {
+            this.send({ type: "app_open", data: { appId, data } });
+          }
+          return {
+            id: call.id,
+            name,
+            response: { output: "ok. The app is now open on screen. Call rebuild_board() with contextual buttons relevant to this app activity." },
+          };
         }
+
+        // Otherwise assume it's a custom app (game) — load + ship to client.
         try {
           const app = await customAppRepository.getApp(appId);
           if (!app) {
-            return { id: call.id, name, response: { output: `error: custom app ${appId} not found` } };
+            return { id: call.id, name, response: { output: `error: app ${appId} not found` } };
           }
           const validation = validateCustomAppDefinition(app.definition);
           if (!validation.ok) {
@@ -1668,12 +1694,18 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
             name,
             response: {
               output:
-                "ok. The game is now on screen. The student is playing. You will receive [GAME] context updates as they play — narrate, encourage, and guide.",
+                "ok. The game is now on screen. The student is playing. You will receive [GAME] context updates as they play — narrate, encourage, and guide. Call rebuild_board() with contextual buttons relevant to this game.",
             },
           };
         } catch (err) {
           return { id: call.id, name, response: { output: `error: ${String(err)}` } };
         }
+      }
+
+      case "close_app": {
+        this.turnAccum.closeApp = true;
+        this.send({ type: "app_close", data: {} });
+        return { id: call.id, name, response: { output: "ok" } };
       }
 
       case "learn_face": {
@@ -1709,6 +1741,20 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
         this.turnAccum.focusReason = reason;
         this.send({ type: "focus_request", data: { reason } });
         return { id: call.id, name, response: { output: "ok" } };
+      }
+
+      case "set_interaction_mode": {
+        const mode = args.mode as string;
+        const reason = (args.reason as string) || "";
+        if (mode !== "interact" && mode !== "assist") {
+          return { id: call.id, name, response: { error: "mode must be 'interact' or 'assist'" } };
+        }
+        logLiveSession("MODE CHANGE (AI)", `→ ${mode} (reason: ${reason})`);
+        // "assist" is a lighter state — AI stays active but less proactive.
+        // Don't change interactionMode (that's user-controlled via cave click).
+        // Instead, set the avatar emote and notify the client.
+        this.send({ type: "interaction_mode_changed", data: { mode, reason, source: "ai" } });
+        return { id: call.id, name, response: { output: `mode set to ${mode}` } };
       }
 
       case "debug_message": {
@@ -1895,11 +1941,11 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
       // RESPONSE_REJECTED with zero output = proactiveAudio decided not to
       // respond. This is normal "nothing to say" behavior, NOT a safety block.
       if (reason === "RESPONSE_REJECTED" && !hadOutput) {
-        // If a button press is pending, retry it
-        if (this.pendingButtonPrompt && this.provider) {
-          logLiveSession("BUTTON RETRY", "RESPONSE_REJECTED after button press — resending prompt");
+        // If a user prompt is pending, retry it
+        if (this.pendingRetryPrompt && this.provider) {
+          logLiveSession("RETRY PROMPT", "RESPONSE_REJECTED after user prompt — resending");
           this.setState("awaiting_turn");
-          this.provider.sendMessage(this.pendingButtonPrompt, "user");
+          this.provider.sendMessage(this.pendingRetryPrompt, "user");
           return;
         }
         logLiveSession("PROACTIVE_SKIP", `RESPONSE_REJECTED with no output — model chose not to respond`);
@@ -1937,11 +1983,11 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
     if (this.state === "awaiting_turn") {
       const hasDirectAudio = this.useDirectAudio && this.directAudioChunks.length > 0;
       if (!hasDirectAudio) {
-        // If a button press prompt is pending, the model was swallowed by a
+        // If a user prompt is pending, the model was swallowed by a
         // proactive-audio empty turn. Retry the prompt.
-        if (this.pendingButtonPrompt && this.provider) {
-          logLiveSession("BUTTON RETRY", "Empty turn after button press — resending prompt");
-          this.provider.sendMessage(this.pendingButtonPrompt, "user");
+        if (this.pendingRetryPrompt && this.provider) {
+          logLiveSession("RETRY PROMPT", "Empty turn after user prompt — resending");
+          this.provider.sendMessage(this.pendingRetryPrompt, "user");
           return;  // stay in awaiting_turn
         }
         this.setState("idle");

@@ -271,17 +271,14 @@ export function requireLicensePermission(
     try {
       // Lazy import to avoid circular deps
       const { licenseService } = await import("../services/licenseService");
-      const perms = await licenseService.getUserPermissions(user.id, user.isSystemAdmin);
-
-      const value = perms[permKey];
-      // For boolean permissions, check truthy
-      // For numeric permissions (maxStudents, expertAgentsCount), check > 0 or -1 (unlimited)
-      const granted =
-        typeof value === "boolean"
-          ? value
-          : typeof value === "number"
-            ? value === -1 || value > 0
-            : !!value;
+      // Check across ALL the user's institute licenses — allow if ANY grants the permission.
+      // Prior behavior picked only the "first non-none" license, which could deny even
+      // when another of the user's institutes granted the feature.
+      const granted = await licenseService.userHasPermission(
+        user.id,
+        permKey,
+        user.isSystemAdmin,
+      );
 
       if (!granted) {
         res.status(403).json({

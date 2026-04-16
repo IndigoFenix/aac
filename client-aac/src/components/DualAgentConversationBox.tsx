@@ -138,6 +138,7 @@ export function DualAgentConversationBox({
     transcription,
     interactionMode,
     setInteractionMode,
+    lastModeChange,
     videoCaptureEnabled,
     setVideoCaptureEnabled,
     initialize,
@@ -291,8 +292,10 @@ export function DualAgentConversationBox({
     }
   }, [interactionMode, isInitialized, setInteractionMode, sendMessage, stopAudio]);
 
-  // Determine if avatar should show asleep
+  // Determine if avatar should show asleep (full cave sleep — user-controlled only)
   const isAsleep = interactionMode === 'silent';
+  // AI-initiated "assist" mode — less proactive, avatar shows sleep face
+  const isAssistMode = lastModeChange?.mode === 'assist' && lastModeChange.source === 'ai';
   // Mouth is open when audio is playing and volume exceeds threshold
   const isMouthOpen = isPlaying && speakingVolume > MOUTH_OPEN_THRESHOLD;
 
@@ -324,6 +327,16 @@ export function DualAgentConversationBox({
                 alt={isAsleep ? "Cave (sleeping)" : "Cave (empty)"}
                 className="w-full h-full object-contain"
               />
+              {/* Mode-change indicator — flashes briefly when AI changes mode */}
+              {lastModeChange && lastModeChange.source === "ai" && (Date.now() - lastModeChange.at) < 4000 && (
+                <div
+                  key={lastModeChange.at}
+                  className="absolute -top-1 -right-1 px-1.5 py-0.5 rounded-full bg-blue-500 text-white text-[10px] font-semibold shadow animate-pulse"
+                  title={lastModeChange.reason || `AI switched to ${lastModeChange.mode}`}
+                >
+                  AI: {lastModeChange.mode}
+                </div>
+              )}
             </button>
 
             {/* Animated Avatar — hidden when sleeping. Click to send attention message in interact mode.
@@ -344,7 +357,7 @@ export function DualAgentConversationBox({
                   />
                 ) : (
                   <img
-                    src={AVATAR_BODY[emote] || AVATAR_BODY.happy}
+                    src={isAssistMode && emote === "neutral" ? avatarSleep : (AVATAR_BODY[emote] || AVATAR_BODY.happy)}
                     alt={`Avatar (${emote})`}
                     className="w-full h-full object-contain"
                   />

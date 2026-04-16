@@ -652,6 +652,8 @@ export const zh = {
     discardUnsavedPrompt: "Discard unsaved changes?",
     assign: "Assign",
     unassign: "Unassign",
+    assignToStudent: "分配给学生",
+    assignedToStudent: "已分配",
     assigned: "Assigned",
     unassigned: "Unassigned",
     assignError: "Failed to assign",
