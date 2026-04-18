@@ -18,13 +18,14 @@ import {
   ClipboardList,
   ShieldCheck,
   LogOut,
+  Sparkles,
 } from 'lucide-react';
 import logoImage from '@assets/aivota_icon.png';
 import { cn } from '@/lib/utils';
 import { useLocation } from 'wouter';
 import { useAuth } from '@/hooks/useAuth';
 
-type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts' | 'licenses' | 'identity-providers' | 'activity-log';
+type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts' | 'licenses' | 'identity-providers' | 'activity-log' | 'deep-analyses';
 
 type AdminSidebarProps = {
   activeSection: AdminSection;
@@ -91,6 +92,12 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
       label: 'Activity Log',
       section: 'activity-log' as AdminSection,
       testId: 'admin-nav-activity-log',
+    },
+    {
+      icon: Sparkles,
+      label: 'Deep Analyses',
+      section: 'deep-analyses' as AdminSection,
+      testId: 'admin-nav-deep-analyses',
     },
   ];
 

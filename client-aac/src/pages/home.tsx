@@ -31,6 +31,7 @@ import DrawingApp from "@/components/apps/DrawingApp";
 import MusicApp from "@/components/apps/MusicApp";
 import SpotifyApp from "@/components/apps/SpotifyApp";
 import SandboxGameApp from "@/components/apps/sandbox-game";
+import BubblesGameApp from "@/components/apps/bubbles-game";
 import { CustomAppPlayer } from "@/components/CustomAppPlayer";
 import AppMiniBoard from "@/components/AppMiniBoard";
 import { CameraAttentivenessWrapper } from "@/components/CameraAttentivenessWrapper";
@@ -176,6 +177,9 @@ function renderAppContent(
   if (activeApp.appId === "sandbox_game") {
     return <SandboxGameApp onClose={dismissApp} studentId={studentId} />;
   }
+  if (activeApp.appId === "bubbles_game") {
+    return <BubblesGameApp onClose={dismissApp} studentId={studentId} sendMessageToAi={sendMessageToAi} />;
+  }
   if (activeApp.appId === "custom_app" && activeApp.appData?.definition) {
     return (
       <CustomAppPlayer
@@ -271,6 +275,16 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
 
   // Context sidebar buttons (from AI's add_context_button tool)
   const [contextButtons, setContextButtons] = useState<Array<{ label: string; iconRef: string; symbolPath?: string; imageKey?: string; sentence?: string; buttonType?: string }>>([]);
+
+  // Apply symbol updates to context buttons (async image generation)
+  useEffect(() => {
+    if (!symbolUpdateData) return;
+    setContextButtons(prev => prev.map(b =>
+      b.label === symbolUpdateData.buttonLabel
+        ? { ...b, symbolPath: symbolUpdateData.symbolPath }
+        : b
+    ));
+  }, [symbolUpdateData]);
 
   // Board mode: 'ai' shows DynamicBoard, 'db' shows PrebuiltBoardSection
   const [boardMode, setBoardMode] = useState<'ai' | 'db'>('ai');

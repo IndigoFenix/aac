@@ -180,6 +180,7 @@ export const pt = {
     students: "{{STUDENTS}}",
     progress: "Progresso de {{STUDENT}}",
     reports: "Ficha de {{STUDENT}}",
+    deepAnalysis: "Análise profunda",
     symbols: "Biblioteca de símbolos AAC",
     aacSettings: "Configurações AAC",
     currentStudent: "{{STUDENT}} atual",
@@ -2051,6 +2052,8 @@ export const pt = {
     appMusicDesc: "Tocar notas musicais em um piano",
     appSandboxGame: "Fazenda sandbox",
     appSandboxGameDesc: "Cultivar plantas e construir uma fazenda",
+    appBubblesGame: "Bolhas",
+    appBubblesGameDesc: "Estourar bolhas flutuantes para treinar coordenação olho-mão",
     spotifyConnected: "Spotify conectado",
     spotifyConnect: "Conectar",
     spotifyDisconnect: "Desconectar",
@@ -2062,6 +2065,37 @@ export const pt = {
     settingsUpdated: "Configurações AAC atualizadas",
     settingsUpdatedDesc: "As configurações AAC do {{STUDENT}} foram salvas.",
     updateError: "Falha ao atualizar as configurações AAC.",
+  },
+
+  // ============================================================================
+  // DEEP ANALYSIS
+  // ============================================================================
+  deepAnalysis: {
+    title: "Análise profunda",
+    history: "Histórico",
+    specialInstructions: "Instruções especiais",
+    specialInstructionsPlaceholder: "Opcional. Ex.: focar em habilidades sociais, comparar com análise anterior...",
+    generate: "Gerar análise",
+    starting: "Iniciando...",
+    started: "Iniciado",
+    completed: "Concluído",
+    refresh: "Atualizar",
+    loading: "Carregando...",
+    noHistory: "Nenhuma análise ainda.",
+    selectOrGenerate: "Selecione uma análise ou gere uma nova.",
+    selectStudent: "Selecione um {{STUDENT}} para gerar uma análise profunda.",
+    untitled: "Análise sem título",
+    inProgress: "Em andamento (passo {{STEP}})...",
+    delete: "Excluir",
+    confirmDelete: "Excluir esta análise permanentemente?",
+    error: "Erro",
+    status: {
+      pending: "Pendente",
+      running: "Em execução",
+      paused: "Pausado",
+      complete: "Concluído",
+      failed: "Falhou",
+    },
   },
 
   // ============================================================================
@@ -2285,6 +2319,7 @@ export const pt = {
       calendar: "Calendário",
       dashboardLevel: "Nível do painel",
       expertAgents: "Agentes especialistas",
+      deepAnalysisEnabled: "Análise profunda",
       // Actions
       resendInvite: "Reenviar convite",
       inviteResent: "Convite reenviado com sucesso",

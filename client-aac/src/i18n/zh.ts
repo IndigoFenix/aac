@@ -368,6 +368,13 @@ export const zh: Translations = {
     recalibrate: "重新校准眼动追踪",
   },
 
+  bubblesGame: {
+    title: "泡泡",
+    score: "分数",
+    reset: "重置",
+    close: "关闭",
+  },
+
   errors: {
     POLICY_VIOLATION: "此回复因违反政策而被阻止。",
     NO_RESPONSE: "处理回复时发生错误。",

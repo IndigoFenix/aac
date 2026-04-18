@@ -180,6 +180,7 @@ export const he = {
     students: "{{STUDENTS}}",
     progress: "התקדמות {{STUDENTS}}",
     reports: "תיק {{STUDENT}}",
+    deepAnalysis: "ניתוח מעמיק",
     symbols: "ספריית סמלים לתת״ח",
     aacSettings: 'הגדרות תת"ח',
     currentStudent: "{{STUDENT}} נוכחי",
@@ -2051,6 +2052,8 @@ export const he = {
     appMusicDesc: "נגינת תווים על פסנתר",
     appSandboxGame: "חוות ארגז חול",
     appSandboxGameDesc: "גדל צמחים ובנה חווה",
+    appBubblesGame: "בועות",
+    appBubblesGameDesc: "פיצוץ בועות צפות לאימון תיאום עין-יד",
     spotifyConnected: "ספוטיפיי מחובר",
     spotifyConnect: "חבר",
     spotifyDisconnect: "נתק",
@@ -2062,6 +2065,37 @@ export const he = {
     settingsUpdated: 'הגדרות תת"ח עודכנו',
     settingsUpdatedDesc: 'הגדרות תת"ח של ה{{STUDENT}} נשמרו.',
     updateError: 'עדכון הגדרות תת"ח נכשל.',
+  },
+
+  // ============================================================================
+  // DEEP ANALYSIS
+  // ============================================================================
+  deepAnalysis: {
+    title: "ניתוח מעמיק",
+    history: "היסטוריה",
+    specialInstructions: "הוראות מיוחדות",
+    specialInstructionsPlaceholder: "אופציונלי. לדוגמה: להתמקד בכישורים חברתיים החודש, או להשוות לניתוח הקודם...",
+    generate: "צור ניתוח",
+    starting: "מתחיל...",
+    started: "התחיל",
+    completed: "הושלם",
+    refresh: "רענון",
+    loading: "טוען...",
+    noHistory: "עדיין אין ניתוחים.",
+    selectOrGenerate: "בחר ניתוח או צור חדש.",
+    selectStudent: "בחר {{STUDENT}} כדי ליצור ניתוח מעמיק.",
+    untitled: "ניתוח ללא כותרת",
+    inProgress: "בתהליך (שלב {{STEP}})...",
+    delete: "מחק",
+    confirmDelete: "למחוק את הניתוח הזה לצמיתות?",
+    error: "שגיאה",
+    status: {
+      pending: "ממתין",
+      running: "פעיל",
+      paused: "מושהה",
+      complete: "הושלם",
+      failed: "נכשל",
+    },
   },
 
   // ============================================================================
@@ -2288,6 +2322,7 @@ export const he = {
       calendar: "לוח שנה",
       dashboardLevel: "רמת לוח מחוונים",
       expertAgents: "סוכנים מומחים",
+      deepAnalysisEnabled: "ניתוח מעמיק",
       // Actions
       resendInvite: "שליחת הזמנה מחדש",
       inviteResent: "ההזמנה נשלחה בהצלחה",

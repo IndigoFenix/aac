@@ -180,6 +180,7 @@ export const ar = {
     students: "{{STUDENTS}}",
     progress: "تقدم {{STUDENT}}",
     reports: "ملف {{STUDENT}}",
+    deepAnalysis: "تحليل معمق",
     symbols: "مكتبة رموز AAC",
     aacSettings: "إعدادات AAC",
     currentStudent: "{{STUDENT}} الحالي",
@@ -2051,6 +2052,8 @@ export const ar = {
     appMusicDesc: "عزف نغمات موسيقية على بيانو",
     appSandboxGame: "مزرعة الرمل",
     appSandboxGameDesc: "زراعة النباتات وبناء مزرعة",
+    appBubblesGame: "فقاعات",
+    appBubblesGameDesc: "فرقعة الفقاعات العائمة لتدريب التنسيق بين العين واليد",
     spotifyConnected: "Spotify متصل",
     spotifyConnect: "ربط",
     spotifyDisconnect: "قطع الاتصال",
@@ -2062,6 +2065,37 @@ export const ar = {
     settingsUpdated: "تم تحديث إعدادات AAC",
     settingsUpdatedDesc: "تم حفظ إعدادات AAC الخاصة بـ {{STUDENT}}.",
     updateError: "فشل تحديث إعدادات AAC.",
+  },
+
+  // ============================================================================
+  // DEEP ANALYSIS
+  // ============================================================================
+  deepAnalysis: {
+    title: "تحليل معمق",
+    history: "السجل",
+    specialInstructions: "تعليمات خاصة",
+    specialInstructionsPlaceholder: "اختياري. مثال: التركيز على المهارات الاجتماعية هذا الشهر، أو مقارنة مع التحليل السابق...",
+    generate: "إنشاء تحليل",
+    starting: "جارٍ البدء...",
+    started: "بدأ",
+    completed: "اكتمل",
+    refresh: "تحديث",
+    loading: "جارٍ التحميل...",
+    noHistory: "لا توجد تحليلات بعد.",
+    selectOrGenerate: "حدد تحليلاً أو أنشئ تحليلاً جديداً.",
+    selectStudent: "حدد {{STUDENT}} لإنشاء تحليل معمق.",
+    untitled: "تحليل بدون عنوان",
+    inProgress: "قيد التنفيذ (الخطوة {{STEP}})...",
+    delete: "حذف",
+    confirmDelete: "حذف هذا التحليل بشكل نهائي؟",
+    error: "خطأ",
+    status: {
+      pending: "قيد الانتظار",
+      running: "قيد التشغيل",
+      paused: "متوقف مؤقتاً",
+      complete: "مكتمل",
+      failed: "فشل",
+    },
   },
 
   // ============================================================================
@@ -2285,6 +2319,7 @@ export const ar = {
       calendar: "التقويم",
       dashboardLevel: "مستوى لوحة التحكم",
       expertAgents: "وكلاء خبراء",
+      deepAnalysisEnabled: "تحليل معمق",
       // Actions
       resendInvite: "إعادة إرسال الدعوة",
       inviteResent: "تم إعادة إرسال الدعوة بنجاح",

@@ -1,0 +1,2 @@
+ALTER TABLE "chat_sessions" ADD COLUMN "importance" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+CREATE INDEX "idx_chat_sessions_student_importance" ON "chat_sessions" USING btree ("student_id","importance","created_at");

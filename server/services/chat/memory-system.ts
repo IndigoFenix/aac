@@ -32,10 +32,11 @@ import {
   MemoryToolCallInput,
   MemoryOperationResult,
   MemoryToolResponseProcessed,
-  
+  ListFilters,
+
   // State
   MemoryState,
-  
+
   // Schema resolution
   SchemaStep,
 } from './memory-types';
@@ -474,6 +475,11 @@ function closePathAndDescendants(state: MemoryState, path: string) {
   for (const k of Object.keys(state.page)) {
     if (k === p || k.startsWith(p + '/')) delete state.page[k];
   }
+  if (state.filters) {
+    for (const k of Object.keys(state.filters)) {
+      if (k === p || k.startsWith(p + '/')) delete state.filters[k];
+    }
+  }
 }
 
 function setPagination(state: MemoryState, path: string, offset?: number, limit?: number) {
@@ -481,6 +487,53 @@ function setPagination(state: MemoryState, path: string, offset?: number, limit?
   if (!state.page[p]) state.page[p] = { offset: 0, limit: 50 };
   if (offset != null) state.page[p].offset = Math.max(0, offset);
   if (limit != null) state.page[p].limit = Math.max(1, Math.min(500, limit));
+}
+
+function setListFilters(state: MemoryState, path: string, filter: ListFilters | undefined) {
+  const p = normalizePath(path);
+  if (!state.filters) state.filters = {};
+  if (!filter || (!filter.search && !filter.dateFrom && !filter.dateTo)) {
+    delete state.filters[p];
+    return;
+  }
+  const next: ListFilters = {};
+  if (filter.search) next.search = filter.search;
+  if (filter.dateFrom) next.dateFrom = filter.dateFrom;
+  if (filter.dateTo) next.dateTo = filter.dateTo;
+  state.filters[p] = next;
+}
+
+/**
+ * Resolve the schema at a path and return the field whose declared capabilities
+ * control list-level filtering (the array/map/topic field itself).
+ */
+function getContainerFieldAt(memoryFields: AgentMemoryField[], path: string): AgentMemoryField | undefined {
+  const { leaf } = resolveSchemaPath(memoryFields, path);
+  if (!leaf) return undefined;
+  switch (leaf.kind) {
+    case 'field':      return leaf.schema;
+    case 'objectProp': return leaf.propSchema;
+    case 'arrayItem':  return leaf.itemSchema;
+    case 'mapValue':   return leaf.valueSchema;
+    case 'topic':      return leaf.schema;
+    default:           return undefined;
+  }
+}
+
+/**
+ * Validate that a filter payload is allowed on the given path.
+ * Returns an error message if the field doesn't declare matching capabilities, else undefined.
+ */
+function validateFilterForPath(memoryFields: AgentMemoryField[], path: string, filter: ListFilters): string | undefined {
+  const field = getContainerFieldAt(memoryFields, path);
+  if (!field) return `Cannot filter: unknown path '${path}'.`;
+  if (filter.search != null && !(field as AgentMemoryFieldBase).searchable) {
+    return `Field '${field.id}' does not support string search.`;
+  }
+  if ((filter.dateFrom != null || filter.dateTo != null) && !(field as AgentMemoryFieldBase).dateFilterable) {
+    return `Field '${field.id}' does not support date-range filtering.`;
+  }
+  return undefined;
 }
 
 /* ------------------------------
@@ -655,6 +708,16 @@ export function buildMemoryTool(staticMode = false): GPTFunctionTool {
         },
         additionalProperties: false,
         description: "Pagination for 'view' on containers."
+      },
+      filter: {
+        type: "object",
+        properties: {
+          search:   { type: "string",  description: "Substring search. Only allowed on fields declared 'searchable'." },
+          dateFrom: { type: "string",  description: "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'." },
+          dateTo:   { type: "string",  description: "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'." }
+        },
+        additionalProperties: false,
+        description: "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
       },
       openChildren: {
         type: "boolean",
@@ -1260,6 +1323,21 @@ export function renderMemoryVisualization(
   lines.push('  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }');
   lines.push('Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.');
 
+  // Filter capabilities: list each top-level field that declares searchable / dateFilterable.
+  // Use with { "filter": { "search": "...", "dateFrom": "ISO", "dateTo": "ISO" } } on the view op.
+  const filterable: string[] = [];
+  for (const f of memoryFields) {
+    const base = f as AgentMemoryFieldBase;
+    const caps: string[] = [];
+    if (base.searchable) caps.push(`search over [${base.searchable.fields.join(', ')}]`);
+    if (base.dateFilterable) caps.push(`dateFrom/dateTo on ${base.dateFilterable.field}`);
+    if (caps.length) filterable.push(`/${escapeToken(f.id)} → ${caps.join('; ')}`);
+  }
+  if (filterable.length) {
+    lines.push('Filters (view op on container): include { "filter": { "search": "...", "dateFrom": "ISO", "dateTo": "ISO" } }.');
+    lines.push('  Capable fields: ' + filterable.join(' | '));
+  }
+
   // ---------- SCHEMA HINTS (for creation) ----------
   // We list specs for containers you may modify now:
   // container path is visible, OR its parent is visible; top-level opened=true counts as visible.
@@ -1740,12 +1818,25 @@ export function processMemoryToolResponse(
       }
 
       if (action === 'view') {
+          // Validate filters up-front: reject the whole op if any target rejects.
+          if (op.filter) {
+            let filterErr: string | undefined;
+            for (const p of allExpanded) {
+              const e = validateFilterForPath(memoryFields, p, op.filter);
+              if (e) { filterErr = e; break; }
+            }
+            if (filterErr) {
+              results.push({ target: rawTargets.join(','), action, ok: false, message: filterErr });
+              return;
+            }
+          }
+
           const mutated: string[] = [];
           for (const p of allExpanded) {
             const { leaf, error } = requireResolved(p);
             if (error) { results.push({ target: p, action, ok: false, message: error }); continue; }
             openPath(state, p);
-        
+
             // Default: open immediate children when the viewed target is a CONTAINER node (object/array/map/topic).
             let openKids = op.openChildren;
             let nodeSchema: AgentMemoryField | undefined;
@@ -1763,8 +1854,9 @@ export function processMemoryToolResponse(
               openKids = (nodeType === 'object' || nodeType === 'array' || nodeType === 'map' || nodeType === 'topic');
             }
             if (openKids) openChildren(state, values, p, nodeSchema);
-        
+
             if (op.page) setPagination(state, p, op.page.offset, op.page.limit);
+            if (op.filter !== undefined) setListFilters(state, p, op.filter);
             mutated.push(p);
           }
           

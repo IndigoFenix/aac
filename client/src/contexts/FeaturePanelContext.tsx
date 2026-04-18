@@ -39,6 +39,7 @@ export const PATH_TO_FEATURE: Record<string, FeatureType> = {
   '/symbols': 'symbols',
   '/calendar': 'calendar',
   '/userchat': 'userchat',
+  '/deep-analysis': 'deepAnalysis',
 };
 
 // Feature to URL path mapping
@@ -59,6 +60,7 @@ export const FEATURE_TO_PATH: Record<FeatureType, string> = {
   symbols: '/symbols',
   calendar: '/calendar',
   userchat: '/userchat',
+  deepAnalysis: '/deep-analysis',
 };
 
 // Feature configurations
@@ -197,6 +199,14 @@ export const FEATURE_CONFIG: Record<FeatureType, FeatureConfig> = {
     maxSize: 100,
     isFullScreen: false,
     path: '/userchat',
+  },
+  deepAnalysis: {
+    id: 'deepAnalysis',
+    defaultSize: 60,
+    minSize: 40,
+    maxSize: 80,
+    isFullScreen: false,
+    path: '/deep-analysis',
   },
 };
 

@@ -368,6 +368,13 @@ export const pt: Translations = {
     recalibrate: "Recalibrar rastreamento ocular",
   },
 
+  bubblesGame: {
+    title: "Bolhas",
+    score: "Pontuação",
+    reset: "Reiniciar",
+    close: "Fechar",
+  },
+
   errors: {
     POLICY_VIOLATION: "Esta resposta foi bloqueada devido a uma viola\u00e7\u00e3o de pol\u00edtica.",
     NO_RESPONSE: "Ocorreu um erro ao processar a resposta.",

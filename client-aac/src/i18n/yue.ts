@@ -368,6 +368,13 @@ export const yue: Translations = {
     recalibrate: "重新校準眼動追蹤",
   },
 
+  bubblesGame: {
+    title: "泡泡",
+    score: "分數",
+    reset: "重置",
+    close: "關閉",
+  },
+
   errors: {
     POLICY_VIOLATION: "呢個回覆因為違反政策而被封鎖。",
     NO_RESPONSE: "處理回覆嗰陣出咗錯。",

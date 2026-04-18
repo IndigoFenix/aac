@@ -368,6 +368,13 @@ export const he: Translations = {
     recalibrate: "כיול מחדש של מעקב עיניים",
   },
 
+  bubblesGame: {
+    title: "בועות",
+    score: "ניקוד",
+    reset: "איפוס",
+    close: "סגור",
+  },
+
   errors: {
     POLICY_VIOLATION: "תגובה זו נחסמה עקב הפרת מדיניות.",
     NO_RESPONSE: "אירעה שגיאה בעיבוד התגובה.",

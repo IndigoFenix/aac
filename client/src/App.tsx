@@ -212,6 +212,7 @@ function Router() {
       <Route path="/reports" component={ProtectedDashboard} />
       <Route path="/calendar" component={ProtectedDashboard} />
       <Route path="/userchat" component={ProtectedDashboard} />
+      <Route path="/deep-analysis" component={ProtectedDashboard} />
 
       {/* Settings */}
       <Route path="/settings" component={ProtectedDashboard} />
@@ -258,6 +259,11 @@ function Router() {
         </SystemAdminRoute>
       </Route>
       <Route path="/admin/activity-log">
+        <SystemAdminRoute>
+          <AdminDashboard />
+        </SystemAdminRoute>
+      </Route>
+      <Route path="/admin/deep-analyses">
         <SystemAdminRoute>
           <AdminDashboard />
         </SystemAdminRoute>

@@ -51,6 +51,28 @@ export interface AgentMemoryFieldBase {
    * will not show mutation hints and the tool handler will reject mutations.
    */
   readOnly?: boolean;
+  /**
+   * Declares that the field's list() operation supports string search. The
+   * named sub-fields identify which columns/properties are indexed for matching.
+   * Only meaningful for container fields (array/map/topic) with a db.list backend.
+   * IMPORTANT: any field that sets this MUST ship with a matching GIN trigram
+   * index in a migration — the validator at scripts/validate-memory-indexes.ts
+   * enforces this.
+   */
+  searchable?: { fields: string[] };
+  /**
+   * Name of the underlying DB table backing this field's list() operation.
+   * Used only by scripts/validate-memory-indexes.ts to verify that declared
+   * `searchable` fields have matching GIN trigram / tsvector indexes.
+   * Not read at runtime.
+   */
+  searchTable?: string;
+  /**
+   * Declares that the field's list() operation supports date-range filtering.
+   * `field` is the name of the date column/property used as the filter axis.
+   * Only meaningful for container fields with a db.list backend.
+   */
+  dateFilterable?: { field: string };
 }
 
 export interface AgentMemoryFieldObject extends AgentMemoryFieldBase {
@@ -129,6 +151,8 @@ export interface MemoryToolInput {
   newKey?: string;
   /** Optional pagination for view (container paths only). */
   page?: { offset?: number; limit?: number };
+  /** Optional filters for view on container paths whose field declares searchable / dateFilterable. */
+  filter?: ListFilters;
   /** For view: if true and path is a container (no *), also make its immediate children visible. Default true for objects; false for others. */
   openChildren?: boolean;
 }
@@ -176,6 +200,8 @@ export interface MemoryState {
   visible: string[];
   /** Pagination settings per container path */
   page: Record<string, { offset: number; limit: number }>;
+  /** Active list filters per container path (search + date range) */
+  filters?: Record<string, ListFilters>;
   /** When true, the memory prompt is rendered once and frozen until compression */
   staticPromptMode?: boolean;
   /** Cached rendered prompt — set on first render in static mode, cleared on compression */
@@ -256,6 +282,16 @@ export interface PaginationParams {
 }
 
 /**
+ * Filters passed to list operations on fields that declare searchable / dateFilterable.
+ * Dates are ISO-8601 strings (yyyy-mm-dd or full timestamp).
+ */
+export interface ListFilters {
+  search?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+/**
  * Result from a list operation.
  */
 export interface ListResult<T = any> {
@@ -292,8 +328,10 @@ export interface MemoryDBOperations<T = any> {
 
   /**
    * List items in a container (array, map, topic) with pagination.
+   * Filters are only present when the field's schema declares them (searchable / dateFilterable);
+   * otherwise the tool layer rejects filter input before it reaches here.
    */
-  list?: (ctx: DBOperationContext, pagination: PaginationParams) => Promise<ListResult<T>>;
+  list?: (ctx: DBOperationContext, pagination: PaginationParams, filters?: ListFilters) => Promise<ListResult<T>>;
 
   /**
    * Get a single item from a container by key/index.

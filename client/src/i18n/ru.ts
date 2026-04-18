@@ -180,6 +180,7 @@ export const ru = {
     students: "{{STUDENTS}}",
     progress: "Прогресс {{STUDENT}}",
     reports: "Дело {{STUDENT}}",
+    deepAnalysis: "Глубокий анализ",
     symbols: "Библиотека символов AAC",
     aacSettings: "Настройки AAC",
     currentStudent: "Текущий {{STUDENT}}",
@@ -2051,6 +2052,8 @@ export const ru = {
     appMusicDesc: "Играть музыкальные ноты на пианино",
     appSandboxGame: "Ферма-песочница",
     appSandboxGameDesc: "Выращивать растения и строить ферму",
+    appBubblesGame: "Пузыри",
+    appBubblesGameDesc: "Лопать плавающие пузыри для тренировки координации",
     spotifyConnected: "Spotify подключён",
     spotifyConnect: "Подключить",
     spotifyDisconnect: "Отключить",
@@ -2062,6 +2065,37 @@ export const ru = {
     settingsUpdated: "Настройки AAC обновлены",
     settingsUpdatedDesc: "Настройки AAC {{STUDENT}} сохранены.",
     updateError: "Не удалось обновить настройки AAC.",
+  },
+
+  // ============================================================================
+  // DEEP ANALYSIS
+  // ============================================================================
+  deepAnalysis: {
+    title: "Глубокий анализ",
+    history: "История",
+    specialInstructions: "Особые указания",
+    specialInstructionsPlaceholder: "Необязательно. Например: сосредоточиться на социальных навыках, сравнить с предыдущим анализом...",
+    generate: "Создать анализ",
+    starting: "Запуск...",
+    started: "Начато",
+    completed: "Завершено",
+    refresh: "Обновить",
+    loading: "Загрузка...",
+    noHistory: "Анализов пока нет.",
+    selectOrGenerate: "Выберите анализ или создайте новый.",
+    selectStudent: "Выберите {{STUDENT}}, чтобы создать глубокий анализ.",
+    untitled: "Анализ без названия",
+    inProgress: "Выполняется (шаг {{STEP}})...",
+    delete: "Удалить",
+    confirmDelete: "Удалить этот анализ навсегда?",
+    error: "Ошибка",
+    status: {
+      pending: "Ожидает",
+      running: "Выполняется",
+      paused: "Приостановлено",
+      complete: "Завершено",
+      failed: "Ошибка",
+    },
   },
 
   // ============================================================================
@@ -2285,6 +2319,7 @@ export const ru = {
       calendar: "Календарь",
       dashboardLevel: "Уровень панели управления",
       expertAgents: "Экспертные агенты",
+      deepAnalysisEnabled: "Глубокий анализ",
       // Actions
       resendInvite: "Отправить приглашение повторно",
       inviteResent: "Приглашение успешно отправлено повторно",

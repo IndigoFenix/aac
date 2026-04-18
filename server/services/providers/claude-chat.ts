@@ -1,8 +1,8 @@
 // server/services/providers/claude-chat.ts
 // Claude implementation of ChatProvider
 
-import Anthropic from "@anthropic-ai/sdk";
 import { resolveModelId } from "@shared/llm-options";
+import { getAnthropicClient } from "./anthropic-client";
 import type {
   ChatProvider,
   ChatRequest,
@@ -11,11 +11,7 @@ import type {
 } from "./streaming-provider";
 
 export class ClaudeChatProvider implements ChatProvider {
-  private client: Anthropic;
-
-  constructor() {
-    this.client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  }
+  private client = getAnthropicClient();
 
   async completeChat(request: ChatRequest): Promise<ChatCompletionResult> {
     const model = resolveModelId("claude", request.model);

@@ -22,6 +22,7 @@ import {
   interpretationController,
   boardController,
   customAppController,
+  deepAnalysisController,
   onboardingController,
   slpClinicalController,
   programController,
@@ -897,6 +898,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     customAppController.getAssignments(req, res)
   );
 
+  // ============= DEEP ANALYSIS ROUTES =============
+  const requireDeepAnalysis = requireLicensePermission("deepAnalysisEnabled");
+  app.post("/api/deep-analysis", requireAuth, requireDeepAnalysis, (req, res) =>
+    deepAnalysisController.create(req, res)
+  );
+  app.get("/api/deep-analysis", requireAuth, requireDeepAnalysis, (req, res) =>
+    deepAnalysisController.list(req, res)
+  );
+  app.get("/api/deep-analysis/:id", requireAuth, requireDeepAnalysis, (req, res) =>
+    deepAnalysisController.get(req, res)
+  );
+  app.delete("/api/deep-analysis/:id", requireAuth, requireDeepAnalysis, (req, res) =>
+    deepAnalysisController.delete(req, res)
+  );
+
   // ============= ONBOARDING ROUTES =============
   app.get("/api/onboarding/status", requireAuth, (req, res) =>
     onboardingController.getStatus(req, res)
@@ -1297,6 +1313,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Activity logs (system admin)
   app.get("/api/admin/activity-logs", requireAuth, requireSystemAdmin, (req, res) =>
     activityLogController.getLogs(req, res)
+  );
+
+  // Deep analyses (system admin) — viewer across all students
+  app.get("/api/admin/deep-analyses", requireAuth, requireSystemAdmin, (req, res) =>
+    deepAnalysisController.adminList(req, res)
+  );
+  app.get("/api/admin/deep-analyses/:id", requireAuth, requireSystemAdmin, (req, res) =>
+    deepAnalysisController.adminGet(req, res)
   );
 
   // Licenses (admin)

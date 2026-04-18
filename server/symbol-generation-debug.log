@@ -4939,3 +4939,290 @@
 [2026-04-16T11:19:06.169Z] [processQueue] Generated "child_mixing_paint" → 877360f1-e7cd-4789-ad36-631fe2f7461b (7 total)
 [2026-04-16T11:19:06.173Z] [processQueue] FULL REFINED PROMPT for "child_mixing_paint": A simple, bold AAC symbol icon of a child mixing paint. The child is a generic, non-gender-specific figure with a slightly oversized head, simple dot eyes, and a small curved mouth, wearing a plain shirt. The child holds a paintbrush in one hand, stirring it into a small paint palette with several distinct, flat colors (red, blue, yellow) in wells. The figure is centered, with bold black outlines, flat solid colors, and no background.
 [2026-04-16T11:19:10.348Z] [processQueue] Generating "child_looking_through_telescope"...
+[2026-04-16T14:53:39.650Z] [resolveImageKeys] Resolving 8 keys: school_building, person_waking_up, child_playing_outside, bed_time, person_eating_lunch, person_eating_snack, calendar_page, calendar_page (format=internal, useUnapproved=true)
+[2026-04-16T14:53:39.988Z] [resolveImageKeys] Resolved "school_building" → __SYMBOL__:31f589aa-1c22-4a4f-a23d-5ebbc9bec3cb
+[2026-04-16T14:53:40.164Z] [resolveImageKeys] No symbol found for "person_waking_up"
+[2026-04-16T14:53:40.350Z] [resolveImageKeys] Resolved "child_playing_outside" → __SYMBOL__:048df9fb-be2e-4fee-8c4b-1cc710b6f226
+[2026-04-16T14:53:40.530Z] [resolveImageKeys] No symbol found for "bed_time"
+[2026-04-16T14:53:40.710Z] [resolveImageKeys] Resolved "person_eating_lunch" → __SYMBOL__:5098f63a-e573-432e-b9fb-e91910b25ec2
+[2026-04-16T14:53:40.886Z] [resolveImageKeys] No symbol found for "person_eating_snack"
+[2026-04-16T14:53:41.064Z] [resolveImageKeys] No symbol found for "calendar_page"
+[2026-04-16T14:53:41.241Z] [resolveImageKeys] No symbol found for "calendar_page"
+[2026-04-16T14:53:41.245Z] [resolveImageKeys] Done. Resolved 3, unresolved 5: person_waking_up, bed_time, person_eating_snack, calendar_page, calendar_page
+[2026-04-16T14:53:41.251Z] [queueGeneration] Queuing 5 keys: person_waking_up, bed_time, person_eating_snack, calendar_page, calendar_page (hasCallback=true)
+[2026-04-16T14:53:41.446Z] [processQueue] Generating "person_waking_up"...
+[2026-04-16T14:53:53.692Z] [resolveImageKeys] Resolving 1 keys: child_in_playground (format=internal, useUnapproved=true)
+[2026-04-16T14:53:53.863Z] [resolveImageKeys] No symbol found for "child_in_playground"
+[2026-04-16T14:53:53.864Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: child_in_playground
+[2026-04-16T14:53:53.866Z] [queueGeneration] Queuing 1 keys: child_in_playground (hasCallback=true)
+[2026-04-16T14:53:53.908Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T14:53:53.910Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T14:53:54.086Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T14:53:54.088Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T14:54:09.782Z] [COST] imageKey="person_waking_up" | refinement: gemini/gemini-2.5-flash in=728 out=113 | image: openai/gpt-image-1 in=119 out=272
+[2026-04-16T14:54:09.786Z] [processQueue] Generated "person_waking_up" → d16d3d8b-6942-4559-9e73-3b4f8d9bc091 (1 total)
+[2026-04-16T14:54:09.790Z] [processQueue] FULL REFINED PROMPT for "person_waking_up": A simple, bold AAC symbol icon of a generic human figure waking up. The figure is shown from the chest up, with a slightly stylized, larger head relative to the body. The figure has simple dots for eyes and a small curve for the mouth, with no hair. One hand is raised to the face, rubbing an eye, indicating sleepiness. The figure's eyes are partially closed. Use a limited palette of 3-5 bold, flat colors with strong black outlines. The icon is centered on a transparent background, instantly recognizable at small sizes.
+[2026-04-16T14:54:12.438Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T14:54:12.443Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T14:54:13.999Z] [processQueue] Generating "bed_time"...
+[2026-04-16T14:54:32.347Z] [COST] imageKey="bed_time" | refinement: gemini/gemini-2.5-flash in=727 out=91 | image: openai/gpt-image-1 in=95 out=272
+[2026-04-16T14:54:32.351Z] [processQueue] Generated "bed_time" → 83fefd4a-67e9-448a-81b7-5bd9219d35ab (2 total)
+[2026-04-16T14:54:32.360Z] [processQueue] FULL REFINED PROMPT for "bed_time": A simple AAC icon of a bed with a person sleeping in it. The bed is a simple rectangle with a headboard and a pillow. A generic, non-gender-specific human figure is lying under a blanket, with only their head visible on the pillow. The figure's eyes are closed, indicating sleep. Use bold black outlines and flat, solid colors, with a limited palette of 3-5 saturated colors, on a transparent background.
+[2026-04-16T14:54:34.330Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T14:54:34.331Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T14:54:36.544Z] [processQueue] Generating "person_eating_snack"...
+[2026-04-16T14:54:56.008Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T14:54:56.013Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T14:54:56.976Z] [COST] imageKey="person_eating_snack" | refinement: gemini/gemini-2.5-flash in=728 out=90 | image: openai/gpt-image-1 in=96 out=272
+[2026-04-16T14:54:56.979Z] [processQueue] Generated "person_eating_snack" → f1c43a77-78e4-44ef-9030-37e889544d8c (3 total)
+[2026-04-16T14:54:56.983Z] [processQueue] FULL REFINED PROMPT for "person_eating_snack": A simple, bold AAC symbol illustration of a generic human figure with a slightly oversized head, facing forward. The figure has simple dot eyes and a small curved mouth. One hand holds a small, rectangular snack item, bringing it towards the mouth. The snack is a light brown color. The figure is colored in a light skin tone with a simple blue shirt. The illustration uses flat, solid colors with thick black outlines, centered on a transparent background.
+[2026-04-16T14:55:01.254Z] [processQueue] Generating "calendar_page"...
+[2026-04-16T15:10:32.783Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T15:10:32.786Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T15:11:18.120Z] [resolveImageKeys] Resolving 2 keys: volcano_model, mixing_colors (format=internal, useUnapproved=true)
+[2026-04-16T15:11:18.535Z] [resolveImageKeys] Resolved "volcano_model" → __SYMBOL__:1a4048bf-5593-4cff-a1d6-7046985fb8d8
+[2026-04-16T15:11:18.718Z] [resolveImageKeys] No symbol found for "mixing_colors"
+[2026-04-16T15:11:18.724Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: mixing_colors
+[2026-04-16T15:11:18.728Z] [queueGeneration] Queuing 1 keys: mixing_colors (hasCallback=true)
+[2026-04-16T15:11:18.903Z] [processQueue] Generating "mixing_colors"...
+[2026-04-16T15:11:34.015Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T15:11:34.021Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T15:11:34.079Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T15:11:34.087Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T15:11:34.176Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T15:11:34.181Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T15:11:34.967Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T15:11:34.973Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T15:11:44.815Z] [COST] imageKey="mixing_colors" | refinement: gemini/gemini-2.5-flash in=727 out=110 | image: openai/gpt-image-1 in=118 out=272
+[2026-04-16T15:11:44.817Z] [processQueue] Generated "mixing_colors" → bc9ba7f6-d0ca-4c36-b96b-3762ecc5d4e3 (1 total)
+[2026-04-16T15:11:44.819Z] [processQueue] FULL REFINED PROMPT for "mixing_colors": A simple, bold AAC symbol icon on a transparent background depicting the action of mixing colors. A generic human figure, with a large head and simple dot eyes and a small curve mouth, is shown from the chest up, holding a paint palette with several distinct, flat colors (red, yellow, blue) and a paintbrush. The paintbrush is actively stirring two colors together on the palette, indicated by a simple circular motion line. The figure wears a simple, plain shirt. The illustration uses bold black outlines and a limited palette of saturated, flat colors.
+[2026-04-16T15:11:53.722Z] [resolveImageKeys] Resolving 5 keys: starry_sky, moon_phases, planets_in_solar_system, rocket_launch, astronaut_in_spacesuit (format=internal, useUnapproved=true)
+[2026-04-16T15:11:53.891Z] [resolveImageKeys] No symbol found for "starry_sky"
+[2026-04-16T15:11:54.058Z] [resolveImageKeys] No symbol found for "moon_phases"
+[2026-04-16T15:11:54.223Z] [resolveImageKeys] No symbol found for "planets_in_solar_system"
+[2026-04-16T15:11:54.385Z] [resolveImageKeys] Resolved "rocket_launch" → __SYMBOL__:e57f331d-d5ca-4e41-8d4b-48b52456f6f2
+[2026-04-16T15:11:54.553Z] [resolveImageKeys] Resolved "astronaut_in_spacesuit" → __SYMBOL__:28fe0ac8-9267-4f10-8ec5-10e2521c5607
+[2026-04-16T15:11:54.557Z] [resolveImageKeys] Done. Resolved 2, unresolved 3: starry_sky, moon_phases, planets_in_solar_system
+[2026-04-16T15:11:54.565Z] [queueGeneration] Queuing 3 keys: starry_sky, moon_phases, planets_in_solar_system (hasCallback=true)
+[2026-04-16T15:11:54.858Z] [processQueue] Generating "starry_sky"...
+[2026-04-16T15:12:10.303Z] [resolveImageKeys] Resolving 4 keys: jupiter_planet, mars_planet, saturn_planet, neptune_planet (format=internal, useUnapproved=true)
+[2026-04-16T15:12:10.472Z] [resolveImageKeys] No symbol found for "jupiter_planet"
+[2026-04-16T15:12:10.647Z] [resolveImageKeys] No symbol found for "mars_planet"
+[2026-04-16T15:12:10.817Z] [resolveImageKeys] No symbol found for "saturn_planet"
+[2026-04-16T15:12:10.987Z] [resolveImageKeys] No symbol found for "neptune_planet"
+[2026-04-16T15:12:10.988Z] [resolveImageKeys] Done. Resolved 0, unresolved 4: jupiter_planet, mars_planet, saturn_planet, neptune_planet
+[2026-04-16T15:12:10.990Z] [queueGeneration] Queuing 4 keys: jupiter_planet, mars_planet, saturn_planet, neptune_planet (hasCallback=true)
+[2026-04-16T15:12:18.331Z] [COST] imageKey="starry_sky" | refinement: gemini/gemini-2.5-flash in=727 out=63 | image: openai/gpt-image-1 in=70 out=272
+[2026-04-16T15:12:18.335Z] [processQueue] Generated "starry_sky" → ddda6d4d-ed04-4c90-a9af-f1d37ef7734d (1 total)
+[2026-04-16T15:12:18.339Z] [processQueue] FULL REFINED PROMPT for "starry_sky": A simple, bold illustration of a night sky with a dark blue background. Several yellow five-pointed stars of varying sizes are scattered across the sky. A crescent moon, depicted as a simple yellow arc, is positioned in the upper part of the sky. All elements have thick black outlines and flat, solid colors.
+[2026-04-16T15:12:22.548Z] [processQueue] Generating "moon_phases"...
+[2026-04-16T15:12:42.266Z] [COST] imageKey="moon_phases" | refinement: gemini/gemini-2.5-flash in=727 out=114 | image: openai/gpt-image-1 in=123 out=272
+[2026-04-16T15:12:42.269Z] [processQueue] Generated "moon_phases" → a396d578-1455-4112-aa24-cb36fcf5dcf9 (2 total)
+[2026-04-16T15:12:42.274Z] [processQueue] FULL REFINED PROMPT for "moon_phases": A simple, bold illustration of the moon phases on a transparent background. The icon shows four distinct moon phases arranged horizontally: a new moon (solid black circle), a crescent moon (black circle with a thin white crescent), a half moon (black circle with a white semicircle), and a full moon (solid white circle). Each moon phase has a thick black outline. The shapes are filled with flat, solid black and white colors, with no gradients or shadows. The composition is centered, with the moon phases clearly distinguishable and filling about 70% of the canvas.
+[2026-04-16T15:12:46.501Z] [processQueue] Generating "planets_in_solar_system"...
+[2026-04-16T15:13:03.148Z] [resolveImageKeys] Resolving 3 keys: mars_planet, mars_rover, moon_orbiting_planet (format=internal, useUnapproved=true)
+[2026-04-16T15:13:03.345Z] [resolveImageKeys] No symbol found for "mars_planet"
+[2026-04-16T15:13:03.532Z] [resolveImageKeys] No symbol found for "mars_rover"
+[2026-04-16T15:13:03.902Z] [resolveImageKeys] No symbol found for "moon_orbiting_planet"
+[2026-04-16T15:13:03.912Z] [resolveImageKeys] Done. Resolved 0, unresolved 3: mars_planet, mars_rover, moon_orbiting_planet
+[2026-04-16T15:13:03.918Z] [queueGeneration] Queuing 3 keys: mars_planet, mars_rover, moon_orbiting_planet (hasCallback=true)
+[2026-04-16T15:13:06.246Z] [COST] imageKey="planets_in_solar_system" | refinement: gemini/gemini-2.5-flash in=729 out=99 | image: openai/gpt-image-1 in=107 out=272
+[2026-04-16T15:13:06.249Z] [processQueue] Generated "planets_in_solar_system" → 13f0c319-d49c-4ad9-aa24-aab7ff0685f1 (3 total)
+[2026-04-16T15:13:06.254Z] [processQueue] FULL REFINED PROMPT for "planets_in_solar_system": A simple, bold illustration of the solar system. The sun is a large yellow circle on the left, with four planets orbiting it. The planets are depicted as solid colored circles: a small red circle, a medium blue circle, a larger green circle, and a small purple circle, all connected to the sun by thin, curved black lines indicating orbits. All shapes have thick black outlines, and colors are flat and saturated. The composition is centered, with ample padding, on a transparent background.
+[2026-04-16T15:13:10.827Z] [processQueue] Generating "jupiter_planet"...
+[2026-04-16T15:13:17.241Z] [resolveImageKeys] Resolving 3 keys: iron_ore, dust_cloud, mars_rover (format=internal, useUnapproved=true)
+[2026-04-16T15:13:17.422Z] [resolveImageKeys] No symbol found for "iron_ore"
+[2026-04-16T15:13:17.597Z] [resolveImageKeys] No symbol found for "dust_cloud"
+[2026-04-16T15:13:17.784Z] [resolveImageKeys] No symbol found for "mars_rover"
+[2026-04-16T15:13:17.789Z] [resolveImageKeys] Done. Resolved 0, unresolved 3: iron_ore, dust_cloud, mars_rover
+[2026-04-16T15:13:17.795Z] [queueGeneration] Queuing 3 keys: iron_ore, dust_cloud, mars_rover (hasCallback=true)
+[2026-04-16T15:13:29.921Z] [COST] imageKey="jupiter_planet" | refinement: gemini/gemini-2.5-flash in=728 out=77 | image: openai/gpt-image-1 in=83 out=272
+[2026-04-16T15:13:29.922Z] [processQueue] Generated "jupiter_planet" → f60f7834-21d2-4dca-9cfe-0b3dae889c58 (4 total)
+[2026-04-16T15:13:29.923Z] [processQueue] FULL REFINED PROMPT for "jupiter_planet": A simple, bold illustration of the planet Jupiter. The planet is depicted as a large sphere with distinct, flat, solid orange and white bands horizontally across its surface, representing its iconic cloud patterns. A single, prominent red oval, representing the Great Red Spot, is visible within one of the orange bands. The planet is centered on a transparent background with thick black outlines around all shapes.
+[2026-04-16T15:13:34.119Z] [processQueue] Generating "mars_planet"...
+[2026-04-16T15:13:43.841Z] [resolveImageKeys] Resolving 3 keys: rust_on_metal, mars_rover, dust_cloud (format=internal, useUnapproved=true)
+[2026-04-16T15:13:44.014Z] [resolveImageKeys] No symbol found for "rust_on_metal"
+[2026-04-16T15:13:44.196Z] [resolveImageKeys] No symbol found for "mars_rover"
+[2026-04-16T15:13:44.375Z] [resolveImageKeys] No symbol found for "dust_cloud"
+[2026-04-16T15:13:44.379Z] [resolveImageKeys] Done. Resolved 0, unresolved 3: rust_on_metal, mars_rover, dust_cloud
+[2026-04-16T15:13:44.384Z] [queueGeneration] Queuing 3 keys: rust_on_metal, mars_rover, dust_cloud (hasCallback=true)
+[2026-04-16T15:13:51.692Z] [COST] imageKey="mars_planet" | refinement: gemini/gemini-2.5-flash in=727 out=65 | image: openai/gpt-image-1 in=70 out=272
+[2026-04-16T15:13:51.694Z] [processQueue] Generated "mars_planet" → 30ad7c1e-807b-4d8c-8dd4-dca9b32a7c57 (5 total)
+[2026-04-16T15:13:51.695Z] [processQueue] FULL REFINED PROMPT for "mars_planet": A simple, bold illustration of the planet Mars. The planet is a solid, saturated reddish-orange circle, centered on a transparent background. It has a few subtle, slightly darker reddish-brown curved lines or spots to indicate surface features, without excessive detail. The entire planet is outlined with a thick, bold black line.
+[2026-04-16T15:13:55.922Z] [processQueue] Generating "saturn_planet"...
+[2026-04-16T15:14:13.714Z] [COST] imageKey="saturn_planet" | refinement: gemini/gemini-2.5-flash in=728 out=82 | image: openai/gpt-image-1 in=86 out=272
+[2026-04-16T15:14:13.715Z] [processQueue] Generated "saturn_planet" → fbeb755b-e2fe-46de-9a6f-4d2180bc9094 (6 total)
+[2026-04-16T15:14:13.717Z] [processQueue] FULL REFINED PROMPT for "saturn_planet": A simple, bold illustration of the planet Saturn. The planet is depicted as a yellow-orange sphere with a wide, flat ring system around its equator, shown from a slightly tilted angle. The ring system is a lighter yellow-orange color. All shapes have bold black outlines, and colors are flat and solid. The planet is centered on a transparent background, filling about 70% of the canvas.
+[2026-04-16T15:14:16.619Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T15:14:16.620Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T15:14:19.261Z] [processQueue] Generating "neptune_planet"...
+[2026-04-16T15:14:31.864Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T15:14:32.042Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T15:14:36.976Z] [COST] imageKey="neptune_planet" | refinement: gemini/gemini-2.5-flash in=729 out=73 | image: openai/gpt-image-1 in=80 out=272
+[2026-04-16T15:14:36.977Z] [processQueue] Generated "neptune_planet" → d55c20d2-d372-42a2-9a12-8fc0e169f3ad (7 total)
+[2026-04-16T15:14:36.979Z] [processQueue] FULL REFINED PROMPT for "neptune_planet": A simple, bold illustration of the planet Neptune. The planet is depicted as a sphere with a deep blue color, featuring a few lighter blue or white swirling cloud patterns to indicate its gaseous nature. A thin, light blue ring system is subtly visible around the planet. The entire illustration has thick black outlines and uses flat, solid colors, centered on a transparent background.
+[2026-04-16T15:14:41.710Z] [processQueue] "mars_planet" already exists → 30ad7c1e-807b-4d8c-8dd4-dca9b32a7c57
+[2026-04-16T15:14:42.581Z] [resolveImageKeys] Resolving 4 keys: woman, man, boy, girl (format=internal, useUnapproved=true)
+[2026-04-16T15:14:42.854Z] [resolveImageKeys] Resolved "woman" → __SYMBOL__:a6e9f976-548f-460e-a9e4-a7955d69bb27
+[2026-04-16T15:14:43.332Z] [resolveImageKeys] Resolved "man" → __SYMBOL__:0cd555f2-4cbf-4868-b681-8d66f2893325
+[2026-04-16T15:14:44.624Z] [resolveImageKeys] No symbol found for "boy"
+[2026-04-16T15:14:44.822Z] [resolveImageKeys] Resolved "girl" → __SYMBOL__:f3c10a97-a58c-4b3b-bc4c-a85a38facf88
+[2026-04-16T15:14:44.826Z] [resolveImageKeys] Done. Resolved 3, unresolved 1: boy
+[2026-04-16T15:14:44.831Z] [queueGeneration] Queuing 1 keys: boy (hasCallback=true)
+[2026-04-16T15:14:46.194Z] [processQueue] Generating "mars_rover"...
+[2026-04-16T15:15:08.577Z] [COST] imageKey="mars_rover" | refinement: gemini/gemini-2.5-flash in=727 out=91 | image: openai/gpt-image-1 in=96 out=272
+[2026-04-16T15:15:08.581Z] [processQueue] Generated "mars_rover" → c2e63ba3-19fb-41e8-83af-066627bfa9a9 (8 total)
+[2026-04-16T15:15:08.584Z] [processQueue] FULL REFINED PROMPT for "mars_rover": A simple, bold illustration of a mars rover, depicted from a slightly elevated side angle. The rover has a boxy body with six large, circular wheels and a prominent antenna or camera mast extending upwards. Use flat, solid colors like red-orange for the body, black for the wheels, and a touch of gray for the antenna, all outlined in thick black lines. The rover is centered on a transparent background, instantly recognizable as an AAC symbol.
+[2026-04-16T15:15:12.772Z] [processQueue] Generating "moon_orbiting_planet"...
+[2026-04-16T15:15:15.456Z] [resolveImageKeys] Resolving 1 keys: person_moving (format=internal, useUnapproved=true)
+[2026-04-16T15:15:15.636Z] [resolveImageKeys] No symbol found for "person_moving"
+[2026-04-16T15:15:15.641Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: person_moving
+[2026-04-16T15:15:15.646Z] [queueGeneration] Queuing 1 keys: person_moving (hasCallback=true)
+[2026-04-16T15:15:28.733Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T15:15:28.737Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T15:15:31.496Z] [COST] imageKey="moon_orbiting_planet" | refinement: gemini/gemini-2.5-flash in=728 out=91 | image: openai/gpt-image-1 in=100 out=272
+[2026-04-16T15:15:31.499Z] [processQueue] Generated "moon_orbiting_planet" → 9076e1fc-17a7-4652-bbac-11043dc0ad39 (9 total)
+[2026-04-16T15:15:31.502Z] [processQueue] FULL REFINED PROMPT for "moon_orbiting_planet": A simple, bold illustration of a stylized, light gray crescent moon with a black outline, orbiting a larger, blue and green planet with a black outline. The moon is positioned to the upper left of the planet, with a curved black motion line indicating its orbit around the planet. The planet shows simple landmasses in green and oceans in blue. The entire composition is centered on a transparent background, using flat, solid colors with no gradients or shadows.
+[2026-04-16T15:15:35.703Z] [processQueue] Generating "iron_ore"...
+[2026-04-16T15:15:53.304Z] [COST] imageKey="iron_ore" | refinement: gemini/gemini-2.5-flash in=727 out=54 | image: openai/gpt-image-1 in=61 out=272
+[2026-04-16T15:15:53.305Z] [processQueue] Generated "iron_ore" → f8de6623-6324-4427-9916-0e604da490ba (10 total)
+[2026-04-16T15:15:53.307Z] [processQueue] FULL REFINED PROMPT for "iron_ore": A simple, bold illustration of a jagged, reddish-brown rock with a few small, dark grey metallic flecks embedded within it, depicted with a thick black outline. The rock is centered on a transparent background, using flat, solid colors with no gradients or shadows.
+[2026-04-16T15:15:57.479Z] [processQueue] Generating "dust_cloud"...
+[2026-04-16T15:30:57.650Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T15:30:57.658Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T15:31:30.503Z] [resolveImageKeys] Resolving 6 keys: school_building, child_eating_breakfast, child_playing_outside, child_getting_ready_for_bed, group_of_children_playing, teacher_with_students (format=internal, useUnapproved=true)
+[2026-04-16T15:31:30.679Z] [resolveImageKeys] Resolved "school_building" → __SYMBOL__:31f589aa-1c22-4a4f-a23d-5ebbc9bec3cb
+[2026-04-16T15:31:30.850Z] [resolveImageKeys] No symbol found for "child_eating_breakfast"
+[2026-04-16T15:31:31.032Z] [resolveImageKeys] Resolved "child_playing_outside" → __SYMBOL__:048df9fb-be2e-4fee-8c4b-1cc710b6f226
+[2026-04-16T15:31:31.199Z] [resolveImageKeys] No symbol found for "child_getting_ready_for_bed"
+[2026-04-16T15:31:33.390Z] [resolveImageKeys] No symbol found for "group_of_children_playing"
+[2026-04-16T15:31:33.718Z] [resolveImageKeys] No symbol found for "teacher_with_students"
+[2026-04-16T15:31:33.723Z] [resolveImageKeys] Done. Resolved 2, unresolved 4: child_eating_breakfast, child_getting_ready_for_bed, group_of_children_playing, teacher_with_students
+[2026-04-16T15:31:33.729Z] [queueGeneration] Queuing 4 keys: child_eating_breakfast, child_getting_ready_for_bed, group_of_children_playing, teacher_with_students (hasCallback=true)
+[2026-04-16T15:31:33.928Z] [processQueue] Generating "teacher_with_students"...
+[2026-04-16T15:32:05.625Z] [resolveImageKeys] Resolving 4 keys: child_playing_outside, child_in_playground, child_riding_bike, child_playing_with_bubbles (format=internal, useUnapproved=true)
+[2026-04-16T15:32:05.773Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T15:32:05.779Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T15:32:07.717Z] [resolveImageKeys] Resolved "child_playing_outside" → __SYMBOL__:048df9fb-be2e-4fee-8c4b-1cc710b6f226
+[2026-04-16T15:32:08.245Z] [resolveImageKeys] No symbol found for "child_in_playground"
+[2026-04-16T15:32:08.508Z] [resolveImageKeys] No symbol found for "child_riding_bike"
+[2026-04-16T15:32:08.775Z] [resolveImageKeys] No symbol found for "child_playing_with_bubbles"
+[2026-04-16T15:32:08.779Z] [resolveImageKeys] Done. Resolved 1, unresolved 3: child_in_playground, child_riding_bike, child_playing_with_bubbles
+[2026-04-16T15:32:08.790Z] [queueGeneration] Queuing 3 keys: child_in_playground, child_riding_bike, child_playing_with_bubbles (hasCallback=true)
+[2026-04-16T15:32:10.046Z] [COST] imageKey="teacher_with_students" | refinement: gemini/gemini-2.5-flash in=728 out=102 | image: openai/gpt-image-1 in=108 out=272
+[2026-04-16T15:32:10.051Z] [processQueue] Generated "teacher_with_students" → fd89d3ec-03e8-413f-9c68-941c1fc81c6a (1 total)
+[2026-04-16T15:32:10.055Z] [processQueue] FULL REFINED PROMPT for "teacher_with_students": A simple, bold AAC symbol illustration of a teacher standing in front of two students. The teacher is a generic human figure with no hair, wearing a simple shirt, facing forward with a slight smile (dots for eyes, small curve for mouth), and one arm slightly raised as if explaining. Two smaller, generic student figures are seated in front of the teacher, facing the teacher, also with simple smiles. All figures have bold black outlines and are filled with flat, solid colors, centered on a transparent background.
+[2026-04-16T15:32:14.268Z] [processQueue] Generating "child_playing_with_bubbles"...
+[2026-04-16T15:32:26.928Z] [resolveImageKeys] Resolving 5 keys: person_running_fast, turtle_slow, child_wearing_helmet, map_location, child_falling (format=internal, useUnapproved=true)
+[2026-04-16T15:32:27.107Z] [resolveImageKeys] No symbol found for "person_running_fast"
+[2026-04-16T15:32:27.317Z] [resolveImageKeys] Resolved "turtle_slow" → __SYMBOL__:7d0e8388-6d3c-405d-97a3-bce6ff0906e8
+[2026-04-16T15:32:27.517Z] [resolveImageKeys] No symbol found for "child_wearing_helmet"
+[2026-04-16T15:32:27.704Z] [resolveImageKeys] Resolved "map_location" → __SYMBOL__:4e1b5211-5981-4513-98a5-f8a2be8e34bc
+[2026-04-16T15:32:27.971Z] [resolveImageKeys] No symbol found for "child_falling"
+[2026-04-16T15:32:27.975Z] [resolveImageKeys] Done. Resolved 2, unresolved 3: person_running_fast, child_wearing_helmet, child_falling
+[2026-04-16T15:32:27.979Z] [queueGeneration] Queuing 3 keys: person_running_fast, child_wearing_helmet, child_falling (hasCallback=true)
+[2026-04-16T15:32:34.093Z] [COST] imageKey="child_playing_with_bubbles" | refinement: gemini/gemini-2.5-flash in=729 out=107 | image: openai/gpt-image-1 in=113 out=272
+[2026-04-16T15:32:34.098Z] [processQueue] Generated "child_playing_with_bubbles" → f9268c44-1702-4c92-91db-f0977d34d294 (2 total)
+[2026-04-16T15:32:34.102Z] [processQueue] FULL REFINED PROMPT for "child_playing_with_bubbles": A simple, bold AAC symbol icon of a child playing with bubbles. The child is a generic, non-gender-specific figure with a slightly oversized head, simple dot eyes, and a small curved mouth, wearing a plain t-shirt and shorts. The child is depicted in profile, blowing a stream of bubbles from a bubble wand held in one hand, with several round, iridescent bubbles floating in the air around them. The illustration uses flat, solid colors with bold black outlines, no gradients or shadows, on a transparent background.
+[2026-04-16T15:32:38.329Z] [processQueue] Generating "child_falling"...
+[2026-04-16T15:32:42.526Z] [resolveImageKeys] Resolving 4 keys: child_in_playground, person_walking_on_sidewalk, cars_on_street, house_with_yard (format=internal, useUnapproved=true)
+[2026-04-16T15:32:42.702Z] [resolveImageKeys] No symbol found for "child_in_playground"
+[2026-04-16T15:32:42.872Z] [resolveImageKeys] No symbol found for "person_walking_on_sidewalk"
+[2026-04-16T15:32:43.048Z] [resolveImageKeys] No symbol found for "cars_on_street"
+[2026-04-16T15:32:43.248Z] [resolveImageKeys] Resolved "house_with_yard" → __SYMBOL__:a6577a31-c8d5-463f-86b7-407d35abc847
+[2026-04-16T15:32:43.253Z] [resolveImageKeys] Done. Resolved 1, unresolved 3: child_in_playground, person_walking_on_sidewalk, cars_on_street
+[2026-04-16T15:32:43.257Z] [queueGeneration] Queuing 3 keys: child_in_playground, person_walking_on_sidewalk, cars_on_street (hasCallback=true)
+[2026-04-16T15:32:58.219Z] [COST] imageKey="child_falling" | refinement: gemini/gemini-2.5-flash in=727 out=92 | image: openai/gpt-image-1 in=98 out=272
+[2026-04-16T15:32:58.224Z] [processQueue] Generated "child_falling" → 7b0665c6-f395-4282-bf17-f8285ef24ff5 (3 total)
+[2026-04-16T15:32:58.228Z] [processQueue] FULL REFINED PROMPT for "child_falling": A simple, bold AAC symbol icon of a child falling. The child is depicted as a generic, gender-neutral figure with a slightly oversized head, simple dot eyes, and a small curved mouth. The figure is shown mid-fall, with arms and legs splayed outwards, indicating a loss of balance. Simple motion lines trail behind the figure to emphasize the downward movement. The illustration uses flat, solid colors with bold black outlines, on a transparent background.
+[2026-04-16T15:32:59.118Z] [resolveImageKeys] Resolving 5 keys: child_wearing_helmet, person_running_fast, turtle_slow, person_running_far, stopwatch_timer (format=internal, useUnapproved=true)
+[2026-04-16T15:32:59.308Z] [resolveImageKeys] No symbol found for "child_wearing_helmet"
+[2026-04-16T15:32:59.487Z] [resolveImageKeys] No symbol found for "person_running_fast"
+[2026-04-16T15:33:00.955Z] [resolveImageKeys] Resolved "turtle_slow" → __SYMBOL__:7d0e8388-6d3c-405d-97a3-bce6ff0906e8
+[2026-04-16T15:33:01.691Z] [resolveImageKeys] No symbol found for "person_running_far"
+[2026-04-16T15:33:01.872Z] [resolveImageKeys] No symbol found for "stopwatch_timer"
+[2026-04-16T15:33:01.876Z] [resolveImageKeys] Done. Resolved 1, unresolved 4: child_wearing_helmet, person_running_fast, person_running_far, stopwatch_timer
+[2026-04-16T15:33:01.881Z] [queueGeneration] Queuing 4 keys: child_wearing_helmet, person_running_fast, person_running_far, stopwatch_timer (hasCallback=true)
+[2026-04-16T15:33:02.480Z] [processQueue] Generating "cars_on_street"...
+[2026-04-16T15:33:16.529Z] [resolveImageKeys] Resolving 5 keys: stopwatch_timer, person_running_fast, turtle_slow, child_wearing_helmet, child_falling (format=internal, useUnapproved=true)
+[2026-04-16T15:33:16.937Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T15:33:16.943Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T15:33:17.422Z] [resolveImageKeys] No symbol found for "stopwatch_timer"
+[2026-04-16T15:33:17.806Z] [resolveImageKeys] No symbol found for "person_running_fast"
+[2026-04-16T15:33:19.061Z] [resolveImageKeys] Resolved "turtle_slow" → __SYMBOL__:7d0e8388-6d3c-405d-97a3-bce6ff0906e8
+[2026-04-16T15:33:19.254Z] [resolveImageKeys] No symbol found for "child_wearing_helmet"
+[2026-04-16T15:33:19.524Z] [resolveImageKeys] Resolved "child_falling" → __SYMBOL__:7b0665c6-f395-4282-bf17-f8285ef24ff5
+[2026-04-16T15:33:19.530Z] [resolveImageKeys] Done. Resolved 2, unresolved 3: stopwatch_timer, person_running_fast, child_wearing_helmet
+[2026-04-16T15:33:19.536Z] [queueGeneration] Queuing 3 keys: stopwatch_timer, person_running_fast, child_wearing_helmet (hasCallback=true)
+[2026-04-16T15:33:27.846Z] [COST] imageKey="cars_on_street" | refinement: gemini/gemini-2.5-flash in=728 out=75 | image: openai/gpt-image-1 in=82 out=272
+[2026-04-16T15:33:27.854Z] [processQueue] Generated "cars_on_street" → b7649119-2f48-4709-a18a-ef5c8712f4ba (4 total)
+[2026-04-16T15:33:27.858Z] [processQueue] FULL REFINED PROMPT for "cars_on_street": A simple, bold AAC symbol icon of two stylized cars on a street. The cars are viewed from the side, one slightly behind the other, with simple wheels and windows. The street is represented by a flat grey horizontal band beneath the cars. The illustration uses a limited palette of bold, flat colors with strong black outlines, no gradients or shadows, on a transparent background.
+[2026-04-16T15:33:32.133Z] [processQueue] Generating "child_wearing_helmet"...
+[2026-04-16T15:33:52.355Z] [COST] imageKey="child_wearing_helmet" | refinement: gemini/gemini-2.5-flash in=728 out=88 | image: openai/gpt-image-1 in=90 out=272
+[2026-04-16T15:33:52.359Z] [processQueue] Generated "child_wearing_helmet" → 3cc9db6e-78f3-4398-92f2-cbc30d8a5f86 (5 total)
+[2026-04-16T15:33:52.363Z] [processQueue] FULL REFINED PROMPT for "child_wearing_helmet": A simple, bold AAC symbol icon of a generic child figure wearing a helmet, depicted with thick black outlines and flat, solid colors on a transparent background. The child's head is slightly larger in proportion to their body, with simple dot eyes and a small curved mouth. The child wears a round, protective helmet, centered in the frame with some padding around the edges, filling about 70-80% of the canvas.
+[2026-04-16T15:33:56.565Z] [processQueue] Generating "person_running_fast"...
+[2026-04-16T17:17:18.170Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:17:18.174Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:17:34.347Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:17:34.348Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:17:47.730Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:17:47.735Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:18:02.958Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:18:02.963Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:18:18.070Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:18:18.075Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:18:29.033Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:18:29.037Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:18:50.703Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:18:50.704Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:19:20.514Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:19:20.521Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:19:22.646Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:19:22.650Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:19:34.583Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:19:34.586Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:19:46.006Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:19:46.010Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:19:57.815Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:19:57.823Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:20:41.003Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:20:41.005Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:21:29.428Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:21:29.430Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:21:55.313Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:21:55.317Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:24:25.736Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:24:25.784Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:24:34.403Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:24:34.408Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:24:44.630Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:24:44.635Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:24:56.986Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:24:56.990Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:25:08.558Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:25:08.563Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:25:18.907Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:25:18.912Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:25:41.327Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:25:41.329Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:26:01.239Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:26:01.243Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:26:14.504Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:26:14.508Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-16T17:26:24.658Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-16T17:26:24.662Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-18T21:23:30.963Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-18T21:23:30.967Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-18T21:23:31.137Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-18T21:23:31.140Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-18T21:23:31.341Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-18T21:23:31.345Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-18T21:23:31.813Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-18T21:23:31.816Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-18T21:23:50.435Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-18T21:23:50.438Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-18T21:24:01.007Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-18T21:24:01.191Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-18T21:27:32.949Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-18T21:27:32.952Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 

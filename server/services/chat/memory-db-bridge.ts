@@ -689,7 +689,8 @@ export async function populateMemoryFromDB(
         // Container type - prefer list, fall back to read
         if (dbOps.list) {
           const page = state.page[path] ?? { offset: 0, limit: defaultLimit };
-          const result = await dbOps.list(context, page);
+          const filters = state.filters?.[path];
+          const result = await dbOps.list(context, page, filters);
 
           // Transform items if needed
           const items = dbOps.fromDB
@@ -1334,6 +1335,37 @@ export async function processMemoryToolWithDB(
         const containerPath = rawPath.replace(/\/\*$/, '');
         if (preloadedPaths.has(containerPath)) continue;
         preloadedPaths.add(containerPath);
+
+        // Apply the op's pagination/filter to state BEFORE loading, so the list()
+        // call sees the intended slice+filters. If filters change vs the last
+        // loaded snapshot, mark the path stale to force a reload.
+        const normalized = normalizePath(containerPath);
+        if (op.page) {
+          if (!memoryState.page[normalized]) memoryState.page[normalized] = { offset: 0, limit: 50 };
+          if (op.page.offset != null) memoryState.page[normalized].offset = Math.max(0, op.page.offset);
+          if (op.page.limit  != null) memoryState.page[normalized].limit  = Math.max(1, Math.min(500, op.page.limit));
+          markStale(loadState, normalized, false);
+        }
+        if (op.filter !== undefined) {
+          if (!memoryState.filters) memoryState.filters = {};
+          const f = op.filter;
+          const hasAny = !!(f.search || f.dateFrom || f.dateTo);
+          const prev = memoryState.filters[normalized];
+          const prevKey = prev ? JSON.stringify(prev) : '';
+          const nextKey = hasAny ? JSON.stringify({ search: f.search, dateFrom: f.dateFrom, dateTo: f.dateTo }) : '';
+          if (prevKey !== nextKey) {
+            if (hasAny) {
+              memoryState.filters[normalized] = {
+                ...(f.search    ? { search: f.search }       : {}),
+                ...(f.dateFrom  ? { dateFrom: f.dateFrom }   : {}),
+                ...(f.dateTo    ? { dateTo: f.dateTo }       : {}),
+              };
+            } else {
+              delete memoryState.filters[normalized];
+            }
+            markStale(loadState, normalized, false);
+          }
+        }
 
         if (needsLoading(loadState, containerPath)) {
           const resolution = resolveSchemaWithContext(fields, memoryValues, containerPath, baseContext);

@@ -1,0 +1,150 @@
+/**
+ * sessionSummary.ts
+ *
+ * Generates a short title + summary for a chat session so that deep-analysis
+ * session search (memory field Context_StudentSessions / Context_UserSessions)
+ * has something meaningful to match against.
+ *
+ * Idempotent: if the session already has both title and summary, no work is done.
+ * Safe to call in the background (errors are logged, not thrown).
+ */
+
+import { db } from "../db";
+import { chatSessions, type ChatMessage } from "@shared/schema";
+import { eq } from "drizzle-orm";
+import { getStructuredProvider } from "./providers/provider-factory";
+import type { JSONSchema, GPTInputItem } from "./chat/gpt";
+import { settingsRepository } from "../repositories/settingsRepository";
+import fs from "fs";
+import path from "path";
+
+const LOG_FILE = path.resolve(process.cwd(), "server", "session-summary-debug.log");
+function log(msg: string) {
+  try {
+    fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] ${msg}\n`);
+  } catch {}
+}
+
+const MAX_MESSAGES_IN_CONTEXT = 40;
+const MAX_CHARS_PER_MESSAGE = 500;
+
+function messageText(m: ChatMessage): string {
+  const c = m.content;
+  if (typeof c === "string") return c;
+  if (c && typeof c === "object") {
+    return c.text || c.md || c.html || "";
+  }
+  return "";
+}
+
+function buildTranscript(messages: ChatMessage[]): string {
+  const filtered = messages.filter(m => m.role !== "tool" && m.role !== "system");
+  const slice = filtered.length <= MAX_MESSAGES_IN_CONTEXT
+    ? filtered
+    : [
+        ...filtered.slice(0, MAX_MESSAGES_IN_CONTEXT / 2),
+        ...filtered.slice(-MAX_MESSAGES_IN_CONTEXT / 2),
+      ];
+  return slice
+    .map(m => {
+      const text = messageText(m).slice(0, MAX_CHARS_PER_MESSAGE);
+      return `${m.role.toUpperCase()}: ${text}`;
+    })
+    .join("\n");
+}
+
+const SUMMARY_SCHEMA: JSONSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["title", "summary", "importance"],
+  properties: {
+    title: {
+      type: "string",
+      description: "Short human-readable title, ≤ 80 chars. No quotes.",
+    },
+    summary: {
+      type: "string",
+      description: "2-4 sentence summary: main topics, outcomes, anything notable. No PII beyond what's already in the transcript.",
+    },
+    importance: {
+      type: "integer",
+      enum: [0, 1, 2, 3],
+      description: "Perceived importance of this session. 0 = nothing happened and the session could be deleted with no information loss. 1 = routine activity (normal usage, no new findings). 2 = potentially interesting: a new observation, behavior, or data point worth noting. 3 = major milestone (clear goal progress, regression, breakthrough, or incident). Be conservative — 3 is rare.",
+    },
+  },
+};
+
+export async function generateSessionSummary(sessionId: string): Promise<void> {
+  try {
+    const [session] = await db
+      .select()
+      .from(chatSessions)
+      .where(eq(chatSessions.id, sessionId));
+    if (!session) return;
+    if (session.title && session.summary) return; // already done
+
+    const messages: ChatMessage[] = Array.isArray(session.log) ? (session.log as ChatMessage[]) : [];
+    if (messages.length === 0) {
+      await db
+        .update(chatSessions)
+        .set({ title: "(empty session)", summary: "No messages.", importance: 0 })
+        .where(eq(chatSessions.id, sessionId));
+      return;
+    }
+
+    const transcript = buildTranscript(messages);
+    const cfg = await settingsRepository.getLLMConfig("clinician");
+    const provider = getStructuredProvider(cfg.provider);
+
+    const input: GPTInputItem[] = [
+      {
+        type: "message",
+        role: "user",
+        content: `Summarize the following session transcript.\n\nChat mode: ${session.chatMode}\n\nTranscript:\n${transcript}`,
+      },
+    ];
+
+    const response = await provider.structuredComplete({
+      model: cfg.model,
+      input,
+      instructions:
+        "You are summarizing a chat session transcript for later retrieval. Produce a concise title, a 2-4 sentence summary, and an importance score (0-3). Focus on topics, outcomes, and notable events. Do not invent facts.",
+      schemaName: "SessionSummary",
+      schema: SUMMARY_SCHEMA,
+      maxTokens: 400,
+    });
+
+    const parsed = response.content;
+    if (!parsed || typeof parsed !== "object") {
+      log(`[${sessionId}] no parsed content from provider`);
+      return;
+    }
+    const title = typeof parsed.title === "string" ? parsed.title.slice(0, 200) : null;
+    const summary = typeof parsed.summary === "string" ? parsed.summary : null;
+    const rawImportance = parsed.importance;
+    const importance = (typeof rawImportance === "number" && Number.isInteger(rawImportance) && rawImportance >= 0 && rawImportance <= 3)
+      ? rawImportance
+      : 1;
+    if (!title || !summary) {
+      log(`[${sessionId}] missing title/summary in response`);
+      return;
+    }
+
+    await db
+      .update(chatSessions)
+      .set({ title, summary, importance })
+      .where(eq(chatSessions.id, sessionId));
+    log(`[${sessionId}] summary generated (importance=${importance})`);
+  } catch (err) {
+    log(`[${sessionId}] error: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/**
+ * Fire-and-forget summary generation. Does not throw.
+ */
+export function generateSessionSummaryAsync(sessionId: string): void {
+  generateSessionSummary(sessionId).catch(err => {
+    log(`[${sessionId}] async error: ${err instanceof Error ? err.message : String(err)}`);
+  });
+}

@@ -575,7 +575,7 @@ export class GeminiLiveProvider implements LiveProvider {
       if (content.turnComplete) {
         const turnReason = (content as any).turnCompleteReason as string | undefined;
         logLiveSession("SERVER → TURN_COMPLETE", `reason=${turnReason || "normal"}`);
-        if (turnReason && turnReason !== "STOP") {
+        if (turnReason && turnReason !== "STOP" && turnReason !== "RESPONSE_REJECTED") {
           // Abnormal turn end (e.g. MALFORMED_FUNCTION_CALL) — log full message for debugging
           logLiveSession("ABNORMAL TURN_COMPLETE (full msg)", JSON.stringify(msg, null, 2).substring(0, 4000));
         }

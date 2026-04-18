@@ -1,0 +1,1 @@
+ALTER TABLE "deep_analyses" ADD COLUMN "cost_usd" numeric(10, 6) DEFAULT '0' NOT NULL;

@@ -180,6 +180,7 @@ export const yue = {
     students: "{{STUDENTS}}",
     progress: "{{STUDENT}}進度",
     reports: "{{STUDENT}}檔案",
+    deepAnalysis: "深度分析",
     symbols: "AAC 符號庫",
     aacSettings: "AAC 設定",
     currentStudent: "而家嘅{{STUDENT}}",
@@ -2051,6 +2052,8 @@ export const yue = {
     appMusicDesc: "喺鋼琴上面彈音符",
     appSandboxGame: "沙盒農場",
     appSandboxGameDesc: "種植物同起農場",
+    appBubblesGame: "泡泡",
+    appBubblesGameDesc: "篤穿漂浮嘅泡泡，訓練手眼協調",
     spotifyConnected: "Spotify 已連接",
     spotifyConnect: "連接",
     spotifyDisconnect: "斷開連接",
@@ -2062,6 +2065,37 @@ export const yue = {
     settingsUpdated: "AAC 設定已更新",
     settingsUpdatedDesc: "{{STUDENT}}嘅 AAC 設定已儲存。",
     updateError: "AAC 設定更新失敗。",
+  },
+
+  // ============================================================================
+  // DEEP ANALYSIS
+  // ============================================================================
+  deepAnalysis: {
+    title: "深度分析",
+    history: "歷史記錄",
+    specialInstructions: "特別說明",
+    specialInstructionsPlaceholder: "可選。例如：今個月集中睇社交技能，或與上次分析比較...",
+    generate: "生成分析",
+    starting: "啟動中...",
+    started: "已開始",
+    completed: "已完成",
+    refresh: "刷新",
+    loading: "載入中...",
+    noHistory: "仲未有分析。",
+    selectOrGenerate: "揀一個分析或生成新分析。",
+    selectStudent: "揀一個{{STUDENT}}嚟生成深度分析。",
+    untitled: "未命名嘅分析",
+    inProgress: "進行中（第 {{STEP}} 步）...",
+    delete: "刪除",
+    confirmDelete: "永久刪除呢個分析？",
+    error: "錯誤",
+    status: {
+      pending: "待處理",
+      running: "運行中",
+      paused: "已暫停",
+      complete: "已完成",
+      failed: "失敗",
+    },
   },
 
   // ============================================================================
@@ -2285,6 +2319,7 @@ export const yue = {
       calendar: "日曆",
       dashboardLevel: "儀表板級別",
       expertAgents: "專家代理",
+      deepAnalysisEnabled: "深度分析",
       // Actions
       resendInvite: "重新傳送邀請",
       inviteResent: "邀請已成功重新傳送",
