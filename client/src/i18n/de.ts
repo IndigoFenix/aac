@@ -180,6 +180,7 @@ export const de = {
     students: "{{STUDENTS}}",
     progress: "{{STUDENT}}-Fortschritt",
     reports: "{{STUDENT}}-Akte",
+    deepAnalysis: "Tiefenanalyse",
     symbols: "AAC-Symbolbibliothek",
     aacSettings: "AAC-Einstellungen",
     currentStudent: "Aktueller {{STUDENT}}",
@@ -2051,6 +2052,8 @@ export const de = {
     appMusicDesc: "Musiknoten auf einem Klavier spielen",
     appSandboxGame: "Sandbox-Farm",
     appSandboxGameDesc: "Pflanzen anbauen und eine Farm aufbauen",
+    appBubblesGame: "Blasen",
+    appBubblesGameDesc: "Schwebende Blasen zerplatzen für Hand-Auge-Koordination",
     spotifyConnected: "Spotify verbunden",
     spotifyConnect: "Verbinden",
     spotifyDisconnect: "Trennen",
@@ -2062,6 +2065,37 @@ export const de = {
     settingsUpdated: "AAC-Einstellungen aktualisiert",
     settingsUpdatedDesc: "Die AAC-Einstellungen des {{STUDENT}} wurden gespeichert.",
     updateError: "AAC-Einstellungen konnten nicht aktualisiert werden.",
+  },
+
+  // ============================================================================
+  // DEEP ANALYSIS
+  // ============================================================================
+  deepAnalysis: {
+    title: "Tiefenanalyse",
+    history: "Verlauf",
+    specialInstructions: "Besondere Anweisungen",
+    specialInstructionsPlaceholder: "Optional. Z. B. Fokus auf soziale Fähigkeiten, Vergleich mit der vorherigen Analyse...",
+    generate: "Analyse erstellen",
+    starting: "Wird gestartet...",
+    started: "Gestartet",
+    completed: "Abgeschlossen",
+    refresh: "Aktualisieren",
+    loading: "Wird geladen...",
+    noHistory: "Noch keine Analysen.",
+    selectOrGenerate: "Wählen Sie eine Analyse aus oder erstellen Sie eine neue.",
+    selectStudent: "Wählen Sie einen {{STUDENT}}, um eine Tiefenanalyse zu erstellen.",
+    untitled: "Unbenannte Analyse",
+    inProgress: "Läuft (Schritt {{STEP}})...",
+    delete: "Löschen",
+    confirmDelete: "Diese Analyse dauerhaft löschen?",
+    error: "Fehler",
+    status: {
+      pending: "Ausstehend",
+      running: "Läuft",
+      paused: "Pausiert",
+      complete: "Abgeschlossen",
+      failed: "Fehlgeschlagen",
+    },
   },
 
   // ============================================================================
@@ -2285,6 +2319,7 @@ export const de = {
       calendar: "Kalender",
       dashboardLevel: "Dashboard-Stufe",
       expertAgents: "Experten-Agenten",
+      deepAnalysisEnabled: "Tiefenanalyse",
       // Actions
       resendInvite: "Einladung erneut senden",
       inviteResent: "Einladung erfolgreich erneut gesendet",

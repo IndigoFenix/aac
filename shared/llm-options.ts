@@ -6,7 +6,7 @@
 // ──────────────────────────────────────────────────────────────────
 
 export type LLMProviderKey = "openai" | "gemini" | "claude";
-export type UseCaseKey = "clinician" | "aac_chat" | "aac_moderator";
+export type UseCaseKey = "clinician" | "aac_chat" | "aac_moderator" | "deep_analysis";
 
 export interface ModelOption {
   provider: LLMProviderKey;
@@ -72,6 +72,15 @@ export const USE_CASES: Record<UseCaseKey, UseCaseInfo> = {
     requiresTools: true,
     requiresStreaming: false,
     requiresStructuredOutput: true,
+  },
+  deep_analysis: {
+    label: "Deep Analysis",
+    description: "Long-running chain-of-thought agent that produces student progress reports. Extended thinking + tool calling.",
+    defaultProvider: "claude",
+    defaultModel: "claude-opus",
+    requiresTools: true,
+    requiresStreaming: false,
+    requiresStructuredOutput: false,
   },
 };
 
@@ -234,6 +243,7 @@ export const SETTING_KEYS: Record<UseCaseKey, string> = {
   clinician: "llm_clinician",
   aac_chat: "llm_aac_chat",
   aac_moderator: "llm_aac_moderator",
+  deep_analysis: "llm_deep_analysis",
 };
 
 // ──────────────────────────────────────────────────────────────────
@@ -266,14 +276,24 @@ export function getDefaultConfig(useCase: UseCaseKey): LLMConfigValue {
 
 /**
  * Resolve a model ID alias to the actual API model string.
- * Claude model IDs are short aliases; this maps them to the real API identifiers.
+ *
+ * Claude naming differs between backends: the direct Anthropic API separates
+ * the date with `-`, Vertex uses `@`. Selected via ANTHROPIC_USE_VERTEX env.
+ * (Server-only; the client bundle never reads this var, so the mapping falls
+ * back to the direct-API format in the browser — safe because the client
+ * never calls Anthropic directly.)
  */
 export function resolveModelId(provider: LLMProviderKey, modelId: string): string {
   if (provider === "claude") {
+    const useVertex =
+      typeof process !== "undefined" &&
+      (process.env?.ANTHROPIC_USE_VERTEX === "1" ||
+        process.env?.ANTHROPIC_USE_VERTEX === "true");
+    const sep = useVertex ? "@" : "-";
     const CLAUDE_MODEL_MAP: Record<string, string> = {
-      "claude-haiku": "claude-haiku-4-5-20251001",
-      "claude-sonnet": "claude-sonnet-4-20250514",
-      "claude-opus": "claude-opus-4-20250514",
+      "claude-haiku":  `claude-haiku-4-5${sep}20251001`,
+      "claude-sonnet": `claude-sonnet-4${sep}20250514`,
+      "claude-opus":   `claude-opus-4${sep}20250514`,
     };
     return CLAUDE_MODEL_MAP[modelId] || modelId;
   }

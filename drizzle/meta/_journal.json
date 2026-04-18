@@ -407,6 +407,41 @@
       "when": 1776238657147,
       "tag": "0057_eager_the_enforcers",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1776413182136,
+      "tag": "0058_brave_cargill",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1776416434231,
+      "tag": "0059_wandering_blue_blade",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1776418362810,
+      "tag": "0060_solid_domino",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1776433091264,
+      "tag": "0061_moaning_songbird",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1776436596200,
+      "tag": "0062_breezy_cerise",
+      "breakpoints": true
     }
   ]
 }

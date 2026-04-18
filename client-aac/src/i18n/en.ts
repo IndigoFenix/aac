@@ -366,6 +366,13 @@ export const en = {
     recalibrate: "Recalibrate Eye Tracking",
   },
 
+  bubblesGame: {
+    title: "Bubbles",
+    score: "Score",
+    reset: "Reset",
+    close: "Close",
+  },
+
   errors: {
     POLICY_VIOLATION: "This response was blocked due to a policy violation.",
     NO_RESPONSE: "An error occurred while processing the response.",

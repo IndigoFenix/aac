@@ -180,6 +180,7 @@ export const en = {
     students: "{{STUDENTS}}",
     progress: "{{STUDENT}} Progress",
     reports: "{{STUDENT}} File",
+    deepAnalysis: "Deep Analysis",
     symbols: "AAC Symbol Library",
     aacSettings: "AAC Settings",
     currentStudent: "Current {{STUDENT}}",
@@ -2051,6 +2052,8 @@ export const en = {
     appMusicDesc: "Play musical notes on a piano",
     appSandboxGame: "Sandbox Farm",
     appSandboxGameDesc: "Grow plants and build a farm",
+    appBubblesGame: "Bubbles",
+    appBubblesGameDesc: "Pop floating bubbles to practice hand-eye coordination",
     spotifyConnected: "Spotify connected",
     spotifyConnect: "Connect",
     spotifyDisconnect: "Disconnect",
@@ -2062,6 +2065,37 @@ export const en = {
     settingsUpdated: "AAC Settings Updated",
     settingsUpdatedDesc: "The {{STUDENT}}'s AAC settings have been saved.",
     updateError: "Failed to update AAC settings.",
+  },
+
+  // ============================================================================
+  // DEEP ANALYSIS
+  // ============================================================================
+  deepAnalysis: {
+    title: "Deep Analysis",
+    history: "History",
+    specialInstructions: "Special Instructions",
+    specialInstructionsPlaceholder: "Optional. E.g., focus on social skills this month, or compare to last analysis...",
+    generate: "Generate Analysis",
+    starting: "Starting...",
+    started: "Started",
+    completed: "Completed",
+    refresh: "Refresh",
+    loading: "Loading...",
+    noHistory: "No analyses yet.",
+    selectOrGenerate: "Select an analysis, or generate a new one.",
+    selectStudent: "Select a {{STUDENT}} to generate a deep analysis.",
+    untitled: "Untitled Analysis",
+    inProgress: "In progress (step {{STEP}})...",
+    delete: "Delete",
+    confirmDelete: "Delete this analysis permanently?",
+    error: "Error",
+    status: {
+      pending: "Pending",
+      running: "Running",
+      paused: "Paused",
+      complete: "Complete",
+      failed: "Failed",
+    },
   },
 
   // ============================================================================
@@ -2285,6 +2319,7 @@ export const en = {
       calendar: "Calendar",
       dashboardLevel: "Dashboard Level",
       expertAgents: "Expert Agents",
+      deepAnalysisEnabled: "Deep Analysis",
       // Actions
       resendInvite: "Resend Invite",
       inviteResent: "Invite resent successfully",

@@ -96,4 +96,9 @@ app.get('/health', (_req, res) => {
   server.listen({ port, host: "0.0.0.0" }, () => {
     log(`serving on port ${port}`);
   });
+
+  // Resume any deep analyses that were interrupted by a prior server restart.
+  import("./services/deepAnalysisService").then(({ resumeStalledAnalyses }) => {
+    resumeStalledAnalyses().catch(err => log(`resumeStalledAnalyses error: ${err?.message || err}`));
+  }).catch(() => {});
 })();

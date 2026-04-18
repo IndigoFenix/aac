@@ -1452,34 +1452,53 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
           };
         }
 
-        // Enforce button limit
+        // Split buttons: those that fit go on the main board, overflow goes to context sidebar
+        let mainButtons = buttons;
+        let overflowButtons: typeof buttons = [];
         if (state) {
-          const newCount = state.boardButtonLabels.length + buttons.length;
-          if (newCount > maxSlots) {
-            const available = maxSlots - state.boardButtonLabels.length;
-            logDualAgent("LiveRelay.boardPatchRejected", { sessionId: this.sessionId, attempted: buttons.length, current: state.boardButtonLabels.length, max: maxSlots });
-            return {
-              id: call.id,
-              name,
-              response: { error: `Cannot add ${buttons.length} button(s) — would exceed the ${maxSlots}-button limit. Currently ${state.boardButtonLabels.length} buttons, ${available} slot(s) available. Use remove_buttons() first to free slots.` },
-            };
+          const available = maxSlots - state.boardButtonLabels.length;
+          if (buttons.length > available) {
+            mainButtons = buttons.slice(0, available);
+            overflowButtons = buttons.slice(available);
+            logLiveSession("ADD_BUTTONS OVERFLOW", `${overflowButtons.length} button(s) overflow to context sidebar (board ${state.boardButtonLabels.length}/${maxSlots})`);
           }
-          state.boardButtonLabels = [...state.boardButtonLabels, ...buttons.map(b => b.label)];
+          state.boardButtonLabels = [...state.boardButtonLabels, ...mainButtons.map(b => b.label)];
         }
 
         // Resolve existing symbols from DB
-        const unresolvedKeys = await this.resolveExistingSymbols(buttons);
-        this.queueMissingSymbolGeneration(buttons, unresolvedKeys);
+        const allButtons = [...mainButtons, ...overflowButtons];
+        const unresolvedKeys = await this.resolveExistingSymbols(allButtons);
+        this.queueMissingSymbolGeneration(allButtons, unresolvedKeys);
 
-        this.lastBoardUpdateTime = Date.now();
-        this.send({ type: "board_patch", data: { add: buttons, remove: [] } });
-        this.turnAccum.boardChanged = true;
-        this.turnAccum.boardAddLabels.push(...buttons.map(b => b.label));
+        // Add main buttons to the board
+        if (mainButtons.length > 0) {
+          this.lastBoardUpdateTime = Date.now();
+          this.send({ type: "board_patch", data: { add: mainButtons, remove: [] } });
+          this.turnAccum.boardChanged = true;
+          this.turnAccum.boardAddLabels.push(...mainButtons.map(b => b.label));
+        }
+
+        // Send overflow buttons to context sidebar
+        for (const btn of overflowButtons) {
+          if (this.contextButtonLabels.some(l => l.toLowerCase() === btn.label.toLowerCase())) continue;
+          this.contextButtonLabels.push(btn.label);
+          if (this.contextButtonLabels.length > 4) this.contextButtonLabels.shift();
+          this.send({ type: "context_button_add", data: {
+            label: btn.label,
+            iconRef: btn.iconRef,
+            symbolPath: btn.symbolPath,
+            imageKey: btn.imageKey,
+            sentence: btn.sentence,
+          }});
+        }
 
         let stateMsg = "";
         if (state) {
           const available = maxSlots - state.boardButtonLabels.length;
           stateMsg = `Board: ${state.boardButtonLabels.length}/${maxSlots} buttons (${available} available): ${state.boardButtonLabels.join(", ")}`;
+          if (overflowButtons.length > 0) {
+            stateMsg += `. ${overflowButtons.length} button(s) moved to context sidebar.`;
+          }
         }
 
         return { id: call.id, name, response: { output: "ok", board_state: stateMsg } };
@@ -2023,6 +2042,7 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
       this.flushDirectAudio();
       this.directAudioChunks = [];
       this.preGenTtsPromise = null;
+      this.pendingRetryPrompt = null;
       // Reset retry counter on successful turn — only count consecutive failures
       this.debugRetryCount = 0;
       this.setState("idle");
@@ -2947,6 +2967,14 @@ When a button is pressed, the student's pre-generated sentence is also voiced vi
     });
 
     await dualAgentService.triggerMonitor(this.sessionId, true);
+
+    // Populate the generic session summary/title/importance (used by deep-analysis
+    // session search). This runs after the monitor pass so any final Student_Notes
+    // updates are already persisted. Fire-and-forget — errors are logged internally.
+    const sessionId = this.sessionId;
+    import("../sessionSummary").then(({ generateSessionSummaryAsync }) => {
+      generateSessionSummaryAsync(sessionId);
+    }).catch(() => {});
   }
 }
 

@@ -368,6 +368,13 @@ export const ko: Translations = {
     recalibrate: "시선 추적 재보정",
   },
 
+  bubblesGame: {
+    title: "버블",
+    score: "점수",
+    reset: "재설정",
+    close: "닫기",
+  },
+
   errors: {
     POLICY_VIOLATION: "정책 위반으로 이 응답이 차단되었습니다.",
     NO_RESPONSE: "응답을 처리하는 중 오류가 발생했습니다.",

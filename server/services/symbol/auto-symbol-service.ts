@@ -185,7 +185,7 @@ async function processQueue(): Promise<void> {
   let generated = 0;
 
   while (queue.length > 0) {
-    const job = queue.shift()!;
+    const job = queue.pop()!;  // LIFO — newest board's images first
 
     // Rate limit: 4s between generations
     if (generated > 0) {

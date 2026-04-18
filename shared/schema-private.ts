@@ -204,7 +204,7 @@ export const activitySubjectTypeEnum = pgEnum("activity_subject_type", [
   "progress_report", "data_point", "team_member", "meeting",
   "medical_record", "functional_report", "educational_report",
   "profile_domain", "invite", "consent_form", "transition_plan", "transition_goal",
-  "custom_app"
+  "custom_app", "deep_analysis"
 ]);
 
 // =============================================================================
@@ -1150,10 +1150,60 @@ export const chatSessions = pgTable("chat_sessions", {
   monitorBusy: boolean("monitor_busy").default(false), // Is Monitor currently processing?
   monitorBusySince: timestamp("monitor_busy_since"), // Timestamp when Monitor started (for staleness detection)
   thinkingMode: boolean("thinking_mode").default(false), // Is thinking mode active? (Monitor responds directly)
+
+  // Short human-readable summary, generated on session close. Used by deep-analysis
+  // session search (memory field Context_StudentSessions / Context_UserSessions).
+  title: text("title"),
+  summary: text("summary"),
+  // Perceived importance of this session. Set by the summarizer.
+  //  0 = nothing happened; can be deleted without information loss
+  //  1 = routine activity
+  //  2 = potentially interesting findings
+  //  3 = major milestone
+  importance: integer("importance").notNull().default(0),
 }, (table) => [
   index("idx_chat_sessions_user_id").on(table.userId),
   index("idx_chat_sessions_student_id").on(table.studentId),
   index("idx_chat_sessions_status").on(table.status),
+  index("idx_chat_sessions_chat_mode_created").on(table.chatMode, table.createdAt),
+  index("idx_chat_sessions_student_importance").on(table.studentId, table.importance, table.createdAt),
+  // GIN trigram index for title/summary is added via raw SQL in the generated migration
+  // (Drizzle doesn't emit expression-based GIN indexes reliably).
+]);
+
+// Deep analyses — long-running chain-of-thought reports produced by the deep-analysis service.
+// Stored per-student; searchable via memory field Context_DeepAnalyses.
+// Intermediate state (messages, scratch notes, tool-call counters) is persisted so
+// an interrupted run can be resumed from the last checkpoint without losing progress.
+export const deepAnalyses = pgTable("deep_analyses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").references(() => students.id).notNull(),
+  createdByUserId: varchar("created_by_user_id").references(() => users.id).notNull(),
+  model: varchar("model").notNull(),
+  specialInstructions: text("special_instructions"),
+  status: varchar("status").notNull().default("pending"), // pending | running | paused | complete | failed
+  title: text("title"),
+  summary: text("summary"),
+  reportMarkdown: text("report_markdown"),
+  error: text("error"),
+  thinkingTokens: integer("thinking_tokens").notNull().default(0),
+  inputTokens: integer("input_tokens").notNull().default(0),
+  outputTokens: integer("output_tokens").notNull().default(0),
+  // Running USD cost computed from MODEL_OPTIONS rates at each turn persistence.
+  // Thinking tokens are billed as output tokens by Anthropic — included in the output-rate total.
+  costUsd: numeric("cost_usd", { precision: 10, scale: 6 }).notNull().default("0"),
+  // Resumable run state. Updated after each agent turn so an interrupted run can pick up.
+  messages: jsonb("messages").notNull().default([]),   // running conversation (system msgs + user + assistant + tool results)
+  scratch: jsonb("scratch").notNull().default({}),     // free-form scratchpad: running notes, partial findings, tool-call counters, step name
+  stepCount: integer("step_count").notNull().default(0),
+  resumeCount: integer("resume_count").notNull().default(0),
+  lastActivityAt: timestamp("last_activity_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+}, (table) => [
+  index("idx_deep_analyses_student_id").on(table.studentId),
+  index("idx_deep_analyses_created_at").on(table.createdAt),
+  index("idx_deep_analyses_status").on(table.status),
 ]);
 
 // =============================================================================

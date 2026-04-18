@@ -180,6 +180,7 @@ export const ko = {
     students: "{{STUDENTS}}",
     progress: "{{STUDENT}} 진행 상황",
     reports: "{{STUDENT}} 파일",
+    deepAnalysis: "심층 분석",
     symbols: "AAC 기호 라이브러리",
     aacSettings: "AAC 설정",
     currentStudent: "현재 {{STUDENT}}",
@@ -2051,6 +2052,8 @@ export const ko = {
     appMusicDesc: "피아노로 음을 연주",
     appSandboxGame: "샌드박스 농장",
     appSandboxGameDesc: "식물을 기르고 농장을 만들기",
+    appBubblesGame: "버블",
+    appBubblesGameDesc: "떠다니는 버블을 터뜨려 손-눈 협응 연습",
     spotifyConnected: "Spotify 연결됨",
     spotifyConnect: "연결",
     spotifyDisconnect: "연결 해제",
@@ -2062,6 +2065,37 @@ export const ko = {
     settingsUpdated: "AAC 설정 업데이트됨",
     settingsUpdatedDesc: "{{STUDENT}}의 AAC 설정이 저장되었습니다.",
     updateError: "AAC 설정 업데이트에 실패했습니다.",
+  },
+
+  // ============================================================================
+  // DEEP ANALYSIS
+  // ============================================================================
+  deepAnalysis: {
+    title: "심층 분석",
+    history: "기록",
+    specialInstructions: "특별 지시사항",
+    specialInstructionsPlaceholder: "선택사항. 예: 이번 달 사회적 기술에 집중하거나 이전 분석과 비교...",
+    generate: "분석 생성",
+    starting: "시작 중...",
+    started: "시작됨",
+    completed: "완료됨",
+    refresh: "새로 고침",
+    loading: "로드 중...",
+    noHistory: "아직 분석이 없습니다.",
+    selectOrGenerate: "분석을 선택하거나 새로 생성하세요.",
+    selectStudent: "심층 분석을 생성하려면 {{STUDENT}}을(를) 선택하세요.",
+    untitled: "제목 없는 분석",
+    inProgress: "진행 중 (단계 {{STEP}})...",
+    delete: "삭제",
+    confirmDelete: "이 분석을 영구적으로 삭제하시겠습니까?",
+    error: "오류",
+    status: {
+      pending: "대기 중",
+      running: "실행 중",
+      paused: "일시 중지됨",
+      complete: "완료됨",
+      failed: "실패",
+    },
   },
 
   // ============================================================================
@@ -2285,6 +2319,7 @@ export const ko = {
       calendar: "캘린더",
       dashboardLevel: "대시보드 수준",
       expertAgents: "전문가 에이전트",
+      deepAnalysisEnabled: "심층 분석",
       // Actions
       resendInvite: "초대 재전송",
       inviteResent: "초대가 성공적으로 재전송되었습니다",

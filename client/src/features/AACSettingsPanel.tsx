@@ -1340,6 +1340,23 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                   }
                 />
               </div>
+
+              {/* Bubbles */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🫧</span>
+                  <div>
+                    <Label className="text-sm font-medium">{t('aacSettings.appBubblesGame')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('aacSettings.appBubblesGameDesc')}</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={appConfig.bubbles_game?.enabled ?? false}
+                  onCheckedChange={(checked) =>
+                    setAppConfig(prev => ({ ...prev, bubbles_game: { ...prev.bubbles_game, enabled: checked } }))
+                  }
+                />
+              </div>
             </CardContent>
           </Card>
 

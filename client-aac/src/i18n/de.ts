@@ -368,6 +368,13 @@ export const de: Translations = {
     recalibrate: "Blicksteuerung neu kalibrieren",
   },
 
+  bubblesGame: {
+    title: "Blasen",
+    score: "Punktzahl",
+    reset: "Zurücksetzen",
+    close: "Schließen",
+  },
+
   errors: {
     POLICY_VIOLATION: "Diese Antwort wurde aufgrund eines Richtlinienversto\u00dfes blockiert.",
     NO_RESPONSE: "Bei der Verarbeitung der Antwort ist ein Fehler aufgetreten.",

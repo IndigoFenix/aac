@@ -5,8 +5,8 @@
 // whose input_schema is the desired output schema is always provided, and
 // tool_choice is set to "any" so the model MUST call a tool on every turn.
 
-import Anthropic from "@anthropic-ai/sdk";
 import { resolveModelId } from "@shared/llm-options";
+import { getAnthropicClient } from "./anthropic-client";
 import type { StructuredLLMProvider, StructuredRequest } from "./structured-provider";
 import type { GPTResponse, GPTFunctionToolCall, GPTInputItem } from "../chat/gpt";
 
@@ -14,11 +14,7 @@ import type { GPTResponse, GPTFunctionToolCall, GPTInputItem } from "../chat/gpt
 const STRUCTURED_TOOL_NAME = "_structured_response";
 
 export class ClaudeStructuredProvider implements StructuredLLMProvider {
-  private client: Anthropic;
-
-  constructor() {
-    this.client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  }
+  private client = getAnthropicClient();
 
   async structuredComplete(request: StructuredRequest): Promise<GPTResponse> {
     const model = resolveModelId("claude", request.model);

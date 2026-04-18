@@ -40,10 +40,15 @@ export function parseBoardButtons(content: string): Array<{ label: string; iconR
         buttonType = "guess";
       }
       // imageKey is only valid if there are 4+ parts and the 3rd part is non-empty;
-      // otherwise the AI omitted the image key and parts[2] is actually the sentence
+      // otherwise the AI omitted the image key and parts[2] is actually the sentence.
+      // Special case: "label|icon||sentence" has 4 parts with empty imageKey — sentence is parts[3].
       const hasImageKey = parts.length >= 4 && parts[2]?.trim() !== "";
       const imageKey = hasImageKey ? parts[2].trim() : undefined;
-      const sentence = hasImageKey ? (parts[3]?.trim() || undefined) : (parts[2]?.trim() || undefined);
+      const sentence = hasImageKey
+        ? (parts[3]?.trim() || undefined)
+        : (parts.length >= 4 && parts[2]?.trim() === "")
+          ? (parts[3]?.trim() || undefined)   // label|icon||sentence format
+          : (parts[2]?.trim() || undefined);   // label|icon|sentence format (no imageKey slot)
       const spanOffset = hasImageKey ? 4 : 3;
       const rawRowSpan = parseInt(parts[spanOffset]?.trim(), 10);
       const rawColSpan = parseInt(parts[spanOffset + 1]?.trim(), 10);

@@ -55,6 +55,13 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     icon: "🌱",
     enabledByDefault: false,
   },
+  {
+    id: "bubbles_game",
+    name: "Bubbles",
+    description: "Opens a bubble-popping reflex game designed to train hand-eye coordination. Bubbles float around and the student pops them by tapping. Difficulty adjusts automatically. ALWAYS use open_app to launch this when the user wants to play the bubbles game, pop bubbles, or practice coordination.",
+    icon: "🫧",
+    enabledByDefault: false,
+  },
 ];
 
 /**

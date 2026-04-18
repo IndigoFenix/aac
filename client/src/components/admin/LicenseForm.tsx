@@ -92,6 +92,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
   const [dashboardLevel, setDashboardLevel] = useState('0');
   const [expertAgentsCount, setExpertAgentsCount] = useState(0);
   const [expertAgentsUnlimited, setExpertAgentsUnlimited] = useState(false);
+  const [deepAnalysisEnabled, setDeepAnalysisEnabled] = useState(false);
 
   // Reset form when dialog opens/closes or license changes
   useEffect(() => {
@@ -116,6 +117,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
           setDashboardLevel(String(perms.dashboardLevel ?? 0));
           setExpertAgentsCount(perms.expertAgentsCount === -1 ? 0 : (perms.expertAgentsCount ?? 0));
           setExpertAgentsUnlimited(perms.expertAgentsCount === -1);
+          setDeepAnalysisEnabled(perms.deepAnalysisEnabled ?? false);
         } else {
           resetPermissions();
         }
@@ -137,6 +139,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
     setDashboardLevel('0');
     setExpertAgentsCount(0);
     setExpertAgentsUnlimited(false);
+    setDeepAnalysisEnabled(false);
   }
 
   function resetAll() {
@@ -184,6 +187,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
         calendar: true,
         dashboardLevel: -1 as -1,
         expertAgentsCount: -1,
+        deepAnalysisEnabled: true,
       };
     }
     return {
@@ -196,6 +200,7 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
       calendar,
       dashboardLevel: Number(dashboardLevel) as 0 | 1 | 2 | -1,
       expertAgentsCount: expertAgentsUnlimited ? -1 : expertAgentsCount,
+      deepAnalysisEnabled,
     };
   }
 
@@ -538,6 +543,10 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
                   <div className="flex items-center justify-between rounded-md border p-3">
                     <Label className="text-sm">{t('admin.licenses.calendar')}</Label>
                     <Switch checked={calendar} onCheckedChange={setCalendar} />
+                  </div>
+                  <div className="flex items-center justify-between rounded-md border p-3">
+                    <Label className="text-sm">{t('admin.licenses.deepAnalysisEnabled')}</Label>
+                    <Switch checked={deepAnalysisEnabled} onCheckedChange={setDeepAnalysisEnabled} />
                   </div>
                 </div>
 

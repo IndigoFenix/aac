@@ -180,6 +180,7 @@ export const zh = {
     students: "{{STUDENTS}}",
     progress: "{{STUDENT}}进度",
     reports: "{{STUDENT}}档案",
+    deepAnalysis: "深度分析",
     symbols: "AAC 符号库",
     aacSettings: "AAC 设置",
     currentStudent: "当前{{STUDENT}}",
@@ -2051,6 +2052,8 @@ export const zh = {
     appMusicDesc: "在钢琴上演奏音符",
     appSandboxGame: "沙盒农场",
     appSandboxGameDesc: "种植植物和建设农场",
+    appBubblesGame: "泡泡",
+    appBubblesGameDesc: "戳破漂浮的泡泡，训练手眼协调",
     spotifyConnected: "Spotify 已连接",
     spotifyConnect: "连接",
     spotifyDisconnect: "断开连接",
@@ -2062,6 +2065,37 @@ export const zh = {
     settingsUpdated: "AAC 设置已更新",
     settingsUpdatedDesc: "{{STUDENT}}的 AAC 设置已保存。",
     updateError: "AAC 设置更新失败。",
+  },
+
+  // ============================================================================
+  // DEEP ANALYSIS
+  // ============================================================================
+  deepAnalysis: {
+    title: "深度分析",
+    history: "历史记录",
+    specialInstructions: "特别说明",
+    specialInstructionsPlaceholder: "可选。例如：本月关注社交技能，或与上次分析对比...",
+    generate: "生成分析",
+    starting: "正在启动...",
+    started: "已开始",
+    completed: "已完成",
+    refresh: "刷新",
+    loading: "加载中...",
+    noHistory: "还没有分析记录。",
+    selectOrGenerate: "选择一项分析或生成新分析。",
+    selectStudent: "选择一名{{STUDENT}}以生成深度分析。",
+    untitled: "未命名的分析",
+    inProgress: "进行中（第 {{STEP}} 步）...",
+    delete: "删除",
+    confirmDelete: "永久删除此分析？",
+    error: "错误",
+    status: {
+      pending: "待处理",
+      running: "运行中",
+      paused: "已暂停",
+      complete: "已完成",
+      failed: "失败",
+    },
   },
 
   // ============================================================================
@@ -2285,6 +2319,7 @@ export const zh = {
       calendar: "日历",
       dashboardLevel: "仪表板级别",
       expertAgents: "专家代理",
+      deepAnalysisEnabled: "深度分析",
       // Actions
       resendInvite: "重新发送邀请",
       inviteResent: "邀请已成功重新发送",

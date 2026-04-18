@@ -20,3 +20,4 @@ export { voiceRecordController, VoiceRecordController } from "./voiceRecordContr
 export { sessionHistoryController } from "./sessionHistoryController";
 export { licenseController } from "./licenseController";
 export { calendarController } from "./calendarController";
+export { deepAnalysisController, DeepAnalysisController } from "./deepAnalysisController";

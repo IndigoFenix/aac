@@ -10,6 +10,7 @@ export interface LicensePermissions {
   calendar: boolean;
   dashboardLevel: 0 | 1 | 2 | -1; // 0=none, 1=basic, 2=advanced, -1=full
   expertAgentsCount: number;
+  deepAnalysisEnabled: boolean;
 }
 
 export const DEFAULT_LICENSE_PERMISSIONS: LicensePermissions = {
@@ -22,6 +23,7 @@ export const DEFAULT_LICENSE_PERMISSIONS: LicensePermissions = {
   calendar: false,
   dashboardLevel: 0,
   expertAgentsCount: 0,
+  deepAnalysisEnabled: false,
 };
 
 export const MAX_LICENSE_PERMISSIONS: LicensePermissions = {
@@ -34,6 +36,7 @@ export const MAX_LICENSE_PERMISSIONS: LicensePermissions = {
   calendar: true,
   dashboardLevel: -1,
   expertAgentsCount: -1, // -1 = unlimited
+  deepAnalysisEnabled: true,
 };
 
 export const licensePermissionsSchema: z.ZodType<LicensePermissions> = z.object({
@@ -46,6 +49,7 @@ export const licensePermissionsSchema: z.ZodType<LicensePermissions> = z.object(
   calendar: z.boolean(),
   dashboardLevel: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(-1)]),
   expertAgentsCount: z.number().int(),
+  deepAnalysisEnabled: z.boolean(),
 });
 
 /**

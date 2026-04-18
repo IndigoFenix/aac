@@ -32,6 +32,7 @@ import {
   MessageCircleQuestion,
   MessagesSquare,
   Gamepad2,
+  Sparkles,
 } from 'lucide-react';
 import { useState } from 'react';
 import logoImage from '@assets/aivota_icon.png';
@@ -162,6 +163,8 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
   const dashboardLevel = perms?.dashboardLevel ?? 0;
   const showStudentMgmt = (dashboardLevel === -1 || dashboardLevel > 0) && hasStudentAccess;
 
+  const deepAnalysisEnabled = !!perms?.deepAnalysisEnabled;
+
   const studentMgmtItems = [
     {
       icon: ClipboardList,
@@ -179,6 +182,14 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
       disabled: !student,
       badge: undefined as string | undefined,
     },
+    ...(deepAnalysisEnabled ? [{
+      icon: Sparkles,
+      labelKey: 'nav.deepAnalysis',
+      feature: 'deepAnalysis' as FeatureType,
+      testId: 'nav-deep-analysis',
+      disabled: !student,
+      badge: undefined as string | undefined,
+    }] : []),
   ];
 
   const positionClasses = position === 'right' 
