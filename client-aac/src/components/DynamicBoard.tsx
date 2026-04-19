@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { ParsedBoardData, BoardButton } from "@shared/schema";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
+import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { ArrowLeft } from "lucide-react";
 import { apiUrl } from "@/lib/queryClient";
@@ -134,6 +135,7 @@ export default function DynamicBoard({
 }: DynamicBoardProps) {
   const { speak } = useTextToSpeech();
   const { t } = useLanguage();
+  const dualAgent = useDualAgentContextOptional();
   const isRTL = language === "he" || language === "ar";
 
   // Icon/text sizing based on ratio level
@@ -391,6 +393,12 @@ export default function DynamicBoard({
         return;
       }
 
+      // Handle open_website action — open the in-frame browser app
+      if (action?.type === "open_website" && action.url) {
+        dualAgent?.launchApp("browser", { url: action.url, label: button.label });
+        return;
+      }
+
       // Default: speak action
       const textToSpeak = button.spokenText || button.label;
       if (!suppressLocalSpeech) {
@@ -398,7 +406,7 @@ export default function DynamicBoard({
       }
       onButtonClick(button, textToSpeak);
     },
-    [speak, language, voiceType, onButtonClick, navigateToPage, navigateBack, navigateHome, suppressLocalSpeech]
+    [speak, language, voiceType, onButtonClick, navigateToPage, navigateBack, navigateHome, suppressLocalSpeech, dualAgent]
   );
 
   // Render nothing if completely empty

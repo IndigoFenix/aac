@@ -35,6 +35,9 @@ import { buildInteractiveAgentPrompt, AAC_DEFAULT_PERSONA_PROMPT } from "../memo
 import { boardRepository } from "../../repositories/boardRepository";
 import { customAppRepository } from "../../repositories/customAppRepository";
 import { validateCustomAppDefinition } from "@shared/custom-app-validator";
+import type { PermittedWebsite } from "@shared/schema";
+import { isUrlPermitted, mergeBoardWebsitesIntoPermitted } from "@shared/permitted-websites";
+import { fetchRecentVideosForChannels } from "../youtube/channel-search";
 import { licenseService } from "../licenseService";
 import { settingsRepository } from "../../repositories/settingsRepository";
 import { aacSettingsRepository } from "../../repositories/aacSettingsRepository";
@@ -252,6 +255,11 @@ export class LiveRelay {
   private studentVoice: ResolvedVoice | null = null;
   private useLocalTts = false;
   private useDirectAudio = false;
+
+  // Provider/model in use for this session — set at connect() time and read
+  // by the usage tracker so credit charges attribute to the right model.
+  private currentLiveProvider: LLMProviderKey | null = null;
+  private currentLiveModel: string | null = null;
 
   // Greeting
   private initialConnectionDone = false;
@@ -471,6 +479,21 @@ export class LiveRelay {
       onUsage: (usage) => {
         if (this.debugMode) {
           this.send({ type: "debug", data: { usage } });
+        }
+        // Track credits per turn. Fire-and-forget — failures are logged
+        // inside the service and must not interrupt the live session.
+        const state = this.sessionCache?.state;
+        if (state && this.currentLiveProvider && this.currentLiveModel) {
+          dualAgentService
+            .trackLiveUsage(
+              state.sessionId,
+              state.studentId,
+              state.userId,
+              this.currentLiveProvider,
+              this.currentLiveModel,
+              usage,
+            )
+            .catch(err => console.error("[LiveRelay] trackLiveUsage failed:", err));
         }
       },
 
@@ -914,7 +937,17 @@ export class LiveRelay {
         }
       }
 
-      const isGeminiLiveGA = aacChatConfig.provider === "gemini" && aacChatConfig.model.startsWith("gemini-live-");
+      // Choose Vertex vs public Gemini API based on the model's catalog entry.
+      // Live models with availableOnVertex === false (e.g. 3.1 Flash Live Preview)
+      // only run on the public API; everything else (GA 2.5 Flash Live, etc.)
+      // uses Vertex when gemini is the provider.
+      const liveModelInfo =
+        aacChatConfig.provider === "gemini"
+          ? MODEL_OPTIONS.find(m => m.modelId === aacChatConfig.model && m.supportsLive)
+          : undefined;
+      const useVertexForLive =
+        aacChatConfig.provider === "gemini" &&
+        (liveModelInfo?.availableOnVertex ?? true);
 
       // 2. Initialize session (prompt, contacts, symbols, boards)
       const state = await dualAgentService.initializeSession(
@@ -1013,6 +1046,11 @@ export class LiveRelay {
             cachedSymbols: state.cachedSymbols?.length ? state.cachedSymbols : undefined,
             enabledApps: APP_REGISTRY.filter(a => state.appState.enabledApps.includes(a.id)).map(a => ({ id: a.id, name: a.name, description: a.description })),
             availableCustomApps,
+            permittedWebsites: state.permittedWebsites.length > 0 ? state.permittedWebsites : undefined,
+            permittedYoutubeChannels: state.permittedYoutubeChannels.length > 0 ? state.permittedYoutubeChannels : undefined,
+            youtubeChannelVideos: state.permittedYoutubeChannels.length > 0
+              ? await fetchRecentVideosForChannels(state.permittedYoutubeChannels)
+              : undefined,
             autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
             useDirectAudio: true,
           });
@@ -1049,6 +1087,7 @@ export class LiveRelay {
         currentEmote: cached.state.currentEmote,
         activeApp: cached.state.appState?.activeApp || null,
         useDirectAudio: this.useDirectAudio,
+        permittedWebsites: cached.state.permittedWebsites || [],
       };
 
       // Close any existing provider (for forceNewSession re-init)
@@ -1075,11 +1114,13 @@ export class LiveRelay {
         voiceName: geminiVoice,
       };
 
-      this.provider = new GeminiLiveProvider(callbacks, isGeminiLiveGA /* useVertexAI */);
+      this.provider = new GeminiLiveProvider(callbacks, useVertexForLive /* useVertexAI */);
+      this.currentLiveProvider = aacChatConfig.provider;
+      this.currentLiveModel = aacChatConfig.model;
       await this.provider.connect(systemPrompt, providerConfig);
 
       // Log session start
-      const providerLabel = isGeminiLiveGA ? "gemini-live-ga" : "gemini-native-audio-preview";
+      const providerLabel = useVertexForLive ? `vertex:${aacChatConfig.model}` : `api-key:${aacChatConfig.model}`;
       logLiveSession("SESSION START", [
         `Session: ${state.sessionId}`,
         `Student: ${msg.studentId}`,
@@ -1603,6 +1644,7 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
           }
           state.loadedBoardId = match.id;
           state.loadedBoardData = boardData;
+          state.permittedWebsites = mergeBoardWebsitesIntoPermitted(state.permittedWebsites, boardData);
           state.currentPageId = boardData.pages?.[0]?.id || null;
           state.pageHistory = [];
           state.maxBoardItems = (boardData.grid?.rows || 3) * (boardData.grid?.cols || 4);
@@ -1676,7 +1718,65 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
         const builtIn = getAppDefinition(appId);
         if (builtIn) {
           this.turnAccum.openAppData = { appId, data };
-          const needsSearch = data && ["youtube", "spotify"].includes(appId);
+
+          // YouTube and Spotify need a search to resolve a specific video/track
+          // before the client can render anything. We run the search in the
+          // post-turn handler and send `video_play` / `app_open` (with trackId)
+          // from there. For YouTube with permitted channels, an empty query is
+          // valid (returns most-recent). For YouTube without channels + no API
+          // key, the search will return null and we need to tell the model.
+          if (appId === "youtube") {
+            const channels = state?.permittedYoutubeChannels || [];
+            const hasChannels = channels.length > 0;
+            const hasApiKey = !!process.env.YOUTUBE_API_KEY;
+
+            // No data + no channels → nothing to show. Tell the AI.
+            if (!data && !hasChannels) {
+              return {
+                id: call.id,
+                name,
+                response: {
+                  output: "error: open_app(youtube) needs a `data` parameter (search query) when no permitted channels are configured. Pass e.g. 'counting songs'.",
+                },
+              };
+            }
+            // No channels and no API key → search can't run at all.
+            if (!hasChannels && !hasApiKey) {
+              return {
+                id: call.id,
+                name,
+                response: {
+                  output: "error: YouTube search is unavailable — no permitted channels are configured and no API key is set. Tell the student this activity isn't available and suggest something else.",
+                },
+              };
+            }
+            // No data + channels → open the browse UI so the student picks
+            // a channel and video manually. Don't run a search, don't auto-play.
+            if (!data && hasChannels) {
+              this.send({
+                type: "app_open",
+                data: { appId: "youtube", appData: { channels } },
+              });
+              // Clear openAppData so the post-turn handler doesn't also run a search.
+              this.turnAccum.openAppData = null;
+              return {
+                id: call.id,
+                name,
+                response: {
+                  output: "ok. The YouTube app is now open showing the permitted channels. The student will pick a channel and a video. Call rebuild_board() with buttons relevant to this activity. You'll receive a [YOUTUBE] context update when they pick a video.",
+                },
+              };
+            }
+            // Data + channels/key → search-to-play. The post-turn handler will
+            // send video_play (or inject a [SYSTEM] message if nothing matched).
+            return {
+              id: call.id,
+              name,
+              response: { output: "ok. Looking up a video now — the player will appear on screen in a moment. Call rebuild_board() with buttons relevant to this activity." },
+            };
+          }
+
+          const needsSearch = data && appId === "spotify";
           if (!needsSearch) {
             this.send({ type: "app_open", data: { appId, data } });
           }
@@ -1725,6 +1825,33 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
         this.turnAccum.closeApp = true;
         this.send({ type: "app_close", data: {} });
         return { id: call.id, name, response: { output: "ok" } };
+      }
+
+      case "open_website": {
+        const url = extractStringArg(args, "url");
+        const label = (args.label as string | undefined)?.trim() || url;
+        if (!url) {
+          return { id: call.id, name, response: { output: "error: url is required" } };
+        }
+
+        const permitted = state?.permittedWebsites || [];
+        if (!isUrlPermitted(url, permitted)) {
+          return {
+            id: call.id,
+            name,
+            response: { output: `error: the URL "${url}" is not in the permitted-websites list. Choose a URL that matches one of the permitted entries (or ask the caretaker to add it).` },
+          };
+        }
+
+        this.turnAccum.openWebsiteData = { url, label };
+        this.send({ type: "app_open", data: { appId: "browser", appData: { url, label } } });
+        return {
+          id: call.id,
+          name,
+          response: {
+            output: `ok. The browser is now open at ${url}. Call rebuild_board() with contextual buttons relevant to the site. You will receive [BROWSER] updates as the student navigates.`,
+          },
+        };
       }
 
       case "learn_face": {
@@ -2199,14 +2326,55 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
     // 2. App handling (YouTube/Spotify search)
     // -----------------------------------------------------------------------
     if (openAppData) {
-      if (openAppData.appId === "youtube" && openAppData.data) {
+      if (openAppData.appId === "youtube") {
         try {
-          const results = await searchYouTube(openAppData.data);
+          const channels = this.sessionCache?.state?.permittedYoutubeChannels || [];
+          const results = await searchYouTube(openAppData.data || "", channels);
           if (results) {
-            this.send({ type: "video_play", data: { videoId: results.videoId, title: results.title } });
+            logLiveSession(
+              "YOUTUBE_SEARCH",
+              `query="${openAppData.data || "(empty)"}" result="${results.title}" id=${results.videoId}`,
+            );
+            this.send({
+              type: "video_play",
+              data: {
+                videoId: results.videoId,
+                title: results.title,
+                // Include permitted channels so the player can offer a
+                // "← channels" button to browse other approved videos.
+                channels: channels.length > 0 ? channels : undefined,
+              },
+            });
+          } else if (channels.length > 0) {
+            // No title matched — fall back to browse mode instead of playing
+            // something unrelated. Student can pick from the channel list.
+            logLiveSession(
+              "YOUTUBE_SEARCH_NO_MATCH_BROWSE",
+              `query="${openAppData.data || ""}" channels=${channels.length}`,
+            );
+            this.send({
+              type: "app_open",
+              data: { appId: "youtube", appData: { channels } },
+            });
+            this.provider?.sendContextInjection(
+              `[SYSTEM] YouTube search for "${openAppData.data || ""}" didn't match any permitted video titles. The channel browser is now open on screen so the student can pick something themselves.`,
+            );
+          } else {
+            // No channels and search returned null (e.g. API key missing or
+            // quota exceeded). Nothing to show.
+            logLiveSession(
+              "YOUTUBE_SEARCH_EMPTY",
+              `query="${openAppData.data || "(empty)"}" hasKey=${!!process.env.YOUTUBE_API_KEY}`,
+            );
+            this.provider?.sendContextInjection(
+              `[SYSTEM] YouTube search returned no videos for "${openAppData.data || ""}". The player is not open. Suggest a different activity.`,
+            );
           }
         } catch (err) {
           console.error("[LiveRelay] YouTube search failed:", err);
+          this.provider?.sendContextInjection(
+            `[SYSTEM] YouTube search failed with an error. The player is not open. Suggest a different activity.`,
+          );
         }
       } else if (openAppData.appId === "spotify" && openAppData.data) {
         let appData: any = { query: openAppData.data };

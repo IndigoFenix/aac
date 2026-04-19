@@ -1,7 +1,7 @@
 // server/services/dual-agent/types.ts
 // Type definitions for the dual-agent AAC system
 
-import type { ChatMessage, ParsedBoardData } from "@shared/schema";
+import type { ChatMessage, ParsedBoardData, PermittedWebsite, PermittedYoutubeChannel } from "@shared/schema";
 import type { LLMProviderKey } from "@shared/llm-options";
 
 /**
@@ -124,6 +124,14 @@ export interface DualAgentSessionState {
   // Add-on apps state
   appState: AACAppState;
 
+  // Permitted websites (clinician-configured + runtime-merged from loaded board buttons).
+  // Used by the open_website tool and server-side URL gating.
+  permittedWebsites: PermittedWebsite[];
+
+  // Permitted YouTube channels (clinician-configured). When empty, YouTube searches
+  // fall back to unrestricted mode (requires YOUTUBE_API_KEY to return anything).
+  permittedYoutubeChannels: PermittedYoutubeChannel[];
+
   // Avatar emotion state
   currentEmote: "happy" | "sad" | "neutral";
 
@@ -219,6 +227,7 @@ export interface TurnToolAccumulator {
   learnFaceData: { name: string; relationship?: string; description?: string } | null;
   focusReason: string | null;
   openAppData: { appId: string; data?: string } | null;
+  openWebsiteData: { url: string; label?: string } | null;
   closeApp: boolean;
   setBoardName: string | null;
   pressButtonLabel: string | null;
@@ -241,6 +250,7 @@ export function createEmptyAccumulator(): TurnToolAccumulator {
     learnFaceData: null,
     focusReason: null,
     openAppData: null,
+    openWebsiteData: null,
     closeApp: false,
     setBoardName: null,
     pressButtonLabel: null,

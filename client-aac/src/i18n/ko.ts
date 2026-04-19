@@ -405,4 +405,29 @@ export const ko: Translations = {
     SERVICE_STARTING: "서버가 시작 중입니다. 재시도 중...",
     SERVICE_UNAVAILABLE: "서버를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
   },
+
+  browserApp: {
+    back: "뒤로",
+    refresh: "새로 고침",
+    close: "닫기",
+    blockedTitle: "이 사이트를 열 수 없습니다",
+    blockedHint: "이 사이트는 앱 내 표시가 허용되지 않습니다. 다른 사이트를 시도해 주세요.",
+  },
+
+  youtubeApp: {
+    chooseChannel: "채널 선택",
+    backToChannels: "채널 목록으로",
+    loading: "불러오는 중...",
+    noVideos: "이 채널에 최근 영상이 없습니다.",
+    loadError: "이 채널의 영상을 불러올 수 없습니다.",
+    unavailable: "YouTube를 지금 사용할 수 없습니다.",
+    close: "닫기",
+    play: "재생",
+    pause: "일시정지",
+    restart: "처음부터",
+    back10: "10초 뒤로",
+    forward10: "10초 앞으로",
+    prevPage: "이전 페이지",
+    nextPage: "다음 페이지",
+  },
 };

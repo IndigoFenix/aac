@@ -78,6 +78,8 @@ export interface UseDualAgentReturn {
   // Interaction mode
   interactionMode: 'interact' | 'silent';
   setInteractionMode: (mode: 'interact' | 'silent') => void;
+  /** Last mode change — set by AI tool calls or user toggle, used to flash an indicator. */
+  lastModeChange: { mode: 'interact' | 'assist' | 'silent'; reason?: string; source: 'ai' | 'user'; at: number } | null;
 
   // Response mode
   responseMode: 'fast' | 'analyze';
@@ -97,6 +99,8 @@ export interface UseDualAgentReturn {
   // Active app
   activeApp: ActiveAppData | null;
   dismissApp: () => void;
+  /** Client-initiated app launch — e.g. AAC board button with an open_website action. */
+  launchApp: (appId: string, appData?: any) => void;
   /** Register a function to capture the app canvas (e.g. drawing) for detection */
   captureAppCanvasRef: React.MutableRefObject<(() => Promise<Blob | null>) | null>;
 

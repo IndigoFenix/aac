@@ -1559,9 +1559,9 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                                         <div className={cn('flex items-start gap-2')}>
                                           <span className={cn(
                                             'flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium mt-0.5',
-                                            objective.status === 'achieved' 
+                                            objective.status === 'achieved'
                                               ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
-                                              : objective.status === 'in_progress'
+                                              : objective.status === 'in_progress' || objective.status === 'active'
                                               ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
                                               : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                                           )}>

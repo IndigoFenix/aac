@@ -1108,9 +1108,34 @@ export interface BoardGrid {
  * Board button action type
  */
 export interface BoardButtonAction {
-  type: "speak" | "link" | "back" | "home" | "exit";
+  type: "speak" | "link" | "back" | "home" | "exit" | "open_website";
   text?: string;
   toPageId?: string;
+  /** For "open_website" actions: the URL to load in the browser app. Must match a permitted website prefix. */
+  url?: string;
+}
+
+/**
+ * A website the AAC AI is permitted to open via the browser app.
+ * `subpages` are optional AI-facing hints — any URL whose origin+pathname starts with
+ * a parent's url is permitted (subpages do not further restrict access).
+ */
+export interface PermittedWebsite {
+  url: string;
+  label: string;
+  description?: string;
+  subpages?: PermittedWebsite[];
+}
+
+/**
+ * A YouTube channel the AAC AI may pick videos from. `channelId` is the stable
+ * UC... identifier. `description` is AI-facing (used to help the AI choose a
+ * channel that matches the student's request).
+ */
+export interface PermittedYoutubeChannel {
+  channelId: string;
+  label: string;
+  description?: string;
 }
 
 /**

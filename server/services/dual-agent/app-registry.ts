@@ -22,7 +22,7 @@ export const APP_REGISTRY: AACAppDefinition[] = [
   {
     id: "youtube",
     name: "YouTube",
-    description: "Opens an interactive YouTube video player on the user's screen. Use open_app to launch it when the user wants to watch a video. Pass a search query in the data parameter.",
+    description: "Opens an interactive YouTube video player on the user's screen. When permitted channels are configured (the channel list appears in the system prompt with their recent video titles), prefer calling open_app(youtube) WITHOUT `data` — this opens a channel browser where the student picks a video themselves. Only pass a `data` string when the student's request clearly matches one of the actual video titles shown; the search uses title matching, so a generic topic like 'animals' will miss and fall back to the browser anyway. When NO permitted channels are configured (unrestricted search via API key), always pass a descriptive query in `data`.",
     icon: "▶️",
     enabledByDefault: false,
   },
@@ -62,6 +62,8 @@ export const APP_REGISTRY: AACAppDefinition[] = [
     icon: "🫧",
     enabledByDefault: false,
   },
+  // Note: the "browser" app is not listed here. It's launched via the dedicated
+  // open_website tool (gated by aacSettings.permittedWebsites), not via open_app.
 ];
 
 /**

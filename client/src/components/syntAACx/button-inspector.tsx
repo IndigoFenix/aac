@@ -194,6 +194,9 @@ export function ButtonInspector() {
         case "youtube":
           newAction = { type: "youtube", videoId: "", title: "" };
           break;
+        case "open_website":
+          newAction = { type: "open_website", url: "", label: selectedBtn.label };
+          break;
         default:
           newAction = { ...newAction, type: value };
       }
@@ -515,6 +518,9 @@ export function ButtonInspector() {
                 <SelectItem value="youtube" className={isDark ? "text-slate-200" : "text-gray-800"}>
                   {t("button.actionYoutube")}
                 </SelectItem>
+                <SelectItem value="open_website" className={isDark ? "text-slate-200" : "text-gray-800"}>
+                  {t("button.actionOpenWebsite")}
+                </SelectItem>
                 <SelectItem value="exit" className={isDark ? "text-slate-200" : "text-gray-800"}>
                   {t("button.actionExit")}
                 </SelectItem>
@@ -544,7 +550,7 @@ export function ButtonInspector() {
                   placeholder={t("button.videoId")}
                   className={cn(
                     "h-8 text-xs",
-                    isDark 
+                    isDark
                       ? "bg-slate-800 border-slate-700 text-slate-200"
                       : "bg-white border-gray-300 text-gray-800"
                   )}
@@ -555,11 +561,44 @@ export function ButtonInspector() {
                   placeholder={t("button.videoTitle")}
                   className={cn(
                     "h-8 text-xs",
-                    isDark 
+                    isDark
                       ? "bg-slate-800 border-slate-700 text-slate-200"
                       : "bg-white border-gray-300 text-gray-800"
                   )}
                 />
+              </div>
+            )}
+
+            {selectedBtn.action?.type === "open_website" && (
+              <div className="space-y-2">
+                <Input
+                  value={selectedBtn.action.url || ""}
+                  onChange={(e) => handleActionUpdate("url", e.target.value)}
+                  placeholder="https://example.com/"
+                  className={cn(
+                    "h-8 text-xs font-mono",
+                    isDark
+                      ? "bg-slate-800 border-slate-700 text-slate-200"
+                      : "bg-white border-gray-300 text-gray-800",
+                  )}
+                />
+                <Input
+                  value={selectedBtn.action.label || ""}
+                  onChange={(e) => handleActionUpdate("label", e.target.value)}
+                  placeholder={t("button.websiteLabelPlaceholder")}
+                  className={cn(
+                    "h-8 text-xs",
+                    isDark
+                      ? "bg-slate-800 border-slate-700 text-slate-200"
+                      : "bg-white border-gray-300 text-gray-800",
+                  )}
+                />
+                <p className={cn(
+                  "text-[10px]",
+                  isDark ? "text-slate-500" : "text-gray-500",
+                )}>
+                  {t("button.websiteHint")}
+                </p>
               </div>
             )}
 

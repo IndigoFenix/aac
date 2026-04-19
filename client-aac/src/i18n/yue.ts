@@ -405,4 +405,29 @@ export const yue: Translations = {
     SERVICE_STARTING: "伺服器啟動緊，重試緊...",
     SERVICE_UNAVAILABLE: "伺服器暫時用唔到，請陣間再試。",
   },
+
+  browserApp: {
+    back: "返回",
+    refresh: "重新整理",
+    close: "關閉",
+    blockedTitle: "打唔到呢個網站",
+    blockedHint: "呢個網站唔畀喺應用入面顯示。試下第二個網站。",
+  },
+
+  youtubeApp: {
+    chooseChannel: "揀個頻道",
+    backToChannels: "返回頻道清單",
+    loading: "載入緊...",
+    noVideos: "呢個頻道冇最近嘅影片。",
+    loadError: "載入唔到呢個頻道嘅影片。",
+    unavailable: "YouTube 而家用唔到。",
+    close: "關閉",
+    play: "播放",
+    pause: "暫停",
+    restart: "重新開始",
+    back10: "後退 10 秒",
+    forward10: "前進 10 秒",
+    prevPage: "上一頁",
+    nextPage: "下一頁",
+  },
 };

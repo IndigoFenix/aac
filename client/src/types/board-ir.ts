@@ -8,7 +8,8 @@ export type ActionIR =
   | { type: "bookmark"; }
   | { type: "home"; }
   | { type: "exit"; text?: string }
-  | { type: "youtube"; videoId: string; title: string };
+  | { type: "youtube"; videoId: string; title: string }
+  | { type: "open_website"; url: string; label?: string };
 
 export type ActionLinkIR = { type: "link"; toPageId: string; toBoardId?: string; };
 export type ActionNavigateIR = { type: "navigate"; toPageId: string; };

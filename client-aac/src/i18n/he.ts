@@ -405,4 +405,29 @@ export const he: Translations = {
     SERVICE_STARTING: "השרת מתחיל לעבוד. מנסה שוב...",
     SERVICE_UNAVAILABLE: "השרת אינו זמין באופן זמני. אנא נסה שוב בעוד רגע.",
   },
+
+  browserApp: {
+    back: "חזור",
+    refresh: "רענן",
+    close: "סגור",
+    blockedTitle: "לא ניתן לפתוח אתר זה",
+    blockedHint: "אתר זה אינו מאפשר הצגה בתוך האפליקציה. נסה אתר אחר.",
+  },
+
+  youtubeApp: {
+    chooseChannel: "בחר ערוץ",
+    backToChannels: "חזור לערוצים",
+    loading: "טוען...",
+    noVideos: "אין סרטונים אחרונים בערוץ זה.",
+    loadError: "לא ניתן לטעון סרטונים מערוץ זה.",
+    unavailable: "YouTube אינו זמין כרגע.",
+    close: "סגור",
+    play: "נגן",
+    pause: "השהה",
+    restart: "התחל מחדש",
+    back10: "חזרה 10 שניות",
+    forward10: "קדימה 10 שניות",
+    prevPage: "עמוד קודם",
+    nextPage: "עמוד הבא",
+  },
 };

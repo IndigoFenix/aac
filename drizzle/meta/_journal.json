@@ -442,6 +442,34 @@
       "when": 1776436596200,
       "tag": "0062_breezy_cerise",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1776587003395,
+      "tag": "0063_early_monster_badoon",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1776591166692,
+      "tag": "0064_free_nomad",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1777284000000,
+      "tag": "0065_unify_plan_item_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1777370400000,
+      "tag": "0066_objective_default_draft",
+      "breakpoints": true
     }
   ]
 }

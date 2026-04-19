@@ -160,9 +160,95 @@ function meetingKey(m: { id: string; meetingType: string }): string {
   return m.id;
 }
 
-/** ProfileDomain key: {shortId}_{domainType} → "222bbbcc_communication" */
+/** ProfileDomain key: `{domainType}_{shortId}` (e.g. "communication_language_029f60ab").
+ *  The domainType prefix gives the AI a readable reference and the shortId suffix
+ *  guarantees uniqueness when multiple domains of the same type exist (which can
+ *  happen transiently when defaults are auto-created alongside AI-added domains). */
 function profileDomainKey(d: { id: string; domainType: string }): string {
-  return d.id;
+  return `${d.domainType}_${shortId(d.id)}`;
+}
+
+/** Valid domainType enum values — kept in sync with profileDomainSchema.properties.domainType.enum */
+const DOMAIN_TYPE_VALUES = new Set([
+  "cognitive_academic",
+  "communication_language",
+  "social_emotional_behavioral",
+  "motor_sensory",
+  "life_skills_preparation",
+  "other",
+]);
+
+/** Parses a key of the form `{domainType}_{8hex}`. Returns `null` if the key
+ *  is not in that shape (e.g. bare domainType, or a raw UUID). */
+function parseProfileDomainCompositeKey(
+  key: string,
+): { domainType: string; idPrefix: string } | null {
+  const m = key.match(/^(.+)_([a-f0-9]{8})$/);
+  if (!m) return null;
+  const [, domainType, idPrefix] = m;
+  if (!DOMAIN_TYPE_VALUES.has(domainType)) return null;
+  return { domainType, idPrefix };
+}
+
+/** Look up a profile domain by map key. Accepts three forms:
+ *   1. `{domainType}_{shortId}` — canonical unique key (see profileDomainKey)
+ *   2. bare `domainType` — resolves to the single matching domain (first if multiple)
+ *   3. full UUID / UUID-prefix — legacy lookup via findByMapKey */
+async function findProfileDomainByKey(
+  programId: string,
+  key: string,
+): Promise<ProfileDomain | undefined> {
+  const composite = parseProfileDomainCompositeKey(key);
+  if (composite) {
+    const [row] = await db
+      .select()
+      .from(profileDomains)
+      .where(
+        and(
+          eq(profileDomains.programId, programId),
+          eq(profileDomains.domainType, composite.domainType as any),
+          sql`${profileDomains.id}::text LIKE ${composite.idPrefix + "%"}`,
+        ),
+      )
+      .limit(1);
+    if (row) return row;
+  }
+  if (DOMAIN_TYPE_VALUES.has(key)) {
+    const [byType] = await db
+      .select()
+      .from(profileDomains)
+      .where(
+        and(
+          eq(profileDomains.programId, programId),
+          eq(profileDomains.domainType, key as any),
+        ),
+      )
+      .orderBy(asc(profileDomains.sortOrder))
+      .limit(1);
+    if (byType) return byType;
+  }
+  return findByMapKey<ProfileDomain>(
+    profileDomains,
+    profileDomains.id,
+    eq(profileDomains.programId, programId),
+    key,
+  );
+}
+
+/** Resolve a profileDomainId value that may be a UUID, a bare domainType, or a
+ *  composite `{domainType}_{shortId}` key. Returns the UUID (or null if unresolvable). */
+async function resolveProfileDomainId(
+  programId: string | undefined,
+  raw: string | null | undefined,
+): Promise<string | null> {
+  if (!raw) return null;
+  // Already a UUID — pass through
+  if (!DOMAIN_TYPE_VALUES.has(raw) && !parseProfileDomainCompositeKey(raw)) {
+    return raw;
+  }
+  if (!programId) return null;
+  const domain = await findProfileDomainByKey(programId, raw);
+  return domain?.id ?? null;
 }
 
 /** ConsentForm key: {shortId}_{consentType} → "333cccdd_initial_eval" */
@@ -241,11 +327,15 @@ const programOps: MemoryDBOperations<Program> = {
     return draftProgram;
   },
 
-  write: async (ctx, value) => {
+  write: async (ctx, raw) => {
     const studentId = ctx.all.studentId;
     if (!studentId) throw new Error("studentId required for program write");
-  
-    const existing = value.id 
+
+    // Context_Program is object-shaped; the array variant of the write signature
+    // is only relevant to array containers, not here.
+    const value = raw as Program;
+
+    const existing = value.id
       ? await programService.getProgramById(value.id)
       : await programService.getCurrentProgram(studentId);
     
@@ -283,30 +373,42 @@ const programOps: MemoryDBOperations<Program> = {
       // Return program with domains populated so AI can see them
       const result = programOps.fromDB!(program);
 
-      // Populate profileDomains map with created domains
+      // Populate profileDomains map with created domains, keyed by domainType
       if (domains.length > 0) {
         for (const domain of domains) {
-          const key = domain.domainType;
-          result.profileDomains[key] = toMemoryValue(domain);
+          result.profileDomains[profileDomainKey(domain)] = toMemoryValue(domain);
         }
+        // Inform the AI that default domains were auto-created as a side effect —
+        // otherwise the next view may show an empty map and trigger duplicate adds.
+        const keys = domains.map(d => profileDomainKey(d)).join(", ");
+        (result as any)._note =
+          `Program created. ${domains.length} default profile domains were auto-generated (keys: ${keys}). ` +
+          `Use these existing domains rather than adding duplicates. View /Context_Program/profileDomains to inspect or edit them.`;
       }
 
       return result;
     }
   },
 
-  fromDB: (record) => ({
-    ...toMemoryValue(record),
-    // Initialize empty collections for DB-backed children
-    // These will be populated when viewed/opened
-    profileDomains: {},
-    goals: {},
-    services: {},
-    teamMembers: {},
-    meetings: {},
-    consentForms: {},
-    progressReports: {},
-  }),
+  // Idempotent: if the incoming record already has populated container children
+  // (e.g. from write() attaching auto-created domains), preserve them instead of
+  // wiping to {}. Plain DB-record reads have no such properties, so they still
+  // get initialized to empty maps.
+  fromDB: (record) => {
+    const base = toMemoryValue(record) as any;
+    return {
+      ...base,
+      profileDomains: base.profileDomains ?? {},
+      goals: base.goals ?? {},
+      services: base.services ?? {},
+      teamMembers: base.teamMembers ?? {},
+      meetings: base.meetings ?? {},
+      consentForms: base.consentForms ?? {},
+      progressReports: base.progressReports ?? {},
+      // Preserve side-effect note so the bridge can surface it to the AI
+      ...(base._note ? { _note: base._note } : {}),
+    };
+  },
 
   // Extract programId for child operations (goals, services, etc.)
   extractChildContext: (value) => ({
@@ -367,12 +469,7 @@ const profileDomainsOps: MemoryDBOperations<ProfileDomain> = {
     const programId = ctx.all.programId;
     if (!programId) throw new Error("programId required");
 
-    const domain = await findByMapKey<ProfileDomain>(
-      profileDomains,
-      profileDomains.id,
-      eq(profileDomains.programId, programId),
-      String(key)
-    );
+    const domain = await findProfileDomainByKey(programId, String(key));
 
     if (!domain) throw new Error(`ProfileDomain with key ${key} not found`);
 
@@ -399,12 +496,7 @@ const profileDomainsOps: MemoryDBOperations<ProfileDomain> = {
     const programId = ctx.all.programId;
     if (!programId) return;
 
-    const domain = await findByMapKey<ProfileDomain>(
-      profileDomains,
-      profileDomains.id,
-      eq(profileDomains.programId, programId),
-      String(key)
-    );
+    const domain = await findProfileDomainByKey(programId, String(key));
 
     if (domain) {
       await db.delete(profileDomains).where(eq(profileDomains.id, domain.id));
@@ -656,6 +748,8 @@ const goalsOps: MemoryDBOperations<Goal> = {
  * Objectives operations (nested array under goal)
  * NOTE: Objectives now have profileDomainId for domain association
  */
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const objectivesOps: MemoryDBOperations<Objective> = {
   list: async (ctx, { offset, limit }) => {
     const goalId = ctx.all.goalId;
@@ -674,14 +768,95 @@ const objectivesOps: MemoryDBOperations<Objective> = {
     return { items, total };
   },
 
+  // Bulk replace: the AI naturally uses `set` with an array to define all
+  // objectives for a goal in one call. Implement as a diff — keep items whose
+  // ids match existing rows (UPDATE), insert new items without ids, and delete
+  // the rest (nullifying dataPoint refs first so FK constraints don't fire).
+  write: async (ctx, value) => {
+    const goalId = ctx.all.goalId;
+    if (!goalId) throw new Error("goalId required for setting objectives");
+    if (!Array.isArray(value)) {
+      throw new Error("objectives value must be an array");
+    }
+
+    // Strip non-UUID ids (AI often supplies synthetic keys like "obj-comm-1")
+    // and resolve profileDomainId (accept domainType strings or composite keys).
+    const cleaned: any[] = [];
+    for (const v of value as any[]) {
+      const { id: rawId, ...rest } = v as { id?: string } & Record<string, any>;
+      const keepId = rawId && UUID_REGEX.test(rawId);
+      cleaned.push({
+        ...(keepId ? { id: rawId } : {}),
+        ...rest,
+        profileDomainId: await resolveProfileDomainId(ctx.all.programId, rest.profileDomainId),
+      });
+    }
+
+    const existing = await db
+      .select()
+      .from(objectives)
+      .where(eq(objectives.goalId, goalId))
+      .orderBy(asc(objectives.sequenceOrder));
+
+    const incomingIds = new Set(cleaned.filter(c => c.id).map(c => c.id as string));
+    const toDelete = existing.filter(e => !incomingIds.has(e.id)).map(e => e.id);
+
+    if (toDelete.length > 0) {
+      // Nullify dataPoint refs before delete so FK doesn't block us.
+      await db
+        .update(dataPoints)
+        .set({ objectiveId: null })
+        .where(inArray(dataPoints.objectiveId, toDelete));
+      await db.delete(objectives).where(inArray(objectives.id, toDelete));
+    }
+
+    const results: Objective[] = [];
+    for (let i = 0; i < cleaned.length; i++) {
+      const item = cleaned[i];
+      const sequenceOrder = i + 1;
+
+      if (item.id) {
+        const [updated] = await db
+          .update(objectives)
+          .set({ ...item, goalId, sequenceOrder, updatedAt: new Date() })
+          .where(eq(objectives.id, item.id))
+          .returning();
+        if (updated) {
+          results.push(updated);
+          continue;
+        }
+      }
+
+      const { id: _discardId, ...rest } = item;
+      const [created] = await db
+        .insert(objectives)
+        .values({ ...rest, goalId, sequenceOrder })
+        .returning();
+      results.push(created);
+    }
+
+    activityLogService.log({
+      userId: ctx.all.userId,
+      instituteId: ctx.all.instituteId,
+      eventType: "update",
+      subjectType1: "goal",
+      subjectId1: goalId,
+      details: { studentId: ctx.all.studentId, action: "set_objectives", count: results.length },
+      isAiInitiated: true,
+    });
+
+    return results;
+  },
+
   add: async (ctx, value) => {
     const goalId = ctx.all.goalId;
     if (!goalId) throw new Error("goalId required for creating objective");
 
-    // Sanitize profileDomainId - convert empty strings to null
+    // Resolve profileDomainId — accept either a UUID or a domainType enum value
+    // (e.g., "communication_language") since domainType is the map key the AI sees.
     const sanitizedValue = {
       ...value,
-      profileDomainId: value.profileDomainId || null,
+      profileDomainId: await resolveProfileDomainId(ctx.all.programId, value.profileDomainId),
     };
 
     // Get next sequence order
@@ -723,10 +898,14 @@ const objectivesOps: MemoryDBOperations<Objective> = {
 
     if (!items[0]) throw new Error(`Objective at index ${key} not found`);
 
-    // Sanitize profileDomainId - convert empty strings to null
+    // Resolve profileDomainId — accept either a UUID or a domainType enum value
+    // (e.g., "communication_language") since domainType is the map key the AI sees.
     const sanitizedValue = {
       ...value,
-      profileDomainId: value.profileDomainId || null,
+      profileDomainId:
+        value.profileDomainId === undefined
+          ? undefined
+          : await resolveProfileDomainId(ctx.all.programId, value.profileDomainId),
     };
 
     const [updated] = await db
@@ -997,7 +1176,7 @@ const objectiveSchema: AgentMemoryFieldObjectWithDB = {
     objectiveStatement: { id: "objectiveStatement", type: "string", description: "The short-term objective", opened: true },
     sequenceOrder: { id: "sequenceOrder", type: "integer" },
     // Domain association is now on objectives
-    profileDomainId: { id: "profileDomainId", type: "string", description: "ID of the profile domain this objective relates to" },
+    profileDomainId: { id: "profileDomainId", type: "string", description: "The profile domain this objective relates to. Accepts the domain's domainType (e.g. 'communication_language'), its map key (e.g. 'communication_language_029f60ab'), or its UUID." },
     // Measurable criteria
     targetBehavior: { id: "targetBehavior", type: "string" },
     methods: { id: "methods", type: "string" },
@@ -1008,7 +1187,7 @@ const objectiveSchema: AgentMemoryFieldObjectWithDB = {
     status: {
       id: "status",
       type: "string",
-      enum: ["not_started", "in_progress", "achieved", "modified", "discontinued"],
+      enum: ["draft", "active", "achieved", "modified", "discontinued"],
       opened: true,
     },
     // Progress tracking (0-100)

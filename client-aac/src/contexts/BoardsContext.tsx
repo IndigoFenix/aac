@@ -28,9 +28,11 @@ interface ButtonIR {
   iconRef?: string;
   symbolPath?: string;
   action?: {
-    type: "speak" | "link" | "back" | "home";
+    type: "speak" | "link" | "back" | "home" | "exit" | "open_website";
     text?: string;
     toPageId?: string;
+    url?: string;
+    label?: string;
   };
 }
 

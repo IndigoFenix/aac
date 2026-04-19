@@ -4,8 +4,11 @@
 import { db } from "../../db";
 import { chatSessions, students, users, userStudents, medicalRecords } from "@shared/schema";
 import { and, eq, sql } from "drizzle-orm";
-import type { ChatMessage, ParsedBoardData } from "@shared/schema";
-import { creditsForModelUsage } from "../chat/cost-helpers";
+import type { ChatMessage, ParsedBoardData, PermittedWebsite, PermittedYoutubeChannel } from "@shared/schema";
+import { mergeBoardWebsitesIntoPermitted } from "@shared/permitted-websites";
+import { fetchRecentVideosForChannels } from "../youtube/channel-search";
+import { creditsForModelUsage, creditsForLiveUsage } from "../chat/cost-helpers";
+import type { LLMProviderKey } from "@shared/llm-options";
 import {
   InteractiveAgent,
   createInteractiveAgent,
@@ -149,20 +152,18 @@ export class DualAgentService {
   }
 
   /**
-   * Track credits for an interactive agent call.
-   * Updates chatSessions.creditsUsed, students.chatCreditsUsed, and users.chatCreditsUsed.
+   * Persist a credit charge to chatSessions / students / users / userStudents.
+   * Used by both the legacy HTTP path (aggregate tokens) and the Live API
+   * path (modality-split tokens).
    */
-  private async trackInteractiveCredits(
+  private async persistCreditCharge(
     sessionId: string,
     studentId: string,
     userId: string | undefined,
-    usage: { promptTokens: number; completionTokens: number }
+    credits: number,
+    logSuffix: string,
   ): Promise<void> {
-    const provider = this.config.interactiveProvider || "openai";
-    const model = this.config.interactiveModel;
-    const credits = creditsForModelUsage(provider, model, usage.promptTokens, usage.completionTokens);
     if (credits <= 0) return;
-
     try {
       await db
         .update(chatSessions)
@@ -197,10 +198,39 @@ export class DualAgentService {
           ));
       }
 
-      console.log(`[DualAgentService] Tracked ${credits} credits (provider=${provider}, model=${model}, prompt=${usage.promptTokens}, completion=${usage.completionTokens})`);
+      console.log(`[DualAgentService] Tracked ${credits.toFixed(6)} credits (${logSuffix})`);
     } catch (error) {
       console.error("[DualAgentService] Error tracking credits:", error);
     }
+  }
+
+  /**
+   * Track credits for a Live API turn with modality-separated token counts.
+   * Called per `usageMetadata` event from the provider.
+   */
+  async trackLiveUsage(
+    sessionId: string,
+    studentId: string,
+    userId: string | undefined,
+    provider: LLMProviderKey,
+    model: string,
+    usage: import("./live-provider").LiveUsage,
+  ): Promise<void> {
+    let credits: number;
+    let logSuffix: string;
+    if (usage.details) {
+      credits = creditsForLiveUsage(provider, model, usage.details);
+      const d = usage.details;
+      logSuffix =
+        `model=${model} ` +
+        `text_in=${d.textInputTokens} non_text_in=${d.nonTextInputTokens} ` +
+        `text_out=${d.textOutputTokens} audio_out=${d.audioOutputTokens}` +
+        (d.cachedInputTokens ? ` cached=${d.cachedInputTokens}` : "");
+    } else {
+      credits = creditsForModelUsage(provider, model, usage.promptTokens, usage.completionTokens);
+      logSuffix = `model=${model} prompt=${usage.promptTokens} completion=${usage.completionTokens} (no-modality-details)`;
+    }
+    await this.persistCreditCharge(sessionId, studentId, userId, credits, logSuffix);
   }
 
   /**
@@ -412,6 +442,12 @@ export class DualAgentService {
     if (student) {
       const rawPersona = student.aacSettings?.chatAgentPrompt?.trim() || AAC_DEFAULT_PERSONA_PROMPT;
       const persona = initResult.enhancedPrompt || rawPersona;
+      const ytChannels = Array.isArray(student.aacSettings?.permittedYoutubeChannels)
+        ? (student.aacSettings!.permittedYoutubeChannels as PermittedYoutubeChannel[])
+        : [];
+      const ytChannelVideos = ytChannels.length > 0
+        ? await fetchRecentVideosForChannels(ytChannels)
+        : undefined;
       interactivePrompt = buildInteractiveAgentPrompt({
         studentName: student.firstName || student.name?.split(' ')[0] || "",
         persona,
@@ -426,6 +462,11 @@ export class DualAgentService {
         availableBoards: availableBoards.length > 0 ? availableBoards : undefined,
         cachedSymbols: cachedSymbols.length > 0 ? cachedSymbols : undefined,
         enabledApps: enabledAppDefs.map(a => ({ id: a.id, name: a.name, description: a.description })),
+        permittedWebsites: Array.isArray(student.aacSettings?.permittedWebsites)
+          ? (student.aacSettings!.permittedWebsites as PermittedWebsite[])
+          : undefined,
+        permittedYoutubeChannels: ytChannels.length > 0 ? ytChannels : undefined,
+        youtubeChannelVideos: ytChannelVideos,
         autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
       });
     }
@@ -441,6 +482,12 @@ export class DualAgentService {
     // Disabled when remoteStorageEnabled is false OR notes are disabled.
     const aacSt = monitorAgent.getStudent?.()?.aacSettings;
     const remoteStorageEnabled = (aacSt?.remoteStorageEnabled ?? true) && (aacSt?.allowNotes ?? true);
+    const permittedWebsites: PermittedWebsite[] = Array.isArray(aacSt?.permittedWebsites)
+      ? (aacSt!.permittedWebsites as PermittedWebsite[])
+      : [];
+    const permittedYoutubeChannels: PermittedYoutubeChannel[] = Array.isArray(aacSt?.permittedYoutubeChannels)
+      ? (aacSt!.permittedYoutubeChannels as PermittedYoutubeChannel[])
+      : [];
 
     // Create session state
     const state: DualAgentSessionState = {
@@ -453,6 +500,8 @@ export class DualAgentService {
       pendingMessages: [],
       interactionMode,
       appState: { enabledApps: getEnabledAppsFromConfig(aacSt?.appConfig as AppConfig | null), activeApp: null },
+      permittedWebsites,
+      permittedYoutubeChannels,
       currentEmote: "happy",
       boardButtonLabels: [],
       aiAddedButtonLabels: [],
@@ -583,6 +632,8 @@ export class DualAgentService {
         pendingMessages: (session.pendingMessages as PendingMessage[]) || [],
         interactionMode: chatState?.interactionMode || 'interact',
         appState: { enabledApps: getDefaultEnabledApps(), activeApp: null }, // Updated with appConfig below
+        permittedWebsites: [], // Populated with aacSettings below
+        permittedYoutubeChannels: [], // Populated with aacSettings below
         currentEmote: "neutral",
         boardButtonLabels: [],
         aiAddedButtonLabels: [],
@@ -617,6 +668,12 @@ export class DualAgentService {
         const aacSt = student.aacSettings;
         state.remoteStorageEnabled = (aacSt?.remoteStorageEnabled ?? true) && (aacSt?.allowNotes ?? true);
         state.appState.enabledApps = getEnabledAppsFromConfig(aacSt?.appConfig as AppConfig | null);
+        state.permittedWebsites = Array.isArray(aacSt?.permittedWebsites)
+          ? (aacSt!.permittedWebsites as PermittedWebsite[])
+          : [];
+        state.permittedYoutubeChannels = Array.isArray(aacSt?.permittedYoutubeChannels)
+          ? (aacSt!.permittedYoutubeChannels as PermittedYoutubeChannel[])
+          : [];
       }
 
       // Rebuild prompt with correct enabledApps (the stored prompt may have stale app info)
@@ -675,6 +732,11 @@ export class DualAgentService {
           currentEmote: state.currentEmote,
           activeApp: state.appState.activeApp,
           enabledApps: enabledApps.map(a => ({ id: a.id, name: a.name, description: a.description })),
+          permittedWebsites: state.permittedWebsites.length > 0 ? state.permittedWebsites : undefined,
+          permittedYoutubeChannels: state.permittedYoutubeChannels.length > 0 ? state.permittedYoutubeChannels : undefined,
+          youtubeChannelVideos: state.permittedYoutubeChannels.length > 0
+            ? await fetchRecentVideosForChannels(state.permittedYoutubeChannels)
+            : undefined,
           autoSymbolsEnabled: !!(student.aacSettings?.generateSymbols || student.aacSettings?.useApprovedSymbols || student.aacSettings?.useUnapprovedSymbols),
         });
       }

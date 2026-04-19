@@ -12,6 +12,55 @@ import type {
   ToolResponse,
 } from "./live-provider";
 import { logLiveSession } from "./dual-agent-logger";
+import type { LiveUsage } from "./live-provider";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse Gemini's `usageMetadata.promptTokensDetails` /
+ * `responseTokensDetails` arrays into our normalized modality breakdown.
+ * Returns null when the arrays are missing or empty.
+ */
+function extractModalityBreakdown(usage: any): LiveUsage["details"] | null {
+  const prompt: Array<{ modality?: string; tokenCount?: number }> =
+    usage.promptTokensDetails || [];
+  const response: Array<{ modality?: string; tokenCount?: number }> =
+    usage.responseTokensDetails || [];
+  if (prompt.length === 0 && response.length === 0) return null;
+
+  const sumByModality = (
+    arr: Array<{ modality?: string; tokenCount?: number }>,
+    textOut: { text: number; other: number },
+  ) => {
+    for (const entry of arr) {
+      const count = entry.tokenCount || 0;
+      if (entry.modality === "TEXT") textOut.text += count;
+      else textOut.other += count;
+    }
+  };
+
+  const p = { text: 0, other: 0 };
+  sumByModality(prompt, p);
+  // Response buckets separate TEXT vs AUDIO (images aren't emitted).
+  let textOut = 0;
+  let audioOut = 0;
+  for (const entry of response) {
+    const count = entry.tokenCount || 0;
+    if (entry.modality === "AUDIO") audioOut += count;
+    else textOut += count;
+  }
+
+  const cached = usage.cachedContentTokenCount || 0;
+  return {
+    textInputTokens: p.text,
+    nonTextInputTokens: p.other,
+    textOutputTokens: textOut,
+    audioOutputTokens: audioOut,
+    ...(cached > 0 ? { cachedInputTokens: cached } : {}),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // GeminiLiveProvider
@@ -21,7 +70,7 @@ export class GeminiLiveProvider implements LiveProvider {
   private client: GoogleGenAI;
   private session: Session | null = null;
   private resumptionHandle: string | null = null;
-  private config: LiveProviderConfig = { model: "gemini-2.5-flash-native-audio-preview-12-2025" };
+  private config: LiveProviderConfig = { model: "gemini-live-2.5-flash-native-audio" };
   private callbacks: LiveProviderCallbacks;
   private systemPrompt = "";
   private connected = false;
@@ -486,10 +535,21 @@ export class GeminiLiveProvider implements LiveProvider {
     }
 
     if (msg.usageMetadata) {
-      const usage = msg.usageMetadata;
+      const usage = msg.usageMetadata as any;
+      const promptTokens =
+        usage.promptTokenCount ?? usage.inputTokens ?? 0;
+      const completionTokens =
+        // Gemini Live reports response tokens as `responseTokenCount`; the
+        // historical field name on non-Live Gemini is `candidatesTokenCount`.
+        usage.responseTokenCount ?? usage.candidatesTokenCount ?? 0;
+
+      // Modality breakdown is optional — older sessions may not include it.
+      const details = extractModalityBreakdown(usage);
+
       this.callbacks.onUsage?.({
-        promptTokens: (usage as any).promptTokenCount || 0,
-        completionTokens: (usage as any).candidatesTokenCount || 0,
+        promptTokens,
+        completionTokens,
+        ...(details ? { details } : {}),
       });
     }
 

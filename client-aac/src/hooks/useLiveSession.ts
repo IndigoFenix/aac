@@ -887,6 +887,11 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     }
   }, [activeApp, wsSend]);
 
+  /** Client-initiated app launch (e.g. from an AAC board button). */
+  const launchApp = useCallback((appId: string, appData?: any) => {
+    setActiveApp({ appId, appData });
+  }, []);
+
   const clearSession = useCallback(() => {
     if (wsRef.current) {
       wsRef.current.close();
@@ -971,6 +976,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     // Active app
     activeApp,
     dismissApp,
+    launchApp,
     captureAppCanvasRef,
 
     // Avatar — only animate mouth during AI voice ("avatar" tag), not interpretation

@@ -21,6 +21,26 @@ export interface ModelOption {
   supportsStructuredOutput: boolean;
   /** Can be used as a Live/Realtime provider (WebSocket session) */
   supportsLive?: boolean;
+  /**
+   * Whether this model is available on Vertex AI. Defaults to true — set to
+   * false for models (typically preview ones) that ship only on the public
+   * Gemini API. Live-relay uses this to choose between Vertex auth and
+   * API-key auth at session start.
+   */
+  availableOnVertex?: boolean;
+  /**
+   * Audio token rate (Live API models). When set, credit tracking uses this
+   * for audio/image/video input tokens — Google bills all non-text input
+   * modalities at the same rate on Live models. Falls back to
+   * `inputCostPer1M` when unset.
+   */
+  audioInputCostPer1M?: number;
+  /**
+   * Audio output token rate (Live API models). When set, credit tracking
+   * uses this for audio-modality response tokens (spoken replies). Falls
+   * back to `outputCostPer1M` when unset.
+   */
+  audioOutputCostPer1M?: number;
 }
 
 export interface UseCaseInfo {
@@ -143,40 +163,33 @@ export const MODEL_OPTIONS: ModelOption[] = [
     provider: "gemini",
     modelId: "gemini-live-2.5-flash-native-audio",
     displayName: "Gemini 2.5 Flash Live (GA)",
-    description: "GA native-audio live model. Stable, supports function calling + TEXT modality.",
+    description: "GA native-audio live model. Stable, supports function calling + TEXT modality. Runs on Vertex AI.",
     tier: "economy",
-    inputCostPer1M: 0.15,
-    outputCostPer1M: 0.60,
+    inputCostPer1M: 0.50,       // text input
+    outputCostPer1M: 2.00,      // text output
+    audioInputCostPer1M: 3.00,  // audio/image/video input
+    audioOutputCostPer1M: 12.00, // audio output
     supportsTools: true,
     supportsStreaming: true,
     supportsStructuredOutput: false,
     supportsLive: true,
+    availableOnVertex: true,
   },
   {
     provider: "gemini",
     modelId: "gemini-3.1-flash-live-preview",
     displayName: "Gemini 3.1 Flash Live (Preview)",
-    description: "Latest native-audio live model. Sharper function calling, better instruction following. API key only (not on Vertex AI yet).",
+    description: "Latest native-audio live model. Sharper function calling, better instruction following. Runs on the public Gemini API (not yet on Vertex AI) — requires GEMINI_API_KEY.",
     tier: "economy",
-    inputCostPer1M: 0.15,
-    outputCostPer1M: 0.60,
+    inputCostPer1M: 0.75,       // text input (higher than 2.5)
+    outputCostPer1M: 4.50,      // text output (higher than 2.5)
+    audioInputCostPer1M: 3.00,  // audio/image/video input (same as 2.5)
+    audioOutputCostPer1M: 12.00, // audio output (same as 2.5)
     supportsTools: true,
     supportsStreaming: true,
     supportsStructuredOutput: false,
     supportsLive: true,
-  },
-  {
-    provider: "gemini",
-    modelId: "gemini-2.5-flash-native-audio-preview-12-2025",
-    displayName: "Gemini 2.5 Flash Live (Preview)",
-    description: "Preview native-audio live model. Deprecated March 2026 — use GA or 3.1 instead.",
-    tier: "economy",
-    inputCostPer1M: 0.15,
-    outputCostPer1M: 0.60,
-    supportsTools: true,
-    supportsStreaming: true,
-    supportsStructuredOutput: false,
-    supportsLive: true,
+    availableOnVertex: false,
   },
   {
     provider: "gemini",

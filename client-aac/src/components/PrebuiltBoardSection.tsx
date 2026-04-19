@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import type { BoardButton, BoardPage } from "@shared/schema";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useBoards, type BoardData, type ButtonIR } from "@/contexts/BoardsContext";
+import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
 
 interface PrebuiltBoardSectionProps {
   studentId: string;
@@ -84,6 +85,7 @@ export default function PrebuiltBoardSection({
   const [currentPageId, setCurrentPageId] = useState<string | null>(null);
   const [pageHistory, setPageHistory] = useState<string[]>([]);
   const { speak } = useTextToSpeech();
+  const dualAgent = useDualAgentContextOptional();
 
   // Get boards from context (pre-fetched during initialization)
   const { boards, isLoading } = useBoards();
@@ -154,6 +156,12 @@ export default function PrebuiltBoardSection({
         setPageHistory([]);
         setCurrentPageId(selectedBoard.irData.pages[0].id);
       }
+      return;
+    }
+
+    // Handle open_website action — open the in-frame browser app
+    if (button.action?.type === "open_website" && button.action.url) {
+      dualAgent?.launchApp("browser", { url: button.action.url, label: button.action.label || button.label });
       return;
     }
 

@@ -60,6 +60,17 @@ export function buildInteractiveAgentPrompt(params: {
   activeApp?: string | null;
   enabledApps?: Array<{ id: string; name: string; description: string }>;
   availableCustomApps?: Array<{ id: string; name: string; description?: string | null }>;
+  permittedWebsites?: Array<{ url: string; label: string; description?: string; subpages?: Array<{ url: string; label: string; description?: string }> }>;
+  permittedYoutubeChannels?: Array<{ channelId: string; label: string; description?: string }>;
+  /**
+   * Recent videos per permitted channel (pre-fetched from RSS). When present,
+   * takes precedence over `permittedYoutubeChannels` for prompt text — the AI
+   * sees actual video titles so it can suggest real content.
+   */
+  youtubeChannelVideos?: Array<{
+    channel: { channelId: string; label: string; description?: string };
+    videos: Array<{ videoId: string; title: string; published: string }>;
+  }>;
   autoSymbolsEnabled?: boolean;
   useDirectAudio?: boolean;
 }): string {
@@ -67,7 +78,8 @@ export function buildInteractiveAgentPrompt(params: {
     studentName, persona, language, memoryContext, mode,
     studentAge, studentGender, studentDiagnosis, aiName,
     knownContacts, availableBoards, loadedBoardName, loadedPageName,
-    cachedSymbols, activeApp, enabledApps, availableCustomApps,
+    cachedSymbols, activeApp, enabledApps, availableCustomApps, permittedWebsites,
+    permittedYoutubeChannels, youtubeChannelVideos,
     autoSymbolsEnabled = false, useDirectAudio = false,
   } = params;
 
@@ -278,8 +290,62 @@ Custom games (clinician-authored educational games — open with the same open_a
 ${availableCustomApps!.map(a => `- ${a.name}: (id: "${a.id}")${a.description ? ` — ${a.description}` : ""}`).join('\n')}`;
     }
 
+    // Permitted YouTube channels (only meaningful when the YouTube app is enabled).
+    const youtubeEnabled = !!(enabledApps?.some(a => a.id === "youtube"));
+    const channelsForPrompt = youtubeChannelVideos?.length
+      ? youtubeChannelVideos.map(cv => cv.channel)
+      : permittedYoutubeChannels || [];
+    if (youtubeEnabled && channelsForPrompt.length > 0) {
+      prompt += `
+
+YouTube is restricted to the permitted channels listed below. The server will only return videos from these channels.
+
+How to open YouTube:
+- Call open_app(app_id="youtube") with NO data to open the channel browser — the student picks a channel and a video themselves. Use this when you don't know exactly what the student wants or when the student says "I want to watch something".
+- Call open_app(app_id="youtube", data="<exact or close-to-exact video title>") to auto-play a specific video. Only do this when the student's request clearly matches one of the actual video titles listed below. Do NOT pass a generic topic like "animals" or "songs" — the server uses title matching, and an unmatched topic opens the browser instead (which is fine, but clunky).
+
+When suggesting video-related board buttons, reference the actual titles below (or similar phrasing) so the student can recognize what's available.
+
+Permitted channels${youtubeChannelVideos?.length ? " (with recent uploads)" : ""}:`;
+      if (youtubeChannelVideos?.length) {
+        for (const { channel, videos } of youtubeChannelVideos) {
+          prompt += `\n- ${channel.label}${channel.description ? ` — ${channel.description}` : ""}`;
+          for (const v of videos) {
+            prompt += `\n    · ${v.title}`;
+          }
+          if (videos.length === 0) {
+            prompt += `\n    (no recent uploads)`;
+          }
+        }
+      } else {
+        for (const c of channelsForPrompt) {
+          prompt += `\n- ${c.label}${c.description ? ` — ${c.description}` : ""}`;
+        }
+      }
+    }
+
     if (activeApp) {
       prompt += `\n\nThe "${activeApp}" app is currently open on screen.`;
+    }
+  }
+
+  // ── # WEBSITES ──
+
+  if (permittedWebsites && permittedWebsites.length > 0) {
+    prompt += `
+
+# WEBSITES
+You have an in-frame web browser you can open via open_website(url, label). Only the URLs listed below (and their subpages) are permitted — any other URL will be rejected.
+After opening a site, call rebuild_board() with buttons relevant to what the student is looking at. You will receive [BROWSER] context updates as the student navigates — use those to track the current page. If a site fails to load (you'll receive a [SYSTEM] message about it), offer the student a different activity.
+
+Available sites:`;
+    for (const site of permittedWebsites) {
+      prompt += `\n- ${site.label}: ${site.url}${site.description ? ` — ${site.description}` : ""}`;
+      if (site.subpages?.length) {
+        for (const sub of site.subpages) {
+          prompt += `\n  · ${sub.label}: ${sub.url}${sub.description ? ` — ${sub.description}` : ""}`;
+        }
+      }
     }
   }
 
