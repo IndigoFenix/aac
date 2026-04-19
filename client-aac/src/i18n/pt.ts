@@ -405,4 +405,29 @@ export const pt: Translations = {
     SERVICE_STARTING: "O servidor est\u00e1 iniciando. Tentando novamente...",
     SERVICE_UNAVAILABLE: "O servidor est\u00e1 temporariamente indispon\u00edvel. Por favor, tente novamente em um momento.",
   },
+
+  browserApp: {
+    back: "Voltar",
+    refresh: "Atualizar",
+    close: "Fechar",
+    blockedTitle: "N\u00e3o \u00e9 poss\u00edvel abrir este site",
+    blockedHint: "Este site n\u00e3o permite ser exibido dentro do aplicativo. Tente outro site.",
+  },
+
+  youtubeApp: {
+    chooseChannel: "Escolha um canal",
+    backToChannels: "Voltar aos canais",
+    loading: "Carregando...",
+    noVideos: "Sem v\u00eddeos recentes neste canal.",
+    loadError: "N\u00e3o foi poss\u00edvel carregar os v\u00eddeos deste canal.",
+    unavailable: "YouTube n\u00e3o est\u00e1 dispon\u00edvel agora.",
+    close: "Fechar",
+    play: "Reproduzir",
+    pause: "Pausar",
+    restart: "Reiniciar",
+    back10: "10 segundos atr\u00e1s",
+    forward10: "10 segundos \u00e0 frente",
+    prevPage: "P\u00e1gina anterior",
+    nextPage: "Pr\u00f3xima p\u00e1gina",
+  },
 };

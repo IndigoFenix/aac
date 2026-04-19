@@ -356,8 +356,8 @@ export class ProgramService {
    */
   async updateObjectiveProgress(id: string, progress: number): Promise<Objective | undefined> {
     const clampedProgress = Math.max(0, Math.min(100, progress));
-    const status = clampedProgress >= 100 ? "achieved" : 
-                   clampedProgress > 0 ? "in_progress" : "not_started";
+    const status = clampedProgress >= 100 ? "achieved" :
+                   clampedProgress > 0 ? "active" : "draft";
     return programRepository.updateObjective(id, { 
       progress: clampedProgress,
       status,

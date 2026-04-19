@@ -21,6 +21,28 @@ export interface ToolResponse {
   scheduling?: "SILENT" | "WHEN_IDLE";  // Gemini native audio: absorb result without generating audio
 }
 
+/**
+ * One turn's usage stats from a live provider. Aggregates are always present;
+ * `details` is populated when the provider reports a modality breakdown
+ * (Gemini Live returns `promptTokensDetails` / `responseTokensDetails`).
+ */
+export interface LiveUsage {
+  promptTokens: number;
+  completionTokens: number;
+  details?: {
+    /** Text tokens in the prompt (system prompt, history, tool responses). */
+    textInputTokens: number;
+    /** Audio + image + video tokens in the prompt (Google bills as one rate). */
+    nonTextInputTokens: number;
+    /** Text tokens in the model's response (tool calls, transcriptions). */
+    textOutputTokens: number;
+    /** Audio tokens in the model's response (spoken replies). */
+    audioOutputTokens: number;
+    /** Prompt tokens served from context cache, if reported. */
+    cachedInputTokens?: number;
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Callbacks — the relay wires these up
 // ---------------------------------------------------------------------------
@@ -36,8 +58,12 @@ export interface LiveProviderCallbacks {
   onToolCall?: (calls: ToolCall[]) => void;
   /** Model cancelled previously issued tool calls */
   onToolCallCancellation?: (ids: string[]) => void;
-  /** Usage metadata from the model */
-  onUsage?: (usage: { promptTokens: number; completionTokens: number }) => void;
+  /**
+   * Usage metadata for one turn. `details` contains the provider-reported
+   * modality breakdown when available (AUDIO/IMAGE/VIDEO/TEXT) — credit
+   * tracking uses this to bill separately on models with separate rates.
+   */
+  onUsage?: (usage: LiveUsage) => void;
   /** Session is about to disconnect (provider-specific) — reconnect soon */
   onGoAway?: () => void;
   /** Session setup completed — ready to send data */

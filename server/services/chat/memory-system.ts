@@ -917,10 +917,15 @@ export function renderMemoryVisualization(
       // Schema-defined & present at runtime
       if (hasValue && propSchema) {
         const v = value[k];
-  
+
         if (propSchema.type === 'object' || propSchema.type === 'array' || propSchema.type === 'map' || propSchema.type === 'topic') {
           const vis = isOpen(p);
-          shown.push(`  - ${k}: {${propSchema.type}}${inlineDesc(propSchema?.description)} ${vis ? '' : '(hidden)'}`);
+          const suffix = vis
+            ? ''
+            : mayHaveUnloadedData(propSchema, p, v)
+              ? '(may contain items — view to load)'
+              : '(hidden)';
+          shown.push(`  - ${k}: {${propSchema.type}}${inlineDesc(propSchema?.description)} ${suffix}`);
   
           // If this child container path itself is visible, inline-render the child contents
           if (vis) {
@@ -954,7 +959,10 @@ export function renderMemoryVisualization(
         if (showMissingProps) {
           const req = requiredSet.has(k) ? '; required' : '';
           if (propSchema.type === 'object' || propSchema.type === 'map' || propSchema.type === 'array' || propSchema.type === 'topic') {
-            shown.push(`  - ${k}: {${propSchema.type}}${inlineDesc(propSchema?.description)} (empty${req})`);
+            const status = mayHaveUnloadedData(propSchema, p, undefined)
+              ? '(may contain items — view to load)'
+              : `(empty${req})`;
+            shown.push(`  - ${k}: {${propSchema.type}}${inlineDesc(propSchema?.description)} ${status}`);
           } else {
             const enumHint = formatEnumHint(propSchema);
             shown.push(`  - ${k}: <${propSchema.type}>${enumHint}${inlineDesc(propSchema?.description)} (empty${req})`);
@@ -1401,16 +1409,33 @@ export function renderMemoryVisualization(
     return `${name}:${s.type}${primitiveConstraints(s as any)}`;
   }
 
-  function summarizeObjectSchema(s: AgentMemoryFieldObject, maxProps = 10): { req: string[]; propsLine: string; extrasNote?: string } {
+  function summarizeObjectSchema(s: AgentMemoryFieldObject, maxProps = 16): { req: string[]; propsLine: string; extrasNote?: string } {
     const req = s.required ?? [];
     const keys = Object.keys(s.properties ?? {});
-    const shown: string[] = [];
     const limit = Math.max(1, maxProps);
-    for (let i = 0; i < keys.length && i < limit; i++) {
-      const k = keys[i];
-      shown.push(objectPropLine(k, s.properties[k]));
+
+    // Container fields define relational structure (nested arrays/maps that carry
+    // foreign-key links like profileDomainId on objectives). Always include them
+    // in the hint so the AI can see how entities relate — truncate scalars first.
+    const isContainerProp = (k: string) => {
+      const t = s.properties?.[k]?.type;
+      return t === 'map' || t === 'array' || t === 'object' || t === 'topic';
+    };
+
+    const containerKeys = keys.filter(isContainerProp);
+    const scalarKeys = keys.filter(k => !isContainerProp(k));
+    const scalarBudget = Math.max(1, limit - containerKeys.length);
+    const visibleScalars = new Set(scalarKeys.slice(0, scalarBudget));
+    const hiddenScalars = Math.max(0, scalarKeys.length - scalarBudget);
+
+    const shown: string[] = [];
+    for (const k of keys) {
+      if (isContainerProp(k) || visibleScalars.has(k)) {
+        shown.push(objectPropLine(k, s.properties[k]));
+      }
     }
-    const extras = keys.length > limit ? ` … +${keys.length - limit} more` : '';
+
+    const extras = hiddenScalars > 0 ? ` … +${hiddenScalars} more` : '';
     const addl = s.additionalProperties === false ? 'no extra props' : undefined;
     return { req, propsLine: shown.join(', ') + extras, extrasNote: addl };
   }
@@ -1446,24 +1471,43 @@ export function renderMemoryVisualization(
     return selfOpen || parentOpen;
   }
 
-  function pushContainer(path: string, kind: ContKind, schema: any) {
+  function pushContainer(path: string, kind: ContKind, schema: any, forceInclude = false) {
     const p = normalizePath(path);
     const parent = splitPath(p).length ? joinPath(splitPath(p).slice(0, -1)) : null;
-    if (eligible(p)) containerSpecs.push({ path: p, kind, schema, parentPath: parent });
+    if (forceInclude || eligible(p)) containerSpecs.push({ path: p, kind, schema, parentPath: parent });
   }
 
-  // Walk schema to collect eligible containers (by schema, not values, so we show specs even if empty/missing)
-  function walkSchema(s: AgentMemoryField, basePath: string) {
+  // Walk schema to collect eligible containers (by schema, not values, so we show specs even if empty/missing).
+  // When `forceInclude` is true (after descending through a map value or array item),
+  // bypass the eligibility check so nested containers are always shown with template
+  // paths like `/Context_Program/goals/<key>/objectives`.
+  function walkSchema(s: AgentMemoryField, basePath: string, forceInclude = false, depth = 0) {
+    if (depth > 6) return; // safety cap against pathological schemas
     const p = normalizePath(basePath);
-    if (s.type === 'array')       { pushContainer(p, 'array', s as AgentMemoryFieldArray); return; }
-    if (s.type === 'map')         { pushContainer(p, 'map',   s as AgentMemoryFieldMap);   return; }
-    if (s.type === 'topic')       { pushContainer(p, 'topic', s as AgentMemoryFieldTopic); return; }
+    if (s.type === 'array') {
+      const arr = s as AgentMemoryFieldArray;
+      pushContainer(p, 'array', arr, forceInclude);
+      // Descend into item schema so nested containers/enums inside items are visible.
+      const itemPath = joinPath([...splitPath(p), '<index>']);
+      walkSchema(arr.items, itemPath, true, depth + 1);
+      return;
+    }
+    if (s.type === 'map') {
+      const m = s as AgentMemoryFieldMap;
+      pushContainer(p, 'map', m, forceInclude);
+      const valuePath = joinPath([...splitPath(p), '<key>']);
+      walkSchema(m.values, valuePath, true, depth + 1);
+      return;
+    }
+    if (s.type === 'topic')       { pushContainer(p, 'topic', s as AgentMemoryFieldTopic, forceInclude); return; }
     if (s.type === 'object') {
       const props = (s as AgentMemoryFieldObject).properties ?? {};
       for (const k of Object.keys(props)) {
         const childPath = joinPath([...splitPath(p), k]);
-        // Only descend if object itself or the child path is visible; otherwise we keep instructions scoped
-        if (eligible(childPath)) walkSchema(props[k], childPath);
+        // Descend if this child is eligible (top-level visibility rule), OR if we're
+        // already past a container boundary (forceInclude) — in that case the path is
+        // a template, not a real open path, so `eligible()` would never fire.
+        if (forceInclude || eligible(childPath)) walkSchema(props[k], childPath, forceInclude, depth + 1);
       }
     }
   }
@@ -1486,7 +1530,7 @@ export function renderMemoryVisualization(
         lines.push(head.join(''));
 
         if (s.items.type === 'object') {
-          const info = summarizeObjectSchema(s.items as AgentMemoryFieldObject, 12);
+          const info = summarizeObjectSchema(s.items as AgentMemoryFieldObject, 16);
           if (info.req.length) lines.push(`  item.required: [${info.req.join(', ')}]`);
           if (info.propsLine)  lines.push(`  item.props: ${info.propsLine}${info.extrasNote ? `; ${info.extrasNote}` : ''}`);
         } else {
@@ -1511,7 +1555,7 @@ export function renderMemoryVisualization(
         lines.push(head.join(''));
 
         if (s.values.type === 'object') {
-          const info = summarizeObjectSchema(s.values as AgentMemoryFieldObject, 12);
+          const info = summarizeObjectSchema(s.values as AgentMemoryFieldObject, 16);
           if (info.req.length) lines.push(`  value.required: [${info.req.join(', ')}]`);
           if (info.propsLine)  lines.push(`  value.props: ${info.propsLine}${info.extrasNote ? `; ${info.extrasNote}` : ''}`);
         } else {

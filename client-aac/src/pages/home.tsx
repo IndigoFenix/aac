@@ -32,6 +32,8 @@ import MusicApp from "@/components/apps/MusicApp";
 import SpotifyApp from "@/components/apps/SpotifyApp";
 import SandboxGameApp from "@/components/apps/sandbox-game";
 import BubblesGameApp from "@/components/apps/bubbles-game";
+import BrowserApp from "@/components/apps/BrowserApp";
+import type { PermittedWebsite } from "@shared/schema";
 import { CustomAppPlayer } from "@/components/CustomAppPlayer";
 import AppMiniBoard from "@/components/AppMiniBoard";
 import { CameraAttentivenessWrapper } from "@/components/CameraAttentivenessWrapper";
@@ -63,7 +65,7 @@ interface HomeProps {
  * Inner component that bridges DualAgentContext to parent Home for interpret/mode features.
  * Must be rendered inside DualAgentProvider.
  */
-function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onBoardExitReady, onGuessingModeChange, onContextButtonsChange, onInitializedChange, onYesNoChange, onRestartSessionReady, onPausedChange, onActiveAppChange }: {
+function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, onBoardPatchChange, onSymbolUpdateChange, onAiButtonPressChange, onSendMessageReady, onSendContextOnlyReady, onBoardExitReady, onGuessingModeChange, onContextButtonsChange, onInitializedChange, onYesNoChange, onRestartSessionReady, onPausedChange, onActiveAppChange }: {
   onModeChange: (mode: 'interact' | 'silent') => void;
   onInterpretReady: (fn: ((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null) => void;
   onDetectionChange?: (enabled: boolean) => void;
@@ -71,6 +73,7 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
   onSymbolUpdateChange?: (data: { buttonLabel: string; symbolPath: string } | null) => void;
   onAiButtonPressChange?: (data: { label: string; action: string; targetPageId: string; targetPageName: string; buttons: import("@shared/schema").BoardButton[] } | null) => void;
   onSendMessageReady?: (fn: ((msg: string) => Promise<void>) | null) => void;
+  onSendContextOnlyReady?: (fn: ((text: string) => void) | null) => void;
   onInitializedChange?: (initialized: boolean) => void;
   onYesNoChange?: (active: boolean, dismiss: () => void) => void;
   onRestartSessionReady?: (fn: (() => void) | null) => void;
@@ -80,7 +83,7 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
   onGuessingModeChange?: (active: boolean) => void;
   onContextButtonsChange?: (buttons: Array<{ label: string; iconRef: string; symbolPath?: string; sentence?: string }>) => void;
 }) {
-  const { interactionMode, interpretButtons, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendBoardExit, isInitialized, yesNoActive, dismissYesNo, clearSession, initialize, paused, setPaused, activeApp, dismissApp, registerAppCanvasCapture, studentId, guessingMode, contextButtons: contextButtonsFromCtx } = useDualAgentContext();
+  const { interactionMode, interpretButtons, videoCaptureEnabled, voiceEnabled, boardPatch, symbolUpdate, aiButtonPress, sendMessage, sendContextOnly, sendBoardExit, isInitialized, yesNoActive, dismissYesNo, clearSession, initialize, paused, setPaused, activeApp, dismissApp, registerAppCanvasCapture, studentId, guessingMode, contextButtons: contextButtonsFromCtx } = useDualAgentContext();
 
   useEffect(() => {
     onModeChange(interactionMode);
@@ -111,6 +114,11 @@ function DualAgentBridge({ onModeChange, onInterpretReady, onDetectionChange, on
     onSendMessageReady?.((msg: string) => sendMessage(msg));
     return () => onSendMessageReady?.(null);
   }, [sendMessage, onSendMessageReady]);
+
+  useEffect(() => {
+    onSendContextOnlyReady?.((text: string) => sendContextOnly(text));
+    return () => onSendContextOnlyReady?.(null);
+  }, [sendContextOnly, onSendContextOnlyReady]);
 
   useEffect(() => {
     onBoardExitReady?.(sendBoardExit);
@@ -160,10 +168,20 @@ function renderAppContent(
   registerCapture: (fn: (() => Promise<Blob | null>) | null) => void,
   studentId: string,
   sendMessageToAi?: (msg: string) => void,
+  permittedWebsites?: PermittedWebsite[],
+  sendContextOnlyToAi?: (text: string) => void,
 ): React.ReactNode {
   if (!activeApp) return null;
-  if (activeApp.appId === "youtube" && activeApp.appData?.videoId) {
-    return <YouTubeApp videoId={activeApp.appData.videoId} title={activeApp.appData.title || "Video"} onClose={dismissApp} />;
+  if (activeApp.appId === "youtube") {
+    return (
+      <YouTubeApp
+        videoId={activeApp.appData?.videoId}
+        title={activeApp.appData?.title || "Video"}
+        channels={activeApp.appData?.channels}
+        onClose={dismissApp}
+        sendContextOnly={sendContextOnlyToAi}
+      />
+    );
   }
   if (activeApp.appId === "drawing") {
     return <DrawingApp onClose={dismissApp} onRegisterCapture={registerCapture} />;
@@ -179,6 +197,17 @@ function renderAppContent(
   }
   if (activeApp.appId === "bubbles_game") {
     return <BubblesGameApp onClose={dismissApp} studentId={studentId} sendMessageToAi={sendMessageToAi} />;
+  }
+  if (activeApp.appId === "browser" && activeApp.appData?.url) {
+    return (
+      <BrowserApp
+        url={activeApp.appData.url}
+        label={activeApp.appData.label}
+        permittedWebsites={permittedWebsites || []}
+        onClose={dismissApp}
+        sendContextOnly={sendContextOnlyToAi}
+      />
+    );
   }
   if (activeApp.appId === "custom_app" && activeApp.appData?.definition) {
     return (
@@ -305,6 +334,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
   const interpretFnRef = useRef<((buttons: string[], sentences?: Record<string, string>) => Promise<void>) | null>(null);
   const sendBoardExitRef = useRef<((label: string, instruction: string) => void) | null>(null);
   const sendMessageFnRef = useRef<((msg: string) => Promise<void>) | null>(null);
+  const sendContextOnlyFnRef = useRef<((text: string) => void) | null>(null);
   const restartSessionFnRef = useRef<(() => void) | null>(null);
 
   // Pause state (bridged from DualAgentContext)
@@ -1176,7 +1206,15 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
           {/* App content — replaces board when an app is active */}
           {activeApp ? (
             <div className="flex-1 min-w-0 h-full">
-              {renderAppContent(activeApp, dismissAppRef.current, registerAppCanvasCaptureRef.current, studentId, (msg) => sendMessageFnRef.current?.(msg))}
+              {renderAppContent(
+                activeApp,
+                dismissAppRef.current,
+                registerAppCanvasCaptureRef.current,
+                studentId,
+                (msg) => sendMessageFnRef.current?.(msg),
+                (userProfile?.aacSettings?.permittedWebsites as PermittedWebsite[] | undefined) || [],
+                (text) => sendContextOnlyFnRef.current?.(text),
+              )}
             </div>
           ) : boardMode === 'ai' ? (
             <div className="flex-1 min-w-0 h-full">
@@ -1467,6 +1505,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
             onSymbolUpdateChange={setSymbolUpdateData}
             onAiButtonPressChange={setAiButtonPressData}
             onSendMessageReady={(fn) => { sendMessageFnRef.current = fn; }}
+            onSendContextOnlyReady={(fn) => { sendContextOnlyFnRef.current = fn; }}
             onBoardExitReady={(fn) => { sendBoardExitRef.current = fn; }}
             onGuessingModeChange={setIsGuessingMode}
             onContextButtonsChange={setContextButtons}

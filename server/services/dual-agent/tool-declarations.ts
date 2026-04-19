@@ -9,6 +9,8 @@
 
 import { Behavior, type FunctionDeclaration, type Tool } from "@google/genai";
 import type { AACAppDefinition } from "./types";
+import type { PermittedWebsite } from "@shared/schema";
+import { flattenPermittedWebsites } from "@shared/permitted-websites";
 
 // ---------------------------------------------------------------------------
 // Config interface
@@ -34,6 +36,8 @@ export interface ToolDeclarationConfig {
   activeApp?: string | null;
   /** When true, the model speaks directly via native audio — speak() tool is omitted */
   useDirectAudio?: boolean;
+  /** Websites the AI is permitted to open via the browser app. */
+  permittedWebsites?: PermittedWebsite[];
 }
 
 // ---------------------------------------------------------------------------
@@ -257,6 +261,26 @@ const CLOSE_APP: FunctionDeclaration = {
   },
 };
 
+function buildOpenWebsiteTool(permitted: PermittedWebsite[]): FunctionDeclaration {
+  const flat = flattenPermittedWebsites(permitted);
+  const list = flat
+    .map(w => `- "${w.label}" (${w.url})${w.description ? ` — ${w.description}` : ""}`)
+    .join("\n");
+  return {
+    name: "open_website",
+    description: `Open a permitted website in the in-frame browser app on the user's screen. Only URLs covered by the permitted-sites list below may be opened — any other URL will be rejected. Subpages of a permitted URL are also permitted. Use this when the user asks to read, browse, or look something up that maps to one of these sites. After opening, call rebuild_board() with contextual buttons relevant to the site. Permitted sites:\n${list}`,
+    behavior: Behavior.NON_BLOCKING,
+    parametersJsonSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "The URL to open. Must match a permitted site prefix." },
+        label: { type: "string", description: "Short label for the site or page (e.g. 'Wikipedia: Cats'). Optional — used for display only." },
+      },
+      required: ["url"],
+    },
+  };
+}
+
 const LEARN_FACE: FunctionDeclaration = {
   name: "learn_face",
   description: `Remember a new person's face. Use when you see an unrecognized person and learn their name through conversation. Only when confident about their identity.`,
@@ -402,8 +426,14 @@ export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
 
   const hasBuiltInApps = config.enabledApps.length > 0;
   const hasCustomApps = (config.availableCustomApps?.length ?? 0) > 0;
-  if (hasBuiltInApps || hasCustomApps) {
-    declarations.push(buildOpenAppTool(config.enabledApps, config.availableCustomApps ?? []));
+  const hasPermittedWebsites = (config.permittedWebsites?.length ?? 0) > 0;
+  if (hasBuiltInApps || hasCustomApps || hasPermittedWebsites) {
+    if (hasBuiltInApps || hasCustomApps) {
+      declarations.push(buildOpenAppTool(config.enabledApps, config.availableCustomApps ?? []));
+    }
+    if (hasPermittedWebsites) {
+      declarations.push(buildOpenWebsiteTool(config.permittedWebsites!));
+    }
     declarations.push(CLOSE_APP);
   }
 

@@ -403,6 +403,31 @@ export const en = {
     SERVICE_STARTING: "The server is starting up. Retrying...",
     SERVICE_UNAVAILABLE: "The server is temporarily unavailable. Please try again in a moment.",
   },
+
+  browserApp: {
+    back: "Back",
+    refresh: "Refresh",
+    close: "Close",
+    blockedTitle: "Can't open this site",
+    blockedHint: "This site doesn't allow being shown inside the app. Try a different site.",
+  },
+
+  youtubeApp: {
+    chooseChannel: "Choose a channel",
+    backToChannels: "Back to channels",
+    loading: "Loading...",
+    noVideos: "No recent videos in this channel.",
+    loadError: "Couldn't load videos from this channel.",
+    unavailable: "YouTube is unavailable right now.",
+    close: "Close",
+    play: "Play",
+    pause: "Pause",
+    restart: "Restart",
+    back10: "Back 10 seconds",
+    forward10: "Forward 10 seconds",
+    prevPage: "Previous page",
+    nextPage: "Next page",
+  },
 };
 
 export type Translations = typeof en;

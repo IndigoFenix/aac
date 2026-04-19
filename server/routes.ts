@@ -977,6 +977,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     voiceController.voiceChat(req, res)
   );
 
+  // ============= YOUTUBE CHANNEL RESOLVER =============
+  // Resolve a YouTube channel URL / @handle / raw channel ID to a UC... channel ID
+  // AND fetch its display title + description. No API key required (public HTML).
+  app.post("/api/aac/youtube/resolve-channel", optionalAuth, async (req, res) => {
+    try {
+      const { input } = req.body || {};
+      if (typeof input !== "string" || !input.trim()) {
+        return res.status(400).json({ error: "input required" });
+      }
+      const { resolveChannelIdFromUrl, fetchChannelMetadata } = await import(
+        "./services/youtube/channel-search"
+      );
+      const channelId = await resolveChannelIdFromUrl(input);
+      if (!channelId) return res.status(404).json({ error: "Could not resolve channel ID from URL." });
+      const metadata = await fetchChannelMetadata(channelId);
+      return res.json({
+        channelId,
+        title: metadata.title,
+        description: metadata.description,
+      });
+    } catch (err: any) {
+      console.error("[routes] resolve-channel failed:", err?.message || err);
+      return res.status(500).json({ error: "Resolver failed" });
+    }
+  });
+
+  // List recent videos from a YouTube channel (RSS-backed). Public data;
+  // the client already knows the channelId because the server sent the
+  // permitted-channels list to it.
+  app.get("/api/aac/youtube/channel-videos", optionalAuth, async (req, res) => {
+    try {
+      const channelId = req.query.channelId;
+      if (typeof channelId !== "string" || !/^UC[A-Za-z0-9_-]{20,}$/.test(channelId)) {
+        return res.status(400).json({ error: "valid channelId required" });
+      }
+      const { fetchChannelRssVideos } = await import("./services/youtube/channel-search");
+      const videos = await fetchChannelRssVideos(channelId);
+      return res.json({ channelId, videos });
+    } catch (err: any) {
+      console.error("[routes] channel-videos failed:", err?.message || err);
+      return res.status(500).json({ error: "Fetch failed" });
+    }
+  });
+
   // ============= SPOTIFY OAUTH ROUTES =============
   app.get("/api/aac/spotify/auth-url", optionalAuth, (req, res) =>
     spotifyController.getAuthUrl(req, res)

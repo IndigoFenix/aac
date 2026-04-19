@@ -36,8 +36,23 @@ export const assessmentSourceTypeEnum = pgEnum("assessment_source_type", [
   "behavioral_records"
 ]);
 export const interventionLevelEnum = pgEnum("intervention_level", ["activity", "function", "participation"]);
-export const goalStatusEnum = pgEnum("goal_status", ["draft", "active", "achieved", "modified", "discontinued"]);
-export const objectiveStatusEnum = pgEnum("objective_status", ["not_started", "in_progress", "achieved", "modified", "discontinued"]);
+// Unified status enum for any planning item (goals, objectives, transition goals).
+// "draft" and "not_started" are accepted synonyms for pre-work state; "active"
+// and "in_progress" are accepted synonyms for work-in-progress state. Keeping
+// both in the enum preserves pre-existing data while letting callers use
+// whichever term reads more naturally in context.
+export const planItemStatusEnum = pgEnum("plan_item_status", [
+  "draft",
+  "not_started",
+  "active",
+  "in_progress",
+  "achieved",
+  "modified",
+  "discontinued",
+]);
+// Aliases for readability at usage sites. All three point at the same enum.
+export const goalStatusEnum = planItemStatusEnum;
+export const objectiveStatusEnum = planItemStatusEnum;
 export const serviceTypeEnum = pgEnum("service_type", [
   "speech_language_therapy",
   "occupational_therapy",
@@ -399,6 +414,12 @@ export const aacSettings = pgTable("aac_settings", {
 
   // App configuration — per-app settings stored as JSON (e.g. { youtube: { enabled: true }, spotify: { enabled: true } })
   appConfig: jsonb("app_config").default({}),
+
+  // Permitted websites — array of { url, label, description?, subpages? } the AI is allowed to open via the browser app
+  permittedWebsites: jsonb("permitted_websites").default([]),
+
+  // Permitted YouTube channels — array of { channelId, label, description? }. When empty, searches are unrestricted.
+  permittedYoutubeChannels: jsonb("permitted_youtube_channels").default([]),
 
   // Accessibility — single JSON blob so new options don't require migrations
   accessibility: jsonb("accessibility").default({}), // { fontSize?: number, highContrast?: boolean, reduceAnimations?: boolean, enhancedFocusIndicator?: boolean }
@@ -769,7 +790,7 @@ export const objectives = pgTable("objectives", {
   targetDate: date("target_date"),
 
   // Status tracking
-  status: objectiveStatusEnum("status").default("not_started").notNull(),
+  status: objectiveStatusEnum("status").default("draft").notNull(),
   progress: integer("progress").default(0), // 0-100
   achievedDate: date("achieved_date"),
 

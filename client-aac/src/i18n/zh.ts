@@ -405,4 +405,29 @@ export const zh: Translations = {
     SERVICE_STARTING: "服务器正在启动，正在重试...",
     SERVICE_UNAVAILABLE: "服务器暂时不可用，请稍后重试。",
   },
+
+  browserApp: {
+    back: "返回",
+    refresh: "刷新",
+    close: "关闭",
+    blockedTitle: "无法打开此网站",
+    blockedHint: "此网站不允许在应用内显示。请尝试其他网站。",
+  },
+
+  youtubeApp: {
+    chooseChannel: "选择一个频道",
+    backToChannels: "返回频道列表",
+    loading: "加载中...",
+    noVideos: "此频道暂无最近的视频。",
+    loadError: "无法加载此频道的视频。",
+    unavailable: "YouTube 当前不可用。",
+    close: "关闭",
+    play: "播放",
+    pause: "暂停",
+    restart: "重新开始",
+    back10: "后退 10 秒",
+    forward10: "前进 10 秒",
+    prevPage: "上一页",
+    nextPage: "下一页",
+  },
 };

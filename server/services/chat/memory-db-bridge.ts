@@ -1121,6 +1121,8 @@ export async function processDBOperation(
     let dbResult: any;
     // Track whether a DB operation was actually executed (some ops like clear/delete don't produce a dbResult)
     let dbExecuted = false;
+    // Optional informational note propagated from the DB op (e.g. "auto-created X children")
+    let writeNote: string | undefined;
 
     switch (action) {
       case 'set':
@@ -1129,11 +1131,26 @@ export async function processDBOperation(
           const writeResult = await dbOps.write(context, dbValue);
 
           // If write returned a value, use it (transformed by fromDB if available)
-          // Otherwise fall back to original value
+          // Otherwise fall back to original value. For arrays (e.g. bulk `set` on
+          // an array-valued field), map fromDB over items so the array shape is
+          // preserved — otherwise spreading an array through fromDB would collapse
+          // it into an object with numeric string keys.
           if (writeResult !== undefined) {
-            dbResult = dbOps.fromDB ? dbOps.fromDB(writeResult) : writeResult;
+            if (Array.isArray(writeResult)) {
+              dbResult = dbOps.fromDB ? writeResult.map(item => dbOps.fromDB!(item)) : writeResult;
+            } else {
+              dbResult = dbOps.fromDB ? dbOps.fromDB(writeResult) : writeResult;
+            }
           } else {
             dbResult = value;
+          }
+          // Extract optional note describing side effects (e.g. auto-created children)
+          // and strip it from the value we store in memory.
+          if (dbResult && typeof dbResult === 'object' && '_note' in dbResult) {
+            writeNote = (dbResult as any)._note;
+            delete (dbResult as any)._note;
+          } else if (writeResult && typeof writeResult === 'object' && '_note' in writeResult) {
+            writeNote = (writeResult as any)._note;
           }
           markLoaded(loadState, path);
           dbExecuted = true;
@@ -1237,7 +1254,7 @@ export async function processDBOperation(
     }
 
     // dbSynced is true when ANY DB operation was executed (not just ones that return a value)
-    return { dbResult, shouldUpdateMemory: true, dbSynced: dbExecuted };
+    return { dbResult, shouldUpdateMemory: true, dbSynced: dbExecuted, note: writeNote };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return { error: `Database error: ${message}`, shouldUpdateMemory: false, dbSynced: false };
@@ -1565,9 +1582,9 @@ export async function processMemoryToolWithDB(
       ok = false;
       message = dbResult.error;
     } else if (dbResult.dbSynced === true) {
-      // DB operation succeeded
+      // DB operation succeeded — surface any informational note from the DB op
       ok = true;
-      message = undefined;
+      message = dbResult.note;
     } else {
       // DB operation was attempted but dbSynced is false/undefined - treat as failure
       ok = false;

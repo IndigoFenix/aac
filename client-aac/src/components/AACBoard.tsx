@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, Home, Volume2 } from "lucide-react";
 import type { ParsedBoardData, BoardButton, BoardPage } from "@shared/schema";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
+import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
 
 interface AACBoardProps {
   board: ParsedBoardData | null;
@@ -33,6 +34,7 @@ export default function AACBoard({ board, onButtonClick, language = "en", voiceT
   const [currentPageId, setCurrentPageId] = useState<string | null>(null);
   const [pageHistory, setPageHistory] = useState<string[]>([]);
   const { speak, isSpeaking } = useTextToSpeech();
+  const dualAgent = useDualAgentContextOptional();
   const isRTL = language === "he" || language === "ar";
 
   // Get current page
@@ -67,6 +69,12 @@ export default function AACBoard({ board, onButtonClick, language = "en", voiceT
           const speakText = button.action.text || textToSpeak;
           speak(speakText, language, voiceType as any);
           onButtonClick(button, speakText);
+          return;
+
+        case "open_website":
+          if (button.action.url) {
+            dualAgent?.launchApp("browser", { url: button.action.url, label: button.label });
+          }
           return;
       }
     }

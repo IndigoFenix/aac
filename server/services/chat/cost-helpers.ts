@@ -48,6 +48,53 @@ export const creditsForModelUsage = (
     return fullPromptCharge + cachedPromptCharge + completionCharge;
 };
 
+/**
+ * Modality-aware usage breakdown (one turn of a Live API session).
+ * Non-text input modalities (image, video) share the audio rate on Gemini
+ * Live models, so we sum them into a single non-text bucket.
+ */
+export interface LiveUsageBreakdown {
+    textInputTokens: number;
+    nonTextInputTokens: number; // audio + image + video
+    textOutputTokens: number;
+    audioOutputTokens: number;
+    cachedInputTokens?: number; // text input only; cached audio is rare
+}
+
+/**
+ * Calculate credits for a Live API turn using modality-separated token
+ * counts. When the model has no audio pricing configured, non-text tokens
+ * are billed at the flat input rate (matches legacy behavior for safety).
+ */
+export const creditsForLiveUsage = (
+    provider: LLMProviderKey,
+    model: string,
+    usage: LiveUsageBreakdown,
+): number => {
+    const option = getModelOption(provider, model);
+    const textInputPer1M   = option?.inputCostPer1M        ?? 0.15;
+    const textOutputPer1M  = option?.outputCostPer1M       ?? 0.60;
+    // Audio/non-text rates fall back to text rates when the catalog entry
+    // doesn't provide them (e.g. non-live models getting a Live usage event).
+    const audioInputPer1M  = option?.audioInputCostPer1M   ?? textInputPer1M;
+    const audioOutputPer1M = option?.audioOutputCostPer1M  ?? textOutputPer1M;
+
+    const per = (rate: number, tokens: number) =>
+        ChargeToCredits((rate / MILLION) * tokens);
+
+    const cached = usage.cachedInputTokens ?? 0;
+    const cacheDiscount = provider === "claude" ? 0.1 : 0.5;
+    const textInputBillable = Math.max(0, usage.textInputTokens - cached);
+
+    return (
+        per(textInputPer1M,  textInputBillable) +
+        per(textInputPer1M,  cached) * cacheDiscount +
+        per(audioInputPer1M, usage.nonTextInputTokens) +
+        per(textOutputPer1M,  usage.textOutputTokens) +
+        per(audioOutputPer1M, usage.audioOutputTokens)
+    );
+};
+
 // number of credits to charge for ONE web_search_preview tool call
 export const CreditsPerSearchByIntelligence = (
     intelligence: 0|1|2|3,           // 0 = mini, 1 = mini, 2 = 4o, 3 = o3-pro

@@ -5,6 +5,7 @@ import { AACSettingsCustomApps } from '@/components/AACSettingsCustomApps';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { apiRequest } from '@/lib/queryClient';
+import type { PermittedWebsite, PermittedYoutubeChannel } from '@shared/schema';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -40,6 +41,9 @@ import {
   Link,
   Unlink,
   Accessibility,
+  Globe,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -91,6 +95,10 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
   const [useUnapprovedSymbols, setUseUnapprovedSymbols] = useState(false);
   const [dynamicBoardsEnabled, setDynamicBoardsEnabled] = useState(false);
   const [appConfig, setAppConfig] = useState<Record<string, any>>({});
+  const [permittedWebsites, setPermittedWebsites] = useState<PermittedWebsite[]>([]);
+  const [permittedYoutubeChannels, setPermittedYoutubeChannels] = useState<PermittedYoutubeChannel[]>([]);
+  const [youtubeChannelInput, setYoutubeChannelInput] = useState('');
+  const [resolvingChannel, setResolvingChannel] = useState(false);
   const [accessFontSize, setAccessFontSize] = useState(100);
   const [accessHighContrast, setAccessHighContrast] = useState(false);
   const [accessReduceAnimations, setAccessReduceAnimations] = useState(false);
@@ -190,6 +198,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setDynamicBoardsEnabled(aac?.dynamicBoardsEnabled ?? false);
       setUseUnapprovedSymbols(aac?.useUnapprovedSymbols ?? false);
       setAppConfig(aac?.appConfig || {});
+      setPermittedWebsites(Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : []);
+      setPermittedYoutubeChannels(Array.isArray(aac?.permittedYoutubeChannels) ? aac.permittedYoutubeChannels : []);
       const acc = aac?.accessibility || {};
       setAccessFontSize(acc.fontSize ?? 100);
       setAccessHighContrast(acc.highContrast ?? false);
@@ -226,6 +236,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       const originalUseApprovedSymbols = aac?.useApprovedSymbols ?? false;
       const originalUseUnapprovedSymbols = aac?.useUnapprovedSymbols ?? false;
       const originalAppConfig = aac?.appConfig || {};
+      const originalPermittedWebsites = Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : [];
+      const originalPermittedYoutubeChannels = Array.isArray(aac?.permittedYoutubeChannels) ? aac.permittedYoutubeChannels : [];
       const origAcc = aac?.accessibility || {};
       const origAccessFontSize = origAcc.fontSize ?? 100;
       const origAccessHighContrast = origAcc.highContrast ?? false;
@@ -255,13 +267,15 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
         useApprovedSymbols !== originalUseApprovedSymbols ||
         useUnapprovedSymbols !== originalUseUnapprovedSymbols ||
         JSON.stringify(appConfig) !== JSON.stringify(originalAppConfig) ||
+        JSON.stringify(permittedWebsites) !== JSON.stringify(originalPermittedWebsites) ||
+        JSON.stringify(permittedYoutubeChannels) !== JSON.stringify(originalPermittedYoutubeChannels) ||
         accessFontSize !== origAccessFontSize ||
         accessHighContrast !== origAccessHighContrast ||
         accessReduceAnimations !== origAccessReduceAnimations ||
         accessEnhancedFocus !== origAccessEnhancedFocus
       );
     }
-  }, [aiName, chatAgentPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, allowReadProgress, allowReadReports, allowNotes, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
+  }, [aiName, chatAgentPrompt, elevenlabsEnabled, elevenlabsApiKey, elevenlabsAiVoiceId, elevenlabsStudentVoiceId, geminiAiVoice, geminiStudentVoice, aiVoicePitch, studentVoicePitch, useLocalTts, iconTextRatio, interpretationLevel, startupMode, eyegazeEnabled, eyegazeTimeout, allowReadProgress, allowReadReports, allowNotes, generateSymbols, useApprovedSymbols, useUnapprovedSymbols, appConfig, permittedWebsites, permittedYoutubeChannels, accessFontSize, accessHighContrast, accessReduceAnimations, accessEnhancedFocus, student]);
 
   // Update mutation
   const updateMutation = useMutation({
@@ -290,6 +304,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       useUnapprovedSymbols: boolean;
       dynamicBoardsEnabled: boolean;
       appConfig?: Record<string, any>;
+      permittedWebsites?: PermittedWebsite[];
+      permittedYoutubeChannels?: PermittedYoutubeChannel[];
       accessibility?: Record<string, any>;
     }) => {
       const response = await apiRequest('PATCH', `/api/students/${student?.id}`, data);
@@ -340,6 +356,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       useUnapprovedSymbols,
       dynamicBoardsEnabled,
       appConfig,
+      permittedWebsites,
+      permittedYoutubeChannels,
       accessibility: {
         fontSize: accessFontSize,
         highContrast: accessHighContrast,
@@ -376,6 +394,8 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
       setDynamicBoardsEnabled(aac?.dynamicBoardsEnabled ?? false);
       setUseUnapprovedSymbols(aac?.useUnapprovedSymbols ?? false);
       setAppConfig(aac?.appConfig || {});
+      setPermittedWebsites(Array.isArray(aac?.permittedWebsites) ? aac.permittedWebsites : []);
+      setPermittedYoutubeChannels(Array.isArray(aac?.permittedYoutubeChannels) ? aac.permittedYoutubeChannels : []);
       const accR = aac?.accessibility || {};
       setAccessFontSize(accR.fontSize ?? 100);
       setAccessHighContrast(accR.highContrast ?? false);
@@ -386,6 +406,50 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
 
   const handleResetToDefault = () => {
     setChatAgentPrompt(DEFAULT_AAC_PROMPT);
+  };
+
+  const handleAddYoutubeChannel = async () => {
+    const raw = youtubeChannelInput.trim();
+    if (!raw) return;
+    setResolvingChannel(true);
+    try {
+      const res = await apiRequest('POST', '/api/aac/youtube/resolve-channel', { input: raw });
+      const data = await res.json();
+      if (!data.channelId) {
+        toast({
+          title: t('aacSettings.permittedYoutubeChannelsResolveFailedTitle'),
+          description: t('aacSettings.permittedYoutubeChannelsResolveFailedDesc'),
+          variant: 'destructive',
+        });
+        return;
+      }
+      // De-dupe
+      if (permittedYoutubeChannels.some(c => c.channelId === data.channelId)) {
+        toast({
+          title: t('aacSettings.permittedYoutubeChannelsDuplicate'),
+          variant: 'destructive',
+        });
+        return;
+      }
+      // Use fetched title/description as the default label/description; the
+      // clinician can still edit them. Fall back to the pasted input if the
+      // scrape came up empty.
+      const label = (data.title || raw).trim();
+      const description = (data.description || '').trim();
+      setPermittedYoutubeChannels(prev => [
+        ...prev,
+        { channelId: data.channelId, label, description },
+      ]);
+      setYoutubeChannelInput('');
+    } catch (err: any) {
+      toast({
+        title: t('aacSettings.permittedYoutubeChannelsResolveFailedTitle'),
+        description: err?.message || '',
+        variant: 'destructive',
+      });
+    } finally {
+      setResolvingChannel(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -1187,6 +1251,302 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
               >
                 <RotateCcw className="w-3 h-3 me-1" />
                 {t('aacSettings.resetToDefault')}
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Permitted YouTube Channels */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <span className="text-xl">▶️</span>
+                {t('aacSettings.permittedYoutubeChannelsTitle')}
+              </CardTitle>
+              <CardDescription>{t('aacSettings.permittedYoutubeChannelsDescription')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {permittedYoutubeChannels.length === 0 && (
+                <p className="text-sm text-muted-foreground">{t('aacSettings.permittedYoutubeChannelsEmpty')}</p>
+              )}
+              {permittedYoutubeChannels.map((ch, idx) => (
+                <div
+                  key={idx}
+                  className={cn(
+                    "rounded-lg border p-3 space-y-2",
+                    isDark ? "bg-gray-800/50 border-gray-700" : "bg-gray-50 border-gray-200",
+                  )}
+                >
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">{t('aacSettings.permittedYoutubeChannelsLabel')}</Label>
+                      <Input
+                        value={ch.label}
+                        onChange={(e) =>
+                          setPermittedYoutubeChannels(prev =>
+                            prev.map((c, i) => (i === idx ? { ...c, label: e.target.value } : c)),
+                          )
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">{t('aacSettings.permittedYoutubeChannelsChannelId')}</Label>
+                      <Input
+                        value={ch.channelId}
+                        onChange={(e) =>
+                          setPermittedYoutubeChannels(prev =>
+                            prev.map((c, i) => (i === idx ? { ...c, channelId: e.target.value } : c)),
+                          )
+                        }
+                        className="font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">{t('aacSettings.permittedYoutubeChannelsDescriptionField')}</Label>
+                    <Input
+                      value={ch.description || ''}
+                      onChange={(e) =>
+                        setPermittedYoutubeChannels(prev =>
+                          prev.map((c, i) => (i === idx ? { ...c, description: e.target.value } : c)),
+                        )
+                      }
+                      placeholder={t('aacSettings.permittedYoutubeChannelsDescriptionPlaceholder')}
+                    />
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      setPermittedYoutubeChannels(prev => prev.filter((_, i) => i !== idx))
+                    }
+                  >
+                    <Trash2 className="w-3 h-3 me-1" />
+                    {t('aacSettings.permittedYoutubeChannelsRemove')}
+                  </Button>
+                </div>
+              ))}
+
+              <div className="flex gap-2">
+                <Input
+                  placeholder={t('aacSettings.permittedYoutubeChannelsAddPlaceholder')}
+                  value={youtubeChannelInput}
+                  onChange={(e) => setYoutubeChannelInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !resolvingChannel) {
+                      e.preventDefault();
+                      handleAddYoutubeChannel();
+                    }
+                  }}
+                  className="flex-1"
+                />
+                <Button
+                  variant="outline"
+                  onClick={handleAddYoutubeChannel}
+                  disabled={!youtubeChannelInput.trim() || resolvingChannel}
+                >
+                  {resolvingChannel ? (
+                    <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4 me-2" />
+                  )}
+                  {t('aacSettings.permittedYoutubeChannelsAdd')}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {t('aacSettings.permittedYoutubeChannelsHint')}
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Permitted Websites */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Globe className="w-5 h-5" />
+                {t('aacSettings.permittedWebsitesTitle')}
+              </CardTitle>
+              <CardDescription>{t('aacSettings.permittedWebsitesDescription')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {permittedWebsites.length === 0 && (
+                <p className="text-sm text-muted-foreground">{t('aacSettings.permittedWebsitesEmpty')}</p>
+              )}
+              {permittedWebsites.map((site, idx) => (
+                <div
+                  key={idx}
+                  className={cn(
+                    "rounded-lg border p-3 space-y-2",
+                    isDark ? "bg-gray-800/50 border-gray-700" : "bg-gray-50 border-gray-200",
+                  )}
+                >
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">{t('aacSettings.permittedWebsitesLabel')}</Label>
+                      <Input
+                        value={site.label}
+                        onChange={(e) =>
+                          setPermittedWebsites((prev) =>
+                            prev.map((s, i) => (i === idx ? { ...s, label: e.target.value } : s)),
+                          )
+                        }
+                        placeholder={t('aacSettings.permittedWebsitesLabelPlaceholder')}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">{t('aacSettings.permittedWebsitesUrl')}</Label>
+                      <Input
+                        value={site.url}
+                        onChange={(e) =>
+                          setPermittedWebsites((prev) =>
+                            prev.map((s, i) => (i === idx ? { ...s, url: e.target.value } : s)),
+                          )
+                        }
+                        placeholder="https://example.com/"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">{t('aacSettings.permittedWebsitesDescriptionField')}</Label>
+                    <Input
+                      value={site.description || ''}
+                      onChange={(e) =>
+                        setPermittedWebsites((prev) =>
+                          prev.map((s, i) => (i === idx ? { ...s, description: e.target.value } : s)),
+                        )
+                      }
+                      placeholder={t('aacSettings.permittedWebsitesDescriptionPlaceholder')}
+                    />
+                  </div>
+
+                  {/* Subpages */}
+                  {(site.subpages || []).map((sub, subIdx) => (
+                    <div
+                      key={subIdx}
+                      className={cn(
+                        "ms-6 rounded-md border p-2 space-y-2",
+                        isDark ? "bg-gray-900/50 border-gray-700" : "bg-white border-gray-200",
+                      )}
+                    >
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs">{t('aacSettings.permittedWebsitesLabel')}</Label>
+                          <Input
+                            value={sub.label}
+                            onChange={(e) =>
+                              setPermittedWebsites((prev) =>
+                                prev.map((s, i) =>
+                                  i === idx
+                                    ? {
+                                        ...s,
+                                        subpages: (s.subpages || []).map((ss, j) =>
+                                          j === subIdx ? { ...ss, label: e.target.value } : ss,
+                                        ),
+                                      }
+                                    : s,
+                                ),
+                              )
+                            }
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">{t('aacSettings.permittedWebsitesUrl')}</Label>
+                          <Input
+                            value={sub.url}
+                            onChange={(e) =>
+                              setPermittedWebsites((prev) =>
+                                prev.map((s, i) =>
+                                  i === idx
+                                    ? {
+                                        ...s,
+                                        subpages: (s.subpages || []).map((ss, j) =>
+                                          j === subIdx ? { ...ss, url: e.target.value } : ss,
+                                        ),
+                                      }
+                                    : s,
+                                ),
+                              )
+                            }
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">{t('aacSettings.permittedWebsitesDescriptionField')}</Label>
+                        <Input
+                          value={sub.description || ''}
+                          onChange={(e) =>
+                            setPermittedWebsites((prev) =>
+                              prev.map((s, i) =>
+                                i === idx
+                                  ? {
+                                      ...s,
+                                      subpages: (s.subpages || []).map((ss, j) =>
+                                        j === subIdx ? { ...ss, description: e.target.value } : ss,
+                                      ),
+                                    }
+                                  : s,
+                              ),
+                            )
+                          }
+                        />
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setPermittedWebsites((prev) =>
+                            prev.map((s, i) =>
+                              i === idx
+                                ? { ...s, subpages: (s.subpages || []).filter((_, j) => j !== subIdx) }
+                                : s,
+                            ),
+                          )
+                        }
+                      >
+                        <Trash2 className="w-3 h-3 me-1" />
+                        {t('aacSettings.permittedWebsitesRemoveSubpage')}
+                      </Button>
+                    </div>
+                  ))}
+
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setPermittedWebsites((prev) =>
+                          prev.map((s, i) =>
+                            i === idx
+                              ? { ...s, subpages: [...(s.subpages || []), { url: '', label: '' }] }
+                              : s,
+                          ),
+                        )
+                      }
+                    >
+                      <Plus className="w-3 h-3 me-1" />
+                      {t('aacSettings.permittedWebsitesAddSubpage')}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        setPermittedWebsites((prev) => prev.filter((_, i) => i !== idx))
+                      }
+                    >
+                      <Trash2 className="w-3 h-3 me-1" />
+                      {t('aacSettings.permittedWebsitesRemove')}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+
+              <Button
+                variant="outline"
+                onClick={() =>
+                  setPermittedWebsites((prev) => [...prev, { url: '', label: '' }])
+                }
+              >
+                <Plus className="w-4 h-4 me-2" />
+                {t('aacSettings.permittedWebsitesAddWebsite')}
               </Button>
             </CardContent>
           </Card>

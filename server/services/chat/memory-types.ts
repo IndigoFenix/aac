@@ -320,11 +320,13 @@ export interface MemoryDBOperations<T = any> {
   read?: (ctx: DBOperationContext) => Promise<T | undefined>;
 
   /**
-   * Write a single value.
-   * Used for set/upsert on primitives and objects.
+   * Write a value.
+   * Used for set/upsert on primitives, objects, and whole containers.
+   * For array-valued fields, `value` may be T[] and the return may be T[]
+   * (bulk-replace semantics — see objectivesOps.write for an example).
    * Can optionally return the written value (e.g., after sanitization/transformation).
    */
-  write?: (ctx: DBOperationContext, value: T) => Promise<T | void>;
+  write?: (ctx: DBOperationContext, value: T | T[]) => Promise<T | T[] | void>;
 
   /**
    * List items in a container (array, map, topic) with pagination.
@@ -510,6 +512,10 @@ export interface DbOperationResult {
   dbSynced?: boolean;
   /** When set, apply dbResult to this path instead of the operation path */
   targetPath?: string;
+  /** Optional human-readable note describing side effects of the operation
+   *  (e.g. "Auto-created default profile domains: X, Y, Z"). Surfaced to the
+   *  AI as the result's `message` field when the op succeeds. */
+  note?: string;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

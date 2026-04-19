@@ -88,6 +88,7 @@ interface DualAgentContextType {
   // Active app
   activeApp: ActiveAppData | null;
   dismissApp: () => void;
+  launchApp: (appId: string, appData?: any) => void;
   registerAppCanvasCapture: (fn: (() => Promise<Blob | null>) | null) => void;
 
   // Avatar
@@ -620,6 +621,7 @@ function ProviderShell({
 
     activeApp: agent.activeApp,
     dismissApp: agent.dismissApp,
+    launchApp: agent.launchApp,
     registerAppCanvasCapture,
 
     emote: agent.emote,
@@ -668,6 +670,16 @@ export function useDualAgentContext(): DualAgentContextType {
     throw new Error("useDualAgentContext must be used within a DualAgentProvider");
   }
   return context;
+}
+
+/**
+ * Non-throwing variant — returns null when no DualAgentProvider is mounted.
+ * Use this from components that may be rendered outside the provider (e.g. the
+ * AAC board components, which are rendered whether or not dual-agent mode is
+ * enabled).
+ */
+export function useDualAgentContextOptional(): DualAgentContextType | null {
+  return useContext(DualAgentContext) ?? null;
 }
 
 export default DualAgentContext;

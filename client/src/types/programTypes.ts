@@ -16,8 +16,19 @@ export type ProfileDomainType =
   | 'life_skills_preparation'
   | 'other';
 
-export type GoalStatus = 'draft' | 'active' | 'achieved' | 'modified' | 'discontinued';
-export type ObjectiveStatus = 'not_started' | 'in_progress' | 'achieved' | 'modified' | 'discontinued';
+// Unified status enum for any planning item (goals, objectives, transition goals).
+// "draft" and "not_started" are accepted synonyms for pre-work state; "active"
+// and "in_progress" are accepted synonyms for work-in-progress state.
+export type PlanItemStatus =
+  | 'draft'
+  | 'not_started'
+  | 'active'
+  | 'in_progress'
+  | 'achieved'
+  | 'modified'
+  | 'discontinued';
+export type GoalStatus = PlanItemStatus;
+export type ObjectiveStatus = PlanItemStatus;
 
 export type ServiceType = 
   | 'speech_language_therapy'
@@ -466,7 +477,10 @@ export const DOMAIN_ORDER: ProfileDomainType[] = [
   'other',
 ];
 
-export const ALL_GOAL_STATUSES: GoalStatus[] = [
+// Canonical status set shown in UI selectors. "not_started" and "in_progress"
+// remain valid DB enum values to preserve legacy rows, but are intentionally
+// excluded from these selector arrays — new items should use "draft" / "active".
+export const ALL_PLAN_ITEM_STATUSES: PlanItemStatus[] = [
   'draft',
   'active',
   'achieved',
@@ -474,13 +488,8 @@ export const ALL_GOAL_STATUSES: GoalStatus[] = [
   'discontinued',
 ];
 
-export const ALL_OBJECTIVE_STATUSES: ObjectiveStatus[] = [
-  'not_started',
-  'in_progress',
-  'achieved',
-  'modified',
-  'discontinued',
-];
+export const ALL_GOAL_STATUSES: GoalStatus[] = ALL_PLAN_ITEM_STATUSES;
+export const ALL_OBJECTIVE_STATUSES: ObjectiveStatus[] = ALL_PLAN_ITEM_STATUSES;
 
 export const ALL_SERVICE_TYPES: ServiceType[] = [
   'speech_language_therapy',

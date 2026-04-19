@@ -1,6 +1,9 @@
 // server/services/youtube/youtube-search.ts
 // YouTube Data API v3 search with child-safety filters
 
+import type { PermittedYoutubeChannel } from "@shared/schema";
+import { searchWithinPermittedChannels } from "./channel-search";
+
 export interface YouTubeSearchResult {
   videoId: string;
   title: string;
@@ -10,9 +13,24 @@ export interface YouTubeSearchResult {
 
 /**
  * Search YouTube for a child-safe video matching the query.
- * Returns the first result or null on error / no results / missing API key.
+ *
+ * If `permittedChannels` has entries, the search is restricted to those
+ * channels (RSS-backed when no API key; Data API when available).
+ *
+ * Otherwise, falls back to an unrestricted Data API search (requires
+ * YOUTUBE_API_KEY — returns null without one).
  */
-export async function searchYouTube(query: string): Promise<YouTubeSearchResult | null> {
+export async function searchYouTube(
+  query: string,
+  permittedChannels?: PermittedYoutubeChannel[],
+): Promise<YouTubeSearchResult | null> {
+  if (permittedChannels && permittedChannels.length > 0) {
+    return searchWithinPermittedChannels(query, permittedChannels);
+  }
+  return searchYouTubeUnrestricted(query);
+}
+
+async function searchYouTubeUnrestricted(query: string): Promise<YouTubeSearchResult | null> {
   const apiKey = process.env.YOUTUBE_API_KEY;
   if (!apiKey) {
     console.warn("[YouTubeSearch] No YOUTUBE_API_KEY set, skipping search");

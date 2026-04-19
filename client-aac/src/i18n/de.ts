@@ -405,4 +405,29 @@ export const de: Translations = {
     SERVICE_STARTING: "Der Server wird gestartet. Erneuter Versuch...",
     SERVICE_UNAVAILABLE: "Der Server ist vor\u00fcbergehend nicht verf\u00fcgbar. Bitte versuchen Sie es in einem Moment erneut.",
   },
+
+  browserApp: {
+    back: "Zur\u00fcck",
+    refresh: "Aktualisieren",
+    close: "Schlie\u00dfen",
+    blockedTitle: "Diese Seite kann nicht ge\u00f6ffnet werden",
+    blockedHint: "Diese Seite erlaubt keine Anzeige innerhalb der App. Versuchen Sie eine andere Seite.",
+  },
+
+  youtubeApp: {
+    chooseChannel: "Kanal w\u00e4hlen",
+    backToChannels: "Zur\u00fcck zu den Kan\u00e4len",
+    loading: "L\u00e4dt...",
+    noVideos: "Keine aktuellen Videos auf diesem Kanal.",
+    loadError: "Videos dieses Kanals konnten nicht geladen werden.",
+    unavailable: "YouTube ist derzeit nicht verf\u00fcgbar.",
+    close: "Schlie\u00dfen",
+    play: "Abspielen",
+    pause: "Pause",
+    restart: "Neu starten",
+    back10: "10 Sekunden zur\u00fcck",
+    forward10: "10 Sekunden vor",
+    prevPage: "Vorherige Seite",
+    nextPage: "N\u00e4chste Seite",
+  },
 };
