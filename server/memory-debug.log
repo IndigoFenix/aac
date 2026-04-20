@@ -1,20 +1,20 @@
-[21:29:54.841] memoryValues.Student_Notes (4 items)
+[20:36:29.548] memoryValues.Student_Notes (4 items)
 [
   "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
   "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
   "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
   "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain."
 ]
-[21:29:54.891] memoryValues.Student_People (0 items)
+[20:36:29.550] memoryValues.Student_People (0 items)
 []
-[21:29:54.920] memoryValues.Student_Interests (4 items)
+[20:36:29.553] memoryValues.Student_Interests (4 items)
 [
   "facts",
   "drawing",
   "music",
   "science"
 ]
-[21:29:54.951] memoryValues.Student_CustomApps (2 items)
+[20:36:29.554] memoryValues.Student_CustomApps (2 items)
 [
   {
     "id": "material-sensations"
@@ -24,7 +24,7 @@
     "name": "Material Sensations"
   }
 ]
-[21:29:54.979] memoryValues.Student_Preferences
+[20:36:29.555] memoryValues.Student_Preferences
 {
   "FavoriteActivities": [
     "drawing",
@@ -33,14 +33,12 @@
     "interactive exploration"
   ]
 }
-[21:29:55.006] memoryValues.Student_CommunicationStyle
+[20:36:29.555] memoryValues.Student_CommunicationStyle
 {
   "PrimaryMethod": "AAC"
 }
-[21:29:55.036] memoryVisualization — data section (132 lines)
+[20:36:29.557] memoryVisualization — data section (76 lines)
 === Current Memory ===
-• /User_AiPersonalityPreferences (string) — User's preferences for how the AI should communicate (tone, style, etc.) null
-• /User_Language (string) — User's preferred language for communication null
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
   ↪ To append: action "add" at "/Student_People" with value.
@@ -66,54 +64,24 @@
   - [3]: "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain."
   ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
 • /Student_CustomApps (array, 2 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
-• /Relationship_Notes (array, 0 items) — General notes about sessions with this student (non-sensitive) — hidden; view to list items
-• /Context_Institutes (map, 1 keys) — Organizations (schools or clinics) that the user is a member of. Target entries by name. 
-  - Indigo Elementary: {object} (view to expand)
-  ↪ Add: action "add" at "/Context_Institutes" with key + value. Rename: action "rename" on child path.
-• /Context_Students (map, 3 keys) — Students (AAC users) that the user has access to. Target entries by first name. 
-  - Gal: {object} (view to expand)
-  - Shachaf: {object} (view to expand)
-  - Marin: {object} (view to expand)
-  ↪ Add: action "add" at "/Context_Students" with key + value. Rename: action "rename" on child path.
-• /Context_Calendar (map, 1 keys) — Calendar events for the next 90 days, with recurring events expanded into individual occurrences. Each entry has an occurrenceDate showing when it actually happens. Use Context_CalendarAlerts for today's priority events. 
-  - Meeting with Gal: {object} (view to expand)
-  ↪ Add: action "add" at "/Context_Calendar" with key + value. Rename: action "rename" on child path.
-• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  - Articles on Rett Syndrome: {object} (view to expand)
-  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
-  - Preschool SLP Goals Bank: {object} (view to expand)
-• /Context_Program (object) — The current educational program for the student 
-  - id: "508c591b-c0d4-4d37-aa28-754464514508"
-  - framework: "tala" ["tala" | "us_iep"] — TALA (Israel) or US IEP framework
-  - title: "Gal's TALA Program 2026"
-  - status: "draft" ["draft" | "active" | "archived"]
-  - startDate: "2026-04-19"
-  - endDate: "2027-04-19"
-  - dueDate: "2025-11-15"
-  - approvalDate: null
-  - leastRestrictiveEnvironment: null
-  - notes: "Initial program based on ADHD and Asperger's diagnoses. Gal is 6 years old, communicates via AAC, with strong interests in interactive activities (drawing, music, science, space). Profile domains and goals to be developed based on clinical observations and ongoing assessment."
-  - profileDomains: {map} — Functional profile / PLAAFP documentation (keyed by domain type). Unless requested, there should only be one domain per type. 
-      (may contain items - view "/Context_Program/profileDomains" to load from database)
-      ↪ Add: action "add" at "/Context_Program/profileDomains" with key + value.
-  - goals: {map} — Annual goals with objectives. Goals are linked to domains through their objectives (each objective can have a profileDomainId). Goals should be defined using S.M.A.R.T criteria. 
-      (may contain items - view "/Context_Program/goals" to load from database)
-      ↪ Add: action "add" at "/Context_Program/goals" with key + value.
-  ↪ To expand: view "/Context_Program/*". To modify: action "set" on "/Context_Program" or "/Context_Program/<property>".
-• /Context_Reports (object) — Available reports: Medical records (editable), Functional reports (editable), Educational reports (editable). 
-  - medicalRecord: {object} — Current medical record for the student. Contains diagnoses, allergies, medications, and medical alerts. (may contain items — view to load)
-  - archivedMedicalRecords: {array} — Previously finalized medical records (read-only). View these to see historical medical information. (may contain items — view to load)
-  - functionalReport: {object} — Current functional report for the student. Contains mobility, ADL status, sensory profile, and safety risks. (may contain items — view to load)
-  - archivedFunctionalReports: {array} — Previously finalized functional reports (read-only). (may contain items — view to load)
-  - educationalReport: {object} — Current educational report for the student. Contains communication modes, language abilities, technology used, and behavioral strategies. (may contain items — view to load)
-  - archivedEducationalReports: {array} — Previously finalized educational reports (read-only). (may contain items — view to load)
-  ↪ To expand: view "/Context_Reports/*". To modify: action "set" on "/Context_Reports" or "/Context_Reports/<property>".
+• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
+  (may contain items - view "/Context_Library" to load from database)
+• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
+  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
+• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
+• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
+• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
+• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
+• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
+• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
+• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
+  ↪ To expand: view "/Context_Progress/*". (read-only)
 • /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
   - prompt: <string> — The full custom prompt text (empty)
   ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
 • /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
 
-Allowed roots & types: /User_AiPersonalityPreferences{string}, /User_Language{string}, /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Student_CustomApps{array}, /Relationship_Notes{array}, /Context_Institutes{map}, /Context_Students{map}, /Context_Calendar{map}, /Context_Library{map}, /Context_Program{object}, /Context_Reports{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
+Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Student_CustomApps{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
 Operate only on visible paths or their parent container. To reveal children:
   manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
 Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
@@ -133,38 +101,14 @@ Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a co
   e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
 • /Student_Notes — ARRAY of string
   e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Context_Institutes — MAP<string, object>
-  value.required: [name, type]
-  value.props: id:string, name:string, type:string [enum: "school", "clinic"], description:string, address:string, phone:string, email:string, website:string, isActive:boolean, language:string, membership:{object}, members:map<string, object>, students:map<string, object>, classrooms:map<string, object>, invites:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Institutes","key":"<key>","value": {"name":"text","type":"text"} }] }
-• /Context_Students — MAP<string, object>
-  value.required: [firstName, instituteIds, name]
-  value.props: id:string, name:string, firstName:string, lastName:string, gender:string [enum: "male", "female", "other"], birthDate:string [format YYYY-MM-DD], framework:string [enum: "tala", "us_iep"], country:string [enum: "IL", "US"], primaryLanguage:string [enum: "he", "en", "es", "pt", "fr", "ru", "de", "ar", +3 more], additionalLanguages:array<string>, instituteIds:array<string>, link:{object}, aacSettings:{object}, users:map<string, object>, institutes:array<object>, classrooms:array<object> … +1 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Students","key":"<key>","value": {"firstName":"text","instituteIds":[],"name":"text"} }] }
-• /Context_Calendar — MAP<string, object>
-  value.required: [title, startTime, endTime]
-  value.props: id:string, title:string, description:string, occurrenceDate:string [format ISO 8601 datetime], startTime:string [format ISO 8601 datetime], endTime:string [format ISO 8601 datetime], allDay:boolean, repeatType:string [enum: "none", "daily", "weekly", "monthly_date", "monthly_weekday"], repeatInterval:number, repeatDays:array<number>, repeatMonthWeek:number, repeatEndDate:string [format ISO 8601 datetime]
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Calendar","key":"<key>","value": {"title":"text","startTime":"text","endTime":"text"} }] }
 • /Context_Library — MAP<string, object>
   value.props: id:string, title:string, content:string, subtopics:map<string, object>
   e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-• /Context_Program/profileDomains — MAP<string, object>
-  value.required: [domainType]
-  value.props: id:string, domainType:string [enum: "cognitive_academic", "communication_language", "social_emotional_behavioral", "motor_sensory", "life_skills_preparation", "other"], customName:string, strengths:string, needs:string, impactStatement:string, adverseEffectStatement:string, sortOrder:integer, baselineMeasurements:array<object>, assessmentSources:array<object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/profileDomains","key":"<key>","value": {"domainType":"text"} }] }
-• /Context_Program/goals — MAP<string, object>
-  value.required: [goalStatement]
-  value.props: id:string, goalStatement:string, status:string [enum: "draft", "active", "achieved", "modified", "discontinued"], progress:integer [min 0; max 100], targetDate:string [format YYYY-MM-DD], achievedDate:string [format YYYY-MM-DD], targetBehavior:string, criteria:string, methods:string, measurementMethod:string, relevance:string, interventionLevel:string [enum: "activity", "function", "participation"], sortOrder:integer, objectives:array<object>, dataPoints:array<object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/goals","key":"<key>","value": {"goalStatement":"text"} }] }
-• /Context_Reports/archivedMedicalRecords — ARRAY of object
-  item.props: id:string, status:string [enum: "draft", "pending_review", "final", "superseded"], primaryDiagnosis:string, primaryDiagnosisCode:string, coMorbidities:array<string>, secondaryDiagnoses:array<string>, alertsAllergies:array<string>, alertsSeizures:array<string>, alertsCardiac:array<string>, medications:array<string>, medicalEquipment:array<string>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedMedicalRecords","value": {} }] }
-• /Context_Reports/archivedFunctionalReports — ARRAY of object
-  item.props: id:string, status:string [enum: "draft", "pending_review", "final", "superseded"], mobilityStatus:array<string>, adlStatus:array<string>, sensoryProfile:array<string>, safetyRisks:array<string>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedFunctionalReports","value": {} }] }
-• /Context_Reports/archivedEducationalReports — ARRAY of object
-  item.props: id:string, status:string [enum: "draft", "pending_review", "final", "superseded"], communicationMode:array<string>, receptiveLanguage:array<string>, assistiveTechnologyUsed:array<string>, reinforcers:array<string>, preferredActivities:array<string>, behavioralStrategies:array<string>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedEducationalReports","value": {} }] }
+• /Context_Library/<key>/subtopics — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, undefined>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics","key":"<key>","value": {} }] }
+• /Context_Library/<key>/subtopics/<key>/subtopics — MAP<string, undefined>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics/<key>/subtopics","key":"<key>","value": null }] }
 
 Notes:
 - When item/value is an OBJECT, include all listed "required" keys when creating it.
@@ -174,695 +118,575 @@ Notes:
 ============================================================
   manageMemory called
 ============================================================
-[21:30:21.490] INPUT
+[20:36:30.857] INPUT
 {
   "ops": [
     {
-      "action": "set",
-      "path": "/Context_Program/goals/23eb8772-07ae-4d64-9d11-b9fa34d75d29/objectives",
-      "value": [
-        {
-          "id": "obj-comm-1",
-          "objectiveStatement": "Gal will initiate communication (beyond direct prompts) at least 2 times per session using AAC",
-          "profileDomainId": "029f60ab-213e-497d-b54e-cfc328f13baa",
-          "criteria": "Documented frequency of unprompted initiations per session",
-          "targetDate": "2026-10-19",
-          "status": "draft"
-        },
-        {
-          "id": "obj-comm-2",
-          "objectiveStatement": "Gal will sustain topic exchange for 3+ conversational turns with adult support",
-          "profileDomainId": "029f60ab-213e-497d-b54e-cfc328f13baa",
-          "criteria": "Duration and number of turns in recorded exchanges",
-          "targetDate": "2026-12-19",
-          "status": "draft"
-        },
-        {
-          "id": "obj-comm-3",
-          "objectiveStatement": "Gal will ask clarifying questions or express preferences using AAC during structured activities",
-          "profileDomainId": "029f60ab-213e-497d-b54e-cfc328f13baa",
-          "criteria": "Frequency of questions or preference statements per session",
-          "targetDate": "2027-02-19",
-          "status": "draft"
-        }
-      ]
-    },
-    {
-      "action": "set",
-      "path": "/Context_Program/goals/39c3bacf-4989-4a10-860a-1f0ab821ed68/objectives",
-      "value": [
-        {
-          "id": "obj-choice-1",
-          "objectiveStatement": "When presented with 3 options, Gal will make a choice or ask a clarifying question within 30 seconds",
-          "profileDomainId": "029f60ab-213e-497d-b54e-cfc328f13baa",
-          "criteria": "Response time and success rate of choice-making",
-          "targetDate": "2026-09-19",
-          "status": "draft"
-        },
-        {
-          "id": "obj-choice-2",
-          "objectiveStatement": "Gal will use 'help' or 'I'm thinking about' buttons appropriately when faced with multiple options",
-          "profileDomainId": "029f60ab-213e-497d-b54e-cfc328f13baa",
-          "criteria": "Frequency and appropriateness of help-seeking button use",
-          "targetDate": "2026-11-19",
-          "status": "draft"
-        },
-        {
-          "id": "obj-choice-3",
-          "objectiveStatement": "Gal will narrow down preferences using 2-3 guided filtering questions",
-          "profileDomainId": "6242b70f-eafe-4ade-a4c3-ac5af212e0d9",
-          "criteria": "Ability to respond to filtering questions and narrow selections",
-          "targetDate": "2027-01-19",
-          "status": "draft"
-        }
-      ]
-    },
-    {
-      "action": "set",
-      "path": "/Context_Program/goals/f588d64d-166e-4657-860f-dd37f91e65b3/objectives",
-      "value": [
-        {
-          "id": "obj-emotion-1",
-          "objectiveStatement": "Gal will label basic emotions (happy, sad, scared, frustrated) with prompting",
-          "profileDomainId": "12f0bbd5-d479-4682-bcc4-185de355fbd7",
-          "criteria": "Accuracy and frequency of emotion labeling with visual supports",
-          "targetDate": "2026-09-19",
-          "status": "draft"
-        },
-        {
-          "id": "obj-emotion-2",
-          "objectiveStatement": "Gal will identify 1-2 triggers for fear or frustration responses",
-          "profileDomainId": "12f0bbd5-d479-4682-bcc4-185de355fbd7",
-          "criteria": "Documented identification of triggers through communication or observation",
-          "targetDate": "2026-11-19",
-          "status": "draft"
-        },
-        {
-          "id": "obj-emotion-3",
-          "objectiveStatement": "Gal will communicate need for break or help when dysregulated using AAC",
-          "profileDomainId": "12f0bbd5-d479-4682-bcc4-185de355fbd7",
-          "criteria": "Frequency of appropriate help-seeking communication during frustration",
-          "targetDate": "2026-12-19",
-          "status": "draft"
-        },
-        {
-          "id": "obj-emotion-4",
-          "objectiveStatement": "Gal will use 1 coping strategy with support (e.g., breathing, movement, preferred activity)",
-          "profileDomainId": "12f0bbd5-d479-4682-bcc4-185de355fbd7",
-          "criteria": "Demonstrated use of coping strategy; reduction in behavioral escalation",
-          "targetDate": "2027-01-19",
-          "status": "draft"
-        }
-      ]
-    },
-    {
-      "action": "set",
-      "path": "/Context_Program/goals/09a3c96b-83d3-4a7d-adcb-77270bf827e0/objectives",
-      "value": [
-        {
-          "id": "obj-trans-1",
-          "objectiveStatement": "Gal will transition between activities with 1-2 verbal/visual prompts",
-          "profileDomainId": "12f0bbd5-d479-4682-bcc4-185de355fbd7",
-          "criteria": "Frequency of smooth transitions with minimal prompting",
-          "targetDate": "2026-10-19",
-          "status": "draft"
-        },
-        {
-          "id": "obj-trans-2",
-          "objectiveStatement": "Gal will accept minor schedule changes without behavioral outburst",
-          "profileDomainId": "12f0bbd5-d479-4682-bcc4-185de355fbd7",
-          "criteria": "Number of accepted changes vs. behavioral incidents",
-          "targetDate": "2026-12-19",
-          "status": "draft"
-        },
-        {
-          "id": "obj-trans-3",
-          "objectiveStatement": "Gal will use transition objects or strategies (countdown timer, visual schedule) with support",
-          "profileDomainId": "7e71c165-d92a-49f2-96ea-260be4c379f7",
-          "criteria": "Demonstrated use of transition supports; successful transitions documented",
-          "targetDate": "2027-01-19",
-          "status": "draft"
-        }
-      ]
-    },
-    {
-      "action": "set",
-      "path": "/Context_Program/goals/922fd010-ab68-4081-8c62-07a5afba2bef/objectives",
-      "value": [
-        {
-          "id": "obj-attn-1",
-          "objectiveStatement": "Gal will maintain on-task behavior for 10 minutes with visual supports and 2-3 reinforcement breaks",
-          "profileDomainId": "6242b70f-eafe-4ade-a4c3-ac5af212e0d9",
-          "criteria": "Duration of sustained attention; frequency of off-task behaviors",
-          "targetDate": "2026-10-19",
-          "status": "draft"
-        },
-        {
-          "id": "obj-attn-2",
-          "objectiveStatement": "Gal will demonstrate <2 off-task behaviors per 10-minute interval",
-          "profileDomainId": "6242b70f-eafe-4ade-a4c3-ac5af212e0d9",
-          "criteria": "Frequency count of off-task behaviors during structured activities",
-          "targetDate": "2026-11-19",
-          "status": "draft"
-        },
-        {
-          "id": "obj-attn-3",
-          "objectiveStatement": "Gal will complete 3-5 task steps with prompting in structured learning activities",
-          "profileDomainId": "6242b70f-eafe-4ade-a4c3-ac5af212e0d9",
-          "criteria": "Task completion rate and number of steps completed independently",
-          "targetDate": "2027-01-19",
-          "status": "draft"
-        }
-      ]
-    },
-    {
-      "action": "set",
-      "path": "/Context_Program/goals/29275c4d-c4d0-4d0e-9ff1-693c5d86aacb/objectives",
-      "value": [
-        {
-          "id": "obj-prob-1",
-          "objectiveStatement": "Gal will pause before acting when faced with a problem (with visual cue)",
-          "profileDomainId": "6242b70f-eafe-4ade-a4c3-ac5af212e0d9",
-          "criteria": "Frequency of pausing behavior; response to visual cues",
-          "targetDate": "2026-09-19",
-          "status": "draft"
-        },
-        {
-          "id": "obj-prob-2",
-          "objectiveStatement": "Gal will attempt 2+ solutions or ask for help before giving up on a problem",
-          "profileDomainId": "6242b70f-eafe-4ade-a4c3-ac5af212e0d9",
-          "criteria": "Number of strategies attempted per problem-solving situation",
-          "targetDate": "2026-11-19",
-          "status": "draft"
-        },
-        {
-          "id": "obj-prob-3",
-          "objectiveStatement": "Gal will demonstrate <1 impulsive response per session",
-          "profileDomainId": "12f0bbd5-d479-4682-bcc4-185de355fbd7",
-          "criteria": "Frequency of impulsive responses; behavioral incidents",
-          "targetDate": "2026-12-19",
-          "status": "draft"
-        },
-        {
-          "id": "obj-prob-4",
-          "objectiveStatement": "Gal will use 'I'm thinking about' button appropriately during problem-solving",
-          "profileDomainId": "029f60ab-213e-497d-b54e-cfc328f13baa",
-          "criteria": "Frequency and appropriateness of button use in context",
-          "targetDate": "2027-02-19",
-          "status": "draft"
-        }
-      ]
-    },
-    {
-      "action": "set",
-      "path": "/Context_Program/goals/17c05d20-2e36-4d54-b18d-1591cc4bd58e/objectives",
-      "value": [
-        {
-          "id": "obj-sens-1",
-          "objectiveStatement": "Gal will communicate sensory discomfort (e.g., 'too loud,' 'too bright') with prompting",
-          "profileDomainId": "d44f8071-42cf-4ae4-a3fd-b304a82d9be7",
-          "criteria": "Frequency of sensory communication; accuracy of descriptions",
-          "targetDate": "2026-10-19",
-          "status": "draft"
-        },
-        {
-          "id": "obj-sens-2",
-          "objectiveStatement": "Gal will use sensory tools (fidgets, noise-canceling headphones, movement breaks) with 1-2 reminders",
-          "profileDomainId": "d44f8071-42cf-4ae4-a3fd-b304a82d9be7",
-          "criteria": "Frequency of sensory tool use; independence level",
-          "targetDate": "2026-11-19",
-          "status": "draft"
-        },
-        {
-          "id": "obj-sens-3",
-          "objectiveStatement": "Gal will identify 2+ sensory triggers through communication or behavioral observation",
-          "profileDomainId": "d44f8071-42cf-4ae4-a3fd-b304a82d9be7",
-          "criteria": "Documented identification of sensory triggers",
-          "targetDate": "2026-12-19",
-          "status": "draft"
-        }
-      ]
-    },
-    {
-      "action": "set",
-      "path": "/Context_Program/goals/f09c9b49-4743-4852-b86a-410ef693e366/objectives",
-      "value": [
-        {
-          "id": "obj-selfr-1",
-          "objectiveStatement": "Gal will follow 2-3 step directions with 1-2 reminders",
-          "profileDomainId": "7e71c165-d92a-49f2-96ea-260be4c379f7",
-          "criteria": "Compliance rate; number of reminders needed",
-          "targetDate": "2026-10-19",
-          "status": "draft"
-        },
-        {
-          "id": "obj-selfr-2",
-          "objectiveStatement": "Gal will wait for turn/activity with <2 protest behaviors",
-          "profileDomainId": "12f0bbd5-d479-4682-bcc4-185de355fbd7",
-          "criteria": "Frequency of wait-time without protest; behavioral incidents",
-          "targetDate": "2026-11-19",
-          "status": "draft"
-        },
-        {
-          "id": "obj-selfr-3",
-          "objectiveStatement": "Gal will manage minor frustration without behavioral escalation",
-          "profileDomainId": "12f0bbd5-d479-4682-bcc4-185de355fbd7",
-          "criteria": "Observation of frustration responses; reduction in behavioral incidents",
-          "targetDate": "2026-12-19",
-          "status": "draft"
-        },
-        {
-          "id": "obj-selfr-4",
-          "objectiveStatement": "Gal will demonstrate <1 impulsive response per session",
-          "profileDomainId": "12f0bbd5-d479-4682-bcc4-185de355fbd7",
-          "criteria": "Frequency of impulsive responses; behavioral tracking",
-          "targetDate": "2027-01-19",
-          "status": "draft"
-        }
-      ]
-    },
-    {
-      "action": "set",
-      "path": "/Context_Program/goals/e9d466f5-5c04-4a5f-846a-f6a00ee58184/objectives",
-      "value": [
-        {
-          "id": "obj-indep-1",
-          "objectiveStatement": "Gal will independently select from 2-3 presented options",
-          "profileDomainId": "7e71c165-d92a-49f2-96ea-260be4c379f7",
-          "criteria": "Frequency of independent choices without prompting",
-          "targetDate": "2026-09-19",
-          "status": "draft"
-        },
-        {
-          "id": "obj-indep-2",
-          "objectiveStatement": "Gal will initiate preferred activity with <1 prompt",
-          "profileDomainId": "7e71c165-d92a-49f2-96ea-260be4c379f7",
-          "criteria": "Frequency of self-initiated activities; level of prompting needed",
-          "targetDate": "2026-11-19",
-          "status": "draft"
-        },
-        {
-          "id": "obj-indep-3",
-          "objectiveStatement": "Gal will attempt to solve simple problems before asking for help",
-          "profileDomainId": "6242b70f-eafe-4ade-a4c3-ac5af212e0d9",
-          "criteria": "Frequency of problem-solving attempts; help-seeking patterns",
-          "targetDate": "2026-12-19",
-          "status": "draft"
-        },
-        {
-          "id": "obj-indep-4",
-          "objectiveStatement": "Gal will engage in activity without constant redirection",
-          "profileDomainId": "6242b70f-eafe-4ade-a4c3-ac5af212e0d9",
-          "criteria": "Duration of sustained engagement; frequency of redirection needed",
-          "targetDate": "2027-02-19",
-          "status": "draft"
-        }
-      ]
+      "action": "view",
+      "path": "/Context_Progress/*"
     }
   ]
 }
-[21:30:34.697] RESULTS
+[20:36:31.619] RESULTS
 [
   {
-    "target": "/Context_Program/goals/23eb8772-07ae-4d64-9d11-b9fa34d75d29/objectives",
-    "action": "set",
-    "ok": false,
-    "message": "Database error: invalid input value for enum objective_status: \"draft\""
-  },
-  {
-    "target": "/Context_Program/goals/39c3bacf-4989-4a10-860a-1f0ab821ed68/objectives",
-    "action": "set",
-    "ok": false,
-    "message": "Database error: invalid input value for enum objective_status: \"draft\""
-  },
-  {
-    "target": "/Context_Program/goals/f588d64d-166e-4657-860f-dd37f91e65b3/objectives",
-    "action": "set",
-    "ok": false,
-    "message": "Database error: invalid input value for enum objective_status: \"draft\""
-  },
-  {
-    "target": "/Context_Program/goals/09a3c96b-83d3-4a7d-adcb-77270bf827e0/objectives",
-    "action": "set",
-    "ok": false,
-    "message": "Database error: invalid input value for enum objective_status: \"draft\""
-  },
-  {
-    "target": "/Context_Program/goals/922fd010-ab68-4081-8c62-07a5afba2bef/objectives",
-    "action": "set",
-    "ok": false,
-    "message": "Database error: invalid input value for enum objective_status: \"draft\""
-  },
-  {
-    "target": "/Context_Program/goals/29275c4d-c4d0-4d0e-9ff1-693c5d86aacb/objectives",
-    "action": "set",
-    "ok": false,
-    "message": "Database error: invalid input value for enum objective_status: \"draft\""
-  },
-  {
-    "target": "/Context_Program/goals/17c05d20-2e36-4d54-b18d-1591cc4bd58e/objectives",
-    "action": "set",
-    "ok": false,
-    "message": "Database error: invalid input value for enum objective_status: \"draft\""
-  },
-  {
-    "target": "/Context_Program/goals/f09c9b49-4743-4852-b86a-410ef693e366/objectives",
-    "action": "set",
-    "ok": false,
-    "message": "Database error: invalid input value for enum objective_status: \"draft\""
-  },
-  {
-    "target": "/Context_Program/goals/e9d466f5-5c04-4a5f-846a-f6a00ee58184/objectives",
-    "action": "set",
-    "ok": false,
-    "message": "Database error: invalid input value for enum objective_status: \"draft\""
+    "target": "/Context_Progress/*",
+    "action": "view",
+    "ok": true,
+    "message": "• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \\n  ↪ To expand: view \"/Context_Progress/*\". (read-only)",
+    "mutatedPaths": [],
+    "summary": "Path not found or not loaded"
   }
 ]
 
 ============================================================
+  buildPromptAndTools — AI memory view
+============================================================
+[20:36:31.638] memoryValues.Student_Notes (4 items)
+[
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain."
+]
+[20:36:31.640] memoryValues.Student_People (0 items)
+[]
+[20:36:31.641] memoryValues.Student_Interests (4 items)
+[
+  "facts",
+  "drawing",
+  "music",
+  "science"
+]
+[20:36:31.643] memoryValues.Student_CustomApps (2 items)
+[
+  {
+    "id": "material-sensations"
+  },
+  {
+    "id": "material-sensations",
+    "name": "Material Sensations"
+  }
+]
+[20:36:31.644] memoryValues.Student_Preferences
+{
+  "FavoriteActivities": [
+    "drawing",
+    "music",
+    "interactive apps",
+    "interactive exploration"
+  ]
+}
+[20:36:31.645] memoryValues.Student_CommunicationStyle
+{
+  "PrimaryMethod": "AAC"
+}
+[20:36:31.648] memoryVisualization — data section (78 lines)
+=== Current Memory ===
+• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
+  (may contain items - view "/Student_People" to load from database)
+  ↪ To append: action "add" at "/Student_People" with value.
+• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
+  - [0]: "facts"
+  - [1]: "drawing"
+  - [2]: "music"
+  - [3]: "science"
+  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
+• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
+  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
+  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
+  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
+• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
+  - FavoriteActivities: {array} (hidden)
+  - RewardPreferences: {array} (empty)
+  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
+  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
+• /Student_Notes (array, 4 items) — General notes about the student (non-sensitive) 
+  - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
+  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts."
+  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated."
+  - [3]: "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain."
+  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
+• /Student_CustomApps (array, 2 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
+• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
+  - Articles on Rett Syndrome: {object} (view to expand)
+  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
+  - Preschool SLP Goals Bank: {object} (view to expand)
+• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
+  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
+• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
+• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
+• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
+• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
+• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
+• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
+• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
+  ↪ To expand: view "/Context_Progress/*". (read-only)
+• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
+  - prompt: "You are an advanced conversational AI designed to assist AAC (Augmentative and Alternative Communication) users.\nYou should:\n- Respond in a friendly, supportive manner\n- Keep responses concise and clear\n- Help expand on the user's symbol selections to form complete thoughts\n- Ask clarifying questions when needed\n- Be patient and encouraging" — The full custom prompt text
+  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
+• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
+
+Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Student_CustomApps{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
+Operate only on visible paths or their parent container. To reveal children:
+  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
+Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
+
+=== Schema Hints (add/insert/upsert in current scope) ===
+• /Student_People — ARRAY of object
+  item.required: [Name]
+  item.props: Name:string, Relationship:string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
+• /Student_Interests — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
+• /Student_Preferences/FavoriteActivities — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
+• /Student_Preferences/RewardPreferences — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
+• /Student_Preferences/AvoidTopics — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
+• /Student_Notes — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
+• /Context_Library — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, object>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
+• /Context_Library/<key>/subtopics — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, undefined>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics","key":"<key>","value": {} }] }
+• /Context_Library/<key>/subtopics/<key>/subtopics — MAP<string, undefined>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics/<key>/subtopics","key":"<key>","value": null }] }
+
+Notes:
+- When item/value is an OBJECT, include all listed "required" keys when creating it.
+- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
+- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
+
+============================================================
   manageMemory called
 ============================================================
-[21:30:58.222] INPUT
+[20:36:32.627] INPUT
 {
   "ops": [
     {
-      "action": "set",
-      "path": "/Context_Program/goals/23eb8772-07ae-4d64-9d11-b9fa34d75d29/objectives",
-      "value": [
-        {
-          "id": "obj-comm-1",
-          "objectiveStatement": "Gal will initiate communication (beyond direct prompts) at least 2 times per session using AAC",
-          "profileDomainId": "029f60ab-213e-497d-b54e-cfc328f13baa",
-          "criteria": "Documented frequency of unprompted initiations per session",
-          "targetDate": "2026-10-19"
-        },
-        {
-          "id": "obj-comm-2",
-          "objectiveStatement": "Gal will sustain topic exchange for 3+ conversational turns with adult support",
-          "profileDomainId": "029f60ab-213e-497d-b54e-cfc328f13baa",
-          "criteria": "Duration and number of turns in recorded exchanges",
-          "targetDate": "2026-12-19"
-        },
-        {
-          "id": "obj-comm-3",
-          "objectiveStatement": "Gal will ask clarifying questions or express preferences using AAC during structured activities",
-          "profileDomainId": "029f60ab-213e-497d-b54e-cfc328f13baa",
-          "criteria": "Frequency of questions or preference statements per session",
-          "targetDate": "2027-02-19"
-        }
-      ]
-    },
-    {
-      "action": "set",
-      "path": "/Context_Program/goals/39c3bacf-4989-4a10-860a-1f0ab821ed68/objectives",
-      "value": [
-        {
-          "id": "obj-choice-1",
-          "objectiveStatement": "When presented with 3 options, Gal will make a choice or ask a clarifying question within 30 seconds",
-          "profileDomainId": "029f60ab-213e-497d-b54e-cfc328f13baa",
-          "criteria": "Response time and success rate of choice-making",
-          "targetDate": "2026-09-19"
-        },
-        {
-          "id": "obj-choice-2",
-          "objectiveStatement": "Gal will use 'help' or 'I'm thinking about' buttons appropriately when faced with multiple options",
-          "profileDomainId": "029f60ab-213e-497d-b54e-cfc328f13baa",
-          "criteria": "Frequency and appropriateness of help-seeking button use",
-          "targetDate": "2026-11-19"
-        },
-        {
-          "id": "obj-choice-3",
-          "objectiveStatement": "Gal will narrow down preferences using 2-3 guided filtering questions",
-          "profileDomainId": "6242b70f-eafe-4ade-a4c3-ac5af212e0d9",
-          "criteria": "Ability to respond to filtering questions and narrow selections",
-          "targetDate": "2027-01-19"
-        }
-      ]
-    },
-    {
-      "action": "set",
-      "path": "/Context_Program/goals/f588d64d-166e-4657-860f-dd37f91e65b3/objectives",
-      "value": [
-        {
-          "id": "obj-emotion-1",
-          "objectiveStatement": "Gal will label basic emotions (happy, sad, scared, frustrated) with prompting",
-          "profileDomainId": "12f0bbd5-d479-4682-bcc4-185de355fbd7",
-          "criteria": "Accuracy and frequency of emotion labeling with visual supports",
-          "targetDate": "2026-09-19"
-        },
-        {
-          "id": "obj-emotion-2",
-          "objectiveStatement": "Gal will identify 1-2 triggers for fear or frustration responses",
-          "profileDomainId": "12f0bbd5-d479-4682-bcc4-185de355fbd7",
-          "criteria": "Documented identification of triggers through communication or observation",
-          "targetDate": "2026-11-19"
-        },
-        {
-          "id": "obj-emotion-3",
-          "objectiveStatement": "Gal will communicate need for break or help when dysregulated using AAC",
-          "profileDomainId": "12f0bbd5-d479-4682-bcc4-185de355fbd7",
-          "criteria": "Frequency of appropriate help-seeking communication during frustration",
-          "targetDate": "2026-12-19"
-        },
-        {
-          "id": "obj-emotion-4",
-          "objectiveStatement": "Gal will use 1 coping strategy with support (e.g., breathing, movement, preferred activity)",
-          "profileDomainId": "12f0bbd5-d479-4682-bcc4-185de355fbd7",
-          "criteria": "Demonstrated use of coping strategy; reduction in behavioral escalation",
-          "targetDate": "2027-01-19"
-        }
-      ]
-    },
-    {
-      "action": "set",
-      "path": "/Context_Program/goals/09a3c96b-83d3-4a7d-adcb-77270bf827e0/objectives",
-      "value": [
-        {
-          "id": "obj-trans-1",
-          "objectiveStatement": "Gal will transition between activities with 1-2 verbal/visual prompts",
-          "profileDomainId": "12f0bbd5-d479-4682-bcc4-185de355fbd7",
-          "criteria": "Frequency of smooth transitions with minimal prompting",
-          "targetDate": "2026-10-19"
-        },
-        {
-          "id": "obj-trans-2",
-          "objectiveStatement": "Gal will accept minor schedule changes without behavioral outburst",
-          "profileDomainId": "12f0bbd5-d479-4682-bcc4-185de355fbd7",
-          "criteria": "Number of accepted changes vs. behavioral incidents",
-          "targetDate": "2026-12-19"
-        },
-        {
-          "id": "obj-trans-3",
-          "objectiveStatement": "Gal will use transition objects or strategies (countdown timer, visual schedule) with support",
-          "profileDomainId": "7e71c165-d92a-49f2-96ea-260be4c379f7",
-          "criteria": "Demonstrated use of transition supports; successful transitions documented",
-          "targetDate": "2027-01-19"
-        }
-      ]
-    },
-    {
-      "action": "set",
-      "path": "/Context_Program/goals/922fd010-ab68-4081-8c62-07a5afba2bef/objectives",
-      "value": [
-        {
-          "id": "obj-attn-1",
-          "objectiveStatement": "Gal will maintain on-task behavior for 10 minutes with visual supports and 2-3 reinforcement breaks",
-          "profileDomainId": "6242b70f-eafe-4ade-a4c3-ac5af212e0d9",
-          "criteria": "Duration of sustained attention; frequency of off-task behaviors",
-          "targetDate": "2026-10-19"
-        },
-        {
-          "id": "obj-attn-2",
-          "objectiveStatement": "Gal will demonstrate <2 off-task behaviors per 10-minute interval",
-          "profileDomainId": "6242b70f-eafe-4ade-a4c3-ac5af212e0d9",
-          "criteria": "Frequency count of off-task behaviors during structured activities",
-          "targetDate": "2026-11-19"
-        },
-        {
-          "id": "obj-attn-3",
-          "objectiveStatement": "Gal will complete 3-5 task steps with prompting in structured learning activities",
-          "profileDomainId": "6242b70f-eafe-4ade-a4c3-ac5af212e0d9",
-          "criteria": "Task completion rate and number of steps completed independently",
-          "targetDate": "2027-01-19"
-        }
-      ]
-    },
-    {
-      "action": "set",
-      "path": "/Context_Program/goals/29275c4d-c4d0-4d0e-9ff1-693c5d86aacb/objectives",
-      "value": [
-        {
-          "id": "obj-prob-1",
-          "objectiveStatement": "Gal will pause before acting when faced with a problem (with visual cue)",
-          "profileDomainId": "6242b70f-eafe-4ade-a4c3-ac5af212e0d9",
-          "criteria": "Frequency of pausing behavior; response to visual cues",
-          "targetDate": "2026-09-19"
-        },
-        {
-          "id": "obj-prob-2",
-          "objectiveStatement": "Gal will attempt 2+ solutions or ask for help before giving up on a problem",
-          "profileDomainId": "6242b70f-eafe-4ade-a4c3-ac5af212e0d9",
-          "criteria": "Number of strategies attempted per problem-solving situation",
-          "targetDate": "2026-11-19"
-        },
-        {
-          "id": "obj-prob-3",
-          "objectiveStatement": "Gal will demonstrate <1 impulsive response per session",
-          "profileDomainId": "12f0bbd5-d479-4682-bcc4-185de355fbd7",
-          "criteria": "Frequency of impulsive responses; behavioral incidents",
-          "targetDate": "2026-12-19"
-        },
-        {
-          "id": "obj-prob-4",
-          "objectiveStatement": "Gal will use 'I'm thinking about' button appropriately during problem-solving",
-          "profileDomainId": "029f60ab-213e-497d-b54e-cfc328f13baa",
-          "criteria": "Frequency and appropriateness of button use in context",
-          "targetDate": "2027-02-19"
-        }
-      ]
-    },
-    {
-      "action": "set",
-      "path": "/Context_Program/goals/17c05d20-2e36-4d54-b18d-1591cc4bd58e/objectives",
-      "value": [
-        {
-          "id": "obj-sens-1",
-          "objectiveStatement": "Gal will communicate sensory discomfort (e.g., 'too loud,' 'too bright') with prompting",
-          "profileDomainId": "d44f8071-42cf-4ae4-a3fd-b304a82d9be7",
-          "criteria": "Frequency of sensory communication; accuracy of descriptions",
-          "targetDate": "2026-10-19"
-        },
-        {
-          "id": "obj-sens-2",
-          "objectiveStatement": "Gal will use sensory tools (fidgets, noise-canceling headphones, movement breaks) with 1-2 reminders",
-          "profileDomainId": "d44f8071-42cf-4ae4-a3fd-b304a82d9be7",
-          "criteria": "Frequency of sensory tool use; independence level",
-          "targetDate": "2026-11-19"
-        },
-        {
-          "id": "obj-sens-3",
-          "objectiveStatement": "Gal will identify 2+ sensory triggers through communication or behavioral observation",
-          "profileDomainId": "d44f8071-42cf-4ae4-a3fd-b304a82d9be7",
-          "criteria": "Documented identification of sensory triggers",
-          "targetDate": "2026-12-19"
-        }
-      ]
-    },
-    {
-      "action": "set",
-      "path": "/Context_Program/goals/f09c9b49-4743-4852-b86a-410ef693e366/objectives",
-      "value": [
-        {
-          "id": "obj-selfr-1",
-          "objectiveStatement": "Gal will follow 2-3 step directions with 1-2 reminders",
-          "profileDomainId": "7e71c165-d92a-49f2-96ea-260be4c379f7",
-          "criteria": "Compliance rate; number of reminders needed",
-          "targetDate": "2026-10-19"
-        },
-        {
-          "id": "obj-selfr-2",
-          "objectiveStatement": "Gal will wait for turn/activity with <2 protest behaviors",
-          "profileDomainId": "12f0bbd5-d479-4682-bcc4-185de355fbd7",
-          "criteria": "Frequency of wait-time without protest; behavioral incidents",
-          "targetDate": "2026-11-19"
-        },
-        {
-          "id": "obj-selfr-3",
-          "objectiveStatement": "Gal will manage minor frustration without behavioral escalation",
-          "profileDomainId": "12f0bbd5-d479-4682-bcc4-185de355fbd7",
-          "criteria": "Observation of frustration responses; reduction in behavioral incidents",
-          "targetDate": "2026-12-19"
-        },
-        {
-          "id": "obj-selfr-4",
-          "objectiveStatement": "Gal will demonstrate <1 impulsive response per session",
-          "profileDomainId": "12f0bbd5-d479-4682-bcc4-185de355fbd7",
-          "criteria": "Frequency of impulsive responses; behavioral tracking",
-          "targetDate": "2027-01-19"
-        }
-      ]
-    },
-    {
-      "action": "set",
-      "path": "/Context_Program/goals/e9d466f5-5c04-4a5f-846a-f6a00ee58184/objectives",
-      "value": [
-        {
-          "id": "obj-indep-1",
-          "objectiveStatement": "Gal will independently select from 2-3 presented options",
-          "profileDomainId": "7e71c165-d92a-49f2-96ea-260be4c379f7",
-          "criteria": "Frequency of independent choices without prompting",
-          "targetDate": "2026-09-19"
-        },
-        {
-          "id": "obj-indep-2",
-          "objectiveStatement": "Gal will initiate preferred activity with <1 prompt",
-          "profileDomainId": "7e71c165-d92a-49f2-96ea-260be4c379f7",
-          "criteria": "Frequency of self-initiated activities; level of prompting needed",
-          "targetDate": "2026-11-19"
-        },
-        {
-          "id": "obj-indep-3",
-          "objectiveStatement": "Gal will attempt to solve simple problems before asking for help",
-          "profileDomainId": "6242b70f-eafe-4ade-a4c3-ac5af212e0d9",
-          "criteria": "Frequency of problem-solving attempts; help-seeking patterns",
-          "targetDate": "2026-12-19"
-        },
-        {
-          "id": "obj-indep-4",
-          "objectiveStatement": "Gal will engage in activity without constant redirection",
-          "profileDomainId": "6242b70f-eafe-4ade-a4c3-ac5af212e0d9",
-          "criteria": "Duration of sustained engagement; frequency of redirection needed",
-          "targetDate": "2027-02-19"
-        }
-      ]
+      "action": "view",
+      "path": "/Context_Progress"
     }
   ]
 }
-[21:31:06.188] RESULTS
+[20:36:32.637] RESULTS
 [
   {
-    "target": "/Context_Program/goals/23eb8772-07ae-4d64-9d11-b9fa34d75d29/objectives",
-    "action": "set",
-    "ok": true
+    "target": "/Context_Progress",
+    "action": "view",
+    "ok": true,
+    "message": "• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \\n  ↪ To expand: view \"/Context_Progress/*\". (read-only)",
+    "mutatedPaths": [
+      "/Context_Progress"
+    ],
+    "summary": "Path not found or not loaded"
+  }
+]
+
+============================================================
+  buildPromptAndTools — AI memory view
+============================================================
+[20:36:32.646] memoryValues.Student_Notes (4 items)
+[
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain."
+]
+[20:36:32.648] memoryValues.Student_People (0 items)
+[]
+[20:36:32.649] memoryValues.Student_Interests (4 items)
+[
+  "facts",
+  "drawing",
+  "music",
+  "science"
+]
+[20:36:32.650] memoryValues.Student_CustomApps (2 items)
+[
+  {
+    "id": "material-sensations"
   },
   {
-    "target": "/Context_Program/goals/39c3bacf-4989-4a10-860a-1f0ab821ed68/objectives",
-    "action": "set",
-    "ok": true
+    "id": "material-sensations",
+    "name": "Material Sensations"
+  }
+]
+[20:36:32.652] memoryValues.Student_Preferences
+{
+  "FavoriteActivities": [
+    "drawing",
+    "music",
+    "interactive apps",
+    "interactive exploration"
+  ]
+}
+[20:36:32.653] memoryValues.Student_CommunicationStyle
+{
+  "PrimaryMethod": "AAC"
+}
+[20:36:32.655] memoryVisualization — data section (78 lines)
+=== Current Memory ===
+• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
+  (may contain items - view "/Student_People" to load from database)
+  ↪ To append: action "add" at "/Student_People" with value.
+• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
+  - [0]: "facts"
+  - [1]: "drawing"
+  - [2]: "music"
+  - [3]: "science"
+  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
+• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
+  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
+  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
+  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
+• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
+  - FavoriteActivities: {array} (hidden)
+  - RewardPreferences: {array} (empty)
+  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
+  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
+• /Student_Notes (array, 4 items) — General notes about the student (non-sensitive) 
+  - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
+  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts."
+  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated."
+  - [3]: "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain."
+  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
+• /Student_CustomApps (array, 2 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
+• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
+  - Articles on Rett Syndrome: {object} (view to expand)
+  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
+  - Preschool SLP Goals Bank: {object} (view to expand)
+• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
+  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
+• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
+• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
+• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
+• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
+• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
+• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
+• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
+  ↪ To expand: view "/Context_Progress/*". (read-only)
+• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
+  - prompt: "You are an advanced conversational AI designed to assist AAC (Augmentative and Alternative Communication) users.\nYou should:\n- Respond in a friendly, supportive manner\n- Keep responses concise and clear\n- Help expand on the user's symbol selections to form complete thoughts\n- Ask clarifying questions when needed\n- Be patient and encouraging" — The full custom prompt text
+  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
+• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
+
+Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Student_CustomApps{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
+Operate only on visible paths or their parent container. To reveal children:
+  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
+Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
+
+=== Schema Hints (add/insert/upsert in current scope) ===
+• /Student_People — ARRAY of object
+  item.required: [Name]
+  item.props: Name:string, Relationship:string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
+• /Student_Interests — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
+• /Student_Preferences/FavoriteActivities — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
+• /Student_Preferences/RewardPreferences — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
+• /Student_Preferences/AvoidTopics — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
+• /Student_Notes — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
+• /Context_Library — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, object>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
+• /Context_Library/<key>/subtopics — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, undefined>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics","key":"<key>","value": {} }] }
+• /Context_Library/<key>/subtopics/<key>/subtopics — MAP<string, undefined>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics/<key>/subtopics","key":"<key>","value": null }] }
+
+Notes:
+- When item/value is an OBJECT, include all listed "required" keys when creating it.
+- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
+- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
+
+============================================================
+  buildPromptAndTools — AI memory view
+============================================================
+[20:38:31.368] memoryValues.Student_Notes (4 items)
+[
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain."
+]
+[20:38:31.370] memoryValues.Student_People (0 items)
+[]
+[20:38:31.373] memoryValues.Student_Interests (4 items)
+[
+  "facts",
+  "drawing",
+  "music",
+  "science"
+]
+[20:38:31.376] memoryValues.Student_CustomApps (2 items)
+[
+  {
+    "id": "material-sensations"
   },
   {
-    "target": "/Context_Program/goals/f588d64d-166e-4657-860f-dd37f91e65b3/objectives",
-    "action": "set",
-    "ok": true
-  },
+    "id": "material-sensations",
+    "name": "Material Sensations"
+  }
+]
+[20:38:31.378] memoryValues.Student_Preferences
+{
+  "FavoriteActivities": [
+    "drawing",
+    "music",
+    "interactive apps",
+    "interactive exploration"
+  ]
+}
+[20:38:31.379] memoryValues.Student_CommunicationStyle
+{
+  "PrimaryMethod": "AAC"
+}
+[20:38:31.381] memoryVisualization — data section (76 lines)
+=== Current Memory ===
+• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
+  (may contain items - view "/Student_People" to load from database)
+  ↪ To append: action "add" at "/Student_People" with value.
+• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
+  - [0]: "facts"
+  - [1]: "drawing"
+  - [2]: "music"
+  - [3]: "science"
+  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
+• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
+  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
+  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
+  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
+• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
+  - FavoriteActivities: {array} (hidden)
+  - RewardPreferences: {array} (empty)
+  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
+  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
+• /Student_Notes (array, 4 items) — General notes about the student (non-sensitive) 
+  - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
+  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts."
+  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated."
+  - [3]: "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain."
+  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
+• /Student_CustomApps (array, 2 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
+• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
+  (may contain items - view "/Context_Library" to load from database)
+• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
+  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
+• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
+• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
+• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
+• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
+• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
+• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
+• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
+  ↪ To expand: view "/Context_Progress/*". (read-only)
+• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
+  - prompt: <string> — The full custom prompt text (empty)
+  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
+• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
+
+Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Student_CustomApps{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
+Operate only on visible paths or their parent container. To reveal children:
+  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
+Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
+
+=== Schema Hints (add/insert/upsert in current scope) ===
+• /Student_People — ARRAY of object
+  item.required: [Name]
+  item.props: Name:string, Relationship:string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
+• /Student_Interests — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
+• /Student_Preferences/FavoriteActivities — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
+• /Student_Preferences/RewardPreferences — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
+• /Student_Preferences/AvoidTopics — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
+• /Student_Notes — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
+• /Context_Library — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, object>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
+• /Context_Library/<key>/subtopics — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, undefined>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics","key":"<key>","value": {} }] }
+• /Context_Library/<key>/subtopics/<key>/subtopics — MAP<string, undefined>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics/<key>/subtopics","key":"<key>","value": null }] }
+
+Notes:
+- When item/value is an OBJECT, include all listed "required" keys when creating it.
+- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
+- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
+
+============================================================
+  manageMemory called
+============================================================
+[20:38:33.642] INPUT
+{
+  "ops": [
+    {
+      "action": "add",
+      "path": "/Student_Notes",
+      "value": "April 20 Session: Gal expressed interest in science videos (Kurzgesagt), then initiated guessing mode about 'something in the future.' Narrowed down to: Time → Future → asking about timeframe (later today, tomorrow, someday, next week). Pattern shows continued interest in science content and abstract thinking about future events."
+    }
+  ]
+}
+[20:38:33.644] BEFORE add /Student_Notes — Student_Notes array (4 items)
+[
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain."
+]
+[20:38:33.651] ADD to array /Student_Notes — array has 4 items, adding
+April 20 Session: Gal expressed interest in science videos (Kurzgesagt), then initiated guessing mode about 'something in the future.' Narrowed down to: Time → Future → asking about timeframe (later today, tomorrow, someday, next week). Pattern shows continued interest in science content and abstract thinking about future events.
+[20:38:33.652] ADD OK /Student_Notes — array now has 5 items
+[20:38:33.820] RESULTS
+[
   {
-    "target": "/Context_Program/goals/09a3c96b-83d3-4a7d-adcb-77270bf827e0/objectives",
-    "action": "set",
-    "ok": true
-  },
-  {
-    "target": "/Context_Program/goals/922fd010-ab68-4081-8c62-07a5afba2bef/objectives",
-    "action": "set",
-    "ok": true
-  },
-  {
-    "target": "/Context_Program/goals/29275c4d-c4d0-4d0e-9ff1-693c5d86aacb/objectives",
-    "action": "set",
-    "ok": true
-  },
-  {
-    "target": "/Context_Program/goals/17c05d20-2e36-4d54-b18d-1591cc4bd58e/objectives",
-    "action": "set",
-    "ok": true
-  },
-  {
-    "target": "/Context_Program/goals/f09c9b49-4743-4852-b86a-410ef693e366/objectives",
-    "action": "set",
-    "ok": true
-  },
-  {
-    "target": "/Context_Program/goals/e9d466f5-5c04-4a5f-846a-f6a00ee58184/objectives",
-    "action": "set",
+    "target": "/Student_Notes",
+    "action": "add",
     "ok": true
   }
 ]
+[20:38:33.821] AFTER add /Student_Notes — Student_Notes array (5 items)
+[
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain.",
+  "April 20 Session: Gal expressed interest in science videos (Kurzgesagt), then initiated guessing mode about 'something in the future.' Narrowed down to: Time → Future → asking about timeframe (later today, tomorrow, someday, next week). Pattern shows continued interest in science content and abstract thinking about future events."
+]
+
+============================================================
+  buildPromptAndTools — AI memory view
+============================================================
+[20:38:33.832] memoryValues.Student_Notes (5 items)
+[
+  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
+  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
+  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
+  "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain.",
+  "April 20 Session: Gal expressed interest in science videos (Kurzgesagt), then initiated guessing mode about 'something in the future.' Narrowed down to: Time → Future → asking about timeframe (later today, tomorrow, someday, next week). Pattern shows continued interest in science content and abstract thinking about future events."
+]
+[20:38:33.835] memoryValues.Student_People (0 items)
+[]
+[20:38:33.837] memoryValues.Student_Interests (4 items)
+[
+  "facts",
+  "drawing",
+  "music",
+  "science"
+]
+[20:38:33.838] memoryValues.Student_CustomApps (2 items)
+[
+  {
+    "id": "material-sensations"
+  },
+  {
+    "id": "material-sensations",
+    "name": "Material Sensations"
+  }
+]
+[20:38:33.839] memoryValues.Student_Preferences
+{
+  "FavoriteActivities": [
+    "drawing",
+    "music",
+    "interactive apps",
+    "interactive exploration"
+  ]
+}
+[20:38:33.841] memoryValues.Student_CommunicationStyle
+{
+  "PrimaryMethod": "AAC"
+}
+[20:38:33.842] memoryVisualization — data section (77 lines)
+=== Current Memory ===
+• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
+  (may contain items - view "/Student_People" to load from database)
+  ↪ To append: action "add" at "/Student_People" with value.
+• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
+  - [0]: "facts"
+  - [1]: "drawing"
+  - [2]: "music"
+  - [3]: "science"
+  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
+• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
+  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
+  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
+  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
+• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
+  - FavoriteActivities: {array} (hidden)
+  - RewardPreferences: {array} (empty)
+  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
+  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
+• /Student_Notes (array, 5 items) — General notes about the student (non-sensitive) 
+  - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
+  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts."
+  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated."
+  - [3]: "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain."
+  - [4]: "April 20 Session: Gal expressed interest in science videos (Kurzgesagt), then initiated guessing mode about 'something in the future.' Narrowed down to: Time → Future → asking about timeframe (later today, tomorrow, someday, next week). Pattern shows continued interest in science content and abstract thinking about future events."
+  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
+• /Student_CustomApps (array, 2 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
+• /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
+  (may contain items - view "/Context_Library" to load from database)
+• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
+  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
+• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
+• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
+• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
+• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
+• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
+• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
+• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
+  ↪ To expand: view "/Context_Progress/*". (read-only)
+• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
+  - prompt: <string> — The full custom prompt text (empty)
+  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
+• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
+
+Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Student_CustomApps{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
+Operate only on visible paths or their parent container. To reveal children:
+  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
+Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
+
+=== Schema Hints (add/insert/upsert in current scope) ===
+• /Student_People — ARRAY of object
+  item.required: [Name]
+  item.props: Name:string, Relationship:string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
+• /Student_Interests — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
+• /Student_Preferences/FavoriteActivities — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
+• /Student_Preferences/RewardPreferences — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
+• /Student_Preferences/AvoidTopics — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
+• /Student_Notes — ARRAY of string
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
+• /Context_Library — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, object>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
+• /Context_Library/<key>/subtopics — MAP<string, object>
+  value.props: id:string, title:string, content:string, subtopics:map<string, undefined>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics","key":"<key>","value": {} }] }
+• /Context_Library/<key>/subtopics/<key>/subtopics — MAP<string, undefined>
+  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics/<key>/subtopics","key":"<key>","value": null }] }
+
+Notes:
+- When item/value is an OBJECT, include all listed "required" keys when creating it.
+- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
+- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.

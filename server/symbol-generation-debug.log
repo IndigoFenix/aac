@@ -5297,3 +5297,90 @@
 [2026-04-19T14:35:00.226Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
 [2026-04-19T14:36:07.765Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
 [2026-04-19T14:36:07.779Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-20T20:34:47.598Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-20T20:34:47.601Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-20T20:34:54.796Z] [resolveImageKeys] Resolving 1 keys: child_playing_bubbles (format=internal, useUnapproved=true)
+[2026-04-20T20:34:54.963Z] [resolveImageKeys] No symbol found for "child_playing_bubbles"
+[2026-04-20T20:34:54.964Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: child_playing_bubbles
+[2026-04-20T20:34:54.966Z] [queueGeneration] Queuing 1 keys: child_playing_bubbles (hasCallback=true)
+[2026-04-20T20:34:55.004Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-20T20:34:55.006Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-20T20:34:55.131Z] [processQueue] Generating "child_playing_bubbles"...
+[2026-04-20T20:35:06.056Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-20T20:35:06.057Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-20T20:35:14.138Z] [COST] imageKey="child_playing_bubbles" | refinement: gemini/gemini-2.5-flash in=728 out=136 | image: openai/gpt-image-1 in=140 out=272
+[2026-04-20T20:35:14.139Z] [processQueue] Generated "child_playing_bubbles" → ab2d33d9-8e93-45d6-b656-51b5a17e3c0b (1 total)
+[2026-04-20T20:35:14.140Z] [processQueue] FULL REFINED PROMPT for "child_playing_bubbles": A simple, bold AAC symbol icon of a child playing with bubbles. The child is a generic, non-gender-specific figure with a slightly oversized head, simple dot eyes, and a small curved mouth, wearing a plain t-shirt and shorts. The child is shown in profile, blowing into a bubble wand held in one hand, with several round, iridescent bubbles floating in front of them. The bubble wand is a simple circle on a stick. Use bold black outlines, flat solid colors, and a limited palette of 3-5 saturated colors. The main subject is centered and fills about 70-80% of the square canvas on a transparent background.
+[2026-04-20T20:36:07.027Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-20T20:36:07.030Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-20T20:36:07.282Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-20T20:36:07.283Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-20T20:36:13.168Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-20T20:36:13.169Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-20T20:36:22.345Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-20T20:36:22.346Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-20T20:36:30.252Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-20T20:36:30.253Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-20T20:36:30.422Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-20T20:36:30.424Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-20T20:36:56.644Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-20T20:36:56.644Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-20T20:37:06.965Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-20T20:37:06.967Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-20T20:37:10.003Z] [resolveImageKeys] Resolving 1 keys: imageKey:box (format=internal, useUnapproved=true)
+[2026-04-20T20:37:10.164Z] [resolveImageKeys] No symbol found for "imageKey:box"
+[2026-04-20T20:37:10.165Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: imageKey:box
+[2026-04-20T20:37:10.167Z] [queueGeneration] Queuing 1 keys: imageKey:box (hasCallback=true)
+[2026-04-20T20:37:10.333Z] [processQueue] Generating "imageKey:box"...
+[2026-04-20T20:37:29.008Z] [COST] imageKey="imageKey:box" | refinement: gemini/gemini-2.5-flash in=729 out=83 | image: openai/gpt-image-1 in=90 out=272
+[2026-04-20T20:37:29.010Z] [processQueue] Generated "imageKey:box" → eac81872-25a9-4d64-a110-60767d75c992 (1 total)
+[2026-04-20T20:37:29.011Z] [processQueue] FULL REFINED PROMPT for "imageKey:box": A simple, bold illustration of a square cardboard box, shown from a slightly angled front-side view to reveal two visible faces and the top flaps. The box is light brown with dark brown outlines. The top flaps are slightly open, revealing a dark interior. The illustration uses flat, solid colors with no gradients or shadows, and has thick black outlines around all shapes. The box is centered on a transparent background.
+[2026-04-20T20:38:14.376Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-20T20:38:14.378Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-20T20:38:24.857Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-20T20:38:24.858Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-20T20:38:59.757Z] [resolveImageKeys] Resolving 4 keys: child_in_playground, family_on_trip, astronaut_in_space, child_doing_science (format=internal, useUnapproved=true)
+[2026-04-20T20:38:59.922Z] [resolveImageKeys] No symbol found for "child_in_playground"
+[2026-04-20T20:39:00.086Z] [resolveImageKeys] No symbol found for "family_on_trip"
+[2026-04-20T20:39:00.250Z] [resolveImageKeys] No symbol found for "astronaut_in_space"
+[2026-04-20T20:39:00.423Z] [resolveImageKeys] No symbol found for "child_doing_science"
+[2026-04-20T20:39:00.425Z] [resolveImageKeys] Done. Resolved 0, unresolved 4: child_in_playground, family_on_trip, astronaut_in_space, child_doing_science
+[2026-04-20T20:39:00.426Z] [queueGeneration] Queuing 4 keys: child_in_playground, family_on_trip, astronaut_in_space, child_doing_science (hasCallback=true)
+[2026-04-20T20:39:00.593Z] [processQueue] Generating "child_doing_science"...
+[2026-04-20T20:39:11.359Z] [resolveImageKeys] Resolving 1 keys: child_playing_outside (format=internal, useUnapproved=true)
+[2026-04-20T20:39:11.556Z] [resolveImageKeys] Resolved "child_playing_outside" → __SYMBOL__:048df9fb-be2e-4fee-8c4b-1cc710b6f226
+[2026-04-20T20:39:11.557Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-04-20T20:39:18.040Z] [COST] imageKey="child_doing_science" | refinement: gemini/gemini-2.5-flash in=728 out=100 | image: openai/gpt-image-1 in=107 out=272
+[2026-04-20T20:39:18.041Z] [processQueue] Generated "child_doing_science" → efaa9718-5077-4fdc-81bf-836f4b5c40e7 (1 total)
+[2026-04-20T20:39:18.043Z] [processQueue] FULL REFINED PROMPT for "child_doing_science": A simple, bold AAC symbol icon of a child performing a science experiment. The child is a generic, non-gender-specific figure with a slightly oversized head, simple dot eyes, and a small curved mouth, wearing a white lab coat. The child is looking down into a clear glass beaker held in their hands, which contains a bubbling green liquid. Simple motion lines emanate from the beaker to indicate bubbling. The illustration uses flat, solid colors with bold black outlines, on a transparent background.
+[2026-04-20T20:39:22.217Z] [processQueue] Generating "astronaut_in_space"...
+[2026-04-20T20:39:33.744Z] [resolveImageKeys] Resolving 1 keys: astronaut_in_space (format=internal, useUnapproved=true)
+[2026-04-20T20:39:33.906Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-20T20:39:33.907Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-20T20:39:33.910Z] [resolveImageKeys] No symbol found for "astronaut_in_space"
+[2026-04-20T20:39:33.911Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: astronaut_in_space
+[2026-04-20T20:39:33.912Z] [queueGeneration] Queuing 1 keys: astronaut_in_space (hasCallback=true)
+[2026-04-20T20:39:42.948Z] [COST] imageKey="astronaut_in_space" | refinement: gemini/gemini-2.5-flash in=728 out=70 | image: openai/gpt-image-1 in=77 out=272
+[2026-04-20T20:39:42.952Z] [processQueue] Generated "astronaut_in_space" → 53488695-620f-44c9-9e2c-31b80d78bf22 (2 total)
+[2026-04-20T20:39:42.953Z] [processQueue] FULL REFINED PROMPT for "astronaut_in_space": A simple, bold AAC symbol icon of an astronaut floating in space. The astronaut wears a white spacesuit with a clear helmet visor, a small blue and red patch on the chest, and a gray backpack. The figure is centered, slightly stylized with a larger head, and rendered with thick black outlines and flat, solid colors on a transparent background.
+[2026-04-20T20:39:47.131Z] [processQueue] "astronaut_in_space" already exists → 53488695-620f-44c9-9e2c-31b80d78bf22
+[2026-04-20T20:39:48.331Z] [resolveImageKeys] Resolving 5 keys: child_in_playground, family_on_trip, astronaut_in_space, child_doing_science, child_playing_outside (format=internal, useUnapproved=true)
+[2026-04-20T20:39:48.495Z] [resolveImageKeys] No symbol found for "child_in_playground"
+[2026-04-20T20:39:48.660Z] [resolveImageKeys] No symbol found for "family_on_trip"
+[2026-04-20T20:39:48.827Z] [resolveImageKeys] Resolved "astronaut_in_space" → __SYMBOL__:53488695-620f-44c9-9e2c-31b80d78bf22
+[2026-04-20T20:39:48.991Z] [resolveImageKeys] Resolved "child_doing_science" → __SYMBOL__:efaa9718-5077-4fdc-81bf-836f4b5c40e7
+[2026-04-20T20:39:49.155Z] [resolveImageKeys] Resolved "child_playing_outside" → __SYMBOL__:048df9fb-be2e-4fee-8c4b-1cc710b6f226
+[2026-04-20T20:39:49.156Z] [resolveImageKeys] Done. Resolved 3, unresolved 2: child_in_playground, family_on_trip
+[2026-04-20T20:39:49.157Z] [queueGeneration] Queuing 2 keys: child_in_playground, family_on_trip (hasCallback=true)
+[2026-04-20T20:39:51.320Z] [processQueue] Generating "family_on_trip"...
+[2026-04-20T20:40:04.831Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-20T20:40:04.832Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-20T20:40:16.275Z] [COST] imageKey="family_on_trip" | refinement: gemini/gemini-2.5-flash in=728 out=106 | image: openai/gpt-image-1 in=110 out=272
+[2026-04-20T20:40:16.276Z] [processQueue] Generated "family_on_trip" → cee18663-e364-45a1-92a5-0677bfe1172c (3 total)
+[2026-04-20T20:40:16.278Z] [processQueue] FULL REFINED PROMPT for "family_on_trip": A simple, bold AAC icon illustration of a family of three walking together, facing forward. The family consists of two adults and one child, all depicted with generic, non-gender-specific figures with simple dot eyes and small curve mouths, no hair. They are walking in a line, holding hands, with simple motion lines indicating forward movement. The figures wear minimal, solid-colored clothing. The illustration uses a limited palette of 3-5 saturated colors, with thick black outlines around all shapes, on a transparent background.
+[2026-04-20T20:40:20.442Z] [processQueue] "family_on_trip" already exists → cee18663-e364-45a1-92a5-0677bfe1172c
+[2026-04-20T20:40:24.621Z] [processQueue] Generating "child_in_playground"...
+[2026-04-20T20:40:44.720Z] [COST] imageKey="child_in_playground" | refinement: gemini/gemini-2.5-flash in=728 out=98 | image: openai/gpt-image-1 in=103 out=272
+[2026-04-20T20:40:44.721Z] [processQueue] Generated "child_in_playground" → afa4f6df-5a83-4052-ba80-bd17678e172d (4 total)
+[2026-04-20T20:40:44.722Z] [processQueue] FULL REFINED PROMPT for "child_in_playground": A simple, bold illustration of a generic child figure playing in a playground, rendered on a transparent background. The child, with a slightly oversized head, dot eyes, and a small curved mouth, is depicted mid-action on a swing set, with simple motion lines indicating movement. The swing set is represented by two vertical posts and a horizontal bar, with the swing seat clearly visible. The illustration uses flat, solid colors with bold black outlines, minimal detail, and no gradients or shadows.
+[2026-04-20T20:40:48.911Z] [processQueue] "child_in_playground" already exists → afa4f6df-5a83-4052-ba80-bd17678e172d

@@ -26,6 +26,7 @@ import type {
 import { createEmptyAccumulator } from "./types";
 import { buildToolDeclarations, type ToolDeclarationConfig } from "./tool-declarations";
 import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
+import { GeminiLiveTtsSession } from "../voice/gemini-live-tts-service";
 import { searchYouTube } from "../youtube/youtube-search";
 import { searchSpotify } from "../spotify/spotify-search";
 import { createContact, findSimilarContact, updateContact, getContactsByStudent } from "../biometric";
@@ -253,6 +254,7 @@ export class LiveRelay {
   // Voice
   private aiVoice: ResolvedVoice | null = null;
   private studentVoice: ResolvedVoice | null = null;
+  private studentTtsSession: GeminiLiveTtsSession | null = null;
   private useLocalTts = false;
   private useDirectAudio = false;
 
@@ -987,6 +989,23 @@ export class LiveRelay {
           this.aiVoice = voices?.aiVoice || null;
           this.studentVoice = voices?.studentVoice || null;
           console.log(`[LiveRelay] Voices resolved — AI: ${this.aiVoice?.geminiVoiceName || this.aiVoice?.fallbackType || "none"}, Student: ${this.studentVoice?.fallbackType || "none"} (lang: ${this.studentVoice?.language || "?"}, gemini: ${this.studentVoice?.geminiVoiceName || "none"})`);
+
+          // Start a persistent Gemini Live session for student TTS when a
+          // Gemini voice is configured and ElevenLabs won't handle it.
+          // This keeps the WebSocket warm for the duration of the AAC
+          // conversation, avoiding the ~2.5s HTTP connection overhead of
+          // the standard Gemini TTS HTTP API.
+          const sv = this.studentVoice;
+          const elevenLabsWillHandle =
+            !!(sv?.elevenlabsApiKey && sv?.elevenlabsVoiceId) ||
+            !!(sv?.customVoice && sv.customVoice.active);
+          if (sv?.geminiVoiceName && !elevenLabsWillHandle) {
+            this.studentTtsSession = new GeminiLiveTtsSession({
+              voiceName: sv.geminiVoiceName,
+              language: sv.language,
+            });
+            sv.geminiLiveSession = this.studentTtsSession;
+          }
         } else {
           console.warn("[LiveRelay] No student found — voices not resolved");
         }
@@ -3110,6 +3129,10 @@ When a button is pressed, the student's pre-generated sentence is also voiced vi
     }
 
     this.provider?.close();
+    if (this.studentTtsSession) {
+      this.studentTtsSession.close();
+      this.studentTtsSession = null;
+    }
     logDualAgent("LiveRelay.cleanup", { sessionId: this.sessionId });
   }
 
