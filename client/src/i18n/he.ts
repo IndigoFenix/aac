@@ -336,6 +336,8 @@ export const he = {
     popupMode: "צף",
     switchToPopup: "עבור למצב צף",
     expandMode: "הרחב צ׳אט",
+    expandInput: "הרחב תיבת טקסט",
+    collapseInput: "כווץ תיבת טקסט",
     minimize: "מזער",
     popupWelcome: "התחל שיחה...",
     placeholderShort: "הקלד הודעה...",

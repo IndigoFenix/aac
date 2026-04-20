@@ -336,6 +336,8 @@ export const es = {
     popupMode: "Ventana emergente",
     switchToPopup: "Cambiar a modo ventana emergente",
     expandMode: "Expandir chat",
+    expandInput: "Expandir entrada",
+    collapseInput: "Contraer entrada",
     minimize: "Minimizar",
     popupWelcome: "Iniciar una conversación...",
     placeholderShort: "Escribir un mensaje...",

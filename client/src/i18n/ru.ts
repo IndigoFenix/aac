@@ -336,6 +336,8 @@ export const ru = {
     popupMode: "Всплывающее окно",
     switchToPopup: "Переключить в режим всплывающего окна",
     expandMode: "Развернуть чат",
+    expandInput: "Развернуть поле ввода",
+    collapseInput: "Свернуть поле ввода",
     minimize: "Свернуть",
     popupWelcome: "Начните разговор...",
     placeholderShort: "Введите сообщение...",

@@ -336,6 +336,8 @@ export const yue = {
     popupMode: "彈窗",
     switchToPopup: "切換去彈窗模式",
     expandMode: "展開對話",
+    expandInput: "展開輸入欄",
+    collapseInput: "收起輸入欄",
     minimize: "最小化",
     popupWelcome: "開始傾計...",
     placeholderShort: "輸入訊息...",

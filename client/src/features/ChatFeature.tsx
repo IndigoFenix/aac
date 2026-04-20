@@ -4,7 +4,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -65,7 +64,7 @@ export function ChatFeature() {
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastReadMessageRef = useRef<number | null>(null);
   
@@ -211,6 +210,14 @@ export function ChatFeature() {
     }
   }, [isListening]);
 
+  // Auto-resize the textarea to fit its content (up to CSS max-height).
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [prompt, isListening, interimTranscript]);
+
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return t('chat.greeting.morning');
@@ -233,10 +240,13 @@ export function ChatFeature() {
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
+      // Always block the newline on plain Enter; only send if not mid-request.
       e.preventDefault();
-      handleSend();
+      if (!isSending) {
+        handleSend();
+      }
     }
-  }, [handleSend]);
+  }, [handleSend, isSending]);
 
   const handleSuggestionClick = (promptKey: string) => {
     const promptText = t(promptKey, { name: student?.name || '' });
@@ -602,7 +612,7 @@ export function ChatFeature() {
       <div
         dir={isRTL ? 'rtl' : 'ltr'}
         className={cn(
-          "relative bg-card border rounded-full px-6 py-4 flex items-center gap-3",
+          "relative bg-card border rounded-3xl px-6 py-3 flex items-end gap-3",
           isListening ? "border-red-500/50 ring-2 ring-red-500/20" : "border-card-border"
         )}
       >
@@ -643,19 +653,20 @@ export function ChatFeature() {
           </Button>
         )}
 
-        <Input
+        <textarea
           ref={inputRef}
+          rows={1}
           value={isListening ? (interimTranscript || prompt) : prompt}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder={getPlaceholder()}
           className={cn(
-            "flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 text-base h-8 px-2",
+            "flex-1 self-center border-0 bg-transparent outline-none focus-visible:ring-0 focus-visible:ring-offset-0 text-base px-2 py-1 resize-none overflow-y-auto max-h-[50vh] leading-6 placeholder:text-muted-foreground",
             isListening && "text-muted-foreground italic"
           )}
           dir={isRTL ? 'rtl' : 'ltr'}
           data-testid="input-prompt"
           onKeyDown={handleKeyDown}
-          disabled={isSending || isListening}
+          disabled={isListening}
         />
 
         {/* Voice Controls */}
@@ -787,7 +798,9 @@ export function ChatFeature() {
             className="flex-1 min-h-0 overflow-y-auto px-6 py-6"
           >
             <div className="space-y-6 max-w-4xl mx-auto">
-              {history.map((message, index) => (
+              {history.map((message, index) => {
+                const isStreaming = Boolean((message.metadata as any)?.isStreaming);
+                return (
                 <div
                   key={`${message.timestamp}-${index}`}
                   dir={isRTL ? 'rtl' : 'ltr'}
@@ -798,11 +811,16 @@ export function ChatFeature() {
                   data-testid={`message-${message.role}-${index}`}
                 >
                   {message.role === 'assistant' && (
-                    <Avatar className="w-8 h-8 mt-1 flex-shrink-0">
-                      <AvatarFallback className={cn("bg-primary/10", currentPersonaInfo && getPersonaColorClasses(currentPersonaInfo))}>
-                        <PersonaIcon persona={persona} size="md" />
-                      </AvatarFallback>
-                    </Avatar>
+                    <div className="relative w-8 h-8 mt-1 flex-shrink-0">
+                      <Avatar className="w-8 h-8">
+                        <AvatarFallback className={cn("bg-primary/10", currentPersonaInfo && getPersonaColorClasses(currentPersonaInfo))}>
+                          <PersonaIcon persona={persona} size="md" />
+                        </AvatarFallback>
+                      </Avatar>
+                      {isStreaming && (
+                        <div className="absolute -inset-1 rounded-full border-2 border-transparent border-t-primary border-r-primary animate-spin pointer-events-none" />
+                      )}
+                    </div>
                   )}
                   <div className="max-w-2xl">
                     <div
@@ -812,11 +830,13 @@ export function ChatFeature() {
                           ? "bg-primary text-primary-foreground"
                           : message.role === 'system'
                           ? "bg-destructive/10 border border-destructive/20 text-destructive"
+                          : isStreaming
+                          ? "bg-transparent text-muted-foreground italic"
                           : "bg-card border border-card-border text-card-foreground"
                       )}
                     >
                       {isHtmlContent(message) ? (
-                        <div 
+                        <div
                           className="text-sm prose prose-sm dark:prose-invert max-w-none"
                           dir={isRTL ? 'rtl' : 'ltr'}
                           dangerouslySetInnerHTML={{ __html: getMessageContent(message) }}
@@ -890,8 +910,9 @@ export function ChatFeature() {
                     </div>
                   </div>
                 </div>
-              ))}
-              
+                );
+              })}
+
               {/* Typing/Thinking indicator — hidden while text is actively streaming */}
               {isSending && !(history.length > 0 && (history[history.length - 1].metadata as any)?.isStreaming) && (
                 <div

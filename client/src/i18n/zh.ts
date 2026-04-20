@@ -336,6 +336,8 @@ export const zh = {
     popupMode: "弹窗",
     switchToPopup: "切换到弹窗模式",
     expandMode: "展开聊天",
+    expandInput: "展开输入框",
+    collapseInput: "收起输入框",
     minimize: "最小化",
     popupWelcome: "开始对话...",
     placeholderShort: "输入消息...",
