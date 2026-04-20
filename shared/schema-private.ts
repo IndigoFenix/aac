@@ -1148,6 +1148,9 @@ export const chatSessions = pgTable("chat_sessions", {
   userId: varchar("user_id").references(() => users.id),
   studentId: varchar("student_id").references(() => students.id),
   userStudentId: varchar("user_student_id").references(() => userStudents.id), // The relationship record if both are provided
+  // Cross-schema FKs: institutes.id and institute_users.id live in schema.ts — constraints enforced via migration
+  instituteId: varchar("institute_id"),
+  instituteUserId: varchar("institute_user_id"),
 
   // Chat mode determines which agent template to use
   chatMode: varchar("chat_mode").notNull().default("chat"),
@@ -1185,6 +1188,7 @@ export const chatSessions = pgTable("chat_sessions", {
 }, (table) => [
   index("idx_chat_sessions_user_id").on(table.userId),
   index("idx_chat_sessions_student_id").on(table.studentId),
+  index("idx_chat_sessions_institute_id").on(table.instituteId),
   index("idx_chat_sessions_status").on(table.status),
   index("idx_chat_sessions_chat_mode_created").on(table.chatMode, table.createdAt),
   index("idx_chat_sessions_student_importance").on(table.studentId, table.importance, table.createdAt),

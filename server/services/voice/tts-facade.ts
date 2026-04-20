@@ -4,6 +4,7 @@
 import { googleTtsService, type VoiceType } from "./google-tts-service";
 import { geminiTtsService } from "./gemini-tts-service";
 import { elevenlabsTtsService } from "./elevenlabs-tts-service";
+import type { GeminiLiveTtsSession } from "./gemini-live-tts-service";
 import type { Voice } from "@shared/schema";
 
 export interface ResolvedVoice {
@@ -13,6 +14,10 @@ export interface ResolvedVoice {
   elevenlabsApiKey?: string; // student-level ElevenLabs API key
   elevenlabsVoiceId?: string; // student-level ElevenLabs voice ID (direct, bypasses voices table)
   geminiVoiceName?: string; // Gemini prebuilt voice name (e.g. "Puck", "Kore")
+  // Persistent Gemini Live TTS session owned by the caller (e.g. LiveRelay).
+  // When set, streaming TTS goes through this session — no per-call HTTP
+  // connection overhead. Ignored by synthesize() (buffered path).
+  geminiLiveSession?: GeminiLiveTtsSession;
 }
 
 /**
@@ -110,6 +115,17 @@ export async function* synthesizeStream(
         error.message
       );
       // Fall through to OpenAI
+    }
+  }
+
+  // Persistent Gemini Live session — preferred for student voice (no
+  // per-call connection overhead, native Gemini voice quality)
+  if (voice.geminiLiveSession) {
+    try {
+      yield* voice.geminiLiveSession.synthesizeStream(text);
+      return;
+    } catch (error: any) {
+      console.error(`[TTSFacade] Gemini Live TTS streaming failed, falling back:`, error.message);
     }
   }
 

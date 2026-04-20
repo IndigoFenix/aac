@@ -618,6 +618,7 @@ interface MemoryContext {
   student?: StudentWithAacSettings;
   userStudent?: UserStudent;
   institute?: Institute;
+  instituteUser?: { id: string };
 }
 
 // Memory values are stored flat with prefixed keys
@@ -1028,6 +1029,13 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     context.institute = await instituteRepository.getInstituteById(instituteId);
   }
 
+  // Resolve the user's membership record for this institute, used for subject-scoped
+  // session keying (each (user, institute) pair is a distinct subject).
+  if (userId && instituteId) {
+    const link = await instituteRepository.getInstituteUserLink(instituteId, userId);
+    if (link) context.instituteUser = { id: link.id };
+  }
+
   if (isAACFeature && !context.student) {
     throw { status: 400, message: "AAC feature requires a valid studentId" };
   }
@@ -1064,21 +1072,73 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     conversationSummary: "",
     openedTopics: [],
   };
+  chatState = newChatState;
 
   if (sessionId) {
-    session = await getSession(sessionId);
-    if (!session) {
+    const existing = await getSession(sessionId);
+    if (!existing) {
       throw { status: 404, message: "Session not found" };
     }
-    chatState = (session.state as ChatState) || newChatState;
-    log = (session.log as ChatMessage[]) || [];
-  } else {
-    // Create new session
-    chatState = newChatState;
+
+    const reqIds = {
+      userId: userId ?? null,
+      studentId: studentId ?? null,
+      instituteId: instituteId ?? null,
+      instituteUserId: context.instituteUser?.id ?? null,
+      userStudentId: context.userStudent?.id ?? null,
+    };
+    const sesIds = {
+      userId: existing.userId,
+      studentId: existing.studentId,
+      instituteId: existing.instituteId ?? null,
+      instituteUserId: existing.instituteUserId ?? null,
+      userStudentId: existing.userStudentId,
+    };
+
+    // Ownership: if the session has a userId, it must match the caller.
+    // Legacy/null-userId sessions are owned by whoever picks them up.
+    const ownershipMismatch = sesIds.userId != null && reqIds.userId != null && sesIds.userId !== reqIds.userId;
+
+    // Switch: session and request both have a value for the field, and they differ.
+    // null→value is not a switch (it's a fill-in, handled below).
+    const isSwitch = (a: string | null, b: string | null) => a != null && b != null && a !== b;
+    const subjectSwitch =
+      isSwitch(sesIds.studentId, reqIds.studentId) ||
+      isSwitch(sesIds.instituteId, reqIds.instituteId) ||
+      isSwitch(sesIds.instituteUserId, reqIds.instituteUserId);
+
+    if (ownershipMismatch || subjectSwitch) {
+      console.warn(
+        `[sessionService] ${ownershipMismatch ? "ownership-mismatch" : "subject-switch"} on session ${sessionId} — opening new session`,
+        { reqIds, sesIds }
+      );
+      // Fall through to new-session creation below.
+      session = undefined;
+    } else {
+      // Reuse. Fill in any subject fields the session is missing but the request provides.
+      const updates: Partial<InsertChatSession> = {};
+      if (sesIds.userId == null && reqIds.userId != null) updates.userId = reqIds.userId;
+      if (sesIds.studentId == null && reqIds.studentId != null) updates.studentId = reqIds.studentId;
+      if (sesIds.instituteId == null && reqIds.instituteId != null) updates.instituteId = reqIds.instituteId;
+      if (sesIds.instituteUserId == null && reqIds.instituteUserId != null) updates.instituteUserId = reqIds.instituteUserId;
+      if (sesIds.userStudentId == null && reqIds.userStudentId != null) updates.userStudentId = reqIds.userStudentId;
+      if (Object.keys(updates).length > 0) {
+        await updateSession(existing.id, updates);
+        Object.assign(existing, updates);
+      }
+      session = existing;
+      chatState = (session.state as ChatState) || newChatState;
+      log = (session.log as ChatMessage[]) || [];
+    }
+  }
+
+  if (!session) {
     session = await createSession({
       userId: userId || null,
       studentId: studentId || null,
       userStudentId: context.userStudent?.id || null,
+      instituteId: instituteId || null,
+      instituteUserId: context.instituteUser?.id || null,
       chatMode: feature,
       state: chatState,
       log: [],

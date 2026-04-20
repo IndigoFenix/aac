@@ -273,20 +273,17 @@ export class DualAgentService {
         elevenlabsVoiceId: elEnabled ? (aac?.elevenlabsAiVoiceId || undefined) : undefined,
         geminiVoiceName: (aac as any)?.geminiAiVoice || defaultAiGeminiVoice,
       },
-      // Student voice uses Google Cloud TTS (fast, ~200-500ms) instead of
-      // Gemini TTS (~2.5s connection overhead per request due to fresh HTTP
-      // connection). Google Cloud TTS voice quality is lower (Standard/Neural2).
-      //
-      // TO UPGRADE TO GEMINI VOICES: Use a dedicated Gemini Live API session
-      // for TTS (persistent WebSocket = no reconnection latency). The regular
-      // generateContent API creates a new HTTP connection per call, adding
-      // ~2-2.5s of overhead that dwarfs the ~300ms generation time.
-      // A Live session would give ~300-500ms latency with better voice quality.
-      // Cost is comparable — see conversation notes from 2026-04-13.
+      // Student voice defaults to Gemini Live TTS via a persistent WebSocket
+      // session owned by the LiveRelay (see gemini-live-tts-service.ts). The
+      // session is attached to the voice after resolution. ElevenLabs (when
+      // configured) still takes precedence — see tts-facade.ts for the order.
+      // Google Cloud TTS remains the fallback when no Live session is attached
+      // (e.g. /api/voice/speak HTTP endpoint).
       studentVoice: {
         fallbackType: studentFallback as any,
         customVoice: studentCustom || null,
         language: student?.primaryLanguage || "en",
+        geminiVoiceName: (aac as any)?.geminiStudentVoice || defaultStudentGeminiVoice,
       },
     };
   }
