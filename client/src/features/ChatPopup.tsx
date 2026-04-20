@@ -4,7 +4,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -27,6 +26,7 @@ import {
   Send,
   Minus,
   Maximize2,
+  Minimize2,
   MessageCircle,
   Sparkles,
   Plus,
@@ -61,9 +61,14 @@ export function ChatPopup() {
   const [ttsEnabled, setTtsEnabled] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastReadMessageRef = useRef<number | null>(null);
+
+  // Track whether the textarea content exceeds 3 lines (shows the expand toggle).
+  const [inputOverflows, setInputOverflows] = useState(false);
+  // Whether the input is expanded to fill the whole popup body.
+  const [inputExpanded, setInputExpanded] = useState(false);
 
   const { user } = useAuth();
   const { student } = useStudent();
@@ -174,6 +179,7 @@ export function ChatPopup() {
     if (prompt.trim() && !isSending) {
       const messageText = prompt.trim();
       setPrompt('');
+      setInputExpanded(false);
       await sendMessage(messageText, { replyType: 'html' });
       inputRef.current?.focus();
     }
@@ -181,10 +187,33 @@ export function ChatPopup() {
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
+      // Block the newline on plain Enter; only send if not mid-request.
       e.preventDefault();
-      handleSend();
+      if (!isSending) {
+        handleSend();
+      }
     }
-  }, [handleSend]);
+  }, [handleSend, isSending]);
+
+  // Auto-resize the textarea and detect whether the content exceeds 3 lines.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    if (inputExpanded) {
+      // In expanded mode the textarea fills the popup body; don't shrink it.
+      el.style.height = '100%';
+      // Still detect overflow so the toggle stays visible.
+      const lineHeight = parseFloat(getComputedStyle(el).lineHeight || '20') || 20;
+      setInputOverflows(el.scrollHeight > lineHeight * 3 + 4);
+      return;
+    }
+    el.style.height = 'auto';
+    const lineHeight = parseFloat(getComputedStyle(el).lineHeight || '20') || 20;
+    const maxCollapsed = lineHeight * 3 + 4; // ~3 lines of text
+    const target = Math.min(el.scrollHeight, maxCollapsed);
+    el.style.height = `${target}px`;
+    setInputOverflows(el.scrollHeight > maxCollapsed);
+  }, [prompt, isListening, interimTranscript, inputExpanded]);
 
   const handleMinimize = () => {
     setChatMode('minimized');
@@ -321,12 +350,12 @@ export function ChatPopup() {
         "w-96 max-w-[calc(100vw-2rem)]"
       )}
     >
-      <div 
+      <div
         dir={isRTL ? 'rtl' : 'ltr'}
         className={cn(
           "flex flex-col rounded-2xl shadow-2xl border border-border overflow-hidden",
           "bg-background",
-          "max-h-[70vh]"
+          inputExpanded ? "h-[70vh]" : "max-h-[70vh]"
         )}
       >
         {/* Header */}
@@ -437,10 +466,13 @@ export function ChatPopup() {
           </div>
         </div>
 
-        {/* Messages area */}
-        <div 
+        {/* Messages area — hidden when the input is expanded to fill the popup */}
+        <div
           ref={scrollAreaRef}
-          className="flex-1 overflow-y-auto px-4 py-3 max-h-80 min-h-48"
+          className={cn(
+            "flex-1 overflow-y-auto px-4 py-3 max-h-80 min-h-48",
+            inputExpanded && "hidden"
+          )}
         >
           {history.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center gap-3">
@@ -454,7 +486,9 @@ export function ChatPopup() {
             </div>
           ) : (
             <div className="space-y-3">
-              {history.slice(-10).map((message, index) => (
+              {history.slice(-10).map((message, index) => {
+                const isStreaming = Boolean((message.metadata as any)?.isStreaming);
+                return (
                 <div
                   key={`${message.timestamp}-${index}`}
                   className={cn(
@@ -463,11 +497,16 @@ export function ChatPopup() {
                   )}
                 >
                   {message.role === 'assistant' && (
-                    <Avatar className="w-6 h-6 flex-shrink-0">
-                      <AvatarFallback className={cn("text-xs", currentPersonaInfo && getPersonaColorClasses(currentPersonaInfo))}>
-                        <PersonaIcon persona={persona} size="sm" />
-                      </AvatarFallback>
-                    </Avatar>
+                    <div className="relative w-6 h-6 flex-shrink-0">
+                      <Avatar className="w-6 h-6">
+                        <AvatarFallback className={cn("text-xs", currentPersonaInfo && getPersonaColorClasses(currentPersonaInfo))}>
+                          <PersonaIcon persona={persona} size="sm" />
+                        </AvatarFallback>
+                      </Avatar>
+                      {isStreaming && (
+                        <div className="absolute -inset-1 rounded-full border-2 border-transparent border-t-primary border-r-primary animate-spin pointer-events-none" />
+                      )}
+                    </div>
                   )}
                   <div className="max-w-[80%]">
                     <div
@@ -475,11 +514,13 @@ export function ChatPopup() {
                         "rounded-xl px-3 py-2 text-sm",
                         message.role === 'user'
                           ? "bg-primary text-primary-foreground"
+                          : isStreaming
+                          ? "bg-transparent text-muted-foreground italic"
                           : "bg-muted text-foreground"
                       )}
                     >
                       {isHtmlContent(message) ? (
-                        <div 
+                        <div
                           className="prose prose-sm dark:prose-invert max-w-none text-xs"
                           dangerouslySetInnerHTML={{ __html: getMessageContent(message) }}
                         />
@@ -491,7 +532,8 @@ export function ChatPopup() {
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
               
               {/* Typing/Thinking indicator */}
               {isSending && (
@@ -525,8 +567,13 @@ export function ChatPopup() {
           )}
         </div>
 
-        {/* Input area */}
-        <div className="px-3 py-3 border-t border-border bg-card space-y-2">
+        {/* Input area — grows to fill the popup when inputExpanded */}
+        <div
+          className={cn(
+            "px-3 py-3 border-t border-border bg-card space-y-2 flex flex-col min-h-0",
+            inputExpanded && "flex-1"
+          )}
+        >
           {/* Attached files list */}
           {attachedFiles.length > 0 && (
             <div
@@ -573,7 +620,8 @@ export function ChatPopup() {
           )}
 
           <div className={cn(
-            "flex items-center gap-2 rounded-full px-3 py-1",
+            "flex items-end gap-2 px-3 py-1",
+            inputExpanded ? "rounded-2xl flex-1 min-h-0" : "rounded-2xl",
             isListening ? "bg-red-500/10 ring-1 ring-red-500/30" : "bg-muted"
           )}>
             <DropdownMenu>
@@ -581,7 +629,7 @@ export function ChatPopup() {
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="h-6 w-6 rounded-full"
+                  className="h-6 w-6 rounded-full mb-1"
                   data-testid="chat-popup-add-attachment"
                   aria-label={t('chat.addAttachment')}
                   disabled={isUploadingFile}
@@ -601,20 +649,47 @@ export function ChatPopup() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Input
+            <textarea
               ref={inputRef}
+              rows={1}
               value={isListening ? (interimTranscript || prompt) : prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder={isListening ? t('chat.listening') : t('chat.placeholderShort')}
               className={cn(
-                "flex-1 border-0 bg-transparent focus-visible:ring-0 text-sm h-8 px-1",
+                "flex-1 border-0 bg-transparent outline-none focus-visible:ring-0 text-sm px-1 py-1.5 resize-none overflow-y-auto leading-5 placeholder:text-muted-foreground",
+                inputExpanded ? "self-stretch h-full" : "self-end",
                 isListening && "text-muted-foreground italic"
               )}
               dir={isRTL ? 'rtl' : 'ltr'}
               data-testid="chat-popup-input"
               onKeyDown={handleKeyDown}
-              disabled={isSending || isListening}
+              disabled={isListening}
             />
+
+            {/* Expand / collapse input button (popup mode) */}
+            {(inputOverflows || inputExpanded) && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 rounded-full mb-1"
+                    onClick={() => setInputExpanded((v) => !v)}
+                    aria-label={inputExpanded ? t('chat.collapseInput') : t('chat.expandInput')}
+                    data-testid="chat-popup-expand-input"
+                  >
+                    {inputExpanded ? (
+                      <Minimize2 className="w-3.5 h-3.5" />
+                    ) : (
+                      <Maximize2 className="w-3.5 h-3.5" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {inputExpanded ? t('chat.collapseInput') : t('chat.expandInput')}
+                </TooltipContent>
+              </Tooltip>
+            )}
 
             {/* Voice input button */}
             {sttSupported && (
@@ -624,7 +699,7 @@ export function ChatPopup() {
                     size="icon"
                     variant="ghost"
                     className={cn(
-                      "h-7 w-7 rounded-full transition-colors",
+                      "h-7 w-7 rounded-full transition-colors mb-1",
                       isListening && "bg-red-500/20 text-red-500 animate-pulse",
                       sttDisabled && "opacity-50 cursor-not-allowed"
                     )}
@@ -653,7 +728,7 @@ export function ChatPopup() {
             <Button
               size="icon"
               variant="ghost"
-              className="h-7 w-7 rounded-full"
+              className="h-7 w-7 rounded-full mb-1"
               onClick={handleSend}
               disabled={!prompt.trim() || isSending || isListening}
               data-testid="chat-popup-send"

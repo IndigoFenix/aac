@@ -336,6 +336,8 @@ export const ko = {
     popupMode: "팝업",
     switchToPopup: "팝업 모드로 전환",
     expandMode: "채팅 확장",
+    expandInput: "입력창 확장",
+    collapseInput: "입력창 축소",
     minimize: "최소화",
     popupWelcome: "대화를 시작하세요...",
     placeholderShort: "메시지 입력...",

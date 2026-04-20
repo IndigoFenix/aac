@@ -336,6 +336,8 @@ export const ar = {
     popupMode: "نافذة منبثقة",
     switchToPopup: "التبديل إلى وضع النافذة المنبثقة",
     expandMode: "توسيع المحادثة",
+    expandInput: "توسيع الإدخال",
+    collapseInput: "تصغير الإدخال",
     minimize: "تصغير",
     popupWelcome: "ابدأ محادثة...",
     placeholderShort: "اكتب رسالة...",

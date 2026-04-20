@@ -336,6 +336,8 @@ export const fr = {
     popupMode: "Popup",
     switchToPopup: "Passer en mode popup",
     expandMode: "Agrandir le chat",
+    expandInput: "Agrandir la saisie",
+    collapseInput: "Réduire la saisie",
     minimize: "Réduire",
     popupWelcome: "Démarrer une conversation...",
     placeholderShort: "Tapez un message...",
