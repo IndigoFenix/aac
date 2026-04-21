@@ -6,6 +6,7 @@ import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { ArrowLeft } from "lucide-react";
 import { apiUrl } from "@/lib/queryClient";
+import { resolveStaticIconPath } from "@/lib/utils";
 
 export interface BoardPatch {
   add: Array<{ label: string; iconRef: string }>;
@@ -537,7 +538,7 @@ export default function DynamicBoard({
       return <img src={apiUrl(`/api/custom-symbols/${symbolId}/image`)} alt={button.label} style={imgStyle} loading="lazy" />;
     }
     if (button.symbolPath) {
-      return <img src={button.symbolPath} alt={button.label} style={imgStyle} />;
+      return <img src={resolveStaticIconPath(button.symbolPath)} alt={button.label} style={imgStyle} />;
     }
     // Show emoji with loading spinner while symbol is being generated
     if ((button as any).imageKey) {
