@@ -1200,6 +1200,7 @@ export default function Home({ studentId, onLogout, onExitStudent }: HomeProps) 
                 language={currentLanguage}
                 voiceType={userProfile?.aacSettings?.studentVoiceType || 'boy'}
                 suppressLocalSpeech={aiSessionActive}
+                getFaceImage={faceImageCache.getFaceImage}
               />
             );
           })()}

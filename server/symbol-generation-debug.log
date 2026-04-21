@@ -5384,3 +5384,502 @@
 [2026-04-20T20:40:44.721Z] [processQueue] Generated "child_in_playground" → afa4f6df-5a83-4052-ba80-bd17678e172d (4 total)
 [2026-04-20T20:40:44.722Z] [processQueue] FULL REFINED PROMPT for "child_in_playground": A simple, bold illustration of a generic child figure playing in a playground, rendered on a transparent background. The child, with a slightly oversized head, dot eyes, and a small curved mouth, is depicted mid-action on a swing set, with simple motion lines indicating movement. The swing set is represented by two vertical posts and a horizontal bar, with the swing seat clearly visible. The illustration uses flat, solid colors with bold black outlines, minimal detail, and no gradients or shadows.
 [2026-04-20T20:40:48.911Z] [processQueue] "child_in_playground" already exists → afa4f6df-5a83-4052-ba80-bd17678e172d
+[2026-04-21T08:13:17.249Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T08:13:17.256Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T08:13:49.242Z] [resolveImageKeys] Resolving 8 keys: breakfast_table, school_building, sandwich_on_plate, children_playing_with_toys, family_eating_dinner, child_in_bed, thumbs_up, thumbs_down (format=internal, useUnapproved=true)
+[2026-04-21T08:13:49.412Z] [resolveImageKeys] No symbol found for "breakfast_table"
+[2026-04-21T08:13:49.585Z] [resolveImageKeys] Resolved "school_building" → __SYMBOL__:31f589aa-1c22-4a4f-a23d-5ebbc9bec3cb
+[2026-04-21T08:13:49.756Z] [resolveImageKeys] No symbol found for "sandwich_on_plate"
+[2026-04-21T08:13:49.955Z] [resolveImageKeys] No symbol found for "children_playing_with_toys"
+[2026-04-21T08:13:50.130Z] [resolveImageKeys] No symbol found for "family_eating_dinner"
+[2026-04-21T08:13:50.306Z] [resolveImageKeys] No symbol found for "child_in_bed"
+[2026-04-21T08:13:52.975Z] [resolveImageKeys] Resolved "thumbs_up" → __SYMBOL__:ee779fe6-3a63-41a0-9b66-85935690beda
+[2026-04-21T08:13:55.143Z] [resolveImageKeys] Resolved "thumbs_down" → __SYMBOL__:a1803fd3-b1cc-4b1f-84e1-eb3501716239
+[2026-04-21T08:13:55.153Z] [resolveImageKeys] Done. Resolved 3, unresolved 5: breakfast_table, sandwich_on_plate, children_playing_with_toys, family_eating_dinner, child_in_bed
+[2026-04-21T08:13:55.160Z] [queueGeneration] Queuing 5 keys: breakfast_table, sandwich_on_plate, children_playing_with_toys, family_eating_dinner, child_in_bed (hasCallback=true)
+[2026-04-21T08:13:57.015Z] [processQueue] Generating "child_in_bed"...
+[2026-04-21T08:13:57.969Z] [processQueue] Failed "child_in_bed": Prompt refinement returned no text
+[2026-04-21T08:13:59.815Z] [processQueue] Generating "family_eating_dinner"...
+[2026-04-21T08:14:07.568Z] [resolveImageKeys] Resolving 1 keys: man_with_glasses (format=internal, useUnapproved=true)
+[2026-04-21T08:14:07.893Z] [resolveImageKeys] No symbol found for "man_with_glasses"
+[2026-04-21T08:14:07.895Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: man_with_glasses
+[2026-04-21T08:14:07.897Z] [queueGeneration] Queuing 1 keys: man_with_glasses (hasCallback=true)
+[2026-04-21T08:14:19.578Z] [COST] imageKey="family_eating_dinner" | refinement: gemini/gemini-2.5-flash in=728 out=114 | image: openai/gpt-image-1 in=121 out=272
+[2026-04-21T08:14:19.582Z] [processQueue] Generated "family_eating_dinner" → acb11643-2651-40ac-9591-bceba5b53cfc (1 total)
+[2026-04-21T08:14:19.586Z] [processQueue] FULL REFINED PROMPT for "family_eating_dinner": A simple, bold AAC symbol icon depicting a family eating dinner. The illustration features three stylized, generic human figures (two adults, one child) seated around a simple, round table. Each figure has a simple dot for eyes and a small curve for a mouth; no hair is depicted. Each figure holds a fork in one hand, raised towards their mouth, indicating the action of eating. A simple plate is in front of each person on the table. The figures and table are rendered with thick black outlines and flat, solid, saturated colors, on a transparent background.
+[2026-04-21T08:14:23.787Z] [processQueue] Generating "man_with_glasses"...
+[2026-04-21T08:14:24.644Z] [resolveImageKeys] Resolving 1 keys: small_toy (format=internal, useUnapproved=true)
+[2026-04-21T08:14:24.840Z] [resolveImageKeys] No symbol found for "small_toy"
+[2026-04-21T08:14:24.845Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: small_toy
+[2026-04-21T08:14:24.851Z] [queueGeneration] Queuing 1 keys: small_toy (hasCallback=true)
+[2026-04-21T08:14:32.781Z] [resolveImageKeys] Resolving 1 keys: keys (format=internal, useUnapproved=true)
+[2026-04-21T08:14:32.949Z] [resolveImageKeys] No symbol found for "keys"
+[2026-04-21T08:14:32.950Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: keys
+[2026-04-21T08:14:32.951Z] [queueGeneration] Queuing 1 keys: keys (hasCallback=true)
+[2026-04-21T08:14:41.058Z] [COST] imageKey="man_with_glasses" | refinement: gemini/gemini-2.5-flash in=728 out=73 | image: openai/gpt-image-1 in=80 out=272
+[2026-04-21T08:14:41.061Z] [processQueue] Generated "man_with_glasses" → cca036b8-a6c3-43e8-9deb-5f84766e1159 (2 total)
+[2026-04-21T08:14:41.063Z] [processQueue] FULL REFINED PROMPT for "man_with_glasses": A simple, bold AAC symbol icon of a generic male figure with short, simple hair, facing forward. The figure has a slightly stylized head, simple dot eyes, a small curved mouth, and is wearing simple, thick-rimmed glasses. The illustration uses flat, solid colors with bold black outlines, suitable for instant recognition at small sizes on a transparent background.
+[2026-04-21T08:14:45.232Z] [processQueue] Generating "keys"...
+[2026-04-21T08:14:48.370Z] [resolveImageKeys] Resolving 1 keys: wrench (format=internal, useUnapproved=true)
+[2026-04-21T08:14:48.550Z] [resolveImageKeys] No symbol found for "wrench"
+[2026-04-21T08:14:48.555Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: wrench
+[2026-04-21T08:14:48.560Z] [queueGeneration] Queuing 1 keys: wrench (hasCallback=true)
+[2026-04-21T08:15:02.793Z] [COST] imageKey="keys" | refinement: gemini/gemini-2.5-flash in=726 out=74 | image: openai/gpt-image-1 in=83 out=272
+[2026-04-21T08:15:02.803Z] [processQueue] Generated "keys" → 5797288a-22b5-4e93-a371-f8674af1b240 (3 total)
+[2026-04-21T08:15:02.810Z] [processQueue] FULL REFINED PROMPT for "keys": A simple, bold illustration of a set of three metal keys on a metal keyring. The keys are depicted from a side view, slightly angled, with the keyring at the top. The illustration uses flat, solid colors: silver for the keys and keyring, with bold black outlines around all shapes. The image is centered on a transparent background, instantly recognizable at small sizes.
+[2026-04-21T08:15:07.125Z] [processQueue] Generating "wrench"...
+[2026-04-21T08:15:23.269Z] [COST] imageKey="wrench" | refinement: gemini/gemini-2.5-flash in=726 out=73 | image: openai/gpt-image-1 in=77 out=272
+[2026-04-21T08:15:23.270Z] [processQueue] Generated "wrench" → 8c24b771-a7e7-4ae5-b96e-002f1f801305 (4 total)
+[2026-04-21T08:15:23.271Z] [processQueue] FULL REFINED PROMPT for "wrench": A simple, bold illustration of a wrench, shown from a side view with the open end facing right. The wrench is silver-gray with a thick black outline. It has a flat, solid color, with no gradients, shadows, or highlights. The wrench is centered and fills about 75% of the square canvas, with some padding around the edges.
+[2026-04-21T08:15:27.454Z] [processQueue] Generating "small_toy"...
+[2026-04-21T08:35:45.452Z] [resolveImageKeys] Resolving 7 keys: crayons, piano, beaker, farm_animals, rocket, code_block, person_yawning (format=internal, useUnapproved=true)
+[2026-04-21T08:35:45.642Z] [resolveImageKeys] Resolved "crayons" → __SYMBOL__:197ac6dd-379d-4fc3-8e96-51593f9b4604
+[2026-04-21T08:35:45.971Z] [resolveImageKeys] No symbol found for "piano"
+[2026-04-21T08:35:46.124Z] [resolveImageKeys] No symbol found for "beaker"
+[2026-04-21T08:35:46.284Z] [resolveImageKeys] Resolved "farm_animals" → __SYMBOL__:c1a09328-2e2e-47df-b0fd-5dcf631dd815
+[2026-04-21T08:35:46.440Z] [resolveImageKeys] Resolved "rocket" → __SYMBOL__:641ea22d-af42-4070-96e7-7eafc7a3639c
+[2026-04-21T08:35:46.594Z] [resolveImageKeys] No symbol found for "code_block"
+[2026-04-21T08:35:46.749Z] [resolveImageKeys] Resolved "person_yawning" → __SYMBOL__:a49afb33-4de1-4728-b67d-c4b287b2ef8a
+[2026-04-21T08:35:46.752Z] [resolveImageKeys] Done. Resolved 4, unresolved 3: piano, beaker, code_block
+[2026-04-21T08:35:46.758Z] [queueGeneration] Queuing 3 keys: piano, beaker, code_block (hasCallback=true)
+[2026-04-21T08:35:46.928Z] [processQueue] Generating "code_block"...
+[2026-04-21T08:36:05.967Z] [COST] imageKey="code_block" | refinement: gemini/gemini-2.5-flash in=727 out=85 | image: openai/gpt-image-1 in=92 out=272
+[2026-04-21T08:36:05.969Z] [processQueue] Generated "code_block" → 708b3dc4-189b-459c-8889-4d811c323a82 (1 total)
+[2026-04-21T08:36:05.971Z] [processQueue] FULL REFINED PROMPT for "code_block": A simple, bold illustration of a code block. The icon features a dark gray rectangular block with rounded corners, representing a section of code. Inside the block, two horizontal white lines are stacked vertically, with the top line being slightly shorter than the bottom line, symbolizing lines of text or code. The entire illustration has a thick black outline and uses flat, solid colors on a transparent background, suitable for an AAC communication board.
+[2026-04-21T08:36:10.150Z] [processQueue] Generating "beaker"...
+[2026-04-21T08:36:17.796Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T08:36:17.798Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T08:36:26.501Z] [COST] imageKey="beaker" | refinement: gemini/gemini-2.5-flash in=726 out=70 | image: openai/gpt-image-1 in=79 out=272
+[2026-04-21T08:36:26.502Z] [processQueue] Generated "beaker" → 723fcf7c-79d9-4fee-ad02-e98b15f512ca (2 total)
+[2026-04-21T08:36:26.503Z] [processQueue] FULL REFINED PROMPT for "beaker": A simple, bold illustration of a laboratory beaker, viewed from the side. The beaker is a transparent glass container with a wide mouth and a flat bottom, depicted with a thick black outline. It is filled about halfway with a solid blue liquid. The beaker is centered on a transparent background, with no gradients, shadows, or 3D effects.
+[2026-04-21T08:36:30.689Z] [processQueue] Generating "piano"...
+[2026-04-21T08:36:46.782Z] [COST] imageKey="piano" | refinement: gemini/gemini-2.5-flash in=726 out=58 | image: openai/gpt-image-1 in=64 out=272
+[2026-04-21T08:36:46.784Z] [processQueue] Generated "piano" → 955f2eb0-ab9e-4802-a24a-3f92f0bccc26 (3 total)
+[2026-04-21T08:36:46.786Z] [processQueue] FULL REFINED PROMPT for "piano": A simple, bold illustration of a grand piano, viewed from a slight angle showing the keyboard and the curved side. The piano is black with white keys and black keys clearly visible. It has thick black outlines, flat solid colors, and no gradients or shadows, rendered on a transparent background.
+[2026-04-21T09:27:49.893Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T09:27:49.895Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T09:28:04.050Z] [resolveImageKeys] Resolving 2 keys: person_yawning, person_hiding_face (format=internal, useUnapproved=true)
+[2026-04-21T09:28:04.235Z] [resolveImageKeys] Resolved "person_yawning" → __SYMBOL__:a49afb33-4de1-4728-b67d-c4b287b2ef8a
+[2026-04-21T09:28:04.393Z] [resolveImageKeys] No symbol found for "person_hiding_face"
+[2026-04-21T09:28:04.396Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: person_hiding_face
+[2026-04-21T09:28:04.399Z] [queueGeneration] Queuing 1 keys: person_hiding_face (hasCallback=true)
+[2026-04-21T09:28:04.564Z] [processQueue] Generating "person_hiding_face"...
+[2026-04-21T09:28:21.518Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T09:28:21.521Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T09:28:22.770Z] [COST] imageKey="person_hiding_face" | refinement: gemini/gemini-2.5-flash in=728 out=87 | image: openai/gpt-image-1 in=95 out=272
+[2026-04-21T09:28:22.772Z] [processQueue] Generated "person_hiding_face" → ea0c9e52-4a07-4c18-9385-c6d71cd37333 (1 total)
+[2026-04-21T09:28:22.773Z] [processQueue] FULL REFINED PROMPT for "person_hiding_face": A simple, bold AAC symbol icon of a generic human figure with a slightly stylized body and larger head. The figure is facing forward, with both hands raised to cover their face, indicating hiding. Simple dots for eyes and a small curve for the mouth are obscured by the hands. The figure has no hair. The illustration uses flat, solid colors with bold black outlines, no gradients or shadows, and is centered on a transparent background.
+[2026-04-21T09:42:09.245Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T09:42:09.247Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T09:42:09.376Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T09:42:09.378Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T09:42:09.494Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T09:42:09.496Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T09:42:09.591Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T09:42:09.593Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T09:56:21.065Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T09:56:21.067Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T09:56:27.968Z] [resolveImageKeys] Resolving 1 keys: bubbles_game (format=internal, useUnapproved=true)
+[2026-04-21T09:56:28.033Z] [resolveImageKeys] Resolving 1 keys: drawing (format=internal, useUnapproved=true)
+[2026-04-21T09:56:33.547Z] [resolveImageKeys] No symbol found for "bubbles_game"
+[2026-04-21T09:56:33.548Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: bubbles_game
+[2026-04-21T09:56:33.550Z] [queueGeneration] Queuing 1 keys: bubbles_game (hasCallback=true)
+[2026-04-21T09:56:33.819Z] [resolveImageKeys] No symbol found for "drawing"
+[2026-04-21T09:56:33.823Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: drawing
+[2026-04-21T09:56:33.825Z] [queueGeneration] Queuing 1 keys: drawing (hasCallback=true)
+[2026-04-21T09:56:40.368Z] [resolveImageKeys] Resolving 1 keys: science_experiment (format=internal, useUnapproved=true)
+[2026-04-21T09:56:40.746Z] [processQueue] Generating "bubbles_game"...
+[2026-04-21T09:56:48.918Z] [resolveImageKeys] Resolved "science_experiment" → __SYMBOL__:fdc69eb1-ea8a-42ac-bc27-42508d8dd116
+[2026-04-21T09:56:48.919Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-04-21T10:10:32.005Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T10:10:32.007Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T10:10:32.118Z] [resolveImageKeys] Resolving 1 keys: drawing (format=internal, useUnapproved=true)
+[2026-04-21T10:10:32.219Z] [resolveImageKeys] Resolving 1 keys: piano (format=internal, useUnapproved=true)
+[2026-04-21T10:10:32.326Z] [resolveImageKeys] Resolving 1 keys: bubbles (format=internal, useUnapproved=true)
+[2026-04-21T10:10:32.422Z] [resolveImageKeys] No symbol found for "drawing"
+[2026-04-21T10:10:32.424Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: drawing
+[2026-04-21T10:10:32.427Z] [queueGeneration] Queuing 1 keys: drawing (hasCallback=true)
+[2026-04-21T10:10:32.603Z] [resolveImageKeys] Resolved "piano" → __SYMBOL__:955f2eb0-ab9e-4802-a24a-3f92f0bccc26
+[2026-04-21T10:10:32.605Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-04-21T10:10:32.814Z] [resolveImageKeys] No symbol found for "bubbles"
+[2026-04-21T10:10:32.816Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: bubbles
+[2026-04-21T10:10:32.819Z] [queueGeneration] Queuing 1 keys: bubbles (hasCallback=true)
+[2026-04-21T10:10:33.027Z] [processQueue] Generating "drawing"...
+[2026-04-21T10:10:34.520Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T10:10:34.522Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T10:10:34.959Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T10:10:34.960Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T10:10:37.790Z] [resolveImageKeys] Resolving 6 keys: lightbulb, rocket, code, drawing, piano, bubbles (format=internal, useUnapproved=true)
+[2026-04-21T10:10:37.963Z] [resolveImageKeys] No symbol found for "lightbulb"
+[2026-04-21T10:10:38.133Z] [resolveImageKeys] Resolved "rocket" → __SYMBOL__:641ea22d-af42-4070-96e7-7eafc7a3639c
+[2026-04-21T10:10:38.300Z] [resolveImageKeys] Resolved "code" → __SYMBOL__:8373c755-41ed-4d2a-a287-f2edba4356f0
+[2026-04-21T10:10:38.469Z] [resolveImageKeys] No symbol found for "drawing"
+[2026-04-21T10:10:38.635Z] [resolveImageKeys] Resolved "piano" → __SYMBOL__:955f2eb0-ab9e-4802-a24a-3f92f0bccc26
+[2026-04-21T10:10:38.805Z] [resolveImageKeys] No symbol found for "bubbles"
+[2026-04-21T10:10:38.808Z] [resolveImageKeys] Done. Resolved 3, unresolved 3: lightbulb, drawing, bubbles
+[2026-04-21T10:10:38.810Z] [queueGeneration] Queuing 3 keys: lightbulb, drawing, bubbles (hasCallback=true)
+[2026-04-21T10:10:51.592Z] [COST] imageKey="drawing" | refinement: gemini/gemini-2.5-flash in=726 out=98 | image: openai/gpt-image-1 in=105 out=272
+[2026-04-21T10:10:51.593Z] [processQueue] Generated "drawing" → 121d85a0-e703-46b1-bd17-0ed685cef8dc (1 total)
+[2026-04-21T10:10:51.595Z] [processQueue] FULL REFINED PROMPT for "drawing": A simple, bold AAC symbol illustration of a generic human figure, facing forward, seated at a small table. The figure holds a red crayon in their right hand, poised over a white sheet of paper on the table. A simple black line drawing of a circle is visible on the paper, indicating the act of drawing. The figure has a large head, small dot eyes, and a simple curved mouth. The illustration uses flat, solid colors with bold black outlines, on a transparent background.
+[2026-04-21T10:10:55.793Z] [processQueue] Generating "bubbles"...
+[2026-04-21T10:11:14.470Z] [COST] imageKey="bubbles" | refinement: gemini/gemini-2.5-flash in=726 out=60 | image: openai/gpt-image-1 in=66 out=272
+[2026-04-21T10:11:14.472Z] [processQueue] Generated "bubbles" → d07dc6b1-a5c3-4272-9bab-3abae5cdf67d (2 total)
+[2026-04-21T10:11:14.474Z] [processQueue] FULL REFINED PROMPT for "bubbles": A simple, bold illustration of several circular bubbles of varying sizes floating upwards. The bubbles are outlined in thick black and filled with light blue, with a small white circular highlight on each to suggest translucency. The composition is centered, with the bubbles filling most of the square canvas on a transparent background.
+[2026-04-21T10:11:18.661Z] [processQueue] "drawing" already exists → 121d85a0-e703-46b1-bd17-0ed685cef8dc
+[2026-04-21T10:11:22.838Z] [processQueue] Generating "lightbulb"...
+[2026-04-21T10:11:44.105Z] [COST] imageKey="lightbulb" | refinement: gemini/gemini-2.5-flash in=727 out=94 | image: openai/gpt-image-1 in=101 out=272
+[2026-04-21T10:11:44.106Z] [processQueue] Generated "lightbulb" → 4383ae00-bf8a-4c39-9641-77e6623befd6 (3 total)
+[2026-04-21T10:11:44.110Z] [processQueue] FULL REFINED PROMPT for "lightbulb": A simple, bold illustration of a classic lightbulb, shown from the side. The lightbulb has a clear glass bulb shape with a visible filament inside and a screw-in metal base. The outlines are thick black, and the colors are flat and solid: a light yellow for the glowing filament, a very light grey for the glass, and a darker grey for the metal base. The lightbulb is centered and fills about 75% of the square canvas.
+[2026-04-21T10:11:48.318Z] [processQueue] "bubbles" already exists → d07dc6b1-a5c3-4272-9bab-3abae5cdf67d
+[2026-04-21T10:13:45.387Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T10:13:45.395Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T10:13:46.008Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T10:13:46.017Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T10:13:48.457Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T10:13:48.463Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T10:13:50.184Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T10:13:50.188Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T10:21:33.263Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T10:21:33.265Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T10:21:34.429Z] [resolveImageKeys] Resolving 1 keys: science_experiment (format=internal, useUnapproved=true)
+[2026-04-21T10:21:34.589Z] [resolveImageKeys] Resolved "science_experiment" → __SYMBOL__:fdc69eb1-ea8a-42ac-bc27-42508d8dd116
+[2026-04-21T10:21:34.591Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-04-21T10:21:35.486Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T10:21:35.488Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T10:38:46.074Z] [resolveImageKeys] Resolving 1 keys: toy_robot (format=internal, useUnapproved=true)
+[2026-04-21T10:38:46.162Z] [resolveImageKeys] Resolving 1 keys: markers (format=internal, useUnapproved=true)
+[2026-04-21T10:38:46.425Z] [resolveImageKeys] No symbol found for "toy_robot"
+[2026-04-21T10:38:46.427Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: toy_robot
+[2026-04-21T10:38:46.430Z] [queueGeneration] Queuing 1 keys: toy_robot (hasCallback=true)
+[2026-04-21T10:38:46.615Z] [resolveImageKeys] Resolved "markers" → __SYMBOL__:cc7a29ca-4e0f-49cd-8f35-83ebf9657b4c
+[2026-04-21T10:38:46.618Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-04-21T10:38:46.944Z] [processQueue] Generating "toy_robot"...
+[2026-04-21T10:39:06.627Z] [COST] imageKey="toy_robot" | refinement: gemini/gemini-2.5-flash in=727 out=88 | image: openai/gpt-image-1 in=94 out=272
+[2026-04-21T10:39:06.628Z] [processQueue] Generated "toy_robot" → 0f9393ba-e714-43e0-9adb-f77874f87d20 (1 total)
+[2026-04-21T10:39:06.631Z] [processQueue] FULL REFINED PROMPT for "toy_robot": A simple, bold illustration of a toy robot, centered on a transparent background. The robot is depicted from the front, with a square head, two round eyes, a small rectangular mouth, a rectangular body, and two cylindrical arms and legs. It has a single antenna on its head. The robot is colored with flat, solid grey for the body, red for the eyes, and blue for the antenna, all outlined in thick black.
+[2026-04-21T10:39:34.999Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T10:39:35.000Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T10:39:53.570Z] [resolveImageKeys] Resolving 8 keys: help, person_with_head_bandage, toilet, plate_with_cutlery, glass_of_water, thermometer, person_on_phone, check_mark (format=internal, useUnapproved=true)
+[2026-04-21T10:39:55.164Z] [resolveImageKeys] Resolved "help" → __SYMBOL__:f472ec49-d78c-4551-8a35-dc2a4456e8ab
+[2026-04-21T10:39:57.300Z] [resolveImageKeys] No symbol found for "person_with_head_bandage"
+[2026-04-21T10:39:59.415Z] [resolveImageKeys] Resolved "toilet" → __SYMBOL__:f1d5b02e-3135-496f-9db1-802ec9b5d127
+[2026-04-21T10:40:01.701Z] [resolveImageKeys] No symbol found for "plate_with_cutlery"
+[2026-04-21T10:40:02.380Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T10:40:02.381Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T10:40:03.913Z] [resolveImageKeys] No symbol found for "glass_of_water"
+[2026-04-21T10:40:04.920Z] [resolveImageKeys] No symbol found for "thermometer"
+[2026-04-21T10:40:05.851Z] [resolveImageKeys] No symbol found for "person_on_phone"
+[2026-04-21T10:40:06.947Z] [resolveImageKeys] Resolved "check_mark" → __SYMBOL__:bd8bf1f6-a3c7-4a1c-a57c-3ed2744ae67e
+[2026-04-21T10:40:06.949Z] [resolveImageKeys] Done. Resolved 3, unresolved 5: person_with_head_bandage, plate_with_cutlery, glass_of_water, thermometer, person_on_phone
+[2026-04-21T10:40:06.951Z] [queueGeneration] Queuing 5 keys: person_with_head_bandage, plate_with_cutlery, glass_of_water, thermometer, person_on_phone (hasCallback=true)
+[2026-04-21T10:40:08.108Z] [processQueue] Generating "person_on_phone"...
+[2026-04-21T10:40:12.878Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T10:40:12.880Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T10:40:18.712Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T10:40:18.714Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T10:42:33.694Z] [resolveImageKeys] Resolving 5 keys: child_with_backpack, lightbulb, planet_with_rings, school_building, baseball_cap (format=internal, useUnapproved=true)
+[2026-04-21T10:42:35.342Z] [resolveImageKeys] No symbol found for "child_with_backpack"
+[2026-04-21T10:42:35.580Z] [resolveImageKeys] Resolved "lightbulb" → __SYMBOL__:4383ae00-bf8a-4c39-9641-77e6623befd6
+[2026-04-21T10:42:35.796Z] [resolveImageKeys] Resolved "planet_with_rings" → __SYMBOL__:6c11df68-d21c-4cad-8800-cc1d4ecfbf7d
+[2026-04-21T10:42:36.002Z] [resolveImageKeys] Resolved "school_building" → __SYMBOL__:31f589aa-1c22-4a4f-a23d-5ebbc9bec3cb
+[2026-04-21T10:42:36.173Z] [resolveImageKeys] No symbol found for "baseball_cap"
+[2026-04-21T10:42:36.174Z] [resolveImageKeys] Done. Resolved 3, unresolved 2: child_with_backpack, baseball_cap
+[2026-04-21T10:42:36.176Z] [queueGeneration] Queuing 2 keys: child_with_backpack, baseball_cap (hasCallback=true)
+[2026-04-21T10:42:36.348Z] [processQueue] Generating "baseball_cap"...
+[2026-04-21T10:42:49.185Z] [resolveImageKeys] Resolving 4 keys: person_yawning, person_hiding_face, person_eating, person_drinking_water (format=internal, useUnapproved=true)
+[2026-04-21T10:42:49.358Z] [resolveImageKeys] Resolved "person_yawning" → __SYMBOL__:a49afb33-4de1-4728-b67d-c4b287b2ef8a
+[2026-04-21T10:42:49.522Z] [resolveImageKeys] Resolved "person_hiding_face" → __SYMBOL__:ea0c9e52-4a07-4c18-9385-c6d71cd37333
+[2026-04-21T10:42:49.686Z] [resolveImageKeys] Resolved "person_eating" → __SYMBOL__:28a2d75a-3d43-450b-9666-81f802ca68a4
+[2026-04-21T10:42:49.851Z] [resolveImageKeys] Resolved "person_drinking_water" → __SYMBOL__:bfc41dba-fab1-4dd4-bf05-b9f89e6a531a
+[2026-04-21T10:42:49.852Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-04-21T10:42:58.314Z] [COST] imageKey="baseball_cap" | refinement: gemini/gemini-2.5-flash in=727 out=90 | image: openai/gpt-image-1 in=95 out=272
+[2026-04-21T10:42:58.315Z] [processQueue] Generated "baseball_cap" → 67dee614-2a61-4a19-8319-f3a266882ee1 (1 total)
+[2026-04-21T10:42:58.318Z] [processQueue] FULL REFINED PROMPT for "baseball_cap": A simple, bold illustration of a baseball cap, shown from a slightly angled front view. The cap has a rounded crown and a stiff brim extending forward. It is rendered in flat, solid colors: a dark blue for the main cap and a lighter blue for the brim, with a white circular logo on the front. All shapes have thick black outlines. The cap is centered on a transparent background, filling about 75% of the canvas.
+[2026-04-21T10:43:03.844Z] [processQueue] Generating "child_with_backpack"...
+[2026-04-21T10:43:12.007Z] [resolveImageKeys] Resolving 4 keys: person_in_bed, person_shushing, lightbulb, planet_with_rings (format=internal, useUnapproved=true)
+[2026-04-21T10:43:12.176Z] [resolveImageKeys] Resolved "person_in_bed" → __SYMBOL__:035ee71c-4b21-46d7-a681-71e26ddce82a
+[2026-04-21T10:43:12.348Z] [resolveImageKeys] No symbol found for "person_shushing"
+[2026-04-21T10:43:12.519Z] [resolveImageKeys] Resolved "lightbulb" → __SYMBOL__:4383ae00-bf8a-4c39-9641-77e6623befd6
+[2026-04-21T10:43:12.690Z] [resolveImageKeys] Resolved "planet_with_rings" → __SYMBOL__:6c11df68-d21c-4cad-8800-cc1d4ecfbf7d
+[2026-04-21T10:43:12.691Z] [resolveImageKeys] Done. Resolved 3, unresolved 1: person_shushing
+[2026-04-21T10:43:12.693Z] [queueGeneration] Queuing 1 keys: person_shushing (hasCallback=true)
+[2026-04-21T10:43:25.098Z] [COST] imageKey="child_with_backpack" | refinement: gemini/gemini-2.5-flash in=728 out=99 | image: openai/gpt-image-1 in=106 out=272
+[2026-04-21T10:43:25.100Z] [processQueue] Generated "child_with_backpack" → cf33b166-4145-46b1-b6cc-6fc9702b6b72 (2 total)
+[2026-04-21T10:43:25.102Z] [processQueue] FULL REFINED PROMPT for "child_with_backpack": A simple, bold AAC symbol icon of a generic child figure, facing forward, wearing a backpack. The child has a slightly stylized body with a larger head, simple dots for eyes, and a small curve for a mouth. The child has no hair. The backpack is clearly visible on their back, depicted from a slightly angled view to show its straps and main compartment. The illustration uses flat, solid colors with bold black outlines, no gradients or shadows, and is centered on a transparent background.
+[2026-04-21T10:43:31.877Z] [processQueue] Generating "person_shushing"...
+[2026-04-21T10:43:37.973Z] [resolveImageKeys] Resolving 3 keys: solar_system, astronaut_in_suit, lightbulb (format=internal, useUnapproved=true)
+[2026-04-21T10:43:38.148Z] [resolveImageKeys] Resolved "solar_system" → __SYMBOL__:2298cfa9-2bd2-4047-aad2-63b4413da589
+[2026-04-21T10:43:38.322Z] [resolveImageKeys] No symbol found for "astronaut_in_suit"
+[2026-04-21T10:43:38.490Z] [resolveImageKeys] Resolved "lightbulb" → __SYMBOL__:4383ae00-bf8a-4c39-9641-77e6623befd6
+[2026-04-21T10:43:38.491Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: astronaut_in_suit
+[2026-04-21T10:43:38.492Z] [queueGeneration] Queuing 1 keys: astronaut_in_suit (hasCallback=true)
+[2026-04-21T10:43:55.047Z] [COST] imageKey="person_shushing" | refinement: gemini/gemini-2.5-flash in=728 out=83 | image: openai/gpt-image-1 in=89 out=272
+[2026-04-21T10:43:55.048Z] [processQueue] Generated "person_shushing" → b23e6b5d-f462-48b4-ba9a-22b3f9f1a6df (3 total)
+[2026-04-21T10:43:55.050Z] [processQueue] FULL REFINED PROMPT for "person_shushing": A simple, bold AAC symbol illustration of a generic human figure from the chest up, facing forward. The figure has a round head, simple dot eyes, and a small curved mouth. One hand is raised with the index finger vertically pressed against the lips, indicating a "shush" gesture. The figure has no hair. The illustration uses flat, solid colors with thick black outlines, rendered on a transparent background.
+[2026-04-21T10:43:58.926Z] [resolveImageKeys] Resolving 4 keys: rocket_launch, big_elephant, running_cheetah, child_drawing_rocket (format=internal, useUnapproved=true)
+[2026-04-21T10:44:04.647Z] [resolveImageKeys] Resolved "rocket_launch" → __SYMBOL__:e57f331d-d5ca-4e41-8d4b-48b52456f6f2
+[2026-04-21T10:44:04.854Z] [processQueue] Generating "astronaut_in_suit"...
+[2026-04-21T10:44:10.809Z] [resolveImageKeys] No symbol found for "big_elephant"
+[2026-04-21T10:44:14.012Z] [resolveImageKeys] Resolving 1 keys: toy_rocket (format=internal, useUnapproved=true)
+[2026-04-21T10:44:15.261Z] [resolveImageKeys] No symbol found for "running_cheetah"
+[2026-04-21T10:44:18.435Z] [resolveImageKeys] No symbol found for "toy_rocket"
+[2026-04-21T10:44:18.442Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: toy_rocket
+[2026-04-21T10:44:18.447Z] [queueGeneration] Queuing 1 keys: toy_rocket (hasCallback=true)
+[2026-04-21T10:44:19.900Z] [resolveImageKeys] No symbol found for "child_drawing_rocket"
+[2026-04-21T10:44:19.917Z] [resolveImageKeys] Done. Resolved 1, unresolved 3: big_elephant, running_cheetah, child_drawing_rocket
+[2026-04-21T10:44:19.939Z] [queueGeneration] Queuing 3 keys: big_elephant, running_cheetah, child_drawing_rocket (hasCallback=true)
+[2026-04-21T10:44:25.652Z] [COST] imageKey="astronaut_in_suit" | refinement: gemini/gemini-2.5-flash in=728 out=67 | image: openai/gpt-image-1 in=73 out=272
+[2026-04-21T10:44:25.652Z] [processQueue] Generated "astronaut_in_suit" → 4d5710d8-a14c-4eb7-b84a-d3ced8226c27 (4 total)
+[2026-04-21T10:44:25.653Z] [processQueue] FULL REFINED PROMPT for "astronaut_in_suit": A simple, bold illustration of an astronaut in a full white spacesuit with a clear helmet visor, facing forward. The spacesuit has a few minimal details like a backpack and control panel on the chest, rendered in light gray and blue. The figure is centered on a transparent background, with thick black outlines and flat, solid colors.
+[2026-04-21T10:44:29.824Z] [processQueue] Generating "child_drawing_rocket"...
+[2026-04-21T10:44:48.678Z] [COST] imageKey="child_drawing_rocket" | refinement: gemini/gemini-2.5-flash in=728 out=92 | image: openai/gpt-image-1 in=99 out=272
+[2026-04-21T10:44:48.680Z] [processQueue] Generated "child_drawing_rocket" → 119ee38b-c582-45cb-b87b-f68687814896 (5 total)
+[2026-04-21T10:44:48.682Z] [processQueue] FULL REFINED PROMPT for "child_drawing_rocket": A simple, bold AAC symbol icon of a child drawing a rocket. The child is a generic, non-gender-specific figure with a slightly oversized head, simple dot eyes, and a small curved mouth, sitting with a crayon in hand. The child is drawing a simple, stylized rocket on a piece of paper in front of them. The illustration uses flat, solid colors with bold black outlines, suitable for instant recognition at small sizes on a transparent background.
+[2026-04-21T10:44:52.863Z] [processQueue] Generating "running_cheetah"...
+[2026-04-21T10:45:12.502Z] [COST] imageKey="running_cheetah" | refinement: gemini/gemini-2.5-flash in=727 out=85 | image: openai/gpt-image-1 in=95 out=272
+[2026-04-21T10:45:12.506Z] [processQueue] Generated "running_cheetah" → c2195319-04e2-4e85-a64d-5d7ce304266e (6 total)
+[2026-04-21T10:45:12.520Z] [processQueue] FULL REFINED PROMPT for "running_cheetah": A simple, bold illustration of a cheetah running at full speed, depicted in profile. The cheetah has a yellow body with black spots, a white belly, and a black stripe from its eye to its mouth. Its legs are extended, showing a mid-stride motion, with simple black motion lines behind its back legs to indicate speed. The illustration uses flat, solid colors with thick black outlines, suitable for an AAC symbol.
+[2026-04-21T10:45:15.980Z] [resolveImageKeys] Resolving 1 keys: person_yawning (format=internal, useUnapproved=true)
+[2026-04-21T10:45:18.595Z] [resolveImageKeys] Resolved "person_yawning" → __SYMBOL__:a49afb33-4de1-4728-b67d-c4b287b2ef8a
+[2026-04-21T10:45:18.596Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-04-21T10:45:18.930Z] [processQueue] Generating "big_elephant"...
+[2026-04-21T10:45:23.833Z] [resolveImageKeys] Resolving 3 keys: rocket, person_yawning, person_eating (format=internal, useUnapproved=true)
+[2026-04-21T10:45:30.089Z] [resolveImageKeys] Resolved "rocket" → __SYMBOL__:641ea22d-af42-4070-96e7-7eafc7a3639c
+[2026-04-21T10:45:35.018Z] [resolveImageKeys] Resolved "person_yawning" → __SYMBOL__:a49afb33-4de1-4728-b67d-c4b287b2ef8a
+[2026-04-21T10:45:38.331Z] [resolveImageKeys] Resolved "person_eating" → __SYMBOL__:28a2d75a-3d43-450b-9666-81f802ca68a4
+[2026-04-21T10:45:38.332Z] [resolveImageKeys] Done. Resolved 3, unresolved 0: 
+[2026-04-21T10:45:40.673Z] [COST] imageKey="big_elephant" | refinement: gemini/gemini-2.5-flash in=727 out=82 | image: openai/gpt-image-1 in=87 out=272
+[2026-04-21T10:45:40.674Z] [processQueue] Generated "big_elephant" → 092843d2-cdb2-4488-a0be-681660039579 (7 total)
+[2026-04-21T10:45:40.676Z] [processQueue] FULL REFINED PROMPT for "big_elephant": A simple, bold illustration of a large elephant, facing left, with its trunk curled upwards slightly and its ears fanned out. The elephant is depicted with a thick black outline, filled with a solid grey color, and its tusks are a solid off-white. The eye is a simple black dot. The image is centered on a transparent background, with minimal detail, suitable for an AAC communication board.
+[2026-04-21T10:45:44.925Z] [processQueue] Generating "toy_rocket"...
+[2026-04-21T10:45:46.141Z] [resolveImageKeys] Resolving 1 keys: open_book (format=internal, useUnapproved=true)
+[2026-04-21T10:45:46.319Z] [resolveImageKeys] Resolved "open_book" → __SYMBOL__:d9cf315a-494b-4f1b-b0f5-b3ed2f441ead
+[2026-04-21T10:45:46.323Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-04-21T10:46:03.428Z] [COST] imageKey="toy_rocket" | refinement: gemini/gemini-2.5-flash in=727 out=80 | image: openai/gpt-image-1 in=86 out=272
+[2026-04-21T10:46:03.429Z] [processQueue] Generated "toy_rocket" → ecfdbd7c-f4dc-4275-b553-cc59662f1b04 (8 total)
+[2026-04-21T10:46:03.431Z] [processQueue] FULL REFINED PROMPT for "toy_rocket": A simple, bold illustration of a toy rocket, centered on a transparent background. The rocket is shown from a slightly angled side view, pointing upwards, with a red cone nose, a white cylindrical body, and two blue fins at the base. A small yellow flame shape extends from the bottom of the rocket to indicate launch. All shapes have thick black outlines and are filled with flat, solid colors.
+[2026-04-21T11:20:38.418Z] [resolveImageKeys] Resolving 4 keys: person_drawing, music_keyboard, rocket_launch, lightbulb (format=internal, useUnapproved=true)
+[2026-04-21T11:20:41.143Z] [resolveImageKeys] Resolved "person_drawing" → __SYMBOL__:34daf2be-4599-4e1c-bde0-5e35a2b5632b
+[2026-04-21T11:20:45.642Z] [resolveImageKeys] No symbol found for "music_keyboard"
+[2026-04-21T11:20:49.638Z] [resolveImageKeys] Resolved "rocket_launch" → __SYMBOL__:e57f331d-d5ca-4e41-8d4b-48b52456f6f2
+[2026-04-21T11:20:52.150Z] [resolveImageKeys] Resolving 3 keys: test_tube, computer_coding, tractor (format=internal, useUnapproved=true)
+[2026-04-21T11:20:52.667Z] [resolveImageKeys] Resolved "lightbulb" → __SYMBOL__:4383ae00-bf8a-4c39-9641-77e6623befd6
+[2026-04-21T11:20:52.668Z] [resolveImageKeys] Done. Resolved 3, unresolved 1: music_keyboard
+[2026-04-21T11:20:52.670Z] [queueGeneration] Queuing 1 keys: music_keyboard (hasCallback=true)
+[2026-04-21T11:20:54.921Z] [resolveImageKeys] Resolved "test_tube" → __SYMBOL__:419854ec-1c79-4cb8-9c15-354e231fcb2e
+[2026-04-21T11:20:55.456Z] [processQueue] Generating "music_keyboard"...
+[2026-04-21T11:20:57.607Z] [resolveImageKeys] Resolved "computer_coding" → __SYMBOL__:12badd18-d811-4c8a-858e-c99f86e5d50a
+[2026-04-21T11:21:00.620Z] [resolveImageKeys] No symbol found for "tractor"
+[2026-04-21T11:21:00.622Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: tractor
+[2026-04-21T11:21:00.623Z] [queueGeneration] Queuing 1 keys: tractor (hasCallback=true)
+[2026-04-21T11:21:01.106Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T11:21:01.108Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T11:21:20.745Z] [COST] imageKey="music_keyboard" | refinement: gemini/gemini-2.5-flash in=727 out=101 | image: openai/gpt-image-1 in=106 out=272
+[2026-04-21T11:21:20.747Z] [processQueue] Generated "music_keyboard" → 2822cbc6-05ad-490d-be41-9cafcdbc937e (1 total)
+[2026-04-21T11:21:20.749Z] [processQueue] FULL REFINED PROMPT for "music_keyboard": A simple, bold illustration of a music keyboard, viewed from a slightly elevated front angle. The keyboard has a flat, rectangular shape with distinct black and white keys. The keys are arranged in the standard pattern, with groups of two and three black keys clearly visible against the white keys. The illustration uses a limited palette of black and white for the keys and a dark gray for the keyboard body, all with thick black outlines. The keyboard is centered and fills approximately 75% of the square canvas.
+[2026-04-21T11:21:26.790Z] [processQueue] Generating "tractor"...
+[2026-04-21T11:21:47.054Z] [COST] imageKey="tractor" | refinement: gemini/gemini-2.5-flash in=726 out=101 | image: openai/gpt-image-1 in=107 out=272
+[2026-04-21T11:21:47.055Z] [processQueue] Generated "tractor" → bc8f7bb3-5eb7-44fa-9c1e-9468e13f3c21 (2 total)
+[2026-04-21T11:21:47.057Z] [processQueue] FULL REFINED PROMPT for "tractor": A simple, bold illustration of a red tractor, viewed from a slightly angled side perspective to clearly show the large rear wheels and smaller front wheels. The tractor has a simple cabin with a small window, a front grille, and a visible exhaust pipe. All shapes have bold black outlines and are filled with flat, solid colors, primarily red for the body, black for the tires, and a touch of gray for mechanical details. The tractor is centered on a transparent background, instantly recognizable as an AAC symbol.
+[2026-04-21T11:42:14.095Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T11:42:14.097Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T11:42:26.294Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T11:42:26.295Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T11:42:26.401Z] [resolveImageKeys] Resolving 1 keys: rocket (format=internal, useUnapproved=true)
+[2026-04-21T11:42:26.501Z] [resolveImageKeys] Resolving 1 keys: drawing_tools (format=internal, useUnapproved=true)
+[2026-04-21T11:42:26.665Z] [resolveImageKeys] Resolving 1 keys: music_keyboard (format=internal, useUnapproved=true)
+[2026-04-21T11:42:27.645Z] [resolveImageKeys] Resolved "rocket" → __SYMBOL__:641ea22d-af42-4070-96e7-7eafc7a3639c
+[2026-04-21T11:42:27.647Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-04-21T11:42:27.826Z] [resolveImageKeys] No symbol found for "drawing_tools"
+[2026-04-21T11:42:27.828Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: drawing_tools
+[2026-04-21T11:42:27.830Z] [queueGeneration] Queuing 1 keys: drawing_tools (hasCallback=true)
+[2026-04-21T11:42:28.128Z] [resolveImageKeys] Resolved "music_keyboard" → __SYMBOL__:2822cbc6-05ad-490d-be41-9cafcdbc937e
+[2026-04-21T11:42:28.129Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-04-21T11:42:29.030Z] [processQueue] Generating "drawing_tools"...
+[2026-04-21T11:42:29.285Z] [resolveImageKeys] Resolving 6 keys: rocket, planet_with_rings, moon, crayons, check_mark, person_yawning (format=internal, useUnapproved=true)
+[2026-04-21T11:42:30.035Z] [resolveImageKeys] Resolved "rocket" → __SYMBOL__:641ea22d-af42-4070-96e7-7eafc7a3639c
+[2026-04-21T11:42:30.573Z] [resolveImageKeys] Resolved "planet_with_rings" → __SYMBOL__:6c11df68-d21c-4cad-8800-cc1d4ecfbf7d
+[2026-04-21T11:42:30.876Z] [resolveImageKeys] Resolved "moon" → __SYMBOL__:b37ec4ff-f50b-4e00-97c8-25d0f0e24f6d
+[2026-04-21T11:42:31.227Z] [resolveImageKeys] Resolved "crayons" → __SYMBOL__:197ac6dd-379d-4fc3-8e96-51593f9b4604
+[2026-04-21T11:42:31.747Z] [resolveImageKeys] Resolved "check_mark" → __SYMBOL__:bd8bf1f6-a3c7-4a1c-a57c-3ed2744ae67e
+[2026-04-21T11:42:32.452Z] [resolveImageKeys] Resolving 8 keys: red_circle, blue_circle, yellow_circle, green_circle, rocket, sparkles, check_mark, person_yawning (format=internal, useUnapproved=true)
+[2026-04-21T11:42:33.031Z] [resolveImageKeys] Resolved "person_yawning" → __SYMBOL__:a49afb33-4de1-4728-b67d-c4b287b2ef8a
+[2026-04-21T11:42:33.033Z] [resolveImageKeys] Done. Resolved 6, unresolved 0: 
+[2026-04-21T11:42:34.208Z] [resolveImageKeys] Resolved "red_circle" → __SYMBOL__:8e127124-bcdb-4339-871e-f19e43a73de1
+[2026-04-21T11:42:36.061Z] [resolveImageKeys] Resolved "blue_circle" → __SYMBOL__:428c3c7b-5520-4889-9bad-81796ac12c94
+[2026-04-21T11:42:37.972Z] [resolveImageKeys] Resolved "yellow_circle" → __SYMBOL__:b984057e-9f6d-478e-88cc-8c8af06605b9
+[2026-04-21T11:42:39.627Z] [resolveImageKeys] Resolved "green_circle" → __SYMBOL__:f2f1ac04-0010-43b6-84a9-c16345832585
+[2026-04-21T11:42:41.140Z] [resolveImageKeys] Resolving 5 keys: rocket, paw_prints, drawing_tools, bubbles, person_yawning (format=internal, useUnapproved=true)
+[2026-04-21T11:42:41.809Z] [resolveImageKeys] Resolved "rocket" → __SYMBOL__:641ea22d-af42-4070-96e7-7eafc7a3639c
+[2026-04-21T11:42:44.283Z] [resolveImageKeys] Resolved "rocket" → __SYMBOL__:641ea22d-af42-4070-96e7-7eafc7a3639c
+[2026-04-21T11:42:45.134Z] [resolveImageKeys] Resolved "sparkles" → __SYMBOL__:4e97de13-fd83-4c96-8c4b-200cb6995e8d
+[2026-04-21T11:42:47.775Z] [resolveImageKeys] Resolved "paw_prints" → __SYMBOL__:ea1fee48-4c8b-42bb-8225-7704522d91ed
+[2026-04-21T11:42:48.710Z] [resolveImageKeys] Resolved "check_mark" → __SYMBOL__:bd8bf1f6-a3c7-4a1c-a57c-3ed2744ae67e
+[2026-04-21T11:42:51.551Z] [resolveImageKeys] No symbol found for "drawing_tools"
+[2026-04-21T11:42:52.573Z] [resolveImageKeys] Resolved "person_yawning" → __SYMBOL__:a49afb33-4de1-4728-b67d-c4b287b2ef8a
+[2026-04-21T11:42:52.575Z] [resolveImageKeys] Done. Resolved 8, unresolved 0: 
+[2026-04-21T11:42:54.600Z] [COST] imageKey="drawing_tools" | refinement: gemini/gemini-2.5-flash in=727 out=89 | image: openai/gpt-image-1 in=98 out=272
+[2026-04-21T11:42:54.603Z] [processQueue] Generated "drawing_tools" → c68fbab0-a7ca-4673-9787-4731b79ff7ba (1 total)
+[2026-04-21T11:42:54.605Z] [processQueue] FULL REFINED PROMPT for "drawing_tools": A simple, bold illustration of a set of drawing tools, centered on a transparent background. The tools include a yellow pencil with a pink eraser, a blue crayon, and a red paintbrush with a black handle, all arranged slightly fanned out. Each tool has a thick black outline and is filled with a single, flat, solid color. The icon is instantly recognizable at small sizes, with minimal detail and no gradients, shadows, or text.
+[2026-04-21T11:56:44.427Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T11:56:44.432Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T11:57:05.524Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T11:57:05.526Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T11:57:15.952Z] [resolveImageKeys] Resolving 3 keys: child_playing_with_toy_rocket, child_drawing_rocket, child_reading_book_about_rockets (format=internal, useUnapproved=true)
+[2026-04-21T11:57:16.117Z] [resolveImageKeys] No symbol found for "child_playing_with_toy_rocket"
+[2026-04-21T11:57:16.285Z] [resolveImageKeys] Resolved "child_drawing_rocket" → __SYMBOL__:119ee38b-c582-45cb-b87b-f68687814896
+[2026-04-21T11:57:16.452Z] [resolveImageKeys] No symbol found for "child_reading_book_about_rockets"
+[2026-04-21T11:57:16.454Z] [resolveImageKeys] Done. Resolved 1, unresolved 2: child_playing_with_toy_rocket, child_reading_book_about_rockets
+[2026-04-21T11:57:16.456Z] [queueGeneration] Queuing 2 keys: child_playing_with_toy_rocket, child_reading_book_about_rockets (hasCallback=true)
+[2026-04-21T11:57:16.626Z] [processQueue] Generating "child_reading_book_about_rockets"...
+[2026-04-21T11:57:37.382Z] [COST] imageKey="child_reading_book_about_rockets" | refinement: gemini/gemini-2.5-flash in=730 out=98 | image: openai/gpt-image-1 in=103 out=272
+[2026-04-21T11:57:37.384Z] [processQueue] Generated "child_reading_book_about_rockets" → 1ce98db0-2136-4d59-922f-03e2ac81a0fb (1 total)
+[2026-04-21T11:57:37.387Z] [processQueue] FULL REFINED PROMPT for "child_reading_book_about_rockets": A simple, bold AAC symbol icon of a child reading a book about rockets. The child is a generic, non-gender-specific figure with a slightly oversized head, simple dot eyes, and a small curved mouth, sitting and holding an open book. The book has a simple illustration of a rocket on one page. The icon uses a limited palette of 3-5 saturated, flat colors with bold black outlines, rendered on a transparent background, suitable for instant recognition at small sizes.
+[2026-04-21T11:57:41.567Z] [processQueue] Generating "child_playing_with_toy_rocket"...
+[2026-04-21T11:57:42.958Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T11:57:42.960Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T11:58:02.802Z] [COST] imageKey="child_playing_with_toy_rocket" | refinement: gemini/gemini-2.5-flash in=730 out=121 | image: openai/gpt-image-1 in=127 out=272
+[2026-04-21T11:58:02.805Z] [processQueue] Generated "child_playing_with_toy_rocket" → b70f678d-21de-47bd-a570-c5f1dcbcbb9d (2 total)
+[2026-04-21T11:58:02.808Z] [processQueue] FULL REFINED PROMPT for "child_playing_with_toy_rocket": A simple, bold AAC symbol icon of a child playing with a toy rocket. The child is a generic, non-gender-specific figure with a slightly oversized head, simple dot eyes, and a small curved mouth, wearing a plain blue shirt and red pants. The child is kneeling or sitting on the ground, holding a red and white toy rocket with a pointed nose cone and fins, looking up at it with a happy expression. The rocket is held slightly in front of the child. The illustration features thick black outlines, flat, solid colors, and no gradients or shadows, on a transparent background.
+[2026-04-21T11:58:04.650Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T11:58:04.651Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T11:58:04.833Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T11:58:04.834Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T11:58:24.849Z] [resolveImageKeys] Resolving 6 keys: rocket_launch, person_drawing, person_playing_piano, person_learning, robot_toy, person_playing_video_game (format=internal, useUnapproved=true)
+[2026-04-21T11:58:25.007Z] [resolveImageKeys] Resolved "rocket_launch" → __SYMBOL__:e57f331d-d5ca-4e41-8d4b-48b52456f6f2
+[2026-04-21T11:58:25.166Z] [resolveImageKeys] Resolved "person_drawing" → __SYMBOL__:34daf2be-4599-4e1c-bde0-5e35a2b5632b
+[2026-04-21T11:58:25.324Z] [resolveImageKeys] No symbol found for "person_playing_piano"
+[2026-04-21T11:58:25.482Z] [resolveImageKeys] No symbol found for "person_learning"
+[2026-04-21T11:58:25.640Z] [resolveImageKeys] Resolved "robot_toy" → __SYMBOL__:7c77dfde-9d45-4ccd-a5a1-81577acd903b
+[2026-04-21T11:58:25.799Z] [resolveImageKeys] Resolved "person_playing_video_game" → __SYMBOL__:c855796e-aed0-4b76-8da4-2894806b9c8f
+[2026-04-21T11:58:25.801Z] [resolveImageKeys] Done. Resolved 4, unresolved 2: person_playing_piano, person_learning
+[2026-04-21T11:58:25.803Z] [queueGeneration] Queuing 2 keys: person_playing_piano, person_learning (hasCallback=true)
+[2026-04-21T11:58:25.963Z] [processQueue] Generating "person_learning"...
+[2026-04-21T11:58:33.306Z] [resolveImageKeys] Resolving 4 keys: rocket_launch, planet_ring, full_moon, astronaut_in_suit (format=internal, useUnapproved=true)
+[2026-04-21T11:58:33.463Z] [resolveImageKeys] Resolved "rocket_launch" → __SYMBOL__:e57f331d-d5ca-4e41-8d4b-48b52456f6f2
+[2026-04-21T11:58:33.490Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T11:58:33.491Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T11:58:33.626Z] [resolveImageKeys] Resolved "planet_ring" → __SYMBOL__:199fbeb7-3997-498c-b03a-38a32ada212c
+[2026-04-21T11:58:33.788Z] [resolveImageKeys] Resolved "full_moon" → __SYMBOL__:fca76997-a201-4823-a98a-92cb8146768e
+[2026-04-21T11:58:33.948Z] [resolveImageKeys] Resolved "astronaut_in_suit" → __SYMBOL__:4d5710d8-a14c-4eb7-b84a-d3ced8226c27
+[2026-04-21T11:58:33.949Z] [resolveImageKeys] Done. Resolved 4, unresolved 0: 
+[2026-04-21T11:58:42.797Z] [COST] imageKey="person_learning" | refinement: gemini/gemini-2.5-flash in=727 out=89 | image: openai/gpt-image-1 in=95 out=272
+[2026-04-21T11:58:42.799Z] [processQueue] Generated "person_learning" → f7280942-1ebc-4059-8bda-e636eab92f62 (1 total)
+[2026-04-21T11:58:42.801Z] [processQueue] FULL REFINED PROMPT for "person_learning": A simple, bold AAC symbol icon of a generic human figure with a slightly oversized head, facing forward, seated at a desk with a book open in front of them. The figure has simple dot eyes and a small curved mouth, with no hair. One hand is raised slightly, pointing towards the open book, indicating engagement with the material. The illustration uses flat, solid colors with thick black outlines, suitable for instant recognition on a transparent background.
+[2026-04-21T11:58:43.794Z] [resolveImageKeys] Resolving 3 keys: video_search, person_drawing, person_playing_piano (format=internal, useUnapproved=true)
+[2026-04-21T11:58:43.955Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T11:58:43.957Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T11:58:43.964Z] [resolveImageKeys] No symbol found for "video_search"
+[2026-04-21T11:58:44.121Z] [resolveImageKeys] Resolved "person_drawing" → __SYMBOL__:34daf2be-4599-4e1c-bde0-5e35a2b5632b
+[2026-04-21T11:58:44.283Z] [resolveImageKeys] No symbol found for "person_playing_piano"
+[2026-04-21T11:58:44.284Z] [resolveImageKeys] Done. Resolved 1, unresolved 2: video_search, person_playing_piano
+[2026-04-21T11:58:44.286Z] [queueGeneration] Queuing 2 keys: video_search, person_playing_piano (hasCallback=true)
+[2026-04-21T11:58:46.979Z] [processQueue] Generating "person_playing_piano"...
+[2026-04-21T11:58:55.926Z] [resolveImageKeys] Resolving 6 keys: rocket_launch, person_drawing, person_playing_piano, person_learning, robot_toy, person_playing_video_game (format=internal, useUnapproved=true)
+[2026-04-21T11:58:56.083Z] [resolveImageKeys] Resolved "rocket_launch" → __SYMBOL__:e57f331d-d5ca-4e41-8d4b-48b52456f6f2
+[2026-04-21T11:58:56.242Z] [resolveImageKeys] Resolved "person_drawing" → __SYMBOL__:34daf2be-4599-4e1c-bde0-5e35a2b5632b
+[2026-04-21T11:58:56.403Z] [resolveImageKeys] No symbol found for "person_playing_piano"
+[2026-04-21T11:58:56.560Z] [resolveImageKeys] Resolved "person_learning" → __SYMBOL__:f7280942-1ebc-4059-8bda-e636eab92f62
+[2026-04-21T11:58:56.720Z] [resolveImageKeys] Resolved "robot_toy" → __SYMBOL__:7c77dfde-9d45-4ccd-a5a1-81577acd903b
+[2026-04-21T11:58:56.878Z] [resolveImageKeys] Resolved "person_playing_video_game" → __SYMBOL__:c855796e-aed0-4b76-8da4-2894806b9c8f
+[2026-04-21T11:58:56.880Z] [resolveImageKeys] Done. Resolved 5, unresolved 1: person_playing_piano
+[2026-04-21T11:58:56.884Z] [queueGeneration] Queuing 1 keys: person_playing_piano (hasCallback=true)
+[2026-04-21T11:59:02.816Z] [resolveImageKeys] Resolving 4 keys: person_drawing, person_playing_piano, person_playing_video_game, person_learning (format=internal, useUnapproved=true)
+[2026-04-21T11:59:02.974Z] [resolveImageKeys] Resolved "person_drawing" → __SYMBOL__:34daf2be-4599-4e1c-bde0-5e35a2b5632b
+[2026-04-21T11:59:03.131Z] [resolveImageKeys] No symbol found for "person_playing_piano"
+[2026-04-21T11:59:03.289Z] [resolveImageKeys] Resolved "person_playing_video_game" → __SYMBOL__:c855796e-aed0-4b76-8da4-2894806b9c8f
+[2026-04-21T11:59:03.454Z] [resolveImageKeys] Resolved "person_learning" → __SYMBOL__:f7280942-1ebc-4059-8bda-e636eab92f62
+[2026-04-21T11:59:03.455Z] [resolveImageKeys] Done. Resolved 3, unresolved 1: person_playing_piano
+[2026-04-21T11:59:03.456Z] [queueGeneration] Queuing 1 keys: person_playing_piano (hasCallback=true)
+[2026-04-21T11:59:06.799Z] [COST] imageKey="person_playing_piano" | refinement: gemini/gemini-2.5-flash in=728 out=81 | image: openai/gpt-image-1 in=87 out=272
+[2026-04-21T11:59:06.801Z] [processQueue] Generated "person_playing_piano" → 6c2953e4-87e6-4645-9873-d06815552cdd (2 total)
+[2026-04-21T11:59:06.804Z] [processQueue] FULL REFINED PROMPT for "person_playing_piano": A simple, bold AAC symbol icon of a generic person sitting at a piano, playing it. The person is shown from the side, with their hands clearly on the piano keys. The piano is a simple, black grand piano shape. The person has a large head, small dot eyes, and a simple curved mouth. The illustration uses flat, solid colors with bold black outlines, on a transparent background.
+[2026-04-21T11:59:10.974Z] [processQueue] "person_playing_piano" already exists → 6c2953e4-87e6-4645-9873-d06815552cdd
+[2026-04-21T11:59:15.139Z] [processQueue] "person_playing_piano" already exists → 6c2953e4-87e6-4645-9873-d06815552cdd
+[2026-04-21T11:59:19.305Z] [processQueue] "person_playing_piano" already exists → 6c2953e4-87e6-4645-9873-d06815552cdd
+[2026-04-21T11:59:23.477Z] [processQueue] Generating "video_search"...
+[2026-04-21T11:59:27.616Z] [resolveImageKeys] Resolving 2 keys: computer_code, soap_bubbles (format=internal, useUnapproved=true)
+[2026-04-21T11:59:27.831Z] [resolveImageKeys] No symbol found for "computer_code"
+[2026-04-21T11:59:28.024Z] [resolveImageKeys] Resolved "soap_bubbles" → __SYMBOL__:77d54149-ce7c-4f0d-bdc9-b941f0eb914d
+[2026-04-21T11:59:28.025Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: computer_code
+[2026-04-21T11:59:28.027Z] [queueGeneration] Queuing 1 keys: computer_code (hasCallback=true)
+[2026-04-21T11:59:41.337Z] [COST] imageKey="video_search" | refinement: gemini/gemini-2.5-flash in=727 out=88 | image: openai/gpt-image-1 in=94 out=272
+[2026-04-21T11:59:41.338Z] [processQueue] Generated "video_search" → f972b07b-8bf2-4f93-b4eb-80cd5e20216c (3 total)
+[2026-04-21T11:59:41.340Z] [processQueue] FULL REFINED PROMPT for "video_search": A simple, bold AAC symbol icon depicting a magnifying glass over a video play button. The play button is a solid red triangle pointing right, centered within a light gray square with rounded corners. The magnifying glass has a dark gray handle pointing down-right and a light gray circular frame, positioned over the top-left of the play button. The entire illustration has thick black outlines and is rendered with flat, solid colors on a transparent background.
+[2026-04-21T11:59:45.521Z] [processQueue] Generating "computer_code"...
+[2026-04-21T11:59:51.643Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T11:59:51.645Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T12:00:05.013Z] [COST] imageKey="computer_code" | refinement: gemini/gemini-2.5-flash in=727 out=94 | image: openai/gpt-image-1 in=100 out=272
+[2026-04-21T12:00:05.014Z] [processQueue] Generated "computer_code" → 19e072cf-41f0-49f4-aaff-703d16ba4d8b (4 total)
+[2026-04-21T12:00:05.015Z] [processQueue] FULL REFINED PROMPT for "computer_code": A simple, bold AAC symbol icon depicting computer code. The image features a stylized, dark gray computer monitor with a light blue screen. On the screen, two lines of white, blocky text characters are visible, representing generic code. A small, white greater-than symbol (>) is positioned at the beginning of the top line, indicating a command prompt. The monitor is centered on a transparent background with thick black outlines around all shapes and uses flat, solid colors.
+[2026-04-21T12:00:14.603Z] [resolveImageKeys] Resolving 3 keys: person_outside, person_waving, person_talking (format=internal, useUnapproved=true)
+[2026-04-21T12:00:14.763Z] [resolveImageKeys] No symbol found for "person_outside"
+[2026-04-21T12:00:14.935Z] [resolveImageKeys] Resolved "person_waving" → __SYMBOL__:52bc54b5-ad89-4100-8f55-a61a9d01450c
+[2026-04-21T12:00:15.094Z] [resolveImageKeys] Resolved "person_talking" → __SYMBOL__:71f32589-57de-4b47-8205-4a5a4918eb80
+[2026-04-21T12:00:15.096Z] [resolveImageKeys] Done. Resolved 2, unresolved 1: person_outside
+[2026-04-21T12:00:15.098Z] [queueGeneration] Queuing 1 keys: person_outside (hasCallback=true)
+[2026-04-21T12:00:15.267Z] [processQueue] Generating "person_outside"...
+[2026-04-21T12:00:22.122Z] [resolveImageKeys] Resolving 6 keys: woman, man, boy, girl, person, woman_teacher (format=internal, useUnapproved=true)
+[2026-04-21T12:00:22.283Z] [resolveImageKeys] Resolved "woman" → __SYMBOL__:a6e9f976-548f-460e-a9e4-a7955d69bb27
+[2026-04-21T12:00:22.443Z] [resolveImageKeys] Resolved "man" → __SYMBOL__:0cd555f2-4cbf-4868-b681-8d66f2893325
+[2026-04-21T12:00:22.611Z] [resolveImageKeys] No symbol found for "boy"
+[2026-04-21T12:00:22.773Z] [resolveImageKeys] Resolved "girl" → __SYMBOL__:f3c10a97-a58c-4b3b-bc4c-a85a38facf88
+[2026-04-21T12:00:22.933Z] [resolveImageKeys] Resolved "person" → __SYMBOL__:894ac537-d331-455e-8221-b1baf1e1b7e8
+[2026-04-21T12:00:23.094Z] [resolveImageKeys] Resolved "woman_teacher" → __SYMBOL__:ebe32fdd-2065-463c-bfe2-18edb482fcc7
+[2026-04-21T12:00:23.096Z] [resolveImageKeys] Done. Resolved 5, unresolved 1: boy
+[2026-04-21T12:00:23.103Z] [queueGeneration] Queuing 1 keys: boy (hasCallback=true)
+[2026-04-21T12:00:33.371Z] [resolveImageKeys] Resolving 3 keys: person_on_phone, child_playing_with_friend, person_talking (format=internal, useUnapproved=true)
+[2026-04-21T12:00:33.536Z] [resolveImageKeys] No symbol found for "person_on_phone"
+[2026-04-21T12:00:33.713Z] [resolveImageKeys] No symbol found for "child_playing_with_friend"
+[2026-04-21T12:00:33.906Z] [resolveImageKeys] Resolved "person_talking" → __SYMBOL__:71f32589-57de-4b47-8205-4a5a4918eb80
+[2026-04-21T12:00:33.907Z] [resolveImageKeys] Done. Resolved 1, unresolved 2: person_on_phone, child_playing_with_friend
+[2026-04-21T12:00:33.909Z] [queueGeneration] Queuing 2 keys: person_on_phone, child_playing_with_friend (hasCallback=true)
+[2026-04-21T12:00:34.417Z] [COST] imageKey="person_outside" | refinement: gemini/gemini-2.5-flash in=727 out=86 | image: openai/gpt-image-1 in=92 out=272
+[2026-04-21T12:00:34.418Z] [processQueue] Generated "person_outside" → 363e74ca-6212-4385-b8d7-be8117c14347 (1 total)
+[2026-04-21T12:00:34.420Z] [processQueue] FULL REFINED PROMPT for "person_outside": A simple, bold AAC symbol icon of a generic human figure standing outdoors. The figure has a large head, small dot eyes, and a small curved mouth, with no hair. The figure is wearing a simple short-sleeved shirt and pants, depicted with flat, solid colors and thick black outlines. The background is transparent, with no specific outdoor elements like trees or sun, to emphasize the general concept of being "outside."
+[2026-04-21T12:00:38.600Z] [processQueue] Generating "child_playing_with_friend"...
+[2026-04-21T12:00:47.410Z] [resolveImageKeys] Resolving 2 keys: person_on_phone, person_texting (format=internal, useUnapproved=true)
+[2026-04-21T12:00:47.587Z] [resolveImageKeys] No symbol found for "person_on_phone"
+[2026-04-21T12:00:47.751Z] [resolveImageKeys] No symbol found for "person_texting"
+[2026-04-21T12:00:47.752Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: person_on_phone, person_texting
+[2026-04-21T12:00:47.754Z] [queueGeneration] Queuing 2 keys: person_on_phone, person_texting (hasCallback=true)
+[2026-04-21T12:00:53.527Z] [resolveImageKeys] Resolving 2 keys: child_playing_with_friend, rocket_drawing (format=internal, useUnapproved=true)
+[2026-04-21T12:00:53.689Z] [resolveImageKeys] No symbol found for "child_playing_with_friend"
+[2026-04-21T12:00:53.851Z] [resolveImageKeys] No symbol found for "rocket_drawing"
+[2026-04-21T12:00:53.852Z] [resolveImageKeys] Done. Resolved 0, unresolved 2: child_playing_with_friend, rocket_drawing
+[2026-04-21T12:00:53.854Z] [queueGeneration] Queuing 2 keys: child_playing_with_friend, rocket_drawing (hasCallback=true)
+[2026-04-21T12:00:57.811Z] [COST] imageKey="child_playing_with_friend" | refinement: gemini/gemini-2.5-flash in=729 out=79 | image: openai/gpt-image-1 in=85 out=272
+[2026-04-21T12:00:57.812Z] [processQueue] Generated "child_playing_with_friend" → 49bfbbd3-a13d-45b2-9515-87a5134dcd45 (2 total)
+[2026-04-21T12:00:57.814Z] [processQueue] FULL REFINED PROMPT for "child_playing_with_friend": A simple, bold AAC symbol illustration of two generic children, facing each other and smiling, with their hands raised slightly as if interacting in play. Both children have round heads, simple dot eyes, and a small curved mouth. They wear simple, short-sleeved shirts and pants. The figures are outlined in thick black, filled with flat, solid colors, and centered on a transparent background.
+[2026-04-21T12:00:59.774Z] [resolveImageKeys] Resolving 1 keys: person_drawing (format=internal, useUnapproved=true)
+[2026-04-21T12:00:59.962Z] [resolveImageKeys] Resolved "person_drawing" → __SYMBOL__:34daf2be-4599-4e1c-bde0-5e35a2b5632b
+[2026-04-21T12:00:59.962Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 
+[2026-04-21T12:01:01.985Z] [processQueue] Generating "rocket_drawing"...
+[2026-04-21T12:01:06.388Z] [resolveImageKeys] Resolving 1 keys: message_sent (format=internal, useUnapproved=true)
+[2026-04-21T12:01:06.549Z] [resolveImageKeys] No symbol found for "message_sent"
+[2026-04-21T12:01:06.550Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: message_sent
+[2026-04-21T12:01:06.552Z] [queueGeneration] Queuing 1 keys: message_sent (hasCallback=true)
+[2026-04-21T12:01:11.290Z] [resolveImageKeys] Resolving 2 keys: message_sent, person_drawing (format=internal, useUnapproved=true)
+[2026-04-21T12:01:11.456Z] [resolveImageKeys] No symbol found for "message_sent"
+[2026-04-21T12:01:11.620Z] [resolveImageKeys] Resolved "person_drawing" → __SYMBOL__:34daf2be-4599-4e1c-bde0-5e35a2b5632b
+[2026-04-21T12:01:11.621Z] [resolveImageKeys] Done. Resolved 1, unresolved 1: message_sent
+[2026-04-21T12:01:11.622Z] [queueGeneration] Queuing 1 keys: message_sent (hasCallback=true)
+[2026-04-21T12:01:18.050Z] [COST] imageKey="rocket_drawing" | refinement: gemini/gemini-2.5-flash in=727 out=83 | image: openai/gpt-image-1 in=90 out=272
+[2026-04-21T12:01:18.053Z] [processQueue] Generated "rocket_drawing" → 3ae0748d-3f57-474a-8f74-d60eba61cc34 (3 total)
+[2026-04-21T12:01:18.054Z] [processQueue] FULL REFINED PROMPT for "rocket_drawing": A simple, bold illustration of a rocket ship, pointing upwards and slightly to the right, with a flame coming from its base. The rocket has a conical nose cone, a cylindrical body, and two triangular fins on either side of the base. The illustration uses flat, solid colors: a white body, a red nose cone and fins, and an orange flame, all with thick black outlines on a transparent background.
+[2026-04-21T12:01:22.232Z] [processQueue] Generating "message_sent"...
+[2026-04-21T13:16:10.185Z] [resolveImageKeys] Resolving 1 keys: rocket_taking_off (format=internal, useUnapproved=true)
+[2026-04-21T13:16:10.349Z] [resolveImageKeys] No symbol found for "rocket_taking_off"
+[2026-04-21T13:16:10.350Z] [resolveImageKeys] Done. Resolved 0, unresolved 1: rocket_taking_off
+[2026-04-21T13:16:10.356Z] [queueGeneration] Queuing 1 keys: rocket_taking_off (hasCallback=true)
+[2026-04-21T13:16:10.538Z] [processQueue] Generating "rocket_taking_off"...
+[2026-04-21T13:16:25.337Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T13:16:25.339Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T13:16:34.445Z] [COST] imageKey="rocket_taking_off" | refinement: gemini/gemini-2.5-flash in=728 out=102 | image: openai/gpt-image-1 in=108 out=272
+[2026-04-21T13:16:34.449Z] [processQueue] Generated "rocket_taking_off" → de3f69f3-a0c7-41b9-82ba-35b032bba232 (1 total)
+[2026-04-21T13:16:34.452Z] [processQueue] FULL REFINED PROMPT for "rocket_taking_off": A simple, bold illustration of a rocket taking off, centered on a transparent background. The rocket is depicted from the side, angled slightly upwards, with a cone nose, cylindrical body, and fins at the base. Bright orange and yellow flames with simple upward motion lines emanate from the bottom of the rocket, indicating propulsion. The rocket itself is white with a red tip and blue fins, outlined in thick black. The style is flat, solid colors with no gradients or shadows, instantly recognizable at small sizes.
+[2026-04-21T13:16:58.076Z] [resolveImageKeys] Resolving 0 keys:  (format=internal, useUnapproved=true)
+[2026-04-21T13:16:58.077Z] [resolveImageKeys] Done. Resolved 0, unresolved 0: 
+[2026-04-21T13:17:20.885Z] [resolveImageKeys] Resolving 1 keys: rocket_taking_off (format=internal, useUnapproved=true)
+[2026-04-21T13:17:21.048Z] [resolveImageKeys] Resolved "rocket_taking_off" → __SYMBOL__:de3f69f3-a0c7-41b9-82ba-35b032bba232
+[2026-04-21T13:17:21.050Z] [resolveImageKeys] Done. Resolved 1, unresolved 0: 

@@ -267,6 +267,10 @@ export class LiveRelay {
   private initialConnectionDone = false;
   private pendingGreeting: { prompt: string; frame?: string } | null = null;
   private hasGreeted = false;
+  // Defer the initial set_board(home) send to the client until the model is
+  // actually ready (onReady fires). Otherwise the home board buttons appear
+  // before the model can handle them and clicks get dropped or queued.
+  private pendingHomeBoardSend = false;
 
   // Turn accumulation
   private turnAccum: TurnToolAccumulator = createEmptyAccumulator();
@@ -414,6 +418,17 @@ export class LiveRelay {
     this.handleClientMessage(next);
   }
 
+  // Client-initiated interrupt is implemented at the provider level: when the
+  // relay state is non-idle, handleButtonPress / board_exit dispatches via
+  // `provider.sendMessage(..., { interrupt: true })`, which routes through
+  // `sendClientContent` (the documented interrupt mechanism on Live API).
+  // Gemini stops the in-flight turn, sends `interrupted=true`, and our
+  // existing `onInterrupted` → `handleInterrupted` cleans up state, audio
+  // buffer, and tells the client to stop playback. We do NOT pre-emptively
+  // mutate server state — letting the model gracefully process the interrupt
+  // avoids confusing it (e.g. unloading the board while tokens are still
+  // streaming).
+
   // -------------------------------------------------------------------------
   // Provider callbacks
   // -------------------------------------------------------------------------
@@ -519,16 +534,37 @@ export class LiveRelay {
           logLiveSession("ON_READY (initial)", `Sending greeting prompt, timestamp=${Date.now()}`);
           this.send({ type: "initialized", sessionId: this.sessionCache?.state?.sessionId || "" });
           this.sendSessionSnapshot();
+          // Now that the model is connected and ready, send the home board.
+          // The set_board for home was deferred during handleInitialize so the
+          // user wouldn't see clickable buttons before the model could handle them.
+          this.flushPendingHomeBoardSend();
 
           if (this.pendingGreeting && this.provider) {
             this.setState("awaiting_turn");
             logLiveSession("GREETING PROMPT", this.pendingGreeting.prompt);
+            const greetingPrompt = this.pendingGreeting.prompt;
             if (this.pendingGreeting.frame) {
-              this.provider.sendFrameWithPrompt(this.pendingGreeting.frame, this.pendingGreeting.prompt);
+              this.provider.sendFrameWithPrompt(this.pendingGreeting.frame, greetingPrompt);
             } else {
-              this.provider.sendMessage(this.pendingGreeting.prompt, "user");
+              this.provider.sendMessage(greetingPrompt, "user");
             }
             this.pendingGreeting = null;
+            // Mark the greeting as delivered immediately. Without this, a fast
+            // disconnect (e.g. Gemini 1008 in the first second) leaves
+            // hasGreeted=false, and onReady's reconnect branch then re-sends
+            // the "session start" framing — making the model greet/reset on
+            // every recovery. Also persist the prompt to pendingMessages so
+            // loadHistoryForReconnect restores it after forceNewSession.
+            this.hasGreeted = true;
+            if (this.sessionId) {
+              dualAgentService
+                .addPendingMessage(this.sessionId, {
+                  role: "user",
+                  content: greetingPrompt,
+                  timestamp: Date.now(),
+                })
+                .catch(err => console.error("[LiveRelay] Failed to persist greeting prompt:", err));
+            }
           } else {
             this.setState("idle");
           }
@@ -538,6 +574,10 @@ export class LiveRelay {
         // Reconnection
         logLiveSession("ON_READY (reconnect)", `hasGreeted=${this.hasGreeted}`);
         this.send({ type: "reconnected" });
+        // Flush the deferred home board send on reconnect too — handleInitialize
+        // ran again and set pendingHomeBoardSend. This matches the pre-defer
+        // behavior of always loading the home board on reconnect.
+        this.flushPendingHomeBoardSend();
 
         if (!this.hasGreeted) {
           console.log("[LiveRelay] Reconnected before greeting — re-prompting");
@@ -733,24 +773,36 @@ export class LiveRelay {
 
         case "button_press": {
           if (this.paused) break;
-          if (this.state !== "idle" && this.state !== "awaiting_turn") {
-            logLiveSession("QUEUED button_press", `state=${this.state} buttons=[${msg.buttons.join(", ")}]`);
-            this.pendingClientMessages.push(msg);
+          // Drop presses received before the model is ready. The client gates
+          // the home board on the deferred set_board send, so this should be
+          // rare — but if a press still slips through (cached board, race),
+          // dropping is safer than queuing because the queued press would fire
+          // immediately on init and surprise the user.
+          if (this.state === "initializing" || this.state === "closed") {
+            logLiveSession("BTN_DROPPED (not ready)", `state=${this.state} buttons=[${msg.buttons.join(", ")}]`);
             break;
           }
+          // Out-of-turn press → flag the dispatch as an interrupt. The
+          // provider will route via sendClientContent (the documented
+          // interrupt path) instead of sendRealtimeInput. Don't touch
+          // server-side state — let Gemini's `interrupted` signal trigger
+          // the existing onInterrupted → handleInterrupted cleanup.
+          const isInterrupt = this.state !== "idle";
           this.setState("awaiting_turn");
-          this.handleButtonPress(msg.buttons, msg.sentences, msg.board);
+          this.handleButtonPress(msg.buttons, msg.sentences, msg.board, isInterrupt);
           break;
         }
 
         case "board_exit": {
           // Exit button pressed on loaded board — client sends the action directly
           if (this.paused) break;
-          if (this.state !== "idle" && this.state !== "awaiting_turn") {
-            logLiveSession("QUEUED board_exit", `state=${this.state} label="${msg.label}"`);
-            this.pendingClientMessages.push(msg);
+          if (this.state === "initializing" || this.state === "closed") {
+            logLiveSession("BTN_DROPPED (not ready)", `state=${this.state} label="${msg.label}"`);
             break;
           }
+          // Out-of-turn exit → mark this dispatch as an interrupt (used below
+          // when calling provider.sendMessage). Don't pre-emptively touch state.
+          const exitIsInterrupt = this.state !== "idle";
 
           // Detect Home button press — server loads the home board directly
           // (no AI tool call required) to avoid the rebuild_board side-panel
@@ -805,7 +857,7 @@ export class LiveRelay {
           const exitInstruction = msg.instruction
             ? `Board exited. The user pressed "${msg.label}". ${msg.instruction}`
             : `Board exited. The user pressed "${msg.label}". Use rebuild_board() to create a new board for the current context.`;
-          this.provider!.sendMessage(exitInstruction, "user");
+          this.provider!.sendMessage(exitInstruction, "user", true, { interrupt: exitIsInterrupt });
           break;
         }
 
@@ -1083,8 +1135,10 @@ export class LiveRelay {
       // return to it deliberately.
       const studentLang = cached.monitorAgent.getStudent?.()?.primaryLanguage || "en";
       this.homeBoardData = buildDefaultHomeBoard(studentLang);
-      // Load the home board immediately into session state
-      this.loadHomeBoardInternal(state);
+      // Load the home board into session state, but defer the client `set_board`
+      // send until onReady. This prevents the home buttons from appearing
+      // (and being clickable) before the model is connected.
+      this.loadHomeBoardInternal(state, /* deferClientSend */ true);
       // Add home to available boards so the AI can call set_board("home")
       if (!state.availableBoards) state.availableBoards = [];
       if (!state.availableBoards.some(b => b.key === HOME_BOARD_KEY)) {
@@ -1232,9 +1286,14 @@ export class LiveRelay {
   // Button press handling
   // -------------------------------------------------------------------------
 
-  private handleButtonPress(buttons: string[], sentences?: Record<string, string>, board?: any): void {
+  private handleButtonPress(
+    buttons: string[],
+    sentences?: Record<string, string>,
+    board?: any,
+    interrupt = false,
+  ): void {
     const buttonList = buttons.join(", ");
-    console.log(`[LiveRelay] Interpreting buttons: ${buttonList}`);
+    console.log(`[LiveRelay] Interpreting buttons: ${buttonList}${interrupt ? " (interrupt)" : ""}`);
 
     // [MORE] — user wants more button options, NOT a spoken response
     if (buttons.length === 1 && buttons[0] === "[MORE]") {
@@ -1246,7 +1305,7 @@ export class LiveRelay {
         }).catch(err => console.error("[LiveRelay] Failed to persist [MORE]:", err));
       }
       this.provider!.sendMessage(`[MORE OPTIONS REQUESTED]
-The user pressed "More" — they can't find the button they need on the current board. Use add_buttons() to add more relevant options to the board. Do NOT respond with speech — just silently add buttons.`, "user");
+The user pressed "More" — they can't find the button they need on the current board. Use add_buttons() to add more relevant options to the board. Do NOT respond with speech — just silently add buttons.`, "user", true, { interrupt });
       return;
     }
 
@@ -1286,7 +1345,7 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
     //
     // Track the prompt so we can retry if proactiveAudio swallows the turn.
     this.pendingRetryPrompt = prompt;
-    this.provider!.sendMessage(prompt, "user");
+    this.provider!.sendMessage(prompt, "user", true, { interrupt });
 
     // Stream student voice TTS in parallel
     if (singleSentence && this.studentVoice) {
@@ -3073,8 +3132,16 @@ When a button is pressed, the student's pre-generated sentence is also voiced vi
    * Load the home board directly (server-side, no AI tool call required).
    * Called on session init and when the user presses Home. The AI is informed
    * via context injection and can use rebuild_board() to add side panel buttons.
+   *
+   * @param deferClientSend  When true, only update server-side state. The
+   *   `set_board` message to the client is held until `flushPendingHomeBoardSend`
+   *   runs from `onReady`. Used during init so the home board buttons don't
+   *   appear before the model is connected and ready to handle clicks.
    */
-  private loadHomeBoardInternal(state?: import("./types").DualAgentSessionState): void {
+  private loadHomeBoardInternal(
+    state?: import("./types").DualAgentSessionState,
+    deferClientSend = false,
+  ): void {
     const targetState = state || this.sessionCache?.state;
     if (!targetState || !this.homeBoardData) return;
     targetState.loadedBoardId = "__home__";
@@ -3085,8 +3152,20 @@ When a button is pressed, the student's pre-generated sentence is also voiced vi
     targetState.aiAddedButtonLabels = [];
     const nativeLabels = this.getNativePageButtonLabels(targetState);
     targetState.boardButtonLabels = [...nativeLabels];
+    if (deferClientSend) {
+      this.pendingHomeBoardSend = true;
+      logLiveSession("HOME_BOARD_LOADED (deferred)", `state updated; client send held until onReady — buttons: ${nativeLabels.join(", ")}`);
+    } else {
+      this.send({ type: "set_board", data: { board: this.homeBoardData, name: this.homeBoardData.name, boardId: "__home__" } });
+      logLiveSession("HOME_BOARD_LOADED", `server-side load — buttons: ${nativeLabels.join(", ")}`);
+    }
+  }
+
+  private flushPendingHomeBoardSend(): void {
+    if (!this.pendingHomeBoardSend || !this.homeBoardData) return;
+    this.pendingHomeBoardSend = false;
     this.send({ type: "set_board", data: { board: this.homeBoardData, name: this.homeBoardData.name, boardId: "__home__" } });
-    logLiveSession("HOME_BOARD_LOADED", `server-side load — buttons: ${nativeLabels.join(", ")}`);
+    logLiveSession("HOME_BOARD_LOADED (flushed)", "sent set_board to client now that model is ready");
   }
 
   private startSilenceKeepalive(): void {

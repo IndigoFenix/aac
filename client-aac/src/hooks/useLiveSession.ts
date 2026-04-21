@@ -105,11 +105,18 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Session state
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  // Mirror of isInitialized for use inside long-lived closures (ws.onclose)
+  // that would otherwise capture a stale `false` from the initial render.
+  const isInitializedRef = useRef(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reconnecting, setReconnecting] = useState(false);
   const [safetyBlocked, setSafetyBlocked] = useState(false);
   const rateLimitedRef = useRef(false);
+  // Set true right before we intentionally close the socket (clearSession,
+  // unmount). The ws.onclose handler reads this to decide whether the close
+  // was expected and should NOT trigger an auto-reconnect.
+  const closingIntentionallyRef = useRef(false);
 
   // Message state
   const [currentMessage, setCurrentMessage] = useState<DualAgentMessage | null>(null);
@@ -231,6 +238,13 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   const wsSend = useCallback((msg: any) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(msg));
+    } else {
+      // Diagnose silent drops: if a button press / board_exit / user_message
+      // gets here while the socket isn't OPEN, it disappears. Logging readyState
+      // (0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED, undefined=no socket) tells
+      // us whether the WS died or never finished reconnecting.
+      const rs = wsRef.current?.readyState;
+      console.warn(`[useLiveSession] DROPPED ${msg?.type || "msg"} — wsReadyState=${rs ?? "no-socket"}`);
     }
   }, []);
 
@@ -287,6 +301,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         case "initialized":
           setSessionId(msg.sessionId);
           setIsInitialized(true);
+          isInitializedRef.current = true;
           // Don't clear isLoading yet — wait until the first board arrives
           // so the loading screen stays up until the home page is ready.
           setError(null);
@@ -703,19 +718,32 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
       ws.onmessage = handleServerMessage;
 
       ws.onclose = (event) => {
-        console.log(`[useLiveSession] WebSocket closed: ${event.code} ${event.reason}`);
+        const wasIntentional = closingIntentionallyRef.current;
+        closingIntentionallyRef.current = false;
+        console.log(
+          `[useLiveSession] WebSocket closed: code=${event.code} reason=${event.reason} intentional=${wasIntentional} isInitialized=${isInitializedRef.current}`,
+        );
         wsRef.current = null;
+        if (wasIntentional) {
+          // clearSession / unmount — do NOT auto-reconnect
+          return;
+        }
         if (rateLimitedRef.current) {
           // Rate limited — do NOT auto-reconnect, user must retry manually
           console.warn("[useLiveSession] Rate limited — skipping auto-reconnect");
           return;
         }
-        if (isInitialized) {
+        // Read isInitialized from a ref — the closure value is captured at
+        // initialize() call time (when it was still false), so checking the
+        // closure variable would never reconnect after a successful init.
+        if (isInitializedRef.current) {
           // Auto-reconnect after unexpected close
           reconnectTimerRef.current = setTimeout(() => {
             console.log("[useLiveSession] Attempting reconnect...");
             initialize();
           }, 3000);
+        } else {
+          console.warn("[useLiveSession] WS closed before initialized — not auto-reconnecting");
         }
       };
 
@@ -894,11 +922,13 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
 
   const clearSession = useCallback(() => {
     if (wsRef.current) {
+      closingIntentionallyRef.current = true;
       wsRef.current.close();
       wsRef.current = null;
     }
     setSessionId(null);
     setIsInitialized(false);
+    isInitializedRef.current = false;
     setCurrentMessage(null);
     setTranscription(null);
     setInterpretationText(null);
@@ -921,6 +951,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
         clearTimeout(reconnectTimerRef.current);
       }
       if (wsRef.current) {
+        closingIntentionallyRef.current = true;
         wsRef.current.close();
         wsRef.current = null;
       }

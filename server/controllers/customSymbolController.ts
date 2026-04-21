@@ -111,10 +111,10 @@ class CustomSymbolController {
     }
   }
 
-  /** GET /api/custom-symbols/public */
+  /** GET /api/custom-symbols/public — admin-only (see routes.ts) */
   async getPublicSymbols(req: Request, res: Response) {
     try {
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
       const offset = parseInt(req.query.offset as string) || 0;
       const symbols = await customSymbolRepository.getPublicSymbols(limit, offset);
       res.json(symbols);
@@ -272,7 +272,7 @@ class CustomSymbolController {
   /** GET /api/custom-symbols/unapproved — list unapproved auto-generated symbols (admin review) */
   async getUnapprovedSymbols(req: Request, res: Response) {
     try {
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
       const offset = parseInt(req.query.offset as string) || 0;
       const symbols = await customSymbolRepository.getUnapprovedSymbols(limit, offset);
       res.json(symbols);
@@ -343,6 +343,46 @@ class CustomSymbolController {
     } catch (error: any) {
       console.error("[CustomSymbolController] updateSymbol error:", error);
       res.status(500).json({ message: "Failed to update symbol" });
+    }
+  }
+
+  /** POST /api/custom-symbols/bulk-delete-unapproved — admin-only bulk cleanup by date range */
+  async bulkDeleteUnapproved(req: Request, res: Response) {
+    try {
+      const { startDate, endDate } = req.body ?? {};
+      if (!startDate || !endDate) {
+        return res.status(400).json({ message: "startDate and endDate are required (ISO strings)" });
+      }
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        return res.status(400).json({ message: "Invalid date format; use ISO 8601" });
+      }
+      if (start > end) {
+        return res.status(400).json({ message: "startDate must be <= endDate" });
+      }
+
+      const symbols = await customSymbolRepository.getUnapprovedInDateRange(start, end);
+
+      if (symbols.length > 0) {
+        const { s3Service } = await import("../services/storage/s3-service");
+        await Promise.all(symbols.map(s =>
+          s3Service.delete(s.s3Key).catch(() => { /* ignore S3 errors, still drop DB row */ })
+        ));
+        await customSymbolRepository.deleteSymbolsByIds(symbols.map(s => s.id));
+      }
+
+      res.json({ deletedCount: symbols.length });
+
+      activityLogService.log({
+        userId: (req as any).user?.id,
+        eventType: "delete",
+        subjectType1: "custom_symbol",
+        details: { bulk: true, deletedCount: symbols.length, startDate, endDate },
+      });
+    } catch (error: any) {
+      console.error("[CustomSymbolController] bulkDeleteUnapproved error:", error);
+      res.status(500).json({ message: "Failed to bulk-delete unapproved symbols" });
     }
   }
 

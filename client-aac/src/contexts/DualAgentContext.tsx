@@ -290,6 +290,12 @@ function DualAgentProviderInner({
 
   const handleSymbolUpdate = useCallback((data: { buttonLabel: string; symbolPath: string }) => {
     setSymbolUpdate(data);
+    // Also apply to context sidebar buttons — they share the same labels/symbols pipeline
+    setContextButtons(prev => prev.map(b =>
+      b.label.toLowerCase() === data.buttonLabel.toLowerCase()
+        ? { ...b, symbolPath: data.symbolPath }
+        : b
+    ));
   }, []);
 
   const liveAgent = useLiveSession({

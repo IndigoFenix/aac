@@ -134,8 +134,23 @@ export interface LiveProvider {
   sendAudio(audioBase64: string, mimeType?: string): void;
   /** Send a brief silence to trigger audio VAD and kick the model into responding */
   sendAudioNudge(): void;
-  /** Send a text message as a conversation turn */
-  sendMessage(text: string, role?: "user" | "model", turnComplete?: boolean): void;
+  /**
+   * Send a text message as a conversation turn.
+   *
+   * `opts.interrupt` (default false): when true, force-route via
+   * `sendClientContent` regardless of model. `sendClientContent` is documented
+   * as the explicit interrupt mechanism on the Live API — sending one cancels
+   * any in-flight model generation. Used for client-initiated interrupts (e.g.
+   * a button press while the model is speaking). When false, in-conversation
+   * text uses the model's preferred non-interrupting path (`sendRealtimeInput`
+   * on 3.1, `sendClientContent` on 2.5).
+   */
+  sendMessage(
+    text: string,
+    role?: "user" | "model",
+    turnComplete?: boolean,
+    opts?: { interrupt?: boolean },
+  ): void;
   /** Inject context without triggering a model response */
   sendContextInjection(text: string): void;
   /** Send conversation history to prime the session (after reconnection) */
