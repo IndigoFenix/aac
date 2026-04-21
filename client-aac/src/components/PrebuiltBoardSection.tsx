@@ -6,6 +6,7 @@ import type { BoardButton, BoardPage } from "@shared/schema";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useBoards, type BoardData, type ButtonIR } from "@/contexts/BoardsContext";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
+import { resolveStaticIconPath } from "@/lib/utils";
 
 interface PrebuiltBoardSectionProps {
   studentId: string;
@@ -328,7 +329,7 @@ export default function PrebuiltBoardSection({
                 <div className="flex-[3] flex items-center justify-center min-h-0 w-full overflow-hidden">
                   {button.symbolPath ? (
                     <img
-                      src={button.symbolPath}
+                      src={resolveStaticIconPath(button.symbolPath)}
                       alt={button.label}
                       className="object-contain"
                       style={{ width: "55%", height: "55%", maxHeight: "100%" }}

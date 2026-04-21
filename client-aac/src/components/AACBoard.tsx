@@ -4,6 +4,7 @@ import { ChevronLeft, Home, Volume2 } from "lucide-react";
 import type { ParsedBoardData, BoardButton, BoardPage } from "@shared/schema";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useDualAgentContextOptional } from "@/contexts/DualAgentContext";
+import { resolveStaticIconPath } from "@/lib/utils";
 
 interface AACBoardProps {
   board: ParsedBoardData | null;
@@ -232,7 +233,7 @@ export default function AACBoard({ board, onButtonClick, language = "en", voiceT
                       <i className={`fas ${button.action.type === "home" ? "fa-house" : isRTL ? "fa-arrow-right" : "fa-arrow-left"} text-[2.5rem] sm:text-[3rem] md:text-[3.5rem] leading-none text-gray-700`} />
                     ) : button.symbolPath ? (
                       <img
-                        src={button.symbolPath}
+                        src={resolveStaticIconPath(button.symbolPath)}
                         alt={button.label}
                         className="w-[60%] h-[60%] object-contain"
                       />

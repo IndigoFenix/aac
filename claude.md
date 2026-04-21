@@ -22,6 +22,7 @@ All AAC settings should be able to be managed from both the Clinician client and
 ## Database strategy
 We update the database schema using npm run db:generate, followed by db:migrate.
 Don't use drizzle-kit push, since this does not update the drizzle migration status properly.
+Never update the _journal.json or create drizzle files manually - this creates bugs.
 
 ## Chat System (General and Specific)
 In server/services, files in the chat and providers folders should be treated as though they may be ported to a general AI chat application. Features that are likely to be useful for a wide variety of applications (such as chat behaviors and memory storage) should go there. Features that are specific to CliniAACian's use cases go in external files.
