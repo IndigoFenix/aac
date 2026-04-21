@@ -18,7 +18,7 @@ import {
   type UpdateInstituteSymbolAssociation,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, and, or, ilike, sql, desc } from "drizzle-orm";
+import { eq, and, or, ilike, sql, desc, gte, lte, inArray } from "drizzle-orm";
 
 /** Resolved symbol with key/description priority applied */
 export interface ResolvedSymbol {
@@ -197,6 +197,28 @@ class CustomSymbolRepository {
       .orderBy(desc(customSymbols.createdAt))
       .limit(limit)
       .offset(offset);
+  }
+
+  /**
+   * Get unapproved public symbols created within [startDate, endDate].
+   */
+  async getUnapprovedInDateRange(startDate: Date, endDate: Date): Promise<CustomSymbol[]> {
+    return db.select().from(customSymbols)
+      .where(and(
+        eq(customSymbols.isPublic, true),
+        eq(customSymbols.isApproved, false),
+        gte(customSymbols.createdAt, startDate),
+        lte(customSymbols.createdAt, endDate),
+      ));
+  }
+
+  /**
+   * Delete symbols by IDs. Returns the number of rows deleted.
+   */
+  async deleteSymbolsByIds(ids: string[]): Promise<number> {
+    if (ids.length === 0) return 0;
+    const result = await db.delete(customSymbols).where(inArray(customSymbols.id, ids)).returning();
+    return result.length;
   }
 
   async searchSymbols(query: string, limit = 20): Promise<CustomSymbol[]> {

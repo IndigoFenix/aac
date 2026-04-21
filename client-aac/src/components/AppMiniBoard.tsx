@@ -5,6 +5,8 @@
 import { motion, AnimatePresence } from "framer-motion";
 import type { ParsedBoardData, BoardButton } from "@shared/schema";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
+import { apiUrl } from "@/lib/queryClient";
+import { resolveStaticIconPath } from "@/lib/utils";
 
 interface AppMiniBoardProps {
   board: ParsedBoardData | null;
@@ -12,9 +14,31 @@ interface AppMiniBoardProps {
   language?: string;
   voiceType?: string;
   suppressLocalSpeech?: boolean;
+  getFaceImage?: (contactId: string) => string | null;
 }
 
-export default function AppMiniBoard({ board, onButtonClick, language, voiceType, suppressLocalSpeech }: AppMiniBoardProps) {
+function renderButtonIcon(button: BoardButton, getFaceImage?: (contactId: string) => string | null) {
+  const imgClass = "max-w-full max-h-full w-auto h-auto object-contain";
+  if (button.symbolPath?.startsWith("__FACE__:")) {
+    const contactId = button.symbolPath.substring(9);
+    const cached = getFaceImage?.(contactId);
+    if (cached) return <img src={cached} alt={button.label} className={`rounded-full ${imgClass}`} />;
+    return <span className="text-2xl leading-none">👤</span>;
+  }
+  if (button.symbolPath?.startsWith("__SYMBOL__:")) {
+    const symbolId = button.symbolPath.substring(11);
+    return <img src={apiUrl(`/api/custom-symbols/${symbolId}/image`)} alt={button.label} className={imgClass} loading="lazy" />;
+  }
+  if (button.symbolPath) {
+    return <img src={resolveStaticIconPath(button.symbolPath)} alt={button.label} className={imgClass} />;
+  }
+  if (button.iconRef) {
+    return <span className="text-2xl leading-none">{button.iconRef}</span>;
+  }
+  return null;
+}
+
+export default function AppMiniBoard({ board, onButtonClick, language, voiceType, suppressLocalSpeech, getFaceImage }: AppMiniBoardProps) {
   const { speak } = useTextToSpeech();
 
   // Get buttons from the first page (up to 4)
@@ -46,9 +70,9 @@ export default function AppMiniBoard({ board, onButtonClick, language, voiceType
             whileTap={{ scale: 0.95 }}
             transition={{ delay: i * 0.05 }}
           >
-            {button.iconRef && (
-              <span className="text-2xl leading-none">{button.iconRef}</span>
-            )}
+            <div className="flex items-center justify-center flex-1 min-h-0 w-full overflow-hidden">
+              {renderButtonIcon(button, getFaceImage)}
+            </div>
             <span className="text-xs font-semibold text-white mt-1 px-1 text-center leading-tight line-clamp-2">
               {button.label}
             </span>

@@ -15,10 +15,11 @@ import { LicenseList } from '@/components/admin/LicenseList';
 import { ActivityLog } from '@/components/admin/ActivityLog';
 import { IdentityProviderList } from '@/components/admin/IdentityProviderList';
 import { DeepAnalysisAdmin } from '@/components/admin/DeepAnalysisAdmin';
+import { PublicSymbolsAdmin } from '@/components/admin/PublicSymbolsAdmin';
 import { cn } from '@/lib/utils';
 import { useLanguage } from '@/contexts/LanguageContext';
 
-type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts' | 'licenses' | 'identity-providers' | 'activity-log' | 'deep-analyses';
+type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts' | 'licenses' | 'identity-providers' | 'activity-log' | 'deep-analyses' | 'public-symbols';
 
 export function AdminDashboard() {
   const [location, navigate] = useLocation();
@@ -36,6 +37,7 @@ export function AdminDashboard() {
     if (location.startsWith('/admin/identity-providers')) return 'identity-providers';
     if (location.startsWith('/admin/activity-log')) return 'activity-log';
     if (location.startsWith('/admin/deep-analyses')) return 'deep-analyses';
+    if (location.startsWith('/admin/public-symbols')) return 'public-symbols';
     if (location.startsWith('/admin/personas')) return 'personas';
     return 'personas'; // default
   };
@@ -69,6 +71,8 @@ export function AdminDashboard() {
       navigate('/admin/activity-log');
     } else if (section === 'deep-analyses') {
       navigate('/admin/deep-analyses');
+    } else if (section === 'public-symbols') {
+      navigate('/admin/public-symbols');
     }
   };
 
@@ -117,6 +121,10 @@ export function AdminDashboard() {
 
     if (activeSection === 'deep-analyses') {
       return <DeepAnalysisAdmin />;
+    }
+
+    if (activeSection === 'public-symbols') {
+      return <PublicSymbolsAdmin />;
     }
 
     return null;

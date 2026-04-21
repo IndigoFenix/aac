@@ -1,20 +1,17 @@
-[20:36:29.548] memoryValues.Student_Notes (4 items)
+[13:17:42.716] memoryValues.Student_Notes (1 items)
 [
-  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
-  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
-  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
-  "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain."
+  "**Profile & Learning Style:** Gal (age 6) communicates via AAC and strongly prefers interactive, hands-on apps (drawing, music) over passive activities. Core interests: facts, drawing, music, science (hands-on exploration: experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Typically looks down and to the side during communication—this is normal.\n\n**Communication Patterns:** Uses 'I'm thinking about' button to initiate guessing mode. Prefers shorter, focused interactions with clear exit strategies. Frequently expresses tiredness via guessing mode. Responds well to direct activity suggestions (e.g., 'Want to draw a rocket?') rather than abstract menu browsing. When browsing multiple options without committing, offer specific, interest-based prompts instead of waiting for selection.\n\n**Safety & Notable Events:** (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home; monitor for clarification and continue offering reassurance and specific activities when frustrated.\n\n**Session Progress (April 21):** Gal shows sustained interest in space exploration and rockets as a strong motivator for engagement, even when expressing tiredness. Responds well to direct activity suggestions and navigates conversation flow smoothly when space/rocket topics are introduced. Rockets are an effective engagement tool. **Today's Session:** Gal engaged with space topic, explored YouTube option but declined video. Expressed excitement about multiple topics (space, drawing, music, games, facts). Ready for hands-on activity."
 ]
-[20:36:29.550] memoryValues.Student_People (0 items)
+[13:17:42.718] memoryValues.Student_People (0 items)
 []
-[20:36:29.553] memoryValues.Student_Interests (4 items)
+[13:17:42.720] memoryValues.Student_Interests (4 items)
 [
   "facts",
   "drawing",
   "music",
   "science"
 ]
-[20:36:29.554] memoryValues.Student_CustomApps (2 items)
+[13:17:42.722] memoryValues.Student_CustomApps (2 items)
 [
   {
     "id": "material-sensations"
@@ -24,7 +21,7 @@
     "name": "Material Sensations"
   }
 ]
-[20:36:29.555] memoryValues.Student_Preferences
+[13:17:42.724] memoryValues.Student_Preferences
 {
   "FavoriteActivities": [
     "drawing",
@@ -33,11 +30,11 @@
     "interactive exploration"
   ]
 }
-[20:36:29.555] memoryValues.Student_CommunicationStyle
+[13:17:42.726] memoryValues.Student_CommunicationStyle
 {
   "PrimaryMethod": "AAC"
 }
-[20:36:29.557] memoryVisualization — data section (76 lines)
+[13:17:42.729] memoryVisualization — data section (73 lines)
 === Current Memory ===
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
@@ -57,11 +54,8 @@
   - RewardPreferences: {array} (empty)
   - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
   ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 4 items) — General notes about the student (non-sensitive) 
-  - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
-  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts."
-  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated."
-  - [3]: "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain."
+• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
+  - [0]: "**Profile & Learning Style:** Gal (age 6) communicates via AAC and strongly prefers interactive, hands-on apps (drawing, music) over passive activities. Core interests: facts, drawing, music, science (hands-on exploration: experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Typically looks down and to the side during communication—this is normal.\n\n**Communication Patterns:** Uses 'I'm thinking about' button to initiate guessing mode. Prefers shorter, focused interactions with clear exit strategies. Frequently expresses tiredness via guessing mode. Responds well to direct activity suggestions (e.g., 'Want to draw a rocket?') rather than abstract menu browsing. When browsing multiple options without committing, offer specific, interest-based prompts instead of waiting for selection.\n\n**Safety & Notable Events:** (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home; monitor for clarification and continue offering reassurance and specific activities when frustrated.\n\n**Session Progress (April 21):** Gal shows sustained interest in space exploration and rockets as a strong motivator for engagement, even when expressing tiredness. Responds well to direct activity suggestions and navigates conversation flow smoothly when space/rocket topics are introduced. Rockets are an effective engagement tool. **Today's Session:** Gal engaged with space topic, explored YouTube option but declined video. Expressed excitement about multiple topics (space, drawing, music, games, facts). Ready for hands-on activity."
   ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
 • /Student_CustomApps (array, 2 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
 • /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
@@ -118,195 +112,46 @@ Notes:
 ============================================================
   manageMemory called
 ============================================================
-[20:36:30.857] INPUT
+[13:17:44.154] INPUT
 {
   "ops": [
     {
       "action": "view",
-      "path": "/Context_Progress/*"
+      "path": "/Student_Notes/*"
     }
   ]
 }
-[20:36:31.619] RESULTS
+[13:17:44.171] RESULTS
 [
   {
-    "target": "/Context_Progress/*",
+    "target": "/Student_Notes/*",
     "action": "view",
     "ok": true,
-    "message": "• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \\n  ↪ To expand: view \"/Context_Progress/*\". (read-only)",
-    "mutatedPaths": [],
-    "summary": "Path not found or not loaded"
-  }
-]
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[20:36:31.638] memoryValues.Student_Notes (4 items)
-[
-  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
-  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
-  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
-  "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain."
-]
-[20:36:31.640] memoryValues.Student_People (0 items)
-[]
-[20:36:31.641] memoryValues.Student_Interests (4 items)
-[
-  "facts",
-  "drawing",
-  "music",
-  "science"
-]
-[20:36:31.643] memoryValues.Student_CustomApps (2 items)
-[
-  {
-    "id": "material-sensations"
-  },
-  {
-    "id": "material-sensations",
-    "name": "Material Sensations"
-  }
-]
-[20:36:31.644] memoryValues.Student_Preferences
-{
-  "FavoriteActivities": [
-    "drawing",
-    "music",
-    "interactive apps",
-    "interactive exploration"
-  ]
-}
-[20:36:31.645] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[20:36:31.648] memoryVisualization — data section (78 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
-  - [0]: "facts"
-  - [1]: "drawing"
-  - [2]: "music"
-  - [3]: "science"
-  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (hidden)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 4 items) — General notes about the student (non-sensitive) 
-  - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
-  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts."
-  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated."
-  - [3]: "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain."
-  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
-• /Student_CustomApps (array, 2 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
-• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  - Articles on Rett Syndrome: {object} (view to expand)
-  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
-  - Preschool SLP Goals Bank: {object} (view to expand)
-• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
-  - prompt: "You are an advanced conversational AI designed to assist AAC (Augmentative and Alternative Communication) users.\nYou should:\n- Respond in a friendly, supportive manner\n- Keep responses concise and clear\n- Help expand on the user's symbol selections to form complete thoughts\n- Ask clarifying questions when needed\n- Be patient and encouraging" — The full custom prompt text
-  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
-• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Student_CustomApps{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics/<key>/subtopics — MAP<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics/<key>/subtopics","key":"<key>","value": null }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  manageMemory called
-============================================================
-[20:36:32.627] INPUT
-{
-  "ops": [
-    {
-      "action": "view",
-      "path": "/Context_Progress"
-    }
-  ]
-}
-[20:36:32.637] RESULTS
-[
-  {
-    "target": "/Context_Progress",
-    "action": "view",
-    "ok": true,
-    "message": "• /Context_Progress (object) — Current IEP/program goals and progress (read-only) \\n  ↪ To expand: view \"/Context_Progress/*\". (read-only)",
+    "message": "• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) \\n  - [0]: \"**Profile & Learning Style:** Gal (age 6) communicates via AAC and strongly prefers interactive, hands-on apps (drawing, music) over passive activities. Core interests: facts, drawing, music, science (hands-on exploration: experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Typically looks down and to the side during communication—this is normal.\\n\\n**Communication Patterns:** Uses 'I'm thinking about' button to initiate guessing mode. Prefers shorter, focused interactions with clear exit strategies. Frequently expresses tiredness via guessing mode. Responds well to direct activity suggestions (e.g., 'Want to draw a rocket?') rather than abstract menu browsing. When browsing multiple options without committing, offer specific, interest-based prompts instead of waiting for selection.\\n\\n**Safety & Notable Events:** (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home; monitor for clarification and continue offering reassurance and specific activities when frustrated.\\n\\n**Session Progress (April 21):** Gal shows sustained interest in space exploration and rockets as a strong motivator for engagement, even when expressing tiredness. Responds well to direct activity suggestions and navigates conversation flow smoothly when space/rocket topics are introduced. Rockets are an effective engagement tool. **Today's Session:** Gal engaged with space topic, explored YouTube option but declined video. Expressed excitement about multiple topics (space, drawing, music, games, facts). Ready for hands-on activity.\"\\n  ↪ To append: action \"add\" at \"/Student_Notes\" with value. To update item: action \"set\" at \"/Student_Notes/<index>\".",
     "mutatedPaths": [
-      "/Context_Progress"
+      "/Student_Notes/0"
     ],
-    "summary": "Path not found or not loaded"
+    "summary": "Array with 1 item(s)"
   }
 ]
 
 ============================================================
   buildPromptAndTools — AI memory view
 ============================================================
-[20:36:32.646] memoryValues.Student_Notes (4 items)
+[13:17:44.179] memoryValues.Student_Notes (1 items)
 [
-  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
-  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
-  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
-  "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain."
+  "**Profile & Learning Style:** Gal (age 6) communicates via AAC and strongly prefers interactive, hands-on apps (drawing, music) over passive activities. Core interests: facts, drawing, music, science (hands-on exploration: experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Typically looks down and to the side during communication—this is normal.\n\n**Communication Patterns:** Uses 'I'm thinking about' button to initiate guessing mode. Prefers shorter, focused interactions with clear exit strategies. Frequently expresses tiredness via guessing mode. Responds well to direct activity suggestions (e.g., 'Want to draw a rocket?') rather than abstract menu browsing. When browsing multiple options without committing, offer specific, interest-based prompts instead of waiting for selection.\n\n**Safety & Notable Events:** (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home; monitor for clarification and continue offering reassurance and specific activities when frustrated.\n\n**Session Progress (April 21):** Gal shows sustained interest in space exploration and rockets as a strong motivator for engagement, even when expressing tiredness. Responds well to direct activity suggestions and navigates conversation flow smoothly when space/rocket topics are introduced. Rockets are an effective engagement tool. **Today's Session:** Gal engaged with space topic, explored YouTube option but declined video. Expressed excitement about multiple topics (space, drawing, music, games, facts). Ready for hands-on activity."
 ]
-[20:36:32.648] memoryValues.Student_People (0 items)
+[13:17:44.181] memoryValues.Student_People (0 items)
 []
-[20:36:32.649] memoryValues.Student_Interests (4 items)
+[13:17:44.182] memoryValues.Student_Interests (4 items)
 [
   "facts",
   "drawing",
   "music",
   "science"
 ]
-[20:36:32.650] memoryValues.Student_CustomApps (2 items)
+[13:17:44.185] memoryValues.Student_CustomApps (2 items)
 [
   {
     "id": "material-sensations"
@@ -316,7 +161,7 @@ Notes:
     "name": "Material Sensations"
   }
 ]
-[20:36:32.652] memoryValues.Student_Preferences
+[13:17:44.186] memoryValues.Student_Preferences
 {
   "FavoriteActivities": [
     "drawing",
@@ -325,11 +170,11 @@ Notes:
     "interactive exploration"
   ]
 }
-[20:36:32.653] memoryValues.Student_CommunicationStyle
+[13:17:44.187] memoryValues.Student_CommunicationStyle
 {
   "PrimaryMethod": "AAC"
 }
-[20:36:32.655] memoryVisualization — data section (78 lines)
+[13:17:44.188] memoryVisualization — data section (73 lines)
 === Current Memory ===
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
@@ -349,133 +194,8 @@ Notes:
   - RewardPreferences: {array} (empty)
   - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
   ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 4 items) — General notes about the student (non-sensitive) 
-  - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
-  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts."
-  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated."
-  - [3]: "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain."
-  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
-• /Student_CustomApps (array, 2 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
-• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  - Articles on Rett Syndrome: {object} (view to expand)
-  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
-  - Preschool SLP Goals Bank: {object} (view to expand)
-• /Context_StudentInfo (object) — Basic information about the student (name, age, language, etc.) 
-  ↪ To expand: view "/Context_StudentInfo/*". (read-only)
-• /Context_StudentInstitutes (array, 0 items) — Schools and clinics the student attends — hidden; view to list items
-• /Context_Classes (array, 0 items) — Classes the student is enrolled in — hidden; view to list items
-• /Context_Classmates (array, 0 items) — Other students and staff in the student's classes — hidden; view to list items
-• /Context_MedicalInfo (object) — Medical records and health information (read-only) — hidden; view to list keys
-• /Context_FunctionalInfo (object) — Functional assessment reports (read-only) — hidden; view to list keys
-• /Context_EducationalInfo (object) — Educational reports and accommodations (read-only) — hidden; view to list keys
-• /Context_Progress (object) — Current IEP/program goals and progress (read-only) 
-  ↪ To expand: view "/Context_Progress/*". (read-only)
-• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
-  - prompt: "You are an advanced conversational AI designed to assist AAC (Augmentative and Alternative Communication) users.\nYou should:\n- Respond in a friendly, supportive manner\n- Keep responses concise and clear\n- Help expand on the user's symbol selections to form complete thoughts\n- Ask clarifying questions when needed\n- Be patient and encouraging" — The full custom prompt text
-  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
-• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
-
-Allowed roots & types: /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Student_CustomApps{array}, /Context_Library{map}, /Context_StudentInfo{object}, /Context_StudentInstitutes{array}, /Context_Classes{array}, /Context_Classmates{array}, /Context_MedicalInfo{object}, /Context_FunctionalInfo{object}, /Context_EducationalInfo{object}, /Context_Progress{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics/<key>/subtopics — MAP<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics/<key>/subtopics","key":"<key>","value": null }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[20:38:31.368] memoryValues.Student_Notes (4 items)
-[
-  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
-  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
-  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
-  "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain."
-]
-[20:38:31.370] memoryValues.Student_People (0 items)
-[]
-[20:38:31.373] memoryValues.Student_Interests (4 items)
-[
-  "facts",
-  "drawing",
-  "music",
-  "science"
-]
-[20:38:31.376] memoryValues.Student_CustomApps (2 items)
-[
-  {
-    "id": "material-sensations"
-  },
-  {
-    "id": "material-sensations",
-    "name": "Material Sensations"
-  }
-]
-[20:38:31.378] memoryValues.Student_Preferences
-{
-  "FavoriteActivities": [
-    "drawing",
-    "music",
-    "interactive apps",
-    "interactive exploration"
-  ]
-}
-[20:38:31.379] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[20:38:31.381] memoryVisualization — data section (76 lines)
-=== Current Memory ===
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
-  - [0]: "facts"
-  - [1]: "drawing"
-  - [2]: "music"
-  - [3]: "science"
-  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (hidden)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 4 items) — General notes about the student (non-sensitive) 
-  - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
-  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts."
-  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated."
-  - [3]: "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain."
+• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
+  - [0]: "**Profile & Learning Style:** Gal (age 6) communicates via AAC and strongly prefers interactive, hands-on apps (drawing, music) over passive activities. Core interests: facts, drawing, music, science (hands-on exploration: experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Typically looks down and to the side during communication—this is normal.\n\n**Communication Patterns:** Uses 'I'm thinking about' button to initiate guessing mode. Prefers shorter, focused interactions with clear exit strategies. Frequently expresses tiredness via guessing mode. Responds well to direct activity suggestions (e.g., 'Want to draw a rocket?') rather than abstract menu browsing. When browsing multiple options without committing, offer specific, interest-based prompts instead of waiting for selection.\n\n**Safety & Notable Events:** (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home; monitor for clarification and continue offering reassurance and specific activities when frustrated.\n\n**Session Progress (April 21):** Gal shows sustained interest in space exploration and rockets as a strong motivator for engagement, even when expressing tiredness. Responds well to direct activity suggestions and navigates conversation flow smoothly when space/rocket topics are introduced. Rockets are an effective engagement tool. **Today's Session:** Gal engaged with space topic, explored YouTube option but declined video. Expressed excitement about multiple topics (space, drawing, music, games, facts). Ready for hands-on activity."
   ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
 • /Student_CustomApps (array, 2 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
 • /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
@@ -532,64 +252,50 @@ Notes:
 ============================================================
   manageMemory called
 ============================================================
-[20:38:33.642] INPUT
+[13:17:46.450] INPUT
 {
   "ops": [
     {
-      "action": "add",
-      "path": "/Student_Notes",
-      "value": "April 20 Session: Gal expressed interest in science videos (Kurzgesagt), then initiated guessing mode about 'something in the future.' Narrowed down to: Time → Future → asking about timeframe (later today, tomorrow, someday, next week). Pattern shows continued interest in science content and abstract thinking about future events."
+      "action": "set",
+      "path": "/Student_Notes/0",
+      "value": "**Profile & Learning Style:** Gal (age 6) communicates via AAC and strongly prefers interactive, hands-on apps (drawing, music) over passive activities. Core interests: facts, drawing, music, science (hands-on exploration: experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Typically looks down and to the side during communication—this is normal.\n\n**Communication Patterns:** Uses 'I'm thinking about' button to initiate guessing mode. Prefers shorter, focused interactions with clear exit strategies. Frequently expresses tiredness via guessing mode. Responds well to direct activity suggestions (e.g., 'Want to draw a rocket?') rather than abstract menu browsing. When browsing multiple options without committing, offer specific, interest-based prompts instead of waiting for selection.\n\n**Safety & Notable Events:** (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home; monitor for clarification and continue offering reassurance and specific activities when frustrated.\n\n**Session Progress:** Gal shows sustained interest in space exploration and rockets as a strong motivator for engagement, even when expressing tiredness. Responds well to direct activity suggestions and navigates conversation flow smoothly when space/rocket topics are introduced. Rockets are an effective engagement tool."
     }
   ]
 }
-[20:38:33.644] BEFORE add /Student_Notes — Student_Notes array (4 items)
+[13:17:46.452] BEFORE set /Student_Notes/0 — Student_Notes array (1 items)
 [
-  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
-  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
-  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
-  "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain."
+  "**Profile & Learning Style:** Gal (age 6) communicates via AAC and strongly prefers interactive, hands-on apps (drawing, music) over passive activities. Core interests: facts, drawing, music, science (hands-on exploration: experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Typically looks down and to the side during communication—this is normal.\n\n**Communication Patterns:** Uses 'I'm thinking about' button to initiate guessing mode. Prefers shorter, focused interactions with clear exit strategies. Frequently expresses tiredness via guessing mode. Responds well to direct activity suggestions (e.g., 'Want to draw a rocket?') rather than abstract menu browsing. When browsing multiple options without committing, offer specific, interest-based prompts instead of waiting for selection.\n\n**Safety & Notable Events:** (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home; monitor for clarification and continue offering reassurance and specific activities when frustrated.\n\n**Session Progress (April 21):** Gal shows sustained interest in space exploration and rockets as a strong motivator for engagement, even when expressing tiredness. Responds well to direct activity suggestions and navigates conversation flow smoothly when space/rocket topics are introduced. Rockets are an effective engagement tool. **Today's Session:** Gal engaged with space topic, explored YouTube option but declined video. Expressed excitement about multiple topics (space, drawing, music, games, facts). Ready for hands-on activity."
 ]
-[20:38:33.651] ADD to array /Student_Notes — array has 4 items, adding
-April 20 Session: Gal expressed interest in science videos (Kurzgesagt), then initiated guessing mode about 'something in the future.' Narrowed down to: Time → Future → asking about timeframe (later today, tomorrow, someday, next week). Pattern shows continued interest in science content and abstract thinking about future events.
-[20:38:33.652] ADD OK /Student_Notes — array now has 5 items
-[20:38:33.820] RESULTS
+[13:17:46.777] RESULTS
 [
   {
-    "target": "/Student_Notes",
-    "action": "add",
+    "target": "/Student_Notes/0",
+    "action": "set",
     "ok": true
   }
 ]
-[20:38:33.821] AFTER add /Student_Notes — Student_Notes array (5 items)
+[13:17:46.778] AFTER set /Student_Notes/0 — Student_Notes array (1 items)
 [
-  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
-  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
-  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
-  "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain.",
-  "April 20 Session: Gal expressed interest in science videos (Kurzgesagt), then initiated guessing mode about 'something in the future.' Narrowed down to: Time → Future → asking about timeframe (later today, tomorrow, someday, next week). Pattern shows continued interest in science content and abstract thinking about future events."
+  "**Profile & Learning Style:** Gal (age 6) communicates via AAC and strongly prefers interactive, hands-on apps (drawing, music) over passive activities. Core interests: facts, drawing, music, science (hands-on exploration: experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Typically looks down and to the side during communication—this is normal.\n\n**Communication Patterns:** Uses 'I'm thinking about' button to initiate guessing mode. Prefers shorter, focused interactions with clear exit strategies. Frequently expresses tiredness via guessing mode. Responds well to direct activity suggestions (e.g., 'Want to draw a rocket?') rather than abstract menu browsing. When browsing multiple options without committing, offer specific, interest-based prompts instead of waiting for selection.\n\n**Safety & Notable Events:** (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home; monitor for clarification and continue offering reassurance and specific activities when frustrated.\n\n**Session Progress:** Gal shows sustained interest in space exploration and rockets as a strong motivator for engagement, even when expressing tiredness. Responds well to direct activity suggestions and navigates conversation flow smoothly when space/rocket topics are introduced. Rockets are an effective engagement tool."
 ]
 
 ============================================================
   buildPromptAndTools — AI memory view
 ============================================================
-[20:38:33.832] memoryValues.Student_Notes (5 items)
+[13:17:46.783] memoryValues.Student_Notes (1 items)
 [
-  "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities.",
-  "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts.",
-  "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated.",
-  "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain.",
-  "April 20 Session: Gal expressed interest in science videos (Kurzgesagt), then initiated guessing mode about 'something in the future.' Narrowed down to: Time → Future → asking about timeframe (later today, tomorrow, someday, next week). Pattern shows continued interest in science content and abstract thinking about future events."
+  "**Profile & Learning Style:** Gal (age 6) communicates via AAC and strongly prefers interactive, hands-on apps (drawing, music) over passive activities. Core interests: facts, drawing, music, science (hands-on exploration: experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Typically looks down and to the side during communication—this is normal.\n\n**Communication Patterns:** Uses 'I'm thinking about' button to initiate guessing mode. Prefers shorter, focused interactions with clear exit strategies. Frequently expresses tiredness via guessing mode. Responds well to direct activity suggestions (e.g., 'Want to draw a rocket?') rather than abstract menu browsing. When browsing multiple options without committing, offer specific, interest-based prompts instead of waiting for selection.\n\n**Safety & Notable Events:** (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home; monitor for clarification and continue offering reassurance and specific activities when frustrated.\n\n**Session Progress:** Gal shows sustained interest in space exploration and rockets as a strong motivator for engagement, even when expressing tiredness. Responds well to direct activity suggestions and navigates conversation flow smoothly when space/rocket topics are introduced. Rockets are an effective engagement tool."
 ]
-[20:38:33.835] memoryValues.Student_People (0 items)
+[13:17:46.784] memoryValues.Student_People (0 items)
 []
-[20:38:33.837] memoryValues.Student_Interests (4 items)
+[13:17:46.785] memoryValues.Student_Interests (4 items)
 [
   "facts",
   "drawing",
   "music",
   "science"
 ]
-[20:38:33.838] memoryValues.Student_CustomApps (2 items)
+[13:17:46.786] memoryValues.Student_CustomApps (2 items)
 [
   {
     "id": "material-sensations"
@@ -599,7 +305,7 @@ April 20 Session: Gal expressed interest in science videos (Kurzgesagt), then in
     "name": "Material Sensations"
   }
 ]
-[20:38:33.839] memoryValues.Student_Preferences
+[13:17:46.787] memoryValues.Student_Preferences
 {
   "FavoriteActivities": [
     "drawing",
@@ -608,11 +314,11 @@ April 20 Session: Gal expressed interest in science videos (Kurzgesagt), then in
     "interactive exploration"
   ]
 }
-[20:38:33.841] memoryValues.Student_CommunicationStyle
+[13:17:46.788] memoryValues.Student_CommunicationStyle
 {
   "PrimaryMethod": "AAC"
 }
-[20:38:33.842] memoryVisualization — data section (77 lines)
+[13:17:46.789] memoryVisualization — data section (73 lines)
 === Current Memory ===
 • /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
   (may contain items - view "/Student_People" to load from database)
@@ -632,12 +338,8 @@ April 20 Session: Gal expressed interest in science videos (Kurzgesagt), then in
   - RewardPreferences: {array} (empty)
   - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
   ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 5 items) — General notes about the student (non-sensitive) 
-  - [0]: "Profile: Gal (age 6) communicates via AAC and strongly prefers interactive apps (drawing, music) over passive activities. Core interests: facts, drawing, music, and science—especially hands-on exploration (experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Learning style: prefers hands-on, practical engagement and browses multiple options before committing to extended activities."
-  - [1]: "Communication Style: Uses 'I'm thinking about' button to initiate guessing mode, preferring shorter, focused interactions with clear exit strategies. Typically looks down and to the side during communication—this is normal. When engagement seems uncertain, offer direct activity suggestions (e.g., 'Want to draw a rocket?') rather than waiting for menu selection. Frequently expresses tiredness via guessing mode. Responds positively to expanded activity options and specific, interest-based prompts."
-  - [2]: "Safety & Concerns: (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home. Monitor for clarification and continue offering reassurance and specific activities when frustrated."
-  - [3]: "Session History (April 16-19): Gal has engaged in multiple focused sessions across drawing, space exploration, science experiments, interactive games, and multimedia learning. Consistent patterns: sustained engagement with hands-on activities (drawing app, bubbles game, sink-or-float experiments), strong interest in space topics (Mars, planets, rockets), willingness to provide details about personal activities, and excellent hand-eye coordination in reflex games. Note on YouTube browsing (April 19): Gal cycled between YouTube and Space buttons repeatedly, suggesting difficulty finding desired specific content. Recommendation: Offer direct activity suggestions (e.g., 'Want to watch a rocket launch video?') rather than abstract topic buttons when browsing appears uncertain."
-  - [4]: "April 20 Session: Gal expressed interest in science videos (Kurzgesagt), then initiated guessing mode about 'something in the future.' Narrowed down to: Time → Future → asking about timeframe (later today, tomorrow, someday, next week). Pattern shows continued interest in science content and abstract thinking about future events."
+• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
+  - [0]: "**Profile & Learning Style:** Gal (age 6) communicates via AAC and strongly prefers interactive, hands-on apps (drawing, music) over passive activities. Core interests: facts, drawing, music, science (hands-on exploration: experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Typically looks down and to the side during communication—this is normal.\n\n**Communication Patterns:** Uses 'I'm thinking about' button to initiate guessing mode. Prefers shorter, focused interactions with clear exit strategies. Frequently expresses tiredness via guessing mode. Responds well to direct activity suggestions (e.g., 'Want to draw a rocket?') rather than abstract menu browsing. When browsing multiple options without committing, offer specific, interest-based prompts instead of waiting for selection.\n\n**Safety & Notable Events:** (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times in succession—may indicate scissors-related incident at school or home; monitor for clarification and continue offering reassurance and specific activities when frustrated.\n\n**Session Progress:** Gal shows sustained interest in space exploration and rockets as a strong motivator for engagement, even when expressing tiredness. Responds well to direct activity suggestions and navigates conversation flow smoothly when space/rocket topics are introduced. Rockets are an effective engagement tool."
   ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
 • /Student_CustomApps (array, 2 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
 • /Context_Library (map, 0 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 

@@ -19,13 +19,14 @@ import {
   ShieldCheck,
   LogOut,
   Sparkles,
+  Image as ImageIcon,
 } from 'lucide-react';
 import logoImage from '@assets/aivota_icon.png';
 import { cn } from '@/lib/utils';
 import { useLocation } from 'wouter';
 import { useAuth } from '@/hooks/useAuth';
 
-type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts' | 'licenses' | 'identity-providers' | 'activity-log' | 'deep-analyses';
+type AdminSection = 'personas' | 'library' | 'voices' | 'models' | 'sessions' | 'contacts' | 'licenses' | 'identity-providers' | 'activity-log' | 'deep-analyses' | 'public-symbols';
 
 type AdminSidebarProps = {
   activeSection: AdminSection;
@@ -98,6 +99,12 @@ export function AdminSidebar({ activeSection, onSectionChange }: AdminSidebarPro
       label: 'Deep Analyses',
       section: 'deep-analyses' as AdminSection,
       testId: 'admin-nav-deep-analyses',
+    },
+    {
+      icon: ImageIcon,
+      label: 'Public Symbols',
+      section: 'public-symbols' as AdminSection,
+      testId: 'admin-nav-public-symbols',
     },
   ];
 

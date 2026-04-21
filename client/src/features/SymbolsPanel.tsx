@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest, apiUrl } from '@/lib/queryClient';
 import { useStudent } from '@/hooks/useStudent';
-import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -45,12 +44,10 @@ interface SymbolData {
 
 const PAGE_SIZE = 24;
 
-function SymbolCard({ symbol, onEdit, onDelete, showApproval, onApprove }: {
+function SymbolCard({ symbol, onEdit, onDelete }: {
   symbol: SymbolData;
   onEdit?: () => void;
   onDelete?: () => void;
-  showApproval?: boolean;
-  onApprove?: () => void;
 }) {
   const { t } = useLanguage();
   const { theme } = useTheme();
@@ -59,13 +56,7 @@ function SymbolCard({ symbol, onEdit, onDelete, showApproval, onApprove }: {
     <div className={cn(
       "border rounded-lg p-3 flex flex-col items-center gap-2 hover:shadow-md transition-shadow relative",
       isDark ? "bg-slate-800 border-slate-700" : "bg-white border-gray-200",
-      showApproval && !symbol.isApproved && (isDark ? "border-yellow-600/50" : "border-yellow-400"),
     )}>
-      {showApproval && !symbol.isApproved && (
-        <span className="absolute top-1 right-1 text-[9px] px-1.5 py-0.5 rounded-full bg-yellow-500/20 text-yellow-600 font-medium">
-          {t('symbols.pending')}
-        </span>
-      )}
       <img
         src={apiUrl(`/api/custom-symbols/${symbol.id}/image`)}
         alt={symbol.assocKey || symbol.key || t('symbols.title')}
@@ -81,11 +72,6 @@ function SymbolCard({ symbol, onEdit, onDelete, showApproval, onApprove }: {
         </span>
       )}
       <div className="flex gap-1">
-        {onApprove && (
-          <Button variant="ghost" size="sm" onClick={onApprove} className="text-green-600 hover:text-green-700" title={t('symbols.approve')}>
-            <span className="text-xs">&#10003;</span>
-          </Button>
-        )}
         {onEdit && (
           <Button variant="ghost" size="sm" onClick={onEdit}>
             <Edit className="w-3 h-3" />
@@ -115,7 +101,6 @@ function filterSymbols(symbols: SymbolData[], query: string): SymbolData[] {
 
 export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
   const { student } = useStudent();
-  const { user } = useAuth();
   const { t } = useLanguage();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -128,14 +113,12 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
   // Pagination state per tab
   const [myPage, setMyPage] = useState(1);
   const [studentPage, setStudentPage] = useState(1);
-  const [publicPage, setPublicPage] = useState(1);
 
   // Reset pagination when search changes
   const handleSearchChange = (q: string) => {
     setSearchQuery(q);
     setMyPage(1);
     setStudentPage(1);
-    setPublicPage(1);
   };
 
   // Queries
@@ -151,37 +134,12 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
     enabled: isOpen && !!student,
   });
 
-  const { data: approvedPublicSymbols = [] } = useQuery<SymbolData[]>({
-    queryKey: ['custom-symbols', 'public'],
-    queryFn: () => apiRequest('GET', '/api/custom-symbols/public?limit=200').then(r => r.json()),
-    enabled: isOpen && activeTab === 'public',
-  });
-
-  const { data: unapprovedSymbols = [] } = useQuery<SymbolData[]>({
-    queryKey: ['custom-symbols', 'unapproved'],
-    queryFn: () => apiRequest('GET', '/api/custom-symbols/unapproved?limit=200').then(r => r.json()),
-    enabled: isOpen && activeTab === 'public',
-  });
-
   // Filtered + paginated lists
   const filteredMy = useMemo(() => filterSymbols(mySymbols, searchQuery), [mySymbols, searchQuery]);
   const filteredStudent = useMemo(() => filterSymbols(studentSymbols, searchQuery), [studentSymbols, searchQuery]);
-  const allPublic = useMemo(() => filterSymbols([...unapprovedSymbols, ...approvedPublicSymbols], searchQuery), [unapprovedSymbols, approvedPublicSymbols, searchQuery]);
 
   const paginatedMy = filteredMy.slice(0, myPage * PAGE_SIZE);
   const paginatedStudent = filteredStudent.slice(0, studentPage * PAGE_SIZE);
-  const paginatedPublic = allPublic.slice(0, publicPage * PAGE_SIZE);
-
-  // Mutations
-  const deleteSymbolMutation = useMutation({
-    mutationFn: (id: string) => apiRequest('DELETE', `/api/custom-symbols/${id}`),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['custom-symbols'] }); },
-  });
-
-  const approveSymbolMutation = useMutation({
-    mutationFn: (id: string) => apiRequest('PATCH', `/api/custom-symbols/${id}`, { isApproved: true }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['custom-symbols'] }); },
-  });
 
   const deleteAssocMutation = useMutation({
     mutationFn: ({ assocId, type }: { assocId: string; type: string }) =>
@@ -201,10 +159,8 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
   if (!isOpen) return null;
 
   const renderGrid = (symbols: SymbolData[], opts: {
-    showApproval?: boolean;
     onEdit?: (s: SymbolData) => void;
     onDelete?: (s: SymbolData) => void;
-    onApprove?: (s: SymbolData) => void;
     emptyMessage: string;
     total: number;
     page: number;
@@ -219,8 +175,6 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
             <SymbolCard
               key={s.id}
               symbol={s}
-              showApproval={opts.showApproval}
-              onApprove={opts.onApprove && !s.isApproved ? () => opts.onApprove!(s) : undefined}
               onEdit={opts.onEdit ? () => opts.onEdit!(s) : undefined}
               onDelete={opts.onDelete ? () => opts.onDelete!(s) : undefined}
             />
@@ -254,7 +208,6 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
         <TabsList className="mx-4 mt-2 shrink-0">
           <TabsTrigger value="my">{t('symbols.mySymbols')}</TabsTrigger>
           {student && <TabsTrigger value="student">{t('symbols.student')}</TabsTrigger>}
-          {user?.isSystemAdmin && <TabsTrigger value="public">{t('symbols.public')}</TabsTrigger>}
         </TabsList>
 
         {/* Search bar */}
@@ -291,18 +244,6 @@ export function SymbolsPanel({ isOpen }: { isOpen: boolean }) {
               total: filteredStudent.length,
               page: studentPage,
               onLoadMore: () => setStudentPage(p => p + 1),
-            })}
-          </TabsContent>
-
-          <TabsContent value="public" className="p-4 mt-0">
-            {renderGrid(paginatedPublic, {
-              showApproval: true,
-              onApprove: (s) => approveSymbolMutation.mutate(s.id),
-              onDelete: (s) => deleteSymbolMutation.mutate(s.id),
-              emptyMessage: searchQuery ? t('symbols.noResults') : t('symbols.noPublicSymbols'),
-              total: allPublic.length,
-              page: publicPage,
-              onLoadMore: () => setPublicPage(p => p + 1),
             })}
           </TabsContent>
         </div>

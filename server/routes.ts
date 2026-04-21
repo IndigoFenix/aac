@@ -1058,10 +1058,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/custom-symbols/institute/:instituteId", requireAuth, (req, res) =>
     customSymbolController.getInstituteSymbols(req, res)
   );
-  app.get("/api/custom-symbols/public", requireAuth, (req, res) =>
+  app.get("/api/custom-symbols/public", requireSystemAdmin, (req, res) =>
     customSymbolController.getPublicSymbols(req, res)
   );
-  app.get("/api/custom-symbols/unapproved", requireAuth, (req, res) =>
+  app.get("/api/custom-symbols/unapproved", requireSystemAdmin, (req, res) =>
     customSymbolController.getUnapprovedSymbols(req, res)
   );
   app.get("/api/custom-symbols/by-key/:key", requireAuth, (req, res) =>
@@ -1076,6 +1076,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/custom-symbols/available/:studentId", requireAuth, (req, res) =>
     customSymbolController.getAvailableSymbols(req, res)
   );
+  app.post("/api/custom-symbols/bulk-delete-unapproved", requireSystemAdmin, (req, res) =>
+    customSymbolController.bulkDeleteUnapproved(req, res)
+  );
 
   // Symbol CRUD (parameterized routes last)
   app.post("/api/custom-symbols", requireAuth, upload.single("image"), (req, res) =>
@@ -1087,10 +1090,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/custom-symbols/:id/image", requireAuth, (req, res) =>
     customSymbolController.getSymbolImage(req, res)
   );
-  app.patch("/api/custom-symbols/:id", requireAuth, (req, res) =>
+  app.patch("/api/custom-symbols/:id", requireSystemAdmin, (req, res) =>
     customSymbolController.updateSymbol(req, res)
   );
-  app.delete("/api/custom-symbols/:id", requireAuth, (req, res) =>
+  app.delete("/api/custom-symbols/:id", requireSystemAdmin, (req, res) =>
     customSymbolController.deleteSymbol(req, res)
   );
 

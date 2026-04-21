@@ -91,6 +91,20 @@ export class GeminiLiveProvider implements LiveProvider {
   // Vertex AI does not support the `behavior` parameter on tool declarations
   private useVertexAI = false;
 
+  /**
+   * On gemini-3.1-flash-live-preview, `sendClientContent` is restricted to
+   * seeding INITIAL conversation history. Any text update during the live
+   * conversation must use `sendRealtimeInput({text})` instead — otherwise
+   * the server eventually closes with 1008 ("Operation is not implemented,
+   * or supported, or enabled"). This flag flips the wire-level path for
+   * sendMessage/sendContextInjection/sendFrameWithPrompt.
+   * Source: ai.google.dev/gemini-api/docs/live-api/capabilities and the
+   * 3.1 model-specific docs.
+   */
+  private get isPreview31(): boolean {
+    return this.config.model === "gemini-3.1-flash-live-preview";
+  }
+
   constructor(callbacks: LiveProviderCallbacks, useVertexAI = false) {
     if (useVertexAI) {
       const project = process.env.GOOGLE_CLOUD_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || "";
@@ -128,6 +142,12 @@ export class GeminiLiveProvider implements LiveProvider {
 
     const triggerTokens = config.compressionTriggerTokens ?? 100_000;
     const targetTokens = config.compressionTargetTokens ?? 50_000;
+
+    const isPreview31 = config.model === "gemini-3.1-flash-live-preview";
+    logLiveSession(
+      "CONNECT_CONFIG",
+      `model=${config.model} vertexAI=${this.useVertexAI} responseModality=${config.responseModality} hasTools=${!!config.tools} hasResumptionHandle=${!!this.resumptionHandle} textVia=${isPreview31 ? "sendRealtimeInput" : "sendClientContent"}`,
+    );
 
     try {
       this.session = await this.client.live.connect({
@@ -179,7 +199,10 @@ export class GeminiLiveProvider implements LiveProvider {
           //  prompt if it determines that the prompt is not directed at it."
           // NOTE: Do NOT add realtimeInputConfig or activityHandling — those cause
           // empty turns for text input (see feedback_gemini_live_config.md).
-          proactivity: { proactiveAudio: true },
+          // 3.1 Preview rejects the `proactivity` field with 1007 — omit for that model.
+          ...(config.model === "gemini-3.1-flash-live-preview"
+            ? {}
+            : { proactivity: { proactiveAudio: true } }),
           // Safety filters disabled — Gemini was rejecting innocuous greetings to a
           // 6-year-old AAC user with RESPONSE_REJECTED, causing partial audio
           // playback + retry loops. The system prompt strictly defines behavior
@@ -347,6 +370,30 @@ export class GeminiLiveProvider implements LiveProvider {
   ): void {
     if (!this.session || !this.connected) return;
     try {
+      if (this.isPreview31) {
+        // 3.1: split into individual realtime inputs. Order: frames first,
+        // then prompt last (text triggers the turn).
+        logLiveSession(
+          "CLIENT → sendRealtimeInput(video+text)",
+          `prompt="${prompt.substring(0, 80)}" extraImages=${extraImages?.length ?? 0}`,
+        );
+        this.session.sendRealtimeInput({
+          video: { data: jpegBase64, mimeType: "image/jpeg" } as any,
+        });
+        if (extraImages) {
+          for (const img of extraImages) {
+            if (img.label) {
+              this.session.sendRealtimeInput({ text: img.label });
+            }
+            this.session.sendRealtimeInput({
+              video: { data: img.data, mimeType: img.mimeType } as any,
+            });
+          }
+        }
+        this.session.sendRealtimeInput({ text: prompt });
+        return;
+      }
+
       const parts: any[] = [
         { inlineData: { data: jpegBase64, mimeType: "image/jpeg" } },
       ];
@@ -395,11 +442,42 @@ export class GeminiLiveProvider implements LiveProvider {
     }
   }
 
-  sendMessage(text: string, role: "user" | "model" = "user", turnComplete = true): void {
+  sendMessage(
+    text: string,
+    role: "user" | "model" = "user",
+    turnComplete = true,
+    opts: { interrupt?: boolean } = {},
+  ): void {
     if (!this.session || !this.connected) return;
+    const interrupt = !!opts.interrupt;
     try {
+      if (this.isPreview31) {
+        // 3.1: ALL in-conversation text goes via sendRealtimeInput, regardless
+        // of whether we're trying to interrupt. The 3.1 docs explicitly
+        // restrict sendClientContent to "seeding initial context history" and
+        // empirically reject in-conversation sendClientContent with 1008
+        // ("Operation is not implemented, or supported, or enabled") — even
+        // when used as an interrupt. There is no clean text-interrupt path on
+        // 3.1; the new text input gets delivered and the model handles
+        // sequencing on its end. This means the user may hear the model
+        // finish its current sentence before responding to the new press.
+        if (role !== "user") {
+          // sendRealtimeInput has no role concept; model-role text isn't
+          // supported on 3.1's realtime text path.
+          return;
+        }
+        logLiveSession("CLIENT → sendRealtimeInput(text)", text.substring(0, 200));
+        this.session.sendRealtimeInput({ text });
+        return;
+      }
+
+      // 2.5 and other models: sendClientContent works for everything,
+      // including in-conversation text and interrupts.
       const payload = { turns: [{ role, parts: [{ text }] }], turnComplete };
-      logLiveSession("CLIENT → sendMessage", JSON.stringify(payload, null, 2));
+      logLiveSession(
+        interrupt ? "CLIENT → sendClientContent (interrupt)" : "CLIENT → sendMessage",
+        JSON.stringify(payload, null, 2),
+      );
       this.session.sendClientContent(payload);
     } catch (err) {
       console.error("[GeminiLiveProvider] Failed to send message:", err);
@@ -408,12 +486,23 @@ export class GeminiLiveProvider implements LiveProvider {
 
   sendContextInjection(text: string): void {
     if (!this.session || !this.connected) return;
+    const wrapped = `[SYSTEM CONTEXT UPDATE]\n${text}`;
     try {
-      logLiveSession("CLIENT → sendContextInjection", `turnComplete=false text="${text.substring(0, 120)}"`);
-      this.session.sendClientContent({
-        turns: [{ role: "user", parts: [{ text: `[SYSTEM CONTEXT UPDATE]\n${text}` }] }],
-        turnComplete: false,
-      });
+      if (this.isPreview31) {
+        // 3.1: route text through sendRealtimeInput. There's no
+        // turnComplete=false equivalent — every text input triggers a turn.
+        // To approximate "context injection that doesn't ask for a reply",
+        // we still send the text but the system prompt should explain that
+        // [SYSTEM CONTEXT UPDATE] entries are informational.
+        logLiveSession("CLIENT → sendRealtimeInput(text) [context]", wrapped.substring(0, 200));
+        this.session.sendRealtimeInput({ text: wrapped });
+      } else {
+        logLiveSession("CLIENT → sendContextInjection", `turnComplete=false text="${text.substring(0, 120)}"`);
+        this.session.sendClientContent({
+          turns: [{ role: "user", parts: [{ text: wrapped }] }],
+          turnComplete: false,
+        });
+      }
     } catch (err) {
       console.error("[GeminiLiveProvider] Failed to send context injection:", err);
     }
@@ -426,6 +515,10 @@ export class GeminiLiveProvider implements LiveProvider {
         role: t.role,
         parts: [{ text: t.text }],
       }));
+      // sendClientContent with turnComplete=false IS the correct path for
+      // seeding initial history on 3.1 (this is exactly what the docs say
+      // sendClientContent is restricted to).
+      logLiveSession("CLIENT → sendConversationHistory", `turns=${turns.length}`);
       this.session.sendClientContent({
         turns: contents,
         turnComplete: false,
@@ -627,9 +720,31 @@ export class GeminiLiveProvider implements LiveProvider {
         logLiveSession("SERVER → modelTurn", "modelTurn present but no parts");
       }
 
-      // Output transcription — text of what the model said (for logging/display)
+      // Output transcription — text of what the model said (for logging/display).
+      // On gemini-3.1-flash-live-preview, a phantom outputTranscription arrives
+      // after function calls, echoing the tool's string argument with no audio
+      // and no audioOutputTokens. On 3.1, real speech transcriptions arrive
+      // alongside an audio part in the same serverContent — so we can gate on
+      // that. On 2.5, transcriptions arrive in their OWN serverContent messages
+      // (no audio part in the same message), so the gate would suppress all
+      // text. Apply the gate for 3.1 only.
       if ((content as any).outputTranscription?.text) {
-        this.callbacks.onOutputTranscription?.((content as any).outputTranscription.text);
+        const transcriptText = (content as any).outputTranscription.text;
+        if (this.isPreview31) {
+          const hasAudioPart = !!content.modelTurn?.parts?.some(
+            (p: any) => p.inlineData?.mimeType?.startsWith("audio/"),
+          );
+          if (hasAudioPart) {
+            this.callbacks.onOutputTranscription?.(transcriptText);
+          } else {
+            logLiveSession(
+              "SERVER → outputTranscription (3.1 phantom, no audio)",
+              transcriptText,
+            );
+          }
+        } else {
+          this.callbacks.onOutputTranscription?.(transcriptText);
+        }
       }
 
       if (content.turnComplete) {
