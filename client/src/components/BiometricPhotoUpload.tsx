@@ -9,7 +9,7 @@
 // sent together as multipart form-data.
 
 import { useState, useRef, useEffect } from 'react';
-import { apiRequest, apiUrl } from '@/lib/queryClient';
+import { apiUrl } from '@/lib/queryClient';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
 
@@ -165,16 +165,32 @@ export function BiometricPhotoUpload({
         return;
       }
 
-      // Multipart upload — apiRequest handles FormData + prefixes VITE_API_URL
+      // Multipart upload. Use raw fetch (via apiUrl for port correctness) so we
+      // can read the response body even on 4xx — apiRequest throws on non-OK
+      // and we lose the structured { code } payload.
       const form = new FormData();
       form.append('image', file);
       form.append('embedding', JSON.stringify(embedding));
       if (quality !== undefined) form.append('quality', String(quality));
 
-      const response = await apiRequest('POST', endpointFor(target), form);
-      const data = await response.json();
-      if (!data.success) {
-        throw new Error(data.message || 'Upload failed');
+      const response = await fetch(apiUrl(endpointFor(target)), {
+        method: 'POST',
+        credentials: 'include',
+        body: form,
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || !data.success) {
+        if (data.code === 'NO_FACE') {
+          toast({
+            title: t('biometric.noFaceDetected'),
+            description: t('biometric.noFaceDetectedHint'),
+            variant: 'destructive',
+          });
+          setPreview(null);
+          return;
+        }
+        throw new Error(data.message || `Upload failed (${response.status})`);
       }
 
       toast({ title: t('biometric.photoUploaded') });

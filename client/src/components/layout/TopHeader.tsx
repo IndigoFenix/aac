@@ -1,7 +1,7 @@
 // src/components/layout/TopHeader.tsx
 
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { User, Menu, Settings, LogOut, Shield, Building2, HeadsetIcon } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useStudent } from '@/hooks/useStudent';
@@ -10,7 +10,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useFeaturePanel } from '@/contexts/FeaturePanelContext';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { openUI } from '@/lib/uiEvents';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, apiUrl } from '@/lib/queryClient';
 import { useStudentLabel } from '@/hooks/useStudentLabel';
 import { cn } from '@/lib/utils';
 
@@ -40,6 +40,8 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
         return t('nav.institute');
       case 'students':
         return ts('nav.students');
+      case 'studentInfo':
+        return ts('nav.studentInfo');
       case 'aacsettings':
         return t('nav.aacsettings');
       case 'progress':
@@ -195,6 +197,12 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
             <p className="text-xs text-muted-foreground">{t('header.active')}</p>
           </div>
           <Avatar className="w-8 h-8">
+            {user.biometricDataId && (
+              <AvatarImage
+                src={apiUrl(`/api/biometric-data/${user.biometricDataId}/photo`)}
+                alt={user.fullName || user.firstName || 'Profile'}
+              />
+            )}
             <AvatarFallback className="bg-primary/10">
               <User className="w-4 h-4 text-primary" />
             </AvatarFallback>

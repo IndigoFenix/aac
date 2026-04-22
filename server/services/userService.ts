@@ -163,6 +163,7 @@ export class UserService {
       referralCode: user.referralCode,
       mfaEnabled: user.mfaEnabled,
       mfaEnforcedByAdmin: user.mfaEnforcedByAdmin,
+      biometricDataId: (user as any).biometricDataId ?? null,
     };
   }
 

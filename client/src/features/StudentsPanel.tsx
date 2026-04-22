@@ -11,7 +11,7 @@ import { useChat } from '@/hooks/useChat';
 import { useFeaturePanel, useSharedState } from '@/contexts/FeaturePanelContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, apiUrl } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
 import { openUI } from '@/lib/uiEvents';
 
@@ -66,6 +66,7 @@ interface StudentWithProgress {
   backgroundContext?: string;
   framework?: string;
   country?: string;
+  biometricDataId?: string | null;
 }
 
 export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
@@ -133,11 +134,11 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
     return () => unregisterMetadataBuilder('students');
   }, [registerMetadataBuilder, unregisterMetadataBuilder, buildStudentsMetadata]);
 
-  // Handle student click - navigate to student progress
+  // Handle student click - select the student and open their info panel
   const handleStudentClick = async (studentId: string) => {
     setSharedState({ selectedStudentId: studentId });
     await selectStudent(studentId);
-    // setActiveFeature('progress');
+    setActiveFeature('studentInfo');
   };
 
   const goToProgress = async (studentId: string) => {
@@ -162,6 +163,7 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
       birthDate: student.birthDate,
       framework: student.framework,
       country: student.country,
+      biometricDataId: student.biometricDataId,
     });
   };
 
@@ -285,12 +287,29 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
               <CardContent className="p-4 flex items-center gap-4">
                 {/* Avatar */}
                 <div className={cn(
-                  'w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg shrink-0 transition-colors',
+                  'w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg shrink-0 transition-colors overflow-hidden',
                   isDark
                     ? 'bg-slate-800 text-slate-300 group-hover:bg-primary group-hover:text-primary-foreground'
                     : 'bg-secondary text-secondary-foreground group-hover:bg-primary group-hover:text-primary-foreground'
                 )}>
-                  {student.name.split(' ').map(n => n[0]).join('')}
+                  {student.biometricDataId ? (
+                    <img
+                      src={apiUrl(`/api/biometric-data/${student.biometricDataId}/photo`)}
+                      alt={student.name}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        const target = e.currentTarget as HTMLImageElement;
+                        target.style.display = 'none';
+                        const parent = target.parentElement;
+                        if (parent) {
+                          const initials = student.name.split(' ').map(n => n[0]).join('');
+                          parent.innerHTML = initials;
+                        }
+                      }}
+                    />
+                  ) : (
+                    student.name.split(' ').map(n => n[0]).join('')
+                  )}
                 </div>
 
                 {/* Main Info */}

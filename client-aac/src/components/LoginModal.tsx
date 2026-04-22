@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { Loader2, LogIn } from "lucide-react";
 import aivotaLogo from "@assets/aivota_logo.png";
 
 interface LoginModalProps {
@@ -84,7 +85,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (isLogin) {
       loginMutation.mutate({
         email: formData.email,
@@ -129,52 +130,54 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={() => !isLoading && onClose()}>
-      <DialogContent className="sm:max-w-[500px]" onPointerDownOutside={(e) => e.preventDefault()}>
-        <DialogHeader>
-          <img src={aivotaLogo} alt="Aivota" className="mx-auto h-14 mb-2 object-contain" />
-          <DialogTitle>
+      <DialogContent className="sm:max-w-[500px] shadow-lg" onPointerDownOutside={(e) => e.preventDefault()}>
+        <DialogHeader className="space-y-1 text-center sm:text-center">
+          <img src={aivotaLogo} alt="Aivota" className="mx-auto h-16 mb-4 object-contain" />
+          <DialogTitle className="text-2xl font-bold text-center">
             {isLogin ? "Welcome Back" : "Create Your Account"}
           </DialogTitle>
-          <DialogDescription>
-            {isLogin 
+          <DialogDescription className="text-center">
+            {isLogin
               ? "Sign in to access your communication profile and continue your journey."
               : "Join Aivota and create your personalized communication experience."
             }
           </DialogDescription>
         </DialogHeader>
-        
+
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Email and Password - Always required */}
-          <div className="grid grid-cols-1 gap-4">
-            <div>
-              <Label htmlFor="email">Email Address *</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="your.email@example.com"
-                value={formData.email}
-                onChange={(e) => handleInputChange("email", e.target.value)}
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="password">Password *</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Enter your password"
-                value={formData.password}
-                onChange={(e) => handleInputChange("password", e.target.value)}
-                required
-              />
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="email">Email Address *</Label>
+            <Input
+              id="email"
+              type="email"
+              placeholder="your.email@example.com"
+              value={formData.email}
+              onChange={(e) => handleInputChange("email", e.target.value)}
+              required
+              dir="ltr"
+              disabled={isLoading}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="password">Password *</Label>
+            <Input
+              id="password"
+              type="password"
+              placeholder="Enter your password"
+              value={formData.password}
+              onChange={(e) => handleInputChange("password", e.target.value)}
+              required
+              dir="ltr"
+              disabled={isLoading}
+            />
           </div>
 
           {/* Registration-only fields */}
           {!isLogin && (
             <>
               <div className="grid grid-cols-2 gap-4">
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="name">Full Name *</Label>
                   <Input
                     id="name"
@@ -182,9 +185,10 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
                     value={formData.name}
                     onChange={(e) => handleInputChange("name", e.target.value)}
                     required
+                    disabled={isLoading}
                   />
                 </div>
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="age">Age</Label>
                   <Input
                     id="age"
@@ -192,14 +196,15 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
                     placeholder="25"
                     value={formData.age}
                     onChange={(e) => handleInputChange("age", e.target.value)}
+                    disabled={isLoading}
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="gender">Gender</Label>
-                  <Select value={formData.gender} onValueChange={(value) => handleInputChange("gender", value)}>
+                  <Select value={formData.gender} onValueChange={(value) => handleInputChange("gender", value)} disabled={isLoading}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select gender" />
                     </SelectTrigger>
@@ -211,9 +216,9 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
                     </SelectContent>
                   </Select>
                 </div>
-                <div>
+                <div className="space-y-2">
                   <Label htmlFor="language">Preferred Language</Label>
-                  <Select value={formData.language} onValueChange={(value) => handleInputChange("language", value)}>
+                  <Select value={formData.language} onValueChange={(value) => handleInputChange("language", value)} disabled={isLoading}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -234,7 +239,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
                 </div>
               </div>
 
-              <div>
+              <div className="space-y-2">
                 <Label htmlFor="preferences">Communication Preferences</Label>
                 <Textarea
                   id="preferences"
@@ -242,10 +247,11 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
                   value={formData.preferences}
                   onChange={(e) => handleInputChange("preferences", e.target.value)}
                   rows={3}
+                  disabled={isLoading}
                 />
               </div>
 
-              <div>
+              <div className="space-y-2">
                 <Label htmlFor="clinicalInfo">Clinical Information (Optional)</Label>
                 <Textarea
                   id="clinicalInfo"
@@ -253,29 +259,32 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
                   value={formData.clinicalInfo}
                   onChange={(e) => handleInputChange("clinicalInfo", e.target.value)}
                   rows={2}
+                  disabled={isLoading}
                 />
               </div>
             </>
           )}
 
-          <div className="flex flex-col gap-3 pt-4">
-            <Button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-purple-600 hover:bg-purple-700"
-            >
-              {isLoading
-                ? (isLogin ? "Signing in..." : "Creating Account...")
-                : (isLogin ? "Sign In" : "Create Account")
-              }
-            </Button>
-          </div>
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin me-2" />
+                {isLogin ? "Signing in..." : "Creating Account..."}
+              </>
+            ) : (
+              isLogin ? "Sign In" : "Create Account"
+            )}
+          </Button>
         </form>
 
         {/* Dev-only impersonation */}
         {import.meta.env.DEV && (
-          <form onSubmit={handleImpersonate} className="pt-2">
-            <div className="border-t pt-3 space-y-2">
+          <form onSubmit={handleImpersonate}>
+            <div className="border-t pt-4 space-y-2">
               <p className="text-xs font-medium text-orange-600">Dev: Login as user</p>
               <div className="flex gap-2">
                 <Input
@@ -284,6 +293,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
                   value={impersonateEmail}
                   onChange={(e) => setImpersonateEmail(e.target.value)}
                   required
+                  dir="ltr"
                   className="text-sm"
                 />
                 <Button
@@ -293,7 +303,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
                   disabled={isImpersonating}
                   className="shrink-0 border-orange-300 text-orange-600 hover:bg-orange-50"
                 >
-                  {isImpersonating ? "..." : "Go"}
+                  {isImpersonating ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
                 </Button>
               </div>
             </div>

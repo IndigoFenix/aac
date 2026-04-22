@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useAuth } from "@/hooks/useAuth";
 import { useStudent } from "@/hooks/useStudent";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -20,13 +19,10 @@ import {
   Camera,
   Settings,
   User,
-  Shield,
-  ShieldCheck,
-  ShieldOff,
   Loader2,
 } from "lucide-react";
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
-import { InsertInviteCode, insertInviteCodeSchema, Interpretation, RedeemInviteCode, redeemInviteCodeSchema, Student } from "@shared/schema";
+import { BiometricPhotoUpload } from "@/components/BiometricPhotoUpload";
+import { InsertInviteCode, insertInviteCodeSchema, RedeemInviteCode, redeemInviteCodeSchema, Student } from "@shared/schema";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -119,13 +115,6 @@ export function GlobalAuthModals() {
     studentId: string;
     name: string;
   } | null>(null);
-
-  // MFA state
-  const [mfaSetupStep, setMfaSetupStep] = useState<"idle" | "setup" | "verify" | "disable">("idle");
-  const [mfaQrCode, setMfaQrCode] = useState<string | null>(null);
-  const [mfaManualKey, setMfaManualKey] = useState<string | null>(null);
-  const [mfaCode, setMfaCode] = useState("");
-  const [mfaDisableCode, setMfaDisableCode] = useState("");
 
   // Invite code forms
   const createInviteForm = useForm<InsertInviteCode>({
@@ -311,102 +300,6 @@ export function GlobalAuthModals() {
       toast({
         title: t("toast.imageUploadFailed"),
         description: error.message || t("toast.imageUploadFailedDesc"),
-        variant: "destructive",
-      });
-    },
-  });
-
-  // MFA setup mutation
-  const mfaSetupMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/auth/mfa/setup");
-      return res.json();
-    },
-    onSuccess: (data) => {
-      if (data.success) {
-        setMfaQrCode(data.qrCode);
-        setMfaManualKey(data.manualEntryKey);
-        setMfaSetupStep("verify");
-      } else {
-        toast({
-          title: "MFA Setup Failed",
-          description: data.message || "Failed to start MFA setup",
-          variant: "destructive",
-        });
-      }
-    },
-    onError: (error: any) => {
-      toast({
-        title: "MFA Setup Failed",
-        description: error.message || "Failed to start MFA setup",
-        variant: "destructive",
-      });
-    },
-  });
-
-  // MFA verify setup mutation
-  const mfaVerifySetupMutation = useMutation({
-    mutationFn: async (code: string) => {
-      const res = await apiRequest("POST", "/auth/mfa/verify-setup", { code });
-      return res.json();
-    },
-    onSuccess: (data) => {
-      if (data.success) {
-        setMfaSetupStep("idle");
-        setMfaQrCode(null);
-        setMfaManualKey(null);
-        setMfaCode("");
-        queryClient.invalidateQueries({ queryKey: ["/auth/user"] });
-        refetchUser();
-        toast({
-          title: "MFA Enabled",
-          description: "Two-factor authentication has been enabled for your account.",
-        });
-      } else {
-        toast({
-          title: "Verification Failed",
-          description: data.message || "Invalid verification code",
-          variant: "destructive",
-        });
-      }
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Verification Failed",
-        description: error.message || "Failed to verify code",
-        variant: "destructive",
-      });
-    },
-  });
-
-  // MFA disable mutation
-  const mfaDisableMutation = useMutation({
-    mutationFn: async (code: string) => {
-      const res = await apiRequest("POST", "/auth/mfa/disable", { code });
-      return res.json();
-    },
-    onSuccess: (data) => {
-      if (data.success) {
-        setMfaSetupStep("idle");
-        setMfaDisableCode("");
-        queryClient.invalidateQueries({ queryKey: ["/auth/user"] });
-        refetchUser();
-        toast({
-          title: "MFA Disabled",
-          description: "Two-factor authentication has been disabled for your account.",
-        });
-      } else {
-        toast({
-          title: "Failed to Disable MFA",
-          description: data.message || "Invalid verification code",
-          variant: "destructive",
-        });
-      }
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Failed to Disable MFA",
-        description: error.message || "Failed to disable MFA",
         variant: "destructive",
       });
     },
@@ -1034,104 +927,6 @@ export function GlobalAuthModals() {
               </h3>
 
               <div className="bg-muted/50 p-4 rounded-lg mb-4">
-                {/* Profile Image Section */}
-                <div className="mb-6">
-                  <h4 className="text-sm font-medium mb-3">
-                    {t("settings.profileImage")}
-                  </h4>
-                  <div className="flex items-center gap-4">
-                    {/* Current Profile Image */}
-                    <div className="w-16 h-16 rounded-full bg-muted border-2 border-border overflow-hidden">
-                      {user?.profileImageUrl ? (
-                        <img
-                          src={user.profileImageUrl}
-                          alt={user.fullName || user.firstName || "Profile"}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-primary/10">
-                          <User className="w-8 h-8 text-primary" />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Image Upload Section */}
-                    <div className="flex-1">
-                      {profileImagePreview ? (
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <img
-                              src={profileImagePreview}
-                              alt="Preview"
-                              className="w-12 h-12 rounded-full object-cover border"
-                            />
-                            <span className="text-sm text-foreground">
-                              {t("settings.newImageSelected")}
-                            </span>
-                          </div>
-                          <div className="flex gap-2">
-                            <Button
-                              onClick={handleUploadProfileImage}
-                              disabled={uploadProfileImageMutation.isPending}
-                              size="sm"
-                              className="flex items-center gap-2"
-                              data-testid="button-upload-profile-image"
-                            >
-                              {uploadProfileImageMutation.isPending ? (
-                                <>
-                                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
-                                  {t("common.uploading")}
-                                </>
-                              ) : (
-                                <>
-                                  <Upload className="w-4 h-4" />
-                                  {t("common.upload")}
-                                </>
-                              )}
-                            </Button>
-                            <Button
-                              variant="outline"
-                              onClick={handleClearProfileImage}
-                              size="sm"
-                              disabled={uploadProfileImageMutation.isPending}
-                            >
-                              <X className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={handleProfileImageChange}
-                            className="hidden"
-                            id="profile-image-input"
-                            data-testid="input-profile-image"
-                          />
-                          <Button
-                            variant="outline"
-                            onClick={() =>
-                              document
-                                .getElementById("profile-image-input")
-                                ?.click()
-                            }
-                            className="flex items-center gap-2"
-                            data-testid="button-select-profile-image"
-                            disabled={true}
-                          >
-                            <Camera className="w-4 h-4" />
-                            {t("settings.selectImage")}
-                          </Button>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {t("settings.imageHint")}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
                 {/* Profile Name Section */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -1217,215 +1012,26 @@ export function GlobalAuthModals() {
               </div>
             </div>
 
-            {/* Two-Factor Authentication Section */}
-            <div>
-              <h3
-                className={`text-lg font-medium mb-4 flex items-center gap-2 ${isRTL ? "text-right flex-row-reverse" : "text-left"}`}
-              >
-                <Shield className="w-5 h-5" />
-                Two-Factor Authentication
-              </h3>
-
-              <div className="bg-muted/50 p-4 rounded-lg">
-                {/* MFA Status */}
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    {user?.mfaEnabled ? (
-                      <>
-                        <ShieldCheck className="w-5 h-5 text-green-500" />
-                        <span className="text-green-600 font-medium">MFA Enabled</span>
-                      </>
-                    ) : (
-                      <>
-                        <ShieldOff className="w-5 h-5 text-muted-foreground" />
-                        <span className="text-muted-foreground">MFA Not Enabled</span>
-                      </>
-                    )}
-                  </div>
-                  {user?.mfaEnforcedByAdmin && (
-                    <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">
-                      Required by Admin
-                    </span>
-                  )}
+            {/* Face Photo Section */}
+            {user && (
+              <div>
+                <h3
+                  className={`text-lg font-medium mb-4 flex items-center gap-2 ${isRTL ? "text-right flex-row-reverse" : "text-left"}`}
+                >
+                  <Camera className="w-5 h-5" />
+                  {t("biometric.facePhoto")}
+                </h3>
+                <div className="bg-muted/50 p-4 rounded-lg">
+                  <p className={`text-sm text-muted-foreground mb-3 ${isRTL ? "text-right" : ""}`}>
+                    {t("biometric.photoHint")}
+                  </p>
+                  <BiometricPhotoUpload
+                    target={{ type: "user", userId: user.id }}
+                    biometricDataId={user.biometricDataId}
+                  />
                 </div>
-
-                {/* MFA Setup Flow */}
-                {mfaSetupStep === "idle" && !user?.mfaEnabled && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      Add an extra layer of security to your account by enabling two-factor authentication.
-                    </p>
-                    <Button
-                      onClick={() => {
-                        setMfaSetupStep("setup");
-                        mfaSetupMutation.mutate();
-                      }}
-                      disabled={mfaSetupMutation.isPending}
-                      className="flex items-center gap-2"
-                    >
-                      {mfaSetupMutation.isPending ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Setting up...
-                        </>
-                      ) : (
-                        <>
-                          <Shield className="w-4 h-4" />
-                          Enable Two-Factor Authentication
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                )}
-
-                {/* QR Code and Verification */}
-                {mfaSetupStep === "verify" && mfaQrCode && (
-                  <div className="space-y-4">
-                    <p className="text-sm text-muted-foreground">
-                      Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.)
-                    </p>
-                    <div className="flex justify-center">
-                      <img
-                        src={mfaQrCode}
-                        alt="MFA QR Code"
-                        className="w-48 h-48 border rounded"
-                      />
-                    </div>
-                    {mfaManualKey && (
-                      <div className="text-center">
-                        <p className="text-xs text-muted-foreground mb-1">Or enter this key manually:</p>
-                        <code className="bg-muted px-2 py-1 rounded text-sm font-mono select-all">
-                          {mfaManualKey}
-                        </code>
-                      </div>
-                    )}
-                    <div className="space-y-2">
-                      <Label>Enter the 6-digit code from your app:</Label>
-                      <div className="flex justify-center">
-                        <InputOTP
-                          maxLength={6}
-                          value={mfaCode}
-                          onChange={(value) => setMfaCode(value)}
-                        >
-                          <InputOTPGroup>
-                            <InputOTPSlot index={0} />
-                            <InputOTPSlot index={1} />
-                            <InputOTPSlot index={2} />
-                            <InputOTPSlot index={3} />
-                            <InputOTPSlot index={4} />
-                            <InputOTPSlot index={5} />
-                          </InputOTPGroup>
-                        </InputOTP>
-                      </div>
-                    </div>
-                    <div className="flex gap-2 justify-center">
-                      <Button
-                        onClick={() => mfaVerifySetupMutation.mutate(mfaCode)}
-                        disabled={mfaCode.length !== 6 || mfaVerifySetupMutation.isPending}
-                      >
-                        {mfaVerifySetupMutation.isPending ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                            Verifying...
-                          </>
-                        ) : (
-                          "Verify & Enable"
-                        )}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setMfaSetupStep("idle");
-                          setMfaQrCode(null);
-                          setMfaManualKey(null);
-                          setMfaCode("");
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                {/* MFA Enabled - Disable Option */}
-                {mfaSetupStep === "idle" && user?.mfaEnabled && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      Your account is protected with two-factor authentication.
-                    </p>
-                    {!user?.mfaEnforcedByAdmin && (
-                      <Button
-                        variant="destructive"
-                        onClick={() => setMfaSetupStep("disable")}
-                      >
-                        <ShieldOff className="w-4 h-4 mr-2" />
-                        Disable Two-Factor Authentication
-                      </Button>
-                    )}
-                    {user?.mfaEnforcedByAdmin && (
-                      <p className="text-sm text-yellow-600">
-                        MFA is required by your administrator and cannot be disabled.
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Disable Confirmation */}
-                {mfaSetupStep === "disable" && (
-                  <div className="space-y-4">
-                    <Alert>
-                      <AlertDescription>
-                        Enter your current authenticator code to disable two-factor authentication.
-                      </AlertDescription>
-                    </Alert>
-                    <div className="space-y-2">
-                      <Label>Enter the 6-digit code from your app:</Label>
-                      <div className="flex justify-center">
-                        <InputOTP
-                          maxLength={6}
-                          value={mfaDisableCode}
-                          onChange={(value) => setMfaDisableCode(value)}
-                        >
-                          <InputOTPGroup>
-                            <InputOTPSlot index={0} />
-                            <InputOTPSlot index={1} />
-                            <InputOTPSlot index={2} />
-                            <InputOTPSlot index={3} />
-                            <InputOTPSlot index={4} />
-                            <InputOTPSlot index={5} />
-                          </InputOTPGroup>
-                        </InputOTP>
-                      </div>
-                    </div>
-                    <div className="flex gap-2 justify-center">
-                      <Button
-                        variant="destructive"
-                        onClick={() => mfaDisableMutation.mutate(mfaDisableCode)}
-                        disabled={mfaDisableCode.length !== 6 || mfaDisableMutation.isPending}
-                      >
-                        {mfaDisableMutation.isPending ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                            Disabling...
-                          </>
-                        ) : (
-                          "Confirm Disable"
-                        )}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          setMfaSetupStep("idle");
-                          setMfaDisableCode("");
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                )}
               </div>
-            </div>
+            )}
           </div>
 
           <DialogFooter>

@@ -224,7 +224,6 @@ export interface TurnToolAccumulator {
   transcriptSpeaker: string;
   contextText: string;
   callMonitorReason: string | null;
-  learnFaceData: { name: string; relationship?: string; description?: string } | null;
   focusReason: string | null;
   openAppData: { appId: string; data?: string } | null;
   openWebsiteData: { url: string; label?: string } | null;
@@ -247,7 +246,6 @@ export function createEmptyAccumulator(): TurnToolAccumulator {
     transcriptSpeaker: "",
     contextText: "",
     callMonitorReason: null,
-    learnFaceData: null,
     focusReason: null,
     openAppData: null,
     openWebsiteData: null,

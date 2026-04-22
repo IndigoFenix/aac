@@ -281,20 +281,9 @@ function buildOpenWebsiteTool(permitted: PermittedWebsite[]): FunctionDeclaratio
   };
 }
 
-const LEARN_FACE: FunctionDeclaration = {
-  name: "learn_face",
-  description: `Remember a new person's face. Use when you see an unrecognized person and learn their name through conversation. Only when confident about their identity.`,
-  behavior: Behavior.NON_BLOCKING,
-  parametersJsonSchema: {
-    type: "object",
-    properties: {
-      name: { type: "string", description: "Person's name." },
-      relationship: { type: "string", description: "Relationship to the user (e.g. classmate, sibling, teacher)." },
-      description: { type: "string", description: "Physical description (e.g. 'Brown hair, glasses')." },
-    },
-    required: ["name"],
-  },
-};
+// LEARN_FACE (runtime face-learning via AAC) has been removed. New contacts
+// are now created deliberately from the Contacts panel, and physical
+// descriptors are populated by the photo-analyzer AI pipeline on upload.
 
 function buildCallMonitorTool(_config: ToolDeclarationConfig): FunctionDeclaration {
   return {
@@ -437,9 +426,8 @@ export function buildToolDeclarations(config: ToolDeclarationConfig): Tool[] {
     declarations.push(CLOSE_APP);
   }
 
-  if (config.faceRecognitionActive) {
-    declarations.push(LEARN_FACE);
-  }
+  // Face recognition continues to IDENTIFY known contacts, but new contacts
+  // must be created deliberately from the Contacts panel — LEARN_FACE removed.
 
   declarations.push(buildCallMonitorTool(config));
   declarations.push(YES_NO);

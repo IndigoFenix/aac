@@ -11,6 +11,7 @@ import {
   type EntityType,
   type FaceEmbedding,
 } from "./recognition-service";
+import { analyzeFacePhoto, NoFaceDetectedError } from "./photo-analyzer";
 
 // 512×512 is the working resolution for face-api embeddings; no gain from larger
 const TARGET_SIZE = 512;
@@ -59,9 +60,16 @@ async function uploadToS3(buffer: Buffer): Promise<string> {
 export async function uploadBiometricPhoto(
   target: { type: EntityType; id: string },
   imageBuffer: Buffer,
-  opts: { embedding?: FaceEmbedding; quality?: number } = {},
+  opts: { embedding?: FaceEmbedding; quality?: number; userId?: string } = {},
 ): Promise<PhotoUploadResult> {
   const resized = await resizeForBiometric(imageBuffer);
+
+  // AI gate + descriptor extraction. Rejects non-face images and populates
+  // hair/eye color, age/sex, identifying features, and a physicalDescription.
+  // Cost of this call is recorded by apiTracker. Throws NoFaceDetectedError
+  // on rejection — the controller translates that to HTTP 400.
+  const analysis = await analyzeFacePhoto(resized, "image/jpeg", { userId: opts.userId });
+
   const key = await uploadToS3(resized);
 
   const biometricDataId = await ensureBiometricData(target);
@@ -78,7 +86,16 @@ export async function uploadBiometricPhoto(
     faceImageUrl: key,
     faceImageQuality: opts.quality,
     ...(opts.embedding ? { faceEmbedding: opts.embedding } : {}),
+    // AI-populated physical descriptors — only overwrite fields the model returned
+    ...(analysis.hairColor ? { hairColor: analysis.hairColor } : {}),
+    ...(analysis.eyeColor ? { eyeColor: analysis.eyeColor } : {}),
+    ...(analysis.estimatedAge ? { estimatedAge: analysis.estimatedAge } : {}),
+    ...(analysis.estimatedSex ? { estimatedSex: analysis.estimatedSex } : {}),
+    ...(analysis.identifyingFeatures ? { identifyingFeatures: analysis.identifyingFeatures } : {}),
+    ...(analysis.physicalDescription ? { physicalDescription: analysis.physicalDescription } : {}),
   });
 
   return { biometricDataId, faceImageUrl: key, faceImageQuality: opts.quality };
 }
+
+export { NoFaceDetectedError };

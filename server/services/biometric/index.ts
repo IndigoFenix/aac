@@ -3,3 +3,4 @@
 
 export * from "./recognition-service";
 export * from "./photo-upload";
+export * from "./photo-analyzer";

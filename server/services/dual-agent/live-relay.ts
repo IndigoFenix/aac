@@ -29,15 +29,9 @@ import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
 import { GeminiLiveTtsSession } from "../voice/gemini-live-tts-service";
 import { searchYouTube } from "../youtube/youtube-search";
 import { searchSpotify } from "../spotify/spotify-search";
-import {
-  createContact,
-  findSimilarContact,
-  updateContact,
-  getContactsByStudent,
-  storeFaceEmbeddingForContact,
-  ensureBiometricData,
-  updateBiometricData,
-} from "../biometric";
+// Biometric imports removed along with the LEARN_FACE tool. Identification
+// still runs on the client; face-enrollment now goes through the Contacts
+// panel upload flow.
 import { logDualAgent, logLiveSession } from "./dual-agent-logger";
 import { dualAgentService, type SessionCache } from "./dual-agent-service";
 import { buildInteractiveAgentPrompt, AAC_DEFAULT_PERSONA_PROMPT } from "../memory-schema/aac-memory-schema";
@@ -1940,17 +1934,6 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
         };
       }
 
-      case "learn_face": {
-        const faceName = args.name as string || "";
-        const relationship = args.relationship as string | undefined;
-        const description = args.description as string | undefined;
-        this.turnAccum.learnFaceData = { name: faceName, relationship, description };
-        return {
-          id: call.id,
-          name,
-          response: { output: "ok", note: "Face enrollment will process after turn completes" },
-        };
-      }
 
       case "call_monitor": {
         const reason = args.reason as string || "unspecified";
@@ -2294,7 +2277,6 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
     const fullContextText = accum.contextText.trim();
     const fullTranscriptText = accum.transcriptText.trim();
     const callMonitorReason = accum.callMonitorReason || undefined;
-    const learnFaceData = accum.learnFaceData || undefined;
     const openAppData = accum.openAppData || undefined;
     const closeAppTriggered = accum.closeApp;
     const focusReason = accum.focusReason || undefined;
@@ -2316,7 +2298,6 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
         fullContextText && "context",
         hasBoardChange && "board",
         callMonitorReason && "call_monitor",
-        learnFaceData && "learn_face",
       ].filter(Boolean).join(", ") || "(none)",
       speak: fullSpeakText || "(none)",
       interpret: fullInterpretText || "(none)",
@@ -2332,7 +2313,6 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
           }
         : "(no changes)",
       callMonitor: callMonitorReason || false,
-      learnFace: learnFaceData?.name || false,
       setBoard: accum.setBoardName || false,
       pressButton: accum.pressButtonLabel || false,
       openApp: openAppData?.appId || false,
@@ -2477,41 +2457,10 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
     }
 
     // -----------------------------------------------------------------------
-    // 3. Contact enrollment
+    // (Contact enrollment via AAC face-learning removed. New contacts are
+    //  created from the Contacts panel; physical descriptors are populated
+    //  server-side by the photo-analyzer AI pipeline on image upload.)
     // -----------------------------------------------------------------------
-    if (learnFaceData && this.unknownFaceDescriptors.length > 0 && this.studentId) {
-      try {
-        const descriptor = this.unknownFaceDescriptors[0].descriptor;
-        const existing = await findSimilarContact(this.studentId, descriptor);
-        if (!existing) {
-          const created = await createContact({
-            studentId: this.studentId,
-            name: learnFaceData.name,
-            relationship: learnFaceData.relationship || null,
-            // Physical description goes on biometric_data; contextNotes captures
-            // the relationship-specific observation the AI learned at runtime.
-            contextNotes: learnFaceData.description || null,
-          });
-          // Store face embedding + physical description via biometric_data.
-          await storeFaceEmbeddingForContact(created.id, descriptor);
-          if (learnFaceData.description) {
-            const bdId = await ensureBiometricData({ type: "contact", id: created.id });
-            await updateBiometricData(bdId, { physicalDescription: learnFaceData.description });
-          }
-          console.log(`[LiveRelay] Created new contact: ${learnFaceData.name}`);
-        } else {
-          await updateContact(existing.id, {
-            contextNotes: learnFaceData.description || existing.contextNotes,
-            lastSeenAt: new Date(),
-            timesIdentified: (existing.timesIdentified || 0) + 1,
-          });
-          console.log(`[LiveRelay] Updated existing contact: ${existing.name}`);
-        }
-        this.unknownFaceDescriptors = [];
-      } catch (err) {
-        console.error("[LiveRelay] Contact enrollment failed:", err);
-      }
-    }
 
     // -----------------------------------------------------------------------
     // 4. TTS
