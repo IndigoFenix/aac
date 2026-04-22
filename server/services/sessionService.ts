@@ -167,6 +167,7 @@ import {
 } from "./memory-schema/relationship-memory-schema";
 import {
   STUDENT_CONTACTS_FIELD,
+  STUDENT_LINKABLE_ENTITIES_FIELD,
 } from "./memory-schema/contacts-memory-schema";
 
 
@@ -355,6 +356,8 @@ export const MASTER_MEMORY_FIELDS: AgentMemoryFieldWithDB[] = [
   ...STUDENT_MEMORY_FIELDS,
   // Student_Contacts — backed by the studentContacts table (not chatMemory)
   STUDENT_CONTACTS_FIELD,
+  // Read-only list of linkable users/students (shared-institute scope)
+  STUDENT_LINKABLE_ENTITIES_FIELD,
   // Relationship_* fields with db operations
   ...RELATIONSHIP_MEMORY_FIELDS,
 ];
@@ -1697,13 +1700,20 @@ function injectModeContext(
 }
 
 /**
- * Extract context data from memory values for the response
+ * Extract context data from memory values for the response.
+ *
+ * Also emits invalidation signals for student-scoped master-memory fields that
+ * back real DB tables (e.g. Student_Contacts), so the client can refresh the
+ * corresponding panels without needing a Context_* wrapper for every field.
  */
-function extractContextFromMemoryValues(memoryValues: FlatMemoryValues): Record<string, any> {
+function extractContextFromMemoryValues(
+  memoryValues: FlatMemoryValues,
+  opts: { studentId?: string } = {},
+): Record<string, any> {
   const contextData: Record<string, any> = {};
-  
+
   console.log('[extractContextFromMemoryValues] Input keys:', Object.keys(memoryValues));
-  
+
   // Extract all Context_ prefixed fields
   for (const [key, value] of Object.entries(memoryValues)) {
     if (key.startsWith(MEMORY_PREFIX.CONTEXT)) {
@@ -1713,9 +1723,29 @@ function extractContextFromMemoryValues(memoryValues: FlatMemoryValues): Record<
       console.log('[extractContextFromMemoryValues] Extracted:', key, '->', contextKey);
     }
   }
-  
+
+  // Student-scoped table-backed fields — emit invalidation signals so the
+  // matching client panels re-query. Only fire when we actually have a
+  // studentId to attach (otherwise the client can't scope its invalidation).
+  if (opts.studentId) {
+    if ("Student_Contacts" in memoryValues) {
+      contextData.studentContactsUpdated = { studentId: opts.studentId };
+    }
+    // Student_* fields covering core identity (name, gender, etc.) plus any
+    // Student_People / chatMemory fields. Exclude fields that already have
+    // their own signals (Student_Contacts) or are read-only (Student_LinkableEntities)
+    // so we don't double-invalidate.
+    const IGNORED_FOR_STUDENT_UPDATE = new Set(["Student_Contacts", "Student_LinkableEntities"]);
+    const touchedStudentFields = Object.keys(memoryValues).filter(
+      (k) => k.startsWith(MEMORY_PREFIX.STUDENT) && !IGNORED_FOR_STUDENT_UPDATE.has(k),
+    );
+    if (touchedStudentFields.length > 0) {
+      contextData.studentUpdated = { studentId: opts.studentId };
+    }
+  }
+
   console.log('[extractContextFromMemoryValues] Output keys:', Object.keys(contextData));
-  
+
   return contextData;
 }
 
@@ -1843,7 +1873,7 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
       cacheBoardForSession(messageManager.session?.id, mergedMemoryValues?.Context_Board);
 
       // Extract context data (boards, documents, etc.) from memory values
-      const contextData = extractContextFromMemoryValues(mergedMemoryValues);
+      const contextData = extractContextFromMemoryValues(mergedMemoryValues, { studentId });
 
       console.log('[onMessage] Extracted contextData keys:', Object.keys(contextData));
 
@@ -1936,7 +1966,7 @@ export async function onMessageStreaming(input: OnMessageStreamingInput): Promis
       cacheBoardForSession(messageManager.session?.id, mergedMemoryValues?.Context_Board);
 
       // Extract context data (boards, documents, etc.) from memory values
-      const contextData = extractContextFromMemoryValues(mergedMemoryValues);
+      const contextData = extractContextFromMemoryValues(mergedMemoryValues, { studentId });
 
       return {
         ...response,
@@ -2054,7 +2084,7 @@ export async function* onMessageMdStreaming(
         // Resolve imageKeys → symbolPaths on the board (lookup + optional generation)
         await resolveImageKeysOnBoard(mergedMemoryValues?.Context_Board, studentId);
 
-        const contextData = extractContextFromMemoryValues(mergedMemoryValues);
+        const contextData = extractContextFromMemoryValues(mergedMemoryValues, { studentId });
 
         // Cache the board for future requests (survives panel navigation)
         cacheBoardForSession(messageManager.session?.id, mergedMemoryValues?.Context_Board);

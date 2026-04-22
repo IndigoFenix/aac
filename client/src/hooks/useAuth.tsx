@@ -29,6 +29,7 @@ interface User {
   referralCode?: string;
   mfaEnabled?: boolean;
   mfaEnforcedByAdmin?: boolean;
+  biometricDataId?: string | null;
   licensePermissions?: LicensePermissions;
   licenseType?: string;
   isTrial?: boolean;

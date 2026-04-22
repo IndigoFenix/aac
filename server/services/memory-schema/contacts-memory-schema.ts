@@ -36,6 +36,8 @@ import {
   createContact,
   updateContact,
   deleteContact,
+  getLinkableEntitiesForStudent,
+  type LinkableEntity,
 } from "../biometric";
 import { activityLogService } from "../activityLogService";
 
@@ -336,13 +338,13 @@ const contactValueSchema: AgentMemoryFieldObjectWithDB = {
       id: "linkedUserId",
       type: "string",
       description:
-        "If this contact is a registered user in the system, their user id. Mutually exclusive with linkedStudentId.",
+        "If this contact is a registered user in the system, their user id (from Student_LinkableEntities where type='user'). Mutually exclusive with linkedStudentId. When linked, the contact shares biometric data with the canonical user record.",
     },
     linkedStudentId: {
       id: "linkedStudentId",
       type: "string",
       description:
-        "If this contact is another student in the system, their student id. Mutually exclusive with linkedUserId.",
+        "If this contact is another student in the system, their student id (from Student_LinkableEntities where type='student'). Mutually exclusive with linkedUserId.",
     },
     // Biometric descriptors are read-only — not writable from the AI.
     hairColor: { id: "hairColor", type: "string" },
@@ -364,9 +366,13 @@ export const STUDENT_CONTACTS_FIELD: AgentMemoryFieldMapWithDB = {
   title: "Student Contacts",
   description:
     "People in the student's life — parents, classmates, therapists, team members. " +
-    "Keys are `{shortId}_{name}`. To add a contact, use add. To associate a contact with " +
-    "a formal IEP/TALA team, add them to the program's teamContacts (junction) instead. " +
-    "Photos and face embeddings are managed through the UI, not here.",
+    "Keys are `{shortId}_{name}`. BEFORE adding a contact, CHECK Student_LinkableEntities. " +
+    "If the person already exists as a user or student in the system, set linkedUserId " +
+    "(for users) or linkedStudentId (for students) on the new contact so their records " +
+    "stay connected — shared biometric data, no duplicate identities. Linking is NOT " +
+    "automatic; you must set it explicitly when you recognize the person. To associate a " +
+    "contact with a formal IEP/TALA team, add them to the program's teamContacts (junction) " +
+    "after creating the contact. Photos and face embeddings are managed through the UI.",
   opened: true,
   values: contactValueSchema,
   db: studentContactsOps as any,
@@ -611,4 +617,63 @@ export const PROGRAM_TEAM_CONTACTS_FIELD: AgentMemoryFieldArrayWithDB = {
   opened: true,
   items: teamContactValueSchema,
   db: programContactsOps as any,
+};
+
+// ============================================================================
+// Student_LinkableEntities — read-only list of users/students that share at
+// least one institute with the current student, and therefore can be linked
+// from a Student_Contacts row via linkedUserId / linkedStudentId.
+// ============================================================================
+
+// What the AI sees — strictly surface-level (id + type + name). No emails,
+// no additional identifiers. Enough to pick someone from the list and link.
+type LinkableEntitySurface = Pick<LinkableEntity, "id" | "type" | "name">;
+
+const linkableEntitiesOps: MemoryDBOperations<LinkableEntitySurface> = {
+  list: async (ctx, { offset, limit }) => {
+    const studentId = ctx.all.studentId;
+    if (!studentId) throw new Error("studentId required for Student_LinkableEntities");
+    const all = await getLinkableEntitiesForStudent(studentId);
+    const surface: LinkableEntitySurface[] = all.map(({ id, type, name }) => ({ id, type, name }));
+    const items = surface.slice(offset, offset + limit);
+    return { items, total: surface.length };
+  },
+  fromDB: (record) => record,
+  getDBKey: (value) => value.id,
+};
+
+const linkableEntitySchema: AgentMemoryFieldObjectWithDB = {
+  id: "linkableEntity",
+  type: "object",
+  opened: true,
+  properties: {
+    id: {
+      id: "id",
+      type: "string",
+      description:
+        "The user id (when type='user') or student id (when type='student'). Use this as linkedUserId/linkedStudentId when creating a Student_Contacts entry for this person.",
+    },
+    type: {
+      id: "type",
+      type: "string",
+      enum: ["user", "student"],
+    },
+    name: { id: "name", type: "string" },
+  },
+  required: ["id", "type", "name"],
+};
+
+export const STUDENT_LINKABLE_ENTITIES_FIELD: AgentMemoryFieldArrayWithDB = {
+  id: "Student_LinkableEntities",
+  type: "array",
+  title: "Linkable Users & Students",
+  description:
+    "Read-only. Users and other students that share at least one institute with " +
+    "this student. When creating a Student_Contacts row for someone who already " +
+    "appears in this list, set linkedUserId (for users) or linkedStudentId (for " +
+    "students) on the new contact so the system knows it's the same real person. " +
+    "If a matching name is found, auto-linking also happens on your behalf.",
+  opened: false,
+  items: linkableEntitySchema,
+  db: linkableEntitiesOps as any,
 };

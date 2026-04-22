@@ -34,7 +34,9 @@ import {
   Gamepad2,
   Sparkles,
   Contact,
+  UserCircle,
 } from 'lucide-react';
+import { apiUrl } from '@/lib/queryClient';
 import { useState } from 'react';
 import logoImage from '@assets/aivota_icon.png';
 import { useAuth } from '@/hooks/useAuth';
@@ -161,20 +163,30 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
   ];
 
   // ── Section 3: Student Management ──
+  // Visible whenever the license allows at least one student.
   const dashboardLevel = perms?.dashboardLevel ?? 0;
-  const showStudentMgmt = (dashboardLevel === -1 || dashboardLevel > 0) && hasStudentAccess;
+  const showProgressItems = dashboardLevel === -1 || dashboardLevel > 0;
+  const showStudentMgmt = hasStudentAccess;
 
   const deepAnalysisEnabled = !!perms?.deepAnalysisEnabled;
 
   const studentMgmtItems = [
     {
+      icon: UserCircle,
+      labelKey: 'nav.studentInfo',
+      feature: 'studentInfo' as FeatureType,
+      testId: 'nav-student-info',
+      disabled: !student,
+      badge: undefined as string | undefined,
+    },
+    ...(showProgressItems ? [{
       icon: ClipboardList,
       labelKey: 'nav.progress',
       feature: 'progress' as FeatureType,
       testId: 'nav-progress',
       disabled: !student,
       badge: undefined as string | undefined,
-    },
+    }] : []),
     {
       icon: Contact,
       labelKey: 'nav.contacts',
@@ -183,15 +195,15 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
       disabled: !student,
       badge: undefined as string | undefined,
     },
-    {
+    ...(showProgressItems ? [{
       icon: ClipboardList,
       labelKey: 'nav.reports',
       feature: 'reports' as FeatureType,
       testId: 'nav-reports',
       disabled: !student,
       badge: undefined as string | undefined,
-    },
-    ...(deepAnalysisEnabled ? [{
+    }] : []),
+    ...(deepAnalysisEnabled && showProgressItems ? [{
       icon: Sparkles,
       labelKey: 'nav.deepAnalysis',
       feature: 'deepAnalysis' as FeatureType,
@@ -297,8 +309,17 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
               data-testid="card-student-context"
             > {student ? (
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center">
-                  <GraduationCap className="w-4 h-4 text-primary" />
+                <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center overflow-hidden">
+                  {(student as any).biometricDataId ? (
+                    <img
+                      src={apiUrl(`/api/biometric-data/${(student as any).biometricDataId}/photo`)}
+                      alt={student.name}
+                      className="w-full h-full object-cover"
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                    />
+                  ) : (
+                    <GraduationCap className="w-4 h-4 text-primary" />
+                  )}
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-medium text-primary">

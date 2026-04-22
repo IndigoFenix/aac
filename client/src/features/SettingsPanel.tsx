@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -13,6 +14,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import {
   Select,
   SelectContent,
@@ -28,6 +31,8 @@ import {
   User,
   Bell,
   Shield,
+  ShieldCheck,
+  ShieldOff,
   Palette,
   Languages,
   Building2,
@@ -38,19 +43,90 @@ import {
   Accessibility,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { apiRequest } from '@/lib/queryClient';
-import { BiometricPhotoUpload } from '@/components/BiometricPhotoUpload';
+import { apiRequest, apiUrl } from '@/lib/queryClient';
 import { useAccessibility } from '@/contexts/AccessibilityContext';
 import { Slider } from '@/components/ui/slider';
+import { openUI } from '@/lib/uiEvents';
 
 type SystemType = 'tala' | 'us_iep';
 
 export function SettingsPanel() {
   const { language, setLanguage, isRTL } = useLanguage();
   const { theme, setTheme } = useTheme();
-  const { user } = useAuth();
+  const { user, refetchUser } = useAuth();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const { fontSize, highContrast, reduceAnimations, enhancedFocusIndicator, setFontSize, setHighContrast, setReduceAnimations, setEnhancedFocusIndicator } = useAccessibility();
+
+  // MFA state
+  const [mfaSetupStep, setMfaSetupStep] = useState<'idle' | 'setup' | 'verify' | 'disable'>('idle');
+  const [mfaQrCode, setMfaQrCode] = useState<string | null>(null);
+  const [mfaManualKey, setMfaManualKey] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaDisableCode, setMfaDisableCode] = useState('');
+
+  const mfaSetupMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest('POST', '/auth/mfa/setup');
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.success) {
+        setMfaQrCode(data.qrCode);
+        setMfaManualKey(data.manualEntryKey);
+        setMfaSetupStep('verify');
+      } else {
+        toast({ title: t('settings.mfaSetupFailed'), description: data.message || t('settings.mfaSetupFailedDesc'), variant: 'destructive' });
+      }
+    },
+    onError: (error: any) => {
+      toast({ title: t('settings.mfaSetupFailed'), description: error.message || t('settings.mfaSetupFailedDesc'), variant: 'destructive' });
+    },
+  });
+
+  const mfaVerifySetupMutation = useMutation({
+    mutationFn: async (code: string) => {
+      const res = await apiRequest('POST', '/auth/mfa/verify-setup', { code });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.success) {
+        setMfaSetupStep('idle');
+        setMfaQrCode(null);
+        setMfaManualKey(null);
+        setMfaCode('');
+        queryClient.invalidateQueries({ queryKey: ['/auth/user'] });
+        refetchUser();
+        toast({ title: t('settings.mfaEnabled'), description: t('settings.mfaEnabledDesc') });
+      } else {
+        toast({ title: t('settings.mfaVerificationFailed'), description: data.message || t('settings.mfaInvalidCode'), variant: 'destructive' });
+      }
+    },
+    onError: (error: any) => {
+      toast({ title: t('settings.mfaVerificationFailed'), description: error.message || t('settings.mfaVerificationFailedDesc'), variant: 'destructive' });
+    },
+  });
+
+  const mfaDisableMutation = useMutation({
+    mutationFn: async (code: string) => {
+      const res = await apiRequest('POST', '/auth/mfa/disable', { code });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.success) {
+        setMfaSetupStep('idle');
+        setMfaDisableCode('');
+        queryClient.invalidateQueries({ queryKey: ['/auth/user'] });
+        refetchUser();
+        toast({ title: t('settings.mfaDisabled'), description: t('settings.mfaDisabledDesc') });
+      } else {
+        toast({ title: t('settings.mfaDisableFailed'), description: data.message || t('settings.mfaInvalidCode'), variant: 'destructive' });
+      }
+    },
+    onError: (error: any) => {
+      toast({ title: t('settings.mfaDisableFailed'), description: error.message || t('settings.mfaDisableFailedDesc'), variant: 'destructive' });
+    },
+  });
 
   // System type state (affects workflow and default language)
   const [systemType, setSystemType] = useState<SystemType>('us_iep');
@@ -138,11 +214,18 @@ export function SettingsPanel() {
                   "flex items-center gap-4",
                   isRTL && "flex-row-reverse"
                 )}>
-                  <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                    {user.profileImageUrl ? (
-                      <img 
-                        src={user.profileImageUrl} 
-                        alt={user.fullName || 'Profile'} 
+                  <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
+                    {user.biometricDataId ? (
+                      <img
+                        src={apiUrl(`/api/biometric-data/${user.biometricDataId}/photo`)}
+                        alt={user.fullName || 'Profile'}
+                        className="w-full h-full object-cover"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    ) : user.profileImageUrl ? (
+                      <img
+                        src={user.profileImageUrl}
+                        alt={user.fullName || 'Profile'}
                         className="w-full h-full rounded-full object-cover"
                       />
                     ) : (
@@ -156,27 +239,10 @@ export function SettingsPanel() {
                       {user.userType}
                     </Badge>
                   </div>
-                  <Button variant="outline">{t('settings.editProfile')}</Button>
+                  <Button variant="outline" onClick={() => openUI('settings')}>
+                    {t('settings.editProfile')}
+                  </Button>
                 </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Avatar / face photo */}
-          {user && (
-            <Card>
-              <CardHeader>
-                <CardTitle className={cn('flex items-center gap-2', isRTL && 'flex-row-reverse')}>
-                  <User className="w-5 h-5" />
-                  {t('biometric.facePhoto')}
-                </CardTitle>
-                <CardDescription>{t('biometric.photoHint')}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <BiometricPhotoUpload
-                  target={{ type: 'user', userId: user.id }}
-                  biometricDataId={(user as any).biometricDataId}
-                />
               </CardContent>
             </Card>
           )}
@@ -598,6 +664,173 @@ export function SettingsPanel() {
               <CardDescription>{t('settings.securityDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Two-Factor Authentication */}
+              <div className="space-y-3">
+                <div className={cn('flex items-center justify-between', isRTL && 'flex-row-reverse')}>
+                  <div className={cn('flex items-center gap-2', isRTL && 'flex-row-reverse')}>
+                    {user?.mfaEnabled ? (
+                      <>
+                        <ShieldCheck className="w-5 h-5 text-green-500" />
+                        <Label className="text-base font-medium text-green-600">
+                          {t('settings.mfaEnabled')}
+                        </Label>
+                      </>
+                    ) : (
+                      <>
+                        <ShieldOff className="w-5 h-5 text-muted-foreground" />
+                        <Label className="text-base font-medium">
+                          {t('settings.mfaNotEnabled')}
+                        </Label>
+                      </>
+                    )}
+                  </div>
+                  {user?.mfaEnforcedByAdmin && (
+                    <Badge variant="outline" className="bg-yellow-50 text-yellow-800 border-yellow-300">
+                      {t('settings.mfaRequiredByAdmin')}
+                    </Badge>
+                  )}
+                </div>
+
+                {mfaSetupStep === 'idle' && !user?.mfaEnabled && (
+                  <>
+                    <p className="text-sm text-muted-foreground">
+                      {t('settings.mfaDescription')}
+                    </p>
+                    <Button
+                      onClick={() => {
+                        setMfaSetupStep('setup');
+                        mfaSetupMutation.mutate();
+                      }}
+                      disabled={mfaSetupMutation.isPending}
+                      className="flex items-center gap-2"
+                    >
+                      {mfaSetupMutation.isPending ? (
+                        <><Loader2 className="w-4 h-4 animate-spin" />{t('settings.mfaSettingUp')}</>
+                      ) : (
+                        <><Shield className="w-4 h-4" />{t('settings.mfaEnable')}</>
+                      )}
+                    </Button>
+                  </>
+                )}
+
+                {mfaSetupStep === 'verify' && mfaQrCode && (
+                  <div className="space-y-4">
+                    <p className="text-sm text-muted-foreground">{t('settings.mfaScanQr')}</p>
+                    <div className="flex justify-center">
+                      <img src={mfaQrCode} alt="MFA QR Code" className="w-48 h-48 border rounded" />
+                    </div>
+                    {mfaManualKey && (
+                      <div className="text-center">
+                        <p className="text-xs text-muted-foreground mb-1">{t('settings.mfaManualKey')}</p>
+                        <code className="bg-muted px-2 py-1 rounded text-sm font-mono select-all">
+                          {mfaManualKey}
+                        </code>
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      <Label>{t('settings.mfaEnterCode')}</Label>
+                      <div className="flex justify-center">
+                        <InputOTP maxLength={6} value={mfaCode} onChange={setMfaCode}>
+                          <InputOTPGroup>
+                            <InputOTPSlot index={0} />
+                            <InputOTPSlot index={1} />
+                            <InputOTPSlot index={2} />
+                            <InputOTPSlot index={3} />
+                            <InputOTPSlot index={4} />
+                            <InputOTPSlot index={5} />
+                          </InputOTPGroup>
+                        </InputOTP>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 justify-center">
+                      <Button
+                        onClick={() => mfaVerifySetupMutation.mutate(mfaCode)}
+                        disabled={mfaCode.length !== 6 || mfaVerifySetupMutation.isPending}
+                      >
+                        {mfaVerifySetupMutation.isPending ? (
+                          <><Loader2 className="w-4 h-4 animate-spin mr-2" />{t('settings.mfaVerifying')}</>
+                        ) : (
+                          t('settings.mfaVerifyEnable')
+                        )}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setMfaSetupStep('idle');
+                          setMfaQrCode(null);
+                          setMfaManualKey(null);
+                          setMfaCode('');
+                        }}
+                      >
+                        {t('common.cancel')}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {mfaSetupStep === 'idle' && user?.mfaEnabled && (
+                  <>
+                    <p className="text-sm text-muted-foreground">{t('settings.mfaProtected')}</p>
+                    {!user.mfaEnforcedByAdmin && (
+                      <Button variant="destructive" onClick={() => setMfaSetupStep('disable')}>
+                        <ShieldOff className="w-4 h-4 mr-2" />
+                        {t('settings.mfaDisable')}
+                      </Button>
+                    )}
+                    {user.mfaEnforcedByAdmin && (
+                      <p className="text-sm text-yellow-600">{t('settings.mfaAdminLocked')}</p>
+                    )}
+                  </>
+                )}
+
+                {mfaSetupStep === 'disable' && (
+                  <div className="space-y-4">
+                    <Alert>
+                      <AlertDescription>{t('settings.mfaDisableHint')}</AlertDescription>
+                    </Alert>
+                    <div className="space-y-2">
+                      <Label>{t('settings.mfaEnterCode')}</Label>
+                      <div className="flex justify-center">
+                        <InputOTP maxLength={6} value={mfaDisableCode} onChange={setMfaDisableCode}>
+                          <InputOTPGroup>
+                            <InputOTPSlot index={0} />
+                            <InputOTPSlot index={1} />
+                            <InputOTPSlot index={2} />
+                            <InputOTPSlot index={3} />
+                            <InputOTPSlot index={4} />
+                            <InputOTPSlot index={5} />
+                          </InputOTPGroup>
+                        </InputOTP>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 justify-center">
+                      <Button
+                        variant="destructive"
+                        onClick={() => mfaDisableMutation.mutate(mfaDisableCode)}
+                        disabled={mfaDisableCode.length !== 6 || mfaDisableMutation.isPending}
+                      >
+                        {mfaDisableMutation.isPending ? (
+                          <><Loader2 className="w-4 h-4 animate-spin mr-2" />{t('settings.mfaDisabling')}</>
+                        ) : (
+                          t('settings.mfaConfirmDisable')
+                        )}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setMfaSetupStep('idle');
+                          setMfaDisableCode('');
+                        }}
+                      >
+                        {t('common.cancel')}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
               <Button variant="outline" className="w-full">
                 {t('settings.changePassword')}
               </Button>

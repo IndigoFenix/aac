@@ -135,6 +135,12 @@ export interface ChatResponseActions {
     studentId?: string;
   };
 
+  // Student contacts updates - trigger StudentContactsPanel reload and
+  // refresh program teamContacts rows (contact names may have changed).
+  studentContactsUpdated?: {
+    studentId?: string;
+  };
+
   // Classroom updates - trigger InstitutePanel classroom tab reload
   classroomsUpdated?: {
     instituteId?: string;
@@ -595,11 +601,12 @@ export const ChatProvider = ({
       }
     }
 
-    // Handle student updates - triggers StudentsPanel reload
+    // Handle student updates - triggers StudentsPanel + StudentInfoPanel reload
     // Context_Students becomes "students" in contextData
     if (contextData.students || contextData.studentsUpdated || contextData.studentUpdated) {
       console.log('[ChatProvider] Students data updated by AI, invalidating queries');
       setAiRefreshing(prev => new Set(prev).add('students'));
+      setAiRefreshing(prev => new Set(prev).add('studentInfo'));
 
       // Invalidate the main students list
       queryClient.invalidateQueries({ queryKey: ['/api/students'] });
@@ -610,7 +617,35 @@ export const ChatProvider = ({
         queryClient.invalidateQueries({ queryKey: ['/api/students', updatedStudentId] });
         queryClient.invalidateQueries({ queryKey: ['/api/students', updatedStudentId, 'programs'] });
         queryClient.invalidateQueries({ queryKey: ['/api/students', updatedStudentId, 'programs', 'current'] });
+        // StudentInfoPanel reads the student's user+institute links
+        queryClient.invalidateQueries({ queryKey: ['/api/students', updatedStudentId, 'links'] });
       }
+    }
+
+    // Handle student contacts updates - triggers StudentContactsPanel reload
+    // and refreshes the linkable-entities picker. The program panel's
+    // teamContacts cards embed the contact's name, so refresh those too.
+    if (contextData.studentContactsUpdated) {
+      console.log('[ChatProvider] Student contacts updated by AI, invalidating queries');
+      setAiRefreshing(prev => new Set(prev).add('contacts'));
+      setAiRefreshing(prev => new Set(prev).add('progress'));
+
+      const sid = contextData.studentContactsUpdated.studentId;
+      if (sid) {
+        queryClient.invalidateQueries({ queryKey: ['/api/biometric/students', sid, 'contacts'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/biometric/students', sid, 'linkable-entities'] });
+        // Program team cards join through studentContacts for the display name
+        queryClient.invalidateQueries({ queryKey: ['/api/students', sid, 'programs'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/students', sid, 'programs', 'current'] });
+      }
+      // The program detail view (teamContacts array) isn't student-scoped in its
+      // query key, so invalidate broadly by the /full suffix.
+      queryClient.invalidateQueries({
+        predicate: (q) =>
+          Array.isArray(q.queryKey) &&
+          q.queryKey[0] === '/api/programs' &&
+          q.queryKey[q.queryKey.length - 1] === 'full',
+      });
     }
 
     // Handle reports updates - triggers ReportsPanel reload

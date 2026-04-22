@@ -206,6 +206,7 @@ function Router() {
       {/* Student management features */}
       <Route path="/overview" component={ProtectedDashboard} />
       <Route path="/students" component={ProtectedDashboard} />
+      <Route path="/student-info" component={ProtectedDashboard} />
       <Route path="/aacsettings" component={ProtectedDashboard} />
       <Route path="/progress" component={ProtectedDashboard} />
       <Route path="/contacts" component={ProtectedDashboard} />

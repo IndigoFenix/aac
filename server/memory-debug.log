@@ -1,17 +1,17 @@
-[12:12:08.439] memoryValues.Student_Notes (1 items)
+[14:46:32.088] memoryValues.Student_Notes (1 items)
 [
   "**Profile & Learning Style:** Gal (age 6) communicates via AAC and strongly prefers interactive, hands-on apps (drawing, music) over passive activities. Core interests: facts, drawing, music, science (hands-on exploration: experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Typically looks down and to the side during communication—this is normal.\n\n**Communication Patterns:** Uses 'I'm thinking about' button to initiate guessing mode. Prefers shorter, focused interactions with clear exit strategies. Frequently expresses tiredness via guessing mode. Responds well to direct activity suggestions (e.g., 'Want to draw a rocket?') rather than abstract menu browsing. When browsing multiple options without committing, offer specific, interest-based prompts instead of waiting for selection.\n\n**Safety & Notable Events:** (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times—may indicate scissors-related incident; monitor for clarification and offer reassurance with specific activities when frustrated.\n\n**Session Progress:** Consistently responds well to game-based activities and brief, focused interactions. April 21: Successfully played Bubbles game (100% success rate), reported feeling happy. Demonstrates engagement with interactive apps and clear emotional expression."
 ]
-[12:12:08.440] memoryValues.Student_People (0 items)
+[14:46:32.089] memoryValues.Student_People (0 items)
 []
-[12:12:08.442] memoryValues.Student_Interests (4 items)
+[14:46:32.091] memoryValues.Student_Interests (4 items)
 [
   "facts",
   "drawing",
   "music",
   "science"
 ]
-[12:12:08.443] memoryValues.Student_CustomApps (2 items)
+[14:46:32.093] memoryValues.Student_CustomApps (2 items)
 [
   {
     "id": "material-sensations"
@@ -21,7 +21,7 @@
     "name": "Material Sensations"
   }
 ]
-[12:12:08.444] memoryValues.Student_Preferences
+[14:46:32.094] memoryValues.Student_Preferences
 {
   "FavoriteActivities": [
     "drawing",
@@ -30,11 +30,11 @@
     "interactive exploration"
   ]
 }
-[12:12:08.445] memoryValues.Student_CommunicationStyle
+[14:46:32.098] memoryValues.Student_CommunicationStyle
 {
   "PrimaryMethod": "AAC"
 }
-[12:12:08.446] memoryValues.Student_Contacts
+[14:46:32.102] memoryValues.Student_Contacts
 {
   "ce10644b_daniel_nadel": {
     "id": "ce10644b-bfe0-458a-9984-594d2eaf6dab",
@@ -60,7 +60,7 @@
     "hasPhoto": true
   }
 }
-[12:12:08.447] memoryVisualization — data section (263 lines)
+[14:46:32.105] memoryVisualization — data section (263 lines)
 === Current Memory ===
 • /User_AiPersonalityPreferences (string) — User's preferences for how the AI should communicate (tone, style, etc.) null
 • /User_Language (string) — User's preferred language for communication null
@@ -326,661 +326,56 @@ Notes:
 - For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
 
 ============================================================
-  buildPromptAndTools — AI memory view
+  manageMemory called
 ============================================================
-[12:12:09.904] memoryValues.Student_Notes (1 items)
-[
-  "**Profile & Learning Style:** Gal (age 6) communicates via AAC and strongly prefers interactive, hands-on apps (drawing, music) over passive activities. Core interests: facts, drawing, music, science (hands-on exploration: experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Typically looks down and to the side during communication—this is normal.\n\n**Communication Patterns:** Uses 'I'm thinking about' button to initiate guessing mode. Prefers shorter, focused interactions with clear exit strategies. Frequently expresses tiredness via guessing mode. Responds well to direct activity suggestions (e.g., 'Want to draw a rocket?') rather than abstract menu browsing. When browsing multiple options without committing, offer specific, interest-based prompts instead of waiting for selection.\n\n**Safety & Notable Events:** (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times—may indicate scissors-related incident; monitor for clarification and offer reassurance with specific activities when frustrated.\n\n**Session Progress:** Consistently responds well to game-based activities and brief, focused interactions. April 21: Successfully played Bubbles game (100% success rate), reported feeling happy. Demonstrates engagement with interactive apps and clear emotional expression."
-]
-[12:12:09.904] memoryValues.Student_People (0 items)
-[]
-[12:12:09.906] memoryValues.Student_Interests (4 items)
-[
-  "facts",
-  "drawing",
-  "music",
-  "science"
-]
-[12:12:09.907] memoryValues.Student_CustomApps (2 items)
-[
-  {
-    "id": "material-sensations"
-  },
-  {
-    "id": "material-sensations",
-    "name": "Material Sensations"
-  }
-]
-[12:12:09.908] memoryValues.Student_Preferences
+[14:46:35.984] INPUT
 {
-  "FavoriteActivities": [
-    "drawing",
-    "music",
-    "interactive apps",
-    "interactive exploration"
+  "ops": [
+    {
+      "action": "view",
+      "path": "/Context_Students/Marin"
+    }
   ]
 }
-[12:12:09.909] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[12:12:09.911] memoryValues.Student_Contacts
-{
-  "ce10644b_daniel_nadel": {
-    "id": "ce10644b-bfe0-458a-9984-594d2eaf6dab",
-    "name": "Daniel Nadel",
-    "relationship": "Father",
-    "role": "parent_guardian",
-    "customRole": null,
-    "organization": null,
-    "contactEmail": "dnadel95@gmail.com",
-    "contactPhone": "0507414948",
-    "contextNotes": null,
-    "lastSeenAt": null,
-    "timesIdentified": 0,
-    "isActive": true,
-    "linkedUserId": "89c433f9-52c7-4b3c-90ed-8067439bbabc",
-    "linkedStudentId": null,
-    "hairColor": null,
-    "eyeColor": null,
-    "estimatedAge": null,
-    "estimatedSex": null,
-    "physicalDescription": null,
-    "identifyingFeatures": null,
-    "hasPhoto": true
-  }
-}
-[12:12:09.914] memoryVisualization — data section (263 lines)
-=== Current Memory ===
-• /User_AiPersonalityPreferences (string) — User's preferences for how the AI should communicate (tone, style, etc.) null
-• /User_Language (string) — User's preferred language for communication null
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
-  - [0]: "facts"
-  - [1]: "drawing"
-  - [2]: "music"
-  - [3]: "science"
-  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (hidden)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
-  - [0]: "**Profile & Learning Style:** Gal (age 6) communicates via AAC and strongly prefers interactive, hands-on apps (drawing, music) over passive activities. Core interests: facts, drawing, music, science (hands-on exploration: experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Typically looks down and to the side during communication—this is normal.\n\n**Communication Patterns:** Uses 'I'm thinking about' button to initiate guessing mode. Prefers shorter, focused interactions with clear exit strategies. Frequently expresses tiredness via guessing mode. Responds well to direct activity suggestions (e.g., 'Want to draw a rocket?') rather than abstract menu browsing. When browsing multiple options without committing, offer specific, interest-based prompts instead of waiting for selection.\n\n**Safety & Notable Events:** (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times—may indicate scissors-related incident; monitor for clarification and offer reassurance with specific activities when frustrated.\n\n**Session Progress:** Consistently responds well to game-based activities and brief, focused interactions. April 21: Successfully played Bubbles game (100% success rate), reported feeling happy. Demonstrates engagement with interactive apps and clear emotional expression."
-  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
-• /Student_CustomApps (array, 2 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
-• /Student_Contacts (map, 1 keys) — People in the student's life — parents, classmates, therapists, team members. Keys are `{shortId}_{name}`. To add a contact, use add. To associate a contact with a formal IEP/TALA team, add them to the program's teamContacts (junction) instead. Photos and face embeddings are managed through the UI, not here. 
-  - ce10644b_daniel_nadel: {object}
-      - id: "ce10644b-bfe0-458a-9984-594d2eaf6dab"
-      - name: "Daniel Nadel"
-      - relationship: "Father" — Free-form relationship label (e.g. mother, classmate, therapist)
-      - role: "parent_guardian" ["parent_guardian" | "student" | "homeroom_teacher" | "special_education_teacher" | "general_education_teacher" | "speech_language_pathologist" | +7 more] — Formal team-member role, if applicable
-      - customRole: null
-      - organization: null
-      - contactEmail: "dnadel95@gmail.com"
-      - contactPhone: "0507414948"
-      - contextNotes: null — What you know about this relationship — attitudes toward the student, interaction patterns, anything noteworthy.
-      - linkedUserId: "89c433f9-52c7-4b3c-90ed-8067439bbabc" — If this contact is a registered user in the system, their user id. Mutually exclusive with linkedStudentId.
-      - linkedStudentId: null — If this contact is another student in the system, their student id. Mutually exclusive with linkedUserId.
-      - hairColor: null
-      - eyeColor: null
-      - estimatedAge: null
-      - estimatedSex: null
-      - physicalDescription: null
-      - identifyingFeatures: null
-      - hasPhoto: true
-      - lastSeenAt: null
-      - timesIdentified: 0
-      ↪ To expand: view "/Student_Contacts/ce10644b_daniel_nadel/*". To modify: action "set" on "/Student_Contacts/ce10644b_daniel_nadel" or "/Student_Contacts/ce10644b_daniel_nadel/<property>".
-  ↪ Add: action "add" at "/Student_Contacts" with key + value. Rename: action "rename" on child path.
-• /Relationship_Notes (array, 0 items) — General notes about sessions with this student (non-sensitive) — hidden; view to list items
-• /Context_Institutes (map, 1 keys) — Organizations (schools or clinics) that the user is a member of. Target entries by name. 
-  - Indigo Elementary: {object} (view to expand)
-  ↪ Add: action "add" at "/Context_Institutes" with key + value. Rename: action "rename" on child path.
-• /Context_Students (map, 3 keys) — Students (AAC users) that the user has access to. Target entries by first name. 
-  - Gal: {object} (view to expand)
-  - Shachaf: {object} (view to expand)
-  - Marin: {object} (view to expand)
-  ↪ Add: action "add" at "/Context_Students" with key + value. Rename: action "rename" on child path.
-• /Context_Calendar (map, 1 keys) — Calendar events for the next 90 days, with recurring events expanded into individual occurrences. Each entry has an occurrenceDate showing when it actually happens. Use Context_CalendarAlerts for today's priority events. 
-  - Meeting with Gal: {object} (view to expand)
-  ↪ Add: action "add" at "/Context_Calendar" with key + value. Rename: action "rename" on child path.
-• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  - Articles on Rett Syndrome: {object} (view to expand)
-  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
-  - Preschool SLP Goals Bank: {object} (view to expand)
-• /Context_Program (object) — The current educational program for the student 
-  - id: "508c591b-c0d4-4d37-aa28-754464514508"
-  - framework: "tala" ["tala" | "us_iep"] — TALA (Israel) or US IEP framework
-  - title: "Gal's TALA Program 2026"
-  - status: "draft" ["draft" | "active" | "archived"]
-  - startDate: "2026-04-19"
-  - endDate: "2027-04-19"
-  - dueDate: "2025-11-15"
-  - approvalDate: null
-  - leastRestrictiveEnvironment: null
-  - personalFactors: {object} — ICF Personal Factors: student's interests, temperament, motivators, coping styles, cultural background, etc. Contextual — not a target of intervention. (hidden)
-  - environmentalFactors: {object} — ICF Environmental Factors keyed by category. Each category lists facilitators (what helps) and barriers (what hinders). Describes the current state of the world; services/accommodations capture what we do about it. (hidden)
-  - notes: "Initial program based on ADHD and Asperger's diagnoses. Gal is 6 years old, communicates via AAC, with strong interests in interactive activities (drawing, music, science, space). Profile domains and goals to be developed based on clinical observations and ongoing assessment."
-  - profileDomains: {map} — Functional profile / PLAAFP documentation (keyed by domain type). Unless requested, there should only be one domain per type. 
-      (may contain items - view "/Context_Program/profileDomains" to load from database)
-      ↪ Add: action "add" at "/Context_Program/profileDomains" with key + value.
-  - goals: {map} — Annual goals with objectives. Goals are linked to domains through their objectives (each objective can have a profileDomainId). Goals should be defined using S.M.A.R.T criteria. 
-      (may contain items - view "/Context_Program/goals" to load from database)
-      ↪ Add: action "add" at "/Context_Program/goals" with key + value.
-  - teamContacts: {array} — People assigned to this program's team. Junction rows linking studentContacts to this program — add a contact to Student_Contacts first, then reference it here by contactId. 
-      (may contain items - view "/Context_Program/teamContacts" to load from database)
-      ↪ To append: action "add" at "/Context_Program/teamContacts" with value.
-  ↪ To expand: view "/Context_Program/*". To modify: action "set" on "/Context_Program" or "/Context_Program/<property>".
-• /Context_Reports (object) — Available reports: Medical records (editable), Functional reports (editable), Educational reports (editable). 
-  - medicalRecord: {object} — Current medical record for the student. Contains diagnoses, allergies, medications, and medical alerts. (may contain items — view to load)
-  - archivedMedicalRecords: {array} — Previously finalized medical records (read-only). View these to see historical medical information. (may contain items — view to load)
-  - functionalReport: {object} — Current functional report for the student. Contains mobility, ADL status, sensory profile, and safety risks. (may contain items — view to load)
-  - archivedFunctionalReports: {array} — Previously finalized functional reports (read-only). (may contain items — view to load)
-  - educationalReport: {object} — Current educational report for the student. Contains communication modes, language abilities, technology used, and behavioral strategies. (may contain items — view to load)
-  - archivedEducationalReports: {array} — Previously finalized educational reports (read-only). (may contain items — view to load)
-  ↪ To expand: view "/Context_Reports/*". To modify: action "set" on "/Context_Reports" or "/Context_Reports/<property>".
-• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
-  - prompt: <string> — The full custom prompt text (empty)
-  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
-• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
-
-Allowed roots & types: /User_AiPersonalityPreferences{string}, /User_Language{string}, /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Student_CustomApps{array}, /Student_Contacts{map}, /Relationship_Notes{array}, /Context_Institutes{map}, /Context_Students{map}, /Context_Calendar{map}, /Context_Library{map}, /Context_Program{object}, /Context_Reports{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Student_Contacts — MAP<string, object>
-  value.required: [name]
-  value.props: id:string, name:string, relationship:string, role:string [enum: "parent_guardian", "student", "homeroom_teacher", "special_education_teacher", "general_education_teacher", "speech_language_pathologist", "occupational_therapist", "physical_therapist", +5 more], customRole:string, organization:string, contactEmail:string, contactPhone:string, contextNotes:string, linkedUserId:string, linkedStudentId:string, hairColor:string, eyeColor:string, estimatedAge:string, estimatedSex:string, physicalDescription:string … +4 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Contacts","key":"<key>","value": {"name":"text"} }] }
-• /Context_Institutes — MAP<string, object>
-  value.required: [name, type]
-  value.props: id:string, name:string, type:string [enum: "school", "clinic"], description:string, address:string, phone:string, email:string, website:string, isActive:boolean, language:string, membership:{object}, members:map<string, object>, students:map<string, object>, classrooms:map<string, object>, invites:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Institutes","key":"<key>","value": {"name":"text","type":"text"} }] }
-• /Context_Institutes/<key>/members — MAP<string, object>
-  value.props: user:{object}, membership:{object}
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Institutes/<key>/members","key":"<key>","value": {} }] }
-• /Context_Institutes/<key>/students — MAP<string, object>
-  value.props: student:{object}, enrollment:{object}, studentId:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Institutes/<key>/students","key":"<key>","value": {} }] }
-• /Context_Institutes/<key>/classrooms — MAP<string, object>
-  value.required: [name]
-  value.props: id:string, name:string, grade:string [enum: "pre_k", "k", "1", "2", "3", "4", "5", "6", +8 more], description:string, capacity:integer, roomNumber:string, academicYear:string, isActive:boolean, members:map<string, object>, students:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Institutes/<key>/classrooms","key":"<key>","value": {"name":"text"} }] }
-• /Context_Institutes/<key>/classrooms/<key>/members — MAP<string, object>
-  value.props: user:{object}, membership:{object}, userId:string, role:string, isPrimary:boolean
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Institutes/<key>/classrooms/<key>/members","key":"<key>","value": {} }] }
-• /Context_Institutes/<key>/classrooms/<key>/students — MAP<string, object>
-  value.props: student:{object}, enrollment:{object}, studentId:string, isPrimary:boolean, enrollmentDate:string, notes:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Institutes/<key>/classrooms/<key>/students","key":"<key>","value": {} }] }
-• /Context_Institutes/<key>/invites — MAP<string, object>
-  value.required: [inviteeEmail]
-  value.props: id:string, inviteeEmail:string, role:string [enum: "admin", "director", "teacher", "therapist", "aide", "staff", "observer"], grantAdmin:boolean, message:string, status:string [enum: "pending", "accepted", "declined", "expired", "cancelled"], expiresAt:string [format ISO datetime]
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Institutes/<key>/invites","key":"<key>","value": {"inviteeEmail":"text"} }] }
-• /Context_Students — MAP<string, object>
-  value.required: [firstName, instituteIds, name]
-  value.props: id:string, name:string, firstName:string, lastName:string, gender:string [enum: "male", "female", "other"], birthDate:string [format YYYY-MM-DD], framework:string [enum: "tala", "us_iep"], country:string [enum: "IL", "US"], primaryLanguage:string [enum: "he", "en", "es", "pt", "fr", "ru", "de", "ar", +3 more], additionalLanguages:array<string>, instituteIds:array<string>, link:{object}, aacSettings:{object}, users:map<string, object>, institutes:array<object>, classrooms:array<object> … +1 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Students","key":"<key>","value": {"firstName":"text","instituteIds":[],"name":"text"} }] }
-• /Context_Students/<key>/additionalLanguages — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Students/<key>/additionalLanguages","value": "text" }] }
-• /Context_Students/<key>/instituteIds — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Students/<key>/instituteIds","value": "text" }] }
-• /Context_Students/<key>/users — MAP<string, object>
-  value.required: [userId]
-  value.props: userId:string, role:string [enum: "owner", "caregiver", "therapist", "teacher", "parent"], hasEducationalRights:boolean, hasMedicalRights:boolean, isActive:boolean
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Students/<key>/users","key":"<key>","value": {"userId":"text"} }] }
-• /Context_Students/<key>/institutes — ARRAY of object
-  item.props: institute:{object}, enrollment:{object}
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Students/<key>/institutes","value": {} }] }
-• /Context_Students/<key>/classrooms — ARRAY of object
-  item.props: classroom:{object}, enrollment:{object}
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Students/<key>/classrooms","value": {} }] }
-• /Context_Calendar — MAP<string, object>
-  value.required: [title, startTime, endTime]
-  value.props: id:string, title:string, description:string, occurrenceDate:string [format ISO 8601 datetime], startTime:string [format ISO 8601 datetime], endTime:string [format ISO 8601 datetime], allDay:boolean, repeatType:string [enum: "none", "daily", "weekly", "monthly_date", "monthly_weekday"], repeatInterval:number, repeatDays:array<number>, repeatMonthWeek:number, repeatEndDate:string [format ISO 8601 datetime]
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Calendar","key":"<key>","value": {"title":"text","startTime":"text","endTime":"text"} }] }
-• /Context_Calendar/<key>/repeatDays — ARRAY of number
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Calendar/<key>/repeatDays","value": 0 }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics/<key>/subtopics — MAP<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics/<key>/subtopics","key":"<key>","value": null }] }
-• /Context_Program/profileDomains — MAP<string, object>
-  value.required: [domainType]
-  value.props: id:string, domainType:string [enum: "cognitive_academic", "communication_language", "social_emotional_behavioral", "motor_sensory", "life_skills_preparation", "other"], customName:string, strengths:string, needs:string, impactStatement:string, adverseEffectStatement:string, sortOrder:integer, baselineMeasurements:array<object>, assessmentSources:array<object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/profileDomains","key":"<key>","value": {"domainType":"text"} }] }
-• /Context_Program/profileDomains/<key>/baselineMeasurements — ARRAY of object
-  item.required: [skillDescription, measurementMethod, value]
-  item.props: id:string, skillDescription:string, measurementMethod:string, value:string, numericValue:number, unit:string, assessedAt:string [format YYYY-MM-DD], assessedBy:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/profileDomains/<key>/baselineMeasurements","value": {"skillDescription":"text","measurementMethod":"text","value":"text"} }] }
-• /Context_Program/profileDomains/<key>/assessmentSources — ARRAY of object
-  item.required: [sourceType]
-  item.props: id:string, sourceType:string [enum: "standardized_test", "structured_observation", "parent_questionnaire", "teacher_input", "curriculum_based", "behavioral_records"], instrumentName:string, assessedAt:string [format YYYY-MM-DD], summary:string, resultsData:{object}
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/profileDomains/<key>/assessmentSources","value": {"sourceType":"text"} }] }
-• /Context_Program/goals — MAP<string, object>
-  value.required: [goalStatement]
-  value.props: id:string, goalStatement:string, status:string [enum: "draft", "active", "achieved", "modified", "discontinued"], progress:integer [min 0; max 100], targetDate:string [format YYYY-MM-DD], achievedDate:string [format YYYY-MM-DD], targetBehavior:string, criteria:string, methods:string, measurementMethod:string, relevance:string, interventionLevel:string [enum: "activity", "function", "participation"], useGas:boolean, gasLevels:{object}, objectives:array<object>, dataPoints:array<object> … +6 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/goals","key":"<key>","value": {"goalStatement":"text"} }] }
-• /Context_Program/goals/<key>/objectives — ARRAY of object
-  item.required: [objectiveStatement]
-  item.props: id:string, objectiveStatement:string, sequenceOrder:integer, profileDomainId:string, targetBehavior:string, methods:string, criteria:string, measurementMethod:string, relevance:string, targetDate:string [format YYYY-MM-DD], status:string [enum: "draft", "active", "achieved", "modified", "discontinued"], progress:integer [min 0; max 100], achievedDate:string [format YYYY-MM-DD], dataPoints:array<object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/goals/<key>/objectives","value": {"objectiveStatement":"text"} }] }
-• /Context_Program/goals/<key>/objectives/<index>/dataPoints — ARRAY of object
-  item.required: [value]
-  item.props: id:string, recordedAt:string [format date-time], value:string, numericValue:number, achievedLevel:string [enum: "much_less_than_expected", "less_than_expected", "expected", "better_than_expected", "much_better_than_expected"], context:string, collectedBy:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/goals/<key>/objectives/<index>/dataPoints","value": {"value":"text"} }] }
-• /Context_Program/goals/<key>/dataPoints — ARRAY of object
-  item.required: [value]
-  item.props: id:string, recordedAt:string [format date-time], value:string, numericValue:number, achievedLevel:string [enum: "much_less_than_expected", "less_than_expected", "expected", "better_than_expected", "much_better_than_expected"], context:string, collectedBy:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/goals/<key>/dataPoints","value": {"value":"text"} }] }
-• /Context_Program/teamContacts — ARRAY of object
-  item.required: [contactId]
-  item.props: id:string, contactId:string, contactName:string, programRole:string [enum: "parent_guardian", "student", "homeroom_teacher", "special_education_teacher", "general_education_teacher", "speech_language_pathologist", "occupational_therapist", "physical_therapist", +5 more], responsibilities:array<string>, isCoordinator:boolean, isActive:boolean
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/teamContacts","value": {"contactId":"text"} }] }
-• /Context_Program/teamContacts/<index>/responsibilities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/teamContacts/<index>/responsibilities","value": "text" }] }
-• /Context_Reports/archivedMedicalRecords — ARRAY of object
-  item.props: id:string, status:string [enum: "draft", "pending_review", "final", "superseded"], primaryDiagnosis:string, primaryDiagnosisCode:string, coMorbidities:array<string>, secondaryDiagnoses:array<string>, alertsAllergies:array<string>, alertsSeizures:array<string>, alertsCardiac:array<string>, medications:array<string>, medicalEquipment:array<string>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedMedicalRecords","value": {} }] }
-• /Context_Reports/archivedMedicalRecords/<index>/coMorbidities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedMedicalRecords/<index>/coMorbidities","value": "text" }] }
-• /Context_Reports/archivedMedicalRecords/<index>/secondaryDiagnoses — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedMedicalRecords/<index>/secondaryDiagnoses","value": "text" }] }
-• /Context_Reports/archivedMedicalRecords/<index>/alertsAllergies — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedMedicalRecords/<index>/alertsAllergies","value": "text" }] }
-• /Context_Reports/archivedMedicalRecords/<index>/alertsSeizures — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedMedicalRecords/<index>/alertsSeizures","value": "text" }] }
-• /Context_Reports/archivedMedicalRecords/<index>/alertsCardiac — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedMedicalRecords/<index>/alertsCardiac","value": "text" }] }
-• /Context_Reports/archivedMedicalRecords/<index>/medications — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedMedicalRecords/<index>/medications","value": "text" }] }
-• /Context_Reports/archivedMedicalRecords/<index>/medicalEquipment — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedMedicalRecords/<index>/medicalEquipment","value": "text" }] }
-• /Context_Reports/archivedFunctionalReports — ARRAY of object
-  item.props: id:string, status:string [enum: "draft", "pending_review", "final", "superseded"], mobilityStatus:array<string>, adlStatus:array<string>, sensoryProfile:array<string>, safetyRisks:array<string>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedFunctionalReports","value": {} }] }
-• /Context_Reports/archivedFunctionalReports/<index>/mobilityStatus — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedFunctionalReports/<index>/mobilityStatus","value": "text" }] }
-• /Context_Reports/archivedFunctionalReports/<index>/adlStatus — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedFunctionalReports/<index>/adlStatus","value": "text" }] }
-• /Context_Reports/archivedFunctionalReports/<index>/sensoryProfile — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedFunctionalReports/<index>/sensoryProfile","value": "text" }] }
-• /Context_Reports/archivedFunctionalReports/<index>/safetyRisks — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedFunctionalReports/<index>/safetyRisks","value": "text" }] }
-• /Context_Reports/archivedEducationalReports — ARRAY of object
-  item.props: id:string, status:string [enum: "draft", "pending_review", "final", "superseded"], communicationMode:array<string>, receptiveLanguage:array<string>, assistiveTechnologyUsed:array<string>, reinforcers:array<string>, preferredActivities:array<string>, behavioralStrategies:array<string>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedEducationalReports","value": {} }] }
-• /Context_Reports/archivedEducationalReports/<index>/communicationMode — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedEducationalReports/<index>/communicationMode","value": "text" }] }
-• /Context_Reports/archivedEducationalReports/<index>/receptiveLanguage — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedEducationalReports/<index>/receptiveLanguage","value": "text" }] }
-• /Context_Reports/archivedEducationalReports/<index>/assistiveTechnologyUsed — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedEducationalReports/<index>/assistiveTechnologyUsed","value": "text" }] }
-• /Context_Reports/archivedEducationalReports/<index>/reinforcers — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedEducationalReports/<index>/reinforcers","value": "text" }] }
-• /Context_Reports/archivedEducationalReports/<index>/preferredActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedEducationalReports/<index>/preferredActivities","value": "text" }] }
-• /Context_Reports/archivedEducationalReports/<index>/behavioralStrategies — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedEducationalReports/<index>/behavioralStrategies","value": "text" }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
-
-============================================================
-  buildPromptAndTools — AI memory view
-============================================================
-[12:12:38.921] memoryValues.Student_Notes (1 items)
-[
-  "**Profile & Learning Style:** Gal (age 6) communicates via AAC and strongly prefers interactive, hands-on apps (drawing, music) over passive activities. Core interests: facts, drawing, music, science (hands-on exploration: experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Typically looks down and to the side during communication—this is normal.\n\n**Communication Patterns:** Uses 'I'm thinking about' button to initiate guessing mode. Prefers shorter, focused interactions with clear exit strategies. Frequently expresses tiredness via guessing mode. Responds well to direct activity suggestions (e.g., 'Want to draw a rocket?') rather than abstract menu browsing. When browsing multiple options without committing, offer specific, interest-based prompts instead of waiting for selection.\n\n**Safety & Notable Events:** (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times—may indicate scissors-related incident; monitor for clarification and offer reassurance with specific activities when frustrated.\n\n**Session Progress:** Consistently responds well to game-based activities and brief, focused interactions. April 21: Successfully played Bubbles game (100% success rate), reported feeling happy. Demonstrates engagement with interactive apps and clear emotional expression."
-]
-[12:12:38.924] memoryValues.Student_People (0 items)
-[]
-[12:12:38.926] memoryValues.Student_Interests (4 items)
-[
-  "facts",
-  "drawing",
-  "music",
-  "science"
-]
-[12:12:38.927] memoryValues.Student_CustomApps (2 items)
+[14:46:36.183] RESULTS
 [
   {
-    "id": "material-sensations"
-  },
-  {
-    "id": "material-sensations",
-    "name": "Material Sensations"
+    "target": "/Context_Students/cd6c4624-7fd4-48f7-84f2-e25ed688b32d",
+    "action": "view",
+    "ok": true,
+    "message": "• /Context_Students/cd6c4624-7fd4-48f7-84f2-e25ed688b32d (object) \\n  - id: \"cd6c4624-7fd4-48f7-84f2-e25ed688b32d\"\\n  - name: \"Marin Almog\"\\n  - firstName: \"Marin\"\\n  - lastName: \"Almog\"\\n  - gender: \"female\" [\"male\" | \"female\" | \"other\"]\\n  - birthDate: \"2018-03-05\"\\n  - framework: \"tala\" [\"tala\" | \"us_iep\"] — Educational framework: TALA (Israel) or US IEP\\n  - country: \"IL\" [\"IL\" | \"US\"] — IL (Israel) or US (United States)\\n  - primaryLanguage: \"he\" [\"he\" | \"en\" | \"es\" | \"pt\" | \"fr\" | \"ru\" | +5 more] — Language code: he, en, es, pt, fr, ru, de, ar, zh, yue, ko\\n  - additionalLanguages: {array} (hidden)\\n  - isActive: true\\n  - link: {object} — The current user's relationship with this student \\n      - role: \"owner\"\\n      - hasEducationalRights: true\\n      - hasMedicalRights: true\\n      - isActive: true\\n      ↪ To expand: view \"/Context_Students/cd6c4624-7fd4-48f7-84f2-e25ed688b32d/link/*\". To modify: action \"set\" on \"/Context_Students/cd6c4624-7fd4-48f7-84f2-e25ed688b32d/link\" or \"/Context_Students/cd6c4624-7fd4-48f7-84f2-e25ed688b32d/link/<property>\".\\n  - aacSettings: {object} — AAC system settings for this student. View to see current settings. (may contain items — view to load)\\n  - users: {map} — Users who have access to this student (keyed by userId) (may contain items — view to load)\\n  - institutes: {array} — Institutes this student belongs to (may contain items — view to load)\\n  - classrooms: {array} — Classrooms this student is enrolled in (may contain items — view to load)\\n  ↪ To expand: view \"/Context_Students/cd6c4624-7fd4-48f7-84f2-e25ed688b32d/*\". To modify: action \"set\" on \"/Context_Students/cd6c4624-7fd4-48f7-84f2-e25ed688b32d\" or \"/Context_Students/cd6c4624-7fd4-48f7-84f2-e25ed688b32d/<property>\".",
+    "mutatedPaths": [
+      "/Context_Students/cd6c4624-7fd4-48f7-84f2-e25ed688b32d"
+    ],
+    "summary": "21 item(s): id, firstName, lastName, name, gender..."
   }
 ]
-[12:12:38.928] memoryValues.Student_Preferences
+
+============================================================
+  manageMemory called
+============================================================
+[14:46:38.277] INPUT
 {
-  "FavoriteActivities": [
-    "drawing",
-    "music",
-    "interactive apps",
-    "interactive exploration"
+  "ops": [
+    {
+      "action": "add",
+      "path": "/Student_Contacts",
+      "key": "cd6c4624_marin_almog",
+      "value": {
+        "id": "cd6c4624-7fd4-48f7-84f2-e25ed688b32d",
+        "name": "Marin Almog",
+        "relationship": "classmate",
+        "role": "student"
+      }
+    }
   ]
 }
-[12:12:38.929] memoryValues.Student_CommunicationStyle
-{
-  "PrimaryMethod": "AAC"
-}
-[12:12:38.930] memoryValues.Student_Contacts
-{
-  "ce10644b_daniel_nadel": {
-    "id": "ce10644b-bfe0-458a-9984-594d2eaf6dab",
-    "name": "Daniel Nadel",
-    "relationship": "Father",
-    "role": "parent_guardian",
-    "customRole": null,
-    "organization": null,
-    "contactEmail": "dnadel95@gmail.com",
-    "contactPhone": "0507414948",
-    "contextNotes": null,
-    "lastSeenAt": null,
-    "timesIdentified": 0,
-    "isActive": true,
-    "linkedUserId": "89c433f9-52c7-4b3c-90ed-8067439bbabc",
-    "linkedStudentId": null,
-    "hairColor": null,
-    "eyeColor": null,
-    "estimatedAge": null,
-    "estimatedSex": null,
-    "physicalDescription": null,
-    "identifyingFeatures": null,
-    "hasPhoto": true
+[14:46:38.646] RESULTS
+[
+  {
+    "target": "/Student_Contacts",
+    "action": "add",
+    "ok": true,
+    "actualKey": "32f6d121_marin_almog"
   }
-}
-[12:12:38.932] memoryVisualization — data section (263 lines)
-=== Current Memory ===
-• /User_AiPersonalityPreferences (string) — User's preferences for how the AI should communicate (tone, style, etc.) null
-• /User_Language (string) — User's preferred language for communication null
-• /Student_People (array, 0 items) — Important people in the student's life (names and relationships only) 
-  (may contain items - view "/Student_People" to load from database)
-  ↪ To append: action "add" at "/Student_People" with value.
-• /Student_Interests (array, 4 items) — Things the student enjoys or is interested in 
-  - [0]: "facts"
-  - [1]: "drawing"
-  - [2]: "music"
-  - [3]: "science"
-  ↪ To append: action "add" at "/Student_Interests" with value. To update item: action "set" at "/Student_Interests/<index>".
-• /Student_CommunicationStyle (object) — How the student communicates (method only, not detailed abilities) 
-  - PrimaryMethod: "AAC" — verbal, nonverbal, AAC, or mixed
-  - PreferredModality: <string> — If AAC, which type (symbols, text, combined) (empty)
-  ↪ To expand: view "/Student_CommunicationStyle/*". To modify: action "set" on "/Student_CommunicationStyle" or "/Student_CommunicationStyle/<property>".
-• /Student_Preferences (object) — Student's preferences for activities, rewards, and engagement 
-  - FavoriteActivities: {array} (hidden)
-  - RewardPreferences: {array} (empty)
-  - AvoidTopics: {array} — Topics that should be avoided in conversation (empty)
-  ↪ To expand: view "/Student_Preferences/*". To modify: action "set" on "/Student_Preferences" or "/Student_Preferences/<property>".
-• /Student_Notes (array, 1 items) — General notes about the student (non-sensitive) 
-  - [0]: "**Profile & Learning Style:** Gal (age 6) communicates via AAC and strongly prefers interactive, hands-on apps (drawing, music) over passive activities. Core interests: facts, drawing, music, science (hands-on exploration: experiments, how things work, chemistry, weather), farm games, space topics (stars, moon, planets, rockets, astronauts), and programming (Code blocks, Games, Robots). Typically looks down and to the side during communication—this is normal.\n\n**Communication Patterns:** Uses 'I'm thinking about' button to initiate guessing mode. Prefers shorter, focused interactions with clear exit strategies. Frequently expresses tiredness via guessing mode. Responds well to direct activity suggestions (e.g., 'Want to draw a rocket?') rather than abstract menu browsing. When browsing multiple options without committing, offer specific, interest-based prompts instead of waiting for selection.\n\n**Safety & Notable Events:** (1) Expressed fear multiple times and seeks home/safety when scared (trigger unidentified—remain alert and reassuring). (2) Lost hat at school (confirmed April 9); shows persistence in communicating about it. (3) April 13: Expressed frustration and pressed 'Scissors' three times—may indicate scissors-related incident; monitor for clarification and offer reassurance with specific activities when frustrated.\n\n**Session Progress:** Consistently responds well to game-based activities and brief, focused interactions. April 21: Successfully played Bubbles game (100% success rate), reported feeling happy. Demonstrates engagement with interactive apps and clear emotional expression."
-  ↪ To append: action "add" at "/Student_Notes" with value. To update item: action "set" at "/Student_Notes/<index>".
-• /Student_CustomApps (array, 2 items) — Custom apps (games) currently assigned to this student. To assign a new app, call manageMemory with an `add` op on this path, providing `{ id: <app_id> }` — the app must belong to one of the student's institutes. To remove an assignment, call `delete` with the app id or the array index. The app's `name` field is read-only and auto-populated. — hidden; view to list items
-• /Student_Contacts (map, 1 keys) — People in the student's life — parents, classmates, therapists, team members. Keys are `{shortId}_{name}`. To add a contact, use add. To associate a contact with a formal IEP/TALA team, add them to the program's teamContacts (junction) instead. Photos and face embeddings are managed through the UI, not here. 
-  - ce10644b_daniel_nadel: {object}
-      - id: "ce10644b-bfe0-458a-9984-594d2eaf6dab"
-      - name: "Daniel Nadel"
-      - relationship: "Father" — Free-form relationship label (e.g. mother, classmate, therapist)
-      - role: "parent_guardian" ["parent_guardian" | "student" | "homeroom_teacher" | "special_education_teacher" | "general_education_teacher" | "speech_language_pathologist" | +7 more] — Formal team-member role, if applicable
-      - customRole: null
-      - organization: null
-      - contactEmail: "dnadel95@gmail.com"
-      - contactPhone: "0507414948"
-      - contextNotes: null — What you know about this relationship — attitudes toward the student, interaction patterns, anything noteworthy.
-      - linkedUserId: "89c433f9-52c7-4b3c-90ed-8067439bbabc" — If this contact is a registered user in the system, their user id. Mutually exclusive with linkedStudentId.
-      - linkedStudentId: null — If this contact is another student in the system, their student id. Mutually exclusive with linkedUserId.
-      - hairColor: null
-      - eyeColor: null
-      - estimatedAge: null
-      - estimatedSex: null
-      - physicalDescription: null
-      - identifyingFeatures: null
-      - hasPhoto: true
-      - lastSeenAt: null
-      - timesIdentified: 0
-      ↪ To expand: view "/Student_Contacts/ce10644b_daniel_nadel/*". To modify: action "set" on "/Student_Contacts/ce10644b_daniel_nadel" or "/Student_Contacts/ce10644b_daniel_nadel/<property>".
-  ↪ Add: action "add" at "/Student_Contacts" with key + value. Rename: action "rename" on child path.
-• /Relationship_Notes (array, 0 items) — General notes about sessions with this student (non-sensitive) — hidden; view to list items
-• /Context_Institutes (map, 1 keys) — Organizations (schools or clinics) that the user is a member of. Target entries by name. 
-  - Indigo Elementary: {object} (view to expand)
-  ↪ Add: action "add" at "/Context_Institutes" with key + value. Rename: action "rename" on child path.
-• /Context_Students (map, 3 keys) — Students (AAC users) that the user has access to. Target entries by first name. 
-  - Gal: {object} (view to expand)
-  - Shachaf: {object} (view to expand)
-  - Marin: {object} (view to expand)
-  ↪ Add: action "add" at "/Context_Students" with key + value. Rename: action "rename" on child path.
-• /Context_Calendar (map, 1 keys) — Calendar events for the next 90 days, with recurring events expanded into individual occurrences. Each entry has an occurrenceDate showing when it actually happens. Use Context_CalendarAlerts for today's priority events. 
-  - Meeting with Gal: {object} (view to expand)
-  ↪ Add: action "add" at "/Context_Calendar" with key + value. Rename: action "rename" on child path.
-• /Context_Library (map, 3 keys) — Knowledge base topics organized hierarchically. Browse by viewing topics and their subtopics. Each topic may contain educational content and/or nested subtopics. 
-  - Articles on Rett Syndrome: {object} (view to expand)
-  - Physiotherapy Goals - Gross Motor Skills: {object} (view to expand)
-  - Preschool SLP Goals Bank: {object} (view to expand)
-• /Context_Program (object) — The current educational program for the student 
-  - id: "508c591b-c0d4-4d37-aa28-754464514508"
-  - framework: "tala" ["tala" | "us_iep"] — TALA (Israel) or US IEP framework
-  - title: "Gal's TALA Program 2026"
-  - status: "draft" ["draft" | "active" | "archived"]
-  - startDate: "2026-04-19"
-  - endDate: "2027-04-19"
-  - dueDate: "2025-11-15"
-  - approvalDate: null
-  - leastRestrictiveEnvironment: null
-  - personalFactors: {object} — ICF Personal Factors: student's interests, temperament, motivators, coping styles, cultural background, etc. Contextual — not a target of intervention. (hidden)
-  - environmentalFactors: {object} — ICF Environmental Factors keyed by category. Each category lists facilitators (what helps) and barriers (what hinders). Describes the current state of the world; services/accommodations capture what we do about it. (hidden)
-  - notes: "Initial program based on ADHD and Asperger's diagnoses. Gal is 6 years old, communicates via AAC, with strong interests in interactive activities (drawing, music, science, space). Profile domains and goals to be developed based on clinical observations and ongoing assessment."
-  - profileDomains: {map} — Functional profile / PLAAFP documentation (keyed by domain type). Unless requested, there should only be one domain per type. 
-      (may contain items - view "/Context_Program/profileDomains" to load from database)
-      ↪ Add: action "add" at "/Context_Program/profileDomains" with key + value.
-  - goals: {map} — Annual goals with objectives. Goals are linked to domains through their objectives (each objective can have a profileDomainId). Goals should be defined using S.M.A.R.T criteria. 
-      (may contain items - view "/Context_Program/goals" to load from database)
-      ↪ Add: action "add" at "/Context_Program/goals" with key + value.
-  - teamContacts: {array} — People assigned to this program's team. Junction rows linking studentContacts to this program — add a contact to Student_Contacts first, then reference it here by contactId. 
-      (may contain items - view "/Context_Program/teamContacts" to load from database)
-      ↪ To append: action "add" at "/Context_Program/teamContacts" with value.
-  ↪ To expand: view "/Context_Program/*". To modify: action "set" on "/Context_Program" or "/Context_Program/<property>".
-• /Context_Reports (object) — Available reports: Medical records (editable), Functional reports (editable), Educational reports (editable). 
-  - medicalRecord: {object} — Current medical record for the student. Contains diagnoses, allergies, medications, and medical alerts. (may contain items — view to load)
-  - archivedMedicalRecords: {array} — Previously finalized medical records (read-only). View these to see historical medical information. (may contain items — view to load)
-  - functionalReport: {object} — Current functional report for the student. Contains mobility, ADL status, sensory profile, and safety risks. (may contain items — view to load)
-  - archivedFunctionalReports: {array} — Previously finalized functional reports (read-only). (may contain items — view to load)
-  - educationalReport: {object} — Current educational report for the student. Contains communication modes, language abilities, technology used, and behavioral strategies. (may contain items — view to load)
-  - archivedEducationalReports: {array} — Previously finalized educational reports (read-only). (may contain items — view to load)
-  ↪ To expand: view "/Context_Reports/*". To modify: action "set" on "/Context_Reports" or "/Context_Reports/<property>".
-• /Context_AACPrompt (object) — The custom prompt that guides the Interactive Agent's behavior during AAC sessions. Update this when student goals, medical info, or context changes. 
-  - prompt: <string> — The full custom prompt text (empty)
-  ↪ To expand: view "/Context_AACPrompt/*". To modify: action "set" on "/Context_AACPrompt" or "/Context_AACPrompt/<property>".
-• /Context_AACSettings (object) — Configuration for the AAC system — voice, display, input, symbols, privacy, and apps — hidden; view to list keys
-
-Allowed roots & types: /User_AiPersonalityPreferences{string}, /User_Language{string}, /Student_People{array}, /Student_Interests{array}, /Student_CommunicationStyle{object}, /Student_Preferences{object}, /Student_Notes{array}, /Student_CustomApps{array}, /Student_Contacts{map}, /Relationship_Notes{array}, /Context_Institutes{map}, /Context_Students{map}, /Context_Calendar{map}, /Context_Library{map}, /Context_Program{object}, /Context_Reports{object}, /Context_AACPrompt{object}, /Context_AACSettings{object}
-Operate only on visible paths or their parent container. To reveal children:
-  manageMemory { "ops": [ { "action": "view", "path": "/path/*" } ] }
-Pagination: include { "page": { "offset": N, "limit": M } } in a view op on a container.
-
-=== Schema Hints (add/insert/upsert in current scope) ===
-• /Student_People — ARRAY of object
-  item.required: [Name]
-  item.props: Name:string, Relationship:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_People","value": {"Name":"text"} }] }
-• /Student_Interests — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Interests","value": "text" }] }
-• /Student_Preferences/FavoriteActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/FavoriteActivities","value": "text" }] }
-• /Student_Preferences/RewardPreferences — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/RewardPreferences","value": "text" }] }
-• /Student_Preferences/AvoidTopics — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Preferences/AvoidTopics","value": "text" }] }
-• /Student_Notes — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Notes","value": "text" }] }
-• /Student_Contacts — MAP<string, object>
-  value.required: [name]
-  value.props: id:string, name:string, relationship:string, role:string [enum: "parent_guardian", "student", "homeroom_teacher", "special_education_teacher", "general_education_teacher", "speech_language_pathologist", "occupational_therapist", "physical_therapist", +5 more], customRole:string, organization:string, contactEmail:string, contactPhone:string, contextNotes:string, linkedUserId:string, linkedStudentId:string, hairColor:string, eyeColor:string, estimatedAge:string, estimatedSex:string, physicalDescription:string … +4 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Student_Contacts","key":"<key>","value": {"name":"text"} }] }
-• /Context_Institutes — MAP<string, object>
-  value.required: [name, type]
-  value.props: id:string, name:string, type:string [enum: "school", "clinic"], description:string, address:string, phone:string, email:string, website:string, isActive:boolean, language:string, membership:{object}, members:map<string, object>, students:map<string, object>, classrooms:map<string, object>, invites:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Institutes","key":"<key>","value": {"name":"text","type":"text"} }] }
-• /Context_Institutes/<key>/members — MAP<string, object>
-  value.props: user:{object}, membership:{object}
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Institutes/<key>/members","key":"<key>","value": {} }] }
-• /Context_Institutes/<key>/students — MAP<string, object>
-  value.props: student:{object}, enrollment:{object}, studentId:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Institutes/<key>/students","key":"<key>","value": {} }] }
-• /Context_Institutes/<key>/classrooms — MAP<string, object>
-  value.required: [name]
-  value.props: id:string, name:string, grade:string [enum: "pre_k", "k", "1", "2", "3", "4", "5", "6", +8 more], description:string, capacity:integer, roomNumber:string, academicYear:string, isActive:boolean, members:map<string, object>, students:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Institutes/<key>/classrooms","key":"<key>","value": {"name":"text"} }] }
-• /Context_Institutes/<key>/classrooms/<key>/members — MAP<string, object>
-  value.props: user:{object}, membership:{object}, userId:string, role:string, isPrimary:boolean
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Institutes/<key>/classrooms/<key>/members","key":"<key>","value": {} }] }
-• /Context_Institutes/<key>/classrooms/<key>/students — MAP<string, object>
-  value.props: student:{object}, enrollment:{object}, studentId:string, isPrimary:boolean, enrollmentDate:string, notes:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Institutes/<key>/classrooms/<key>/students","key":"<key>","value": {} }] }
-• /Context_Institutes/<key>/invites — MAP<string, object>
-  value.required: [inviteeEmail]
-  value.props: id:string, inviteeEmail:string, role:string [enum: "admin", "director", "teacher", "therapist", "aide", "staff", "observer"], grantAdmin:boolean, message:string, status:string [enum: "pending", "accepted", "declined", "expired", "cancelled"], expiresAt:string [format ISO datetime]
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Institutes/<key>/invites","key":"<key>","value": {"inviteeEmail":"text"} }] }
-• /Context_Students — MAP<string, object>
-  value.required: [firstName, instituteIds, name]
-  value.props: id:string, name:string, firstName:string, lastName:string, gender:string [enum: "male", "female", "other"], birthDate:string [format YYYY-MM-DD], framework:string [enum: "tala", "us_iep"], country:string [enum: "IL", "US"], primaryLanguage:string [enum: "he", "en", "es", "pt", "fr", "ru", "de", "ar", +3 more], additionalLanguages:array<string>, instituteIds:array<string>, link:{object}, aacSettings:{object}, users:map<string, object>, institutes:array<object>, classrooms:array<object> … +1 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Students","key":"<key>","value": {"firstName":"text","instituteIds":[],"name":"text"} }] }
-• /Context_Students/<key>/additionalLanguages — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Students/<key>/additionalLanguages","value": "text" }] }
-• /Context_Students/<key>/instituteIds — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Students/<key>/instituteIds","value": "text" }] }
-• /Context_Students/<key>/users — MAP<string, object>
-  value.required: [userId]
-  value.props: userId:string, role:string [enum: "owner", "caregiver", "therapist", "teacher", "parent"], hasEducationalRights:boolean, hasMedicalRights:boolean, isActive:boolean
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Students/<key>/users","key":"<key>","value": {"userId":"text"} }] }
-• /Context_Students/<key>/institutes — ARRAY of object
-  item.props: institute:{object}, enrollment:{object}
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Students/<key>/institutes","value": {} }] }
-• /Context_Students/<key>/classrooms — ARRAY of object
-  item.props: classroom:{object}, enrollment:{object}
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Students/<key>/classrooms","value": {} }] }
-• /Context_Calendar — MAP<string, object>
-  value.required: [title, startTime, endTime]
-  value.props: id:string, title:string, description:string, occurrenceDate:string [format ISO 8601 datetime], startTime:string [format ISO 8601 datetime], endTime:string [format ISO 8601 datetime], allDay:boolean, repeatType:string [enum: "none", "daily", "weekly", "monthly_date", "monthly_weekday"], repeatInterval:number, repeatDays:array<number>, repeatMonthWeek:number, repeatEndDate:string [format ISO 8601 datetime]
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Calendar","key":"<key>","value": {"title":"text","startTime":"text","endTime":"text"} }] }
-• /Context_Calendar/<key>/repeatDays — ARRAY of number
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Calendar/<key>/repeatDays","value": 0 }] }
-• /Context_Library — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics — MAP<string, object>
-  value.props: id:string, title:string, content:string, subtopics:map<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics","key":"<key>","value": {} }] }
-• /Context_Library/<key>/subtopics/<key>/subtopics — MAP<string, undefined>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Library/<key>/subtopics/<key>/subtopics","key":"<key>","value": null }] }
-• /Context_Program/profileDomains — MAP<string, object>
-  value.required: [domainType]
-  value.props: id:string, domainType:string [enum: "cognitive_academic", "communication_language", "social_emotional_behavioral", "motor_sensory", "life_skills_preparation", "other"], customName:string, strengths:string, needs:string, impactStatement:string, adverseEffectStatement:string, sortOrder:integer, baselineMeasurements:array<object>, assessmentSources:array<object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/profileDomains","key":"<key>","value": {"domainType":"text"} }] }
-• /Context_Program/profileDomains/<key>/baselineMeasurements — ARRAY of object
-  item.required: [skillDescription, measurementMethod, value]
-  item.props: id:string, skillDescription:string, measurementMethod:string, value:string, numericValue:number, unit:string, assessedAt:string [format YYYY-MM-DD], assessedBy:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/profileDomains/<key>/baselineMeasurements","value": {"skillDescription":"text","measurementMethod":"text","value":"text"} }] }
-• /Context_Program/profileDomains/<key>/assessmentSources — ARRAY of object
-  item.required: [sourceType]
-  item.props: id:string, sourceType:string [enum: "standardized_test", "structured_observation", "parent_questionnaire", "teacher_input", "curriculum_based", "behavioral_records"], instrumentName:string, assessedAt:string [format YYYY-MM-DD], summary:string, resultsData:{object}
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/profileDomains/<key>/assessmentSources","value": {"sourceType":"text"} }] }
-• /Context_Program/goals — MAP<string, object>
-  value.required: [goalStatement]
-  value.props: id:string, goalStatement:string, status:string [enum: "draft", "active", "achieved", "modified", "discontinued"], progress:integer [min 0; max 100], targetDate:string [format YYYY-MM-DD], achievedDate:string [format YYYY-MM-DD], targetBehavior:string, criteria:string, methods:string, measurementMethod:string, relevance:string, interventionLevel:string [enum: "activity", "function", "participation"], useGas:boolean, gasLevels:{object}, objectives:array<object>, dataPoints:array<object> … +6 more
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/goals","key":"<key>","value": {"goalStatement":"text"} }] }
-• /Context_Program/goals/<key>/objectives — ARRAY of object
-  item.required: [objectiveStatement]
-  item.props: id:string, objectiveStatement:string, sequenceOrder:integer, profileDomainId:string, targetBehavior:string, methods:string, criteria:string, measurementMethod:string, relevance:string, targetDate:string [format YYYY-MM-DD], status:string [enum: "draft", "active", "achieved", "modified", "discontinued"], progress:integer [min 0; max 100], achievedDate:string [format YYYY-MM-DD], dataPoints:array<object>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/goals/<key>/objectives","value": {"objectiveStatement":"text"} }] }
-• /Context_Program/goals/<key>/objectives/<index>/dataPoints — ARRAY of object
-  item.required: [value]
-  item.props: id:string, recordedAt:string [format date-time], value:string, numericValue:number, achievedLevel:string [enum: "much_less_than_expected", "less_than_expected", "expected", "better_than_expected", "much_better_than_expected"], context:string, collectedBy:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/goals/<key>/objectives/<index>/dataPoints","value": {"value":"text"} }] }
-• /Context_Program/goals/<key>/dataPoints — ARRAY of object
-  item.required: [value]
-  item.props: id:string, recordedAt:string [format date-time], value:string, numericValue:number, achievedLevel:string [enum: "much_less_than_expected", "less_than_expected", "expected", "better_than_expected", "much_better_than_expected"], context:string, collectedBy:string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/goals/<key>/dataPoints","value": {"value":"text"} }] }
-• /Context_Program/teamContacts — ARRAY of object
-  item.required: [contactId]
-  item.props: id:string, contactId:string, contactName:string, programRole:string [enum: "parent_guardian", "student", "homeroom_teacher", "special_education_teacher", "general_education_teacher", "speech_language_pathologist", "occupational_therapist", "physical_therapist", +5 more], responsibilities:array<string>, isCoordinator:boolean, isActive:boolean
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/teamContacts","value": {"contactId":"text"} }] }
-• /Context_Program/teamContacts/<index>/responsibilities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Program/teamContacts/<index>/responsibilities","value": "text" }] }
-• /Context_Reports/archivedMedicalRecords — ARRAY of object
-  item.props: id:string, status:string [enum: "draft", "pending_review", "final", "superseded"], primaryDiagnosis:string, primaryDiagnosisCode:string, coMorbidities:array<string>, secondaryDiagnoses:array<string>, alertsAllergies:array<string>, alertsSeizures:array<string>, alertsCardiac:array<string>, medications:array<string>, medicalEquipment:array<string>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedMedicalRecords","value": {} }] }
-• /Context_Reports/archivedMedicalRecords/<index>/coMorbidities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedMedicalRecords/<index>/coMorbidities","value": "text" }] }
-• /Context_Reports/archivedMedicalRecords/<index>/secondaryDiagnoses — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedMedicalRecords/<index>/secondaryDiagnoses","value": "text" }] }
-• /Context_Reports/archivedMedicalRecords/<index>/alertsAllergies — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedMedicalRecords/<index>/alertsAllergies","value": "text" }] }
-• /Context_Reports/archivedMedicalRecords/<index>/alertsSeizures — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedMedicalRecords/<index>/alertsSeizures","value": "text" }] }
-• /Context_Reports/archivedMedicalRecords/<index>/alertsCardiac — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedMedicalRecords/<index>/alertsCardiac","value": "text" }] }
-• /Context_Reports/archivedMedicalRecords/<index>/medications — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedMedicalRecords/<index>/medications","value": "text" }] }
-• /Context_Reports/archivedMedicalRecords/<index>/medicalEquipment — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedMedicalRecords/<index>/medicalEquipment","value": "text" }] }
-• /Context_Reports/archivedFunctionalReports — ARRAY of object
-  item.props: id:string, status:string [enum: "draft", "pending_review", "final", "superseded"], mobilityStatus:array<string>, adlStatus:array<string>, sensoryProfile:array<string>, safetyRisks:array<string>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedFunctionalReports","value": {} }] }
-• /Context_Reports/archivedFunctionalReports/<index>/mobilityStatus — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedFunctionalReports/<index>/mobilityStatus","value": "text" }] }
-• /Context_Reports/archivedFunctionalReports/<index>/adlStatus — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedFunctionalReports/<index>/adlStatus","value": "text" }] }
-• /Context_Reports/archivedFunctionalReports/<index>/sensoryProfile — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedFunctionalReports/<index>/sensoryProfile","value": "text" }] }
-• /Context_Reports/archivedFunctionalReports/<index>/safetyRisks — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedFunctionalReports/<index>/safetyRisks","value": "text" }] }
-• /Context_Reports/archivedEducationalReports — ARRAY of object
-  item.props: id:string, status:string [enum: "draft", "pending_review", "final", "superseded"], communicationMode:array<string>, receptiveLanguage:array<string>, assistiveTechnologyUsed:array<string>, reinforcers:array<string>, preferredActivities:array<string>, behavioralStrategies:array<string>
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedEducationalReports","value": {} }] }
-• /Context_Reports/archivedEducationalReports/<index>/communicationMode — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedEducationalReports/<index>/communicationMode","value": "text" }] }
-• /Context_Reports/archivedEducationalReports/<index>/receptiveLanguage — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedEducationalReports/<index>/receptiveLanguage","value": "text" }] }
-• /Context_Reports/archivedEducationalReports/<index>/assistiveTechnologyUsed — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedEducationalReports/<index>/assistiveTechnologyUsed","value": "text" }] }
-• /Context_Reports/archivedEducationalReports/<index>/reinforcers — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedEducationalReports/<index>/reinforcers","value": "text" }] }
-• /Context_Reports/archivedEducationalReports/<index>/preferredActivities — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedEducationalReports/<index>/preferredActivities","value": "text" }] }
-• /Context_Reports/archivedEducationalReports/<index>/behavioralStrategies — ARRAY of string
-  e.g. add → manageMemory { "ops":[{ "action":"add","path":"/Context_Reports/archivedEducationalReports/<index>/behavioralStrategies","value": "text" }] }
-
-Notes:
-- When item/value is an OBJECT, include all listed "required" keys when creating it.
-- Arrays/maps may enforce limits (uniqueItems, min/max counts) and map keys may have regex constraints.
-- For topics, "value" may be a string (description) or a full node {description?, subtopics?}.
+]

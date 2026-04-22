@@ -27,6 +27,7 @@ import {
   enrollContactFace,
   getLinkableEntitiesForStudent,
   uploadBiometricPhoto,
+  NoFaceDetectedError,
   getBiometricData,
   updateBiometricData,
   type FaceEmbedding,
@@ -711,8 +712,21 @@ export class BiometricController {
     }
     const quality = req.body.quality ? parseFloat(req.body.quality) : undefined;
 
-    const result = await uploadBiometricPhoto(target, file.buffer, { embedding, quality });
-    res.json({ success: true, ...result });
+    try {
+      const userId = (req.user as any)?.id;
+      const result = await uploadBiometricPhoto(target, file.buffer, { embedding, quality, userId });
+      res.json({ success: true, ...result });
+    } catch (err) {
+      if (err instanceof NoFaceDetectedError) {
+        res.status(400).json({
+          success: false,
+          code: "NO_FACE",
+          message: err.message,
+        });
+        return;
+      }
+      throw err;
+    }
   }
 
   async uploadUserPhoto(req: Request, res: Response): Promise<void> {
