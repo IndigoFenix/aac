@@ -1348,6 +1348,11 @@ export const he = {
     methods: "שיטות מדידה",
     methodsPlaceholder: "כיצד זה ימדד?",
     targetDate: "תאריך יעד",
+    gasTargetLevel: "רמת יעד GAS",
+    gasTargetLevelShort: "יעד",
+    gasTargetLevelPlaceholder: "בחר רמה מהמטרה ההורית",
+    gasTargetLevelNone: "לא הוגדר",
+    gasTargetLevelHint: "הרמה בסולם GAS של המטרה ההורית שמטרה זו שואפת להגיע אליה.",
     progress: "התקדמות",
 
     status: {
@@ -1454,6 +1459,12 @@ export const he = {
     notes: "הערות מפגש",
     notesPlaceholder: "הערות אופציונליות על המפגש...",
     valueRequired: "יש להזין ערך מספרי או טקסטואלי",
+    goalHeader: "רישום למטרה",
+    observedValue: "ערך נצפה (אופציונלי)",
+    observedValuePlaceholder: "מדידה מדויקת",
+    observedValueHint: "עקוף את ברירת המחדל של הרמה אם מדדת משהו שונה בסשן הזה.",
+    collectedByPlaceholder: "שם חבר צוות או מטפל",
+    recordedAt: "נרשם בתאריך",
 
     // GAS-scored data point
     achievedLevel: "רמה שהושגה",

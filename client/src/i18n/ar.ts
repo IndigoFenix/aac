@@ -1348,6 +1348,11 @@ export const ar = {
     methods: "طرق القياس",
     methodsPlaceholder: "كيف سيتم قياس ذلك؟",
     targetDate: "التاريخ المستهدف",
+    gasTargetLevel: "مستوى الهدف في GAS",
+    gasTargetLevelShort: "الهدف",
+    gasTargetLevelPlaceholder: "اختر مستوى من الهدف الأصل",
+    gasTargetLevelNone: "غير محدد",
+    gasTargetLevelHint: "المستوى على مقياس GAS للهدف الأصل الذي يسعى هذا الهدف للوصول إليه.",
     progress: "التقدم",
 
     status: {
@@ -1454,6 +1459,12 @@ export const ar = {
     notes: "ملاحظات الجلسة",
     notesPlaceholder: "ملاحظات اختيارية حول هذه الجلسة...",
     valueRequired: "يرجى إدخال قيمة رقمية أو نصية",
+    goalHeader: "تسجيل للهدف",
+    observedValue: "القيمة الملاحظة (اختياري)",
+    observedValuePlaceholder: "قياس دقيق",
+    observedValueHint: "تجاوز القيمة الافتراضية للمستوى إذا قست شيئاً مختلفاً في هذه الجلسة.",
+    collectedByPlaceholder: "اسم الموظف أو مقدم الرعاية",
+    recordedAt: "تم التسجيل في",
 
     // GAS-scored data point
     achievedLevel: "المستوى المحقق",

@@ -1348,6 +1348,11 @@ export const ru = {
     methods: "Методы измерения",
     methodsPlaceholder: "Как это будет измеряться?",
     targetDate: "Целевая дата",
+    gasTargetLevel: "Целевой уровень GAS",
+    gasTargetLevelShort: "Цель",
+    gasTargetLevelPlaceholder: "Выберите уровень из родительской цели",
+    gasTargetLevelNone: "Не установлено",
+    gasTargetLevelHint: "Уровень на шкале GAS родительской цели, которого стремится достичь эта подцель.",
     progress: "Прогресс",
 
     status: {
@@ -1454,6 +1459,12 @@ export const ru = {
     notes: "Заметки сессии",
     notesPlaceholder: "Необязательные заметки об этой сессии...",
     valueRequired: "Пожалуйста, введите числовое или текстовое значение",
+    goalHeader: "Запись для цели",
+    observedValue: "Наблюдаемое значение (необязательно)",
+    observedValuePlaceholder: "Точное измерение",
+    observedValueHint: "Переопределите значение уровня по умолчанию, если вы измерили что-то другое в этой сессии.",
+    collectedByPlaceholder: "Имя сотрудника или опекуна",
+    recordedAt: "Записано в",
 
     // GAS-scored data point
     achievedLevel: "Достигнутый уровень",

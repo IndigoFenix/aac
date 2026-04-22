@@ -1348,6 +1348,11 @@ export const zh = {
     methods: "测量方法",
     methodsPlaceholder: "如何测量？",
     targetDate: "目标日期",
+    gasTargetLevel: "GAS 目标水平",
+    gasTargetLevelShort: "目标",
+    gasTargetLevelPlaceholder: "从父目标中选择一个水平",
+    gasTargetLevelNone: "未设置",
+    gasTargetLevelHint: "此目标旨在达到的父目标 GAS 量表上的水平。",
     progress: "进度",
 
     status: {
@@ -1454,6 +1459,12 @@ export const zh = {
     notes: "会话记录",
     notesPlaceholder: "关于此次会话的可选备注...",
     valueRequired: "请输入数值或文本值",
+    goalHeader: "目标记录",
+    observedValue: "观察值（可选）",
+    observedValuePlaceholder: "精确测量",
+    observedValueHint: "如果本次会话测量到的值与级别的默认值不同，请覆盖。",
+    collectedByPlaceholder: "工作人员或照顾者姓名",
+    recordedAt: "记录时间",
 
     // GAS-scored data point
     achievedLevel: "达到的水平",

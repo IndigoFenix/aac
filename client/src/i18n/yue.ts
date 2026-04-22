@@ -1348,6 +1348,11 @@ export const yue = {
     methods: "量度方法",
     methodsPlaceholder: "點樣量度？",
     targetDate: "目標日期",
+    gasTargetLevel: "GAS 目標水平",
+    gasTargetLevelShort: "目標",
+    gasTargetLevelPlaceholder: "從父目標揀一個水平",
+    gasTargetLevelNone: "未設定",
+    gasTargetLevelHint: "呢個目標想達到嘅父目標 GAS 量表上嘅水平。",
     progress: "進度",
 
     status: {
@@ -1454,6 +1459,12 @@ export const yue = {
     notes: "治療記錄",
     notesPlaceholder: "關於呢次治療嘅可選備註...",
     valueRequired: "請輸入數值或文字值",
+    goalHeader: "目標記錄",
+    observedValue: "觀察值（可選）",
+    observedValuePlaceholder: "精確測量",
+    observedValueHint: "如果今次會話測量到嘅值同級別嘅預設值唔同，請覆寫。",
+    collectedByPlaceholder: "工作人員或照顧者姓名",
+    recordedAt: "記錄時間",
 
     // GAS-scored data point
     achievedLevel: "達到嘅水平",

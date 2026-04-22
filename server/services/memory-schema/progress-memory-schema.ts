@@ -1189,6 +1189,15 @@ const objectiveSchema: AgentMemoryFieldObjectWithDB = {
     measurementMethod: { id: "measurementMethod", type: "string" },
     relevance: { id: "relevance", type: "string" },
     targetDate: { id: "targetDate", type: "string", format: "YYYY-MM-DD" },
+    // GAS integration — only meaningful when the parent goal has useGas=true.
+    // Points at one level on the parent's scale that this objective aims to reach.
+    gasTargetLevel: {
+      id: "gasTargetLevel",
+      type: "string",
+      enum: ["much_less_than_expected", "less_than_expected", "expected", "better_than_expected", "much_better_than_expected"],
+      description:
+        "For GAS-scored goals: the target level on the parent goal's 5-level scale that this objective aims to reach. The objective is considered met when the student achieves this level consistently. Leave null when the parent goal is not GAS-scored.",
+    },
     status: {
       id: "status",
       type: "string",

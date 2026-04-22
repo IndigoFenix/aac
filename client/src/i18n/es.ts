@@ -1348,6 +1348,11 @@ export const es = {
     methods: "Métodos de medición",
     methodsPlaceholder: "¿Cómo se medirá esto?",
     targetDate: "Fecha objetivo",
+    gasTargetLevel: "Nivel objetivo GAS",
+    gasTargetLevelShort: "Objetivo",
+    gasTargetLevelPlaceholder: "Seleccione un nivel del objetivo principal",
+    gasTargetLevelNone: "No establecido",
+    gasTargetLevelHint: "El nivel en la escala GAS del objetivo principal que este objetivo busca alcanzar.",
     progress: "Progreso",
 
     status: {
@@ -1454,6 +1459,12 @@ export const es = {
     notes: "Notas de sesión",
     notesPlaceholder: "Notas opcionales sobre esta sesión...",
     valueRequired: "Por favor, ingrese un valor numérico o de texto",
+    goalHeader: "Registro para el objetivo",
+    observedValue: "Valor observado (opcional)",
+    observedValuePlaceholder: "Medición exacta",
+    observedValueHint: "Anule el valor predeterminado del nivel si midió algo diferente en esta sesión.",
+    collectedByPlaceholder: "Nombre del personal o cuidador",
+    recordedAt: "Registrado el",
 
     // GAS-scored data point
     achievedLevel: "Nivel alcanzado",
