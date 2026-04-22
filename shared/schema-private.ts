@@ -866,6 +866,11 @@ export const objectives = pgTable("objectives", {
   // Timeline
   targetDate: date("target_date"),
 
+  // GAS integration — when the parent goal has useGas=true, this field points
+  // at one level on the parent's scale that this objective aims to reach.
+  // Null when the parent goal isn't GAS-scored or the objective is unscored.
+  gasTargetLevel: gasLevelEnum("gas_target_level"),
+
   // Status tracking
   status: objectiveStatusEnum("status").default("draft").notNull(),
   progress: integer("progress").default(0), // 0-100

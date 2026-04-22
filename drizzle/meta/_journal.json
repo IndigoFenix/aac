@@ -505,6 +505,13 @@
       "when": 1776858591729,
       "tag": "0071_sleepy_captain_marvel",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1776880378074,
+      "tag": "0072_friendly_captain_universe",
+      "breakpoints": true
     }
   ]
 }

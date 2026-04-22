@@ -1348,6 +1348,11 @@ export const en = {
     methods: "Measurement Methods",
     methodsPlaceholder: "How will this be measured?",
     targetDate: "Target Date",
+    gasTargetLevel: "GAS Target Level",
+    gasTargetLevelShort: "Target",
+    gasTargetLevelPlaceholder: "Select a level from the parent goal",
+    gasTargetLevelNone: "Not set",
+    gasTargetLevelHint: "The level on the parent goal's GAS scale that this objective aims to reach.",
     progress: "Progress",
 
     status: {
@@ -1454,6 +1459,12 @@ export const en = {
     notes: "Session Notes",
     notesPlaceholder: "Optional notes about this session...",
     valueRequired: "Please enter a numeric or text value",
+    goalHeader: "Recording for goal",
+    observedValue: "Observed value (optional)",
+    observedValuePlaceholder: "Exact measurement",
+    observedValueHint: "Override the level's default if you measured something different this session.",
+    collectedByPlaceholder: "Staff member or caregiver name",
+    recordedAt: "Recorded at",
 
     // GAS-scored data point
     achievedLevel: "Achieved Level",

@@ -1348,6 +1348,11 @@ export const ko = {
     methods: "측정 방법",
     methodsPlaceholder: "어떻게 측정할 것인가?",
     targetDate: "목표 날짜",
+    gasTargetLevel: "GAS 목표 수준",
+    gasTargetLevelShort: "목표",
+    gasTargetLevelPlaceholder: "상위 목표에서 수준 선택",
+    gasTargetLevelNone: "설정되지 않음",
+    gasTargetLevelHint: "이 하위 목표가 달성하려는 상위 목표의 GAS 척도 수준.",
     progress: "진행",
 
     status: {
@@ -1454,6 +1459,12 @@ export const ko = {
     notes: "세션 메모",
     notesPlaceholder: "이 세션에 대한 선택적 메모...",
     valueRequired: "수치 또는 텍스트 값을 입력해주세요",
+    goalHeader: "목표 기록",
+    observedValue: "관찰된 값 (선택사항)",
+    observedValuePlaceholder: "정확한 측정",
+    observedValueHint: "이 세션에서 다른 것을 측정한 경우 수준의 기본값을 재정의하세요.",
+    collectedByPlaceholder: "직원 또는 보호자 이름",
+    recordedAt: "기록 시간",
 
     // GAS-scored data point
     achievedLevel: "달성된 수준",

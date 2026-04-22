@@ -1,0 +1,1 @@
+ALTER TABLE "objectives" ADD COLUMN "gas_target_level" "gas_level";

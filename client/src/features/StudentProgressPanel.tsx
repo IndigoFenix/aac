@@ -24,7 +24,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogBody, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
@@ -235,6 +235,8 @@ interface ObjectiveFormState {
   criteria: string;
   methods: string;
   targetDate: string;
+  /** Which level on the parent GAS goal's scale this objective targets. Only used when parent.useGas. */
+  gasTargetLevel: GasLevel | '';
 }
 
 interface ServiceFormState {
@@ -251,9 +253,13 @@ interface ServiceFormState {
 
 interface DataPointFormState {
   numericValue: string;
+  unit: string;
   value: string;
   context: string;
   achievedLevel: GasLevel | '';
+  collectedBy: string;
+  /** ISO-local datetime string for the <input type="datetime-local">. Empty = now */
+  recordedAt: string;
 }
 
 interface TeamContactFormState {
@@ -266,6 +272,15 @@ interface TeamContactFormState {
 // =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
+
+/**
+ * Format a Date as the value expected by <input type="datetime-local">:
+ * YYYY-MM-DDTHH:mm in the user's local timezone.
+ */
+function toLocalDateTimeInput(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 /**
  * Get display name for a service
@@ -612,6 +627,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
     criteria: '',
     methods: '',
     targetDate: '',
+    gasTargetLevel: '',
   });
   
   const [serviceForm, setServiceForm] = useState<ServiceFormState>({
@@ -628,9 +644,12 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
   
   const [dataPointForm, setDataPointForm] = useState<DataPointFormState>({
     numericValue: '',
+    unit: '',
     value: '',
     context: '',
     achievedLevel: '',
+    collectedBy: '',
+    recordedAt: '',
   });
   
   const [teamContactForm, setTeamContactForm] = useState<TeamContactFormState>({
@@ -1069,6 +1088,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
       criteria: '',
       methods: '',
       targetDate: '',
+      gasTargetLevel: '',
     });
     setSelectedGoalForObjective(null);
     setEditingObjective(null);
@@ -1090,7 +1110,18 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
   };
 
   const resetDataPointForm = () => {
-    setDataPointForm({ numericValue: '', value: '', context: '', achievedLevel: '' });
+    setDataPointForm({
+      numericValue: '',
+      unit: '',
+      value: '',
+      context: '',
+      achievedLevel: '',
+      // Default collector to the current user's name. Clinicians can override
+      // when logging data collected by someone else (aide, parent, etc.).
+      collectedBy: user?.fullName || `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || '',
+      // Default to the current local date/time — clinicians can back-date via the picker.
+      recordedAt: toLocalDateTimeInput(new Date()),
+    });
     setSelectedGoalForDataPoint(null);
   };
 
@@ -2011,6 +2042,16 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                                                 {t('objective.methods')}: {objective.methods}
                                               </p>
                                             )}
+                                            {/* GAS target level badge — when the parent goal is GAS-scored
+                                                and this objective aims at a specific level */}
+                                            {goal.useGas && objective.gasTargetLevel && (
+                                              <Badge variant="outline" className="text-xs mt-1">
+                                                {(() => {
+                                                  const ordinal = GAS_LEVEL_ORDINALS[objective.gasTargetLevel as GasLevel];
+                                                  return `${t('objective.gasTargetLevelShort')}: ${ordinal > 0 ? '+' : ''}${ordinal} · ${t(`goal.gas.level.${objective.gasTargetLevel}`)}`;
+                                                })()}
+                                              </Badge>
+                                            )}
                                             {/* Show objective progress */}
                                             {objective.progress !== null && objective.progress !== undefined && objective.progress > 0 && (
                                               <div className="mt-2">
@@ -2043,6 +2084,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                                                     criteria: objective.criteria || '',
                                                     methods: objective.methods || '',
                                                     targetDate: objective.targetDate || '',
+                                                    gasTargetLevel: (objective.gasTargetLevel as GasLevel) || '',
                                                   });
                                                   setShowObjectiveModal(true);
                                                 }}
@@ -2984,6 +3026,55 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                 onChange={(e) => setObjectiveForm(prev => ({ ...prev, targetDate: e.target.value }))}
               />
             </div>
+
+            {/* GAS target-level picker — only shown when the parent goal is GAS-scored
+                and has at least one level defined. Points this objective at one level on
+                the parent's scale. */}
+            {(() => {
+              const parent = selectedGoalForObjective ? goals.find(g => g.id === selectedGoalForObjective) : null;
+              if (!parent?.useGas) return null;
+              const parentLevels = (parent.gasLevels as GasLevels | undefined) || {};
+              const definedLevels = GAS_LEVEL_ORDER.filter(lv => parentLevels[lv]?.behavior);
+              if (definedLevels.length === 0) return null;
+              return (
+                <div className="space-y-2">
+                  <Label>{t('objective.gasTargetLevel')}</Label>
+                  <Select
+                    value={objectiveForm.gasTargetLevel || 'none'}
+                    onValueChange={(value) =>
+                      setObjectiveForm(prev => ({
+                        ...prev,
+                        gasTargetLevel: value === 'none' ? '' : (value as GasLevel),
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={t('objective.gasTargetLevelPlaceholder')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">{t('objective.gasTargetLevelNone')}</SelectItem>
+                      {definedLevels.map((level) => {
+                        const entry = parentLevels[level];
+                        const ordinal = GAS_LEVEL_ORDINALS[level];
+                        return (
+                          <SelectItem key={level} value={level}>
+                            <span className="font-medium">
+                              {ordinal > 0 ? '+' : ''}{ordinal} · {t(`goal.gas.level.${level}`)}
+                            </span>
+                            {entry?.behavior && (
+                              <span className="text-muted-foreground text-xs ms-2">
+                                — {entry.behavior.slice(0, 60)}{entry.behavior.length > 60 ? '…' : ''}
+                              </span>
+                            )}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">{t('objective.gasTargetLevelHint')}</p>
+                </div>
+              );
+            })()}
           </div>
 
           <DialogFooter>
@@ -3004,6 +3095,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                   criteria: objectiveForm.criteria || undefined,
                   methods: objectiveForm.methods || undefined,
                   targetDate: objectiveForm.targetDate || undefined,
+                  gasTargetLevel: objectiveForm.gasTargetLevel || null,
                 };
                 
                 if (editingObjective) {
@@ -3187,7 +3279,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
 
       {/* Data Point Modal */}
       <Dialog open={showDataPointModal} onOpenChange={setShowDataPointModal}>
-        <DialogContent className="sm:max-w-[440px]">
+        <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
             <DialogTitle>{t('dataPoint.record')}</DialogTitle>
             <DialogDescription>{t('dataPoint.modalDescription')}</DialogDescription>
@@ -3199,9 +3291,39 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
               : null;
             const isGasGoal = !!selectedGoal?.useGas;
             const gasLevels = (selectedGoal?.gasLevels as GasLevels | undefined) || {};
+            const varyingVariable = selectedGoal?.gasVaryingVariable as GasVaryingVariable | undefined;
+            const baselineLevel = selectedGoal?.gasBaselineLevel as GasLevel | undefined;
+            // Quantitative varying variables prompt for an exact numeric value;
+            // 'mediation' is categorical and takes the level's meaning at face value.
+            const showQuantitativeInput =
+              isGasGoal &&
+              (varyingVariable === 'frequency' ||
+                varyingVariable === 'time' ||
+                varyingVariable === 'achievement');
+            // Unit hint pulled from the level the user selected (if any).
+            const selectedLevelEntry = dataPointForm.achievedLevel
+              ? gasLevels[dataPointForm.achievedLevel as GasLevel]
+              : undefined;
+            const levelUnitHint = selectedLevelEntry?.unit || '';
             return (
               <>
-                <div className="grid gap-4 py-4">
+                <DialogBody className="grid gap-4 py-4">
+                  {/* Goal context header */}
+                  {selectedGoal && (
+                    <div className="rounded-md border bg-muted/30 p-3 space-y-1">
+                      <div className="text-xs text-muted-foreground uppercase tracking-wide">
+                        {t('dataPoint.goalHeader')}
+                      </div>
+                      <div className="text-sm font-medium">{selectedGoal.goalStatement}</div>
+                      {isGasGoal && varyingVariable && (
+                        <div className="text-xs text-muted-foreground">
+                          {t('goal.gas.varyingVariable')}: {t(`goal.gas.variable.${varyingVariable}`)}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* GAS level picker */}
                   {isGasGoal && (
                     <div className="space-y-2">
                       <Label>{t('dataPoint.achievedLevel')} *</Label>
@@ -3210,21 +3332,47 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                           const ordinal = GAS_LEVEL_ORDINALS[level];
                           const entry = gasLevels[level];
                           const selected = dataPointForm.achievedLevel === level;
+                          const isBaseline = baselineLevel === level;
+                          const isTarget = level === 'expected';
                           return (
                             <button
                               type="button"
                               key={level}
-                              onClick={() => setDataPointForm(prev => ({ ...prev, achievedLevel: level }))}
+                              onClick={() => setDataPointForm(prev => ({
+                                ...prev,
+                                achievedLevel: level,
+                                // Pre-fill unit from the level if the form hasn't been edited yet
+                                unit: prev.unit || entry?.unit || '',
+                              }))}
                               className={cn(
                                 'w-full text-start p-3 rounded-md border transition-colors',
                                 selected ? 'border-primary bg-primary/10' : 'hover:bg-muted/50'
                               )}
                             >
-                              <div className="text-sm font-semibold">
-                                {ordinal > 0 ? '+' : ''}{ordinal} · {t(`goal.gas.level.${level}`)}
+                              <div className="flex items-center justify-between">
+                                <div className="text-sm font-semibold">
+                                  {ordinal > 0 ? '+' : ''}{ordinal} · {t(`goal.gas.level.${level}`)}
+                                </div>
+                                <div className="flex gap-1">
+                                  {isBaseline && (
+                                    <Badge variant="outline" className="text-xs">
+                                      {t('goal.gas.baselineBadge')}
+                                    </Badge>
+                                  )}
+                                  {isTarget && (
+                                    <Badge variant="outline" className="text-xs">
+                                      {t('goal.gas.targetBadge')}
+                                    </Badge>
+                                  )}
+                                </div>
                               </div>
                               {entry?.behavior && (
                                 <div className="text-xs text-muted-foreground mt-1">{entry.behavior}</div>
+                              )}
+                              {entry?.numericValue != null && (
+                                <div className="text-xs text-muted-foreground mt-0.5">
+                                  {entry.numericValue}{entry.unit ? ` ${entry.unit}` : ''}
+                                </div>
                               )}
                             </button>
                           );
@@ -3233,11 +3381,39 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                     </div>
                   )}
 
+                  {/* Quantitative override — only shown for quantitative varying variables */}
+                  {showQuantitativeInput && (
+                    <div className="space-y-2">
+                      <Label>{t('dataPoint.observedValue')}</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          type="number"
+                          step="any"
+                          value={dataPointForm.numericValue}
+                          onChange={(e) => setDataPointForm(prev => ({ ...prev, numericValue: e.target.value }))}
+                          placeholder={t('dataPoint.observedValuePlaceholder')}
+                          className="flex-1"
+                        />
+                        <Input
+                          value={dataPointForm.unit}
+                          onChange={(e) => setDataPointForm(prev => ({ ...prev, unit: e.target.value }))}
+                          placeholder={levelUnitHint || t('goal.gas.unitPlaceholder')}
+                          className="w-24"
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {t('dataPoint.observedValueHint')}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Non-GAS goal: simple numeric entry */}
                   {!isGasGoal && (
                     <div className="space-y-2">
                       <Label>{t('dataPoint.numericValue')}</Label>
                       <Input
                         type="number"
+                        step="any"
                         value={dataPointForm.numericValue}
                         onChange={(e) => setDataPointForm(prev => ({ ...prev, numericValue: e.target.value }))}
                         placeholder={t('dataPoint.numericPlaceholder')}
@@ -3245,26 +3421,50 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                     </div>
                   )}
 
-                  {/* value - schema field (NOT textValue) */}
-                  <div className="space-y-2">
-                    <Label>{t('dataPoint.textValue')}</Label>
-                    <Input
-                      value={dataPointForm.value}
-                      onChange={(e) => setDataPointForm(prev => ({ ...prev, value: e.target.value }))}
-                      placeholder={t('dataPoint.textPlaceholder')}
-                    />
-                  </div>
+                  {/* Free-text value — only for non-GAS goals. For GAS goals the
+                      level's behavior already captures what happened. */}
+                  {!isGasGoal && (
+                    <div className="space-y-2">
+                      <Label>{t('dataPoint.textValue')}</Label>
+                      <Input
+                        value={dataPointForm.value}
+                        onChange={(e) => setDataPointForm(prev => ({ ...prev, value: e.target.value }))}
+                        placeholder={t('dataPoint.textPlaceholder')}
+                      />
+                    </div>
+                  )}
 
-                  {/* context - schema field (NOT sessionNotes) */}
+                  {/* Context notes — always */}
                   <div className="space-y-2">
                     <Label>{t('dataPoint.notes')}</Label>
                     <Textarea
                       value={dataPointForm.context}
                       onChange={(e) => setDataPointForm(prev => ({ ...prev, context: e.target.value }))}
                       placeholder={t('dataPoint.notesPlaceholder')}
+                      className="min-h-[60px]"
                     />
                   </div>
-                </div>
+
+                  {/* Session metadata: collector + timestamp */}
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label>{t('dataPoint.collectedBy')}</Label>
+                      <Input
+                        value={dataPointForm.collectedBy}
+                        onChange={(e) => setDataPointForm(prev => ({ ...prev, collectedBy: e.target.value }))}
+                        placeholder={t('dataPoint.collectedByPlaceholder')}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t('dataPoint.recordedAt')}</Label>
+                      <Input
+                        type="datetime-local"
+                        value={dataPointForm.recordedAt}
+                        onChange={(e) => setDataPointForm(prev => ({ ...prev, recordedAt: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                </DialogBody>
 
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setShowDataPointModal(false)}>
@@ -3281,31 +3481,47 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                         return;
                       }
                       if (selectedGoalForDataPoint) {
-                        // For GAS goals, prefer the level's numericValue if the user didn't enter one.
+                        // For GAS goals: prefer the observed numeric input. If blank,
+                        // fall back to the picked level's default numericValue (if any).
                         const achieved = dataPointForm.achievedLevel || undefined;
                         const levelEntry = achieved ? gasLevels[achieved] : undefined;
                         const numeric = dataPointForm.numericValue
                           ? parseFloat(dataPointForm.numericValue)
                           : levelEntry?.numericValue;
-                        const textValue = dataPointForm.value || (isGasGoal && levelEntry?.behavior) || '';
+                        // For GAS goals the "value" text isn't meaningful — the level
+                        // + behavior describe what happened. Serialize numericValue+unit
+                        // for display if the clinician entered them.
+                        let textValue = dataPointForm.value;
+                        if (!textValue && isGasGoal) {
+                          if (numeric != null) {
+                            const unit = dataPointForm.unit || levelEntry?.unit || '';
+                            textValue = unit ? `${numeric} ${unit}` : String(numeric);
+                          } else if (levelEntry?.behavior) {
+                            textValue = levelEntry.behavior;
+                          }
+                        }
+                        const recordedAt = dataPointForm.recordedAt
+                          ? new Date(dataPointForm.recordedAt)
+                          : new Date();
                         createDataPointMutation.mutate({
                           goalId: selectedGoalForDataPoint,
                           data: {
                             numericValue: numeric,
-                            value: textValue,
+                            value: textValue || '',
                             context: dataPointForm.context || undefined,
                             achievedLevel: achieved,
-                            recordedAt: new Date(),
+                            collectedBy: dataPointForm.collectedBy || undefined,
+                            recordedAt,
                           } as InsertDataPoint,
                         });
                       }
                     }}
                     disabled={createDataPointMutation.isPending}
                   >
-              {createDataPointMutation.isPending && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
-              {t('common.save')}
-            </Button>
-          </DialogFooter>
+                    {createDataPointMutation.isPending && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
+                    {t('common.save')}
+                  </Button>
+                </DialogFooter>
               </>
             );
           })()}
