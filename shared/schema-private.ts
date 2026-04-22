@@ -36,6 +36,20 @@ export const assessmentSourceTypeEnum = pgEnum("assessment_source_type", [
   "behavioral_records"
 ]);
 export const interventionLevelEnum = pgEnum("intervention_level", ["activity", "function", "participation"]);
+// GAS (Goal Attainment Scaling) enums — TALA-aligned goal scoring
+export const gasLevelEnum = pgEnum("gas_level", [
+  "much_less_than_expected",  // -2
+  "less_than_expected",        // -1
+  "expected",                  //  0
+  "better_than_expected",      // +1
+  "much_better_than_expected", // +2
+]);
+export const gasVaryingVariableEnum = pgEnum("gas_varying_variable", [
+  "achievement", // level of skill acquired
+  "mediation",   // amount of prompting/support
+  "time",        // duration / response time
+  "frequency",   // occurrences per window
+]);
 // Unified status enum for any planning item (goals, objectives, transition goals).
 // "draft" and "not_started" are accepted synonyms for pre-work state; "active"
 // and "in_progress" are accepted synonyms for work-in-progress state. Keeping
@@ -216,7 +230,8 @@ export const activityEventTypeEnum = pgEnum("activity_event_type", [
 export const activitySubjectTypeEnum = pgEnum("activity_subject_type", [
   "student", "classroom", "institute", "user", "board", "custom_symbol",
   "program", "goal", "objective", "service", "accommodation",
-  "progress_report", "data_point", "team_member", "meeting",
+  "progress_report", "data_point", "team_member", "program_contact",
+  "student_contact", "biometric_data", "meeting",
   "medical_record", "functional_report", "educational_report",
   "profile_domain", "invite", "consent_form", "transition_plan", "transition_goal",
   "custom_app", "deep_analysis"
@@ -269,9 +284,8 @@ export const users = pgTable("users", {
   mfaSecret: text("mfa_secret"), // Encrypted TOTP secret
   mfaEnforcedByAdmin: boolean("mfa_enforced_by_admin").default(false).notNull(),
 
-  // Biometric recognition fields
-  faceEmbedding: jsonb("face_embedding"), // 128-dimensional face embedding vector
-  voiceEmbedding: jsonb("voice_embedding"), // Voice embedding vector for speaker recognition
+  // Biometric data — references shared biometric_data table (one row per real person).
+  biometricDataId: varchar("biometric_data_id"),
 
   // External storage — when set, sensitive fields are stored in the named backend
   externalStorage: varchar("external_storage"),
@@ -325,9 +339,8 @@ export const students = pgTable("students", {
   chatCreditsUsed: real("chat_credits_used").notNull().default(0),
   chatCreditsUpdated: timestamp("chat_credits_updated").defaultNow(),
 
-  // Biometric recognition fields
-  faceEmbedding: jsonb("face_embedding"), // 128-dimensional face embedding vector
-  voiceEmbedding: jsonb("voice_embedding"), // Voice embedding vector for speaker recognition
+  // Biometric data — references shared biometric_data table.
+  biometricDataId: varchar("biometric_data_id"),
 
   // External storage — when set, sensitive fields are stored in the named backend
   externalStorage: varchar("external_storage"),
@@ -434,29 +447,71 @@ export const aacSettings = pgTable("aac_settings", {
   index("idx_aac_settings_student_id").on(table.studentId),
 ]);
 
-// Student contacts — people the student knows (classmates, siblings, etc.) with optional biometrics
+// =============================================================================
+// BIOMETRIC DATA (shared)
+// =============================================================================
+// One row per real person. Referenced by users, students, and studentContacts
+// via biometricDataId FK. When a contact is linked to a user or student, its
+// biometricDataId is write-through synced to the linked record's.
+export const biometricData = pgTable("biometric_data", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+
+  faceEmbedding: jsonb("face_embedding"),
+  voiceEmbedding: jsonb("voice_embedding"),
+  faceImageUrl: text("face_image_url"),
+  faceImageQuality: real("face_image_quality"),
+
+  hairColor: text("hair_color"),
+  eyeColor: text("eye_color"),
+  estimatedAge: text("estimated_age"),
+  estimatedSex: text("estimated_sex"),
+  physicalDescription: text("physical_description"),
+  identifyingFeatures: text("identifying_features"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Student contacts — represents the relationship between a student and a person.
+// Biometric/physical data lives on the linked biometric_data row. If the contact
+// is also a user or another student, linkedUserId/linkedStudentId points to them
+// and biometricDataId is shared with their record.
 export const studentContacts = pgTable("student_contacts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   studentId: varchar("student_id").references(() => students.id).notNull(),
+
+  // Identity — label this student uses (may differ from linked user's legal name)
   name: text("name").notNull(),
-  relationship: text("relationship"), // 'classmate', 'sibling', 'teacher', etc.
-  hairColor: text("hair_color"),
-  estimatedAge: text("estimated_age"), // '8', '30s', 'child', 'adult'
-  estimatedSex: text("estimated_sex"), // 'male', 'female', 'unknown'
-  description: text("description"), // free-form physical/contextual description
-  contextNotes: text("context_notes"), // what AI knows about interactions/relationship
-  faceEmbedding: jsonb("face_embedding"), // 128D float array
-  voiceEmbedding: jsonb("voice_embedding"), // future use
-  faceImageData: text("face_image_data"), // base64-encoded JPEG of cropped face (legacy, unused - face images cached client-side)
-  faceImageQuality: real("face_image_quality"), // quality score (0–1), higher = more frontal + larger
+  relationship: text("relationship"),
+
+  // Links to canonical records (mutually exclusive — enforced in repo)
+  linkedUserId: varchar("linked_user_id").references(() => users.id),
+  linkedStudentId: varchar("linked_student_id").references((): AnyPgColumn => students.id),
+
+  // Shared biometric record — auto-synced to linked user/student when linked
+  biometricDataId: varchar("biometric_data_id").references(() => biometricData.id),
+
+  // Team-member fields (nullable — set only for formal IEP/TALA team members)
+  role: teamMemberRoleEnum("role"),
+  customRole: text("custom_role"),
+  organization: text("organization"),
+  contactEmail: text("contact_email"),
+  contactPhone: text("contact_phone"),
+
+  // Relationship-scoped context
+  contextNotes: text("context_notes"),
   lastSeenAt: timestamp("last_seen_at"),
   timesIdentified: integer("times_identified").default(0).notNull(),
+
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_student_contacts_student_id").on(table.studentId),
   index("idx_student_contacts_is_active").on(table.isActive),
+  index("idx_student_contacts_linked_user_id").on(table.linkedUserId),
+  index("idx_student_contacts_linked_student_id").on(table.linkedStudentId),
+  index("idx_student_contacts_biometric_data_id").on(table.biometricDataId),
 ]);
 
 // =============================================================================
@@ -651,6 +706,13 @@ export const programs = pgTable("programs", {
   // IEP-specific
   leastRestrictiveEnvironment: text("least_restrictive_environment"),
 
+  // ICF contextual factors (WHO 2002)
+  // personalFactors: free-form JSON — age-appropriate interests, temperament, motivators, coping, cultural background, etc.
+  // environmentalFactors: JSON keyed by ICF category (products_technology, natural_environment, support_relationships, attitudes, services_systems_policies),
+  //   each containing { facilitators: string[], barriers: string[], notes?: string }
+  personalFactors: jsonb("personal_factors").default({}),
+  environmentalFactors: jsonb("environmental_factors").default({}),
+
   // Metadata
   notes: text("notes"),
   metadata: jsonb("metadata").default({}),
@@ -752,6 +814,21 @@ export const goals = pgTable("goals", {
 
   // TALA-specific: ICF intervention level
   interventionLevel: interventionLevelEnum("intervention_level"),
+
+  // GAS (Goal Attainment Scaling) — TALA-aligned scoring
+  // When useGas is true, the five gasLevels define the ordinal scale used to
+  // score dataPoints (dataPoints.achievedLevel). progress remains a derived
+  // 0-100 summary for display compatibility.
+  useGas: boolean("use_gas").default(false).notNull(),
+  gasVaryingVariable: gasVaryingVariableEnum("gas_varying_variable"),
+  gasBaselineLevel: gasLevelEnum("gas_baseline_level"),
+  // Shape: Partial<Record<gas_level, { behavior: string, numericValue?: number, unit?: string }>>
+  gasLevels: jsonb("gas_levels").default({}),
+
+  // Family-Centered Service (FCS) / COPM-style joint goal-setting
+  clientImportanceRating: integer("client_importance_rating"), // 1-5 from client/family
+  setJointlyWithFamily: boolean("set_jointly_with_family").default(false).notNull(),
+  familyInput: text("family_input"), // free-form notes from parent/caregiver about this goal
 
   // Status tracking
   status: goalStatusEnum("status").default("draft").notNull(),
@@ -865,9 +942,9 @@ export const services = pgTable("services", {
   customServiceName: text("custom_service_name"), // For 'other' type
   description: text("description"),
 
-  // Provider
-  providerId: varchar("provider_id").references(() => teamMembers.id),
-  providerName: text("provider_name"), // Fallback if no linked team member
+  // Provider — references a studentContacts row (the person delivering this service).
+  providerContactId: varchar("provider_contact_id").references(() => studentContacts.id),
+  providerName: text("provider_name"), // Fallback if no linked contact
 
   // Frequency & Duration
   frequencyCount: integer("frequency_count").notNull().default(1),
@@ -988,6 +1065,9 @@ export const dataPoints = pgTable("data_points", {
   recordedAt: timestamp("recorded_at").notNull(),
   value: text("value").notNull(),
   numericValue: real("numeric_value"), // For graphing
+  // For GAS-scored goals: the ordinal level observed at this data point.
+  // Independent of `value`/`numericValue` — populated when the parent goal has useGas=true.
+  achievedLevel: gasLevelEnum("achieved_level"),
   context: text("context"),
   collectedBy: text("collected_by"),
 
@@ -1047,23 +1127,17 @@ export const transitionGoals = pgTable("transition_goals", {
 ]);
 
 /**
- * Team Members - People involved in the program
+ * Program Contacts — junction linking studentContacts to programs.
+ * A person (studentContacts row) can be on multiple programs across years;
+ * their coordinator/responsibilities/active status is per-program.
  */
-export const teamMembers = pgTable("team_members", {
+export const programContacts = pgTable("program_contacts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   programId: varchar("program_id").references(() => programs.id).notNull(),
+  contactId: varchar("contact_id").references(() => studentContacts.id).notNull(),
 
-  // Can optionally link to a user account
-  userId: varchar("user_id").references(() => users.id),
-
-  name: text("name").notNull(),
-  role: teamMemberRoleEnum("role").notNull(),
-  customRole: text("custom_role"), // For 'other' role
-
-  organization: text("organization"), // For external providers
-  contactEmail: text("contact_email"),
-  contactPhone: text("contact_phone"),
-
+  // Per-program role override — falls back to studentContacts.role when null
+  programRole: teamMemberRoleEnum("program_role"),
   responsibilities: text("responsibilities").array(),
   isCoordinator: boolean("is_coordinator").default(false).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
@@ -1071,9 +1145,9 @@ export const teamMembers = pgTable("team_members", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
-  index("idx_team_members_program_id").on(table.programId),
-  index("idx_team_members_user_id").on(table.userId),
-  index("idx_team_members_role").on(table.role),
+  index("idx_program_contacts_program_id").on(table.programId),
+  index("idx_program_contacts_contact_id").on(table.contactId),
+  uniqueIndex("uq_program_contacts_program_contact").on(table.programId, table.contactId),
 ]);
 
 /**
@@ -1687,16 +1761,24 @@ export const updateTransitionGoalSchema = createInsertSchema(transitionGoals).om
   updatedAt: true,
 }).partial();
 
-// Team member schemas
-export const insertTeamMemberSchema = createInsertSchema(teamMembers).omit({
+// Biometric data schemas
+export const insertBiometricDataSchema = createInsertSchema(biometricData).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 });
+export const updateBiometricDataSchema = insertBiometricDataSchema.partial();
 
-export const updateTeamMemberSchema = createInsertSchema(teamMembers).omit({
+// Program contacts (junction) schemas
+export const insertProgramContactSchema = createInsertSchema(programContacts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const updateProgramContactSchema = createInsertSchema(programContacts).omit({
   id: true,
   programId: true,
+  contactId: true,
   createdAt: true,
   updatedAt: true,
 }).partial();
@@ -1931,9 +2013,13 @@ export type TransitionGoal = typeof transitionGoals.$inferSelect;
 export type InsertTransitionGoal = z.infer<typeof insertTransitionGoalSchema>;
 export type UpdateTransitionGoal = z.infer<typeof updateTransitionGoalSchema>;
 
-export type TeamMember = typeof teamMembers.$inferSelect;
-export type InsertTeamMember = z.infer<typeof insertTeamMemberSchema>;
-export type UpdateTeamMember = z.infer<typeof updateTeamMemberSchema>;
+export type BiometricData = typeof biometricData.$inferSelect;
+export type InsertBiometricData = z.infer<typeof insertBiometricDataSchema>;
+export type UpdateBiometricData = z.infer<typeof updateBiometricDataSchema>;
+
+export type ProgramContact = typeof programContacts.$inferSelect;
+export type InsertProgramContact = z.infer<typeof insertProgramContactSchema>;
+export type UpdateProgramContact = z.infer<typeof updateProgramContactSchema>;
 
 export type Meeting = typeof meetings.$inferSelect;
 export type InsertMeeting = z.infer<typeof insertMeetingSchema>;
@@ -1973,6 +2059,21 @@ export type ProgramStatus = 'draft' | 'active' | 'archived';
 export type ProfileDomainType = 'cognitive_academic' | 'communication_language' | 'social_emotional_behavioral' | 'motor_sensory' | 'life_skills_preparation' | 'other';
 export type AssessmentSourceType = 'standardized_test' | 'structured_observation' | 'parent_questionnaire' | 'teacher_input' | 'curriculum_based' | 'behavioral_records';
 export type InterventionLevel = 'activity' | 'function' | 'participation';
+export type GasLevel = 'much_less_than_expected' | 'less_than_expected' | 'expected' | 'better_than_expected' | 'much_better_than_expected';
+export type GasVaryingVariable = 'achievement' | 'mediation' | 'time' | 'frequency';
+export type GasLevels = Partial<Record<GasLevel, { behavior: string; numericValue?: number; unit?: string }>>;
+// Note: support_relationships and attitudes are no longer ICF categories — those
+// are modeled via studentContacts (per-person) instead of program-level factors.
+export type EnvironmentalFactorCategory = 'products_technology' | 'natural_environment' | 'services_systems_policies';
+export type EnvironmentalFactors = Partial<Record<EnvironmentalFactorCategory, { facilitators?: string[]; barriers?: string[]; notes?: string }>>;
+export type PersonalFactors = {
+  interests?: string[];
+  temperament?: string;
+  motivators?: string[];
+  coping?: string;
+  culturalBackground?: string;
+  [key: string]: unknown;
+};
 export type GoalStatus = 'draft' | 'active' | 'achieved' | 'modified' | 'discontinued';
 export type ObjectiveStatus = 'not_started' | 'in_progress' | 'achieved' | 'modified' | 'discontinued';
 export type ServiceType = 'speech_language_therapy' | 'occupational_therapy' | 'physical_therapy' | 'counseling' | 'specialized_instruction' | 'consultation' | 'aac_support' | 'other';

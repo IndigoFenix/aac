@@ -29,7 +29,15 @@ import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
 import { GeminiLiveTtsSession } from "../voice/gemini-live-tts-service";
 import { searchYouTube } from "../youtube/youtube-search";
 import { searchSpotify } from "../spotify/spotify-search";
-import { createContact, findSimilarContact, updateContact, getContactsByStudent } from "../biometric";
+import {
+  createContact,
+  findSimilarContact,
+  updateContact,
+  getContactsByStudent,
+  storeFaceEmbeddingForContact,
+  ensureBiometricData,
+  updateBiometricData,
+} from "../biometric";
 import { logDualAgent, logLiveSession } from "./dual-agent-logger";
 import { dualAgentService, type SessionCache } from "./dual-agent-service";
 import { buildInteractiveAgentPrompt, AAC_DEFAULT_PERSONA_PROMPT } from "../memory-schema/aac-memory-schema";
@@ -2476,13 +2484,20 @@ You MUST call rebuild_board() with new buttons that respond to this. Also use ad
         const descriptor = this.unknownFaceDescriptors[0].descriptor;
         const existing = await findSimilarContact(this.studentId, descriptor);
         if (!existing) {
-          await createContact({
+          const created = await createContact({
             studentId: this.studentId,
             name: learnFaceData.name,
             relationship: learnFaceData.relationship || null,
-            description: learnFaceData.description || null,
-            faceEmbedding: descriptor,
+            // Physical description goes on biometric_data; contextNotes captures
+            // the relationship-specific observation the AI learned at runtime.
+            contextNotes: learnFaceData.description || null,
           });
+          // Store face embedding + physical description via biometric_data.
+          await storeFaceEmbeddingForContact(created.id, descriptor);
+          if (learnFaceData.description) {
+            const bdId = await ensureBiometricData({ type: "contact", id: created.id });
+            await updateBiometricData(bdId, { physicalDescription: learnFaceData.description });
+          }
           console.log(`[LiveRelay] Created new contact: ${learnFaceData.name}`);
         } else {
           await updateContact(existing.id, {

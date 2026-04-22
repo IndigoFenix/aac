@@ -57,7 +57,6 @@ import { marked } from 'marked';
 marked.setOptions({ async: false });
 
 export function ChatPopup() {
-  const [prompt, setPrompt] = useState('');
   const [ttsEnabled, setTtsEnabled] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -96,6 +95,8 @@ export function ChatPopup() {
     uploadFile,
     removeFile,
     clearFiles,
+    draftInput: prompt,
+    setDraftInput: setPrompt,
   } = useChat();
 
   // Text-to-speech hook
@@ -139,9 +140,13 @@ export function ChatPopup() {
     }
   }, [history, isSending, isMinimized]);
 
-  // Focus input when popup expands
+  // Focus input when popup expands. Also reset the input-expand toggle on
+  // minimize so restoring the popup doesn't come back with the textarea
+  // stretched to fill the body.
   useEffect(() => {
-    if (!isMinimized) {
+    if (isMinimized) {
+      setInputExpanded(false);
+    } else {
       inputRef.current?.focus();
     }
   }, [isMinimized]);
@@ -165,9 +170,15 @@ export function ChatPopup() {
     }
   }, [history, ttsEnabled, ttsSupported, isMinimized, speak]);
 
-  // Auto-send when speech recognition completes
+  // Auto-send when speech recognition completes. Only fire on a real
+  // true → false transition of isListening — not on mount, otherwise
+  // remounting the popup (e.g. after minimize/maximize) with a non-empty
+  // shared draft would auto-send the message.
+  const wasListeningRef = useRef(false);
   useEffect(() => {
-    if (!isListening && prompt.trim() && !isSending) {
+    const wasListening = wasListeningRef.current;
+    wasListeningRef.current = isListening;
+    if (wasListening && !isListening && prompt.trim() && !isSending) {
       const timeout = setTimeout(() => {
         handleSend();
       }, 500);
@@ -196,6 +207,9 @@ export function ChatPopup() {
   }, [handleSend, isSending]);
 
   // Auto-resize the textarea and detect whether the content exceeds 3 lines.
+  // isMinimized is in the deps because the textarea is unmounted/remounted
+  // when the popup is minimized and restored — the effect needs to re-run
+  // to size the freshly mounted element.
   useEffect(() => {
     const el = inputRef.current;
     if (!el) return;
@@ -213,7 +227,7 @@ export function ChatPopup() {
     const target = Math.min(el.scrollHeight, maxCollapsed);
     el.style.height = `${target}px`;
     setInputOverflows(el.scrollHeight > maxCollapsed);
-  }, [prompt, isListening, interimTranscript, inputExpanded]);
+  }, [prompt, isListening, interimTranscript, inputExpanded, isMinimized]);
 
   const handleMinimize = () => {
     setChatMode('minimized');

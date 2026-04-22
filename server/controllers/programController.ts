@@ -24,8 +24,8 @@ import {
   updateTransitionPlanSchema,
   insertTransitionGoalSchema,
   updateTransitionGoalSchema,
-  insertTeamMemberSchema,
-  updateTeamMemberSchema,
+  insertProgramContactSchema,
+  updateProgramContactSchema,
   insertMeetingSchema,
   updateMeetingSchema,
   insertConsentFormSchema,
@@ -1320,14 +1320,15 @@ export class ProgramController {
   }
 
   // ==========================================================================
-  // TEAM MEMBER ENDPOINTS
+  // PROGRAM TEAM (contacts junction) — new path
   // ==========================================================================
 
   /**
    * GET /api/programs/:programId/team
-   * Get all team members for a program
+   * List the team for a program: program_contacts rows joined with the
+   * underlying studentContacts record.
    */
-  async getTeamMembers(req: Request, res: Response): Promise<void> {
+  async getTeamContacts(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
       const { programId } = req.params;
@@ -1338,19 +1339,20 @@ export class ProgramController {
         return;
       }
 
-      const members = await programService.getTeamMembersByProgramId(programId);
-      res.json({ success: true, members });
+      const team = await programService.getTeamContactsByProgramId(programId);
+      res.json({ success: true, team });
     } catch (error: any) {
-      console.error("Error fetching team members:", error);
-      res.status(500).json({ success: false, message: "Failed to fetch team members" });
+      console.error("Error fetching team contacts:", error);
+      res.status(500).json({ success: false, message: "Failed to fetch team" });
     }
   }
 
   /**
    * POST /api/programs/:programId/team
-   * Add a team member
+   * Add an existing studentContact to this program's team.
+   * Body: { contactId, programRole?, isCoordinator?, responsibilities? }
    */
-  async createTeamMember(req: Request, res: Response): Promise<void> {
+  async addTeamContact(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
       const { programId } = req.params;
@@ -1361,115 +1363,97 @@ export class ProgramController {
         return;
       }
 
-      const validatedData = insertTeamMemberSchema.parse({
-        ...req.body,
-        programId,
-      });
-      const member = await programService.createTeamMember(validatedData);
-
-      res.json({ success: true, message: "Team member added successfully", member });
+      const validated = insertProgramContactSchema.parse({ ...req.body, programId });
+      const row = await programService.addTeamContact(validated);
+      res.status(201).json({ success: true, programContact: row });
 
       activityLogService.log({
         userId: currentUser.id,
         eventType: "create",
-        subjectType1: "team_member",
-        subjectId1: member.id,
-        subjectType2: "program",
-        subjectId2: programId,
+        subjectType1: "program_contact",
+        subjectId1: row.id,
       });
     } catch (error: any) {
-      console.error("Error creating team member:", error);
       if (error.name === "ZodError") {
-        res.status(400).json({ success: false, message: "Invalid team member data", errors: error.errors });
+        res.status(400).json({ success: false, message: "Invalid data", errors: error.errors });
         return;
       }
-      res.status(500).json({ success: false, message: "Failed to add team member" });
+      console.error("Error adding team contact:", error);
+      res.status(500).json({ success: false, message: "Failed to add team contact" });
     }
   }
 
   /**
-   * PATCH /api/team-members/:id
-   * Update a team member
+   * PATCH /api/program-contacts/:id
+   * Update junction fields: coordinator flag, responsibilities, per-program role.
    */
-  async updateTeamMember(req: Request, res: Response): Promise<void> {
+  async updateTeamContact(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
       const { id } = req.params;
 
-      const member = await programService.getTeamMemberById(id);
-      if (!member) {
-        res.status(404).json({ success: false, message: "Team member not found" });
+      const existing = await programService.getTeamContactById(id);
+      if (!existing) {
+        res.status(404).json({ success: false, message: "Team contact not found" });
         return;
       }
 
-      const { hasAccess } = await programService.verifyProgramAccess(member.programId, currentUser.id);
+      const { hasAccess } = await programService.verifyProgramAccess(existing.programId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied" });
         return;
       }
 
-      const validatedData = updateTeamMemberSchema.parse(req.body);
-      const updated = await programService.updateTeamMember(id, validatedData);
-
-      if (updated) {
-        res.json({ success: true, message: "Team member updated successfully", member: updated });
-
-        activityLogService.log({
-          userId: currentUser.id,
-          eventType: "update",
-          subjectType1: "team_member",
-          subjectId1: id,
-        });
-      } else {
-        res.status(404).json({ success: false, message: "Team member not found" });
-      }
+      const validated = updateProgramContactSchema.parse(req.body);
+      const row = await programService.updateTeamContact(id, validated);
+      res.json({ success: true, programContact: row });
     } catch (error: any) {
-      console.error("Error updating team member:", error);
       if (error.name === "ZodError") {
-        res.status(400).json({ success: false, message: "Invalid team member data", errors: error.errors });
+        res.status(400).json({ success: false, message: "Invalid data", errors: error.errors });
         return;
       }
-      res.status(500).json({ success: false, message: "Failed to update team member" });
+      console.error("Error updating team contact:", error);
+      res.status(500).json({ success: false, message: "Failed to update team contact" });
     }
   }
 
   /**
-   * DELETE /api/team-members/:id
-   * Remove a team member
+   * DELETE /api/program-contacts/:id
+   * Remove a contact from the program team (soft-delete on the junction row).
+   * The underlying studentContacts row is preserved.
    */
-  async deleteTeamMember(req: Request, res: Response): Promise<void> {
+  async removeTeamContact(req: Request, res: Response): Promise<void> {
     try {
       const currentUser = req.user as any;
       const { id } = req.params;
 
-      const member = await programService.getTeamMemberById(id);
-      if (!member) {
-        res.status(404).json({ success: false, message: "Team member not found" });
+      const existing = await programService.getTeamContactById(id);
+      if (!existing) {
+        res.status(404).json({ success: false, message: "Team contact not found" });
         return;
       }
 
-      const { hasAccess } = await programService.verifyProgramAccess(member.programId, currentUser.id);
+      const { hasAccess } = await programService.verifyProgramAccess(existing.programId, currentUser.id);
       if (!hasAccess) {
         res.status(403).json({ success: false, message: "Access denied" });
         return;
       }
 
-      const deleted = await programService.deleteTeamMember(id);
-      if (deleted) {
-        res.json({ success: true, message: "Team member removed successfully" });
-
+      const removed = await programService.removeTeamContact(id);
+      if (removed) {
+        res.json({ success: true, message: "Team contact removed" });
         activityLogService.log({
           userId: currentUser.id,
           eventType: "delete",
-          subjectType1: "team_member",
+          subjectType1: "program_contact",
           subjectId1: id,
         });
       } else {
-        res.status(404).json({ success: false, message: "Team member not found" });
+        res.status(404).json({ success: false, message: "Team contact not found" });
       }
     } catch (error: any) {
-      console.error("Error deleting team member:", error);
-      res.status(500).json({ success: false, message: "Failed to remove team member" });
+      console.error("Error removing team contact:", error);
+      res.status(500).json({ success: false, message: "Failed to remove team contact" });
     }
   }
 

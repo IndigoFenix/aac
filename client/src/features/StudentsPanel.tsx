@@ -39,6 +39,7 @@ import {
   GraduationCap,
   Building2,
   Loader2,
+  Users as UsersIcon,
 } from 'lucide-react';
 
 interface StudentsPanelProps {
@@ -363,6 +364,16 @@ export function StudentsPanel({ isOpen, onClose }: StudentsPanelProps) {
                         }}
                       >
                         {t('students.editDetails') || 'Edit Details'}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          selectStudent(student.id);
+                          setActiveFeature('contacts');
+                        }}
+                      >
+                        <UsersIcon className="w-4 h-4 me-2" />
+                        {t('students.manageContacts') || 'Manage Contacts'}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem className="text-destructive">

@@ -14,7 +14,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -162,7 +162,50 @@ interface Issue {
   message: string;
 }
 
-function validateDirectory(dir: string): Issue[] {
+/**
+ * Dynamically import the file and confirm it exports a plain object.
+ * Catches unterminated string literals, trailing content outside the export,
+ * and other syntactic corruption that the regex parser happily ignores.
+ */
+async function validateFileParses(filePath: string, dirName: string, file: string): Promise<Issue[]> {
+  try {
+    const url = pathToFileURL(filePath).href + `?t=${Date.now()}`; // bust tsx's import cache
+    const mod = await import(url);
+    const exportName = file.replace(/\.ts$/, "");
+    const candidate = (mod as Record<string, unknown>)[exportName] ?? mod.default;
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+      return [{
+        severity: "error",
+        file: `${dirName}/${file}`,
+        message: `Export '${exportName}' is missing or is not a plain object — the translation map isn't structured correctly`,
+      }];
+    }
+    // Ensure nothing leaked outside the object: check for other non-type exports.
+    const otherExports = Object.keys(mod).filter((k) => k !== exportName && k !== "default" && typeof (mod as any)[k] !== "function");
+    if (otherExports.length > 0) {
+      return [{
+        severity: "warning",
+        file: `${dirName}/${file}`,
+        message: `Unexpected extra exports alongside '${exportName}': ${otherExports.join(", ")}`,
+      }];
+    }
+    return [];
+  } catch (err: any) {
+    // Pull a file:line:col out of the stack if tsx/esbuild gave us one
+    const msg = err?.message || String(err);
+    const locMatch = typeof err?.stack === "string"
+      ? err.stack.match(/:(\d+):(\d+)/)
+      : null;
+    return [{
+      severity: "error",
+      file: `${dirName}/${file}`,
+      line: locMatch ? Number(locMatch[1]) : undefined,
+      message: `Syntax / parse error: ${msg.split("\n")[0]}`,
+    }];
+  }
+}
+
+async function validateDirectory(dir: string): Promise<Issue[]> {
   const issues: Issue[] = [];
   const dirName = path.relative(ROOT, dir);
 
@@ -183,6 +226,46 @@ function validateDirectory(dir: string): Issue[] {
 
   console.log(`\n=== Validating ${dirName} ===`);
   console.log(`Found ${tsFiles.length} translation files: ${tsFiles.join(", ")}`);
+
+  // Parse-validate every file first — catch syntactic errors before the structural check.
+  // If ANY file fails to parse we skip the structural comparison (it would be meaningless).
+  let anyParseError = false;
+  for (const file of tsFiles) {
+    const parseIssues = await validateFileParses(path.join(dir, file), dirName, file);
+    for (const issue of parseIssues) {
+      if (issue.severity === "error") anyParseError = true;
+      issues.push(issue);
+    }
+  }
+  if (anyParseError) {
+    issues.push({
+      severity: "warning",
+      file: dirName,
+      message: "Skipping structural comparison because one or more files failed to parse",
+    });
+    return issues;
+  }
+
+  // Duplicate-key detection — two sibling entries with the same dotted path.
+  // JS parses this silently (last wins), but it's almost always a bug.
+  for (const file of tsFiles) {
+    const entries = parseTranslationFile(path.join(dir, file));
+    const seen = new Map<string, number>();
+    for (const entry of entries) {
+      if (entry.type !== "key-value") continue;
+      const prev = seen.get(entry.fullPath);
+      if (prev !== undefined) {
+        issues.push({
+          severity: "error",
+          file: `${dirName}/${file}`,
+          line: entry.line,
+          message: `Duplicate key "${entry.fullPath}" — first seen at line ${prev}`,
+        });
+      } else {
+        seen.set(entry.fullPath, entry.line);
+      }
+    }
+  }
 
   // Use English as the reference
   const enFile = tsFiles.find((f) => f === "en.ts");
@@ -282,38 +365,45 @@ function validateDirectory(dir: string): Issue[] {
 // ============================================================================
 // Main
 // ============================================================================
-let totalIssues = 0;
-let totalErrors = 0;
-let totalWarnings = 0;
+async function main() {
+  let totalIssues = 0;
+  let totalErrors = 0;
+  let totalWarnings = 0;
 
-for (const dir of I18N_DIRS) {
-  if (!fs.existsSync(dir)) {
-    console.log(`Skipping ${dir} (not found)`);
-    continue;
-  }
-
-  const issues = validateDirectory(dir);
-
-  if (issues.length === 0) {
-    console.log("  All files are consistent!");
-  } else {
-    for (const issue of issues) {
-      const lineStr = issue.line ? `:${issue.line}` : "";
-      const prefix = issue.severity === "error" ? "ERROR" : "WARN ";
-      console.log(`  ${prefix} ${issue.file}${lineStr}: ${issue.message}`);
+  for (const dir of I18N_DIRS) {
+    if (!fs.existsSync(dir)) {
+      console.log(`Skipping ${dir} (not found)`);
+      continue;
     }
+
+    const issues = await validateDirectory(dir);
+
+    if (issues.length === 0) {
+      console.log("  All files are consistent!");
+    } else {
+      for (const issue of issues) {
+        const lineStr = issue.line ? `:${issue.line}` : "";
+        const prefix = issue.severity === "error" ? "ERROR" : "WARN ";
+        console.log(`  ${prefix} ${issue.file}${lineStr}: ${issue.message}`);
+      }
+    }
+
+    const errors = issues.filter((i) => i.severity === "error").length;
+    const warnings = issues.filter((i) => i.severity === "warning").length;
+    totalErrors += errors;
+    totalWarnings += warnings;
+    totalIssues += issues.length;
   }
 
-  const errors = issues.filter((i) => i.severity === "error").length;
-  const warnings = issues.filter((i) => i.severity === "warning").length;
-  totalErrors += errors;
-  totalWarnings += warnings;
-  totalIssues += issues.length;
+  console.log(`\n=== Summary ===`);
+  console.log(`Total: ${totalErrors} errors, ${totalWarnings} warnings`);
+
+  if (totalErrors > 0) {
+    process.exit(1);
+  }
 }
 
-console.log(`\n=== Summary ===`);
-console.log(`Total: ${totalErrors} errors, ${totalWarnings} warnings`);
-
-if (totalErrors > 0) {
+main().catch((err) => {
+  console.error("Validator crashed:", err);
   process.exit(1);
-}
+});

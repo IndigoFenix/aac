@@ -44,7 +44,8 @@ import {
   dataPoints,
   transitionPlans,
   transitionGoals,
-  teamMembers,
+  programContacts,
+  biometricData,
   meetings,
   consentForms,
   chatSessions,
@@ -945,7 +946,7 @@ export type InsertApiProvider = z.infer<typeof insertApiProviderSchema>;
 export type ApiProviderPricing = typeof apiProviderPricing.$inferSelect;
 export type InsertApiProviderPricing = z.infer<typeof insertApiProviderPricingSchema>;
 
-export type FeatureType = "chat" | "boards" | "customApps" | "interpret" | 'docuslp' | 'overview' | 'students' | 'institute' | 'progress' | 'reports' | 'settings' | 'aacsettings' | 'aac' | 'symbols' | 'calendar' | 'userchat' | 'deepAnalysis';
+export type FeatureType = "chat" | "boards" | "customApps" | "interpret" | 'docuslp' | 'overview' | 'students' | 'contacts' | 'institute' | 'progress' | 'reports' | 'settings' | 'aacsettings' | 'aac' | 'symbols' | 'calendar' | 'userchat' | 'deepAnalysis';
 
 export type ChatPersona = 'assistant' | 'coach' | 'clinical' | 'teacher' | 'pediatric_physical_therapist' | 'speech_language_pathologist' | 'occupational_therapist' | 'behavioral_specialist';
 
@@ -995,7 +996,8 @@ import type {
   GoalProgressEntry,
   TransitionPlan,
   TransitionGoal,
-  TeamMember,
+  StudentContact,
+  ProgramContact,
   Meeting,
   ConsentForm,
   ProgramStatus,
@@ -1025,7 +1027,8 @@ export interface ProgramWithDetails {
   transitionPlan?: TransitionPlan & {
     goals: TransitionGoal[];
   };
-  teamMembers: TeamMember[];
+  // Program team — junction rows with their underlying contact joined in
+  teamContacts: (ProgramContact & { contact: StudentContact })[];
   meetings: Meeting[];
   consentForms: ConsentForm[];
 }
@@ -1546,7 +1549,7 @@ export const programsRelations = relations(programs, ({ one, many }) => ({
   accommodations: many(accommodations),
   progressReports: many(progressReports),
   transitionPlan: one(transitionPlans),
-  teamMembers: many(teamMembers),
+  teamContacts: many(programContacts),
   meetings: many(meetings),
   consentForms: many(consentForms),
 }));
@@ -1605,9 +1608,9 @@ export const servicesRelations = relations(services, ({ one, many }) => ({
     fields: [services.programId],
     references: [programs.id]
   }),
-  provider: one(teamMembers, {
-    fields: [services.providerId],
-    references: [teamMembers.id]
+  providerContact: one(studentContacts, {
+    fields: [services.providerContactId],
+    references: [studentContacts.id]
   }),
   accommodations: many(accommodations),
   goalLinks: many(serviceGoals),
@@ -1685,16 +1688,43 @@ export const transitionGoalsRelations = relations(transitionGoals, ({ one }) => 
   }),
 }));
 
-export const teamMembersRelations = relations(teamMembers, ({ one, many }) => ({
-  program: one(programs, {
-    fields: [teamMembers.programId],
-    references: [programs.id]
+export const studentContactsRelations = relations(studentContacts, ({ one, many }) => ({
+  student: one(students, {
+    fields: [studentContacts.studentId],
+    references: [students.id]
   }),
-  user: one(users, {
-    fields: [teamMembers.userId],
+  linkedUser: one(users, {
+    fields: [studentContacts.linkedUserId],
     references: [users.id]
   }),
+  linkedStudent: one(students, {
+    fields: [studentContacts.linkedStudentId],
+    references: [students.id],
+    relationName: 'linkedStudent',
+  }),
+  biometricData: one(biometricData, {
+    fields: [studentContacts.biometricDataId],
+    references: [biometricData.id]
+  }),
+  programContacts: many(programContacts),
   providedServices: many(services),
+}));
+
+export const programContactsRelations = relations(programContacts, ({ one }) => ({
+  program: one(programs, {
+    fields: [programContacts.programId],
+    references: [programs.id]
+  }),
+  contact: one(studentContacts, {
+    fields: [programContacts.contactId],
+    references: [studentContacts.id]
+  }),
+}));
+
+export const biometricDataRelations = relations(biometricData, ({ many }) => ({
+  users: many(users),
+  students: many(students),
+  contacts: many(studentContacts),
 }));
 
 export const meetingsRelations = relations(meetings, ({ one }) => ({

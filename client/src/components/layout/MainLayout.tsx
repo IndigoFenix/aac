@@ -14,6 +14,7 @@ import { useIsMobile } from '@/hooks/useIsMobile';
 import { cn } from '@/lib/utils';
 import { OverviewPanel } from '@/features/OverviewPanel';
 import { StudentsPanel } from '@/features/StudentsPanel';
+import { StudentContactsPanel } from '@/features/StudentContactsPanel';
 import { StudentProgressPanel } from '@/features/StudentProgressPanel';
 import { InstitutePanel } from '@/features/InstitutePanel';
 import { ReportsPanel } from '@/features/ReportsPanel';
@@ -129,6 +130,8 @@ export function MainLayout() {
         return <InstitutePanel isOpen={isPanelOpen} />;
       case 'students':
         return <StudentsPanel isOpen={isPanelOpen} />;
+      case 'contacts':
+        return <StudentContactsPanel isOpen={isPanelOpen} />;
       case 'progress':
         return <StudentProgressPanel isOpen={isPanelOpen} />;
       case 'reports':

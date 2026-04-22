@@ -25,9 +25,16 @@ import {
   updateContact,
   deleteContact,
   enrollContactFace,
+  getLinkableEntitiesForStudent,
+  uploadBiometricPhoto,
+  getBiometricData,
+  updateBiometricData,
   type FaceEmbedding,
   type VoiceEmbedding,
+  type EntityType,
 } from "../services/biometric";
+import { s3Service } from "../services/storage/s3-service";
+import { updateBiometricDataSchema } from "@shared/schema";
 import { insertStudentContactSchema, updateStudentContactSchema } from "@shared/schema";
 import { studentService } from "../services";
 
@@ -613,6 +620,28 @@ export class BiometricController {
   }
 
   /**
+   * GET /api/biometric/students/:studentId/linkable-entities
+   * Return users + other students that share an institute with this student,
+   * for populating the linkedUserId / linkedStudentId picker.
+   */
+  async getLinkableEntities(req: Request, res: Response): Promise<void> {
+    try {
+      const { studentId } = req.params;
+      const currentUser = req.user as any;
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
+      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+        res.status(403).json({ success: false, message: "Not authorized" });
+        return;
+      }
+      const entities = await getLinkableEntitiesForStudent(studentId);
+      res.json({ success: true, entities });
+    } catch (error: any) {
+      console.error("[BiometricController] getLinkableEntities error:", error);
+      res.status(500).json({ success: false, message: "Failed to load linkable entities" });
+    }
+  }
+
+  /**
    * POST /api/biometric/students/:studentId/contacts/:id/face
    * Enroll face embedding for a contact
    */
@@ -643,6 +672,155 @@ export class BiometricController {
         return;
       }
       res.status(500).json({ success: false, message: "Failed to enroll contact face" });
+    }
+  }
+
+  // ============================================================================
+  // PHOTO UPLOAD (shared for users/students/contacts)
+  // ============================================================================
+  // Multipart endpoint: image file + optional embedding (JSON-stringified in a
+  // form field). Resizes + uploads to S3, updates biometric_data.
+
+  private async handlePhotoUpload(
+    req: Request,
+    res: Response,
+    target: { type: EntityType; id: string },
+  ): Promise<void> {
+    const file = (req as any).file as { buffer: Buffer; mimetype?: string } | undefined;
+    if (!file?.buffer) {
+      res.status(400).json({ success: false, message: "No image file uploaded" });
+      return;
+    }
+    if (file.mimetype && !file.mimetype.startsWith("image/")) {
+      res.status(400).json({ success: false, message: "File must be an image" });
+      return;
+    }
+
+    let embedding: FaceEmbedding | undefined;
+    if (req.body.embedding) {
+      try {
+        const raw = typeof req.body.embedding === "string"
+          ? JSON.parse(req.body.embedding)
+          : req.body.embedding;
+        const parsed = z.array(z.number()).min(64).max(512).parse(raw);
+        embedding = parsed;
+      } catch (err) {
+        res.status(400).json({ success: false, message: "Invalid embedding format" });
+        return;
+      }
+    }
+    const quality = req.body.quality ? parseFloat(req.body.quality) : undefined;
+
+    const result = await uploadBiometricPhoto(target, file.buffer, { embedding, quality });
+    res.json({ success: true, ...result });
+  }
+
+  async uploadUserPhoto(req: Request, res: Response): Promise<void> {
+    try {
+      const { userId } = req.params;
+      const currentUser = req.user as any;
+      if (userId !== currentUser.id && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+        res.status(403).json({ success: false, message: "Not authorized" });
+        return;
+      }
+      await this.handlePhotoUpload(req, res, { type: "user", id: userId });
+    } catch (error: any) {
+      console.error("[BiometricController] uploadUserPhoto error:", error);
+      res.status(500).json({ success: false, message: "Failed to upload photo" });
+    }
+  }
+
+  async uploadStudentPhoto(req: Request, res: Response): Promise<void> {
+    try {
+      const { studentId } = req.params;
+      const currentUser = req.user as any;
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
+      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+        res.status(403).json({ success: false, message: "Not authorized" });
+        return;
+      }
+      await this.handlePhotoUpload(req, res, { type: "student", id: studentId });
+    } catch (error: any) {
+      console.error("[BiometricController] uploadStudentPhoto error:", error);
+      res.status(500).json({ success: false, message: "Failed to upload photo" });
+    }
+  }
+
+  async uploadContactPhoto(req: Request, res: Response): Promise<void> {
+    try {
+      const { studentId, id } = req.params;
+      const currentUser = req.user as any;
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
+      if (!hasAccess && !currentUser.isAdmin && !currentUser.isSystemAdmin) {
+        res.status(403).json({ success: false, message: "Not authorized" });
+        return;
+      }
+      const existing = await getContact(id);
+      if (!existing || existing.studentId !== studentId) {
+        res.status(404).json({ success: false, message: "Contact not found" });
+        return;
+      }
+      await this.handlePhotoUpload(req, res, { type: "contact", id });
+    } catch (error: any) {
+      console.error("[BiometricController] uploadContactPhoto error:", error);
+      res.status(500).json({ success: false, message: "Failed to upload photo" });
+    }
+  }
+
+  // ============================================================================
+  // BIOMETRIC DATA direct access (physical features, retrieval)
+  // ============================================================================
+
+  /**
+   * GET /api/biometric-data/:id/photo
+   * Stream the stored JPEG from S3. Access control happens implicitly — the
+   * client must already have access to a user/student/contact that points at
+   * this biometric_data row for the URL to have been returned to them.
+   * (TODO: tighten with a signed-URL approach once Terraform settles.)
+   */
+  async getBiometricPhoto(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const row = await getBiometricData(id);
+      if (!row?.faceImageUrl) {
+        res.status(404).json({ success: false, message: "No photo stored" });
+        return;
+      }
+      const buffer = await s3Service.download(row.faceImageUrl);
+      res.setHeader("Content-Type", "image/jpeg");
+      res.setHeader("Cache-Control", "private, max-age=300");
+      res.send(buffer);
+    } catch (error: any) {
+      console.error("[BiometricController] getBiometricPhoto error:", error);
+      res.status(500).json({ success: false, message: "Failed to retrieve photo" });
+    }
+  }
+
+  /**
+   * PATCH /api/biometric-data/:id
+   * Update physical/identifying features (hairColor, eyeColor, etc.).
+   * Embeddings and image URL are not editable through this endpoint.
+   */
+  async updateBiometricDataPhysical(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      // Strip fields that must go through dedicated endpoints
+      const data = updateBiometricDataSchema
+        .omit({ faceEmbedding: true, voiceEmbedding: true, faceImageUrl: true, faceImageQuality: true })
+        .parse(req.body);
+      const row = await updateBiometricData(id, data);
+      if (!row) {
+        res.status(404).json({ success: false, message: "Biometric data not found" });
+        return;
+      }
+      res.json({ success: true, biometricData: row });
+    } catch (error: any) {
+      if (error.name === "ZodError") {
+        res.status(400).json({ success: false, message: "Invalid data", errors: error.errors });
+        return;
+      }
+      console.error("[BiometricController] updateBiometricDataPhysical error:", error);
+      res.status(500).json({ success: false, message: "Failed to update biometric data" });
     }
   }
 }

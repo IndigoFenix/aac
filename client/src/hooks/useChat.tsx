@@ -172,6 +172,11 @@ interface ChatContextType {
   /** Current persona ID (UUID from database, or undefined for default) */
   persona: string | undefined;
 
+  // Draft input — shared between ChatFeature and ChatPopup so the message
+  // the user is composing survives switching between expanded/popup/minimized.
+  draftInput: string;
+  setDraftInput: (value: string | ((prev: string) => string)) => void;
+
   // Thinking state - for real-time AI status during tool calls
   thinkingText: string | null;
   isThinking: boolean;
@@ -253,6 +258,7 @@ export const ChatProvider = ({
   const [isSending, setIsSending] = useState(false);
   const [persona, setPersonaState] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
+  const [draftInput, setDraftInput] = useState('');
 
   // External hooks - need user for enabled condition on personas query
   const { user } = useAuth();
@@ -1124,6 +1130,8 @@ export const ChatProvider = ({
     isSending,
     error,
     persona,
+    draftInput,
+    setDraftInput,
     thinkingText,
     isThinking,
     aiRefreshing,

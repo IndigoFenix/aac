@@ -11,6 +11,7 @@ import {
   students,
   aacSettings,
   studentContacts,
+  programContacts,
   userStudents,
   instituteStudents,
   studentClassrooms,
@@ -33,7 +34,6 @@ import {
   dataPoints,
   transitionPlans,
   transitionGoals,
-  teamMembers,
   meetings,
   consentForms,
   chatSessions,
@@ -416,7 +416,7 @@ export class StudentService {
         await del(tx, accommodations, inArray(accommodations.programId, programIds), 'accommodations');
         await del(tx, progressReports, inArray(progressReports.programId, programIds), 'progressReports');
         await del(tx, transitionPlans, inArray(transitionPlans.programId, programIds), 'transitionPlans');
-        await del(tx, teamMembers, inArray(teamMembers.programId, programIds), 'teamMembers');
+        await del(tx, programContacts, inArray(programContacts.programId, programIds), 'programContacts');
         await del(tx, meetings, inArray(meetings.programId, programIds), 'meetings');
         await del(tx, consentForms, inArray(consentForms.programId, programIds), 'consentForms');
         await del(tx, programs, inArray(programs.id, programIds), 'programs');

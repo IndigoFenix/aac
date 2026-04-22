@@ -477,6 +477,34 @@
       "when": 1776700038273,
       "tag": "0067_smart_red_shift",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1776808984387,
+      "tag": "0068_blue_typhoid_mary",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1776846147612,
+      "tag": "0069_unique_lizard",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1776846917258,
+      "tag": "0070_sad_lyja",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1776858591729,
+      "tag": "0071_sleepy_captain_marvel",
+      "breakpoints": true
     }
   ]
 }

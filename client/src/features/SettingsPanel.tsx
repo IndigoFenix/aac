@@ -39,7 +39,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { apiRequest } from '@/lib/queryClient';
-import { BiometricEnrollment } from '@/components/BiometricEnrollment';
+import { BiometricPhotoUpload } from '@/components/BiometricPhotoUpload';
 import { useAccessibility } from '@/contexts/AccessibilityContext';
 import { Slider } from '@/components/ui/slider';
 
@@ -162,14 +162,24 @@ export function SettingsPanel() {
             </Card>
           )}
 
-          {/* Biometric Recognition Section - hidden until feature is ready
+          {/* Avatar / face photo */}
           {user && (
-            <BiometricEnrollment
-              entityType="user"
-              entityId={user.id}
-            />
+            <Card>
+              <CardHeader>
+                <CardTitle className={cn('flex items-center gap-2', isRTL && 'flex-row-reverse')}>
+                  <User className="w-5 h-5" />
+                  {t('biometric.facePhoto')}
+                </CardTitle>
+                <CardDescription>{t('biometric.photoHint')}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <BiometricPhotoUpload
+                  target={{ type: 'user', userId: user.id }}
+                  biometricDataId={(user as any).biometricDataId}
+                />
+              </CardContent>
+            </Card>
           )}
-          */}
 
           {/* System Settings */}
           <Card>
