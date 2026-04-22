@@ -498,18 +498,10 @@ export function useProgramStats(goals: Goal[], services: Service[], teamMembers:
     activeGoals: goals.filter(g => g.status === 'active').length,
     achievedGoals: goals.filter(g => g.status === 'achieved').length,
     totalGoals: goals.length,
-    goalProgress: goals.length > 0 
-      ? Math.round((goals.filter(g => g.status === 'achieved').length / goals.length) * 100) 
+    goalProgress: goals.length > 0
+      ? Math.round((goals.filter(g => g.status === 'achieved').length / goals.length) * 100)
       : 0,
-    // Uses correct schema field names: frequencyCount, sessionDuration
-    totalServiceMinutes: services
-      .filter(s => s.isActive)
-      .reduce((sum, s) => {
-        const freq = s.frequencyCount || 1;
-        const duration = s.sessionDuration || 30;
-        const periodsPerWeek = s.frequencyPeriod === 'daily' ? 5 : s.frequencyPeriod === 'weekly' ? 1 : 0.25;
-        return sum + (freq * duration * periodsPerWeek);
-      }, 0),
+    activeServices: services.filter(s => s.isActive).length,
     activeTeamMembers: teamMembers.filter(m => m.isActive).length,
   };
 }

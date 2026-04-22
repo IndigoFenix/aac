@@ -1084,6 +1084,157 @@ export class ProgramController {
   }
 
   // ==========================================================================
+  // SERVICE ↔ USER LINKS
+  // ==========================================================================
+
+  /**
+   * GET /api/services/:id/users
+   * List users assigned to a service.
+   */
+  async getServiceUsers(req: Request, res: Response): Promise<void> {
+    try {
+      const currentUser = req.user as any;
+      const { id } = req.params;
+
+      const service = await programService.getServiceById(id);
+      if (!service) {
+        res.status(404).json({ success: false, message: "Service not found" });
+        return;
+      }
+
+      const { hasAccess } = await programService.verifyProgramAccess(service.programId, currentUser.id);
+      if (!hasAccess) {
+        res.status(403).json({ success: false, message: "Access denied" });
+        return;
+      }
+
+      const links = await programService.getServiceUsers(id);
+      res.json({ success: true, users: links });
+    } catch (error: any) {
+      console.error("Error fetching service users:", error);
+      res.status(500).json({ success: false, message: "Failed to fetch service users" });
+    }
+  }
+
+  /**
+   * POST /api/services/:id/users  { userId }
+   * Link a user to a service. User must share an institute with the service's student.
+   */
+  async linkUserToService(req: Request, res: Response): Promise<void> {
+    try {
+      const currentUser = req.user as any;
+      const { id } = req.params;
+      const { userId } = req.body as { userId?: string };
+
+      if (!userId) {
+        res.status(400).json({ success: false, message: "userId is required" });
+        return;
+      }
+
+      const service = await programService.getServiceById(id);
+      if (!service) {
+        res.status(404).json({ success: false, message: "Service not found" });
+        return;
+      }
+
+      const { hasAccess } = await programService.verifyProgramAccess(service.programId, currentUser.id);
+      if (!hasAccess) {
+        res.status(403).json({ success: false, message: "Access denied" });
+        return;
+      }
+
+      // Enforce the shared-institute rule.
+      const program = await programService.getProgramById(service.programId);
+      if (!program) {
+        res.status(404).json({ success: false, message: "Program not found" });
+        return;
+      }
+      const candidates = await studentService.getUsersSharingInstituteWithStudent(program.studentId);
+      if (!candidates.some((u) => u.id === userId)) {
+        res.status(400).json({
+          success: false,
+          message: "User must share an institute with the student",
+        });
+        return;
+      }
+
+      const link = await programService.linkUserToService(id, userId);
+      res.json({ success: true, link });
+
+      activityLogService.log({
+        userId: currentUser.id,
+        eventType: "update",
+        subjectType1: "service",
+        subjectId1: id,
+        subjectType2: "user",
+        subjectId2: userId,
+      });
+    } catch (error: any) {
+      console.error("Error linking user to service:", error);
+      res.status(500).json({ success: false, message: "Failed to link user" });
+    }
+  }
+
+  /**
+   * GET /api/services/:id/events
+   * List calendar events linked to a service.
+   */
+  async getServiceEvents(req: Request, res: Response): Promise<void> {
+    try {
+      const currentUser = req.user as any;
+      const { id } = req.params;
+
+      const service = await programService.getServiceById(id);
+      if (!service) {
+        res.status(404).json({ success: false, message: "Service not found" });
+        return;
+      }
+
+      const { hasAccess } = await programService.verifyProgramAccess(service.programId, currentUser.id);
+      if (!hasAccess) {
+        res.status(403).json({ success: false, message: "Access denied" });
+        return;
+      }
+
+      const { calendarService } = await import("../services/calendarService");
+      const events = await calendarService.getEventsByServiceId(id);
+      res.json({ success: true, events });
+    } catch (error: any) {
+      console.error("Error fetching service events:", error);
+      res.status(500).json({ success: false, message: "Failed to fetch service events" });
+    }
+  }
+
+  /**
+   * DELETE /api/services/:id/users/:userId
+   * Remove a user from a service.
+   */
+  async unlinkUserFromService(req: Request, res: Response): Promise<void> {
+    try {
+      const currentUser = req.user as any;
+      const { id, userId } = req.params;
+
+      const service = await programService.getServiceById(id);
+      if (!service) {
+        res.status(404).json({ success: false, message: "Service not found" });
+        return;
+      }
+
+      const { hasAccess } = await programService.verifyProgramAccess(service.programId, currentUser.id);
+      if (!hasAccess) {
+        res.status(403).json({ success: false, message: "Access denied" });
+        return;
+      }
+
+      await programService.unlinkUserFromService(id, userId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error unlinking user from service:", error);
+      res.status(500).json({ success: false, message: "Failed to unlink user" });
+    }
+  }
+
+  // ==========================================================================
   // DATA POINT ENDPOINTS
   // ==========================================================================
 

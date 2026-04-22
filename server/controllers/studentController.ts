@@ -409,6 +409,30 @@ export class StudentController {
         .json({ success: false, message: "Failed to fetch linked users" });
     }
   }
+
+  /**
+   * GET /api/students/:id/institute-members
+   * Users who share at least one active institute with this student —
+   * the pool of valid candidates for assigning service users.
+   */
+  async getInstituteMembers(req: Request, res: Response): Promise<void> {
+    try {
+      const currentUser = req.user as any;
+      const studentId = req.params.id;
+
+      const { hasAccess } = await studentService.verifyStudentAccess(studentId, currentUser.id);
+      if (!hasAccess) {
+        res.status(403).json({ success: false, message: "Access denied" });
+        return;
+      }
+
+      const members = await studentService.getUsersSharingInstituteWithStudent(studentId);
+      res.json({ success: true, members });
+    } catch (error: any) {
+      console.error("Error fetching institute members for student:", error);
+      res.status(500).json({ success: false, message: "Failed to fetch institute members" });
+    }
+  }
 }
 
 export const studentController = new StudentController();

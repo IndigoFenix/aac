@@ -100,7 +100,6 @@ import type {
   GoalStatus,
   ObjectiveStatus,
   ServiceType,
-  ServiceFrequencyPeriod,
   ServiceSetting,
   ServiceDeliveryModel,
   ProgressStatus,
@@ -243,9 +242,6 @@ interface ServiceFormState {
   serviceType: ServiceType;
   customServiceName: string;
   description: string;
-  frequencyCount: number;
-  frequencyPeriod: ServiceFrequencyPeriod;
-  sessionDuration: number;
   setting: ServiceSetting;
   deliveryModel: ServiceDeliveryModel;
   providerName: string;
@@ -289,16 +285,6 @@ function getServiceDisplayName(service: Service): string {
   return service.customServiceName || service.serviceType.replace(/_/g, ' ');
 }
 
-/**
- * Calculate weekly service minutes
- */
-function calculateWeeklyMinutes(service: Service): number {
-  const periodsPerWeek = 
-    service.frequencyPeriod === 'daily' ? 5 : 
-    service.frequencyPeriod === 'weekly' ? 1 : 
-    0.25; // monthly
-  return service.frequencyCount * service.sessionDuration * periodsPerWeek;
-}
 
 /**
  * Get unique domains for a goal by looking at its objectives
@@ -580,7 +566,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
   const { aiRefreshing } = useChat();
   const isAiRefreshing = aiRefreshing.has('progress');
   const { setActiveFeature, registerMetadataBuilder, unregisterMetadataBuilder } = useFeaturePanel();
-  const { sharedState } = useSharedState();
+  const { sharedState, setSharedState } = useSharedState();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -634,9 +620,6 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
     serviceType: 'speech_language_therapy',
     customServiceName: '',
     description: '',
-    frequencyCount: 1,
-    frequencyPeriod: 'weekly',
-    sessionDuration: 30,
     setting: 'therapy_room',
     deliveryModel: 'direct',
     providerName: '',
@@ -992,6 +975,84 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
     },
   });
 
+  // --- Service user assignments (visible when editing an existing service) ---
+  const { data: serviceUsersData, refetch: refetchServiceUsers } = useQuery({
+    queryKey: ['/api/services', editingService?.id, 'users'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/services/${editingService!.id}/users`);
+      const json = await res.json();
+      return (json.users || []) as { id: string; serviceId: string; userId: string }[];
+    },
+    enabled: !!editingService?.id,
+  });
+  const linkedServiceUserIds = (serviceUsersData || []).map((u) => u.userId);
+
+  // Pool of users who share an institute with this student
+  const { data: instituteMembersData } = useQuery({
+    queryKey: ['/api/students', student?.id, 'institute-members'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/students/${student!.id}/institute-members`);
+      const json = await res.json();
+      return (json.members || []) as {
+        id: string;
+        email: string;
+        firstName: string | null;
+        lastName: string | null;
+        fullName: string | null;
+        profileImageUrl: string | null;
+        biometricDataId: string | null;
+      }[];
+    },
+    enabled: !!student?.id && !!editingService?.id,
+  });
+  const instituteMembers = instituteMembersData || [];
+
+  const linkServiceUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const res = await apiRequest('POST', `/api/services/${editingService!.id}/users`, { userId });
+      if (!res.ok) throw new Error('Failed to link user');
+      return res.json();
+    },
+    onSuccess: () => refetchServiceUsers(),
+    onError: (error: Error) => {
+      toast({ title: t('common.error'), description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const unlinkServiceUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const res = await apiRequest('DELETE', `/api/services/${editingService!.id}/users/${userId}`);
+      if (!res.ok) throw new Error('Failed to unlink user');
+      return res.json();
+    },
+    onSuccess: () => refetchServiceUsers(),
+    onError: (error: Error) => {
+      toast({ title: t('common.error'), description: error.message, variant: 'destructive' });
+    },
+  });
+
+  // --- Scheduled events for the service ---
+  const { data: serviceEventsData } = useQuery({
+    queryKey: ['/api/services', editingService?.id, 'events'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/services/${editingService!.id}/events`);
+      const json = await res.json();
+      return (json.events || []) as { id: string; title: string; startTime: string; endTime: string; repeatType: string }[];
+    },
+    enabled: !!editingService?.id,
+  });
+  const serviceEvents = serviceEventsData || [];
+
+  const handleScheduleNewEvent = () => {
+    if (!editingService) return;
+    setSharedState({
+      pendingEventForServiceId: editingService.id,
+      pendingEventTitle: editingService.customServiceName || editingService.serviceType,
+    });
+    setShowServiceModal(false);
+    setActiveFeature('calendar');
+  };
+
   // Create data point - using schema field names (value, context, NOT textValue/sessionNotes)
   const createDataPointMutation = useMutation({
     mutationFn: async ({ goalId, data }: { goalId: string; data: InsertDataPoint }) => {
@@ -1099,9 +1160,6 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
       serviceType: 'speech_language_therapy',
       customServiceName: '',
       description: '',
-      frequencyCount: 1,
-      frequencyPeriod: 'weekly',
-      sessionDuration: 30,
       setting: 'therapy_room',
       deliveryModel: 'direct',
       providerName: '',
@@ -1163,9 +1221,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
     const totalGoals = goals.length;
     const goalProgress = totalGoals > 0 ? Math.round((achievedGoals / totalGoals) * 100) : 0;
 
-    const totalServiceMinutes = services
-      .filter((s) => s.isActive)
-      .reduce((sum, s) => sum + calculateWeeklyMinutes(s), 0);
+    const activeServices = services.filter((s) => s.isActive).length;
 
     // Aggregate GAS T-score across all GAS-scored goals that have at least one
     // achievedLevel data point. Unrated goals default to weight=3 (midpoint 1-5).
@@ -1181,7 +1237,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
     }
     const gasTScore = computeGasTScore(gasEntries);
 
-    return { activeGoals, achievedGoals, totalGoals, goalProgress, totalServiceMinutes, gasTScore, gasGoalsWithData };
+    return { activeGoals, achievedGoals, totalGoals, goalProgress, activeServices, gasTScore, gasGoalsWithData };
   }, [goals, services]);
 
   // Register metadata builder
@@ -1515,8 +1571,8 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                       <Clock className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                     </div>
                     <div className={isRTL ? 'text-right' : ''}>
-                      <p className="text-2xl font-bold">{Math.round(stats.totalServiceMinutes)}</p>
-                      <p className="text-xs text-muted-foreground">{t('program.stats.weeklyMinutes')}</p>
+                      <p className="text-2xl font-bold">{stats.activeServices}</p>
+                      <p className="text-xs text-muted-foreground">{t('program.stats.activeServices')}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -2284,24 +2340,11 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                               {t(`service.types.${service.serviceType}`)}
                             </p>
                             <div className={cn('flex items-center gap-3 mt-2 text-xs text-muted-foreground')}>
-                              <span className="flex items-center gap-1">
-                                <Clock className="w-3 h-3" />
-                                {/* sessionDuration is schema field (NOT durationMinutes) */}
-                                {service.sessionDuration} {t('common.minutes')}
-                              </span>
-                              <span>•</span>
-                              <span>
-                                {/* frequencyCount and frequencyPeriod are schema fields (NOT frequency) */}
-                                {service.frequencyCount}x {t(`service.frequency.${service.frequencyPeriod}`)}
-                              </span>
                               {service.setting && (
-                                <>
-                                  <span>•</span>
-                                  <span className="flex items-center gap-1">
-                                    <Building2 className="w-3 h-3" />
-                                    {t(`service.settings.${service.setting}`)}
-                                  </span>
-                                </>
+                                <span className="flex items-center gap-1">
+                                  <Building2 className="w-3 h-3" />
+                                  {t(`service.settings.${service.setting}`)}
+                                </span>
                               )}
                             </div>
                             {/* providerName is schema field (NOT provider) */}
@@ -2324,9 +2367,6 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                                   serviceType: service.serviceType,
                                   customServiceName: service.customServiceName || '',
                                   description: service.description || '',
-                                  frequencyCount: service.frequencyCount,
-                                  frequencyPeriod: service.frequencyPeriod,
-                                  sessionDuration: service.sessionDuration,
                                   setting: service.setting || 'therapy_room',
                                   deliveryModel: service.deliveryModel || 'direct',
                                   providerName: service.providerName || '',
@@ -3129,7 +3169,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
             <DialogDescription>{t('service.modalDescription')}</DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 py-4">
+          <DialogBody className="grid gap-4 py-4">
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>{t('service.type')}</Label>
@@ -3164,49 +3204,6 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
               </div>
             </div>
 
-            <div className="grid sm:grid-cols-3 gap-4">
-              {/* frequencyCount - schema field (NOT frequency) */}
-              <div className="space-y-2">
-                <Label>{t('service.frequencyCount')}</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={serviceForm.frequencyCount}
-                  onChange={(e) => setServiceForm(prev => ({ ...prev, frequencyCount: parseInt(e.target.value) || 1 }))}
-                />
-              </div>
-
-              {/* frequencyPeriod - schema field */}
-              <div className="space-y-2">
-                <Label>{t('service.period')}</Label>
-                <Select
-                  value={serviceForm.frequencyPeriod}
-                  onValueChange={(value: ServiceFrequencyPeriod) => setServiceForm(prev => ({ ...prev, frequencyPeriod: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="daily">{t('service.frequency.daily')}</SelectItem>
-                    <SelectItem value="weekly">{t('service.frequency.weekly')}</SelectItem>
-                    <SelectItem value="monthly">{t('service.frequency.monthly')}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* sessionDuration - schema field (NOT durationMinutes) */}
-              <div className="space-y-2">
-                <Label>{t('service.duration')}</Label>
-                <Input
-                  type="number"
-                  min={5}
-                  step={5}
-                  value={serviceForm.sessionDuration}
-                  onChange={(e) => setServiceForm(prev => ({ ...prev, sessionDuration: parseInt(e.target.value) || 30 }))}
-                />
-              </div>
-            </div>
-
             <div className="space-y-2">
               <Label>{t('service.setting')}</Label>
               <Select
@@ -3236,7 +3233,107 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                 placeholder={t('service.providerPlaceholder')}
               />
             </div>
-          </div>
+
+            {editingService && (
+              <>
+                <Separator />
+
+                {/* Assigned users */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <Users className="w-4 h-4" />
+                    {t('service.assignedUsers')}
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    {t('service.assignedUsersHint')}
+                  </p>
+                  {instituteMembers.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      {t('service.noInstituteMembers')}
+                    </p>
+                  ) : (
+                    <div className="space-y-1 max-h-48 overflow-y-auto rounded-md border p-2">
+                      {instituteMembers.map((m) => {
+                        const linked = linkedServiceUserIds.includes(m.id);
+                        const busy =
+                          (linkServiceUserMutation.isPending && linkServiceUserMutation.variables === m.id) ||
+                          (unlinkServiceUserMutation.isPending && unlinkServiceUserMutation.variables === m.id);
+                        return (
+                          <div
+                            key={m.id}
+                            className={cn(
+                              'flex items-center justify-between p-2 rounded-md text-sm',
+                              linked ? 'bg-primary/10 border border-primary/20' : 'bg-muted/40',
+                            )}
+                          >
+                            <span className="truncate">{m.fullName || m.email}</span>
+                            <Button
+                              variant={linked ? 'destructive' : 'outline'}
+                              size="sm"
+                              className="h-7"
+                              disabled={busy}
+                              onClick={() =>
+                                linked
+                                  ? unlinkServiceUserMutation.mutate(m.id)
+                                  : linkServiceUserMutation.mutate(m.id)
+                              }
+                            >
+                              {busy ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : linked ? (
+                                t('service.unassign')
+                              ) : (
+                                t('service.assign')
+                              )}
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <Separator />
+
+                {/* Scheduled events */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4" />
+                      {t('service.scheduledEvents')}
+                    </Label>
+                    <Button variant="outline" size="sm" onClick={handleScheduleNewEvent}>
+                      <Plus className="w-3 h-3 me-1" />
+                      {t('service.scheduleNew')}
+                    </Button>
+                  </div>
+                  {serviceEvents.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      {t('service.noScheduledEvents')}
+                    </p>
+                  ) : (
+                    <div className="space-y-1 max-h-48 overflow-y-auto rounded-md border p-2">
+                      {serviceEvents.map((ev) => (
+                        <div key={ev.id} className="flex items-center justify-between p-2 rounded-md bg-muted/40 text-sm">
+                          <div className="min-w-0">
+                            <p className="font-medium truncate">{ev.title}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {new Date(ev.startTime).toLocaleString()}
+                              {ev.repeatType !== 'none' && (
+                                <span className="ms-2">
+                                  ({t(`service.repeat.${ev.repeatType}`) || ev.repeatType})
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </DialogBody>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowServiceModal(false)}>
@@ -3253,9 +3350,6 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                   serviceType: serviceForm.serviceType,
                   customServiceName: serviceForm.customServiceName,
                   description: serviceForm.description || undefined,
-                  frequencyCount: serviceForm.frequencyCount,
-                  frequencyPeriod: serviceForm.frequencyPeriod,
-                  sessionDuration: serviceForm.sessionDuration,
                   setting: serviceForm.setting,
                   deliveryModel: serviceForm.deliveryModel,
                   providerName: serviceForm.providerName || undefined,

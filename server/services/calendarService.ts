@@ -2,7 +2,7 @@
 // Business logic for calendar events
 
 import { calendarRepository } from "../repositories/calendarRepository";
-import { instituteRepository } from "../repositories";
+import { instituteRepository, programRepository } from "../repositories";
 import type {
   CalendarEvent,
   InsertCalendarEvent,
@@ -10,37 +10,87 @@ import type {
   CalendarEventAttendee,
 } from "@shared/schema";
 
+type AttendeeInput = {
+  attendeeType: "user" | "student" | "classroom" | "institute";
+  attendeeId: string;
+};
+
 class CalendarService {
   /**
    * Create a new event. The creator is always added as an attendee.
+   * If the event is linked to a service, the service's student, all assigned
+   * service users, and the provider contact's linked user (if any) are also
+   * auto-added.
    */
   async createEvent(
     data: InsertCalendarEvent,
     userId: string,
-    additionalAttendees?: { attendeeType: "user" | "student" | "classroom" | "institute"; attendeeId: string }[],
+    additionalAttendees?: AttendeeInput[],
   ): Promise<CalendarEvent & { attendees: CalendarEventAttendee[] }> {
     const event = await calendarRepository.createEvent(data, userId);
 
-    // Auto-add the creator as an attendee
+    // Deduplicate as we go (type+id pair)
+    const addedKeys = new Set<string>();
     const allAttendees: CalendarEventAttendee[] = [];
-    allAttendees.push(await calendarRepository.addAttendee({
-      eventId: event.id,
-      attendeeType: "user",
-      attendeeId: userId,
-    }));
+    const addAttendee = async (att: AttendeeInput) => {
+      const key = `${att.attendeeType}:${att.attendeeId}`;
+      if (addedKeys.has(key)) return;
+      addedKeys.add(key);
+      allAttendees.push(await calendarRepository.addAttendee({
+        eventId: event.id,
+        attendeeType: att.attendeeType,
+        attendeeId: att.attendeeId,
+      }));
+    };
 
-    // Add any additional attendees
+    // Creator is always an attendee
+    await addAttendee({ attendeeType: "user", attendeeId: userId });
+
+    // Auto-populate from the linked service, if any
+    if (data.serviceId) {
+      await this.addServiceAttendees(data.serviceId, addAttendee);
+    }
+
+    // Any explicit additional attendees
     if (additionalAttendees) {
       for (const att of additionalAttendees) {
-        allAttendees.push(await calendarRepository.addAttendee({
-          eventId: event.id,
-          attendeeType: att.attendeeType,
-          attendeeId: att.attendeeId,
-        }));
+        await addAttendee(att);
       }
     }
 
     return { ...event, attendees: allAttendees };
+  }
+
+  /**
+   * Populate the student, service users, and linked provider user for a service.
+   */
+  private async addServiceAttendees(
+    serviceId: string,
+    addAttendee: (att: AttendeeInput) => Promise<void>,
+  ): Promise<void> {
+    const service = await programRepository.getServiceById(serviceId);
+    if (!service) return;
+    const program = await programRepository.getProgramById(service.programId);
+    if (program?.studentId) {
+      await addAttendee({ attendeeType: "student", attendeeId: program.studentId });
+    }
+    const links = await programRepository.getServiceUsers(serviceId);
+    for (const l of links) {
+      await addAttendee({ attendeeType: "user", attendeeId: l.userId });
+    }
+    if (service.providerContactId) {
+      const contact = await programRepository.getStudentContactById(service.providerContactId);
+      if (contact?.linkedUserId) {
+        await addAttendee({ attendeeType: "user", attendeeId: contact.linkedUserId });
+      }
+    }
+  }
+
+  /** List events linked to a given service (no date window). */
+  async getEventsByServiceId(
+    serviceId: string,
+  ): Promise<(CalendarEvent & { attendees: CalendarEventAttendee[] })[]> {
+    return calendarRepository.getEventsByServiceId(serviceId);
   }
 
   async getEvent(eventId: string, userId: string) {

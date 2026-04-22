@@ -1126,7 +1126,7 @@ export const ko = {
     stats: {
       activeGoals: "활성 목표",
       goalsAchieved: "달성된 목표",
-      weeklyMinutes: "주간 시간(분)",
+      activeServices: "Active Services",
       teamMembers: "팀 구성원",
     },
 
@@ -1385,12 +1385,17 @@ export const ko = {
     name: "서비스 이름",
     namePlaceholder: "예: 개별 언어 치료",
     nameRequired: "서비스 이름은 필수 항목입니다",
-    frequencyCount: "빈도",
-    period: "기간",
-    duration: "시간 (분)",
     setting: "환경",
     provider: "제공자",
     providerPlaceholder: "서비스 제공자 이름",
+    assignedUsers: "Assigned Users",
+    assignedUsersHint: "Users who share an institute with this {{STUDENT}} can be assigned to deliver this service.",
+    noInstituteMembers: "No users share an institute with this {{STUDENT}} yet.",
+    assign: "Assign",
+    unassign: "Remove",
+    scheduledEvents: "Scheduled Events",
+    scheduleNew: "Schedule",
+    noScheduledEvents: "No events scheduled yet.",
 
     // Types
     types: {
@@ -1404,11 +1409,13 @@ export const ko = {
       other: "기타",
     },
 
-    // Frequency
-    frequency: {
-      daily: "매일",
-      weekly: "매주",
-      monthly: "매월",
+    // Event recurrence labels (mirrors calendar repeat types)
+    repeat: {
+      none: "One-off",
+      daily: "Daily",
+      weekly: "Weekly",
+      monthly_date: "Monthly",
+      monthly_weekday: "Monthly (weekday)",
     },
 
     // Settings
@@ -2595,6 +2602,9 @@ export const ko = {
     month: "월",
     week: "주",
     day: "일",
+    forService: "For Service",
+    forServicePlaceholder: "None (standalone event)",
+    forServiceNone: "None",
     newEvent: "새 일정",
     editEvent: "일정 편집",
     deleteEvent: "일정 삭제",

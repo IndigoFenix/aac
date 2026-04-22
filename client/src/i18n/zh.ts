@@ -1126,7 +1126,7 @@ export const zh = {
     stats: {
       activeGoals: "活跃目标",
       goalsAchieved: "已达成目标",
-      weeklyMinutes: "每周分钟数",
+      activeServices: "Active Services",
       teamMembers: "团队成员",
     },
 
@@ -1385,12 +1385,17 @@ export const zh = {
     name: "服务名称",
     namePlaceholder: "例如：个别言语治疗",
     nameRequired: "服务名称为必填项",
-    frequencyCount: "频率",
-    period: "周期",
-    duration: "时长（分钟）",
     setting: "环境",
     provider: "提供者",
     providerPlaceholder: "服务提供者姓名",
+    assignedUsers: "Assigned Users",
+    assignedUsersHint: "Users who share an institute with this {{STUDENT}} can be assigned to deliver this service.",
+    noInstituteMembers: "No users share an institute with this {{STUDENT}} yet.",
+    assign: "Assign",
+    unassign: "Remove",
+    scheduledEvents: "Scheduled Events",
+    scheduleNew: "Schedule",
+    noScheduledEvents: "No events scheduled yet.",
 
     // Types
     types: {
@@ -1404,11 +1409,13 @@ export const zh = {
       other: "其他",
     },
 
-    // Frequency
-    frequency: {
-      daily: "每天",
-      weekly: "每周",
-      monthly: "每月",
+    // Event recurrence labels (mirrors calendar repeat types)
+    repeat: {
+      none: "One-off",
+      daily: "Daily",
+      weekly: "Weekly",
+      monthly_date: "Monthly",
+      monthly_weekday: "Monthly (weekday)",
     },
 
     // Settings
@@ -2595,6 +2602,9 @@ export const zh = {
     month: "月",
     week: "周",
     day: "日",
+    forService: "For Service",
+    forServicePlaceholder: "None (standalone event)",
+    forServiceNone: "None",
     newEvent: "新建事件",
     editEvent: "编辑事件",
     deleteEvent: "删除事件",

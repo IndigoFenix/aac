@@ -38,6 +38,7 @@ import {
   userObjectives,
   services,
   serviceGoals,
+  serviceUsers,
   accommodations,
   progressReports,
   goalProgressEntries,
@@ -1614,6 +1615,19 @@ export const servicesRelations = relations(services, ({ one, many }) => ({
   }),
   accommodations: many(accommodations),
   goalLinks: many(serviceGoals),
+  userLinks: many(serviceUsers),
+  calendarEvents: many(calendarEvents),
+}));
+
+export const serviceUsersRelations = relations(serviceUsers, ({ one }) => ({
+  service: one(services, {
+    fields: [serviceUsers.serviceId],
+    references: [services.id],
+  }),
+  user: one(users, {
+    fields: [serviceUsers.userId],
+    references: [users.id],
+  }),
 }));
 
 export const serviceGoalsRelations = relations(serviceGoals, ({ one }) => ({
@@ -1838,6 +1852,10 @@ export const calendarEvents = pgTable("calendar_events", {
   repeatMonthWeek: integer("repeat_month_week"), // for monthly_weekday: 1=first, 2=second, 3=third, -1=last
   repeatEndDate: timestamp("repeat_end_date"), // when recurrence stops
 
+  // Optional link to the service this event delivers. When a service is deleted,
+  // its events are removed too (we don't keep orphan events on the calendar).
+  serviceId: varchar("service_id").references(() => services.id, { onDelete: "cascade" }),
+
   createdByUserId: varchar("created_by_user_id").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -1845,6 +1863,7 @@ export const calendarEvents = pgTable("calendar_events", {
   index("idx_calendar_events_start_time").on(table.startTime),
   index("idx_calendar_events_end_time").on(table.endTime),
   index("idx_calendar_events_created_by").on(table.createdByUserId),
+  index("idx_calendar_events_service_id").on(table.serviceId),
 ]);
 
 export const calendarEventAttendees = pgTable("calendar_event_attendees", {
@@ -1896,6 +1915,10 @@ export const calendarEventsRelations = relations(calendarEvents, ({ one, many })
   createdBy: one(users, {
     fields: [calendarEvents.createdByUserId],
     references: [users.id],
+  }),
+  service: one(services, {
+    fields: [calendarEvents.serviceId],
+    references: [services.id],
   }),
   attendees: many(calendarEventAttendees),
 }));

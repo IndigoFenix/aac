@@ -1,13 +1,14 @@
 // src/features/CalendarPanel.tsx
 // Calendar feature panel with monthly view and event management
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/hooks/useAuth';
 import { useStudent } from '@/hooks/useStudent';
 import { useInstitute } from '@/hooks/useInstitute';
+import { useSharedState } from '@/contexts/FeaturePanelContext';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 
@@ -62,6 +63,7 @@ interface EventFormData {
   repeatDays: number[];
   repeatMonthWeek: number;
   repeatEndDate: string;
+  serviceId: string;
   attendees: AttendeeEntry[];
 }
 
@@ -76,6 +78,7 @@ const defaultFormData: EventFormData = {
   repeatDays: [],
   repeatMonthWeek: 1,
   repeatEndDate: '',
+  serviceId: '',
   attendees: [],
 };
 
@@ -94,6 +97,7 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
   const { user } = useAuth();
   const { students } = useStudent();
   const { currentInstitute, institutes } = useInstitute();
+  const { sharedState, setSharedState } = useSharedState();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -143,6 +147,42 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
   });
 
   const classrooms = classroomsData || [];
+
+  // Fetch services visible to the user across their students' current programs,
+  // for the "For service" dropdown on the event editor. We collect programs
+  // per-student, then services per-program. Kept simple — the list is small.
+  const { data: servicesData } = useQuery({
+    queryKey: ['/api/calendar/services-for-user', students.map((s) => s.id).join(',')],
+    queryFn: async () => {
+      const out: { id: string; label: string; studentName: string; studentId: string }[] = [];
+      for (const s of students) {
+        try {
+          const progRes = await apiRequest('GET', `/api/students/${s.id}/programs/current`);
+          if (!progRes.ok) continue;
+          const progJson = await progRes.json();
+          const programId = progJson?.program?.id;
+          if (!programId) continue;
+          const svcRes = await apiRequest('GET', `/api/programs/${programId}/services`);
+          if (!svcRes.ok) continue;
+          const svcJson = await svcRes.json();
+          for (const svc of svcJson.services || []) {
+            if (!svc.isActive) continue;
+            out.push({
+              id: svc.id,
+              label: svc.customServiceName || svc.serviceType,
+              studentName: s.name,
+              studentId: s.id,
+            });
+          }
+        } catch {
+          // ignore students we can't load; keep the dropdown optimistic
+        }
+      }
+      return out;
+    },
+    enabled: !!user && students.length > 0,
+  });
+  const availableServices = servicesData || [];
 
   // Build available attendee options for the picker
   const attendeeOptions = useMemo((): AttendeeEntry[] => {
@@ -365,11 +405,38 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
       repeatDays: (ev.repeatDays as number[]) || [],
       repeatMonthWeek: (ev as any).repeatMonthWeek || 1,
       repeatEndDate: ev.repeatEndDate ? toLocalDateString(new Date(ev.repeatEndDate)) : '',
+      serviceId: (ev as any).serviceId || '',
       attendees: existingAttendees,
     });
     setEditingEvent(ev);
     setShowEventDialog(true);
   }, [students, institutes, classrooms, user, t]);
+
+  // When StudentProgressPanel navigates here with a pending service to schedule,
+  // open the dialog pre-filled. Then clear the shared state so we don't re-trigger.
+  useEffect(() => {
+    const pendingServiceId: string | undefined = sharedState.pendingEventForServiceId;
+    if (!pendingServiceId || !isOpen) return;
+
+    const pendingTitle: string = sharedState.pendingEventTitle || '';
+    const now = new Date();
+    const start = new Date(now);
+    start.setMinutes(0, 0, 0);
+    start.setHours(start.getHours() + 1);
+    const end = new Date(start);
+    end.setHours(end.getHours() + 1);
+
+    setFormData({
+      ...defaultFormData,
+      title: pendingTitle,
+      startTime: toLocalDateTimeString(start),
+      endTime: toLocalDateTimeString(end),
+      serviceId: pendingServiceId,
+    });
+    setEditingEvent(null);
+    setShowEventDialog(true);
+    setSharedState({ pendingEventForServiceId: undefined, pendingEventTitle: undefined });
+  }, [sharedState.pendingEventForServiceId, isOpen, setSharedState]);
 
   const handleSubmit = useCallback(() => {
     const payload: any = {
@@ -383,6 +450,7 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
       repeatDays: formData.repeatType === 'weekly' ? formData.repeatDays : undefined,
       repeatMonthWeek: formData.repeatType === 'monthly_weekday' ? formData.repeatMonthWeek : undefined,
       repeatEndDate: formData.repeatEndDate ? new Date(formData.repeatEndDate).toISOString() : undefined,
+      serviceId: formData.serviceId || null,
       attendees: formData.attendees
         .filter((a) => a.attendeeType !== 'user' || a.attendeeId !== user?.id) // creator is auto-added
         .map(({ attendeeType, attendeeId }) => ({ attendeeType, attendeeId })),
@@ -686,6 +754,31 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
                 rows={2}
               />
             </div>
+
+            {/* For service */}
+            {availableServices.length > 0 && (
+              <div className="space-y-2">
+                <Label>{t('calendar.forService')}</Label>
+                <Select
+                  value={formData.serviceId || '__none__'}
+                  onValueChange={(v) =>
+                    setFormData((prev) => ({ ...prev, serviceId: v === '__none__' ? '' : v }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('calendar.forServicePlaceholder')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">{t('calendar.forServiceNone')}</SelectItem>
+                    {availableServices.map((svc) => (
+                      <SelectItem key={svc.id} value={svc.id}>
+                        {svc.label} — {svc.studentName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {/* All Day Toggle */}
             <div className="flex items-center justify-between">

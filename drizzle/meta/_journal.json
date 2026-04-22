@@ -512,6 +512,13 @@
       "when": 1776880378074,
       "tag": "0072_friendly_captain_universe",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1776885767110,
+      "tag": "0073_cute_red_wolf",
+      "breakpoints": true
     }
   ]
 }

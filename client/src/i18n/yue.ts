@@ -1126,7 +1126,7 @@ export const yue = {
     stats: {
       activeGoals: "活躍目標",
       goalsAchieved: "已達成目標",
-      weeklyMinutes: "每週分鐘數",
+      activeServices: "Active Services",
       teamMembers: "團隊成員",
     },
 
@@ -1385,12 +1385,17 @@ export const yue = {
     name: "服務名稱",
     namePlaceholder: "例如：個別言語治療",
     nameRequired: "服務名稱係必填嘅",
-    frequencyCount: "頻率",
-    period: "週期",
-    duration: "時長（分鐘）",
     setting: "環境",
     provider: "提供者",
     providerPlaceholder: "服務提供者嘅名",
+    assignedUsers: "Assigned Users",
+    assignedUsersHint: "Users who share an institute with this {{STUDENT}} can be assigned to deliver this service.",
+    noInstituteMembers: "No users share an institute with this {{STUDENT}} yet.",
+    assign: "Assign",
+    unassign: "Remove",
+    scheduledEvents: "Scheduled Events",
+    scheduleNew: "Schedule",
+    noScheduledEvents: "No events scheduled yet.",
 
     // Types
     types: {
@@ -1404,11 +1409,13 @@ export const yue = {
       other: "其他",
     },
 
-    // Frequency
-    frequency: {
-      daily: "每日",
-      weekly: "每週",
-      monthly: "每月",
+    // Event recurrence labels (mirrors calendar repeat types)
+    repeat: {
+      none: "One-off",
+      daily: "Daily",
+      weekly: "Weekly",
+      monthly_date: "Monthly",
+      monthly_weekday: "Monthly (weekday)",
     },
 
     // Settings
@@ -2595,6 +2602,9 @@ export const yue = {
     month: "月",
     week: "週",
     day: "日",
+    forService: "For Service",
+    forServicePlaceholder: "None (standalone event)",
+    forServiceNone: "None",
     newEvent: "新事件",
     editEvent: "編輯事件",
     deleteEvent: "刪除事件",

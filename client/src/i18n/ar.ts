@@ -1126,7 +1126,7 @@ export const ar = {
     stats: {
       activeGoals: "الأهداف النشطة",
       goalsAchieved: "الأهداف المحققة",
-      weeklyMinutes: "الدقائق الأسبوعية",
+      activeServices: "Active Services",
       teamMembers: "أعضاء الفريق",
     },
 
@@ -1385,12 +1385,17 @@ export const ar = {
     name: "اسم الخدمة",
     namePlaceholder: "مثال: علاج نطق فردي",
     nameRequired: "اسم الخدمة مطلوب",
-    frequencyCount: "التكرار",
-    period: "الفترة",
-    duration: "المدة (دقيقة)",
     setting: "المكان",
     provider: "مقدم الخدمة",
     providerPlaceholder: "اسم مقدم الخدمة",
+    assignedUsers: "Assigned Users",
+    assignedUsersHint: "Users who share an institute with this {{STUDENT}} can be assigned to deliver this service.",
+    noInstituteMembers: "No users share an institute with this {{STUDENT}} yet.",
+    assign: "Assign",
+    unassign: "Remove",
+    scheduledEvents: "Scheduled Events",
+    scheduleNew: "Schedule",
+    noScheduledEvents: "No events scheduled yet.",
 
     // Types
     types: {
@@ -1404,11 +1409,13 @@ export const ar = {
       other: "أخرى",
     },
 
-    // Frequency
-    frequency: {
-      daily: "يومياً",
-      weekly: "أسبوعياً",
-      monthly: "شهرياً",
+    // Event recurrence labels (mirrors calendar repeat types)
+    repeat: {
+      none: "One-off",
+      daily: "Daily",
+      weekly: "Weekly",
+      monthly_date: "Monthly",
+      monthly_weekday: "Monthly (weekday)",
     },
 
     // Settings
@@ -2595,6 +2602,9 @@ export const ar = {
     month: "شهر",
     week: "أسبوع",
     day: "يوم",
+    forService: "For Service",
+    forServicePlaceholder: "None (standalone event)",
+    forServiceNone: "None",
     newEvent: "حدث جديد",
     editEvent: "تعديل الحدث",
     deleteEvent: "حذف الحدث",

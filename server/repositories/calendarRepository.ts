@@ -86,6 +86,35 @@ export class CalendarRepository {
       .where(eq(calendarEventAttendees.eventId, eventId));
   }
 
+  async getEventsByServiceId(
+    serviceId: string,
+  ): Promise<(CalendarEvent & { attendees: CalendarEventAttendee[] })[]> {
+    const events = await db
+      .select()
+      .from(calendarEvents)
+      .where(eq(calendarEvents.serviceId, serviceId))
+      .orderBy(calendarEvents.startTime);
+
+    if (events.length === 0) return [];
+
+    const attendees = await db
+      .select()
+      .from(calendarEventAttendees)
+      .where(inArray(calendarEventAttendees.eventId, events.map((e) => e.id)));
+
+    const attendeesByEvent = new Map<string, CalendarEventAttendee[]>();
+    for (const att of attendees) {
+      const list = attendeesByEvent.get(att.eventId) || [];
+      list.push(att);
+      attendeesByEvent.set(att.eventId, list);
+    }
+
+    return events.map((event) => ({
+      ...event,
+      attendees: attendeesByEvent.get(event.id) || [],
+    }));
+  }
+
   // ---- Queries ----
 
   /**

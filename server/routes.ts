@@ -472,6 +472,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     programController.deleteService(req, res)
   );
 
+  // Service ↔ Users
+  app.get("/api/services/:id/users", requireAuth, (req, res) =>
+    programController.getServiceUsers(req, res)
+  );
+  app.post("/api/services/:id/users", requireAuth, (req, res) =>
+    programController.linkUserToService(req, res)
+  );
+  app.delete("/api/services/:id/users/:userId", requireAuth, (req, res) =>
+    programController.unlinkUserFromService(req, res)
+  );
+
+  // Service ↔ Calendar events
+  app.get("/api/services/:id/events", requireAuth, (req, res) =>
+    programController.getServiceEvents(req, res)
+  );
+
   // Data Points
   app.get("/api/goals/:goalId/data-points", requireAuth, (req, res) =>
     programController.getDataPoints(req, res)
@@ -564,6 +580,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.delete("/api/students/:id/link/:userId", requireAuth, (req, res) =>
     studentController.unlinkUser(req, res)
+  );
+
+  // Users sharing an institute with this student — pool for service assignees
+  app.get("/api/students/:id/institute-members", requireAuth, (req, res) =>
+    studentController.getInstituteMembers(req, res)
   );
 
   // ==========================================================================

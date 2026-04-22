@@ -1126,7 +1126,7 @@ export const he = {
     stats: {
       activeGoals: "מטרות פעילות",
       goalsAchieved: "מטרות הושגו",
-      weeklyMinutes: "דקות שבועיות",
+      activeServices: "Active Services",
       teamMembers: "חברי צוות",
     },
 
@@ -1385,12 +1385,17 @@ export const he = {
     name: "שם השירות",
     namePlaceholder: "לדוגמה: טיפול קלינאות תקשורת פרטני",
     nameRequired: "נדרש שם שירות",
-    frequencyCount: "תדירות",
-    period: "תקופה",
-    duration: "משך (דקות)",
     setting: "מיקום",
     provider: "נותן שירות",
     providerPlaceholder: "שם נותן השירות",
+    assignedUsers: "Assigned Users",
+    assignedUsersHint: "Users who share an institute with this {{STUDENT}} can be assigned to deliver this service.",
+    noInstituteMembers: "No users share an institute with this {{STUDENT}} yet.",
+    assign: "Assign",
+    unassign: "Remove",
+    scheduledEvents: "Scheduled Events",
+    scheduleNew: "Schedule",
+    noScheduledEvents: "No events scheduled yet.",
 
     // Types
     types: {
@@ -1404,11 +1409,13 @@ export const he = {
       other: "אחר",
     },
 
-    // Frequency
-    frequency: {
-      daily: "יומי",
-      weekly: "שבועי",
-      monthly: "חודשי",
+    // Event recurrence labels (mirrors calendar repeat types)
+    repeat: {
+      none: "One-off",
+      daily: "Daily",
+      weekly: "Weekly",
+      monthly_date: "Monthly",
+      monthly_weekday: "Monthly (weekday)",
     },
 
     // Settings
@@ -2598,6 +2605,9 @@ export const he = {
     month: "חודש",
     week: "שבוע",
     day: "יום",
+    forService: "For Service",
+    forServicePlaceholder: "None (standalone event)",
+    forServiceNone: "None",
     newEvent: "אירוע חדש",
     editEvent: "ערוך אירוע",
     deleteEvent: "מחק אירוע",

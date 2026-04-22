@@ -414,29 +414,18 @@ export class ProgramService {
     return programRepository.unlinkServiceFromGoal(serviceId, goalId);
   }
 
-  /**
-   * Calculate total service minutes per week for a program
-   */
-  async calculateWeeklyServiceMinutes(programId: string): Promise<number> {
-    const programServices = await programRepository.getServicesByProgramId(programId);
-    return programServices.reduce((total, service) => {
-      if (!service.isActive) return total;
-      
-      let weeklyMultiplier = 1;
-      switch (service.frequencyPeriod) {
-        case "daily":
-          weeklyMultiplier = 5; // School days
-          break;
-        case "weekly":
-          weeklyMultiplier = 1;
-          break;
-        case "monthly":
-          weeklyMultiplier = 0.25;
-          break;
-      }
-      
-      return total + (service.sessionDuration * service.frequencyCount * weeklyMultiplier);
-    }, 0);
+  // Service ↔ Users
+
+  async getServiceUsers(serviceId: string) {
+    return programRepository.getServiceUsers(serviceId);
+  }
+
+  async linkUserToService(serviceId: string, userId: string) {
+    return programRepository.linkUserToService(serviceId, userId);
+  }
+
+  async unlinkUserFromService(serviceId: string, userId: string): Promise<void> {
+    return programRepository.unlinkUserFromService(serviceId, userId);
   }
 
   // ==========================================================================
