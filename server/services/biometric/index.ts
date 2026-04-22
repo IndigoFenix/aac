@@ -2,3 +2,4 @@
 // Exports for biometric recognition services
 
 export * from "./recognition-service";
+export * from "./photo-upload";

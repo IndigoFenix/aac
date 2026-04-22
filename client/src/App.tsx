@@ -208,6 +208,7 @@ function Router() {
       <Route path="/students" component={ProtectedDashboard} />
       <Route path="/aacsettings" component={ProtectedDashboard} />
       <Route path="/progress" component={ProtectedDashboard} />
+      <Route path="/contacts" component={ProtectedDashboard} />
       <Route path="/institute" component={ProtectedDashboard} />
       <Route path="/reports" component={ProtectedDashboard} />
       <Route path="/calendar" component={ProtectedDashboard} />

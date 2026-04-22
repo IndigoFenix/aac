@@ -13,7 +13,8 @@ import {
   dataPoints,
   transitionPlans,
   transitionGoals,
-  teamMembers,
+  programContacts,
+  studentContacts,
   meetings,
   consentForms,
   students,
@@ -54,9 +55,10 @@ import {
   type TransitionGoal,
   type InsertTransitionGoal,
   type UpdateTransitionGoal,
-  type TeamMember,
-  type InsertTeamMember,
-  type UpdateTeamMember,
+  type ProgramContact,
+  type InsertProgramContact,
+  type UpdateProgramContact,
+  type StudentContact,
   type Meeting,
   type InsertMeeting,
   type UpdateMeeting,
@@ -304,7 +306,7 @@ export class ProgramRepository {
       services: servicesWithData,
       progressReports: reportsWithEntries,
       transitionPlan: transitionWithGoals,
-      teamMembers: await this.getTeamMembersByProgramId(programId),
+      teamContacts: await this.getTeamContactsByProgramId(programId),
       meetings: await this.getMeetingsByProgramId(programId),
       consentForms: await this.getConsentFormsByProgramId(programId),
     };
@@ -910,58 +912,63 @@ export class ProgramRepository {
     return (result.rowCount ?? 0) > 0;
   }
 
+
   // ==========================================================================
-  // TEAM MEMBER OPERATIONS
+  // PROGRAM CONTACT OPERATIONS (junction: program ↔ studentContacts)
   // ==========================================================================
 
-  async createTeamMember(insert: InsertTeamMember): Promise<TeamMember> {
-    const [member] = await db
-      .insert(teamMembers)
-      .values(insert)
-      .returning();
-    return member;
+  async addProgramContact(insert: InsertProgramContact): Promise<ProgramContact> {
+    const [row] = await db.insert(programContacts).values(insert).returning();
+    return row;
   }
 
-  async getTeamMemberById(id: string): Promise<TeamMember | undefined> {
-    const [member] = await db
+  async getProgramContactById(id: string): Promise<ProgramContact | undefined> {
+    const [row] = await db
       .select()
-      .from(teamMembers)
-      .where(eq(teamMembers.id, id));
-    if (!member) return undefined;
-    const [hydrated] = await hydrateRecords("team_members", [member]);
-    return hydrated;
+      .from(programContacts)
+      .where(eq(programContacts.id, id));
+    return row;
   }
 
-  async getTeamMembersByProgramId(programId: string): Promise<TeamMember[]> {
+  /** Get all program contacts for a program with their contact row joined in. */
+  async getTeamContactsByProgramId(
+    programId: string,
+  ): Promise<(ProgramContact & { contact: StudentContact })[]> {
     const rows = await db
-      .select()
-      .from(teamMembers)
+      .select({
+        junction: programContacts,
+        contact: studentContacts,
+      })
+      .from(programContacts)
+      .innerJoin(studentContacts, eq(studentContacts.id, programContacts.contactId))
       .where(
         and(
-          eq(teamMembers.programId, programId),
-          eq(teamMembers.isActive, true)
-        )
+          eq(programContacts.programId, programId),
+          eq(programContacts.isActive, true),
+        ),
       );
-    return hydrateRecords("team_members", rows);
+    return rows.map((r) => ({ ...r.junction, contact: r.contact }));
   }
 
-  async updateTeamMember(id: string, updates: UpdateTeamMember): Promise<TeamMember | undefined> {
-    const [updated] = await db
-      .update(teamMembers)
+  async updateProgramContact(
+    id: string,
+    updates: UpdateProgramContact,
+  ): Promise<ProgramContact | undefined> {
+    const [row] = await db
+      .update(programContacts)
       .set({ ...updates, updatedAt: new Date() })
-      .where(eq(teamMembers.id, id))
+      .where(eq(programContacts.id, id))
       .returning();
-    return updated || undefined;
+    return row;
   }
 
-  async deleteTeamMember(id: string): Promise<boolean> {
-    // Soft delete by setting isActive to false
-    const [updated] = await db
-      .update(teamMembers)
+  async removeProgramContact(id: string): Promise<boolean> {
+    const [row] = await db
+      .update(programContacts)
       .set({ isActive: false, updatedAt: new Date() })
-      .where(eq(teamMembers.id, id))
+      .where(eq(programContacts.id, id))
       .returning();
-    return !!updated;
+    return !!row;
   }
 
   // ==========================================================================

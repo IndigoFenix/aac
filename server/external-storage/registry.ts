@@ -19,17 +19,15 @@ export const SENSITIVE_FIELDS: Record<string, TableTierConfig> = {
   users: {
     core: ["email", "firstName", "lastName", "fullName", "password", "mfaSecret", "profileImageUrl"],
     log: ["chatMemory"],
-    biometric: ["faceEmbedding", "voiceEmbedding"],
+    // Biometric fields moved to the shared biometric_data table.
   },
   students: {
     core: ["firstName", "lastName", "name", "birthDate", "gender"],
     log: ["chatMemory"],
-    biometric: ["faceEmbedding", "voiceEmbedding"],
   },
   student_contacts: {
-    core: ["name", "relationship", "hairColor", "estimatedAge", "estimatedSex"],
-    log: ["description", "contextNotes", "faceImageData"],
-    biometric: ["faceEmbedding", "voiceEmbedding"],
+    core: ["name", "relationship", "contactEmail", "contactPhone"],
+    log: ["organization", "contextNotes"],
   },
   aac_settings: {
     core: ["aiName"],
@@ -79,9 +77,13 @@ export const SENSITIVE_FIELDS: Record<string, TableTierConfig> = {
   data_points: {
     log: ["value", "context", "collectedBy"],
   },
-  team_members: {
-    core: ["name", "contactEmail", "contactPhone"],
-    log: ["organization", "responsibilities"],
+  program_contacts: {
+    log: ["responsibilities"],
+  },
+  biometric_data: {
+    // Biometric embeddings + photos are the most sensitive — tier them all.
+    biometric: ["faceEmbedding", "voiceEmbedding", "faceImageUrl"],
+    log: ["hairColor", "eyeColor", "estimatedAge", "estimatedSex", "physicalDescription", "identifyingFeatures"],
   },
   meetings: {
     log: ["notes", "decisions", "parentConcerns", "parentPriorities", "agenda"],
@@ -170,7 +172,8 @@ export const OWNERSHIP_MAP: Record<string, OwnershipResolver> = {
   data_points: () => null,
   transition_plans: () => null,
   transition_goals: () => null,
-  team_members: () => null,
+  program_contacts: () => null,
+  biometric_data: () => null,
   meetings: () => null,
   consent_forms: () => null,
   baseline_measurements: () => null,

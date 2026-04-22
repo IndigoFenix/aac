@@ -33,6 +33,7 @@ import {
   MessagesSquare,
   Gamepad2,
   Sparkles,
+  Contact,
 } from 'lucide-react';
 import { useState } from 'react';
 import logoImage from '@assets/aivota_icon.png';
@@ -171,6 +172,14 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
       labelKey: 'nav.progress',
       feature: 'progress' as FeatureType,
       testId: 'nav-progress',
+      disabled: !student,
+      badge: undefined as string | undefined,
+    },
+    {
+      icon: Contact,
+      labelKey: 'nav.contacts',
+      feature: 'contacts' as FeatureType,
+      testId: 'nav-contacts',
       disabled: !student,
       badge: undefined as string | undefined,
     },

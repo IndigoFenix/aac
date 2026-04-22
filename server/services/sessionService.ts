@@ -165,6 +165,9 @@ import {
 import {
   RELATIONSHIP_MEMORY_FIELDS,
 } from "./memory-schema/relationship-memory-schema";
+import {
+  STUDENT_CONTACTS_FIELD,
+} from "./memory-schema/contacts-memory-schema";
 
 
 // ============================================================================
@@ -350,6 +353,8 @@ export const MASTER_MEMORY_FIELDS: AgentMemoryFieldWithDB[] = [
   ...USER_MEMORY_FIELDS,
   // Student_* fields with db operations
   ...STUDENT_MEMORY_FIELDS,
+  // Student_Contacts — backed by the studentContacts table (not chatMemory)
+  STUDENT_CONTACTS_FIELD,
   // Relationship_* fields with db operations
   ...RELATIONSHIP_MEMORY_FIELDS,
 ];

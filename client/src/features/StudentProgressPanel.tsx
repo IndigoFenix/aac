@@ -10,7 +10,7 @@ import { useChat } from '@/hooks/useChat';
 import { useFeaturePanel, useSharedState } from '@/contexts/FeaturePanelContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTheme } from '@/contexts/ThemeContext';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, apiUrl } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -55,6 +55,7 @@ import {
   Loader2,
   Calendar,
   Users,
+  User,
   BookOpen,
   Settings,
   MoreHorizontal,
@@ -82,7 +83,9 @@ import type {
   Objective,
   Service,
   Accommodation,
-  TeamMember,
+  ProgramContact,
+  StudentContact,
+  InsertProgramContact,
   Meeting,
   ConsentForm,
   ProgressReport,
@@ -91,7 +94,6 @@ import type {
   InsertObjective,
   InsertService,
   InsertDataPoint,
-  InsertTeamMember,
   ProgramFramework,
   ProgramStatus,
   ProfileDomainType,
@@ -103,7 +105,37 @@ import type {
   ServiceDeliveryModel,
   ProgressStatus,
   TeamMemberRole,
+  GasLevel,
+  GasVaryingVariable,
+  GasLevels,
+  EnvironmentalFactors,
+  EnvironmentalFactorCategory,
+  PersonalFactors,
 } from '@shared/schema';
+
+// support_relationships and attitudes are no longer ICF categories here — those
+// live on studentContacts rows (person-scoped), managed in the contacts panel.
+const ENV_FACTOR_CATEGORIES: EnvironmentalFactorCategory[] = [
+  'products_technology',
+  'natural_environment',
+  'services_systems_policies',
+];
+
+// Ordered list of the 5 GAS levels (for iteration in the UI)
+const GAS_LEVEL_ORDER: GasLevel[] = [
+  'much_less_than_expected',
+  'less_than_expected',
+  'expected',
+  'better_than_expected',
+  'much_better_than_expected',
+];
+const GAS_LEVEL_ORDINALS: Record<GasLevel, number> = {
+  much_less_than_expected: -2,
+  less_than_expected: -1,
+  expected: 0,
+  better_than_expected: 1,
+  much_better_than_expected: 2,
+};
 
 // Composite type for full program details (not in schema, defined locally)
 interface ProgramWithDetails {
@@ -112,7 +144,7 @@ interface ProgramWithDetails {
   goals: Goal[];
   services: Service[];
   accommodations: Accommodation[];
-  teamMembers: TeamMember[];
+  teamContacts: (ProgramContact & { contact: StudentContact })[];
   meetings: Meeting[];
   consentForms: ConsentForm[];
   progressReports: ProgressReport[];
@@ -186,6 +218,15 @@ interface GoalFormState {
   criteria: string;
   methods: string;
   targetDate: string;
+  // GAS (Goal Attainment Scaling)
+  useGas: boolean;
+  gasVaryingVariable: GasVaryingVariable | '';
+  gasBaselineLevel: GasLevel | '';
+  gasLevels: GasLevels;
+  // Family-Centered Service
+  clientImportanceRating: string; // stored as string for <Input type=number>
+  setJointlyWithFamily: boolean;
+  familyInput: string;
 }
 
 interface ObjectiveFormState {
@@ -212,15 +253,14 @@ interface DataPointFormState {
   numericValue: string;
   value: string;
   context: string;
+  achievedLevel: GasLevel | '';
 }
 
-interface TeamMemberFormState {
-  name: string;
-  contactEmail: string;
-  role: TeamMemberRole;
-  customRole: string;
-  contactPhone: string;
+interface TeamContactFormState {
+  contactId: string;           // the studentContacts row to add
+  programRole: TeamMemberRole | '';  // optional per-program override
   isCoordinator: boolean;
+  responsibilities: string;    // newline-separated
 }
 
 // =============================================================================
@@ -273,6 +313,246 @@ function getGoalsByDomain(goals: GoalWithNested[], domainId: string): GoalWithNe
 }
 
 // =============================================================================
+// GAS T-SCORE
+// =============================================================================
+
+/**
+ * Classical Kiresuk & Sherman GAS T-score.
+ *   T = 50 + 10 · Σ(wᵢ·xᵢ) / √((1-ρ)·Σwᵢ² + ρ·(Σwᵢ)²)
+ * ρ = 0.3 is the conventional goal intercorrelation.
+ * A T-score of 50 means goals were achieved exactly as expected (level 0);
+ * >50 means overall progress exceeded expectations, <50 fell short.
+ */
+function computeGasTScore(entries: Array<{ ordinal: number; weight: number }>): number | null {
+  if (entries.length === 0) return null;
+  const RHO = 0.3;
+  let sumWX = 0, sumW = 0, sumWsq = 0;
+  for (const { ordinal, weight } of entries) {
+    const w = weight > 0 ? weight : 1;
+    sumWX += w * ordinal;
+    sumW += w;
+    sumWsq += w * w;
+  }
+  const denom = Math.sqrt((1 - RHO) * sumWsq + RHO * sumW * sumW);
+  if (denom === 0) return null;
+  return 50 + (10 * sumWX) / denom;
+}
+
+/** Latest data point with an achievedLevel for a GAS goal */
+function latestAchievedOrdinal(goal: GoalWithNested): number | null {
+  if (!goal.useGas || !goal.dataPoints || goal.dataPoints.length === 0) return null;
+  const ordered = [...goal.dataPoints].sort(
+    (a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime()
+  );
+  const GAS_ORDINALS: Record<string, number> = {
+    much_less_than_expected: -2,
+    less_than_expected: -1,
+    expected: 0,
+    better_than_expected: 1,
+    much_better_than_expected: 2,
+  };
+  for (const dp of ordered) {
+    if (dp.achievedLevel && GAS_ORDINALS[dp.achievedLevel] !== undefined) {
+      return GAS_ORDINALS[dp.achievedLevel];
+    }
+  }
+  return null;
+}
+
+// =============================================================================
+// ICF Contextual Factors editor
+// =============================================================================
+
+type IcfSectionProps = {
+  personalFactors: PersonalFactors;
+  environmentalFactors: EnvironmentalFactors;
+  disabled: boolean;
+  onSave: (updates: { personalFactors?: PersonalFactors; environmentalFactors?: EnvironmentalFactors }) => void;
+  t: (key: string, opts?: any) => string;
+};
+
+function IcfContextualFactorsSection({ personalFactors, environmentalFactors, disabled, onSave, t }: IcfSectionProps) {
+  // Editable buffers so every keystroke doesn't hit the API.
+  const [pfBuf, setPfBuf] = useState<PersonalFactors>(personalFactors);
+  const [efBuf, setEfBuf] = useState<EnvironmentalFactors>(environmentalFactors);
+  const [openPf, setOpenPf] = useState(false);
+  const [openEf, setOpenEf] = useState(false);
+
+  // Keep local buffers in sync when the upstream record changes (e.g. AI edits)
+  useEffect(() => { setPfBuf(personalFactors); }, [personalFactors]);
+  useEffect(() => { setEfBuf(environmentalFactors); }, [environmentalFactors]);
+
+  const saveList = (cat: EnvironmentalFactorCategory, field: 'facilitators' | 'barriers', text: string) => {
+    const list = text.split('\n').map(s => s.trim()).filter(Boolean);
+    const next: EnvironmentalFactors = {
+      ...efBuf,
+      [cat]: { ...(efBuf[cat] || {}), [field]: list },
+    };
+    setEfBuf(next);
+    onSave({ environmentalFactors: next });
+  };
+  const saveNotes = (cat: EnvironmentalFactorCategory, text: string) => {
+    const next: EnvironmentalFactors = {
+      ...efBuf,
+      [cat]: { ...(efBuf[cat] || {}), notes: text || undefined },
+    };
+    setEfBuf(next);
+    onSave({ environmentalFactors: next });
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Personal Factors */}
+      <Collapsible open={openPf} onOpenChange={setOpenPf}>
+        <Card>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <Heart className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">{t('program.personalFactors')}</CardTitle>
+                    <CardDescription>{t('program.personalFactorsDesc')}</CardDescription>
+                  </div>
+                </div>
+                <ChevronDown className={cn('w-5 h-5 text-muted-foreground transition-transform', openPf && 'rotate-180')} />
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="space-y-4 pt-0">
+              <Separator />
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>{t('program.personal.interests')}</Label>
+                  <Textarea
+                    value={(pfBuf.interests || []).join('\n')}
+                    onChange={(e) => setPfBuf(prev => ({ ...prev, interests: e.target.value.split('\n').map(s => s.trim()).filter(Boolean) }))}
+                    onBlur={() => onSave({ personalFactors: pfBuf })}
+                    placeholder={t('program.personal.interestsPlaceholder')}
+                    disabled={disabled}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('program.personal.motivators')}</Label>
+                  <Textarea
+                    value={(pfBuf.motivators || []).join('\n')}
+                    onChange={(e) => setPfBuf(prev => ({ ...prev, motivators: e.target.value.split('\n').map(s => s.trim()).filter(Boolean) }))}
+                    onBlur={() => onSave({ personalFactors: pfBuf })}
+                    placeholder={t('program.personal.motivatorsPlaceholder')}
+                    disabled={disabled}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('program.personal.temperament')}</Label>
+                  <Textarea
+                    value={pfBuf.temperament || ''}
+                    onChange={(e) => setPfBuf(prev => ({ ...prev, temperament: e.target.value }))}
+                    onBlur={() => onSave({ personalFactors: pfBuf })}
+                    placeholder={t('program.personal.temperamentPlaceholder')}
+                    disabled={disabled}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('program.personal.coping')}</Label>
+                  <Textarea
+                    value={pfBuf.coping || ''}
+                    onChange={(e) => setPfBuf(prev => ({ ...prev, coping: e.target.value }))}
+                    onBlur={() => onSave({ personalFactors: pfBuf })}
+                    placeholder={t('program.personal.copingPlaceholder')}
+                    disabled={disabled}
+                  />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>{t('program.personal.culturalBackground')}</Label>
+                  <Textarea
+                    value={pfBuf.culturalBackground || ''}
+                    onChange={(e) => setPfBuf(prev => ({ ...prev, culturalBackground: e.target.value }))}
+                    onBlur={() => onSave({ personalFactors: pfBuf })}
+                    placeholder={t('program.personal.culturalBackgroundPlaceholder')}
+                    disabled={disabled}
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
+
+      {/* Environmental Factors */}
+      <Collapsible open={openEf} onOpenChange={setOpenEf}>
+        <Card>
+          <CollapsibleTrigger asChild>
+            <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <Building2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">{t('program.environmentalFactors')}</CardTitle>
+                    <CardDescription>{t('program.environmentalFactorsDesc')}</CardDescription>
+                  </div>
+                </div>
+                <ChevronDown className={cn('w-5 h-5 text-muted-foreground transition-transform', openEf && 'rotate-180')} />
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="space-y-4 pt-0">
+              <Separator />
+              {ENV_FACTOR_CATEGORIES.map((cat) => {
+                const entry = efBuf[cat] || {};
+                return (
+                  <div key={cat} className="space-y-2 p-3 rounded-md border">
+                    <Label className="text-sm font-semibold">{t(`program.environmental.category.${cat}`)}</Label>
+                    <p className="text-xs text-muted-foreground">{t(`program.environmental.categoryDesc.${cat}`)}</p>
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">{t('program.environmental.facilitators')}</Label>
+                        <Textarea
+                          defaultValue={(entry.facilitators || []).join('\n')}
+                          onBlur={(e) => saveList(cat, 'facilitators', e.target.value)}
+                          placeholder={t('program.environmental.facilitatorsPlaceholder')}
+                          className="min-h-[60px] text-sm"
+                          disabled={disabled}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">{t('program.environmental.barriers')}</Label>
+                        <Textarea
+                          defaultValue={(entry.barriers || []).join('\n')}
+                          onBlur={(e) => saveList(cat, 'barriers', e.target.value)}
+                          placeholder={t('program.environmental.barriersPlaceholder')}
+                          className="min-h-[60px] text-sm"
+                          disabled={disabled}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">{t('program.environmental.notes')}</Label>
+                      <Textarea
+                        defaultValue={entry.notes || ''}
+                        onBlur={(e) => saveNotes(cat, e.target.value)}
+                        placeholder={t('program.environmental.notesPlaceholder')}
+                        className="min-h-[40px] text-sm"
+                        disabled={disabled}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
+    </div>
+  );
+}
+
+// =============================================================================
 // MAIN COMPONENT
 // =============================================================================
 
@@ -295,7 +575,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
   const [showObjectiveModal, setShowObjectiveModal] = useState(false);
   const [showServiceModal, setShowServiceModal] = useState(false);
   const [showDataPointModal, setShowDataPointModal] = useState(false);
-  const [showTeamMemberModal, setShowTeamMemberModal] = useState(false);
+  const [showTeamContactModal, setShowTeamContactModal] = useState(false);
   
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [editingObjective, setEditingObjective] = useState<Objective | null>(null);
@@ -317,6 +597,13 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
     criteria: '',
     methods: '',
     targetDate: '',
+    useGas: false,
+    gasVaryingVariable: '',
+    gasBaselineLevel: 'much_less_than_expected',
+    gasLevels: {},
+    clientImportanceRating: '',
+    setJointlyWithFamily: false,
+    familyInput: '',
   });
   
   const [objectiveForm, setObjectiveForm] = useState<ObjectiveFormState>({
@@ -343,15 +630,14 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
     numericValue: '',
     value: '',
     context: '',
+    achievedLevel: '',
   });
   
-  const [teamMemberForm, setTeamMemberForm] = useState<TeamMemberFormState>({
-    name: '',
-    contactEmail: '',
-    role: 'parent_guardian',
-    customRole: '',
-    contactPhone: '',
+  const [teamContactForm, setTeamContactForm] = useState<TeamContactFormState>({
+    contactId: '',
+    programRole: '',
     isCoordinator: false,
+    responsibilities: '',
   });
 
   // =============================================================================
@@ -399,13 +685,27 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
     enabled: !!student?.id && isOpen,
   });
 
+  // Fetch all studentContacts for the picker — populated only when the add-team
+  // modal is opened, so we don't pay the query cost on every panel render.
+  const { data: contactsData } = useQuery<{ success: boolean; contacts: StudentContact[] }>({
+    queryKey: ['/api/biometric/students', student?.id, 'contacts'],
+    queryFn: async () => {
+      if (!student?.id) throw new Error('No student selected');
+      const response = await apiRequest('GET', `/api/biometric/students/${student.id}/contacts`);
+      if (!response.ok) throw new Error('Failed to fetch contacts');
+      return response.json();
+    },
+    enabled: !!student?.id && isOpen && showTeamContactModal,
+  });
+  const availableContacts = (contactsData?.contacts || []) as StudentContact[];
+
   // Extract data with proper types
   const program = (programDetails?.program || currentProgram) as Program | undefined;
   const domains = (programDetails?.profileDomains || []) as ProfileDomain[];
   const goals = (programDetails?.goals || []) as GoalWithNested[];
   const services = (programDetails?.services || []) as Service[];
   const accommodations = (programDetails?.accommodations || []) as Accommodation[];
-  const teamMembers = (programDetails?.teamMembers || []) as TeamMember[];
+  const teamContacts = (programDetails?.teamContacts || []) as (ProgramContact & { contact: StudentContact })[];
   const meetings = (programDetails?.meetings || []) as Meeting[];
   const consentForms = (programDetails?.consentForms || []) as ConsentForm[];
   const progressReports = (programDetails?.progressReports || []) as ProgressReport[];
@@ -489,6 +789,22 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/programs', program?.id, 'full'] });
       toast({ title: t('common.saved') });
+    },
+    onError: (error: Error) => {
+      toast({ title: t('common.error'), description: error.message, variant: 'destructive' });
+    },
+  });
+
+  // Update program-level fields (ICF contextual factors, notes, etc.)
+  const updateProgramMutation = useMutation({
+    mutationFn: async (updates: Partial<Program>) => {
+      if (!program?.id) throw new Error('No program');
+      const response = await apiRequest('PATCH', `/api/programs/${program.id}`, updates);
+      if (!response.ok) throw new Error('Failed to update program');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/programs', program?.id, 'full'] });
     },
     onError: (error: Error) => {
       toast({ title: t('common.error'), description: error.message, variant: 'destructive' });
@@ -675,34 +991,49 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
     },
   });
 
-  // Create team member - using schema field names (contactEmail, contactPhone, NOT email/phone)
-  const createTeamMemberMutation = useMutation({
-    mutationFn: async (data: InsertTeamMember) => {
+  // Add a studentContacts row to this program's team (creates a programContacts junction row)
+  const addTeamContactMutation = useMutation({
+    mutationFn: async (data: Partial<InsertProgramContact>) => {
       const response = await apiRequest('POST', `/api/programs/${program?.id}/team`, data);
-      if (!response.ok) throw new Error('Failed to add team member');
+      if (!response.ok) throw new Error('Failed to add team contact');
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/programs', program?.id, 'full'] });
       toast({ title: t('team.memberAdded') });
-      setShowTeamMemberModal(false);
-      resetTeamMemberForm();
+      setShowTeamContactModal(false);
+      resetTeamContactForm();
     },
     onError: (error: Error) => {
       toast({ title: t('common.error'), description: error.message, variant: 'destructive' });
     },
   });
 
-  // Delete team member
-  const deleteTeamMemberMutation = useMutation({
-    mutationFn: async (memberId: string) => {
-      const response = await apiRequest('DELETE', `/api/team-members/${memberId}`);
-      if (!response.ok) throw new Error('Failed to remove team member');
+  // Remove a contact from the program team (soft-delete on the junction row — keeps the contact)
+  const removeTeamContactMutation = useMutation({
+    mutationFn: async (programContactId: string) => {
+      const response = await apiRequest('DELETE', `/api/program-contacts/${programContactId}`);
+      if (!response.ok) throw new Error('Failed to remove team contact');
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/programs', program?.id, 'full'] });
       toast({ title: t('team.memberRemoved') });
+    },
+    onError: (error: Error) => {
+      toast({ title: t('common.error'), description: error.message, variant: 'destructive' });
+    },
+  });
+
+  // Update junction-level fields (coordinator flag, programRole override, responsibilities)
+  const updateTeamContactMutation = useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: Record<string, unknown> }) => {
+      const response = await apiRequest('PATCH', `/api/program-contacts/${id}`, updates);
+      if (!response.ok) throw new Error('Failed to update team contact');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/programs', program?.id, 'full'] });
     },
     onError: (error: Error) => {
       toast({ title: t('common.error'), description: error.message, variant: 'destructive' });
@@ -720,6 +1051,13 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
       criteria: '',
       methods: '',
       targetDate: '',
+      useGas: false,
+      gasVaryingVariable: '',
+      gasBaselineLevel: 'much_less_than_expected',
+      gasLevels: {},
+      clientImportanceRating: '',
+      setJointlyWithFamily: false,
+      familyInput: '',
     });
     setEditingGoal(null);
   };
@@ -752,18 +1090,16 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
   };
 
   const resetDataPointForm = () => {
-    setDataPointForm({ numericValue: '', value: '', context: '' });
+    setDataPointForm({ numericValue: '', value: '', context: '', achievedLevel: '' });
     setSelectedGoalForDataPoint(null);
   };
 
-  const resetTeamMemberForm = () => {
-    setTeamMemberForm({
-      name: '',
-      contactEmail: '',
-      role: 'parent_guardian',
-      customRole: '',
-      contactPhone: '',
+  const resetTeamContactForm = () => {
+    setTeamContactForm({
+      contactId: '',
+      programRole: '',
       isCoordinator: false,
+      responsibilities: '',
     });
   };
 
@@ -795,12 +1131,26 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
     const achievedGoals = goals.filter((g) => g.status === 'achieved').length;
     const totalGoals = goals.length;
     const goalProgress = totalGoals > 0 ? Math.round((achievedGoals / totalGoals) * 100) : 0;
-    
+
     const totalServiceMinutes = services
       .filter((s) => s.isActive)
       .reduce((sum, s) => sum + calculateWeeklyMinutes(s), 0);
 
-    return { activeGoals, achievedGoals, totalGoals, goalProgress, totalServiceMinutes };
+    // Aggregate GAS T-score across all GAS-scored goals that have at least one
+    // achievedLevel data point. Unrated goals default to weight=3 (midpoint 1-5).
+    const gasEntries: Array<{ ordinal: number; weight: number }> = [];
+    let gasGoalsWithData = 0;
+    for (const g of goals) {
+      if (!g.useGas) continue;
+      const ord = latestAchievedOrdinal(g);
+      if (ord === null) continue;
+      gasGoalsWithData += 1;
+      const weight = g.clientImportanceRating ?? 3;
+      gasEntries.push({ ordinal: ord, weight });
+    }
+    const gasTScore = computeGasTScore(gasEntries);
+
+    return { activeGoals, achievedGoals, totalGoals, goalProgress, totalServiceMinutes, gasTScore, gasGoalsWithData };
   }, [goals, services]);
 
   // Register metadata builder
@@ -1148,13 +1498,39 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                       <Users className="w-5 h-5 text-amber-600 dark:text-amber-400" />
                     </div>
                     <div className={isRTL ? 'text-right' : ''}>
-                      <p className="text-2xl font-bold">{teamMembers.filter((m) => m.isActive).length}</p>
+                      <p className="text-2xl font-bold">{teamContacts.filter((tc) => tc.isActive).length}</p>
                       <p className="text-xs text-muted-foreground">{t('program.stats.teamMembers')}</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
             </div>
+
+            {/* GAS T-score summary — shown only when at least one GAS goal has data */}
+            {stats.gasTScore !== null && stats.gasGoalsWithData > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className={cn('flex items-center gap-2', isRTL && 'flex-row-reverse')}>
+                    <BarChart3 className="w-5 h-5" />
+                    {t('program.gasOverallScore')}
+                  </CardTitle>
+                  <CardDescription>{t('program.gasOverallScoreDesc')}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className={cn('flex items-baseline gap-3', isRTL && 'flex-row-reverse')}>
+                    <span className="text-4xl font-bold">{stats.gasTScore.toFixed(1)}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {stats.gasTScore >= 50 ? t('program.gasAtOrAbove') : t('program.gasBelow')}
+                    </span>
+                  </div>
+                  {/* T-score scale: 50 = expected, each 10 points is ~1 SD. Clamp to display range [20,80]. */}
+                  <Progress value={Math.max(0, Math.min(100, ((stats.gasTScore - 20) / 60) * 100))} className="h-3" />
+                  <p className="text-xs text-muted-foreground">
+                    {t('program.gasGoalsCounted', { count: stats.gasGoalsWithData })}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Progress Overview */}
             <Card>
@@ -1241,6 +1617,22 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                 <p className="text-sm text-muted-foreground">{t('program.functionalProfileDesc')}</p>
               </div>
             </div>
+
+            {/* ============================================================
+                ICF Contextual Factors — Personal + Environmental
+                These describe the world around the student, not targets of
+                intervention. Authoritative for reports (chatMemory is the
+                fluid observation layer).
+                ============================================================ */}
+            <IcfContextualFactorsSection
+              personalFactors={(program.personalFactors as PersonalFactors | null) || {}}
+              environmentalFactors={(program.environmentalFactors as EnvironmentalFactors | null) || {}}
+              disabled={program.status === 'archived'}
+              onSave={(updates) => updateProgramMutation.mutate(updates)}
+              t={t}
+            />
+
+            <Separator />
 
             {domains.map((domain) => (
               <Collapsible
@@ -1433,6 +1825,31 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                                   <Badge className={STATUS_COLORS[goal.status]}>
                                     {t(`goal.status.${goal.status}`)}
                                   </Badge>
+                                  {/* GAS per-goal indicator: latest achieved vs baseline */}
+                                  {goal.useGas && (() => {
+                                    const latest = latestAchievedOrdinal(goal);
+                                    const baseline = goal.gasBaselineLevel
+                                      ? { much_less_than_expected: -2, less_than_expected: -1, expected: 0, better_than_expected: 1, much_better_than_expected: 2 }[goal.gasBaselineLevel]
+                                      : null;
+                                    if (latest === null) {
+                                      return (
+                                        <Badge variant="outline" className="text-xs">
+                                          GAS · {t('goal.gas.noData')}
+                                        </Badge>
+                                      );
+                                    }
+                                    const delta = baseline !== null ? latest - baseline : null;
+                                    const sign = latest > 0 ? '+' : '';
+                                    return (
+                                      <Badge variant="outline" className={cn(
+                                        'text-xs',
+                                        latest > 0 && 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-300',
+                                        latest < 0 && 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-300',
+                                      )}>
+                                        GAS {sign}{latest}{delta != null && delta !== 0 && ` (${delta > 0 ? '+' : ''}${delta})`}
+                                      </Badge>
+                                    );
+                                  })()}
                                 </div>
                               </div>
                             </div>
@@ -1453,6 +1870,13 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                                         criteria: goal.criteria || '',
                                         methods: goal.methods || '',
                                         targetDate: goal.targetDate || '',
+                                        useGas: goal.useGas || false,
+                                        gasVaryingVariable: (goal.gasVaryingVariable as GasVaryingVariable) || '',
+                                        gasBaselineLevel: (goal.gasBaselineLevel as GasLevel) || 'much_less_than_expected',
+                                        gasLevels: (goal.gasLevels as GasLevels) || {},
+                                        clientImportanceRating: goal.clientImportanceRating != null ? String(goal.clientImportanceRating) : '',
+                                        setJointlyWithFamily: goal.setJointlyWithFamily || false,
+                                        familyInput: goal.familyInput || '',
                                       });
                                       setShowGoalModal(true);
                                     }}
@@ -2020,11 +2444,11 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                 <p className="text-sm text-muted-foreground">{t('program.teamAndComplianceDesc')}</p>
               </div>
               {program.status !== 'archived' && (
-                <Button 
+                <Button
                   className="gap-2"
                   onClick={() => {
-                    resetTeamMemberForm();
-                    setShowTeamMemberModal(true);
+                    resetTeamContactForm();
+                    setShowTeamContactModal(true);
                   }}
                 >
                   <UserPlus className="w-4 h-4" />
@@ -2033,49 +2457,102 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
               )}
             </div>
 
-            {/* Team Members */}
+            {/* Team contacts — rows of programContacts with their underlying studentContact joined in */}
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {teamMembers.map((member) => (
-                <Card key={member.id} className={cn(!member.isActive && 'opacity-60')}>
-                  <CardContent className="p-4">
-                    <div className={cn('flex items-start justify-between', isRTL && 'flex-row-reverse')}>
-                      <div className={isRTL ? 'text-right' : ''}>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-medium">{member.name}</h3>
-                          {member.isCoordinator && (
-                            <Badge variant="secondary" className="text-xs">{t('team.coordinator')}</Badge>
+              {teamContacts.map((tc) => {
+                const c = tc.contact;
+                const displayRole = tc.programRole || c.role;
+                const photoSrc = c.biometricDataId
+                  ? apiUrl(`/api/biometric-data/${c.biometricDataId}/photo`)
+                  : null;
+                return (
+                  <Card key={tc.id} className={cn(!tc.isActive && 'opacity-60')}>
+                    <CardContent className="p-4">
+                      <div className={cn('flex items-start gap-3', isRTL && 'flex-row-reverse')}>
+                        {photoSrc ? (
+                          <img
+                            src={photoSrc}
+                            alt=""
+                            className="w-10 h-10 rounded-full object-cover border shrink-0"
+                            onError={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')}
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                            <User className="w-4 h-4 text-primary" />
+                          </div>
+                        )}
+                        <div className={cn('flex-1 min-w-0', isRTL ? 'text-right' : '')}>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="font-medium truncate">{c.name}</h3>
+                            {tc.isCoordinator && (
+                              <Badge variant="secondary" className="text-xs">{t('team.coordinator')}</Badge>
+                            )}
+                          </div>
+                          {displayRole && (
+                            <p className="text-sm text-muted-foreground">
+                              {t(`team.roles.${displayRole}`)}
+                            </p>
+                          )}
+                          {c.contactEmail && (
+                            <p className="text-xs text-muted-foreground mt-1 truncate">{c.contactEmail}</p>
+                          )}
+                          {c.contactPhone && (
+                            <p className="text-xs text-muted-foreground">{c.contactPhone}</p>
+                          )}
+                          {tc.responsibilities && tc.responsibilities.length > 0 && (
+                            <ul className="mt-2 text-xs text-muted-foreground list-disc list-inside space-y-0.5">
+                              {tc.responsibilities.map((r, i) => <li key={i}>{r}</li>)}
+                            </ul>
                           )}
                         </div>
-                        <p className="text-sm text-muted-foreground">
-                          {t(`team.roles.${member.role}`)}
-                        </p>
-                        {/* contactEmail and contactPhone are schema fields (NOT email/phone) */}
-                        {member.contactEmail && (
-                          <p className="text-xs text-muted-foreground mt-1">{member.contactEmail}</p>
-                        )}
-                        {member.contactPhone && (
-                          <p className="text-xs text-muted-foreground">{member.contactPhone}</p>
+                        {program.status !== 'archived' && (
+                          <div className="flex flex-col gap-1 shrink-0">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              title={tc.isCoordinator ? t('team.unsetCoordinator') : t('team.setCoordinator')}
+                              onClick={() =>
+                                updateTeamContactMutation.mutate({
+                                  id: tc.id,
+                                  updates: { isCoordinator: !tc.isCoordinator },
+                                })
+                              }
+                            >
+                              <Award className={cn('w-4 h-4', tc.isCoordinator && 'text-primary')} />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-destructive hover:text-destructive"
+                              onClick={() => {
+                                if (confirm(t('team.confirmRemove'))) {
+                                  removeTeamContactMutation.mutate(tc.id);
+                                }
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
                         )}
                       </div>
-                      {program.status !== 'archived' && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive hover:text-destructive shrink-0"
-                          onClick={() => {
-                            if (confirm(t('team.confirmRemove'))) {
-                              deleteTeamMemberMutation.mutate(member.id);
-                            }
-                          }}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
+
+            {teamContacts.length === 0 && (
+              <Card>
+                <CardContent className="py-8">
+                  <div className="text-center text-muted-foreground">
+                    <Users className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                    <p className="text-sm">{t('team.noMembers')}</p>
+                    <p className="text-xs mt-1">{t('team.noMembersHint')}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Meetings Section */}
             {meetings.length > 0 && (
@@ -2164,7 +2641,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
 
       {/* Goal Modal */}
       <Dialog open={showGoalModal} onOpenChange={setShowGoalModal}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingGoal ? t('goal.edit') : t('goal.add')}</DialogTitle>
             <DialogDescription>{t('goal.modalDescription')}</DialogDescription>
@@ -2211,6 +2688,187 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                 onChange={(e) => setGoalForm(prev => ({ ...prev, targetDate: e.target.value }))}
               />
             </div>
+
+            {/* =========================================================
+                Family-Centered Service (FCS) — COPM-style joint goal-setting
+                ========================================================= */}
+            <Separator />
+            <div className="space-y-3">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="setJointlyWithFamily"
+                  checked={goalForm.setJointlyWithFamily}
+                  onCheckedChange={(checked) => setGoalForm(prev => ({ ...prev, setJointlyWithFamily: !!checked }))}
+                />
+                <Label htmlFor="setJointlyWithFamily" className="text-sm font-normal">
+                  {t('goal.setJointlyWithFamily')}
+                </Label>
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>{t('goal.clientImportanceRating')}</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={5}
+                    value={goalForm.clientImportanceRating}
+                    onChange={(e) => setGoalForm(prev => ({ ...prev, clientImportanceRating: e.target.value }))}
+                    placeholder="1-5"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>{t('goal.familyInput')}</Label>
+                <Textarea
+                  value={goalForm.familyInput}
+                  onChange={(e) => setGoalForm(prev => ({ ...prev, familyInput: e.target.value }))}
+                  placeholder={t('goal.familyInputPlaceholder')}
+                  className="min-h-[60px]"
+                />
+              </div>
+            </div>
+
+            {/* =========================================================
+                GAS (Goal Attainment Scaling) — TALA-aligned ordinal scoring
+                ========================================================= */}
+            <Separator />
+            <div className="space-y-3">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="useGas"
+                  checked={goalForm.useGas}
+                  onCheckedChange={(checked) => setGoalForm(prev => ({ ...prev, useGas: !!checked }))}
+                />
+                <Label htmlFor="useGas" className="text-sm font-medium">
+                  {t('goal.useGas')}
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground">{t('goal.gasDescription')}</p>
+
+              {goalForm.useGas && (
+                <div className="space-y-4 ps-4 border-s-2">
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>{t('goal.gas.varyingVariable')}</Label>
+                      <Select
+                        value={goalForm.gasVaryingVariable || undefined}
+                        onValueChange={(value: GasVaryingVariable) =>
+                          setGoalForm(prev => ({ ...prev, gasVaryingVariable: value }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={t('goal.gas.selectVariable')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="achievement">{t('goal.gas.variable.achievement')}</SelectItem>
+                          <SelectItem value="mediation">{t('goal.gas.variable.mediation')}</SelectItem>
+                          <SelectItem value="time">{t('goal.gas.variable.time')}</SelectItem>
+                          <SelectItem value="frequency">{t('goal.gas.variable.frequency')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>{t('goal.gas.baselineLevel')}</Label>
+                      <Select
+                        value={goalForm.gasBaselineLevel || undefined}
+                        onValueChange={(value: GasLevel) =>
+                          setGoalForm(prev => ({ ...prev, gasBaselineLevel: value }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {GAS_LEVEL_ORDER.map(level => (
+                            <SelectItem key={level} value={level}>
+                              {GAS_LEVEL_ORDINALS[level] > 0 ? '+' : ''}{GAS_LEVEL_ORDINALS[level]} {t(`goal.gas.level.${level}`)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <Label>{t('goal.gas.levels')}</Label>
+                    <p className="text-xs text-muted-foreground">{t('goal.gas.levelsHint')}</p>
+                    {GAS_LEVEL_ORDER.map(level => {
+                      const ordinal = GAS_LEVEL_ORDINALS[level];
+                      const entry = goalForm.gasLevels[level] || { behavior: '' };
+                      const isBaseline = goalForm.gasBaselineLevel === level;
+                      const isTarget = level === 'expected';
+                      return (
+                        <div key={level} className="space-y-2 p-3 rounded-md border bg-muted/30">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-sm font-semibold">
+                              {ordinal > 0 ? '+' : ''}{ordinal} · {t(`goal.gas.level.${level}`)}
+                            </Label>
+                            <div className="flex gap-1">
+                              {isBaseline && <Badge variant="outline" className="text-xs">{t('goal.gas.baselineBadge')}</Badge>}
+                              {isTarget && <Badge variant="outline" className="text-xs">{t('goal.gas.targetBadge')}</Badge>}
+                            </div>
+                          </div>
+                          <Textarea
+                            value={entry.behavior || ''}
+                            onChange={(e) => setGoalForm(prev => ({
+                              ...prev,
+                              gasLevels: {
+                                ...prev.gasLevels,
+                                [level]: { ...prev.gasLevels[level], behavior: e.target.value },
+                              },
+                            }))}
+                            placeholder={t('goal.gas.behaviorPlaceholder')}
+                            className="min-h-[50px] text-sm"
+                          />
+                          {/* Numeric value + unit only shown for quantitative varying variables */}
+                          {(goalForm.gasVaryingVariable === 'frequency' ||
+                            goalForm.gasVaryingVariable === 'time' ||
+                            goalForm.gasVaryingVariable === 'achievement') && (
+                            <div className="grid grid-cols-2 gap-2">
+                              <Input
+                                type="number"
+                                step="any"
+                                value={entry.numericValue != null ? String(entry.numericValue) : ''}
+                                onChange={(e) => setGoalForm(prev => ({
+                                  ...prev,
+                                  gasLevels: {
+                                    ...prev.gasLevels,
+                                    [level]: {
+                                      ...prev.gasLevels[level],
+                                      behavior: prev.gasLevels[level]?.behavior || '',
+                                      numericValue: e.target.value === '' ? undefined : parseFloat(e.target.value),
+                                    },
+                                  },
+                                }))}
+                                placeholder={t('goal.gas.numericPlaceholder')}
+                                className="text-sm"
+                              />
+                              <Input
+                                value={entry.unit || ''}
+                                onChange={(e) => setGoalForm(prev => ({
+                                  ...prev,
+                                  gasLevels: {
+                                    ...prev.gasLevels,
+                                    [level]: {
+                                      ...prev.gasLevels[level],
+                                      behavior: prev.gasLevels[level]?.behavior || '',
+                                      unit: e.target.value || undefined,
+                                    },
+                                  },
+                                }))}
+                                placeholder={t('goal.gas.unitPlaceholder')}
+                                className="text-sm"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <DialogFooter>
@@ -2223,12 +2881,22 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                   toast({ title: t('common.error'), description: t('goal.statementRequired'), variant: 'destructive' });
                   return;
                 }
+                const rating = goalForm.clientImportanceRating.trim()
+                  ? Math.min(5, Math.max(1, parseInt(goalForm.clientImportanceRating)))
+                  : undefined;
                 const goalData: InsertGoal = {
                   programId: program.id,
                   goalStatement: goalForm.goalStatement,
                   criteria: goalForm.criteria || undefined,
                   methods: goalForm.methods || undefined,
                   targetDate: goalForm.targetDate || undefined,
+                  useGas: goalForm.useGas,
+                  gasVaryingVariable: goalForm.useGas && goalForm.gasVaryingVariable ? goalForm.gasVaryingVariable : null,
+                  gasBaselineLevel: goalForm.useGas && goalForm.gasBaselineLevel ? goalForm.gasBaselineLevel : null,
+                  gasLevels: goalForm.useGas ? goalForm.gasLevels : {},
+                  clientImportanceRating: rating,
+                  setJointlyWithFamily: goalForm.setJointlyWithFamily,
+                  familyInput: goalForm.familyInput || undefined,
                 };
                 if (editingGoal) {
                   updateGoalMutation.mutate({ goalId: editingGoal.id, updates: goalData });
@@ -2519,105 +3187,213 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
 
       {/* Data Point Modal */}
       <Dialog open={showDataPointModal} onOpenChange={setShowDataPointModal}>
-        <DialogContent className="sm:max-w-[400px]">
+        <DialogContent className="sm:max-w-[440px]">
           <DialogHeader>
             <DialogTitle>{t('dataPoint.record')}</DialogTitle>
             <DialogDescription>{t('dataPoint.modalDescription')}</DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 py-4">
-            <div className="space-y-2">
-              <Label>{t('dataPoint.numericValue')}</Label>
-              <Input
-                type="number"
-                value={dataPointForm.numericValue}
-                onChange={(e) => setDataPointForm(prev => ({ ...prev, numericValue: e.target.value }))}
-                placeholder={t('dataPoint.numericPlaceholder')}
-              />
-            </div>
+          {(() => {
+            const selectedGoal = selectedGoalForDataPoint
+              ? goals.find(g => g.id === selectedGoalForDataPoint)
+              : null;
+            const isGasGoal = !!selectedGoal?.useGas;
+            const gasLevels = (selectedGoal?.gasLevels as GasLevels | undefined) || {};
+            return (
+              <>
+                <div className="grid gap-4 py-4">
+                  {isGasGoal && (
+                    <div className="space-y-2">
+                      <Label>{t('dataPoint.achievedLevel')} *</Label>
+                      <div className="space-y-2">
+                        {GAS_LEVEL_ORDER.map(level => {
+                          const ordinal = GAS_LEVEL_ORDINALS[level];
+                          const entry = gasLevels[level];
+                          const selected = dataPointForm.achievedLevel === level;
+                          return (
+                            <button
+                              type="button"
+                              key={level}
+                              onClick={() => setDataPointForm(prev => ({ ...prev, achievedLevel: level }))}
+                              className={cn(
+                                'w-full text-start p-3 rounded-md border transition-colors',
+                                selected ? 'border-primary bg-primary/10' : 'hover:bg-muted/50'
+                              )}
+                            >
+                              <div className="text-sm font-semibold">
+                                {ordinal > 0 ? '+' : ''}{ordinal} · {t(`goal.gas.level.${level}`)}
+                              </div>
+                              {entry?.behavior && (
+                                <div className="text-xs text-muted-foreground mt-1">{entry.behavior}</div>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
-            {/* value - schema field (NOT textValue) */}
-            <div className="space-y-2">
-              <Label>{t('dataPoint.textValue')}</Label>
-              <Input
-                value={dataPointForm.value}
-                onChange={(e) => setDataPointForm(prev => ({ ...prev, value: e.target.value }))}
-                placeholder={t('dataPoint.textPlaceholder')}
-              />
-            </div>
+                  {!isGasGoal && (
+                    <div className="space-y-2">
+                      <Label>{t('dataPoint.numericValue')}</Label>
+                      <Input
+                        type="number"
+                        value={dataPointForm.numericValue}
+                        onChange={(e) => setDataPointForm(prev => ({ ...prev, numericValue: e.target.value }))}
+                        placeholder={t('dataPoint.numericPlaceholder')}
+                      />
+                    </div>
+                  )}
 
-            {/* context - schema field (NOT sessionNotes) */}
-            <div className="space-y-2">
-              <Label>{t('dataPoint.notes')}</Label>
-              <Textarea
-                value={dataPointForm.context}
-                onChange={(e) => setDataPointForm(prev => ({ ...prev, context: e.target.value }))}
-                placeholder={t('dataPoint.notesPlaceholder')}
-              />
-            </div>
-          </div>
+                  {/* value - schema field (NOT textValue) */}
+                  <div className="space-y-2">
+                    <Label>{t('dataPoint.textValue')}</Label>
+                    <Input
+                      value={dataPointForm.value}
+                      onChange={(e) => setDataPointForm(prev => ({ ...prev, value: e.target.value }))}
+                      placeholder={t('dataPoint.textPlaceholder')}
+                    />
+                  </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDataPointModal(false)}>
-              {t('common.cancel')}
-            </Button>
-            <Button
-              onClick={() => {
-                if (!dataPointForm.numericValue && !dataPointForm.value) {
-                  toast({ title: t('common.error'), description: t('dataPoint.valueRequired'), variant: 'destructive' });
-                  return;
-                }
-                if (selectedGoalForDataPoint) {
-                  createDataPointMutation.mutate({
-                    goalId: selectedGoalForDataPoint,
-                    data: {
-                      numericValue: dataPointForm.numericValue ? parseFloat(dataPointForm.numericValue) : undefined,
-                      value: dataPointForm.value || '',
-                      context: dataPointForm.context || undefined,
-                      recordedAt: new Date(),
-                    }
-                  });
-                }
-              }}
-              disabled={createDataPointMutation.isPending}
-            >
+                  {/* context - schema field (NOT sessionNotes) */}
+                  <div className="space-y-2">
+                    <Label>{t('dataPoint.notes')}</Label>
+                    <Textarea
+                      value={dataPointForm.context}
+                      onChange={(e) => setDataPointForm(prev => ({ ...prev, context: e.target.value }))}
+                      placeholder={t('dataPoint.notesPlaceholder')}
+                    />
+                  </div>
+                </div>
+
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowDataPointModal(false)}>
+                    {t('common.cancel')}
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      if (isGasGoal && !dataPointForm.achievedLevel) {
+                        toast({ title: t('common.error'), description: t('dataPoint.achievedLevelRequired'), variant: 'destructive' });
+                        return;
+                      }
+                      if (!isGasGoal && !dataPointForm.numericValue && !dataPointForm.value) {
+                        toast({ title: t('common.error'), description: t('dataPoint.valueRequired'), variant: 'destructive' });
+                        return;
+                      }
+                      if (selectedGoalForDataPoint) {
+                        // For GAS goals, prefer the level's numericValue if the user didn't enter one.
+                        const achieved = dataPointForm.achievedLevel || undefined;
+                        const levelEntry = achieved ? gasLevels[achieved] : undefined;
+                        const numeric = dataPointForm.numericValue
+                          ? parseFloat(dataPointForm.numericValue)
+                          : levelEntry?.numericValue;
+                        const textValue = dataPointForm.value || (isGasGoal && levelEntry?.behavior) || '';
+                        createDataPointMutation.mutate({
+                          goalId: selectedGoalForDataPoint,
+                          data: {
+                            numericValue: numeric,
+                            value: textValue,
+                            context: dataPointForm.context || undefined,
+                            achievedLevel: achieved,
+                            recordedAt: new Date(),
+                          } as InsertDataPoint,
+                        });
+                      }
+                    }}
+                    disabled={createDataPointMutation.isPending}
+                  >
               {createDataPointMutation.isPending && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
               {t('common.save')}
             </Button>
           </DialogFooter>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
-      {/* Team Member Modal */}
-      <Dialog open={showTeamMemberModal} onOpenChange={setShowTeamMemberModal}>
-        <DialogContent className="sm:max-w-[450px]">
+      {/* Add Team Contact Modal — picks an existing studentContacts row */}
+      <Dialog open={showTeamContactModal} onOpenChange={setShowTeamContactModal}>
+        <DialogContent className="sm:max-w-[480px]" dir={isRTL ? 'rtl' : 'ltr'}>
           <DialogHeader>
             <DialogTitle>{t('team.addMember')}</DialogTitle>
-            <DialogDescription>{t('team.addMemberDescription')}</DialogDescription>
+            <DialogDescription>{t('team.pickContactDescription')}</DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4 py-4">
-            <div className="space-y-2">
-              <Label>{t('team.name')} *</Label>
-              <Input
-                value={teamMemberForm.name}
-                onChange={(e) => setTeamMemberForm(prev => ({ ...prev, name: e.target.value }))}
-                placeholder={t('team.namePlaceholder')}
-              />
-            </div>
+            {/* Contact picker — filtered to contacts not already on the team */}
+            {(() => {
+              const onTeamIds = new Set(teamContacts.map(tc => tc.contactId));
+              const eligible = availableContacts.filter(c => !onTeamIds.has(c.id));
+              if (eligible.length === 0) {
+                return (
+                  <div className="rounded-md border p-4 text-center space-y-3 bg-muted/30">
+                    <p className="text-sm text-muted-foreground">{t('team.noContactsAvailable')}</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setShowTeamContactModal(false);
+                        setActiveFeature('contacts');
+                      }}
+                    >
+                      {t('team.goToContacts')}
+                    </Button>
+                  </div>
+                );
+              }
+              return (
+                <div className="space-y-2">
+                  <Label>{t('team.pickContact')} *</Label>
+                  <Select
+                    value={teamContactForm.contactId || undefined}
+                    onValueChange={(value) => setTeamContactForm(prev => ({ ...prev, contactId: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={t('team.pickContactPlaceholder')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {eligible.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                          {c.role && (
+                            <span className="text-muted-foreground text-xs ms-2">
+                              · {t(`team.roles.${c.role}`)}
+                            </span>
+                          )}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="h-auto p-0 text-xs"
+                    onClick={() => {
+                      setShowTeamContactModal(false);
+                      setActiveFeature('contacts');
+                    }}
+                  >
+                    {t('team.createNewContact')}
+                  </Button>
+                </div>
+              );
+            })()}
 
+            {/* Per-program role override */}
             <div className="space-y-2">
-              <Label>{t('team.role')} *</Label>
+              <Label>{t('team.programRoleOverride')}</Label>
               <Select
-                value={teamMemberForm.role}
-                onValueChange={(value: TeamMemberRole) => setTeamMemberForm(prev => ({ ...prev, role: value }))}
+                value={teamContactForm.programRole || undefined}
+                onValueChange={(value: TeamMemberRole) =>
+                  setTeamContactForm(prev => ({ ...prev, programRole: value }))
+                }
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder={t('team.programRoleOverridePlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="parent_guardian">{t('team.roles.parent_guardian')}</SelectItem>
-                  <SelectItem value="student">{t('team.roles.student')}</SelectItem>
                   <SelectItem value="homeroom_teacher">{t('team.roles.homeroom_teacher')}</SelectItem>
                   <SelectItem value="special_education_teacher">{t('team.roles.special_education_teacher')}</SelectItem>
                   <SelectItem value="general_education_teacher">{t('team.roles.general_education_teacher')}</SelectItem>
@@ -2633,32 +3409,24 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
               </Select>
             </div>
 
-            {/* contactEmail - schema field (NOT email) */}
+            {/* Responsibilities — newline-separated list */}
             <div className="space-y-2">
-              <Label>{t('team.email')}</Label>
-              <Input
-                type="email"
-                value={teamMemberForm.contactEmail}
-                onChange={(e) => setTeamMemberForm(prev => ({ ...prev, contactEmail: e.target.value }))}
-                placeholder={t('team.emailPlaceholder')}
-              />
-            </div>
-
-            {/* contactPhone - schema field (NOT phone) */}
-            <div className="space-y-2">
-              <Label>{t('team.phone')}</Label>
-              <Input
-                value={teamMemberForm.contactPhone}
-                onChange={(e) => setTeamMemberForm(prev => ({ ...prev, contactPhone: e.target.value }))}
-                placeholder={t('team.phonePlaceholder')}
+              <Label>{t('team.responsibilities')}</Label>
+              <Textarea
+                value={teamContactForm.responsibilities}
+                onChange={(e) => setTeamContactForm(prev => ({ ...prev, responsibilities: e.target.value }))}
+                placeholder={t('team.responsibilitiesPlaceholder')}
+                className="min-h-[60px]"
               />
             </div>
 
             <div className="flex items-center space-x-2">
               <Checkbox
                 id="isCoordinator"
-                checked={teamMemberForm.isCoordinator}
-                onCheckedChange={(checked) => setTeamMemberForm(prev => ({ ...prev, isCoordinator: !!checked }))}
+                checked={teamContactForm.isCoordinator}
+                onCheckedChange={(checked) =>
+                  setTeamContactForm(prev => ({ ...prev, isCoordinator: !!checked }))
+                }
               />
               <Label htmlFor="isCoordinator" className="text-sm font-normal">
                 {t('team.isCoordinator')}
@@ -2667,29 +3435,29 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowTeamMemberModal(false)}>
+            <Button variant="outline" onClick={() => setShowTeamContactModal(false)}>
               {t('common.cancel')}
             </Button>
             <Button
               onClick={() => {
-                if (!teamMemberForm.name.trim()) {
-                  toast({ title: t('common.error'), description: t('team.nameRequired'), variant: 'destructive' });
+                if (!teamContactForm.contactId) {
+                  toast({ title: t('common.error'), description: t('team.pickContactRequired'), variant: 'destructive' });
                   return;
                 }
-                const memberData: InsertTeamMember = {
-                  programId: program.id,
-                  name: teamMemberForm.name,
-                  role: teamMemberForm.role,
-                  customRole: teamMemberForm.customRole || undefined,
-                  contactEmail: teamMemberForm.contactEmail || undefined,
-                  contactPhone: teamMemberForm.contactPhone || undefined,
-                  isCoordinator: teamMemberForm.isCoordinator,
-                };
-                createTeamMemberMutation.mutate(memberData);
+                const responsibilities = teamContactForm.responsibilities
+                  .split('\n')
+                  .map(s => s.trim())
+                  .filter(Boolean);
+                addTeamContactMutation.mutate({
+                  contactId: teamContactForm.contactId,
+                  programRole: teamContactForm.programRole || undefined,
+                  responsibilities: responsibilities.length > 0 ? responsibilities : undefined,
+                  isCoordinator: teamContactForm.isCoordinator,
+                });
               }}
-              disabled={createTeamMemberMutation.isPending}
+              disabled={addTeamContactMutation.isPending}
             >
-              {createTeamMemberMutation.isPending && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
+              {addTeamContactMutation.isPending && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
               {t('team.add')}
             </Button>
           </DialogFooter>

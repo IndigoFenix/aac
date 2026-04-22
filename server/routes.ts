@@ -494,18 +494,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     programController.updateProgressReport(req, res)
   );
 
-  // Team Members
+  // Program team (new path — contact ↔ program junction). Replaces the old
+  // team-members endpoints. Frontend picks existing studentContacts rather
+  // than creating team members from scratch.
   app.get("/api/programs/:programId/team", requireAuth, (req, res) =>
-    programController.getTeamMembers(req, res)
+    programController.getTeamContacts(req, res)
   );
   app.post("/api/programs/:programId/team", requireAuth, (req, res) =>
-    programController.createTeamMember(req, res)
+    programController.addTeamContact(req, res)
   );
-  app.patch("/api/team-members/:id", requireAuth, (req, res) =>
-    programController.updateTeamMember(req, res)
+  app.patch("/api/program-contacts/:id", requireAuth, (req, res) =>
+    programController.updateTeamContact(req, res)
   );
-  app.delete("/api/team-members/:id", requireAuth, (req, res) =>
-    programController.deleteTeamMember(req, res)
+  app.delete("/api/program-contacts/:id", requireAuth, (req, res) =>
+    programController.removeTeamContact(req, res)
   );
 
   // Meetings
@@ -1204,6 +1206,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.post("/api/biometric/students/:studentId/contacts/:id/face", requireAuth, (req, res) =>
     biometricController.enrollContactFace(req, res)
+  );
+  app.get("/api/biometric/students/:studentId/linkable-entities", requireAuth, (req, res) =>
+    biometricController.getLinkableEntities(req, res)
+  );
+
+  // Photo upload (multipart) — resizes + uploads to S3, saves URL in biometric_data
+  app.post("/api/biometric/users/:userId/photo", requireAuth, upload.single("image"), (req, res) =>
+    biometricController.uploadUserPhoto(req, res)
+  );
+  app.post("/api/biometric/students/:studentId/photo", requireAuth, upload.single("image"), (req, res) =>
+    biometricController.uploadStudentPhoto(req, res)
+  );
+  app.post("/api/biometric/students/:studentId/contacts/:id/photo", requireAuth, upload.single("image"), (req, res) =>
+    biometricController.uploadContactPhoto(req, res)
+  );
+
+  // biometric_data direct access
+  app.get("/api/biometric-data/:id/photo", requireAuth, (req, res) =>
+    biometricController.getBiometricPhoto(req, res)
+  );
+  app.patch("/api/biometric-data/:id", requireAuth, (req, res) =>
+    biometricController.updateBiometricDataPhysical(req, res)
   );
 
   // ============= CALENDAR ROUTES =============

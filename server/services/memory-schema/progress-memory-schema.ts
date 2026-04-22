@@ -49,7 +49,6 @@ import {
   dataPoints,
   transitionPlans,
   transitionGoals,
-  teamMembers,
   meetings,
   consentForms,
   type Program,
@@ -65,7 +64,6 @@ import {
   type DataPoint,
   type TransitionPlan,
   type TransitionGoal,
-  type TeamMember,
   type Meeting,
   type ConsentForm,
   type AgentMemoryField,
@@ -85,6 +83,7 @@ import {
 } from "../chat/memory-types";
 import { programService } from "../programService";
 import { activityLogService } from "../activityLogService";
+import { PROGRAM_TEAM_CONTACTS_FIELD } from "./contacts-memory-schema";
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -401,7 +400,7 @@ const programOps: MemoryDBOperations<Program> = {
       profileDomains: base.profileDomains ?? {},
       goals: base.goals ?? {},
       services: base.services ?? {},
-      teamMembers: base.teamMembers ?? {},
+      teamContacts: base.teamContacts ?? [],
       meetings: base.meetings ?? {},
       consentForms: base.consentForms ?? {},
       progressReports: base.progressReports ?? {},
@@ -1157,6 +1156,12 @@ const dataPointSchema: AgentMemoryFieldObjectWithDB = {
     recordedAt: { id: "recordedAt", type: "string", format: "date-time" },
     value: { id: "value", type: "string", description: "The recorded value", opened: true },
     numericValue: { id: "numericValue", type: "number" },
+    achievedLevel: {
+      id: "achievedLevel",
+      type: "string",
+      enum: ["much_less_than_expected", "less_than_expected", "expected", "better_than_expected", "much_better_than_expected"],
+      description: "For GAS-scored goals: the ordinal level observed at this data point. Populate only when the parent goal has useGas=true.",
+    },
     context: { id: "context", type: "string" },
     collectedBy: { id: "collectedBy", type: "string" },
   },
@@ -1239,6 +1244,95 @@ const goalSchema: AgentMemoryFieldObjectWithDB = {
       enum: ["activity", "function", "participation"],
       description: "TALA-specific ICF intervention level",
     },
+    // GAS (Goal Attainment Scaling) — TALA-aligned ordinal scoring
+    useGas: {
+      id: "useGas",
+      type: "boolean",
+      description: "When true, this goal is scored on a 5-level GAS ordinal scale and dataPoints should record achievedLevel.",
+    },
+    gasVaryingVariable: {
+      id: "gasVaryingVariable",
+      type: "string",
+      enum: ["achievement", "mediation", "time", "frequency"],
+      description: "The single dimension that varies across the 5 GAS levels. Keep all other conditions constant.",
+    },
+    gasBaselineLevel: {
+      id: "gasBaselineLevel",
+      type: "string",
+      enum: ["much_less_than_expected", "less_than_expected", "expected", "better_than_expected", "much_better_than_expected"],
+      description: "The level the student is at when the goal is written. Typically 'much_less_than_expected' in pediatric therapy.",
+    },
+    gasLevels: {
+      id: "gasLevels",
+      type: "object",
+      opened: true,
+      description: "Definitions for the 5 GAS levels. Each level has an observable, present-tense behavior statement and optional numericValue/unit. Only fill the levels you define; all 5 should normally be present.",
+      properties: {
+        much_less_than_expected: {
+          id: "much_less_than_expected",
+          type: "object",
+          properties: {
+            behavior: { id: "behavior", type: "string", description: "Observable, present-tense description of this level (-2)" },
+            numericValue: { id: "numericValue", type: "number" },
+            unit: { id: "unit", type: "string" },
+          },
+        },
+        less_than_expected: {
+          id: "less_than_expected",
+          type: "object",
+          properties: {
+            behavior: { id: "behavior", type: "string", description: "Observable behavior at level -1" },
+            numericValue: { id: "numericValue", type: "number" },
+            unit: { id: "unit", type: "string" },
+          },
+        },
+        expected: {
+          id: "expected",
+          type: "object",
+          properties: {
+            behavior: { id: "behavior", type: "string", description: "The goal — expected outcome at level 0" },
+            numericValue: { id: "numericValue", type: "number" },
+            unit: { id: "unit", type: "string" },
+          },
+        },
+        better_than_expected: {
+          id: "better_than_expected",
+          type: "object",
+          properties: {
+            behavior: { id: "behavior", type: "string", description: "Observable behavior at level +1" },
+            numericValue: { id: "numericValue", type: "number" },
+            unit: { id: "unit", type: "string" },
+          },
+        },
+        much_better_than_expected: {
+          id: "much_better_than_expected",
+          type: "object",
+          properties: {
+            behavior: { id: "behavior", type: "string", description: "Best realistic outcome at level +2" },
+            numericValue: { id: "numericValue", type: "number" },
+            unit: { id: "unit", type: "string" },
+          },
+        },
+      },
+    },
+    // Family-Centered Service (FCS) / COPM
+    clientImportanceRating: {
+      id: "clientImportanceRating",
+      type: "integer",
+      minimum: 1,
+      maximum: 5,
+      description: "Importance rating (1-5) assigned to this goal by the client or family — used in COPM-style joint goal-setting.",
+    },
+    setJointlyWithFamily: {
+      id: "setJointlyWithFamily",
+      type: "boolean",
+      description: "True when the goal was defined in partnership with the student and/or family (FCS principle).",
+    },
+    familyInput: {
+      id: "familyInput",
+      type: "string",
+      description: "Notes from parent/caregiver input about this goal.",
+    },
     sortOrder: { id: "sortOrder", type: "integer" },
     // Nested collections - objectives now carry domain information
     objectives: {
@@ -1295,6 +1389,62 @@ export const PROGRESS_PROGRAM_FIELD: AgentMemoryFieldObjectWithDB = {
     dueDate: { id: "dueDate", type: "string", format: "YYYY-MM-DD" },
     approvalDate: { id: "approvalDate", type: "string", format: "YYYY-MM-DD" },
     leastRestrictiveEnvironment: { id: "leastRestrictiveEnvironment", type: "string" },
+    // ICF contextual factors (WHO 2002) — program-level, authoritative for reports.
+    // These are the deliberate clinician-set snapshot; chatMemory carries day-to-day
+    // observations that can influence these but don't overwrite them.
+    personalFactors: {
+      id: "personalFactors",
+      type: "object",
+      description: "ICF Personal Factors: student's interests, temperament, motivators, coping styles, cultural background, etc. Contextual — not a target of intervention.",
+      properties: {
+        interests: { id: "interests", type: "array", items: { id: "interest", type: "string" } as any },
+        temperament: { id: "temperament", type: "string" },
+        motivators: { id: "motivators", type: "array", items: { id: "motivator", type: "string" } as any },
+        coping: { id: "coping", type: "string" },
+        culturalBackground: { id: "culturalBackground", type: "string" },
+      },
+      additionalProperties: true,
+    },
+    environmentalFactors: {
+      id: "environmentalFactors",
+      type: "object",
+      description: "ICF Environmental Factors keyed by category. Each category lists facilitators (what helps) and barriers (what hinders). Describes the current state of the world; services/accommodations capture what we do about it.",
+      properties: {
+        products_technology: {
+          id: "products_technology",
+          type: "object",
+          description: "AAC devices, assistive tech, educational materials.",
+          properties: {
+            facilitators: { id: "facilitators", type: "array", items: { id: "f", type: "string" } as any },
+            barriers: { id: "barriers", type: "array", items: { id: "b", type: "string" } as any },
+            notes: { id: "notes", type: "string" },
+          },
+        },
+        natural_environment: {
+          id: "natural_environment",
+          type: "object",
+          description: "Physical space, noise, lighting, sensory environment.",
+          properties: {
+            facilitators: { id: "facilitators", type: "array", items: { id: "f", type: "string" } as any },
+            barriers: { id: "barriers", type: "array", items: { id: "b", type: "string" } as any },
+            notes: { id: "notes", type: "string" },
+          },
+        },
+        // Note: support_relationships and attitudes are no longer ICF environmental
+        // factors — those are now modeled as studentContacts rows with role/attitude
+        // captured per-person in contextNotes.
+        services_systems_policies: {
+          id: "services_systems_policies",
+          type: "object",
+          description: "School policy, insurance, transport, legal entitlements.",
+          properties: {
+            facilitators: { id: "facilitators", type: "array", items: { id: "f", type: "string" } as any },
+            barriers: { id: "barriers", type: "array", items: { id: "b", type: "string" } as any },
+            notes: { id: "notes", type: "string" },
+          },
+        },
+      },
+    },
     notes: { id: "notes", type: "string" },
     
     // MAP collections with meaningful keys
@@ -1317,7 +1467,12 @@ export const PROGRESS_PROGRAM_FIELD: AgentMemoryFieldObjectWithDB = {
       values: goalSchema,
       db: goalsOps,
     } as AgentMemoryFieldMapWithDB,
-    
+
+    // Team contacts — junction rows pointing at studentContacts. To add a person,
+    // first create them in Student_Contacts, then add a teamContacts entry with
+    // their contactId.
+    teamContacts: PROGRAM_TEAM_CONTACTS_FIELD,
+
     // Include remaining map collections from the original...
   },
   required: ["framework"],
@@ -1331,11 +1486,21 @@ export const PROGRESS_PROGRAM_FIELD: AgentMemoryFieldObjectWithDB = {
 export const PROGRESS_SYSTEM_PROMPT = `
 You can:
 - View and edit program information
-- Manage goals and track progress (0-100 scale)
+- Manage goals and track progress (0-100 scale, or 5-level GAS scoring when useGas=true)
 - Create objectives under goals, each objective can be linked to a profile domain
 - Document services and accommodations
 - Record data points and generate progress reports
-- Manage team members and meetings
+- Manage the student's contacts (Student_Contacts map — parents, classmates, therapists, team members)
+- Assign contacts to the program's team (teamContacts array on Context_Program) — first create/verify the Student_Contacts entry, then add a teamContacts row with its contactId
+- Manage meetings
+- Record ICF contextual information: personalFactors (interests, temperament, motivators, coping, cultural background) and environmentalFactors (facilitators and barriers grouped by ICF category)
+
+When a TALA-framework goal is measured with Goal Attainment Scaling (useGas=true):
+- Pick one varying variable (achievement, mediation, time, or frequency) — all other conditions stay constant across levels
+- Write each of the 5 gasLevels with a concrete, present-tense observable behavior
+- Set gasBaselineLevel to where the student is when the goal is written (typically much_less_than_expected)
+- Data points should record achievedLevel — the ordinal level observed
+- Goals set with family should have setJointlyWithFamily=true and a clientImportanceRating (1-5)
 `;
 
 // ============================================================================

@@ -6532,3 +6532,742 @@ USAGE: {"input_tokens":1954,"cache_creation_input_tokens":10071,"cache_read_inpu
 }
 ────────────────────────────────────────────────────────────────────────────────
 USAGE: {"input_tokens":2444,"cache_creation_input_tokens":10022,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":10022,"ephemeral_1h_input_tokens":0},"output_tokens":236,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-22T12:12:08.579Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\nYou are an AI assistant specialized in supporting special education pr... [40073 chars] ...ne tool in a response, call describeActions once as well to keep the user informed of your activity.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "dsasasd"
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "describeActions",
+      "description": "Displays a brief status message to the user while you work. Call this alongside your first tool call in a multi-step task to describe the overall action (e.g. \"Creating communication boards\"). You may call multiple tools together in the same response — batch related operations whenever possible for efficiency.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "actionDescription": {
+            "type": "string",
+            "description": "A short description of what you are doing, e.g. \"Looking up student information\", \"Setting up the board\", \"Generating the report\"."
+          }
+        },
+        "required": [
+          "actionDescription"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "fdaOrangeBook",
+      "description": "Look up drug information in the FDA Orange Book (Drugs@FDA). Returns approved drug applications, active ingredients, dosage forms, routes, therapeutic equivalence codes, marketing status, and approval history. Use when the user asks about a specific drug, generic alternatives, or FDA approval details.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "brandName": {
+            "type": "string",
+            "description": "Brand/trade name (e.g. \"Lipitor\", \"Advil\")"
+          },
+          "genericName": {
+            "type": "string",
+            "description": "Generic name (e.g. \"Atorvastatin Calcium\", \"Ibuprofen\")"
+          },
+          "applicationNumber": {
+            "type": "string",
+            "description": "NDA/ANDA/BLA number (e.g. \"NDA020702\")"
+          },
+          "sponsorName": {
+            "type": "string",
+            "description": "Manufacturer/sponsor name (e.g. \"PFIZER\")"
+          },
+          "activeIngredient": {
+            "type": "string",
+            "description": "Active ingredient name"
+          },
+          "exactMatch": {
+            "type": "boolean",
+            "description": "If true (default), uses exact phrase matching. Set to false for fuzzy/tokenized search when exact matching returns no results."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max results to return (1-25, default 10)"
+          }
+        }
+      }
+    },
+    {
+      "name": "analyzeMedia",
+      "description": "Analyze images or videos using Gemini AI. Use this when the user uploads a video or image and wants analysis that requires visual understanding (event lists, attention heatmaps, object identification, etc.). Can also generate images when the instruction requests visual output (heatmaps, annotations, overlays, etc.) — include keywords like \"heatmap\", \"annotate\", \"highlight\", \"draw\", \"overlay\", or \"visualize\" in the instruction. Returns generatedImageFileIds when images are produced — display them as markdown images with src=\"/api/chat/files/{fileId}\".",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instruction": {
+            "type": "string",
+            "description": "What to do with the media. Be specific about the desired output format. Examples: \"List all events in this video with timestamps\", \"Generate a heatmap showing which objects are most visually salient\", \"Describe what the child is interacting with\""
+          },
+          "context": {
+            "type": "string",
+            "description": "Brief context about the conversation and the user's goals, so the analysis is relevant"
+          },
+          "files": {
+            "type": "array",
+            "description": "File references to analyze. Use \"file:<id>\" for uploaded files (the file ID from the upload metadata), or base64 data URLs for inline images from the conversation.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "instruction",
+          "files"
+        ]
+      }
+    },
+    {
+      "name": "extractVideoFrame",
+      "description": "Extract a single still frame from an uploaded video at a specific timestamp. Returns the frame as an image that can be used with generateImage.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "fileId": {
+            "type": "string",
+            "description": "The file ID of the cached video (without the \"file:\" prefix)"
+          },
+          "timestampSeconds": {
+            "type": "number",
+            "description": "Timestamp in seconds to extract the frame from (e.g. 5.0)"
+          }
+        },
+        "required": [
+          "fileId",
+          "timestampSeconds"
+        ]
+      }
+    },
+    {
+      "name": "generateImage",
+      "description": "Generate or edit an image. Can create images from scratch or modify a reference image (e.g. add heatmap overlay, annotate, highlight areas). Use extractVideoFrame first if you need a frame from a video. Returns generatedImageFileIds — display them to the user as markdown images with src=\"/api/chat/files/{fileId}\".",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instruction": {
+            "type": "string",
+            "description": "Detailed instructions for the image generation. Be specific about what to draw, annotate, or highlight."
+          },
+          "referenceImageFileId": {
+            "type": "string",
+            "description": "Optional file ID of a reference image to modify or annotate. Use the frameFileId returned from extractVideoFrame."
+          }
+        },
+        "required": [
+          "instruction"
+        ]
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost. You may also specify memory paths to close — this removes them from the prompt, freeing space. Only close paths you no longer need; paths you are still working with should stay open.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          },
+          "closePaths": {
+            "type": "array",
+            "description": "Memory paths to close (remove from the visible prompt). Only close paths you are no longer actively working with. Paths you are still using should remain open. The prompt will re-render without these paths after compression.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "navigateToFeature",
+      "description": "Navigate the user's interface to a specific panel/feature. Call this when the user's request directly relates to a specific panel (e.g. they ask about a student's progress, or want to manage institutes, or create a board). The navigation happens immediately while you continue processing.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "feature": {
+            "type": "string",
+            "enum": [
+              "boards",
+              "students",
+              "institute",
+              "progress",
+              "reports",
+              "interpret"
+            ],
+            "description": "The panel to navigate to. boards = AAC board editor, students = student list, institute = institute management, progress = student treatment programs, reports = student reports, interpret = communication interpretation"
+          }
+        },
+        "required": [
+          "feature"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "selectStudent",
+      "description": "Switch the currently selected student in the user's interface. Use this when the user asks to switch to a different student, or when their request clearly relates to a different student than the one currently selected. The student list is available in Context_Students.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "studentId": {
+            "type": "string",
+            "description": "The ID of the student to select (from Context_Students)"
+          }
+        },
+        "required": [
+          "studentId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "html": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "html"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":419,"cache_creation_input_tokens":14597,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":14597,"ephemeral_1h_input_tokens":0},"output_tokens":43,"service_tier":"standard","inference_geo":"not_available"}
+
+================================================================================
+[2026-04-22T12:12:09.952Z]
+================================================================================
+{
+  "model": "claude-haiku-4-5-20251001",
+  "system": [
+    {
+      "type": "text",
+      "text": "=== Section: Core Prompt ===\n\nYou are an AI assistant specialized in supporting special education pr... [40073 chars] ...ne tool in a response, call describeActions once as well to keep the user informed of your activity.",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "dsasasd"
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_017B3EyUG53KH5q6Uqips5cy",
+          "name": "describeActions",
+          "input": {
+            "actionDescription": "Responding to unclear input"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_017B3EyUG53KH5q6Uqips5cy",
+          "content": "{\"success\":true}"
+        }
+      ]
+    }
+  ],
+  "max_tokens": 15000,
+  "temperature": 0.7,
+  "tools": [
+    {
+      "name": "describeActions",
+      "description": "Displays a brief status message to the user while you work. Call this alongside your first tool call in a multi-step task to describe the overall action (e.g. \"Creating communication boards\"). You may call multiple tools together in the same response — batch related operations whenever possible for efficiency.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "actionDescription": {
+            "type": "string",
+            "description": "A short description of what you are doing, e.g. \"Looking up student information\", \"Setting up the board\", \"Generating the report\"."
+          }
+        },
+        "required": [
+          "actionDescription"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "manageMemory",
+      "description": "Store or retrieve data from memory.",
+      "input_schema": {
+        "type": "object",
+        "description": "Batch manage-memory request. Top-level MUST be an object with 'ops' array.",
+        "properties": {
+          "ops": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Operations to apply sequentially.",
+            "items": {
+              "type": "object",
+              "description": "One memory operation. Executed in order.",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "view",
+                    "set",
+                    "upsert",
+                    "add",
+                    "insert",
+                    "delete",
+                    "clear",
+                    "rename"
+                  ],
+                  "description": "Operation to perform."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Target path (JSON Pointer). For mutations, must be a single concrete path."
+                },
+                "paths": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Multiple targets (allowed only for view)."
+                },
+                "value": {
+                  "description": "New value for set/upsert/add/insert. For topics, string sets 'description', or supply a node object {description?, subtopics?}."
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Array index for insert/upsert on arrays."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "For add to map/topic: the key to use. For database-backed maps, this MUST be the item's UUID (e.g., studentId, classroomId)."
+                },
+                "newKey": {
+                  "type": "string",
+                  "description": "For rename on map/topic: new key."
+                },
+                "page": {
+                  "type": "object",
+                  "properties": {
+                    "offset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 500
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Pagination for 'view' on containers."
+                },
+                "filter": {
+                  "type": "object",
+                  "properties": {
+                    "search": {
+                      "type": "string",
+                      "description": "Substring search. Only allowed on fields declared 'searchable'."
+                    },
+                    "dateFrom": {
+                      "type": "string",
+                      "description": "ISO date/time lower bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    },
+                    "dateTo": {
+                      "type": "string",
+                      "description": "ISO date/time upper bound (inclusive). Only allowed on fields declared 'dateFilterable'."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Filters for 'view' on container fields. Per-field capabilities are listed in the memory instructions."
+                },
+                "openChildren": {
+                  "type": "boolean",
+                  "description": "For 'view' of a container path (no '*'): if true, also mark immediate children visible."
+                }
+              },
+              "required": [
+                "action"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "fdaOrangeBook",
+      "description": "Look up drug information in the FDA Orange Book (Drugs@FDA). Returns approved drug applications, active ingredients, dosage forms, routes, therapeutic equivalence codes, marketing status, and approval history. Use when the user asks about a specific drug, generic alternatives, or FDA approval details.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "brandName": {
+            "type": "string",
+            "description": "Brand/trade name (e.g. \"Lipitor\", \"Advil\")"
+          },
+          "genericName": {
+            "type": "string",
+            "description": "Generic name (e.g. \"Atorvastatin Calcium\", \"Ibuprofen\")"
+          },
+          "applicationNumber": {
+            "type": "string",
+            "description": "NDA/ANDA/BLA number (e.g. \"NDA020702\")"
+          },
+          "sponsorName": {
+            "type": "string",
+            "description": "Manufacturer/sponsor name (e.g. \"PFIZER\")"
+          },
+          "activeIngredient": {
+            "type": "string",
+            "description": "Active ingredient name"
+          },
+          "exactMatch": {
+            "type": "boolean",
+            "description": "If true (default), uses exact phrase matching. Set to false for fuzzy/tokenized search when exact matching returns no results."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max results to return (1-25, default 10)"
+          }
+        }
+      }
+    },
+    {
+      "name": "analyzeMedia",
+      "description": "Analyze images or videos using Gemini AI. Use this when the user uploads a video or image and wants analysis that requires visual understanding (event lists, attention heatmaps, object identification, etc.). Can also generate images when the instruction requests visual output (heatmaps, annotations, overlays, etc.) — include keywords like \"heatmap\", \"annotate\", \"highlight\", \"draw\", \"overlay\", or \"visualize\" in the instruction. Returns generatedImageFileIds when images are produced — display them as markdown images with src=\"/api/chat/files/{fileId}\".",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instruction": {
+            "type": "string",
+            "description": "What to do with the media. Be specific about the desired output format. Examples: \"List all events in this video with timestamps\", \"Generate a heatmap showing which objects are most visually salient\", \"Describe what the child is interacting with\""
+          },
+          "context": {
+            "type": "string",
+            "description": "Brief context about the conversation and the user's goals, so the analysis is relevant"
+          },
+          "files": {
+            "type": "array",
+            "description": "File references to analyze. Use \"file:<id>\" for uploaded files (the file ID from the upload metadata), or base64 data URLs for inline images from the conversation.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "instruction",
+          "files"
+        ]
+      }
+    },
+    {
+      "name": "extractVideoFrame",
+      "description": "Extract a single still frame from an uploaded video at a specific timestamp. Returns the frame as an image that can be used with generateImage.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "fileId": {
+            "type": "string",
+            "description": "The file ID of the cached video (without the \"file:\" prefix)"
+          },
+          "timestampSeconds": {
+            "type": "number",
+            "description": "Timestamp in seconds to extract the frame from (e.g. 5.0)"
+          }
+        },
+        "required": [
+          "fileId",
+          "timestampSeconds"
+        ]
+      }
+    },
+    {
+      "name": "generateImage",
+      "description": "Generate or edit an image. Can create images from scratch or modify a reference image (e.g. add heatmap overlay, annotate, highlight areas). Use extractVideoFrame first if you need a frame from a video. Returns generatedImageFileIds — display them to the user as markdown images with src=\"/api/chat/files/{fileId}\".",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instruction": {
+            "type": "string",
+            "description": "Detailed instructions for the image generation. Be specific about what to draw, annotate, or highlight."
+          },
+          "referenceImageFileId": {
+            "type": "string",
+            "description": "Optional file ID of a reference image to modify or annotate. Use the frameFileId returned from extractVideoFrame."
+          }
+        },
+        "required": [
+          "instruction"
+        ]
+      }
+    },
+    {
+      "name": "pruneMessages",
+      "description": "Remove old messages from the conversation to keep context focused. Use this when the conversation is getting long and older messages are no longer relevant. Indices 0-1 are protected anchor messages and cannot be removed. Always remove tool call and tool response pairs together. Provide a concise summary of the removed content so context is not lost. You may also specify memory paths to close — this removes them from the prompt, freeing space. Only close paths you no longer need; paths you are still working with should stay open.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "forget": {
+            "type": "array",
+            "description": "Indices (0-based) of messages to remove from the conversation history. Indices 0-1 are protected and will be skipped. Remove tool call + response pairs together.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "A concise one-paragraph summary of the removed messages, preserving key facts and decisions."
+          },
+          "closePaths": {
+            "type": "array",
+            "description": "Memory paths to close (remove from the visible prompt). Only close paths you are no longer actively working with. Paths you are still using should remain open. The prompt will re-render without these paths after compression.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "forget",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "navigateToFeature",
+      "description": "Navigate the user's interface to a specific panel/feature. Call this when the user's request directly relates to a specific panel (e.g. they ask about a student's progress, or want to manage institutes, or create a board). The navigation happens immediately while you continue processing.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "feature": {
+            "type": "string",
+            "enum": [
+              "boards",
+              "students",
+              "institute",
+              "progress",
+              "reports",
+              "interpret"
+            ],
+            "description": "The panel to navigate to. boards = AAC board editor, students = student list, institute = institute management, progress = student treatment programs, reports = student reports, interpret = communication interpretation"
+          }
+        },
+        "required": [
+          "feature"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "selectStudent",
+      "description": "Switch the currently selected student in the user's interface. Use this when the user asks to switch to a different student, or when their request clearly relates to a different student than the one currently selected. The student list is available in Context_Students.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "studentId": {
+            "type": "string",
+            "description": "The ID of the student to select (from Context_Students)"
+          }
+        },
+        "required": [
+          "studentId"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "_structured_response",
+      "description": "Return your final structured response. Call this tool when you are ready to reply to the user (i.e. you have no more tool calls to make). The input MUST conform to the output schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "html": {
+            "type": [
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "html"
+        ],
+        "additionalProperties": false
+      },
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "any"
+  }
+}
+────────────────────────────────────────────────────────────────────────────────
+USAGE: {"input_tokens":493,"cache_creation_input_tokens":0,"cache_read_input_tokens":14597,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":155,"service_tier":"standard","inference_geo":"not_available"}

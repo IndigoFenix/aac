@@ -246,13 +246,6 @@ export const storage = {
   updateTransitionGoal: programRepository.updateTransitionGoal.bind(programRepository),
   deleteTransitionGoal: programRepository.deleteTransitionGoal.bind(programRepository),
 
-  // Team member operations
-  createTeamMember: programRepository.createTeamMember.bind(programRepository),
-  getTeamMemberById: programRepository.getTeamMemberById.bind(programRepository),
-  getTeamMembersByProgramId: programRepository.getTeamMembersByProgramId.bind(programRepository),
-  updateTeamMember: programRepository.updateTeamMember.bind(programRepository),
-  deleteTeamMember: programRepository.deleteTeamMember.bind(programRepository),
-
   // Meeting operations
   createMeeting: programRepository.createMeeting.bind(programRepository),
   getMeetingById: programRepository.getMeetingById.bind(programRepository),

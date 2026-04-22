@@ -59,7 +59,6 @@ import { marked } from 'marked';
 marked.setOptions({ async: false });
 
 export function ChatFeature() {
-  const [prompt, setPrompt] = useState('');
   const [ttsEnabled, setTtsEnabled] = useState(false);
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -99,6 +98,8 @@ export function ChatFeature() {
     removeFile,
     clearFiles,
     stopGeneration,
+    draftInput: prompt,
+    setDraftInput: setPrompt,
   } = useChat();
   
   // Text-to-speech hook
@@ -198,10 +199,15 @@ export function ChatFeature() {
     }
   }, [sharedState.pendingPrompt, setSharedState]);
 
-  // Auto-send when speech recognition completes and not already sending
+  // Auto-send when speech recognition completes. Only fire on a real
+  // true → false transition of isListening — not on mount, otherwise
+  // remounting ChatFeature (e.g. after toggling between expanded and popup
+  // modes) with a non-empty shared draft would auto-send the message.
+  const wasListeningRef = useRef(false);
   useEffect(() => {
-    // If we just stopped listening and have a prompt, send it
-    if (!isListening && prompt.trim() && !isSending) {
+    const wasListening = wasListeningRef.current;
+    wasListeningRef.current = isListening;
+    if (wasListening && !isListening && prompt.trim() && !isSending) {
       // Small delay to allow final transcript to be processed
       const timeout = setTimeout(() => {
         handleSend();

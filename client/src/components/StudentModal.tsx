@@ -49,7 +49,7 @@ import {
   UserMinus,
   Users,
 } from 'lucide-react';
-import { BiometricEnrollment } from '@/components/BiometricEnrollment';
+import { BiometricPhotoUpload } from '@/components/BiometricPhotoUpload';
 
 // =============================================================================
 // TYPES
@@ -979,15 +979,17 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
             </>
           )}
 
-          {/* Biometric Enrollment - hidden until feature is ready
+          {/* Avatar / face photo — also used by the AAC recognition pipeline */}
           {editingStudent && (
-            <BiometricEnrollment
-              entityType="student"
-              entityId={editingStudent.id}
-              compact
-            />
+            <div className="space-y-2 pt-2 border-t">
+              <Label>{t('biometric.facePhoto')}</Label>
+              <BiometricPhotoUpload
+                target={{ type: 'student', studentId: editingStudent.id }}
+                biometricDataId={(editingStudent as any).biometricDataId}
+                dense
+              />
+            </div>
           )}
-          */}
         </DialogBody>
 
         <DialogFooter className={isRTL ? 'flex-row-reverse' : ''}>

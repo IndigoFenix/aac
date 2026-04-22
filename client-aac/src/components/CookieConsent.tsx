@@ -24,7 +24,8 @@ export function CookieConsent() {
       role="dialog"
       aria-live="polite"
       aria-label={t("cookieConsent.title")}
-      className="fixed bottom-4 left-4 right-4 z-[100] mx-auto max-w-2xl rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-2xl p-4"
+      className="fixed bottom-4 left-4 right-4 z-[100] mx-auto max-w-2xl rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-2xl p-4 pointer-events-auto"
+      style={{ pointerEvents: "auto" }}
     >
       <div className={`flex items-start gap-3 ${isRTL ? "flex-row-reverse" : ""}`}>
         <Cookie className="w-6 h-6 text-blue-600 shrink-0 mt-0.5" />

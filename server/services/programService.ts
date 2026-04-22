@@ -36,9 +36,10 @@ import {
   type TransitionGoal,
   type InsertTransitionGoal,
   type UpdateTransitionGoal,
-  type TeamMember,
-  type InsertTeamMember,
-  type UpdateTeamMember,
+  type ProgramContact,
+  type InsertProgramContact,
+  type UpdateProgramContact,
+  type StudentContact,
   type Meeting,
   type InsertMeeting,
   type UpdateMeeting,
@@ -570,24 +571,33 @@ export class ProgramService {
   // TEAM MEMBER OPERATIONS
   // ==========================================================================
 
-  async createTeamMember(insert: InsertTeamMember): Promise<TeamMember> {
-    return programRepository.createTeamMember(insert);
+  // ------------------------------------------------------------------
+  // Program team (contacts junction)
+  // ------------------------------------------------------------------
+
+  async addTeamContact(insert: InsertProgramContact): Promise<ProgramContact> {
+    return programRepository.addProgramContact(insert);
   }
 
-  async getTeamMemberById(id: string): Promise<TeamMember | undefined> {
-    return programRepository.getTeamMemberById(id);
+  async getTeamContactById(id: string): Promise<ProgramContact | undefined> {
+    return programRepository.getProgramContactById(id);
   }
 
-  async getTeamMembersByProgramId(programId: string): Promise<TeamMember[]> {
-    return programRepository.getTeamMembersByProgramId(programId);
+  async getTeamContactsByProgramId(
+    programId: string,
+  ): Promise<(ProgramContact & { contact: StudentContact })[]> {
+    return programRepository.getTeamContactsByProgramId(programId);
   }
 
-  async updateTeamMember(id: string, updates: UpdateTeamMember): Promise<TeamMember | undefined> {
-    return programRepository.updateTeamMember(id, updates);
+  async updateTeamContact(
+    id: string,
+    updates: UpdateProgramContact,
+  ): Promise<ProgramContact | undefined> {
+    return programRepository.updateProgramContact(id, updates);
   }
 
-  async deleteTeamMember(id: string): Promise<boolean> {
-    return programRepository.deleteTeamMember(id);
+  async removeTeamContact(id: string): Promise<boolean> {
+    return programRepository.removeProgramContact(id);
   }
 
   // ==========================================================================
