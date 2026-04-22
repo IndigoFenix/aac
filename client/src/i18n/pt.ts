@@ -1126,7 +1126,7 @@ export const pt = {
     stats: {
       activeGoals: "Objetivos ativos",
       goalsAchieved: "Objetivos alcançados",
-      weeklyMinutes: "Minutos semanais",
+      activeServices: "Active Services",
       teamMembers: "Membros da equipe",
     },
 
@@ -1385,12 +1385,17 @@ export const pt = {
     name: "Nome do serviço",
     namePlaceholder: "ex., Terapia de fala individual",
     nameRequired: "O nome do serviço é obrigatório",
-    frequencyCount: "Frequência",
-    period: "Período",
-    duration: "Duração (min)",
     setting: "Ambiente",
     provider: "Provedor",
     providerPlaceholder: "Nome do provedor do serviço",
+    assignedUsers: "Assigned Users",
+    assignedUsersHint: "Users who share an institute with this {{STUDENT}} can be assigned to deliver this service.",
+    noInstituteMembers: "No users share an institute with this {{STUDENT}} yet.",
+    assign: "Assign",
+    unassign: "Remove",
+    scheduledEvents: "Scheduled Events",
+    scheduleNew: "Schedule",
+    noScheduledEvents: "No events scheduled yet.",
 
     // Types
     types: {
@@ -1404,11 +1409,13 @@ export const pt = {
       other: "Outro",
     },
 
-    // Frequency
-    frequency: {
-      daily: "Diário",
-      weekly: "Semanal",
-      monthly: "Mensal",
+    // Event recurrence labels (mirrors calendar repeat types)
+    repeat: {
+      none: "One-off",
+      daily: "Daily",
+      weekly: "Weekly",
+      monthly_date: "Monthly",
+      monthly_weekday: "Monthly (weekday)",
     },
 
     // Settings
@@ -2595,6 +2602,9 @@ export const pt = {
     month: "Mês",
     week: "Semana",
     day: "Dia",
+    forService: "For Service",
+    forServicePlaceholder: "None (standalone event)",
+    forServiceNone: "None",
     newEvent: "Novo evento",
     editEvent: "Editar evento",
     deleteEvent: "Excluir evento",

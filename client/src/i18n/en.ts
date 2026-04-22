@@ -1126,7 +1126,7 @@ export const en = {
     stats: {
       activeGoals: "Active Goals",
       goalsAchieved: "Goals Achieved",
-      weeklyMinutes: "Weekly Minutes",
+      activeServices: "Active Services",
       teamMembers: "Team Members",
     },
 
@@ -1385,12 +1385,17 @@ export const en = {
     name: "Service Name",
     namePlaceholder: "e.g., Individual Speech Therapy",
     nameRequired: "Service name is required",
-    frequencyCount: "Frequency",
-    period: "Period",
-    duration: "Duration (min)",
     setting: "Setting",
     provider: "Provider",
     providerPlaceholder: "Name of service provider",
+    assignedUsers: "Assigned Users",
+    assignedUsersHint: "Users who share an institute with this {{STUDENT}} can be assigned to deliver this service.",
+    noInstituteMembers: "No users share an institute with this {{STUDENT}} yet.",
+    assign: "Assign",
+    unassign: "Remove",
+    scheduledEvents: "Scheduled Events",
+    scheduleNew: "Schedule",
+    noScheduledEvents: "No events scheduled yet.",
 
     // Types
     types: {
@@ -1404,11 +1409,13 @@ export const en = {
       other: "Other",
     },
 
-    // Frequency
-    frequency: {
+    // Event recurrence labels (mirrors calendar repeat types)
+    repeat: {
+      none: "One-off",
       daily: "Daily",
       weekly: "Weekly",
-      monthly: "Monthly",
+      monthly_date: "Monthly",
+      monthly_weekday: "Monthly (weekday)",
     },
 
     // Settings
@@ -2595,6 +2602,9 @@ export const en = {
     month: "Month",
     week: "Week",
     day: "Day",
+    forService: "For Service",
+    forServicePlaceholder: "None (standalone event)",
+    forServiceNone: "None",
     newEvent: "New Event",
     editEvent: "Edit Event",
     deleteEvent: "Delete Event",

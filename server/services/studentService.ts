@@ -205,6 +205,14 @@ export class StudentService {
   }
 
   /**
+   * Users who share at least one active institute with the student — used as
+   * the pool of valid candidates for assigning service users.
+   */
+  async getUsersSharingInstituteWithStudent(studentId: string) {
+    return studentRepository.getUsersSharingInstituteWithStudent(studentId);
+  }
+
+  /**
    * Update a student. Accepts a mixed body with both student and AAC settings fields.
    * Splits them and routes to the correct tables.
    */

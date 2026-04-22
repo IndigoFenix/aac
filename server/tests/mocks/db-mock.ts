@@ -102,9 +102,6 @@ export interface MockService {
   customServiceName?: string;
   description?: string;
   providerName?: string;
-  frequencyCount?: number;
-  frequencyPeriod?: 'daily' | 'weekly' | 'monthly';
-  sessionDuration?: number;
   setting?: string;
   isActive?: boolean;
   createdAt?: Date;
@@ -446,7 +443,6 @@ class MockDatabase {
       id,
       programId,
       serviceType: 'speech_language_therapy',
-      sessionDuration: 30,
       isActive: true,
       createdAt: new Date(),
       updatedAt: new Date(),

@@ -7,6 +7,7 @@ import {
   objectives,
   services,
   serviceGoals,
+  serviceUsers,
   accommodations,
   progressReports,
   goalProgressEntries,
@@ -39,6 +40,8 @@ import {
   type Service,
   type InsertService,
   type UpdateService,
+  type ServiceUser,
+  type InsertServiceUser,
   type Accommodation,
   type InsertAccommodation,
   type UpdateAccommodation,
@@ -650,6 +653,52 @@ export class ProgramRepository {
           eq(serviceGoals.goalId, goalId)
         )
       );
+  }
+
+  // -------- Service ↔ Users --------
+
+  async getServiceUsers(serviceId: string): Promise<ServiceUser[]> {
+    return db
+      .select()
+      .from(serviceUsers)
+      .where(eq(serviceUsers.serviceId, serviceId));
+  }
+
+  async linkUserToService(serviceId: string, userId: string): Promise<ServiceUser> {
+    // Idempotent: if already linked, return existing row
+    const [existing] = await db
+      .select()
+      .from(serviceUsers)
+      .where(
+        and(eq(serviceUsers.serviceId, serviceId), eq(serviceUsers.userId, userId))
+      );
+    if (existing) return existing;
+
+    const [row] = await db
+      .insert(serviceUsers)
+      .values({ serviceId, userId })
+      .returning();
+    return row;
+  }
+
+  async unlinkUserFromService(serviceId: string, userId: string): Promise<void> {
+    await db
+      .delete(serviceUsers)
+      .where(
+        and(eq(serviceUsers.serviceId, serviceId), eq(serviceUsers.userId, userId))
+      );
+  }
+
+  /**
+   * Look up a studentContacts row by id — used by calendarService when expanding
+   * a service's providerContactId into its linked user (if any).
+   */
+  async getStudentContactById(contactId: string) {
+    const [row] = await db
+      .select()
+      .from(studentContacts)
+      .where(eq(studentContacts.id, contactId));
+    return row;
   }
 
   async deleteService(id: string): Promise<boolean> {

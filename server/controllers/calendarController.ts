@@ -16,6 +16,7 @@ const createEventSchema = z.object({
   repeatDays: z.array(z.number().min(0).max(6)).optional(),
   repeatMonthWeek: z.number().int().optional(), // 1, 2, 3, or -1
   repeatEndDate: z.string().transform((s) => new Date(s)).optional(),
+  serviceId: z.string().optional().nullable(),
   attendees: z
     .array(
       z.object({
@@ -47,6 +48,7 @@ const updateEventSchema = z.object({
     .transform((s) => new Date(s))
     .optional()
     .nullable(),
+  serviceId: z.string().optional().nullable(),
   attendees: z
     .array(
       z.object({

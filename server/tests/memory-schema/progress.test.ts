@@ -155,8 +155,8 @@ describe('Progress Memory Schema', () => {
 
   describe('Services', () => {
     it('should load services from database', async () => {
-      mockDb.createService(programId, { serviceType: 'speech_language_therapy', sessionDuration: 30 });
-      mockDb.createService(programId, { serviceType: 'occupational_therapy', sessionDuration: 45 });
+      mockDb.createService(programId, { serviceType: 'speech_language_therapy' });
+      mockDb.createService(programId, { serviceType: 'occupational_therapy' });
 
       await handler.loadContext('program');
 
@@ -170,7 +170,7 @@ describe('Progress Memory Schema', () => {
       await handler.executeOperation({
         action: 'add',
         path: '/Context_Program/services',
-        value: { serviceType: 'physical_therapy', providerName: 'Dr. Smith', sessionDuration: 60 },
+        value: { serviceType: 'physical_therapy', providerName: 'Dr. Smith' },
       });
 
       const services = mockDb.getServicesByProgramId(programId);

@@ -1126,7 +1126,7 @@ export const ru = {
     stats: {
       activeGoals: "Активные цели",
       goalsAchieved: "Достигнутые цели",
-      weeklyMinutes: "Минут в неделю",
+      activeServices: "Active Services",
       teamMembers: "Члены команды",
     },
 
@@ -1385,12 +1385,17 @@ export const ru = {
     name: "Название услуги",
     namePlaceholder: "напр., Индивидуальная логопедическая терапия",
     nameRequired: "Название услуги обязательно",
-    frequencyCount: "Частота",
-    period: "Период",
-    duration: "Продолжительность (мин)",
     setting: "Место проведения",
     provider: "Поставщик услуг",
     providerPlaceholder: "Имя поставщика услуг",
+    assignedUsers: "Assigned Users",
+    assignedUsersHint: "Users who share an institute with this {{STUDENT}} can be assigned to deliver this service.",
+    noInstituteMembers: "No users share an institute with this {{STUDENT}} yet.",
+    assign: "Assign",
+    unassign: "Remove",
+    scheduledEvents: "Scheduled Events",
+    scheduleNew: "Schedule",
+    noScheduledEvents: "No events scheduled yet.",
 
     // Types
     types: {
@@ -1404,11 +1409,13 @@ export const ru = {
       other: "Другое",
     },
 
-    // Frequency
-    frequency: {
-      daily: "Ежедневно",
-      weekly: "Еженедельно",
-      monthly: "Ежемесячно",
+    // Event recurrence labels (mirrors calendar repeat types)
+    repeat: {
+      none: "One-off",
+      daily: "Daily",
+      weekly: "Weekly",
+      monthly_date: "Monthly",
+      monthly_weekday: "Monthly (weekday)",
     },
 
     // Settings
@@ -2595,6 +2602,9 @@ export const ru = {
     month: "Месяц",
     week: "Неделя",
     day: "День",
+    forService: "For Service",
+    forServicePlaceholder: "None (standalone event)",
+    forServiceNone: "None",
     newEvent: "Новое событие",
     editEvent: "Редактировать событие",
     deleteEvent: "Удалить событие",

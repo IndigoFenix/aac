@@ -86,7 +86,6 @@ export const serviceSettingEnum = pgEnum("service_setting", [
   "community",
   "therapy_room"
 ]);
-export const serviceFrequencyPeriodEnum = pgEnum("service_frequency_period", ["daily", "weekly", "monthly"]);
 export const accommodationTypeEnum = pgEnum("accommodation_type", [
   "visual_support",
   "aac_device",
@@ -951,11 +950,6 @@ export const services = pgTable("services", {
   providerContactId: varchar("provider_contact_id").references(() => studentContacts.id),
   providerName: text("provider_name"), // Fallback if no linked contact
 
-  // Frequency & Duration
-  frequencyCount: integer("frequency_count").notNull().default(1),
-  frequencyPeriod: serviceFrequencyPeriodEnum("frequency_period").notNull().default("weekly"),
-  sessionDuration: integer("session_duration").notNull(), // minutes
-
   // Setting (LRE consideration)
   setting: serviceSettingEnum("setting"),
   settingDescription: text("setting_description"),
@@ -990,6 +984,21 @@ export const serviceGoals = pgTable("service_goals", {
 }, (table) => [
   index("idx_service_goals_service_id").on(table.serviceId),
   index("idx_service_goals_goal_id").on(table.goalId),
+]);
+
+/**
+ * Service Users Junction - Users (therapists/caregivers) assigned to deliver a service.
+ * The pool of valid users is anyone sharing an institute with the program's student.
+ */
+export const serviceUsers = pgTable("service_users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  serviceId: varchar("service_id").references(() => services.id, { onDelete: "cascade" }).notNull(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_service_users_service_id").on(table.serviceId),
+  index("idx_service_users_user_id").on(table.userId),
 ]);
 
 /**
@@ -1699,6 +1708,12 @@ export const updateServiceSchema = createInsertSchema(services).omit({
   updatedAt: true,
 }).partial();
 
+// Service-user link schema
+export const insertServiceUserSchema = createInsertSchema(serviceUsers).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Accommodation schemas
 export const insertAccommodationSchema = createInsertSchema(accommodations).omit({
   id: true,
@@ -1995,6 +2010,9 @@ export type InsertService = z.infer<typeof insertServiceSchema>;
 export type UpdateService = z.infer<typeof updateServiceSchema>;
 
 export type ServiceGoal = typeof serviceGoals.$inferSelect;
+
+export type ServiceUser = typeof serviceUsers.$inferSelect;
+export type InsertServiceUser = z.infer<typeof insertServiceUserSchema>;
 
 export type Accommodation = typeof accommodations.$inferSelect;
 export type InsertAccommodation = z.infer<typeof insertAccommodationSchema>;

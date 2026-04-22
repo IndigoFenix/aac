@@ -6,6 +6,8 @@ import {
   studentClassrooms,
   classroomUsers,
   institutes,
+  instituteUsers,
+  users,
   type Student,
   type InsertStudent,
   type UpdateStudent,
@@ -436,6 +438,48 @@ export class StudentRepository {
    */
   async getStudentByStudentId(studentId: string): Promise<Student | undefined> {
     return this.getStudentById(studentId);
+  }
+
+  /**
+   * Get all users who share at least one active institute with the given student.
+   * Used to populate the "assign users" picker on services — any such user is a
+   * valid candidate to be on a student's service team.
+   */
+  async getUsersSharingInstituteWithStudent(studentId: string): Promise<{
+    id: string;
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
+    fullName: string | null;
+    profileImageUrl: string | null;
+    biometricDataId: string | null;
+  }[]> {
+    const rows = await db
+      .selectDistinctOn([users.id], {
+        id: users.id,
+        email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        fullName: users.fullName,
+        profileImageUrl: users.profileImageUrl,
+        biometricDataId: users.biometricDataId,
+      })
+      .from(instituteStudents)
+      .innerJoin(
+        instituteUsers,
+        and(
+          eq(instituteUsers.instituteId, instituteStudents.instituteId),
+          eq(instituteUsers.isActive, true)
+        )
+      )
+      .innerJoin(users, eq(users.id, instituteUsers.userId))
+      .where(
+        and(
+          eq(instituteStudents.studentId, studentId),
+          eq(instituteStudents.isActive, true)
+        )
+      );
+    return rows;
   }
 }
 

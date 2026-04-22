@@ -50,9 +50,7 @@ export type ServiceSetting =
   | 'community'
   | 'therapy_room';
 
-export type ServiceFrequencyPeriod = 'daily' | 'weekly' | 'monthly';
-
-export type AccommodationType = 
+export type AccommodationType =
   | 'visual_support'
   | 'aac_device'
   | 'modified_materials'
@@ -208,9 +206,6 @@ export interface Service {
   serviceType: ServiceType;
   serviceName: string;
   description?: string | null;
-  frequency?: number | null;
-  frequencyPeriod?: ServiceFrequencyPeriod | null;
-  durationMinutes?: number | null;
   setting?: ServiceSetting | null;
   deliveryModel?: ServiceDeliveryModel | null;
   provider?: string | null;
@@ -437,9 +432,6 @@ export interface ServiceFormData {
   serviceType: ServiceType;
   serviceName: string;
   description: string;
-  frequency: number;
-  frequencyPeriod: string;
-  durationMinutes: number;
   setting: string;
   deliveryModel: string;
   provider: string;

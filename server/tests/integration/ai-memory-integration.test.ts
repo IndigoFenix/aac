@@ -183,9 +183,6 @@ describe('AI Memory Integration', () => {
           value: {
             serviceType: 'speech_language_therapy',
             providerName: 'Dr. Emily Chen',
-            sessionDuration: 30,
-            frequencyCount: 3,
-            frequencyPeriod: 'weekly',
             setting: 'therapy_room',
           },
         },
@@ -194,9 +191,6 @@ describe('AI Memory Integration', () => {
           path: '/Context_Program/services',
           value: {
             serviceType: 'occupational_therapy',
-            sessionDuration: 45,
-            frequencyCount: 1,
-            frequencyPeriod: 'weekly',
             setting: 'classroom',
           },
         },
