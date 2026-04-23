@@ -116,6 +116,7 @@ export interface ChatContext {
   instituteId?: string; // Optional - for filtering medical records by clinic
   reportPermissions?: AccessPermissions; // Optional - defaults to all hidden
   licensePermissions?: LicensePermissions; // Optional - license-based feature gating
+  timezone?: string; // Optional - IANA TZ used to interpret naive datetime strings from the AI
 }
 
 export interface ChatContextState {
@@ -161,6 +162,7 @@ export class ChatContextManager {
         userId: context.userId,
         instituteId: context.instituteId,
         licensePermissions: context.licensePermissions,
+        timezone: context.timezone,
       },
       reportPermissions: permissions,
     };
@@ -672,10 +674,11 @@ export async function createChatContextManager(
   existingLoadState?: MemoryLoadState,
   instituteId?: string,
   reportPermissions?: AccessPermissions,
-  licensePermissions?: LicensePermissions
+  licensePermissions?: LicensePermissions,
+  timezone?: string,
 ): Promise<ChatContextManager> {
   const manager = new ChatContextManager(
-    { studentId, userId, programId, instituteId, reportPermissions, licensePermissions },
+    { studentId, userId, programId, instituteId, reportPermissions, licensePermissions, timezone },
     masterMemoryFields,
     existingLoadState
   );

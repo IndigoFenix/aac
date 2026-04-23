@@ -18,6 +18,7 @@ import type {
   ListResult,
 } from "../chat/memory-types";
 import type { Incident } from "@shared/schema";
+import { parseLocalOrIsoInTimezone } from "../../lib/timezone";
 
 function toMemoryValue(record: Incident): any {
   const { ...rest } = record;
@@ -49,23 +50,25 @@ const incidentOps: MemoryDBOperations<Incident> = {
   add: async (ctx, value) => {
     const studentId = ctx.all.studentId as string | undefined;
     if (!studentId) throw new Error("studentId required to record an incident");
+    const tz = ctx.all.timezone as string | undefined;
 
     const created = await incidentRepository.create({
       studentId,
       type: value.type,
       severity: value.severity,
-      recordedAt: value.recordedAt ? new Date(value.recordedAt) : new Date(),
+      recordedAt: parseLocalOrIsoInTimezone(value.recordedAt, tz) ?? new Date(),
       context: value.context ?? null,
       collectedBy: value.collectedBy ?? null,
     });
     return toMemoryValue(created);
   },
 
-  update: async (_ctx, key, value) => {
+  update: async (ctx, key, value) => {
+    const tz = ctx.all.timezone as string | undefined;
     const updates: Record<string, any> = {};
     if (value.type !== undefined) updates.type = value.type;
     if (value.severity !== undefined) updates.severity = value.severity;
-    if (value.recordedAt !== undefined) updates.recordedAt = new Date(value.recordedAt);
+    if (value.recordedAt !== undefined) updates.recordedAt = parseLocalOrIsoInTimezone(value.recordedAt, tz);
     if (value.context !== undefined) updates.context = value.context;
     if (value.collectedBy !== undefined) updates.collectedBy = value.collectedBy;
 
@@ -105,7 +108,7 @@ const incidentSchema: AgentMemoryFieldObjectWithDB = {
       id: "recordedAt",
       type: "string",
       format: "date-time",
-      description: "When the incident occurred. Provide a UTC ISO 8601 timestamp (e.g. \"2026-04-23T20:00:00Z\"). Convert from the user's local time using their time zone (see User Local Time section). Defaults to the current moment if omitted.",
+      description: "When the incident occurred. Provide the wall-clock local time as ISO 8601 WITHOUT a timezone suffix (e.g. \"2026-04-23T15:00:00\" for 3:00 PM local). The server interprets this in the user's local time zone (see User Local Time section) and stores UTC. Defaults to the current moment if omitted.",
     },
     context: { id: "context", type: "string", description: "Free-text description of what happened.", opened: true },
     collectedBy: { id: "collectedBy", type: "string", description: "Name or role of the person who recorded the incident." },

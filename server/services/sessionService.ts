@@ -1218,7 +1218,8 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     existingLoadState,
     context.institute?.id, // instituteId for medical records filtering
     accessPermissions,
-    licensePerms
+    licensePerms,
+    input.timezone,
   );
     
   // Build memory fields based on mode

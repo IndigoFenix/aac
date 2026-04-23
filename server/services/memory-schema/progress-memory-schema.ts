@@ -84,6 +84,7 @@ import {
 import { programService } from "../programService";
 import { activityLogService } from "../activityLogService";
 import { PROGRAM_TEAM_CONTACTS_FIELD } from "./contacts-memory-schema";
+import { parseLocalOrIsoInTimezone } from "../../lib/timezone";
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -997,13 +998,14 @@ const dataPointsOps: MemoryDBOperations<DataPoint> = {
       throw new Error("goalId or objectiveId required for creating dataPoint");
     }
 
+    const tz = ctx.all.timezone as string | undefined;
     const [created] = await db
       .insert(dataPoints)
       .values({
         ...value,
         goalId: goalId || undefined,
         objectiveId: objectiveId || undefined,
-        recordedAt: value.recordedAt || new Date(),
+        recordedAt: parseLocalOrIsoInTimezone(value.recordedAt, tz) ?? new Date(),
       })
       .returning();
 
@@ -1153,7 +1155,7 @@ const dataPointSchema: AgentMemoryFieldObjectWithDB = {
   opened: true,
   properties: {
     id: { id: "id", type: "string" },
-    recordedAt: { id: "recordedAt", type: "string", format: "date-time", description: "When the observation occurred. Provide a UTC ISO 8601 timestamp (e.g. \"2026-04-23T20:00:00Z\"). Convert from the user's local time using their time zone (see User Local Time section). Defaults to the current moment if omitted." },
+    recordedAt: { id: "recordedAt", type: "string", format: "date-time", description: "When the observation occurred. Provide the wall-clock local time as ISO 8601 WITHOUT a timezone suffix (e.g. \"2026-04-23T15:00:00\" for 3:00 PM local). The server interprets this in the user's local time zone (see User Local Time section) and stores UTC. Defaults to the current moment if omitted." },
     value: { id: "value", type: "string", description: "The recorded value", opened: true },
     numericValue: { id: "numericValue", type: "number" },
     achievedLevel: {

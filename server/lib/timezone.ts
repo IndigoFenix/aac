@@ -57,6 +57,37 @@ export function timezoneOffsetMinutes(timezone: string, at: Date): number {
   return Math.round((asUtcIfLocal - at.getTime()) / 60000);
 }
 
+/**
+ * Parse a datetime string the AI (or a client) may have provided. If the string
+ * already has an explicit offset (ends with "Z" or "±HH:MM"), it's parsed as-is.
+ * Otherwise, the string is treated as a wall-clock value in the supplied zone
+ * and converted to the correct UTC instant.
+ *
+ * Rationale: AIs reliably emit ISO-shaped strings but rarely get the offset
+ * math right. Accepting naive strings and interpreting them in the user's zone
+ * eliminates an entire class of "I said 15:00 but it stored as 18:00" bugs.
+ */
+export function parseLocalOrIsoInTimezone(input: string | Date | null | undefined, timezone?: string): Date | undefined {
+  if (input == null) return undefined;
+  if (input instanceof Date) return input;
+  const trimmed = input.trim();
+  if (!trimmed) return undefined;
+
+  // Has an explicit offset (Z or ±HH:MM after the T portion)? Trust it.
+  const hasOffset = /(Z|[+-]\d{2}:?\d{2})$/.test(trimmed);
+  if (hasOffset || !timezone) {
+    return new Date(trimmed);
+  }
+
+  // Naive wall-clock. Treat as local time in the supplied zone.
+  // Strategy: interpret the string's clock fields as if UTC, then subtract the
+  // zone's offset at that instant to get the real UTC moment.
+  const utcGuess = new Date(trimmed.endsWith("Z") ? trimmed : `${trimmed}Z`);
+  if (Number.isNaN(utcGuess.getTime())) return undefined;
+  const offsetMinutes = timezoneOffsetMinutes(timezone, utcGuess);
+  return new Date(utcGuess.getTime() - offsetMinutes * 60 * 1000);
+}
+
 /** Human-readable "today" label in the zone, e.g. "Thursday, April 23, 2026". */
 export function describeTodayInTimezone(timezone: string, ref: Date = new Date()): string {
   try {

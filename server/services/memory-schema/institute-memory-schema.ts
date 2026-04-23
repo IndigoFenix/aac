@@ -50,6 +50,7 @@ import {
   import { licenseRepository } from "../../repositories/licenseRepository";
   import { calendarRepository } from "../../repositories/calendarRepository";
   import { calendarService } from "../calendarService";
+  import { parseLocalOrIsoInTimezone } from "../../lib/timezone";
   import type { LicensePermissions } from "@shared/license-permissions";
   import { resolvePermissions } from "@shared/license-permissions";
   
@@ -2150,6 +2151,7 @@ import {
     add: async (ctx, value) => {
       const userId = getUserId(ctx);
       const selectedInstituteId = ctx.all.instituteId as string | undefined;
+      const tz = ctx.all.timezone as string | undefined;
 
       // Resolve the event's association FK: the AI can target an institute,
       // classroom, or service event. A plain (no association) event is
@@ -2169,14 +2171,14 @@ import {
         {
           title: value.title,
           description: value.description,
-          startTime: new Date(value.startTime),
-          endTime: new Date(value.endTime),
+          startTime: parseLocalOrIsoInTimezone(value.startTime, tz)!,
+          endTime: parseLocalOrIsoInTimezone(value.endTime, tz)!,
           allDay: value.allDay ?? false,
           repeatType: value.repeatType ?? "none",
           repeatInterval: value.repeatInterval ?? 1,
           repeatDays: value.repeatDays,
           repeatMonthWeek: value.repeatMonthWeek,
-          repeatEndDate: value.repeatEndDate ? new Date(value.repeatEndDate) : undefined,
+          repeatEndDate: parseLocalOrIsoInTimezone(value.repeatEndDate, tz),
           instituteId,
           classroomId,
           serviceId,
@@ -2195,6 +2197,7 @@ import {
     update: async (ctx, key, value) => {
       const userId = getUserId(ctx);
       const eventId = String(key);
+      const tz = ctx.all.timezone as string | undefined;
 
       // RSVP is per-attendee, not part of the event row. Route it separately.
       if (value.myInviteStatus !== undefined && value.myInviteStatus !== null) {
@@ -2204,14 +2207,14 @@ import {
       const updates: Record<string, any> = {};
       if (value.title !== undefined) updates.title = value.title;
       if (value.description !== undefined) updates.description = value.description;
-      if (value.startTime !== undefined) updates.startTime = new Date(value.startTime);
-      if (value.endTime !== undefined) updates.endTime = new Date(value.endTime);
+      if (value.startTime !== undefined) updates.startTime = parseLocalOrIsoInTimezone(value.startTime, tz);
+      if (value.endTime !== undefined) updates.endTime = parseLocalOrIsoInTimezone(value.endTime, tz);
       if (value.allDay !== undefined) updates.allDay = value.allDay;
       if (value.repeatType !== undefined) updates.repeatType = value.repeatType;
       if (value.repeatInterval !== undefined) updates.repeatInterval = value.repeatInterval;
       if (value.repeatDays !== undefined) updates.repeatDays = value.repeatDays;
       if (value.repeatMonthWeek !== undefined) updates.repeatMonthWeek = value.repeatMonthWeek;
-      if (value.repeatEndDate !== undefined) updates.repeatEndDate = value.repeatEndDate ? new Date(value.repeatEndDate) : null;
+      if (value.repeatEndDate !== undefined) updates.repeatEndDate = value.repeatEndDate ? parseLocalOrIsoInTimezone(value.repeatEndDate, tz) : null;
 
       // Skip the event-field update when only RSVP changed.
       if (Object.keys(updates).length > 0) {
@@ -2241,8 +2244,8 @@ import {
       title: { id: "title", type: "string" },
       description: { id: "description", type: "string" },
       occurrenceDate: { id: "occurrenceDate", type: "string", format: "ISO 8601 datetime", description: "The actual date this occurrence falls on (accounts for recurrence expansion)." },
-      startTime: { id: "startTime", type: "string", format: "ISO 8601 datetime", description: "Original event start time (for recurring events, this is the first occurrence). Provide in UTC; the server stores UTC and the client renders in the user's local zone." },
-      endTime: { id: "endTime", type: "string", format: "ISO 8601 datetime" },
+      startTime: { id: "startTime", type: "string", format: "ISO 8601 datetime", description: "Event start time. Provide the wall-clock LOCAL time as ISO 8601 WITHOUT a timezone suffix (e.g. \"2026-04-23T15:00:00\" for 3:00 PM local). The server interprets this in the user's time zone (see User Local Time section) and stores UTC. For recurring events, this is the first occurrence." },
+      endTime: { id: "endTime", type: "string", format: "ISO 8601 datetime", description: "Event end time. Same local-wall-clock format as startTime (no timezone suffix)." },
       allDay: { id: "allDay", type: "boolean" },
       repeatType: { id: "repeatType", type: "string", enum: ["none", "daily", "weekly", "monthly_date", "monthly_weekday"], description: "'none'=one-time, 'daily'=every day, 'weekly'=specific days each week, 'monthly_date'=same date each month, 'monthly_weekday'=Nth weekday each month (e.g., 2nd Tuesday)." },
       repeatInterval: { id: "repeatInterval", type: "number", description: "For weekly: repeat every N weeks (1=every week, 2=every 2 weeks, etc). Default 1." },
