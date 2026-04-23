@@ -1,0 +1,2 @@
+ALTER TABLE "data_points" ALTER COLUMN "recorded_at" SET DATA TYPE timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "data_points" ALTER COLUMN "created_at" SET DATA TYPE timestamp with time zone;

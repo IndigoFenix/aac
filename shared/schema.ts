@@ -43,6 +43,9 @@ import {
   progressReports,
   goalProgressEntries,
   dataPoints,
+  incidents,
+  incidentTypeEnum,
+  incidentSeverityEnum,
   transitionPlans,
   transitionGoals,
   programContacts,
@@ -1836,13 +1839,14 @@ export type InsertContactInquiry = z.infer<typeof insertContactInquirySchema>;
 
 export const eventRepeatEnum = pgEnum("event_repeat", ["none", "daily", "weekly", "monthly_date", "monthly_weekday"]);
 export const eventAttendeeTypeEnum = pgEnum("event_attendee_type", ["user", "student", "classroom", "institute"]);
+export const eventInviteStatusEnum = pgEnum("event_invite_status", ["pending", "accepted", "declined"]);
 
 export const calendarEvents = pgTable("calendar_events", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   title: text("title").notNull(),
   description: text("description"),
-  startTime: timestamp("start_time").notNull(),
-  endTime: timestamp("end_time").notNull(),
+  startTime: timestamp("start_time", { withTimezone: true }).notNull(),
+  endTime: timestamp("end_time", { withTimezone: true }).notNull(),
   allDay: boolean("all_day").default(false).notNull(),
 
   // Recurrence
@@ -1850,20 +1854,25 @@ export const calendarEvents = pgTable("calendar_events", {
   repeatInterval: integer("repeat_interval").default(1), // every N weeks (for weekly type)
   repeatDays: jsonb("repeat_days").$type<number[]>(), // 0=Sun..6=Sat for weekly repeats
   repeatMonthWeek: integer("repeat_month_week"), // for monthly_weekday: 1=first, 2=second, 3=third, -1=last
-  repeatEndDate: timestamp("repeat_end_date"), // when recurrence stops
+  repeatEndDate: timestamp("repeat_end_date", { withTimezone: true }), // when recurrence stops
 
-  // Optional link to the service this event delivers. When a service is deleted,
-  // its events are removed too (we don't keep orphan events on the calendar).
+  // Event-type association FKs. Exactly one of serviceId / instituteId / classroomId
+  // should be set (or none, for a standard event). Type is derived from which is set.
+  // Service events follow the cascade-delete pattern already established.
   serviceId: varchar("service_id").references(() => services.id, { onDelete: "cascade" }),
+  instituteId: varchar("institute_id").references(() => institutes.id, { onDelete: "cascade" }),
+  classroomId: varchar("classroom_id").references(() => classrooms.id, { onDelete: "cascade" }),
 
   createdByUserId: varchar("created_by_user_id").references(() => users.id).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_calendar_events_start_time").on(table.startTime),
   index("idx_calendar_events_end_time").on(table.endTime),
   index("idx_calendar_events_created_by").on(table.createdByUserId),
   index("idx_calendar_events_service_id").on(table.serviceId),
+  index("idx_calendar_events_institute_id").on(table.instituteId),
+  index("idx_calendar_events_classroom_id").on(table.classroomId),
 ]);
 
 export const calendarEventAttendees = pgTable("calendar_event_attendees", {
@@ -1871,7 +1880,8 @@ export const calendarEventAttendees = pgTable("calendar_event_attendees", {
   eventId: varchar("event_id").references(() => calendarEvents.id, { onDelete: "cascade" }).notNull(),
   attendeeType: eventAttendeeTypeEnum("attendee_type").notNull(),
   attendeeId: varchar("attendee_id").notNull(), // FK to users/students/classrooms/institutes
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  inviteStatus: eventInviteStatusEnum("invite_status").default("pending").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_event_attendees_event_id").on(table.eventId),
   index("idx_event_attendees_type_id").on(table.attendeeType, table.attendeeId),

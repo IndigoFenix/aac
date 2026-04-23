@@ -519,6 +519,41 @@
       "when": 1776885767110,
       "tag": "0073_cute_red_wolf",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1776943369499,
+      "tag": "0074_modern_vision",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1776944269163,
+      "tag": "0075_lying_makkari",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1776944309509,
+      "tag": "0076_broad_mimic",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1776951172581,
+      "tag": "0077_fuzzy_arachne",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1776952556450,
+      "tag": "0078_tearful_polaris",
+      "breakpoints": true
     }
   ]
 }

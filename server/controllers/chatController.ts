@@ -35,6 +35,7 @@ const messageSchema = z.object({
     )
     .optional(),
   replyType: z.enum(["text", "html", "md"]).optional(),
+  timezone: z.string().optional(),
 });
 
 /*
@@ -77,7 +78,7 @@ export class ChatController {
         body.featureContext = JSON.parse(body.featureContext);
       }
 
-      let { studentId, instituteId, sessionId, activeFeature, persona, messages, featureContext, vectorStoreId, images, documents, replyType } = messageSchema.parse(body);
+      let { studentId, instituteId, sessionId, activeFeature, persona, messages, featureContext, vectorStoreId, images, documents, replyType, timezone } = messageSchema.parse(body);
       if (!persona) {
         persona = "assistant";
       }
@@ -110,6 +111,7 @@ export class ChatController {
         documents: documents && documents.length > 0 ? documents : undefined,
         replyType: replyType || "html",
         currentImage,
+        timezone,
       })
       res.json(response);
     } catch (error: any) {

@@ -117,6 +117,8 @@ import {
       cullMessagesTo: number;
       cullMessagesThreshold: number;
       maximumMessages: number;
+      /** IANA timezone of the requesting user for this turn; injected into the system prompt. */
+      requestTimezone?: string;
       onUpdateMemoryValues?: (memoryValues: any) => Promise<void>;
       onUpdateChatState?: (chatState: ChatState, log?: ChatMessage[]) => Promise<void>;
       onCreditsUsed?: (creditsUsed: number) => Promise<void>;
@@ -169,6 +171,7 @@ import {
           images?: string[];
           documents?: Array<{ dataUrl: string; filename: string; extractedText?: string }>;
           providerConfig?: { provider: import("@shared/llm-options").LLMProviderKey; model: string };
+          timezone?: string;
       }){
           this.chatState = JSON.parse(JSON.stringify(settings.chatState));
           this.log = JSON.parse(JSON.stringify(settings.log));
@@ -195,6 +198,7 @@ import {
           this.onSelectStudent = settings.onSelectStudent;
           this.onFilesNeeded = settings.onFilesNeeded;
           this.loopDetectionConfig = settings.loopDetectionConfig;
+          this.requestTimezone = settings.timezone;
 
           this.toolRegistry = defaultToolRegistry({
               agent: settings.agent as any,
@@ -806,6 +810,7 @@ import {
               navigateEnabled: this.onNavigate !== undefined,
               selectStudentEnabled: this.onSelectStudent !== undefined,
               replyType: params?.replyType || 'text',
+              timezone: this.requestTimezone,
           });
       }
   

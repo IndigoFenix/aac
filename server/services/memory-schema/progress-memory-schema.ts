@@ -1153,7 +1153,7 @@ const dataPointSchema: AgentMemoryFieldObjectWithDB = {
   opened: true,
   properties: {
     id: { id: "id", type: "string" },
-    recordedAt: { id: "recordedAt", type: "string", format: "date-time" },
+    recordedAt: { id: "recordedAt", type: "string", format: "date-time", description: "When the observation occurred. Provide a UTC ISO 8601 timestamp (e.g. \"2026-04-23T20:00:00Z\"). Convert from the user's local time using their time zone (see User Local Time section). Defaults to the current moment if omitted." },
     value: { id: "value", type: "string", description: "The recorded value", opened: true },
     numericValue: { id: "numericValue", type: "number" },
     achievedLevel: {

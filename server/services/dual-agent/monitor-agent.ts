@@ -9,6 +9,7 @@ import type {
   DualAgentConfig,
 } from "./types";
 import { studentRepository, calendarRepository, settingsRepository } from "../../repositories";
+import { calendarService } from "../calendarService";
 import type { StudentWithAacSettings } from "@shared/schema";
 import type { AACInteractionMode, AACAppDefinition } from "./types";
 import {
@@ -16,6 +17,7 @@ import {
   buildMonitorSystemPrompt,
 } from "../memory-schema/aac-memory-schema";
 import { GPT, type GPTInputItem } from "../chat/gpt";
+import { startOfDayInTimezone, formatLocalDateTime } from "../../lib/timezone";
 
 /**
  * Monitor Agent
@@ -34,6 +36,8 @@ export class MonitorAgent {
   private privacyOptions: { allowReadProgress: boolean; allowReadReports: boolean; allowNotes: boolean } = {
     allowReadProgress: true, allowReadReports: true, allowNotes: true,
   };
+  /** Client-reported IANA timezone for this session (for TZ-aware event windows and prompt context). */
+  private timezone?: string;
 
   constructor(
     studentId: string,
@@ -45,6 +49,11 @@ export class MonitorAgent {
     this.config = config;
     this.userId = userId;
     this.sessionId = sessionId;
+  }
+
+  /** Set the client-reported IANA timezone. Relay calls this after init. */
+  setTimezone(tz: string | undefined): void {
+    this.timezone = tz;
   }
 
   /**
@@ -193,15 +202,14 @@ export class MonitorAgent {
       let eventsSection = "";
       try {
         const now = new Date();
-        const yesterday = new Date(now);
-        yesterday.setDate(yesterday.getDate() - 1);
-        yesterday.setHours(0, 0, 0, 0);
-        const threeDaysOut = new Date(now);
-        threeDaysOut.setDate(threeDaysOut.getDate() + 3);
-        threeDaysOut.setHours(23, 59, 59, 999);
+        // Compute yesterday/+3 day window in the session's timezone when available.
+        const todayStart = this.timezone
+          ? startOfDayInTimezone(this.timezone, now)
+          : (() => { const d = new Date(now); d.setHours(0, 0, 0, 0); return d; })();
+        const yesterday = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
+        const threeDaysOut = new Date(todayStart.getTime() + 4 * 24 * 60 * 60 * 1000 - 1);
 
-        const attendeeKeys = [{ type: 'student', id: this.studentId }];
-        const rawEvents = await calendarRepository.getEventsForAttendees(attendeeKeys, yesterday, threeDaysOut);
+        const rawEvents = await calendarService.getEventsForStudent(this.studentId, yesterday, threeDaysOut);
         const expanded = calendarRepository.expandRecurringEvents(rawEvents, yesterday, threeDaysOut);
 
         if (expanded.length > 0) {
@@ -209,7 +217,10 @@ export class MonitorAgent {
             const occStart = new Date(date);
             const evStart = new Date(ev.startTime);
             occStart.setHours(evStart.getHours(), evStart.getMinutes());
-            return `- ${ev.title} (${occStart.toLocaleDateString()} ${occStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})${ev.description ? `: ${ev.description}` : ''}`;
+            const when = this.timezone
+              ? formatLocalDateTime(occStart, this.timezone)
+              : `${occStart.toLocaleDateString()} ${occStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+            return `- ${ev.title} (${when})${ev.description ? `: ${ev.description}` : ''}`;
           });
           eventsSection = `\n\n## Upcoming & Recent Events\n${eventLines.join('\n')}`;
         }
@@ -218,10 +229,13 @@ export class MonitorAgent {
       }
 
       // ── Build the LLM prompt ──
+      const tzLine = this.timezone
+        ? `\n## User Local Time\nTime zone: ${this.timezone}\nCurrent local time: ${formatLocalDateTime(new Date(), this.timezone)}\nWhen referencing events, speak in this local time.\n`
+        : "";
       const systemPrompt = `You are preparing an enhanced prompt for an AAC session with ${student.name}.
 The Interactive Agent uses this prompt to guide real-time interaction with the student.
 You will also check in periodically during the session to provide context-specific updates.
-
+${tzLine}
 ## Student Data
 ${studentDataParts.join('\n')}
 ${eventsSection}
@@ -343,6 +357,7 @@ Output ONLY the enhanced prompt between [ENHANCED_PROMPT] and [/ENHANCED_PROMPT]
         featureContext,
         replyType: "text",
         systemPromptOverride,
+        timezone: this.timezone,
       });
 
       // Extract any commands or context updates from the response

@@ -1076,7 +1076,7 @@ export const dataPoints = pgTable("data_points", {
   goalId: varchar("goal_id").references(() => goals.id), // Can be direct to goal without progress entry
   objectiveId: varchar("objective_id").references(() => objectives.id),
 
-  recordedAt: timestamp("recorded_at").notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
   value: text("value").notNull(),
   numericValue: real("numeric_value"), // For graphing
   // For GAS-scored goals: the ordinal level observed at this data point.
@@ -1085,12 +1085,45 @@ export const dataPoints = pgTable("data_points", {
   context: text("context"),
   collectedBy: text("collected_by"),
 
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_data_points_progress_entry_id").on(table.goalProgressEntryId),
   index("idx_data_points_goal_id").on(table.goalId),
   index("idx_data_points_objective_id").on(table.objectiveId),
   index("idx_data_points_recorded_at").on(table.recordedAt),
+]);
+
+/**
+ * Incident types — categorizes a recorded incident.
+ * Extensible: add values via migration when new categories are needed.
+ */
+export const incidentTypeEnum = pgEnum("incident_type", ["medical", "functional"]);
+
+/**
+ * Incident severity — four-level ordinal scale.
+ */
+export const incidentSeverityEnum = pgEnum("incident_severity", ["low", "moderate", "high", "critical"]);
+
+/**
+ * Incidents — lightweight per-student events not tied to a program or goal.
+ * Captures medical or functional occurrences (seizure, behavior episode, fall,
+ * regression, etc.) for clinician review and AI context.
+ */
+export const incidents = pgTable("incidents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").references(() => students.id, { onDelete: "cascade" }).notNull(),
+
+  type: incidentTypeEnum("type").notNull(),
+  severity: incidentSeverityEnum("severity").notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+  context: text("context"),
+  collectedBy: text("collected_by"),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_incidents_student_id").on(table.studentId),
+  index("idx_incidents_recorded_at").on(table.recordedAt),
+  index("idx_incidents_type").on(table.type),
 ]);
 
 /**
@@ -1753,6 +1786,17 @@ export const insertDataPointSchema = createInsertSchema(dataPoints).omit({
   createdAt: true,
 });
 
+// Incident schemas
+export const insertIncidentSchema = createInsertSchema(incidents).omit({
+  id: true,
+  createdAt: true,
+});
+export const updateIncidentSchema = createInsertSchema(incidents).omit({
+  id: true,
+  studentId: true,
+  createdAt: true,
+}).partial();
+
 // Transition plan schemas
 export const insertTransitionPlanSchema = createInsertSchema(transitionPlans).omit({
   id: true,
@@ -2027,6 +2071,11 @@ export type InsertGoalProgressEntry = z.infer<typeof insertGoalProgressEntrySche
 
 export type DataPoint = typeof dataPoints.$inferSelect;
 export type InsertDataPoint = z.infer<typeof insertDataPointSchema>;
+export type Incident = typeof incidents.$inferSelect;
+export type InsertIncident = z.infer<typeof insertIncidentSchema>;
+export type UpdateIncident = z.infer<typeof updateIncidentSchema>;
+export type IncidentType = typeof incidentTypeEnum.enumValues[number];
+export type IncidentSeverity = typeof incidentSeverityEnum.enumValues[number];
 
 export type TransitionPlan = typeof transitionPlans.$inferSelect;
 export type InsertTransitionPlan = z.infer<typeof insertTransitionPlanSchema>;

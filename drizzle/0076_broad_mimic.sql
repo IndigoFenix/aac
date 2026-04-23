@@ -1,0 +1,2 @@
+CREATE TYPE "public"."event_invite_status" AS ENUM('pending', 'accepted', 'declined');--> statement-breakpoint
+ALTER TABLE "calendar_event_attendees" ADD COLUMN "invite_status" "event_invite_status" DEFAULT 'pending' NOT NULL;

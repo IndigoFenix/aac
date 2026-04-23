@@ -49,6 +49,7 @@ import {
   import { instituteRepository } from "../../repositories/instituteRepository";
   import { licenseRepository } from "../../repositories/licenseRepository";
   import { calendarRepository } from "../../repositories/calendarRepository";
+  import { calendarService } from "../calendarService";
   import type { LicensePermissions } from "@shared/license-permissions";
   import { resolvePermissions } from "@shared/license-permissions";
   
@@ -2099,27 +2100,34 @@ import {
       const endDate = new Date();
       endDate.setDate(endDate.getDate() + 90);
 
-      // Build attendee keys: the user + their selected institute
-      const attendeeKeys: { type: string; id: string }[] = [
-        { type: 'user', id: userId },
-      ];
-      const selectedInstituteId = ctx.all.instituteId as string | undefined;
-      if (selectedInstituteId) {
-        attendeeKeys.push({ type: 'institute', id: selectedInstituteId });
-      }
+      // Visibility per calendar-plan.md: applies selected-institute gating,
+      // the student-path cross-institute leak, and student-service handling.
+      const events = await calendarService.getEventsForUser(userId, startDate, endDate, {
+        selectedStudentId: ctx.all.studentId as string | undefined,
+        selectedInstituteId: ctx.all.instituteId as string | undefined,
+      });
 
-      const events = await calendarRepository.getEventsForAttendees(attendeeKeys, startDate, endDate);
+      // Strip participant list for events visible only via the selected student
+      const reduced = await calendarService.applyReducedView(events, userId, {
+        selectedStudentId: ctx.all.studentId as string | undefined,
+        selectedInstituteId: ctx.all.instituteId as string | undefined,
+      });
 
       // Expand recurring events into individual occurrences with concrete dates
-      const expanded = calendarRepository.expandRecurringEvents(
-        events, startDate, endDate
-      );
+      const expanded = calendarRepository.expandRecurringEvents(reduced, startDate, endDate);
 
       const paged = expanded.slice(offset, offset + limit);
+      // Index reduced-view flag by event id so we can include it per occurrence
+      const reducedById = new Map(reduced.map((e) => [e.id, (e as any).reducedView === true]));
       return {
         items: paged.map(({ event, date }) => ({
           ...toMemoryValue(event),
           occurrenceDate: date.toISOString(),
+          // Include the requesting user's RSVP status, if any.
+          myInviteStatus: (event as any).attendees?.find(
+            (a: any) => a.attendeeType === "user" && a.attendeeId === userId,
+          )?.inviteStatus ?? null,
+          reducedView: reducedById.get(event.id) === true || undefined,
         })),
         total: expanded.length,
         keys: paged.map(({ event }) => event.id),
@@ -2127,40 +2135,72 @@ import {
     },
 
     get: async (ctx, key) => {
-      const event = await calendarRepository.getEventById(String(key));
-      if (!event) return undefined;
-      const attendees = await calendarRepository.getAttendeesByEventId(event.id);
-      return { ...toMemoryValue(event), attendees: attendees.map(a => toMemoryValue(a)) };
+      const userId = getUserId(ctx);
+      const full = await calendarService.getEvent(String(key), userId);
+      if (!full) return undefined;
+      return {
+        ...toMemoryValue(full),
+        attendees: full.attendees.map((a) => toMemoryValue(a)),
+        myInviteStatus:
+          full.attendees.find((a) => a.attendeeType === "user" && a.attendeeId === userId)
+            ?.inviteStatus ?? null,
+      };
     },
 
     add: async (ctx, value) => {
       const userId = getUserId(ctx);
-      const event = await calendarRepository.createEvent({
-        title: value.title,
-        description: value.description,
-        startTime: new Date(value.startTime),
-        endTime: new Date(value.endTime),
-        allDay: value.allDay ?? false,
-        repeatType: value.repeatType ?? 'none',
-        repeatInterval: value.repeatInterval ?? 1,
-        repeatDays: value.repeatDays,
-        repeatMonthWeek: value.repeatMonthWeek,
-        repeatEndDate: value.repeatEndDate ? new Date(value.repeatEndDate) : undefined,
-      }, userId);
-
-      // Auto-add the user as an attendee
-      await calendarRepository.addAttendee({ eventId: event.id, attendeeType: 'user', attendeeId: userId });
-
-      // Add the selected institute as attendee if available
       const selectedInstituteId = ctx.all.instituteId as string | undefined;
-      if (selectedInstituteId) {
-        await calendarRepository.addAttendee({ eventId: event.id, attendeeType: 'institute', attendeeId: selectedInstituteId });
+
+      // Resolve the event's association FK: the AI can target an institute,
+      // classroom, or service event. A plain (no association) event is
+      // permitted. Per plan, only institute admins can create institute events.
+      const instituteId = value.instituteId ?? undefined;
+      const classroomId = value.classroomId ?? undefined;
+      const serviceId = value.serviceId ?? undefined;
+
+      if (instituteId) {
+        const link = await instituteRepository.getInstituteUserLink(instituteId, userId);
+        if (!link?.isAdmin) {
+          throw new Error("Only institute admins can create institute events");
+        }
       }
 
-      return toMemoryValue(event);
+      const created = await calendarService.createEvent(
+        {
+          title: value.title,
+          description: value.description,
+          startTime: new Date(value.startTime),
+          endTime: new Date(value.endTime),
+          allDay: value.allDay ?? false,
+          repeatType: value.repeatType ?? "none",
+          repeatInterval: value.repeatInterval ?? 1,
+          repeatDays: value.repeatDays,
+          repeatMonthWeek: value.repeatMonthWeek,
+          repeatEndDate: value.repeatEndDate ? new Date(value.repeatEndDate) : undefined,
+          instituteId,
+          classroomId,
+          serviceId,
+        } as any,
+        userId,
+        Array.isArray(value.attendees)
+          ? value.attendees
+              .filter((a: any) => a?.attendeeType && a?.attendeeId)
+              .map((a: any) => ({ attendeeType: a.attendeeType, attendeeId: a.attendeeId }))
+          : undefined,
+      );
+
+      return toMemoryValue(created);
     },
 
     update: async (ctx, key, value) => {
+      const userId = getUserId(ctx);
+      const eventId = String(key);
+
+      // RSVP is per-attendee, not part of the event row. Route it separately.
+      if (value.myInviteStatus !== undefined && value.myInviteStatus !== null) {
+        await calendarService.setRsvp(eventId, userId, value.myInviteStatus);
+      }
+
       const updates: Record<string, any> = {};
       if (value.title !== undefined) updates.title = value.title;
       if (value.description !== undefined) updates.description = value.description;
@@ -2173,14 +2213,20 @@ import {
       if (value.repeatMonthWeek !== undefined) updates.repeatMonthWeek = value.repeatMonthWeek;
       if (value.repeatEndDate !== undefined) updates.repeatEndDate = value.repeatEndDate ? new Date(value.repeatEndDate) : null;
 
-      const event = await calendarRepository.updateEvent(String(key), updates);
-      if (!event) throw new Error("Event not found");
-      return toMemoryValue(event);
+      // Skip the event-field update when only RSVP changed.
+      if (Object.keys(updates).length > 0) {
+        const event = await calendarService.updateEvent(eventId, updates, userId);
+        if (!event) throw new Error("Event not found or edit not permitted (creator or institute admin required)");
+      }
+
+      const fresh = await calendarRepository.getEventById(eventId);
+      return fresh ? toMemoryValue(fresh) : undefined;
     },
 
     delete: async (ctx, key) => {
-      const deleted = await calendarRepository.deleteEvent(String(key));
-      if (!deleted) throw new Error("Event not found");
+      const userId = getUserId(ctx);
+      const deleted = await calendarService.deleteEvent(String(key), userId);
+      if (!deleted) throw new Error("Event not found or delete not permitted (creator or institute admin required)");
     },
 
     fromDB: (record) => toMemoryValue(record),
@@ -2195,7 +2241,7 @@ import {
       title: { id: "title", type: "string" },
       description: { id: "description", type: "string" },
       occurrenceDate: { id: "occurrenceDate", type: "string", format: "ISO 8601 datetime", description: "The actual date this occurrence falls on (accounts for recurrence expansion)." },
-      startTime: { id: "startTime", type: "string", format: "ISO 8601 datetime", description: "Original event start time (for recurring events, this is the first occurrence)." },
+      startTime: { id: "startTime", type: "string", format: "ISO 8601 datetime", description: "Original event start time (for recurring events, this is the first occurrence). Provide in UTC; the server stores UTC and the client renders in the user's local zone." },
       endTime: { id: "endTime", type: "string", format: "ISO 8601 datetime" },
       allDay: { id: "allDay", type: "boolean" },
       repeatType: { id: "repeatType", type: "string", enum: ["none", "daily", "weekly", "monthly_date", "monthly_weekday"], description: "'none'=one-time, 'daily'=every day, 'weekly'=specific days each week, 'monthly_date'=same date each month, 'monthly_weekday'=Nth weekday each month (e.g., 2nd Tuesday)." },
@@ -2203,6 +2249,10 @@ import {
       repeatDays: { id: "repeatDays", type: "array", items: { id: "day", type: "number" }, description: "For weekly: which days. 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat. Example: [1,3,5] for Mon/Wed/Fri." },
       repeatMonthWeek: { id: "repeatMonthWeek", type: "number", description: "For monthly_weekday: which occurrence. 1=first, 2=second, 3=third, -1=last. The weekday is taken from the event's start date." },
       repeatEndDate: { id: "repeatEndDate", type: "string", format: "ISO 8601 datetime", description: "When the recurring event stops repeating." },
+      instituteId: { id: "instituteId", type: "string", description: "If set, this is an institute-wide event. Only institute admins can create or edit events with this set." },
+      classroomId: { id: "classroomId", type: "string", description: "If set, this is a classroom event. Only classroom members can create events with this set." },
+      serviceId: { id: "serviceId", type: "string", description: "If set, links the event to a service in a student's program (therapy session, tutoring, etc.)." },
+      myInviteStatus: { id: "myInviteStatus", type: "string", enum: ["pending", "accepted", "declined"], description: "The current user's RSVP status on this event. Updating this only changes the user's own attendee status, not the event itself." },
     },
     required: ["title", "startTime", "endTime"],
   };

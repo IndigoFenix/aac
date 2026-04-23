@@ -61,6 +61,7 @@ import { customSymbolRepository } from "../repositories/customSymbolRepository";
 import { aacSettingsRepository } from "../repositories/aacSettingsRepository";
 import { instituteRepository } from "../repositories/instituteRepository";
 import { calendarRepository } from "../repositories/calendarRepository";
+import { startOfDayInTimezone } from "../lib/timezone";
 import { licenseService } from "./licenseService";
 import type { LicensePermissions } from "@shared/license-permissions";
 import { resolveImageKeys, queueSymbolGeneration } from "./symbol/auto-symbol-service";
@@ -156,6 +157,9 @@ import {
 import {
   STUDENT_MEMORY_FIELDS,
 } from "./memory-schema/student-memory-schema";
+import {
+  STUDENT_INCIDENTS_FIELD,
+} from "./memory-schema/incident-memory-schema";
 import {
   getAACSettingsMemoryFields,
 } from "./memory-schema/aac-settings-memory-schema";
@@ -356,6 +360,8 @@ export const MASTER_MEMORY_FIELDS: AgentMemoryFieldWithDB[] = [
   ...STUDENT_MEMORY_FIELDS,
   // Student_Contacts — backed by the studentContacts table (not chatMemory)
   STUDENT_CONTACTS_FIELD,
+  // Student_Incidents — backed by the incidents table
+  STUDENT_INCIDENTS_FIELD,
   // Read-only list of linkable users/students (shared-institute scope)
   STUDENT_LINKABLE_ENTITIES_FIELD,
   // Relationship_* fields with db operations
@@ -876,6 +882,8 @@ interface GetMessageManagerInput {
   currentImage?: CurrentImage;
   /** Override the system prompt instead of building it from persona/student settings */
   systemPromptOverride?: string;
+  /** IANA timezone of the requesting user (for AI prompt context and "today" windows). */
+  timezone?: string;
 }
 
 interface GetMessageManagerResult {
@@ -889,33 +897,30 @@ interface GetMessageManagerResult {
  */
 async function loadFlaggedCalendarEvents(
   userId: string,
-  instituteId?: string
+  instituteId?: string,
+  timezone?: string,
 ): Promise<any[]> {
   const now = new Date();
-  const todayStart = new Date(now);
-  todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date(now);
-  todayEnd.setHours(23, 59, 59, 999);
+  // Compute "today" boundaries in the requesting user's zone when supplied.
+  // Without a zone the server's local time is used, which produces a wrong
+  // window for users whose local day differs from the server's.
+  const todayStart = timezone
+    ? startOfDayInTimezone(timezone, now)
+    : (() => { const d = new Date(now); d.setHours(0, 0, 0, 0); return d; })();
+  const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
 
-  const yesterday = new Date(todayStart);
-  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterday = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
 
-  const threeDaysOut = new Date(todayStart);
-  threeDaysOut.setDate(threeDaysOut.getDate() + 3);
-  threeDaysOut.setHours(23, 59, 59, 999);
+  const threeDaysOut = new Date(todayStart.getTime() + 4 * 24 * 60 * 60 * 1000 - 1);
 
   const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
   const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
 
-  // Fetch events in the window: yesterday through 3 days out
-  const attendeeKeys: { type: string; id: string }[] = [
-    { type: 'user', id: userId },
-  ];
-  if (instituteId) {
-    attendeeKeys.push({ type: 'institute', id: instituteId });
-  }
-
-  const rawEvents = await calendarRepository.getEventsForAttendees(attendeeKeys, yesterday, threeDaysOut);
+  // Fetch events in the window via the plan's visibility rules.
+  const { calendarService } = await import("./calendarService");
+  const rawEvents = await calendarService.getEventsForUser(userId, yesterday, threeDaysOut, {
+    selectedInstituteId: instituteId,
+  });
 
   // Expand recurring events into concrete occurrences
   const expanded = calendarRepository.expandRecurringEvents(rawEvents, yesterday, threeDaysOut);
@@ -1382,7 +1387,7 @@ Example button with custom symbol:
   // Inject flagged calendar events so the AI is aware of important upcoming/recent events
   if (!isAACFeature && licensePerms?.calendar && context.user) {
     try {
-      const flagged = await loadFlaggedCalendarEvents(context.user.id, context.institute?.id);
+      const flagged = await loadFlaggedCalendarEvents(context.user.id, context.institute?.id, input.timezone);
       if (flagged.length > 0) {
         memoryValues["Context_CalendarAlerts"] = flagged;
       }
@@ -1619,6 +1624,7 @@ Example button with custom symbol:
     loopDetectionConfig: CLINIAACIAN_LOOP_DETECTION_CONFIG,
     currentImage: input.currentImage,
     providerConfig: llmConfig,
+    timezone: input.timezone,
   });
 
 
@@ -1781,6 +1787,9 @@ export interface OnMessageInput {
 
   /** Override the system prompt instead of building from persona/student settings */
   systemPromptOverride?: string;
+
+  /** IANA timezone of the requesting user (e.g. "America/New_York"). Used for AI prompt context. */
+  timezone?: string;
 }
 
 /**
@@ -1821,7 +1830,7 @@ function classifyError(error: any): string {
 
 export async function onMessage(input: OnMessageInput): Promise<MessageResponse> {
   try {
-    const { userId, studentId, instituteId, sessionId, activeFeature, persona, messages, replyType, featureContext, vectorStoreId, images, documents, currentImage, systemPromptOverride } = input;
+    const { userId, studentId, instituteId, sessionId, activeFeature, persona, messages, replyType, featureContext, vectorStoreId, images, documents, currentImage, systemPromptOverride, timezone } = input;
 
     const { manager: messageManager, memoryValues } = await getMessageManager({
       userId,
@@ -1836,6 +1845,7 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
       documents,
       currentImage,
       systemPromptOverride,
+      timezone,
     });
 
     // Debug: Log what we injected
@@ -1912,7 +1922,7 @@ export async function onMessage(input: OnMessageInput): Promise<MessageResponse>
  */
 export async function onMessageStreaming(input: OnMessageStreamingInput): Promise<MessageResponse> {
   try {
-    const { userId, studentId, instituteId, sessionId, activeFeature, persona, messages, replyType, featureContext, onThinkingUpdate, onNavigate, onSelectStudent, onFilesNeeded, vectorStoreId, images, documents, currentImage, systemPromptOverride } = input;
+    const { userId, studentId, instituteId, sessionId, activeFeature, persona, messages, replyType, featureContext, onThinkingUpdate, onNavigate, onSelectStudent, onFilesNeeded, vectorStoreId, images, documents, currentImage, systemPromptOverride, timezone } = input;
 
     const { manager: messageManager, memoryValues } = await getMessageManager({
       userId,
@@ -1931,6 +1941,7 @@ export async function onMessageStreaming(input: OnMessageStreamingInput): Promis
       documents,
       currentImage,
       systemPromptOverride,
+      timezone,
     });
 
     // Debug: Log what we injected
@@ -2038,7 +2049,7 @@ export async function* onMessageMdStreaming(
     const {
       userId, studentId, instituteId, sessionId, activeFeature, persona, messages,
       featureContext, onThinkingUpdate, onNavigate, onSelectStudent, onFilesNeeded,
-      vectorStoreId, images, documents, currentImage, systemPromptOverride,
+      vectorStoreId, images, documents, currentImage, systemPromptOverride, timezone,
     } = input;
 
     const { manager: messageManager, memoryValues } = await getMessageManager({
@@ -2058,6 +2069,7 @@ export async function* onMessageMdStreaming(
       documents,
       currentImage,
       systemPromptOverride,
+      timezone,
     });
 
     // Persist any incoming messages

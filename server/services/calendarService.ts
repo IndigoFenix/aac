@@ -97,30 +97,19 @@ class CalendarService {
     const event = await calendarRepository.getEventById(eventId);
     if (!event) return undefined;
 
-    const attendees = await calendarRepository.getAttendeesByEventId(eventId);
-
-    // Verify the user can see this event
-    const attendeeKeys = await this.getUserAttendeeKeys(userId);
-    const canSee = attendees.some((att) =>
-      attendeeKeys.some((k) => k.type === att.attendeeType && k.id === att.attendeeId),
-    );
-
+    const canSee = await this.canUserAccessEvent(eventId, userId);
     if (!canSee) return undefined;
 
+    const attendees = await calendarRepository.getAttendeesByEventId(eventId);
     return { ...event, attendees };
   }
 
   async updateEvent(eventId: string, updates: UpdateCalendarEvent, userId: string) {
-    // Verify ownership or access
     const event = await calendarRepository.getEventById(eventId);
     if (!event) return undefined;
 
-    const attendees = await calendarRepository.getAttendeesByEventId(eventId);
-    const attendeeKeys = await this.getUserAttendeeKeys(userId);
-    const canAccess = attendees.some((att) =>
-      attendeeKeys.some((k) => k.type === att.attendeeType && k.id === att.attendeeId),
-    );
-    if (!canAccess) return undefined;
+    const canEdit = await this.canUserEditEvent(event, userId);
+    if (!canEdit) return undefined;
 
     return calendarRepository.updateEvent(eventId, updates);
   }
@@ -129,10 +118,25 @@ class CalendarService {
     const event = await calendarRepository.getEventById(eventId);
     if (!event) return false;
 
-    // Only creator can delete
-    if (event.createdByUserId !== userId) return false;
+    const canEdit = await this.canUserEditEvent(event, userId);
+    if (!canEdit) return false;
 
     return calendarRepository.deleteEvent(eventId);
+  }
+
+  /**
+   * Edit/delete permission per plan:
+   *  - Event creator: always.
+   *  - Institute admin on the event's institute: for events with instituteId set.
+   * No other path grants edit.
+   */
+  async canUserEditEvent(event: CalendarEvent, userId: string): Promise<boolean> {
+    if (event.createdByUserId === userId) return true;
+    if (event.instituteId) {
+      const link = await instituteRepository.getInstituteUserLink(event.instituteId, userId);
+      if (link?.isAdmin) return true;
+    }
+    return false;
   }
 
   async addAttendee(
@@ -202,74 +206,303 @@ class CalendarService {
   }
 
   /**
-   * Get events visible to a user within a date range.
+   * Get events visible to a user within a date range, applying the plan's
+   * visibility rules.
+   *
+   * Visibility:
+   *  - Direct invitee (user attendee) — always.
+   *  - Via selected student — attendee match, student-service events for their services,
+   *    and FK matches on the student's institutes/classrooms (cross-institute leak is
+   *    an acknowledged design choice in calendar-plan.md).
+   *  - Via selected institute — event.instituteId = selected institute (if user is a
+   *    member), and event.classroomId ∈ user's classrooms in that institute.
+   *  - If no institute selected and no student selected, institute/classroom FK matches
+   *    are skipped (per plan: "event is hidden").
    */
   async getEventsForUser(
     userId: string,
     startDate: Date,
     endDate: Date,
+    opts: { selectedStudentId?: string; selectedInstituteId?: string } = {},
   ): Promise<(CalendarEvent & { attendees: CalendarEventAttendee[] })[]> {
-    const attendeeKeys = await this.getUserAttendeeKeys(userId);
-    return calendarRepository.getEventsForAttendees(attendeeKeys, startDate, endDate);
+    const criteria = await this.buildVisibilityCriteria(userId, opts);
+    return calendarRepository.getVisibleEvents(criteria, startDate, endDate);
+  }
+
+  /**
+   * Build the OR'd visibility criteria for a user with an optional selected
+   * student / institute context. Exported via this service so AI-side loaders
+   * (monitor agent, flagged events) can share the exact rules.
+   */
+  async buildVisibilityCriteria(
+    userId: string,
+    opts: { selectedStudentId?: string; selectedInstituteId?: string } = {},
+  ) {
+    const { selectedStudentId, selectedInstituteId } = opts;
+
+    const { studentRepository, classroomRepository } = await import("../repositories");
+
+    const attendees: Array<{ type: string; id: string }> = [
+      { type: "user", id: userId },
+    ];
+    const instituteIds: string[] = [];
+    const classroomIds: string[] = [];
+    const serviceIds: string[] = [];
+
+    // ── Selected institute path ──
+    if (selectedInstituteId) {
+      const userInstitutes = await instituteRepository.getInstitutesByUserId(userId);
+      const userIsMember = userInstitutes.some((i) => i.id === selectedInstituteId);
+      if (userIsMember) {
+        instituteIds.push(selectedInstituteId);
+        // Classrooms the user belongs to within the selected institute.
+        const userClassrooms = await classroomRepository.getClassroomsByUserId(userId);
+        for (const cr of userClassrooms) {
+          if (cr.classroom.instituteId === selectedInstituteId) {
+            classroomIds.push(cr.classroom.id);
+          }
+        }
+      }
+    }
+
+    // ── Selected student path ──
+    // Events visible to the selected student are visible to the viewer. Includes
+    // direct student attendee, the student's service events, and FK matches on
+    // the student's institutes/classrooms — per plan, cross-institute visibility
+    // via a selected student is intentional.
+    if (selectedStudentId) {
+      attendees.push({ type: "student", id: selectedStudentId });
+
+      const studentInstitutes = await instituteRepository.getInstitutesByStudentId(selectedStudentId);
+      for (const row of studentInstitutes) {
+        const instId = (row as any).institute?.id ?? (row as any).id;
+        if (instId && !instituteIds.includes(instId)) instituteIds.push(instId);
+      }
+
+      const studentClassrooms = await classroomRepository.getClassroomsByStudentId(selectedStudentId);
+      for (const cr of studentClassrooms) {
+        const crId = (cr as any).classroom?.id ?? (cr as any).id;
+        if (crId && !classroomIds.includes(crId)) classroomIds.push(crId);
+      }
+
+      // Student service events: include any event linked to a service in any of
+      // the student's programs. Covers the case where the student was removed
+      // from the attendee list but the event is still tied to their service.
+      const { programRepository } = await import("../repositories");
+      const programs = await programRepository.getProgramsByStudentId(selectedStudentId);
+      for (const p of programs) {
+        const services = await programRepository.getServicesByProgramId(p.id);
+        for (const s of services) {
+          if (!serviceIds.includes(s.id)) serviceIds.push(s.id);
+        }
+      }
+    }
+
+    return { attendees, instituteIds, classroomIds, serviceIds };
+  }
+
+  /**
+   * Visibility criteria for events a single student can see. Used by the AAC
+   * monitor agent and any student-centric listing. Rules per calendar-plan.md:
+   *  - Directly assigned to student
+   *  - Event institute = institute the student belongs to
+   *  - Event classroom = classroom the student belongs to
+   */
+  async buildStudentVisibilityCriteria(studentId: string) {
+    const { classroomRepository } = await import("../repositories");
+
+    const attendees: Array<{ type: string; id: string }> = [
+      { type: "student", id: studentId },
+    ];
+    const instituteIds: string[] = [];
+    const classroomIds: string[] = [];
+    const serviceIds: string[] = [];
+
+    const studentInstitutes = await instituteRepository.getInstitutesByStudentId(studentId);
+    for (const row of studentInstitutes) {
+      const instId = (row as any).institute?.id ?? (row as any).id;
+      if (instId) instituteIds.push(instId);
+    }
+
+    const studentClassrooms = await classroomRepository.getClassroomsByStudentId(studentId);
+    for (const cr of studentClassrooms) {
+      const crId = (cr as any).classroom?.id ?? (cr as any).id;
+      if (crId) classroomIds.push(crId);
+    }
+
+    const { programRepository } = await import("../repositories");
+    const programs = await programRepository.getProgramsByStudentId(studentId);
+    for (const p of programs) {
+      const services = await programRepository.getServicesByProgramId(p.id);
+      for (const s of services) serviceIds.push(s.id);
+    }
+
+    return { attendees, instituteIds, classroomIds, serviceIds };
+  }
+
+  /**
+   * Strip the participant list from events that are only visible to the user
+   * via the selected-student path. Per plan: "the event is rendered in a
+   * reduced form: basic info only (title, time, type). The participant list
+   * — other users and students — is hidden."
+   *
+   * An event falls into reduced view when the user has NO direct membership
+   * reason to see it (no user attendee, no institute/classroom membership, not
+   * the creator) but it IS visible via selected student.
+   */
+  async applyReducedView(
+    events: (CalendarEvent & { attendees: CalendarEventAttendee[] })[],
+    userId: string,
+    opts: { selectedStudentId?: string; selectedInstituteId?: string },
+  ): Promise<(CalendarEvent & { attendees: CalendarEventAttendee[]; reducedView?: boolean })[]> {
+    if (!opts.selectedStudentId || events.length === 0) {
+      return events;
+    }
+
+    // Resolve the user's direct memberships once.
+    const { classroomRepository } = await import("../repositories");
+    const userInstitutes = await instituteRepository.getInstitutesByUserId(userId);
+    const userInstituteIds = new Set(userInstitutes.map((i) => i.id));
+    const userClassrooms = await classroomRepository.getClassroomsByUserId(userId);
+    const userClassroomIds = new Set(
+      userClassrooms.map((c: any) => c.classroom?.id ?? c.id).filter(Boolean) as string[],
+    );
+
+    return events.map((e) => {
+      const isCreator = e.createdByUserId === userId;
+      const isDirectInvitee = e.attendees.some(
+        (a) => a.attendeeType === "user" && a.attendeeId === userId,
+      );
+      const viaInstituteMembership = !!e.instituteId && userInstituteIds.has(e.instituteId);
+      const viaClassroomMembership = !!e.classroomId && userClassroomIds.has(e.classroomId);
+
+      const hasDirectReason =
+        isCreator || isDirectInvitee || viaInstituteMembership || viaClassroomMembership;
+
+      if (hasDirectReason) return e;
+
+      // Student-path-only: strip attendees, flag as reduced.
+      return {
+        ...e,
+        description: null,
+        attendees: [],
+        reducedView: true,
+      };
+    });
+  }
+
+  /** Events visible to a student within a date range. Used by AAC monitor agent. */
+  async getEventsForStudent(
+    studentId: string,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<(CalendarEvent & { attendees: CalendarEventAttendee[] })[]> {
+    const criteria = await this.buildStudentVisibilityCriteria(studentId);
+    return calendarRepository.getVisibleEvents(criteria, startDate, endDate);
+  }
+
+  /**
+   * Update the requesting user's RSVP status on an event they're invited to.
+   * Returns the updated attendee row, or undefined if the user is not an
+   * invitee on this event.
+   */
+  async setRsvp(
+    eventId: string,
+    userId: string,
+    status: "pending" | "accepted" | "declined",
+  ): Promise<CalendarEventAttendee | undefined> {
+    const event = await calendarRepository.getEventById(eventId);
+    if (!event) return undefined;
+    return calendarRepository.setAttendeeInviteStatus(eventId, "user", userId, status);
+  }
+
+  /**
+   * Broad access check for a single event. Returns true if the user could see
+   * the event under ANY valid selection context (selected institute/student).
+   * Used for single-event GET and as a base check before applying stricter
+   * edit/delete permissions.
+   */
+  async canUserAccessEvent(eventId: string, userId: string): Promise<boolean> {
+    const event = await calendarRepository.getEventById(eventId);
+    if (!event) return false;
+    if (event.createdByUserId === userId) return true;
+
+    const { studentRepository, classroomRepository } = await import("../repositories");
+    const attendees = await calendarRepository.getAttendeesByEventId(eventId);
+
+    // 1. Direct user attendee
+    if (attendees.some((a) => a.attendeeType === "user" && a.attendeeId === userId)) return true;
+
+    // 2. Student attendee in user's students (student-path leak, per plan)
+    const userStudents = await studentRepository.getStudentsByUserId(userId);
+    const userStudentIds = new Set(userStudents.map((s) => s.id));
+    if (attendees.some((a) => a.attendeeType === "student" && userStudentIds.has(a.attendeeId))) return true;
+
+    // 3. Event institute FK matches a user institute
+    if (event.instituteId) {
+      const userInstitutes = await instituteRepository.getInstitutesByUserId(userId);
+      if (userInstitutes.some((i) => i.id === event.instituteId)) return true;
+    }
+
+    // 4. Event classroom FK matches a user classroom
+    if (event.classroomId) {
+      const userClassrooms = await classroomRepository.getClassroomsByUserId(userId);
+      if (userClassrooms.some((c: any) => (c.classroom?.id ?? c.id) === event.classroomId)) return true;
+    }
+
+    // 5. Event service FK belongs to a program of one of the user's students
+    if (event.serviceId) {
+      const { programRepository } = await import("../repositories");
+      const service = await programRepository.getServiceById(event.serviceId);
+      if (service) {
+        const program = await programRepository.getProgramById(service.programId);
+        if (program?.studentId && userStudentIds.has(program.studentId)) return true;
+      }
+    }
+
+    return false;
   }
 
   /**
    * Get events happening within a timeframe for AI prompt context.
    * Returns a simplified list suitable for embedding in a prompt.
+   * If a timezone is supplied, start/end are formatted in that zone; otherwise UTC.
    */
   async getUpcomingEventsForPrompt(
     userId: string,
-    hoursAhead: number = 24,
-    hoursBehind: number = 2,
+    opts: { timezone?: string; hoursAhead?: number; hoursBehind?: number } = {},
   ): Promise<{ title: string; start: string; end: string; allDay: boolean }[]> {
+    const { timezone, hoursAhead = 24, hoursBehind = 2 } = opts;
     const now = new Date();
     const startDate = new Date(now.getTime() - hoursBehind * 60 * 60 * 1000);
     const endDate = new Date(now.getTime() + hoursAhead * 60 * 60 * 1000);
 
     const events = await this.getEventsForUser(userId, startDate, endDate);
 
+    const fmt = (d: Date) => {
+      if (!timezone) return d.toISOString();
+      // en-CA locale produces ISO-like YYYY-MM-DD HH:mm:ss in the given zone
+      try {
+        const parts = new Intl.DateTimeFormat("en-CA", {
+          timeZone: timezone,
+          year: "numeric", month: "2-digit", day: "2-digit",
+          hour: "2-digit", minute: "2-digit", hour12: false,
+        }).formatToParts(d);
+        const get = (t: string) => parts.find(p => p.type === t)?.value ?? "";
+        return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")} (${timezone})`;
+      } catch {
+        return d.toISOString();
+      }
+    };
+
     return events.map((e) => ({
       title: e.title,
-      start: e.startTime.toISOString(),
-      end: e.endTime.toISOString(),
+      start: fmt(e.startTime),
+      end: fmt(e.endTime),
       allDay: e.allDay,
     }));
   }
 
-  /**
-   * Build the list of attendee keys that a user is connected to:
-   * - The user themselves
-   * - Students linked to the user
-   * - Institutes the user belongs to
-   * - Classrooms the user belongs to
-   */
-  private async getUserAttendeeKeys(userId: string): Promise<{ type: string; id: string }[]> {
-    const keys: { type: string; id: string }[] = [{ type: "user", id: userId }];
-
-    // Lazy imports to avoid circular dependencies
-    const { studentRepository } = await import("../repositories");
-    const { classroomRepository } = await import("../repositories");
-
-    // Students
-    const students = await studentRepository.getStudentsByUserId(userId);
-    for (const s of students) {
-      keys.push({ type: "student", id: s.id });
-    }
-
-    // Institutes
-    const institutes = await instituteRepository.getInstitutesByUserId(userId);
-    for (const inst of institutes) {
-      keys.push({ type: "institute", id: inst.id });
-    }
-
-    // Classrooms
-    const classrooms = await classroomRepository.getClassroomsByUserId(userId);
-    for (const cr of classrooms) {
-      keys.push({ type: "classroom", id: cr.classroom.id });
-    }
-
-    return keys;
-  }
 }
 
 export const calendarService = new CalendarService();

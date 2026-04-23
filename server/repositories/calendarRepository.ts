@@ -13,6 +13,21 @@ import {
 import { db } from "../db";
 import { eq, and, gte, lte, or, inArray, desc } from "drizzle-orm";
 
+/**
+ * OR'd visibility criteria. An event is visible if ANY of these match.
+ * The service layer builds this per the plan's visibility rules.
+ */
+export interface VisibilityCriteria {
+  /** Attendee rows matching any of these keys (user, student, classroom, institute). */
+  attendees: Array<{ type: string; id: string }>;
+  /** calendar_events.institute_id ∈ this list. */
+  instituteIds: string[];
+  /** calendar_events.classroom_id ∈ this list. */
+  classroomIds: string[];
+  /** calendar_events.service_id ∈ this list. */
+  serviceIds: string[];
+}
+
 export class CalendarRepository {
   async createEvent(data: InsertCalendarEvent, createdByUserId: string): Promise<CalendarEvent> {
     const [event] = await db
@@ -86,6 +101,30 @@ export class CalendarRepository {
       .where(eq(calendarEventAttendees.eventId, eventId));
   }
 
+  /**
+   * Update an attendee's RSVP status. Returns the updated row, or undefined if
+   * no matching attendee exists.
+   */
+  async setAttendeeInviteStatus(
+    eventId: string,
+    attendeeType: "user" | "student",
+    attendeeId: string,
+    status: "pending" | "accepted" | "declined",
+  ): Promise<CalendarEventAttendee | undefined> {
+    const [row] = await db
+      .update(calendarEventAttendees)
+      .set({ inviteStatus: status })
+      .where(
+        and(
+          eq(calendarEventAttendees.eventId, eventId),
+          eq(calendarEventAttendees.attendeeType, attendeeType),
+          eq(calendarEventAttendees.attendeeId, attendeeId),
+        ),
+      )
+      .returning();
+    return row || undefined;
+  }
+
   async getEventsByServiceId(
     serviceId: string,
   ): Promise<(CalendarEvent & { attendees: CalendarEventAttendee[] })[]> {
@@ -118,53 +157,72 @@ export class CalendarRepository {
   // ---- Queries ----
 
   /**
-   * Get events in a date range where the user, their students, their institutes,
-   * or their classrooms are attendees.
+   * Get events in a date range that match any of the supplied OR'd visibility
+   * criteria: attendee row match OR FK match on institute/classroom/service.
+   * The service layer builds these criteria per the plan's visibility rules.
    */
-  async getEventsForAttendees(
-    attendeeKeys: { type: string; id: string }[],
+  async getVisibleEvents(
+    criteria: VisibilityCriteria,
     startDate: Date,
     endDate: Date,
   ): Promise<(CalendarEvent & { attendees: CalendarEventAttendee[] })[]> {
-    if (attendeeKeys.length === 0) return [];
+    const { attendees: attendeeKeys, instituteIds, classroomIds, serviceIds } = criteria;
+    if (
+      attendeeKeys.length === 0 &&
+      instituteIds.length === 0 &&
+      classroomIds.length === 0 &&
+      serviceIds.length === 0
+    ) {
+      return [];
+    }
 
-    // Step 1: find event IDs that match any attendee key
-    const conditions = attendeeKeys.map((k) =>
-      and(
-        eq(calendarEventAttendees.attendeeType, k.type as any),
-        eq(calendarEventAttendees.attendeeId, k.id),
-      ),
-    );
+    // Step 1: collect candidate event IDs from attendee matches (if any)
+    let attendeeEventIds: string[] = [];
+    if (attendeeKeys.length > 0) {
+      const conditions = attendeeKeys.map((k) =>
+        and(
+          eq(calendarEventAttendees.attendeeType, k.type as any),
+          eq(calendarEventAttendees.attendeeId, k.id),
+        ),
+      );
+      const rows = await db
+        .select({ eventId: calendarEventAttendees.eventId })
+        .from(calendarEventAttendees)
+        .where(or(...conditions));
+      attendeeEventIds = [...new Set(rows.map((r) => r.eventId))];
+    }
 
-    const matchingAttendees = await db
-      .select({ eventId: calendarEventAttendees.eventId })
-      .from(calendarEventAttendees)
-      .where(or(...conditions));
+    // Step 2: build the visibility OR: id ∈ attendeeEventIds OR FK match.
+    const visibilityClauses: any[] = [];
+    if (attendeeEventIds.length > 0) {
+      visibilityClauses.push(inArray(calendarEvents.id, attendeeEventIds));
+    }
+    if (instituteIds.length > 0) {
+      visibilityClauses.push(inArray(calendarEvents.instituteId, instituteIds));
+    }
+    if (classroomIds.length > 0) {
+      visibilityClauses.push(inArray(calendarEvents.classroomId, classroomIds));
+    }
+    if (serviceIds.length > 0) {
+      visibilityClauses.push(inArray(calendarEvents.serviceId, serviceIds));
+    }
+    if (visibilityClauses.length === 0) return [];
 
-    const eventIds = [...new Set(matchingAttendees.map((a) => a.eventId))];
-    if (eventIds.length === 0) return [];
-
-    // Step 2: load events in the date range
-    // An event is relevant if:
-    //   - It's a one-off event within the range, OR
-    //   - It's a recurring event whose start is before the range end
-    //     and whose repeatEndDate (or infinity) is after the range start
+    // Step 3: date-range filter — one-off overlaps, recurring starts before range end
+    // and recurrence end (if any) is after range start.
     const events = await db
       .select()
       .from(calendarEvents)
       .where(
         and(
-          inArray(calendarEvents.id, eventIds),
+          or(...visibilityClauses),
           or(
-            // Non-repeating: event overlaps [startDate, endDate]
             and(
               eq(calendarEvents.repeatType, "none"),
               lte(calendarEvents.startTime, endDate),
               gte(calendarEvents.endTime, startDate),
             ),
-            // Repeating: event starts before range end, recurrence hasn't ended before range start
             and(
-              // Any recurring type
               or(
                 eq(calendarEvents.repeatType, "daily"),
                 eq(calendarEvents.repeatType, "weekly"),
@@ -173,7 +231,6 @@ export class CalendarRepository {
               ),
               lte(calendarEvents.startTime, endDate),
               or(
-                // no end date — infinite recurrence
                 eq(calendarEvents.repeatEndDate, null as any),
                 gte(calendarEvents.repeatEndDate, startDate),
               ),
@@ -185,7 +242,6 @@ export class CalendarRepository {
 
     if (events.length === 0) return [];
 
-    // Step 3: load all attendees for those events
     const allAttendees = await db
       .select()
       .from(calendarEventAttendees)
@@ -202,6 +258,19 @@ export class CalendarRepository {
       ...event,
       attendees: attendeesByEvent.get(event.id) || [],
     }));
+  }
+
+  /** @deprecated Use getVisibleEvents. Kept for legacy callers during transition. */
+  async getEventsForAttendees(
+    attendeeKeys: { type: string; id: string }[],
+    startDate: Date,
+    endDate: Date,
+  ): Promise<(CalendarEvent & { attendees: CalendarEventAttendee[] })[]> {
+    return this.getVisibleEvents(
+      { attendees: attendeeKeys, instituteIds: [], classroomIds: [], serviceIds: [] },
+      startDate,
+      endDate,
+    );
   }
 
   /**

@@ -34,6 +34,8 @@ import {
   Users,
   CalendarDays,
   X,
+  Check,
+  AlertTriangle,
 } from 'lucide-react';
 
 import type { CalendarEvent, CalendarEventAttendee } from '@shared/schema';
@@ -42,7 +44,7 @@ interface CalendarPanelProps {
   isOpen?: boolean;
 }
 
-type EventWithAttendees = CalendarEvent & { attendees: CalendarEventAttendee[] };
+type EventWithAttendees = CalendarEvent & { attendees: CalendarEventAttendee[]; reducedView?: boolean };
 
 interface AttendeeEntry {
   attendeeType: 'user' | 'student' | 'classroom' | 'institute';
@@ -92,10 +94,21 @@ function toLocalDateString(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+function getClientTimezone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
+/** Pill color class based on the user's RSVP status for an event. */
+function rsvpPillClass(status: 'pending' | 'accepted' | 'declined' | null): string {
+  if (status === 'accepted') return 'bg-green-500/15 text-green-700 dark:text-green-400 hover:bg-green-500/25';
+  if (status === 'declined') return 'bg-muted text-muted-foreground hover:bg-muted/80 line-through opacity-70';
+  return 'bg-primary/10 text-primary hover:bg-primary/20';
+}
+
 export function CalendarPanel({ isOpen }: CalendarPanelProps) {
   const { t, isRTL } = useLanguage();
   const { user } = useAuth();
-  const { students } = useStudent();
+  const { student: selectedStudent, students } = useStudent();
   const { currentInstitute, institutes } = useInstitute();
   const { sharedState, setSharedState } = useSharedState();
   const { toast } = useToast();
@@ -120,13 +133,20 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
     return { startDate: start, endDate: end };
   }, [currentDate]);
 
-  // Fetch events
+  // Fetch events — include selected institute and student so the server can
+  // apply the plan's visibility rules (institute/classroom events are gated
+  // on a selected institute; student-service events surface via selected student).
   const { data: eventsData, isLoading } = useQuery({
-    queryKey: ['/api/calendar/events', startDate.toISOString(), endDate.toISOString()],
+    queryKey: ['/api/calendar/events', startDate.toISOString(), endDate.toISOString(), selectedStudent?.id, currentInstitute?.id],
     queryFn: async () => {
-      const res = await apiRequest('GET',
-        `/api/calendar/events?startDate=${startDate.toISOString()}&endDate=${endDate.toISOString()}`
-      );
+      const params = new URLSearchParams({
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        timezone: getClientTimezone(),
+      });
+      if (selectedStudent?.id) params.set('studentId', selectedStudent.id);
+      if (currentInstitute?.id) params.set('instituteId', currentInstitute.id);
+      const res = await apiRequest('GET', `/api/calendar/events?${params.toString()}`);
       const json = await res.json();
       return json.events as EventWithAttendees[];
     },
@@ -355,6 +375,23 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
     },
   });
 
+  const setRsvp = useMutation({
+    mutationFn: async ({ eventId, status }: { eventId: string; status: 'accepted' | 'declined' | 'pending' }) => {
+      const res = await apiRequest('POST', `/api/calendar/events/${eventId}/rsvp`, { status });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/calendar/events'] });
+    },
+  });
+
+  /** Look up the current user's RSVP status on an event. */
+  const myRsvpStatus = useCallback((ev: EventWithAttendees): 'pending' | 'accepted' | 'declined' | null => {
+    if (!user?.id) return null;
+    const mine = ev.attendees.find((a) => a.attendeeType === 'user' && a.attendeeId === user.id);
+    return (mine?.inviteStatus as any) ?? null;
+  }, [user]);
+
   const resetForm = useCallback(() => {
     setFormData(defaultFormData);
     setEditingEvent(null);
@@ -451,6 +488,7 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
       repeatMonthWeek: formData.repeatType === 'monthly_weekday' ? formData.repeatMonthWeek : undefined,
       repeatEndDate: formData.repeatEndDate ? new Date(formData.repeatEndDate).toISOString() : undefined,
       serviceId: formData.serviceId || null,
+      timezone: getClientTimezone(),
       attendees: formData.attendees
         .filter((a) => a.attendeeType !== 'user' || a.attendeeId !== user?.id) // creator is auto-added
         .map(({ attendeeType, attendeeId }) => ({ attendeeType, attendeeId })),
@@ -531,6 +569,31 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
   // Events for selected date
   const selectedDateKey = selectedDate ? toLocalDateString(selectedDate) : null;
   const selectedDateEvents = selectedDateKey ? (eventsByDate.get(selectedDateKey) || []) : [];
+
+  // Detect overlap between the form's selected time and any existing visible event
+  // (excluding the event currently being edited). Returns the first conflict, if any.
+  const overlapConflict = useMemo(() => {
+    if (!formData.startTime || !formData.endTime) return null;
+    const formStart = new Date(formData.startTime).getTime();
+    const formEnd = new Date(formData.endTime).getTime();
+    if (!(formEnd > formStart)) return null;
+
+    const durationByEventId = new Map<string, number>();
+    for (const ev of events) {
+      durationByEventId.set(ev.id, new Date(ev.endTime).getTime() - new Date(ev.startTime).getTime());
+    }
+
+    for (const item of expandedEvents) {
+      if (editingEvent && item.event.id === editingEvent.id) continue;
+      const occStart = item.date.getTime();
+      const occEnd = occStart + (durationByEventId.get(item.event.id) ?? 0);
+      // Overlap test: occStart < formEnd && occEnd > formStart
+      if (occStart < formEnd && occEnd > formStart) {
+        return { title: item.event.title, occStart: new Date(occStart) };
+      }
+    }
+    return null;
+  }, [formData.startTime, formData.endTime, expandedEvents, events, editingEvent]);
 
   const toggleRepeatDay = (day: number) => {
     setFormData(prev => ({
@@ -613,7 +676,10 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
                     {dayEvents.slice(0, 3).map((item, i) => (
                       <div
                         key={`${item.event.id}-${i}`}
-                        className="text-[10px] leading-tight truncate rounded px-1 py-0.5 bg-primary/10 text-primary cursor-pointer hover:bg-primary/20"
+                        className={cn(
+                          "text-[10px] leading-tight truncate rounded px-1 py-0.5 cursor-pointer",
+                          rsvpPillClass(myRsvpStatus(item.event)),
+                        )}
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedDate(day);
@@ -665,22 +731,27 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
                             )}
                           </div>
                           <div className="flex gap-0.5 flex-shrink-0">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-6 w-6"
-                              onClick={() => openEditEvent(item.event)}
-                            >
-                              <Edit2 className="w-3 h-3" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-6 w-6 text-destructive"
-                              onClick={() => handleDeleteEvent(item.event.id)}
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </Button>
+                            {/* Hide edit/delete on reduced-view events (user has no edit permission) */}
+                            {!item.event.reducedView && (
+                              <>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-6 w-6"
+                                  onClick={() => openEditEvent(item.event)}
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-6 w-6 text-destructive"
+                                  onClick={() => handleDeleteEvent(item.event.id)}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              </>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
@@ -716,6 +787,35 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
                             </span>
                           </div>
                         )}
+                        {/* RSVP controls — shown only when the current user is an invitee */}
+                        {(() => {
+                          const myStatus = myRsvpStatus(item.event);
+                          if (myStatus === null) return null;
+                          return (
+                            <div className="flex gap-1 mt-2">
+                              <Button
+                                size="sm"
+                                variant={myStatus === 'accepted' ? 'default' : 'outline'}
+                                className="h-6 text-xs px-2"
+                                onClick={() => setRsvp.mutate({ eventId: item.event.id, status: 'accepted' })}
+                                disabled={setRsvp.isPending}
+                              >
+                                <Check className="w-3 h-3 me-1" />
+                                {t('calendar.rsvpAccept')}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant={myStatus === 'declined' ? 'default' : 'outline'}
+                                className="h-6 text-xs px-2"
+                                onClick={() => setRsvp.mutate({ eventId: item.event.id, status: 'declined' })}
+                                disabled={setRsvp.isPending}
+                              >
+                                <X className="w-3 h-3 me-1" />
+                                {t('calendar.rsvpDecline')}
+                              </Button>
+                            </div>
+                          );
+                        })()}
                       </CardContent>
                     </Card>
                   ))
@@ -814,6 +914,16 @@ export function CalendarPanel({ isOpen }: CalendarPanelProps) {
                 />
               </div>
             </div>
+
+            {/* Overlap warning (non-blocking) */}
+            {overlapConflict && (
+              <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <div>
+                  {t('calendar.overlapWarning').replace('{title}', overlapConflict.title)}
+                </div>
+              </div>
+            )}
 
             {/* Repeat */}
             <div className="space-y-2">

@@ -158,7 +158,7 @@ const GEMINI_VOICE_MAP: Record<string, string> = {
 
 /** Messages from client → server */
 export type ClientMessage =
-  | { type: "initialize"; studentId: string; userId?: string; sessionId?: string; interactionMode?: AACInteractionMode; responseMode?: AACResponseMode; debugMode?: boolean; initialFrame?: string }
+  | { type: "initialize"; studentId: string; userId?: string; sessionId?: string; interactionMode?: AACInteractionMode; responseMode?: AACResponseMode; debugMode?: boolean; initialFrame?: string; timezone?: string }
   | { type: "frame_grid"; data: string; timestamps?: number[]; gestureContext?: string }    // base64 JPEG
   | { type: "audio_clip"; data: string; mimeType?: string }        // base64 audio (ignored in live mode — Gemini hears PCM directly)
   | { type: "pcm_audio"; data: string }                            // base64 raw PCM Int16 16kHz — streamed directly to Gemini
@@ -252,6 +252,8 @@ export class LiveRelay {
   private responseMode: AACResponseMode = "fast";
   private paused = false;
   private debugMode = false;
+  /** Client-reported IANA timezone for this session; injected into AI prompts. */
+  private timezone: string | undefined = undefined;
 
   // Voice
   private aiVoice: ResolvedVoice | null = null;
@@ -975,6 +977,7 @@ export class LiveRelay {
     this.interactionMode = msg.interactionMode || "interact";
     this.responseMode = msg.responseMode || "fast";
     this.debugMode = msg.debugMode || false;
+    this.timezone = msg.timezone;
 
     try {
       // 1. Read LLM config
@@ -1012,6 +1015,7 @@ export class LiveRelay {
         msg.sessionId,
         this.interactionMode,
         this.pendingLocalState || undefined,
+        this.timezone,
       );
       this.pendingLocalState = null;
       this.sessionId = state.sessionId;
@@ -1173,7 +1177,8 @@ export class LiveRelay {
 
       // 7. Build system prompt
       const echoAwareness = this.buildEchoAwareness();
-      const systemPrompt = state.interactivePrompt + "\n\n" + echoAwareness;
+      const tzSection = this.buildTimezoneSection();
+      const systemPrompt = state.interactivePrompt + "\n\n" + echoAwareness + (tzSection ? "\n\n" + tzSection : "");
 
       // 8. Connect to Gemini
       const geminiVoice = this.aiVoice?.geminiVoiceName || GEMINI_VOICE_MAP[this.aiVoice?.fallbackType || "woman"] || "Zephyr";
@@ -2865,6 +2870,26 @@ You receive continuous microphone audio. You WILL hear your own voice echoed bac
     return `AUDIO ECHO AWARENESS:
 You receive continuous microphone audio. Because speak() text is voiced by external TTS through speakers near the mic, you WILL hear your own output echoed back. Recognize these echoes as YOUR OWN output — never transcribe or respond to them. Only treat audio as genuine user speech if it clearly does NOT match something you recently said.
 When a button is pressed, the student's pre-generated sentence is also voiced via TTS — you will hear this echo too. Do NOT transcribe it.`;
+  }
+
+  /** Build a TZ + local-time section for the interactive agent system prompt. */
+  private buildTimezoneSection(): string {
+    if (!this.timezone) return "";
+    const now = new Date();
+    let local: string;
+    try {
+      local = new Intl.DateTimeFormat("en-US", {
+        timeZone: this.timezone,
+        weekday: "long", year: "numeric", month: "long", day: "numeric",
+        hour: "2-digit", minute: "2-digit", hour12: false,
+      }).format(now);
+    } catch {
+      local = now.toISOString();
+    }
+    return `USER LOCAL TIME:
+Time zone: ${this.timezone}
+Current local time: ${local}
+When creating or referencing calendar events, interpret and speak in this local time.`;
   }
 
   // -------------------------------------------------------------------------

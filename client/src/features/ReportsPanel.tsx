@@ -3,6 +3,8 @@
 // Uses types derived from schema.ts as single source of truth
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/useAuth';
 import { useStudent } from '@/hooks/useStudent';
 import { useChat } from '@/hooks/useChat';
@@ -19,6 +21,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogBody, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
@@ -68,6 +71,9 @@ import type {
   UpdateMedicalRecord,
   UpdateFunctionalReport,
   UpdateEducationalReport,
+  Incident,
+  IncidentType,
+  IncidentSeverity,
 } from '@shared/schema';
 
 // Import API hooks
@@ -106,7 +112,35 @@ const STATUS_ICONS: Record<ReportStatus, React.ReactNode> = {
   superseded: <Archive className="w-3 h-3" />,
 };
 
-type ReportType = 'medical' | 'functional' | 'educational';
+type ReportType = 'medical' | 'functional' | 'educational' | 'incidents';
+
+const INCIDENT_SEVERITY_CLASSES: Record<IncidentSeverity, string> = {
+  low: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+  moderate: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300',
+  high: 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300',
+  critical: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300',
+};
+
+interface IncidentFormState {
+  type: IncidentType;
+  severity: IncidentSeverity;
+  recordedAt: string;
+  context: string;
+  collectedBy: string;
+}
+
+const DEFAULT_INCIDENT_FORM: IncidentFormState = {
+  type: 'medical',
+  severity: 'moderate',
+  recordedAt: '',
+  context: '',
+  collectedBy: '',
+};
+
+function toLocalDateTimeInputForIncident(date: Date): string {
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
 
 // =============================================================================
 // PRINTABLE REPORT
@@ -295,6 +329,102 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
   const { data: archivedMedical } = useArchivedMedicalRecords(student?.id, undefined, showArchivedMedical);
   const { data: archivedFunctional } = useArchivedFunctionalReports(student?.id, showArchivedFunctional);
   const { data: archivedEducational } = useArchivedEducationalReports(student?.id, showArchivedEducational);
+
+  // Incidents — lightweight per-student events not tied to any report.
+  const queryClient = useQueryClient();
+  const incidentsQueryKey = ['/api/students', student?.id, 'incidents'];
+  const { data: incidentsData } = useQuery({
+    queryKey: incidentsQueryKey,
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/students/${student!.id}/incidents`);
+      const json = await res.json();
+      return json.incidents as Incident[];
+    },
+    enabled: !!student?.id,
+  });
+  const incidents = incidentsData ?? [];
+
+  const [showIncidentDialog, setShowIncidentDialog] = useState(false);
+  const [editingIncident, setEditingIncident] = useState<Incident | null>(null);
+  const [incidentForm, setIncidentForm] = useState<IncidentFormState>(DEFAULT_INCIDENT_FORM);
+
+  const createIncident = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest('POST', `/api/students/${student!.id}/incidents`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: incidentsQueryKey });
+      toast({ description: t('incidents.created') });
+      setShowIncidentDialog(false);
+      setEditingIncident(null);
+      setIncidentForm(DEFAULT_INCIDENT_FORM);
+    },
+  });
+  const updateIncident = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const res = await apiRequest('PATCH', `/api/incidents/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: incidentsQueryKey });
+      toast({ description: t('incidents.updated') });
+      setShowIncidentDialog(false);
+      setEditingIncident(null);
+      setIncidentForm(DEFAULT_INCIDENT_FORM);
+    },
+  });
+  const deleteIncident = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest('DELETE', `/api/incidents/${id}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: incidentsQueryKey });
+      toast({ description: t('incidents.deleted') });
+    },
+  });
+
+  const openNewIncident = useCallback(() => {
+    setIncidentForm({ ...DEFAULT_INCIDENT_FORM, recordedAt: toLocalDateTimeInputForIncident(new Date()) });
+    setEditingIncident(null);
+    setShowIncidentDialog(true);
+  }, []);
+
+  const openEditIncident = useCallback((inc: Incident) => {
+    setIncidentForm({
+      type: inc.type,
+      severity: inc.severity,
+      recordedAt: toLocalDateTimeInputForIncident(new Date(inc.recordedAt)),
+      context: inc.context ?? '',
+      collectedBy: inc.collectedBy ?? '',
+    });
+    setEditingIncident(inc);
+    setShowIncidentDialog(true);
+  }, []);
+
+  const handleSubmitIncident = useCallback(() => {
+    const payload = {
+      type: incidentForm.type,
+      severity: incidentForm.severity,
+      recordedAt: incidentForm.recordedAt
+        ? new Date(incidentForm.recordedAt).toISOString()
+        : new Date().toISOString(),
+      context: incidentForm.context || null,
+      collectedBy: incidentForm.collectedBy || null,
+    };
+    if (editingIncident) {
+      updateIncident.mutate({ id: editingIncident.id, data: payload });
+    } else {
+      createIncident.mutate(payload);
+    }
+  }, [incidentForm, editingIncident, createIncident, updateIncident]);
+
+  const handleDeleteIncident = useCallback((id: string) => {
+    if (window.confirm(t('incidents.deleteConfirm'))) {
+      deleteIncident.mutate(id);
+    }
+  }, [deleteIncident, t]);
 
   // Mutations
   const {
@@ -652,6 +782,12 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
                   </TabsTrigger>
                 </>
               )}
+              {(hasMedicalAccess || hasEducationalAccess) && (
+                <TabsTrigger value="incidents" className="gap-1.5 text-xs md:text-sm">
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>{t('incidents.title')}</span>
+                </TabsTrigger>
+              )}
             </TabsList>
 
             {/* Medical Records Tab */}
@@ -710,6 +846,75 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
                 )}
               </TabsContent>
             )}
+
+            {/* Incidents Tab — lightweight per-student events not tied to a report. */}
+            {(hasMedicalAccess || hasEducationalAccess) && (
+              <TabsContent value="incidents" className="mt-0 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold text-base">{t('incidents.title')}</h3>
+                    <p className="text-xs text-muted-foreground">{t('incidents.description')}</p>
+                  </div>
+                  <Button size="sm" onClick={openNewIncident} disabled={!student?.id}>
+                    <Plus className="w-4 h-4 me-1" />
+                    {t('incidents.add')}
+                  </Button>
+                </div>
+
+                {incidents.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                      {t('incidents.empty')}
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="space-y-2">
+                    {incidents.map((inc) => (
+                      <Card key={inc.id}>
+                        <CardContent className="p-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <Badge variant="outline" className="text-xs">
+                                  {t(`incidents.type.${inc.type}`)}
+                                </Badge>
+                                <Badge className={cn('text-xs border-transparent', INCIDENT_SEVERITY_CLASSES[inc.severity])}>
+                                  {t(`incidents.severity.${inc.severity}`)}
+                                </Badge>
+                                <span className="text-xs text-muted-foreground">
+                                  {new Date(inc.recordedAt).toLocaleString()}
+                                </span>
+                              </div>
+                              {inc.context && (
+                                <p className="text-sm whitespace-pre-wrap">{inc.context}</p>
+                              )}
+                              {inc.collectedBy && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  {t('incidents.collectedBy')}: {inc.collectedBy}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex gap-0.5 flex-shrink-0">
+                              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEditIncident(inc)}>
+                                <Edit className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7 text-destructive"
+                                onClick={() => handleDeleteIncident(inc.id)}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            )}
           </Tabs>
 
           {/* No Access Warning */}
@@ -725,6 +930,94 @@ export function ReportsPanel({ isOpen, onClose }: ReportsPanelProps) {
           )}
         </div>
       </ScrollArea>
+
+      {/* Incident Create/Edit Dialog */}
+      <Dialog open={showIncidentDialog} onOpenChange={(open) => {
+        if (!open) {
+          setShowIncidentDialog(false);
+          setEditingIncident(null);
+          setIncidentForm(DEFAULT_INCIDENT_FORM);
+        }
+      }}>
+        <DialogContent className="sm:max-w-[480px]" dir={isRTL ? 'rtl' : 'ltr'}>
+          <DialogHeader>
+            <DialogTitle>{editingIncident ? t('incidents.edit') : t('incidents.add')}</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>{t('incidents.field.type')}</Label>
+                <Select
+                  value={incidentForm.type}
+                  onValueChange={(v) => setIncidentForm(prev => ({ ...prev, type: v as IncidentType }))}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="medical">{t('incidents.type.medical')}</SelectItem>
+                    <SelectItem value="functional">{t('incidents.type.functional')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>{t('incidents.field.severity')}</Label>
+                <Select
+                  value={incidentForm.severity}
+                  onValueChange={(v) => setIncidentForm(prev => ({ ...prev, severity: v as IncidentSeverity }))}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">{t('incidents.severity.low')}</SelectItem>
+                    <SelectItem value="moderate">{t('incidents.severity.moderate')}</SelectItem>
+                    <SelectItem value="high">{t('incidents.severity.high')}</SelectItem>
+                    <SelectItem value="critical">{t('incidents.severity.critical')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>{t('incidents.field.recordedAt')}</Label>
+              <Input
+                type="datetime-local"
+                value={incidentForm.recordedAt}
+                onChange={(e) => setIncidentForm(prev => ({ ...prev, recordedAt: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{t('incidents.field.context')}</Label>
+              <Textarea
+                value={incidentForm.context}
+                onChange={(e) => setIncidentForm(prev => ({ ...prev, context: e.target.value }))}
+                rows={4}
+                placeholder={t('incidents.field.contextPlaceholder')}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{t('incidents.field.collectedBy')}</Label>
+              <Input
+                value={incidentForm.collectedBy}
+                onChange={(e) => setIncidentForm(prev => ({ ...prev, collectedBy: e.target.value }))}
+                placeholder={t('incidents.field.collectedByPlaceholder')}
+              />
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowIncidentDialog(false);
+              setEditingIncident(null);
+              setIncidentForm(DEFAULT_INCIDENT_FORM);
+            }}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              onClick={handleSubmitIncident}
+              disabled={createIncident.isPending || updateIncident.isPending}
+            >
+              {(createIncident.isPending || updateIncident.isPending) && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
+              {editingIncident ? t('common.update') : t('common.create')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Create Report Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>

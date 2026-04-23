@@ -17,6 +17,7 @@ const createEventSchema = z.object({
   repeatMonthWeek: z.number().int().optional(), // 1, 2, 3, or -1
   repeatEndDate: z.string().transform((s) => new Date(s)).optional(),
   serviceId: z.string().optional().nullable(),
+  timezone: z.string().optional(), // IANA TZ; event times are UTC, TZ is informational
   attendees: z
     .array(
       z.object({
@@ -49,6 +50,7 @@ const updateEventSchema = z.object({
     .optional()
     .nullable(),
   serviceId: z.string().optional().nullable(),
+  timezone: z.string().optional(),
   attendees: z
     .array(
       z.object({
@@ -64,24 +66,41 @@ const addAttendeeSchema = z.object({
   attendeeId: z.string(),
 });
 
+const rsvpSchema = z.object({
+  status: z.enum(["pending", "accepted", "declined"]),
+});
+
 class CalendarController {
   async getEvents(req: Request, res: Response): Promise<void> {
     try {
       const user = req.user as any;
-      const { startDate, endDate } = req.query;
+      const { startDate, endDate, timezone: _tz, studentId, instituteId } = req.query;
 
       if (!startDate || !endDate) {
         res.status(400).json({ success: false, message: "startDate and endDate are required" });
         return;
       }
 
+      // `timezone` is accepted for future use (e.g. derived-field formatting).
+      // Event times stored/returned in UTC; client converts on render.
       const events = await calendarService.getEventsForUser(
         user.id,
         new Date(startDate as string),
         new Date(endDate as string),
+        {
+          selectedStudentId: typeof studentId === "string" && studentId ? studentId : undefined,
+          selectedInstituteId: typeof instituteId === "string" && instituteId ? instituteId : undefined,
+        },
       );
 
-      res.json({ success: true, events });
+      // Build reduced views for events visible only via the selected student —
+      // per plan, their participant list is hidden to avoid cross-institute leakage.
+      const reduced = await calendarService.applyReducedView(events, user.id, {
+        selectedStudentId: typeof studentId === "string" && studentId ? studentId : undefined,
+        selectedInstituteId: typeof instituteId === "string" && instituteId ? instituteId : undefined,
+      });
+
+      res.json({ success: true, events: reduced });
     } catch (error: any) {
       console.error("Error fetching calendar events:", error);
       res.status(500).json({ success: false, message: "Failed to fetch events" });
@@ -115,7 +134,7 @@ class CalendarController {
         return;
       }
 
-      const { attendees, ...eventData } = parsed.data;
+      const { attendees, timezone: _tz, ...eventData } = parsed.data;
 
       const created = await calendarService.createEvent(eventData as any, user.id, attendees);
 
@@ -136,7 +155,7 @@ class CalendarController {
         return;
       }
 
-      const { attendees, ...eventData } = parsed.data;
+      const { attendees, timezone: _tz, ...eventData } = parsed.data;
 
       const updated = await calendarService.updateEvent(req.params.id, eventData as any, user.id);
       if (!updated) {
@@ -200,6 +219,26 @@ class CalendarController {
     } catch (error: any) {
       console.error("Error adding attendee:", error);
       res.status(500).json({ success: false, message: "Failed to add attendee" });
+    }
+  }
+
+  async setRsvp(req: Request, res: Response): Promise<void> {
+    try {
+      const user = req.user as any;
+      const parsed = rsvpSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ success: false, message: "Invalid input", errors: parsed.error.flatten() });
+        return;
+      }
+      const updated = await calendarService.setRsvp(req.params.id, user.id, parsed.data.status);
+      if (!updated) {
+        res.status(404).json({ success: false, message: "Event not found or you are not an invitee" });
+        return;
+      }
+      res.json({ success: true, attendee: updated });
+    } catch (error: any) {
+      console.error("Error setting RSVP:", error);
+      res.status(500).json({ success: false, message: "Failed to set RSVP" });
     }
   }
 

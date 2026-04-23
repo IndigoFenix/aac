@@ -740,6 +740,7 @@ export const ChatProvider = ({
       replyType,
       activeFeature,
       persona,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     };
 
     if (session?.id) {

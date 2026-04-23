@@ -35,6 +35,7 @@ const messageSchema = z.object({
     )
     .optional(),
   replyType: z.enum(["text", "html", "md"]).optional(),
+  timezone: z.string().optional(),
 });
 
 /**
@@ -58,7 +59,7 @@ export class ChatStreamController {
 
     try {
       const userId = req.user!.id;
-      let { studentId, instituteId, sessionId, activeFeature, persona, messages, featureContext, vectorStoreId, images, documents, replyType } =
+      let { studentId, instituteId, sessionId, activeFeature, persona, messages, featureContext, vectorStoreId, images, documents, replyType, timezone } =
         messageSchema.parse(req.body);
 
       if (!persona) {
@@ -144,6 +145,7 @@ export class ChatStreamController {
             onSelectStudent,
             onFilesNeeded,
             signal: abortController.signal,
+            timezone,
           });
 
           for await (const event of stream) {
@@ -185,6 +187,7 @@ export class ChatStreamController {
           onNavigate,
           onSelectStudent,
           onFilesNeeded,
+          timezone,
         });
 
         // Send final response (strip memoryValues to reduce payload size)

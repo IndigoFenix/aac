@@ -690,6 +690,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
             interactionMode,
             responseMode,
             debugMode,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             ...(initialFrameBase64 ? { initialFrame: initialFrameBase64 } : {}),
           });
         };

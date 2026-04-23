@@ -59,6 +59,7 @@ import { customSymbolController } from "./controllers/customSymbolController";
 import { contactController } from "./controllers/contactController";
 import { licenseController } from "./controllers/licenseController";
 import { calendarController } from "./controllers/calendarController";
+import { incidentController } from "./controllers/incidentController";
 import { registerDropboxRoutes } from "./services/dropboxRoutes";
 import { activityLogService } from "./services/activityLogService";
 import { activityLogController } from "./controllers/activityLogController";
@@ -1272,6 +1273,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   );
   app.delete("/api/calendar/events/:id/attendees/:attendeeType/:attendeeId", requireAuth, (req, res) =>
     calendarController.removeAttendee(req, res)
+  );
+  app.post("/api/calendar/events/:id/rsvp", requireAuth, (req, res) =>
+    calendarController.setRsvp(req, res)
+  );
+
+  // ============= INCIDENT ROUTES =============
+  app.get("/api/students/:studentId/incidents", requireAuth, (req, res) =>
+    incidentController.list(req, res),
+  );
+  app.post("/api/students/:studentId/incidents", requireAuth, (req, res) =>
+    incidentController.create(req, res),
+  );
+  app.patch("/api/incidents/:id", requireAuth, (req, res) =>
+    incidentController.update(req, res),
+  );
+  app.delete("/api/incidents/:id", requireAuth, (req, res) =>
+    incidentController.delete(req, res),
   );
 
   // ============= USER CHAT ROUTES =============

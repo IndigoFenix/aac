@@ -62,11 +62,16 @@ export interface NlpSchema {
     navigateEnabled?: boolean;
     selectStudentEnabled?: boolean;
     replyType?: 'text' | 'html' | 'md';
+    /** IANA timezone of the requesting user; injected into the prompt so the AI reasons in local time. */
+    timezone?: string;
   }): PromptBuild {
 
     const tools: GPTTool[] = [];
 
     let startPrompt = `${printPromptHeader(ctx.agent, ctx.conversationSummary, ctx.replyType)}`;
+    if (ctx.timezone) {
+      startPrompt += printUserTimeSection(ctx.timezone);
+    }
     let endPrompt = ``;
 
     let formSchema: any, formSchemaHash: string = '';
@@ -584,6 +589,25 @@ export interface NlpSchema {
   }
 
   
+function printUserTimeSection(timezone: string): string {
+  // Cache-safe: only include stable-for-the-day data. Claude's prompt cache
+  // invalidates on any system-prompt change, so minute-level "current time"
+  // would break the cache every turn. Date rolls once per day — acceptable.
+  let today: string;
+  try {
+    today = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      weekday: "long", year: "numeric", month: "long", day: "numeric",
+    }).format(new Date());
+  } catch {
+    today = new Date().toISOString().slice(0, 10);
+  }
+  return `=== Section: User Local Time ===\n\n`
+    + `Time zone: ${timezone}\n`
+    + `Today: ${today}\n`
+    + `When creating or editing datetimes, interpret and reply in this local time. Server stores times as UTC; the client converts on display.\n\n`;
+}
+
 function printPromptHeader(agent: AgentLike, conversationSummary: string, replyType?: 'text' | 'html' | 'md'): string {
     let formatGuidelines: string;
     if (replyType === 'html') {

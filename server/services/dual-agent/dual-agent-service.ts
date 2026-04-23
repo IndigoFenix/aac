@@ -337,11 +337,14 @@ export class DualAgentService {
     existingSessionId?: string,
     interactionMode: AACInteractionMode = 'interact',
     localState?: import("@shared/aac-local-storage").AacSessionSnapshot,
+    timezone?: string,
   ): Promise<DualAgentSessionState> {
     // Check cache first
     if (existingSessionId && sessionCache.has(existingSessionId)) {
       const cached = sessionCache.get(existingSessionId)!;
       cached.lastAccess = Date.now();
+      // Refresh TZ on resume in case the client moved zones.
+      if (timezone) cached.monitorAgent.setTimezone?.(timezone);
       console.log("[DualAgentService] Resuming cached session:", existingSessionId);
       return cached.state;
     }
@@ -363,7 +366,7 @@ export class DualAgentService {
 
     // Create new session
     console.log("[DualAgentService] Creating new session for student:", studentId);
-    return this.createNewSession(studentId, userId, interactionMode);
+    return this.createNewSession(studentId, userId, interactionMode, timezone);
   }
 
   /**
@@ -373,6 +376,7 @@ export class DualAgentService {
     studentId: string,
     userId?: string,
     interactionMode: AACInteractionMode = 'interact',
+    timezone?: string,
   ): Promise<DualAgentSessionState> {
     // Fetch AAC chat LLM config from DB
     const aacChatConfig = await settingsRepository.getLLMConfig('aac_chat');
@@ -386,6 +390,8 @@ export class DualAgentService {
       this.config,
       userId
     );
+    // Apply timezone before initializeSession so event-window computation uses it.
+    if (timezone) monitorAgent.setTimezone(timezone);
 
     // Initialize session - Monitor searches memory and creates base prompt
     const defaultApps = getDefaultEnabledApps();
