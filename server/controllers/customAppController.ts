@@ -3,6 +3,7 @@ import { z } from "zod";
 import { customAppRepository } from "../repositories";
 import { activityLogService } from "../services/activityLogService";
 import { validateCustomAppDefinition } from "@shared/custom-app-validator";
+import { buildClinicianCtx } from "../services/sharing/clinicianCtx";
 
 const saveAppSchema = z.object({
   name: z.string().min(1),
@@ -87,9 +88,10 @@ export class CustomAppController {
   async getAvailableAppsForStudent(req: Request, res: Response): Promise<void> {
     try {
       const { studentId } = req.params;
+      const ctx = await buildClinicianCtx(req, studentId);
       const [apps, assignedIds] = await Promise.all([
         customAppRepository.getAvailableAppsForStudent(studentId),
-        customAppRepository.getAssignedAppIds(studentId),
+        customAppRepository.getAssignedAppIds(studentId, ctx),
       ]);
       res.json({ apps, assignedIds });
     } catch (error: any) {

@@ -19,21 +19,48 @@ import type {
 } from "../chat/memory-types";
 import type { Incident } from "@shared/schema";
 import { parseLocalOrIsoInTimezone } from "../../lib/timezone";
+import { canWriteObject, type AccessCtx } from "../sharing/visibility";
 
 function toMemoryValue(record: Incident): any {
   const { ...rest } = record;
   return rest;
 }
 
+/**
+ * Cross-institute write authorization. Institute principals must own the
+ * incident OR hold a permission='write' share covering it. Mirrors
+ * `requireOwningInstitute` in reportController. Student/admin principals always
+ * pass; orphan rows (institute_id null) belong to the student-only set, which
+ * the visibility helper treats as same-institute.
+ */
+async function rejectCrossInstituteWrite(
+  ctx: { all: Record<string, any> },
+  incident: { id: string; instituteId: string | null; studentId: string },
+) {
+  const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
+  if (!accessCtx || accessCtx.kind !== "institute") return;
+  const allowed = await canWriteObject(
+    accessCtx,
+    "incident",
+    incident.id,
+    incident.studentId,
+    incident.instituteId,
+  );
+  if (!allowed) {
+    throw new Error("Cannot modify an incident owned by another institute");
+  }
+}
+
 const incidentOps: MemoryDBOperations<Incident> = {
   list: async (ctx, { offset, limit }): Promise<ListResult<any>> => {
     const studentId = ctx.all.studentId as string | undefined;
+    const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
     if (!studentId) return { items: [], total: 0, keys: [] };
 
-    const items = await incidentRepository.listByStudent(studentId, { offset, limit });
+    const items = await incidentRepository.listByStudent(studentId, { offset, limit }, accessCtx);
     // Total count for pagination — repo doesn't return total separately, so we
     // re-query without limit. Cheap for typical incident volumes.
-    const all = await incidentRepository.listByStudent(studentId);
+    const all = await incidentRepository.listByStudent(studentId, {}, accessCtx);
 
     return {
       items: items.map(toMemoryValue),
@@ -42,8 +69,9 @@ const incidentOps: MemoryDBOperations<Incident> = {
     };
   },
 
-  get: async (_ctx, key) => {
-    const row = await incidentRepository.getById(String(key));
+  get: async (ctx, key) => {
+    const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
+    const row = await incidentRepository.getById(String(key), accessCtx);
     return row ? toMemoryValue(row) : undefined;
   },
 
@@ -51,9 +79,15 @@ const incidentOps: MemoryDBOperations<Incident> = {
     const studentId = ctx.all.studentId as string | undefined;
     if (!studentId) throw new Error("studentId required to record an incident");
     const tz = ctx.all.timezone as string | undefined;
+    const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
+    // Institute principals attribute new incidents to their own institute.
+    // Student principal (AAC) leaves institute_id null — orphan, standing-share-eligible.
+    const instituteId =
+      accessCtx?.kind === "institute" ? accessCtx.instituteId : null;
 
     const created = await incidentRepository.create({
       studentId,
+      instituteId,
       type: value.type,
       severity: value.severity,
       recordedAt: parseLocalOrIsoInTimezone(value.recordedAt, tz) ?? new Date(),
@@ -64,6 +98,13 @@ const incidentOps: MemoryDBOperations<Incident> = {
   },
 
   update: async (ctx, key, value) => {
+    const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
+    // Load the existing row through the visibility gate so an institute
+    // principal can't update an incident they shouldn't even be able to read.
+    const existing = await incidentRepository.getById(String(key), accessCtx);
+    if (!existing) throw new Error("Incident not found");
+    await rejectCrossInstituteWrite(ctx, existing);
+
     const tz = ctx.all.timezone as string | undefined;
     const updates: Record<string, any> = {};
     if (value.type !== undefined) updates.type = value.type;
@@ -77,7 +118,12 @@ const incidentOps: MemoryDBOperations<Incident> = {
     return toMemoryValue(row);
   },
 
-  delete: async (_ctx, key) => {
+  delete: async (ctx, key) => {
+    const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
+    const existing = await incidentRepository.getById(String(key), accessCtx);
+    if (!existing) throw new Error("Incident not found");
+    await rejectCrossInstituteWrite(ctx, existing);
+
     const ok = await incidentRepository.delete(String(key));
     if (!ok) throw new Error("Incident not found");
   },

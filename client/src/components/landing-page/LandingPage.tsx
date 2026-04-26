@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { School, Stethoscope, Hospital, Microscope, Home } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
@@ -9,6 +10,14 @@ import opher from "@assets/landing-page/opher.png";
 import screenshot from "@assets/landing-page/screenshot.png";
 import boardMakerDemo from "@assets/landing-page/demo-screens/board-maker-demo.png";
 import "./landing-page.css";
+
+const VERTICAL_SEGMENTS = [
+  { key: "schools", Icon: School },
+  { key: "clinics", Icon: Stethoscope },
+  { key: "hospitals", Icon: Hospital },
+  { key: "research", Icon: Microscope },
+  { key: "families", Icon: Home },
+] as const;
 
 const ROLE_OPTIONS = [
   "district_administrator",
@@ -137,6 +146,27 @@ export default function LandingPage() {
               <h3>{t("landing.pillars.aac.title")}</h3>
               <p>{t("landing.pillars.aac.description")}</p>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="landing-section landing-verticals">
+        <div className="landing-container">
+          <div className="landing-section-header">
+            <span className="landing-tagline">{t("landing.verticals.tagline")}</span>
+            <h2>{t("landing.verticals.title")}</h2>
+            <p>{t("landing.verticals.subtitle")}</p>
+          </div>
+          <div className="vertical-segments-grid">
+            {VERTICAL_SEGMENTS.map(({ key, Icon }) => (
+              <div key={key} className="segment-card">
+                <div className="segment-icon">
+                  <Icon size={32} strokeWidth={1.75} />
+                </div>
+                <h3>{t(`landing.verticals.${key}.title`)}</h3>
+                <p>{t(`landing.verticals.${key}.description`)}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>

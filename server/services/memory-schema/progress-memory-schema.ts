@@ -85,6 +85,8 @@ import { programService } from "../programService";
 import { activityLogService } from "../activityLogService";
 import { PROGRAM_TEAM_CONTACTS_FIELD } from "./contacts-memory-schema";
 import { parseLocalOrIsoInTimezone } from "../../lib/timezone";
+import { canWriteObject, withInstituteVisibility, type AccessCtx } from "../sharing/visibility";
+import { recordShareDerivedViewSingle } from "../sharing/audit";
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -294,22 +296,34 @@ async function findByMapKey<T extends { id: string }>(
 const programOps: MemoryDBOperations<Program> = {
   read: async (ctx) => {
     const studentId = ctx.all.studentId;
+    const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
     if (!studentId) throw new Error("studentId required for program query");
 
-    // Get current/working program (active or draft)
+    // Get current/working program (active or draft) — gated by visibility when
+    // accessCtx is set. Children of programs (goals, services, etc.) inherit
+    // visibility through this read; the root-only ownership model means once
+    // the parent is filtered, child queries don't need to re-filter.
+    const visibility = accessCtx
+      ? withInstituteVisibility(programs, accessCtx, "program")
+      : sql`TRUE`;
+
     const [activeProgram] = await db
       .select()
       .from(programs)
       .where(
         and(
           eq(programs.studentId, studentId),
-          eq(programs.status, "active")
+          eq(programs.status, "active"),
+          visibility,
         )
       )
       .orderBy(desc(programs.createdAt))
       .limit(1);
 
-    if (activeProgram) return activeProgram;
+    if (activeProgram) {
+      if (accessCtx) recordShareDerivedViewSingle(accessCtx, "program", activeProgram);
+      return activeProgram;
+    }
 
     // Fall back to draft
     const [draftProgram] = await db
@@ -318,17 +332,22 @@ const programOps: MemoryDBOperations<Program> = {
       .where(
         and(
           eq(programs.studentId, studentId),
-          eq(programs.status, "draft")
+          eq(programs.status, "draft"),
+          visibility,
         )
       )
       .orderBy(desc(programs.createdAt))
       .limit(1);
 
+    if (draftProgram && accessCtx) {
+      recordShareDerivedViewSingle(accessCtx, "program", draftProgram);
+    }
     return draftProgram;
   },
 
   write: async (ctx, raw) => {
     const studentId = ctx.all.studentId;
+    const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
     if (!studentId) throw new Error("studentId required for program write");
 
     // Context_Program is object-shaped; the array variant of the write signature
@@ -338,8 +357,24 @@ const programOps: MemoryDBOperations<Program> = {
     const existing = value.id
       ? await programService.getProgramById(value.id)
       : await programService.getCurrentProgram(studentId);
-    
+
     if (existing) {
+      // Cross-institute write authorization: institute principals must own the
+      // program OR hold a permission='write' share covering it. Read-via-share
+      // alone does NOT grant write — that requires a write-capable share.
+      if (accessCtx?.kind === "institute") {
+        const allowed = await canWriteObject(
+          accessCtx,
+          "program",
+          existing.id,
+          existing.studentId,
+          existing.instituteId,
+        );
+        if (!allowed) {
+          throw new Error("Cannot modify a program owned by another institute");
+        }
+      }
+
       const updated = await programService.updateProgram(existing.id, {
         ...value as UpdateProgram,
       });
@@ -354,10 +389,18 @@ const programOps: MemoryDBOperations<Program> = {
       });
       return updated;
     } else {
+      // For institute principals, force the new program's owner to the
+      // selected institute — the AI doesn't get to attribute it elsewhere.
+      const enforcedInstituteId =
+        accessCtx?.kind === "institute"
+          ? accessCtx.instituteId
+          : (value as any).instituteId ?? null;
+
       // Create new program with default profile domains
       const { program, domains } = await programService.createProgramWithProfile({
         ...value as InsertProgram,
         studentId,
+        instituteId: enforcedInstituteId,
       }, true);
 
       activityLogService.log({

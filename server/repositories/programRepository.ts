@@ -87,6 +87,16 @@ import {
   deleteExternalData,
   type EntityRef,
 } from "../external-storage";
+import {
+  withInstituteVisibility,
+  withInheritedVisibility,
+  visibleProgramIds,
+  type AccessCtx,
+} from "../services/sharing/visibility";
+import {
+  recordShareDerivedView,
+  recordShareDerivedViewSingle,
+} from "../services/sharing/audit";
 
 export class ProgramRepository {
   private studentRef(studentId: string): EntityRef {
@@ -123,12 +133,16 @@ export class ProgramRepository {
   /**
    * Get a program by ID
    */
-  async getProgramById(id: string): Promise<Program | undefined> {
+  async getProgramById(id: string, ctx?: AccessCtx): Promise<Program | undefined> {
+    const where = ctx
+      ? and(eq(programs.id, id), withInstituteVisibility(programs, ctx, "program"))
+      : eq(programs.id, id);
     const [program] = await db
       .select()
       .from(programs)
-      .where(eq(programs.id, id));
+      .where(where);
     if (!program) return undefined;
+    if (ctx) recordShareDerivedViewSingle(ctx, "program", program);
     const [hydrated] = await hydrateRecords("programs", [program]);
     return hydrated;
   }
@@ -136,12 +150,16 @@ export class ProgramRepository {
   /**
    * Get all programs for a student
    */
-  async getProgramsByStudentId(studentId: string): Promise<Program[]> {
+  async getProgramsByStudentId(studentId: string, ctx?: AccessCtx): Promise<Program[]> {
+    const where = ctx
+      ? and(eq(programs.studentId, studentId), withInstituteVisibility(programs, ctx, "program"))
+      : eq(programs.studentId, studentId);
     const rows = await db
       .select()
       .from(programs)
-      .where(eq(programs.studentId, studentId))
+      .where(where)
       .orderBy(desc(programs.createdAt));
+    if (ctx) recordShareDerivedView(ctx, "program", rows);
     return hydrateRecords("programs", rows, this.studentRef(studentId));
   }
 
@@ -150,8 +168,9 @@ export class ProgramRepository {
    * Returns active programs first, then drafts. Excludes archived programs.
    * This allows users to work with draft programs before activation.
    */
-  async getCurrentProgram(studentId: string): Promise<Program | undefined> {
+  async getCurrentProgram(studentId: string, ctx?: AccessCtx): Promise<Program | undefined> {
     const ref = this.studentRef(studentId);
+    const visibility = ctx ? withInstituteVisibility(programs, ctx, "program") : undefined;
 
     // First try to get an active program
     const [activeProgram] = await db
@@ -160,13 +179,15 @@ export class ProgramRepository {
       .where(
         and(
           eq(programs.studentId, studentId),
-          eq(programs.status, "active")
+          eq(programs.status, "active"),
+          visibility,
         )
       )
       .orderBy(desc(programs.createdAt))
       .limit(1);
 
     if (activeProgram) {
+      if (ctx) recordShareDerivedViewSingle(ctx, "program", activeProgram);
       const [hydrated] = await hydrateRecords("programs", [activeProgram], ref);
       return hydrated;
     }
@@ -178,13 +199,15 @@ export class ProgramRepository {
       .where(
         and(
           eq(programs.studentId, studentId),
-          eq(programs.status, "draft")
+          eq(programs.status, "draft"),
+          visibility,
         )
       )
       .orderBy(desc(programs.createdAt))
       .limit(1);
 
     if (!draftProgram) return undefined;
+    if (ctx) recordShareDerivedViewSingle(ctx, "program", draftProgram);
     const [hydrated] = await hydrateRecords("programs", [draftProgram], ref);
     return hydrated;
   }
@@ -235,42 +258,44 @@ export class ProgramRepository {
   /**
    * Get full program with all related details
    */
-  async getProgramWithDetails(programId: string): Promise<ProgramWithDetails | undefined> {
-    const program = await this.getProgramById(programId);
+  async getProgramWithDetails(programId: string, ctx?: AccessCtx): Promise<ProgramWithDetails | undefined> {
+    const program = await this.getProgramById(programId, ctx);
     if (!program) return undefined;
 
     const [student] = await db
       .select()
       .from(students)
       .where(eq(students.id, program.studentId));
-    
+
     if (!student) return undefined;
 
-    // Fetch all related data
-    const domains = await this.getProfileDomainsByProgramId(programId);
+    // Fetch all related data — once the parent program is visible, child reads
+    // also pass ctx so that any individual access-cycle (e.g. a goal moved to
+    // a different program) gets re-checked at the child level too.
+    const domains = await this.getProfileDomainsByProgramId(programId, ctx);
     const domainsWithData = await Promise.all(
       domains.map(async (domain) => ({
         ...domain,
-        baselineMeasurements: await this.getBaselineMeasurementsByDomainId(domain.id),
-        assessmentSources: await this.getAssessmentSourcesByDomainId(domain.id),
+        baselineMeasurements: await this.getBaselineMeasurementsByDomainId(domain.id, ctx),
+        assessmentSources: await this.getAssessmentSourcesByDomainId(domain.id, ctx),
       }))
     );
 
-    const programGoals = await this.getGoalsByProgramId(programId);
+    const programGoals = await this.getGoalsByProgramId(programId, ctx);
     const goalsWithData = await Promise.all(
       programGoals.map(async (goal) => {
-        const goalObjectives = await this.getObjectivesByGoalId(goal.id);
+        const goalObjectives = await this.getObjectivesByGoalId(goal.id, ctx);
         return {
           ...goal,
           objectives: goalObjectives,
-          dataPoints: await this.getDataPointsByGoalId(goal.id),
+          dataPoints: await this.getDataPointsByGoalId(goal.id, ctx),
           // Get domains for this goal via its objectives
           domains: await this.getDomainsForGoal(goal.id),
         };
       })
     );
 
-    const programServices = await this.getServicesByProgramId(programId);
+    const programServices = await this.getServicesByProgramId(programId, ctx);
     const servicesWithData = await Promise.all(
       programServices.map(async (service) => {
         const serviceGoalLinks = await db
@@ -279,25 +304,25 @@ export class ProgramRepository {
           .where(eq(serviceGoals.serviceId, service.id));
         return {
           ...service,
-          accommodations: await this.getAccommodationsByServiceId(service.id),
+          accommodations: await this.getAccommodationsByServiceId(service.id, ctx),
           linkedGoalIds: serviceGoalLinks.map(sg => sg.goalId),
         };
       })
     );
 
-    const reports = await this.getProgressReportsByProgramId(programId);
+    const reports = await this.getProgressReportsByProgramId(programId, ctx);
     const reportsWithEntries = await Promise.all(
       reports.map(async (report) => ({
         ...report,
-        entries: await this.getGoalProgressEntriesByReportId(report.id),
+        entries: await this.getGoalProgressEntriesByReportId(report.id, ctx),
       }))
     );
 
-    const transition = await this.getTransitionPlanByProgramId(programId);
+    const transition = await this.getTransitionPlanByProgramId(programId, ctx);
     const transitionWithGoals = transition
       ? {
           ...transition,
-          goals: await this.getTransitionGoalsByPlanId(transition.id),
+          goals: await this.getTransitionGoalsByPlanId(transition.id, ctx),
         }
       : undefined;
 
@@ -309,9 +334,9 @@ export class ProgramRepository {
       services: servicesWithData,
       progressReports: reportsWithEntries,
       transitionPlan: transitionWithGoals,
-      teamContacts: await this.getTeamContactsByProgramId(programId),
-      meetings: await this.getMeetingsByProgramId(programId),
-      consentForms: await this.getConsentFormsByProgramId(programId),
+      teamContacts: await this.getTeamContactsByProgramId(programId, ctx),
+      meetings: await this.getMeetingsByProgramId(programId, ctx),
+      consentForms: await this.getConsentFormsByProgramId(programId, ctx),
     };
   }
 
@@ -327,21 +352,33 @@ export class ProgramRepository {
     return domain;
   }
 
-  async getProfileDomainById(id: string): Promise<ProfileDomain | undefined> {
+  async getProfileDomainById(id: string, ctx?: AccessCtx): Promise<ProfileDomain | undefined> {
+    const where = ctx
+      ? and(
+          eq(profileDomains.id, id),
+          inArray(profileDomains.programId, visibleProgramIds(ctx)),
+        )
+      : eq(profileDomains.id, id);
     const [domain] = await db
       .select()
       .from(profileDomains)
-      .where(eq(profileDomains.id, id));
+      .where(where);
     if (!domain) return undefined;
     const [hydrated] = await hydrateRecords("profile_domains", [domain]);
     return hydrated;
   }
 
-  async getProfileDomainsByProgramId(programId: string): Promise<ProfileDomain[]> {
+  async getProfileDomainsByProgramId(programId: string, ctx?: AccessCtx): Promise<ProfileDomain[]> {
+    const where = ctx
+      ? and(
+          eq(profileDomains.programId, programId),
+          withInheritedVisibility(profileDomains.programId, programs, ctx, "program"),
+        )
+      : eq(profileDomains.programId, programId);
     const rows = await db
       .select()
       .from(profileDomains)
-      .where(eq(profileDomains.programId, programId))
+      .where(where)
       .orderBy(asc(profileDomains.sortOrder));
     return hydrateRecords("profile_domains", rows);
   }
@@ -374,11 +411,22 @@ export class ProgramRepository {
     return measurement;
   }
 
-  async getBaselineMeasurementsByDomainId(domainId: string): Promise<BaselineMeasurement[]> {
+  async getBaselineMeasurementsByDomainId(domainId: string, ctx?: AccessCtx): Promise<BaselineMeasurement[]> {
+    const where = ctx
+      ? and(
+          eq(baselineMeasurements.profileDomainId, domainId),
+          inArray(
+            baselineMeasurements.profileDomainId,
+            db.select({ id: profileDomains.id }).from(profileDomains).where(
+              inArray(profileDomains.programId, visibleProgramIds(ctx)),
+            ),
+          ),
+        )
+      : eq(baselineMeasurements.profileDomainId, domainId);
     const rows = await db
       .select()
       .from(baselineMeasurements)
-      .where(eq(baselineMeasurements.profileDomainId, domainId));
+      .where(where);
     return hydrateRecords("baseline_measurements", rows);
   }
 
@@ -401,11 +449,22 @@ export class ProgramRepository {
     return source;
   }
 
-  async getAssessmentSourcesByDomainId(domainId: string): Promise<AssessmentSource[]> {
+  async getAssessmentSourcesByDomainId(domainId: string, ctx?: AccessCtx): Promise<AssessmentSource[]> {
+    const where = ctx
+      ? and(
+          eq(assessmentSources.profileDomainId, domainId),
+          inArray(
+            assessmentSources.profileDomainId,
+            db.select({ id: profileDomains.id }).from(profileDomains).where(
+              inArray(profileDomains.programId, visibleProgramIds(ctx)),
+            ),
+          ),
+        )
+      : eq(assessmentSources.profileDomainId, domainId);
     const rows = await db
       .select()
       .from(assessmentSources)
-      .where(eq(assessmentSources.profileDomainId, domainId));
+      .where(where);
     return hydrateRecords("assessment_sources", rows);
   }
 
@@ -428,21 +487,30 @@ export class ProgramRepository {
     return goal;
   }
 
-  async getGoalById(id: string): Promise<Goal | undefined> {
+  async getGoalById(id: string, ctx?: AccessCtx): Promise<Goal | undefined> {
+    const where = ctx
+      ? and(eq(goals.id, id), withInheritedVisibility(goals.programId, programs, ctx, "program"))
+      : eq(goals.id, id);
     const [goal] = await db
       .select()
       .from(goals)
-      .where(eq(goals.id, id));
+      .where(where);
     if (!goal) return undefined;
     const [hydrated] = await hydrateRecords("goals", [goal]);
     return hydrated;
   }
 
-  async getGoalsByProgramId(programId: string): Promise<Goal[]> {
+  async getGoalsByProgramId(programId: string, ctx?: AccessCtx): Promise<Goal[]> {
+    const where = ctx
+      ? and(
+          eq(goals.programId, programId),
+          withInheritedVisibility(goals.programId, programs, ctx, "program"),
+        )
+      : eq(goals.programId, programId);
     const rows = await db
       .select()
       .from(goals)
-      .where(eq(goals.programId, programId))
+      .where(where)
       .orderBy(asc(goals.sortOrder));
     return hydrateRecords("goals", rows);
   }
@@ -480,31 +548,38 @@ export class ProgramRepository {
    * Get goals that have objectives in a specific domain
    * This replaces the old getGoalsByDomainId which was based on goals.profileDomainId
    */
-  async getGoalsByDomainId(domainId: string): Promise<Goal[]> {
+  async getGoalsByDomainId(domainId: string, ctx?: AccessCtx): Promise<Goal[]> {
     // Find all objectives in this domain
     const domainObjectives = await db
       .select()
       .from(objectives)
       .where(eq(objectives.profileDomainId, domainId));
-    
+
     // Get unique goal IDs
     const goalIds = [...new Set(domainObjectives.map(obj => obj.goalId))];
-    
+
     if (goalIds.length === 0) {
       return [];
     }
-    
+
+    const where = ctx
+      ? and(
+          inArray(goals.id, goalIds),
+          withInheritedVisibility(goals.programId, programs, ctx, "program"),
+        )
+      : inArray(goals.id, goalIds);
+
     // Fetch the goals
     const rows = await db
       .select()
       .from(goals)
-      .where(inArray(goals.id, goalIds))
+      .where(where)
       .orderBy(asc(goals.sortOrder));
     return hydrateRecords("goals", rows);
   }
 
-  async getGoalWithContext(goalId: string): Promise<GoalWithContext | undefined> {
-    const goal = await this.getGoalById(goalId);
+  async getGoalWithContext(goalId: string, ctx?: AccessCtx): Promise<GoalWithContext | undefined> {
+    const goal = await this.getGoalById(goalId, ctx);
     if (!goal) return undefined;
 
     const goalObjectives = await this.getObjectivesByGoalId(goalId);
@@ -552,21 +627,37 @@ export class ProgramRepository {
     return objective;
   }
 
-  async getObjectiveById(id: string): Promise<Objective | undefined> {
+  async getObjectiveById(id: string, ctx?: AccessCtx): Promise<Objective | undefined> {
+    const visibleGoalIds = ctx
+      ? db.select({ id: goals.id }).from(goals).where(
+          withInheritedVisibility(goals.programId, programs, ctx, "program"),
+        )
+      : null;
+    const where = visibleGoalIds
+      ? and(eq(objectives.id, id), inArray(objectives.goalId, visibleGoalIds))
+      : eq(objectives.id, id);
     const [objective] = await db
       .select()
       .from(objectives)
-      .where(eq(objectives.id, id));
+      .where(where);
     if (!objective) return undefined;
     const [hydrated] = await hydrateRecords("objectives", [objective]);
     return hydrated;
   }
 
-  async getObjectivesByGoalId(goalId: string): Promise<Objective[]> {
+  async getObjectivesByGoalId(goalId: string, ctx?: AccessCtx): Promise<Objective[]> {
+    const visibleGoalIds = ctx
+      ? db.select({ id: goals.id }).from(goals).where(
+          withInheritedVisibility(goals.programId, programs, ctx, "program"),
+        )
+      : null;
+    const where = visibleGoalIds
+      ? and(eq(objectives.goalId, goalId), inArray(objectives.goalId, visibleGoalIds))
+      : eq(objectives.goalId, goalId);
     const rows = await db
       .select()
       .from(objectives)
-      .where(eq(objectives.goalId, goalId))
+      .where(where)
       .orderBy(asc(objectives.sequenceOrder));
     return hydrateRecords("objectives", rows);
   }
@@ -574,11 +665,19 @@ export class ProgramRepository {
   /**
    * Get objectives by domain ID
    */
-  async getObjectivesByDomainId(domainId: string): Promise<Objective[]> {
+  async getObjectivesByDomainId(domainId: string, ctx?: AccessCtx): Promise<Objective[]> {
+    const visibleGoalIds = ctx
+      ? db.select({ id: goals.id }).from(goals).where(
+          withInheritedVisibility(goals.programId, programs, ctx, "program"),
+        )
+      : null;
+    const where = visibleGoalIds
+      ? and(eq(objectives.profileDomainId, domainId), inArray(objectives.goalId, visibleGoalIds))
+      : eq(objectives.profileDomainId, domainId);
     const rows = await db
       .select()
       .from(objectives)
-      .where(eq(objectives.profileDomainId, domainId))
+      .where(where)
       .orderBy(asc(objectives.sequenceOrder));
     return hydrateRecords("objectives", rows);
   }
@@ -611,21 +710,30 @@ export class ProgramRepository {
     return service;
   }
 
-  async getServiceById(id: string): Promise<Service | undefined> {
+  async getServiceById(id: string, ctx?: AccessCtx): Promise<Service | undefined> {
+    const where = ctx
+      ? and(eq(services.id, id), withInheritedVisibility(services.programId, programs, ctx, "program"))
+      : eq(services.id, id);
     const [service] = await db
       .select()
       .from(services)
-      .where(eq(services.id, id));
+      .where(where);
     if (!service) return undefined;
     const [hydrated] = await hydrateRecords("services", [service]);
     return hydrated;
   }
 
-  async getServicesByProgramId(programId: string): Promise<Service[]> {
+  async getServicesByProgramId(programId: string, ctx?: AccessCtx): Promise<Service[]> {
+    const where = ctx
+      ? and(
+          eq(services.programId, programId),
+          withInheritedVisibility(services.programId, programs, ctx, "program"),
+        )
+      : eq(services.programId, programId);
     const rows = await db
       .select()
       .from(services)
-      .where(eq(services.programId, programId));
+      .where(where);
     return hydrateRecords("services", rows);
   }
 
@@ -720,19 +828,33 @@ export class ProgramRepository {
     return accommodation;
   }
 
-  async getAccommodationsByServiceId(serviceId: string): Promise<Accommodation[]> {
+  async getAccommodationsByServiceId(serviceId: string, ctx?: AccessCtx): Promise<Accommodation[]> {
+    const visibleServiceIds = ctx
+      ? db.select({ id: services.id }).from(services).where(
+          withInheritedVisibility(services.programId, programs, ctx, "program"),
+        )
+      : null;
+    const where = visibleServiceIds
+      ? and(eq(accommodations.serviceId, serviceId), inArray(accommodations.serviceId, visibleServiceIds))
+      : eq(accommodations.serviceId, serviceId);
     const rows = await db
       .select()
       .from(accommodations)
-      .where(eq(accommodations.serviceId, serviceId));
+      .where(where);
     return hydrateRecords("accommodations", rows);
   }
 
-  async getAccommodationsByProgramId(programId: string): Promise<Accommodation[]> {
+  async getAccommodationsByProgramId(programId: string, ctx?: AccessCtx): Promise<Accommodation[]> {
+    const where = ctx
+      ? and(
+          eq(accommodations.programId, programId),
+          withInheritedVisibility(accommodations.programId, programs, ctx, "program"),
+        )
+      : eq(accommodations.programId, programId);
     const rows = await db
       .select()
       .from(accommodations)
-      .where(eq(accommodations.programId, programId));
+      .where(where);
     return hydrateRecords("accommodations", rows);
   }
 
@@ -764,21 +886,30 @@ export class ProgramRepository {
     return report;
   }
 
-  async getProgressReportById(id: string): Promise<ProgressReport | undefined> {
+  async getProgressReportById(id: string, ctx?: AccessCtx): Promise<ProgressReport | undefined> {
+    const where = ctx
+      ? and(eq(progressReports.id, id), withInheritedVisibility(progressReports.programId, programs, ctx, "program"))
+      : eq(progressReports.id, id);
     const [report] = await db
       .select()
       .from(progressReports)
-      .where(eq(progressReports.id, id));
+      .where(where);
     if (!report) return undefined;
     const [hydrated] = await hydrateRecords("progress_reports", [report]);
     return hydrated;
   }
 
-  async getProgressReportsByProgramId(programId: string): Promise<ProgressReport[]> {
+  async getProgressReportsByProgramId(programId: string, ctx?: AccessCtx): Promise<ProgressReport[]> {
+    const where = ctx
+      ? and(
+          eq(progressReports.programId, programId),
+          withInheritedVisibility(progressReports.programId, programs, ctx, "program"),
+        )
+      : eq(progressReports.programId, programId);
     const rows = await db
       .select()
       .from(progressReports)
-      .where(eq(progressReports.programId, programId))
+      .where(where)
       .orderBy(desc(progressReports.reportDate));
     return hydrateRecords("progress_reports", rows);
   }
@@ -811,28 +942,52 @@ export class ProgramRepository {
     return entry;
   }
 
-  async getGoalProgressEntriesByReportId(reportId: string): Promise<GoalProgressEntry[]> {
+  async getGoalProgressEntriesByReportId(reportId: string, ctx?: AccessCtx): Promise<GoalProgressEntry[]> {
+    const visibleGoalIds = ctx
+      ? db.select({ id: goals.id }).from(goals).where(
+          withInheritedVisibility(goals.programId, programs, ctx, "program"),
+        )
+      : null;
+    const where = visibleGoalIds
+      ? and(eq(goalProgressEntries.progressReportId, reportId), inArray(goalProgressEntries.goalId, visibleGoalIds))
+      : eq(goalProgressEntries.progressReportId, reportId);
     const rows = await db
       .select()
       .from(goalProgressEntries)
-      .where(eq(goalProgressEntries.progressReportId, reportId));
+      .where(where);
     return hydrateRecords("goal_progress_entries", rows);
   }
 
-  async getGoalProgressEntriesByGoalId(goalId: string): Promise<GoalProgressEntry[]> {
+  async getGoalProgressEntriesByGoalId(goalId: string, ctx?: AccessCtx): Promise<GoalProgressEntry[]> {
+    const visibleGoalIds = ctx
+      ? db.select({ id: goals.id }).from(goals).where(
+          withInheritedVisibility(goals.programId, programs, ctx, "program"),
+        )
+      : null;
+    const where = visibleGoalIds
+      ? and(eq(goalProgressEntries.goalId, goalId), inArray(goalProgressEntries.goalId, visibleGoalIds))
+      : eq(goalProgressEntries.goalId, goalId);
     const rows = await db
       .select()
       .from(goalProgressEntries)
-      .where(eq(goalProgressEntries.goalId, goalId))
+      .where(where)
       .orderBy(desc(goalProgressEntries.createdAt));
     return hydrateRecords("goal_progress_entries", rows);
   }
 
-  async getLatestGoalProgressEntryByGoalId(goalId: string): Promise<GoalProgressEntry | undefined> {
+  async getLatestGoalProgressEntryByGoalId(goalId: string, ctx?: AccessCtx): Promise<GoalProgressEntry | undefined> {
+    const visibleGoalIds = ctx
+      ? db.select({ id: goals.id }).from(goals).where(
+          withInheritedVisibility(goals.programId, programs, ctx, "program"),
+        )
+      : null;
+    const where = visibleGoalIds
+      ? and(eq(goalProgressEntries.goalId, goalId), inArray(goalProgressEntries.goalId, visibleGoalIds))
+      : eq(goalProgressEntries.goalId, goalId);
     const [entry] = await db
       .select()
       .from(goalProgressEntries)
-      .where(eq(goalProgressEntries.goalId, goalId))
+      .where(where)
       .orderBy(desc(goalProgressEntries.createdAt))
       .limit(1);
     if (!entry) return undefined;
@@ -852,20 +1007,40 @@ export class ProgramRepository {
     return point;
   }
 
-  async getDataPointsByGoalId(goalId: string): Promise<DataPoint[]> {
+  async getDataPointsByGoalId(goalId: string, ctx?: AccessCtx): Promise<DataPoint[]> {
+    const visibleGoalIds = ctx
+      ? db.select({ id: goals.id }).from(goals).where(
+          withInheritedVisibility(goals.programId, programs, ctx, "program"),
+        )
+      : null;
+    const where = visibleGoalIds
+      ? and(eq(dataPoints.goalId, goalId), inArray(dataPoints.goalId, visibleGoalIds))
+      : eq(dataPoints.goalId, goalId);
     const rows = await db
       .select()
       .from(dataPoints)
-      .where(eq(dataPoints.goalId, goalId))
+      .where(where)
       .orderBy(desc(dataPoints.recordedAt));
     return hydrateRecords("data_points", rows);
   }
 
-  async getDataPointsByObjectiveId(objectiveId: string): Promise<DataPoint[]> {
+  async getDataPointsByObjectiveId(objectiveId: string, ctx?: AccessCtx): Promise<DataPoint[]> {
+    const visibleObjectiveIds = ctx
+      ? db.select({ id: objectives.id }).from(objectives).where(
+          inArray(objectives.goalId,
+            db.select({ id: goals.id }).from(goals).where(
+              withInheritedVisibility(goals.programId, programs, ctx, "program"),
+            ),
+          ),
+        )
+      : null;
+    const where = visibleObjectiveIds
+      ? and(eq(dataPoints.objectiveId, objectiveId), inArray(dataPoints.objectiveId, visibleObjectiveIds))
+      : eq(dataPoints.objectiveId, objectiveId);
     const rows = await db
       .select()
       .from(dataPoints)
-      .where(eq(dataPoints.objectiveId, objectiveId))
+      .where(where)
       .orderBy(desc(dataPoints.recordedAt));
     return hydrateRecords("data_points", rows);
   }
@@ -889,21 +1064,30 @@ export class ProgramRepository {
     return plan;
   }
 
-  async getTransitionPlanById(id: string): Promise<TransitionPlan | undefined> {
+  async getTransitionPlanById(id: string, ctx?: AccessCtx): Promise<TransitionPlan | undefined> {
+    const where = ctx
+      ? and(eq(transitionPlans.id, id), withInheritedVisibility(transitionPlans.programId, programs, ctx, "program"))
+      : eq(transitionPlans.id, id);
     const [plan] = await db
       .select()
       .from(transitionPlans)
-      .where(eq(transitionPlans.id, id));
+      .where(where);
     if (!plan) return undefined;
     const [hydrated] = await hydrateRecords("transition_plans", [plan]);
     return hydrated;
   }
 
-  async getTransitionPlanByProgramId(programId: string): Promise<TransitionPlan | undefined> {
+  async getTransitionPlanByProgramId(programId: string, ctx?: AccessCtx): Promise<TransitionPlan | undefined> {
+    const where = ctx
+      ? and(
+          eq(transitionPlans.programId, programId),
+          withInheritedVisibility(transitionPlans.programId, programs, ctx, "program"),
+        )
+      : eq(transitionPlans.programId, programId);
     const [plan] = await db
       .select()
       .from(transitionPlans)
-      .where(eq(transitionPlans.programId, programId));
+      .where(where);
     if (!plan) return undefined;
     const [hydrated] = await hydrateRecords("transition_plans", [plan]);
     return hydrated;
@@ -937,11 +1121,19 @@ export class ProgramRepository {
     return goal;
   }
 
-  async getTransitionGoalsByPlanId(planId: string): Promise<TransitionGoal[]> {
+  async getTransitionGoalsByPlanId(planId: string, ctx?: AccessCtx): Promise<TransitionGoal[]> {
+    const visiblePlanIds = ctx
+      ? db.select({ id: transitionPlans.id }).from(transitionPlans).where(
+          withInheritedVisibility(transitionPlans.programId, programs, ctx, "program"),
+        )
+      : null;
+    const where = visiblePlanIds
+      ? and(eq(transitionGoals.transitionPlanId, planId), inArray(transitionGoals.transitionPlanId, visiblePlanIds))
+      : eq(transitionGoals.transitionPlanId, planId);
     const rows = await db
       .select()
       .from(transitionGoals)
-      .where(eq(transitionGoals.transitionPlanId, planId));
+      .where(where);
     return hydrateRecords("transition_goals", rows);
   }
 
@@ -971,18 +1163,32 @@ export class ProgramRepository {
     return row;
   }
 
-  async getProgramContactById(id: string): Promise<ProgramContact | undefined> {
+  async getProgramContactById(id: string, ctx?: AccessCtx): Promise<ProgramContact | undefined> {
+    const where = ctx
+      ? and(eq(programContacts.id, id), withInheritedVisibility(programContacts.programId, programs, ctx, "program"))
+      : eq(programContacts.id, id);
     const [row] = await db
       .select()
       .from(programContacts)
-      .where(eq(programContacts.id, id));
+      .where(where);
     return row;
   }
 
   /** Get all program contacts for a program with their contact row joined in. */
   async getTeamContactsByProgramId(
     programId: string,
+    ctx?: AccessCtx,
   ): Promise<(ProgramContact & { contact: StudentContact })[]> {
+    const where = ctx
+      ? and(
+          eq(programContacts.programId, programId),
+          eq(programContacts.isActive, true),
+          withInheritedVisibility(programContacts.programId, programs, ctx, "program"),
+        )
+      : and(
+          eq(programContacts.programId, programId),
+          eq(programContacts.isActive, true),
+        );
     const rows = await db
       .select({
         junction: programContacts,
@@ -990,12 +1196,7 @@ export class ProgramRepository {
       })
       .from(programContacts)
       .innerJoin(studentContacts, eq(studentContacts.id, programContacts.contactId))
-      .where(
-        and(
-          eq(programContacts.programId, programId),
-          eq(programContacts.isActive, true),
-        ),
-      );
+      .where(where);
     return rows.map((r) => ({ ...r.junction, contact: r.contact }));
   }
 
@@ -1032,21 +1233,30 @@ export class ProgramRepository {
     return meeting;
   }
 
-  async getMeetingById(id: string): Promise<Meeting | undefined> {
+  async getMeetingById(id: string, ctx?: AccessCtx): Promise<Meeting | undefined> {
+    const where = ctx
+      ? and(eq(meetings.id, id), withInheritedVisibility(meetings.programId, programs, ctx, "program"))
+      : eq(meetings.id, id);
     const [meeting] = await db
       .select()
       .from(meetings)
-      .where(eq(meetings.id, id));
+      .where(where);
     if (!meeting) return undefined;
     const [hydrated] = await hydrateRecords("meetings", [meeting]);
     return hydrated;
   }
 
-  async getMeetingsByProgramId(programId: string): Promise<Meeting[]> {
+  async getMeetingsByProgramId(programId: string, ctx?: AccessCtx): Promise<Meeting[]> {
+    const where = ctx
+      ? and(
+          eq(meetings.programId, programId),
+          withInheritedVisibility(meetings.programId, programs, ctx, "program"),
+        )
+      : eq(meetings.programId, programId);
     const rows = await db
       .select()
       .from(meetings)
-      .where(eq(meetings.programId, programId))
+      .where(where)
       .orderBy(desc(meetings.scheduledDate));
     return hydrateRecords("meetings", rows);
   }
@@ -1079,21 +1289,30 @@ export class ProgramRepository {
     return form;
   }
 
-  async getConsentFormById(id: string): Promise<ConsentForm | undefined> {
+  async getConsentFormById(id: string, ctx?: AccessCtx): Promise<ConsentForm | undefined> {
+    const where = ctx
+      ? and(eq(consentForms.id, id), withInheritedVisibility(consentForms.programId, programs, ctx, "program"))
+      : eq(consentForms.id, id);
     const [form] = await db
       .select()
       .from(consentForms)
-      .where(eq(consentForms.id, id));
+      .where(where);
     if (!form) return undefined;
     const [hydrated] = await hydrateRecords("consent_forms", [form]);
     return hydrated;
   }
 
-  async getConsentFormsByProgramId(programId: string): Promise<ConsentForm[]> {
+  async getConsentFormsByProgramId(programId: string, ctx?: AccessCtx): Promise<ConsentForm[]> {
+    const where = ctx
+      ? and(
+          eq(consentForms.programId, programId),
+          withInheritedVisibility(consentForms.programId, programs, ctx, "program"),
+        )
+      : eq(consentForms.programId, programId);
     const rows = await db
       .select()
       .from(consentForms)
-      .where(eq(consentForms.programId, programId));
+      .where(where);
     return hydrateRecords("consent_forms", rows);
   }
 

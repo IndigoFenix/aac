@@ -4,6 +4,7 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { incidentRepository } from "../repositories";
+import { buildClinicianCtx } from "../services/sharing/clinicianCtx";
 
 const createIncidentSchema = z.object({
   type: z.enum(["medical", "functional"]),
@@ -29,18 +30,24 @@ class IncidentController {
     try {
       const { studentId } = req.params;
       const { startDate, endDate, offset, limit } = req.query;
-      const items = await incidentRepository.listByStudent(studentId, {
-        startDate: typeof startDate === "string" ? new Date(startDate) : undefined,
-        endDate: typeof endDate === "string" ? new Date(endDate) : undefined,
-        offset: typeof offset === "string" ? Number(offset) : undefined,
-        limit: typeof limit === "string" ? Number(limit) : undefined,
-      });
+      const ctx = await buildClinicianCtx(req, studentId);
+      const items = await incidentRepository.listByStudent(
+        studentId,
+        {
+          startDate: typeof startDate === "string" ? new Date(startDate) : undefined,
+          endDate: typeof endDate === "string" ? new Date(endDate) : undefined,
+          offset: typeof offset === "string" ? Number(offset) : undefined,
+          limit: typeof limit === "string" ? Number(limit) : undefined,
+        },
+        ctx,
+      );
       res.json({ success: true, incidents: items });
     } catch (error: any) {
       console.error("Error listing incidents:", error);
       res.status(500).json({ success: false, message: "Failed to list incidents" });
     }
   }
+
 
   async create(req: Request, res: Response): Promise<void> {
     try {

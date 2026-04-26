@@ -35,6 +35,7 @@ import {
   Sparkles,
   Contact,
   UserCircle,
+  Share2,
 } from 'lucide-react';
 import { apiUrl } from '@/lib/queryClient';
 import { useState } from 'react';
@@ -211,6 +212,14 @@ export function Sidebar({ isCollapsed: isCollapsedProp = false, position = 'left
       disabled: !student,
       badge: undefined as string | undefined,
     }] : []),
+    {
+      icon: Share2,
+      labelKey: 'nav.shares',
+      feature: 'shares' as FeatureType,
+      testId: 'nav-shares',
+      disabled: false,
+      badge: undefined as string | undefined,
+    },
   ];
 
   const positionClasses = position === 'right' 

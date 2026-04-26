@@ -17,9 +17,17 @@
 
 import fs from "fs";
 import path from "path";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db";
 import { deepAnalyses, students } from "@shared/schema";
+import {
+  withInstituteVisibility,
+  type AccessCtx,
+} from "./sharing/visibility";
+import {
+  recordShareDerivedView,
+  recordShareDerivedViewSingle,
+} from "./sharing/audit";
 import type { AgentMemoryFieldWithDB } from "./chat/memory-types";
 import { settingsRepository } from "../repositories/settingsRepository";
 import { resolveModelId, getModelOption } from "@shared/llm-options";
@@ -240,15 +248,24 @@ export async function createDeepAnalysis(input: CreateDeepAnalysisInput): Promis
   return { id: row.id };
 }
 
-export async function getDeepAnalysis(id: string) {
-  const [row] = await db.select().from(deepAnalyses).where(eq(deepAnalyses.id, id)).limit(1);
+export async function getDeepAnalysis(id: string, ctx?: AccessCtx) {
+  const where = ctx
+    ? and(eq(deepAnalyses.id, id), withInstituteVisibility(deepAnalyses, ctx, "deep_analysis"))
+    : eq(deepAnalyses.id, id);
+  const [row] = await db.select().from(deepAnalyses).where(where).limit(1);
+  if (ctx) recordShareDerivedViewSingle(ctx, "deep_analysis", row);
   return row;
 }
 
-export async function listDeepAnalysesForStudent(studentId: string) {
-  return db
+export async function listDeepAnalysesForStudent(studentId: string, ctx?: AccessCtx) {
+  const where = ctx
+    ? and(eq(deepAnalyses.studentId, studentId), withInstituteVisibility(deepAnalyses, ctx, "deep_analysis"))
+    : eq(deepAnalyses.studentId, studentId);
+  const rows = await db
     .select({
       id: deepAnalyses.id,
+      studentId: deepAnalyses.studentId,
+      instituteId: deepAnalyses.instituteId,
       createdAt: deepAnalyses.createdAt,
       completedAt: deepAnalyses.completedAt,
       status: deepAnalyses.status,
@@ -257,8 +274,10 @@ export async function listDeepAnalysesForStudent(studentId: string) {
       model: deepAnalyses.model,
     })
     .from(deepAnalyses)
-    .where(eq(deepAnalyses.studentId, studentId))
+    .where(where)
     .orderBy(sql`${deepAnalyses.createdAt} desc`);
+  if (ctx) recordShareDerivedView(ctx, "deep_analysis", rows);
+  return rows;
 }
 
 export async function deleteDeepAnalysis(id: string): Promise<boolean> {

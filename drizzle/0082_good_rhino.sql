@@ -1,0 +1,1 @@
+ALTER TABLE "student_share_invites" ADD COLUMN "pending_bundle" jsonb DEFAULT '{"objects":[],"standingTypes":[],"permission":"read","shareExpiresAt":null,"standingExpiresAt":null,"sensitiveAcknowledged":false}'::jsonb NOT NULL;

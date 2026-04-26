@@ -69,6 +69,9 @@ import {
 } from "./memory-schema/topic-memory-schema";
 import { studentService } from "./studentService";
 import type { LicensePermissions } from "@shared/license-permissions";
+import type { AccessCtx } from "./sharing/visibility";
+import { withInstituteVisibility } from "./sharing/visibility";
+import { recordShareDerivedViewSingle } from "./sharing/audit";
 
 // Re-export for convenience
 export { PROGRESS_PROGRAM_FIELD, PROGRESS_SYSTEM_PROMPT };
@@ -117,6 +120,16 @@ export interface ChatContext {
   reportPermissions?: AccessPermissions; // Optional - defaults to all hidden
   licensePermissions?: LicensePermissions; // Optional - license-based feature gating
   timezone?: string; // Optional - IANA TZ used to interpret naive datetime strings from the AI
+  /**
+   * Cross-institute visibility context. When set, every memory-schema DB op
+   * receives it via DBOperationContext.all.accessCtx and gates reads/writes
+   * through the visibility helper. Built once at session boundary by
+   * buildSessionAccessCtx — see server/services/sharing/sessionCtx.ts.
+   *
+   * Undefined preserves legacy behavior (no filter), matching the controller
+   * helper's contract.
+   */
+  accessCtx?: AccessCtx;
 }
 
 export interface ChatContextState {
@@ -163,6 +176,7 @@ export class ChatContextManager {
         instituteId: context.instituteId,
         licensePermissions: context.licensePermissions,
         timezone: context.timezone,
+        accessCtx: context.accessCtx,
       },
       reportPermissions: permissions,
     };
@@ -291,18 +305,28 @@ export class ChatContextManager {
     return `Available reports: ${parts.join(", ")}.`;
   }
 
-  // Helper methods to load reports
+  // Helper methods to load reports.
+  // When accessCtx is set on the ChatContext, reads route through
+  // withInstituteVisibility — same gate as the HTTP controllers.
   private async loadMedicalRecord(studentId: string, instituteId?: string): Promise<MedicalRecord | null> {
-    const whereClause = instituteId
+    const ctx = this.context.accessCtx;
+    const statusGate = or(
+      eq(medicalRecords.status, "draft"),
+      eq(medicalRecords.status, "pending_review"),
+    );
+    const whereClause = ctx
       ? and(
           eq(medicalRecords.studentId, studentId),
-          eq(medicalRecords.instituteId, instituteId),
-          or(eq(medicalRecords.status, "draft"), eq(medicalRecords.status, "pending_review"))
+          withInstituteVisibility(medicalRecords, ctx, "medical_record"),
+          statusGate,
         )
-      : and(
-          eq(medicalRecords.studentId, studentId),
-          or(eq(medicalRecords.status, "draft"), eq(medicalRecords.status, "pending_review"))
-        );
+      : instituteId
+        ? and(
+            eq(medicalRecords.studentId, studentId),
+            eq(medicalRecords.instituteId, instituteId),
+            statusGate,
+          )
+        : and(eq(medicalRecords.studentId, studentId), statusGate);
 
     const [record] = await db
       .select()
@@ -311,38 +335,57 @@ export class ChatContextManager {
       .orderBy(desc(medicalRecords.createdAt))
       .limit(1);
 
+    if (ctx) recordShareDerivedViewSingle(ctx, "medical_record", record);
     return record || null;
   }
 
   private async loadFunctionalReport(studentId: string): Promise<FunctionalReport | null> {
+    const ctx = this.context.accessCtx;
+    const statusGate = or(
+      eq(functionalReports.status, "draft"),
+      eq(functionalReports.status, "pending_review"),
+    );
+    const whereClause = ctx
+      ? and(
+          eq(functionalReports.studentId, studentId),
+          withInstituteVisibility(functionalReports, ctx, "functional_report"),
+          statusGate,
+        )
+      : and(eq(functionalReports.studentId, studentId), statusGate);
+
     const [report] = await db
       .select()
       .from(functionalReports)
-      .where(
-        and(
-          eq(functionalReports.studentId, studentId),
-          or(eq(functionalReports.status, "draft"), eq(functionalReports.status, "pending_review"))
-        )
-      )
+      .where(whereClause)
       .orderBy(desc(functionalReports.createdAt))
       .limit(1);
 
+    if (ctx) recordShareDerivedViewSingle(ctx, "functional_report", report);
     return report || null;
   }
 
   private async loadEducationalReport(studentId: string): Promise<EducationalReport | null> {
+    const ctx = this.context.accessCtx;
+    const statusGate = or(
+      eq(educationalReports.status, "draft"),
+      eq(educationalReports.status, "pending_review"),
+    );
+    const whereClause = ctx
+      ? and(
+          eq(educationalReports.studentId, studentId),
+          withInstituteVisibility(educationalReports, ctx, "educational_report"),
+          statusGate,
+        )
+      : and(eq(educationalReports.studentId, studentId), statusGate);
+
     const [report] = await db
       .select()
       .from(educationalReports)
-      .where(
-        and(
-          eq(educationalReports.studentId, studentId),
-          or(eq(educationalReports.status, "draft"), eq(educationalReports.status, "pending_review"))
-        )
-      )
+      .where(whereClause)
       .orderBy(desc(educationalReports.createdAt))
       .limit(1);
 
+    if (ctx) recordShareDerivedViewSingle(ctx, "educational_report", report);
     return report || null;
   }
 
@@ -676,9 +719,10 @@ export async function createChatContextManager(
   reportPermissions?: AccessPermissions,
   licensePermissions?: LicensePermissions,
   timezone?: string,
+  accessCtx?: AccessCtx,
 ): Promise<ChatContextManager> {
   const manager = new ChatContextManager(
-    { studentId, userId, programId, instituteId, reportPermissions, licensePermissions, timezone },
+    { studentId, userId, programId, instituteId, reportPermissions, licensePermissions, timezone, accessCtx },
     masterMemoryFields,
     existingLoadState
   );

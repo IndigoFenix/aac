@@ -26,10 +26,10 @@ import {
   onboardingController,
   slpClinicalController,
   programController,
-  recordsController,
   instituteController,
   classroomController,
-  sessionHistoryController
+  sessionHistoryController,
+  shareInviteController
 } from "./controllers";
 
 import {
@@ -368,7 +368,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/invites/token/:token/register", (req, res) =>
     instituteController.registerWithInvite(req, res)
   );
-  
+
+  // ============= CROSS-INSTITUTE SHARE ROUTES =============
+  // See planning-docs/cross-institute-sharing-plan.md
+
+  // Source side
+  app.post("/api/shares/invites", requireAuth, (req, res) =>
+    shareInviteController.createInvite(req, res)
+  );
+  app.get("/api/shares/invites", requireAuth, (req, res) =>
+    shareInviteController.listInvites(req, res)
+  );
+  app.get("/api/shares/invites/inbox", requireAuth, (req, res) =>
+    shareInviteController.listGuardianInbox(req, res)
+  );
+  app.get("/api/shares/invites/:id", requireAuth, (req, res) =>
+    shareInviteController.getInvite(req, res)
+  );
+
+  // Guardian side
+  app.post("/api/shares/invites/:id/approve", requireAuth, (req, res) =>
+    shareInviteController.approveInvite(req, res)
+  );
+  app.post("/api/shares/invites/:id/decline", requireAuth, (req, res) =>
+    shareInviteController.declineInvite(req, res)
+  );
+
+  // Target side
+  app.post("/api/shares/redeem", requireAuth, (req, res) =>
+    shareInviteController.redeem(req, res)
+  );
+  app.post("/api/shares/invites/:id/accept", requireAuth, (req, res) =>
+    shareInviteController.acceptInvite(req, res)
+  );
+
+  // Revocation (any party with standing)
+  app.post("/api/shares/invites/:id/revoke", requireAuth, (req, res) =>
+    shareInviteController.revokeInvite(req, res)
+  );
+  app.post("/api/shares/object-shares/:id/revoke", requireAuth, (req, res) =>
+    shareInviteController.revokeObjectShare(req, res)
+  );
+  app.post("/api/shares/standing-shares/:id/revoke", requireAuth, (req, res) =>
+    shareInviteController.revokeStandingShare(req, res)
+  );
+
+  // Materialized shares for an institute — Outgoing/Incoming tab visibility
+  app.get("/api/shares/active", requireAuth, (req, res) =>
+    shareInviteController.listActiveShares(req, res)
+  );
+
+  // Renewal — guardian extends a standing share's shareExpiresAt
+  app.get("/api/shares/standing-shares/inbox", requireAuth, (req, res) =>
+    shareInviteController.listGuardianStandingShares(req, res)
+  );
+  app.post("/api/shares/standing-shares/:id/renew", requireAuth, (req, res) =>
+    shareInviteController.renewStandingShare(req, res)
+  );
+
+  // Bulk-ungrant — guardian revokes all active shares (object + standing) to a
+  // specific recipient institute for a specific student. Used when a student
+  // transfers institutes and the guardian wants to wind down access in one click.
+  app.post("/api/shares/bulk-revoke", requireAuth, (req, res) =>
+    shareInviteController.bulkRevoke(req, res)
+  );
+
 
   // ============= IEP/TALA PROGRAM ROUTES =============
   

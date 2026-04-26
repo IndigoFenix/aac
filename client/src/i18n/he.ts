@@ -7,7 +7,7 @@ export const he = {
   // ============================================================================
   app: {
     title: "CliniAACian",
-    subtitle: 'כלי עזר מתקדם לפרוש תקשורת תומכת חלופית (תת"ח).',
+    subtitle: "AI-powered speech therapy analysis for better understanding",
   },
 
   // ============================================================================
@@ -113,53 +113,53 @@ export const he = {
     registerSuccessDesc: "החשבון נוצר. כעת ניתן להתחבר.",
     registerFailed: "הרשמה נכשלה",
     registerError: "אירעה שגיאה במהלך הרשמה",
-    
+
     // Forgot Password Page
-    forgotPasswordDesc: 'הזן את כתובת האימייל שלך ונשלח לך קישור לאיפוס הסיסמה.',
-    sendResetLink: 'שלח קישור איפוס',
-    sending: 'שולח...',
-    emailRequired: 'נדרש אימייל',
-    invalidEmail: 'נא להזין כתובת אימייל תקינה',
+    forgotPasswordDesc: "Enter your email address and we'll send you a link to reset your password.",
+    sendResetLink: 'Send Reset Link',
+    sending: 'Sending...',
+    emailRequired: 'Email is required',
+    invalidEmail: 'Please enter a valid email address',
     
     // Check Email (after submission)
-    checkEmail: 'בדוק את האימייל שלך',
-    resetEmailSent: 'אם קיים חשבון עם אימייל זה, שלחנו קישור לאיפוס הסיסמה.',
-    sentTo: 'נשלח אל',
-    checkSpam: 'לא רואה? בדוק את תיקיית הספאם או נסה שוב עם אימייל אחר.',
-    tryDifferentEmail: 'נסה אימייל אחר',
+    checkEmail: 'Check Your Email',
+    resetEmailSent: "If an account exists with this email, we've sent a password reset link.",
+    sentTo: 'Sent to',
+    checkSpam: "Don't see it? Check your spam folder or try again with a different email.",
+    tryDifferentEmail: 'Try a different email',
     
     // Invalid Token
-    invalidResetLink: 'קישור איפוס לא תקין',
-    invalidResetLinkDesc: 'קישור איפוס הסיסמה לא תקין או שפג תוקפו. אנא בקש קישור חדש.',
-    requestNewLink: 'בקש קישור חדש',
-    validatingLink: 'מאמת קישור איפוס...',
+    invalidResetLink: 'Invalid Reset Link',
+    invalidResetLinkDesc: 'This password reset link is invalid or has expired. Please request a new one.',
+    requestNewLink: 'Request New Link',
+    validatingLink: 'Validating reset link...',
     
     // Reset Password Form
-    resetPassword: 'איפוס סיסמה',
-    resetPasswordDesc: 'הזן את הסיסמה החדשה שלך למטה.',
-    resettingFor: 'מאפס סיסמה עבור',
-    newPassword: 'סיסמה חדשה',
-    newPasswordPlaceholder: 'הזן סיסמה חדשה',
-    resetPasswordButton: 'אפס סיסמה',
-    resetting: 'מאפס...',
+    resetPassword: 'Reset Password',
+    resetPasswordDesc: 'Enter your new password below.',
+    resettingFor: 'Resetting password for',
+    newPassword: 'New Password',
+    newPasswordPlaceholder: 'Enter new password',
+    resetPasswordButton: 'Reset Password',
+    resetting: 'Resetting...',
     
     // Password validation
-    passwordRequired: 'נדרשת סיסמה',
-    passwordTooShort: 'הסיסמה חייבת להכיל לפחות 6 תווים',
-    passwordStrength: 'חוזק',
-    passwordRequirements: 'דרישות סיסמה',
-    minCharacters: 'לפחות 6 תווים',
+    passwordRequired: 'Password is required',
+    passwordTooShort: 'Password must be at least 6 characters',
+    passwordStrength: 'Strength',
+    passwordRequirements: 'Password requirements',
+    minCharacters: 'At least 6 characters',
     
     // Success
-    passwordResetSuccess: 'הסיסמה אופסה!',
-    passwordResetSuccessDesc: 'הסיסמה שלך עודכנה בהצלחה. כעת תוכל להתחבר עם הסיסמה החדשה.',
-    goToLogin: 'עבור להתחברות',
+    passwordResetSuccess: 'Password Reset!',
+    passwordResetSuccessDesc: 'Your password has been updated successfully. You can now log in with your new password.',
+    goToLogin: 'Go to Login',
     
     // Navigation
-    backToHome: 'חזרה לדף הבית',
+    backToHome: 'Back to Home',
 
     // Errors
-    passwordResetFailed: 'איפוס הסיסמה נכשל',
+    passwordResetFailed: 'Failed to reset password',
   },
 
   // ============================================================================
@@ -168,27 +168,28 @@ export const he = {
   nav: {
     main: "קליניאאקיאן",
     interpret: "פרש תקשורת",
-    aacsettings: 'הגדרות תת"ח',
-    boards: 'צור לוחות תת"ח',
+    aacsettings: "AAC Settings",
+    boards: "Generate AAC Boards",
     customApps: "משחקים ואפליקציות מותאמות",
     docuslp: "צור דוחות",
     settings: "הגדרות",
     workspace: "סביבת עבודה",
     toggleSidebar: "החלף סרגל צד",
     overview: "סקירה כללית",
-    institute: 'ארגון',
+    institute: "Organization",
     students: "{{STUDENTS}}",
     studentInfo: "{{STUDENT}} Info",
     contacts: "אנשי קשר",
     progress: "התקדמות {{STUDENTS}}",
     reports: "תיק {{STUDENT}}",
     deepAnalysis: "ניתוח מעמיק",
+    shares: "Shares",
     symbols: "ספריית סמלים לתת״ח",
-    aacSettings: 'הגדרות תת"ח',
+    aacSettings: "AAC Settings",
     currentStudent: "{{STUDENT}} נוכחי",
     aacBoards: "לוחות תקשורת",
     studentManagement: "ניהול {{STUDENTS}}",
-    instituteManagement: 'ניהול ארגונים',
+    instituteManagement: 'Organization Management',
     noStudentSelected: "אין {{STUDENT}} נבחר",
     calendar: "לוח שנה",
     userChat: "הודעות",
@@ -285,7 +286,7 @@ export const he = {
       k: "כיתה א׳",
       special_ed: "חינוך מיוחד",
       adult_ed: "חינוך מבוגרים"
-    },
+    }
   },
 
   // ============================================================================
@@ -305,7 +306,7 @@ export const he = {
     newConversation: "התחל שיחה חדשה",
     addAttachment: "הוסף קובץ מצורף",
     tools: "כלים",
-
+    
     // Speech-to-text keys
     voiceInput: "קלט קולי",
     stopListening: "הפסק להקשיב",
@@ -319,7 +320,7 @@ export const he = {
     speakMessage: "קרא בקול",
     copyMessage: "העתק",
     copied: "הועתק!",
-    copyWatermark: "נוצר ע\"י Aivota",
+    copyWatermark: "נוצר ע\\\"י Aivota",
 
     sendMessage: "שלח הודעה",
     suggestions: {
@@ -567,7 +568,7 @@ export const he = {
     inviteCreateFailed: "יצירת קוד נכשלה",
     inviteCreateFailedDesc: "לא ניתן ליצור קוד הזמנה",
     inviteRedeemed: "קוד הזמנה מומש",
-    inviteRedeemedDesc: 'משתמש.ת תת״ח "{alias}" נוסף בהצלחה',
+    inviteRedeemedDesc: 'AAC user "{alias}" was added successfully',
     inviteRedeemFailed: "מימוש קוד נכשל",
     inviteRedeemFailedDesc: "לא ניתן למימוש קוד הזמנה",
     inviteDeleted: "קוד הזמנה נמחק",
@@ -634,7 +635,7 @@ export const he = {
   // ============================================================================
   error: {
     title: "שגיאה",
-    selectStudent: 'חובה לבחור משתמש.ת תת"ח לפני המשך הפרשנות',
+    selectStudent: "You must select an AAC user before continuing with interpretation",
     locationUnavailable: "לא ניתן לקבל מיקום",
     generic: "משהו השתבש",
     networkError: "שגיאת רשת. אנא בדוק את החיבור שלך.",
@@ -697,7 +698,7 @@ export const he = {
     manageBoards: "ניהול לוחות",
     notLoaded: "לא נטען",
     aiGenerated: "נוצר ע״י AI",
-    saveBoard:"שמור לוח",
+    saveBoard: "שמור לוח",
     saving: "שומר…",
     noBoardYet: "עדיין אין לוח",
     noBoardDescription: "השתמש בלוח ההנחיות כדי ליצור לוח AAC ראשון או ליצור לוח ריק",
@@ -787,7 +788,7 @@ export const he = {
     importWarning: "ייבוא יחליף את הלוח הנוכחי. חלק מתכונות Grid3 עשויות לא להתייבא בצורה מושלמת.",
     importButton: "ייבוא",
     importSuccess: "הלוח יובא",
-    importSuccessDesc: "\"{{name}}\" יובא מ־Dropbox",
+    importSuccessDesc: "\\\"{{name}}\\\" יובא מ־Dropbox",
     importFailed: "הייבוא נכשל",
     noFilesFound: "לא נמצאו קבצי לוחות בתיקיית ה-Dropbox שלכם.",
   },
@@ -1177,7 +1178,7 @@ export const he = {
     personalFactorsDesc: "הקשר: תחומי עניין, מזג, גורמים מניעים, התמודדות, רקע תרבותי.",
     personal: {
       interests: "תחומי עניין (אחד בכל שורה)",
-      interestsPlaceholder: "למשל, רכבות\nמוזיקה\nדינוזאורים",
+      interestsPlaceholder: "למשל, רכבות\\nמוזיקה\\nדינוזאורים",
       motivators: "גורמים מניעים (אחד בכל שורה)",
       motivatorsPlaceholder: "אילו תגמולים מעודדים את {{STUDENT}}?",
       temperament: "מזג",
@@ -1514,7 +1515,7 @@ export const he = {
     programRoleOverride: "תפקיד בתוכנית (דריסה)",
     programRoleOverridePlaceholder: "השתמש בתפקיד ברירת המחדל של איש הקשר",
     responsibilities: "אחריויות",
-    responsibilitiesPlaceholder: "אחד בכל שורה — למשל, הוביל שיחות SLP\nתאם עם הורים",
+    responsibilitiesPlaceholder: "אחד בכל שורה — למשל, הוביל שיחות SLP\\nתאם עם הורים",
     setCoordinator: "סמן כרכז",
     unsetCoordinator: "בטל סימון כרכז",
     noMembersHint: "הוסף הורים, מטפלים או מורים מלוח אנשי הקשר.",
@@ -1574,7 +1575,7 @@ export const he = {
   // INSTITUTE
   // ============================================================================
 
-  // Institute Panel
+  // Organization Panel
   institute: {
     title: "ארגונים",
     subtitle: "ניהול החברויות שלך בארגונים",
@@ -1653,13 +1654,13 @@ export const he = {
     dangerZoneDesc: "פעולות בלתי הפיכות לארגון זה",
     enrolled: "רשום",
     inactive: "לא פעיל",
-    // ניהול {{STUDENTS}}
+    // Student management
     addStudent: "הוסף {{STUDENT}}",
     addStudentDesc: "בחר {{STUDENT}} להוספה לארגון זה.",
     selectStudent: "{{STUDENT}}",
     selectStudentPlaceholder: "בחר {{STUDENT}}...",
     noAvailableStudents: "כל ה{{STUDENTS}} שלך כבר בארגון זה",
-    noStudentsHintAdmin: "לחץ על \"הוסף {{STUDENT}}\" כדי לשייך {{STUDENTS}} לארגון זה",
+    noStudentsHintAdmin: "לחץ על \\\"הוסף {{STUDENT}}\\\" כדי לשייך {{STUDENTS}} לארגון זה",
     grade: "שכבת גיל",
     selectGrade: "בחר שכבה...",
     studentIdNumber: "מספר {{STUDENT}}",
@@ -1792,92 +1793,92 @@ export const he = {
 
   // Invites
   invite: {
-    title: 'הזמנות',
-    send: 'שלח הזמנה',
-    sendNew: 'שלח הזמנה חדשה',
-    email: 'כתובת דוא"ל',
+    title: 'Invites',
+    send: 'Send Invite',
+    sendNew: 'Send New Invite',
+    email: 'Email Address',
     emailPlaceholder: 'colleague@example.com',
-    role: 'תפקיד',
-    grantAdmin: 'הענק הרשאות מנהל',
-    message: 'הודעה אישית',
-    messagePlaceholder: 'הודעה אופציונלית למוזמן',
+    role: 'Role',
+    grantAdmin: 'Grant admin access',
+    message: 'Personal Message',
+    messagePlaceholder: 'Optional message for the invitee',
 
     // Status
-    pending: 'ממתין',
-    accepted: 'התקבל',
-    declined: 'נדחה',
-    expired: 'פג תוקף',
-    cancelled: 'בוטל',
+    pending: 'Pending',
+    accepted: 'Accepted',
+    declined: 'Declined',
+    expired: 'Expired',
+    cancelled: 'Cancelled',
 
     // Actions
-    resend: 'שלח שוב',
-    cancel: 'בטל הזמנה',
-    copyLink: 'העתק קישור הזמנה',
-    linkCopied: 'קישור ההזמנה הועתק',
+    resend: 'Resend',
+    cancel: 'Cancel Invite',
+    copyLink: 'Copy Invite Link',
+    linkCopied: 'Invite link copied to clipboard',
 
     // Messages
-    sent: 'ההזמנה נשלחה בהצלחה',
-    sentDesc: 'הזמנה נשלחה ל-{email}',
-    resent: 'ההזמנה נשלחה שוב',
-    resentDesc: 'הזמנה חדשה נשלחה',
-    //cancelled: 'ההזמנה בוטלה',
-    cancelledDesc: 'ההזמנה בוטלה',
-    alreadyMember: 'משתמש זה כבר חבר',
-    alreadyInvited: 'דוא"ל זה כבר הוזמן',
+    sent: 'Invite sent successfully',
+    sentDesc: 'An invite has been sent to {email}',
+    resent: 'Invite resent',
+    resentDesc: 'A new invite has been sent',
+    //cancelled: 'Invite cancelled',
+    cancelledDesc: 'The invite has been cancelled',
+    alreadyMember: 'This user is already a member',
+    alreadyInvited: 'This email has already been invited',
 
     // Invite page
-    invalid: 'הזמנה לא תקינה',
-    invalidDesc: 'קישור ההזמנה לא תקין או שפג תוקפו.',
-    createAccount: 'צור את החשבון שלך',
-    joinTitle: 'הצטרף ל-{institute}',
-    invitedBy: 'הוזמנת על ידי {name}',
-    invitedByToJoin: '{name} הזמין אותך להצטרף ל-{institute}',
-    invitedToJoinInstitute: 'הוזמנת להצטרף ל-{institute}',
-    yourRole: 'התפקיד שלך:',
-    admin: 'מנהל',
-    accept: 'קבל הזמנה',
-    accepting: 'מקבל...',
-    decline: 'דחה',
-    acceptedTitle: 'ההזמנה התקבלה',
-    acceptedDesc: 'הצטרפת ל-{institute}',
-    declinedTitle: 'ההזמנה נדחתה',
-    declinedDesc: 'דחית את ההזמנה',
-    joiningAs: 'מצטרף כ',
-    createAndJoin: 'צור חשבון והצטרף',
-    loginAndJoin: 'התחבר והצטרף',
-    joinInstitute: 'הצטרפות לארגון',
-    welcomeBack: 'שמחים לראותך שוב, {name}! הזן סיסמה כדי להצטרף.',
-    registered: 'ברוכים הבאים!',
-    registeredDesc: 'החשבון שלך נוצר והצטרפת ל-{institute}',
-    error: 'שגיאה',
+    invalid: 'Invalid Invite',
+    invalidDesc: 'This invite link is invalid or has expired.',
+    createAccount: 'Create Your Account',
+    joinTitle: 'Welcome to {institute}',
+    invitedBy: 'Invited by {name}',
+    invitedByToJoin: '{name} invited you to join {institute}',
+    invitedToJoinInstitute: 'You have been invited to join {institute}',
+    yourRole: 'Your role:',
+    admin: 'Admin',
+    accept: 'Accept Invite',
+    accepting: 'Accepting...',
+    decline: 'Decline',
+    acceptedTitle: 'Invite Accepted',
+    acceptedDesc: 'You have joined {institute}',
+    declinedTitle: 'Invite Declined',
+    declinedDesc: 'You have declined the invitation',
+    joiningAs: 'Joining as',
+    createAndJoin: 'Create Account & Join',
+    loginAndJoin: 'Log In & Join',
+    joinInstitute: 'Join Organization',
+    welcomeBack: 'Welcome back, {name}! Enter your password to join.',
+    registered: 'Welcome!',
+    registeredDesc: 'Your account has been created and you have joined {institute}',
+    error: 'Error',
 
     // License-only invite
-    licenseInviteDesc: 'הוזמנת להצטרף ל-CliniAACian',
-    licenseActivated: 'הרישיון שלך הופעל.',
-    activateLicense: 'הפעלת רישיון',
+    licenseInviteDesc: 'You have been invited to join CliniAACian',
+    licenseActivated: 'Your license has been activated.',
+    activateLicense: 'Activate Your License',
 
     // Account switching
-    switchingAccounts: 'מחליף חשבונות...',
+    switchingAccounts: 'Switching accounts...',
 
     // Expiry
-    expiresAt: 'פג תוקף',
-    expiresIn: 'פג תוקף בעוד {days} ימים',
-    expiresSoon: 'פג תוקף בקרוב',
+    expiresAt: 'Expires',
+    expiresIn: 'Expires in {days} days',
+    expiresSoon: 'Expires soon',
   },
 
   // Pending invites page
   pendingInvites: {
-    title: 'הזמנות ממתינות',
-    subtitle: 'הזמנות לארגונים הממתינות לתגובתך',
-    noInvites: 'אין הזמנות ממתינות',
-    noInvitesDesc: 'אין לך הזמנות ממתינות לארגונים',
-    viewAll: 'הצג הכל',
-    badge: '{count} ממתינות',
+    title: 'Pending Invites',
+    subtitle: 'Organization invitations awaiting your response',
+    noInvites: 'No pending invites',
+    noInvitesDesc: 'You have no pending organization invitations',
+    viewAll: 'View All',
+    badge: '{count} pending',
   },
 
-  // ===========================================================================
+  // ============================================================================
   // REPORTS
-  // ===========================================================================
+  // ============================================================================
 
   reports: {
     title: "דוחות",
@@ -2091,10 +2092,10 @@ export const he = {
   // AAC SETTINGS PANEL
   // ============================================================================
   aacSettings: {
-    title: 'הגדרות תת"ח',
-    subtitle: 'הגדר התנהגות צ\'אט תת"ח עבור {name}',
+    title: "AAC Settings",
+    subtitle: "Configure AAC chat behavior for {name}",
     noStudent: "לא נבחר {{STUDENT}}",
-    noStudentDesc: 'בחר {{STUDENT}} כדי להגדיר את הגדרות תת"ח שלו.',
+    noStudentDesc: "Select a {{STUDENT}} to configure their AAC settings.",
     currentStudent: "{{STUDENT}} נוכחי",
     genderMale: "זכר",
     genderFemale: "נקבה",
@@ -2142,7 +2143,7 @@ export const he = {
     voiceAuto: "אוטומטי (לפי גיל ומגדר)",
     // Button size
     buttonSize: "גודל כפתורים",
-    buttonSizeDesc: 'התאם את היחס בין אייקון לטקסט בכפתורי לוח תת"ח',
+    buttonSizeDesc: "Adjust the ratio between icon and text on AAC board buttons",
     buttonSizeXlIcon: "אייקונים גדולים מאוד, טקסט מינימלי",
     buttonSizeLgIcon: "אייקונים גדולים, טקסט קטן",
     buttonSizeBalanced: "מאוזן (ברירת מחדל)",
@@ -2163,7 +2164,7 @@ export const he = {
     interpAutonomousDesc: "אוטונומי. ה-AI מדבר בשם ה{{STUDENT}} באופן יזום בשיחות.",
     // Startup
     startupMode: "מצב הפעלה",
-    startupModeDesc: 'כמה הקשר לטעון בעת התחלת הפעלת תת"ח',
+    startupModeDesc: "How much context to load when starting an AAC session",
     startupFast: "מהיר",
     startupThorough: "מעמיק",
     startupFastDesc: "הפעלה מיידית. טוען הערות והעדפות מהזיכרון — ללא קריאת חימום AI.",
@@ -2262,9 +2263,9 @@ export const he = {
     saveChanges: "שמור שינויים",
     discard: "בטל",
     unsavedChanges: "יש שינויים שלא נשמרו",
-    settingsUpdated: 'הגדרות תת"ח עודכנו',
-    settingsUpdatedDesc: 'הגדרות תת"ח של ה{{STUDENT}} נשמרו.',
-    updateError: 'עדכון הגדרות תת"ח נכשל.',
+    settingsUpdated: "AAC Settings Updated",
+    settingsUpdatedDesc: "The {{STUDENT}}'s AAC settings have been saved.",
+    updateError: "Failed to update AAC settings.",
   },
 
   // ============================================================================
@@ -2352,9 +2353,6 @@ export const he = {
     VOICE_CHAT_FAILED: "עיבוד שיחה קולית נכשל.",
   },
 
-  // ============================================================================
-  // CONSENT
-  // ============================================================================
   consent: {
     title: "טופסי הסכמה",
     description: "תיעוד הסכמות נדרש",
@@ -2381,47 +2379,72 @@ export const he = {
     },
     hero: {
       tagline: "הפתרון: פלטפורמה שמבוססת על שני מרכיבים מרכזיים",
-      title: "להחזיר את הזמן לקלינאים. לתת קול ל{{STUDENTS}}.",
-      subtitle: "מערכת משולבת המבצעת אוטומציה לתיעוד תל\"א ומסנכרנת בין יעדי הטיפול לתקשורת דינמית מבוססת AI.",
-      cta: "← הצטרפו לפיילוט",
+      title: "פלטפורמת ניהול הנתונים הילידית של AI לחינוך מיוחד ולשיקום",
+      subtitle: "אנחנו הופכים כוונה לא-מילולית לדיבור טבעי ולתיעוד קליני אוטומטי לאורך כל מסע הטיפול.",
+      cta: "קביעת הדגמה / יצירת קשר",
       screenshotAlt: "צילום מסך של לוח הבקרה של Aivota",
     },
     pillars: {
-      title: "מערכת אחת, שני צירים",
+      title: "מעבר לתקשורת: תשתית חכמה",
       subtitle: "צמצום שחיקת המטפלים וייעול העבודה באמצעות בינה מלאכותית.",
       iep: {
         label: "CliniAACian",
-        title: "מנוע אוטומציה לתל\"א",
+        title: "תיעוד חכם",
         description: "פלטפורמת AI המנתחת את התקדמות ה{{STUDENT}} ומנסחת יעדים מדויקים באופן אוטומטי. מקצצת עד 50% מזמן התיעוד.",
       },
       aac: {
-        label: "תת\"ח (AAC)",
-        title: "תת\"ח חכם מבוסס AI",
-        description: "כלי תקשורת מודע-הקשר המסתנכרן עם יעדי התל\"א ויוצר חיבור מושלם בין הטיפול לתקשורת היומיומית.",
+        label: "תת\\\"ח (AAC)",
+        title: "תת\\\"ח חכם מבוסס AI",
+        description: "כלי תקשורת מודע-הקשר המסתנכרן עם יעדי התל\\\"א ויוצר חיבור מושלם בין הטיפול לתקשורת היומיומית.",
+      },
+    },
+    verticals: {
+      tagline: "תשתית רבת-שימושים",
+      title: "מערכת אחת. כל תחום.",
+      subtitle: "Aivota מאחדת את חוט הנתונים לאורך כל רצף הטיפול והמחקר.",
+      schools: {
+        title: "בתי ספר",
+        description: "אוטומציה של תל\\\"א ועמידה ברגולציה ב-100% תוך החזרת הזמן למחנכים.",
+      },
+      clinics: {
+        title: "מרפאות פרטיות",
+        description: "הגדלת קיבולת המטופלים ב-25% באמצעות תיעוד קליני אוטומטי ומעקב התקדמות.",
+      },
+      hospitals: {
+        title: "בתי חולים",
+        description: "תקשורת פונקציונלית ליד המיטה וניטור החלמה אורך-זמני באיכות גבוהה.",
+      },
+      research: {
+        title: "מחקר ופארמה",
+        description: "גישה לראיות מהעולם האמיתי (RWE) ייחודיות באמצעות נתוני כוונה והתנהגות מובנים.",
+      },
+      families: {
+        title: "משפחות",
+        description: "מרכז בקרה מאוחד למטפלים המסנכרן יעדי טיפול עם החיים היומיומיים.",
       },
     },
     founder: {
       label: "מייסד וחזון",
       title: "ניסיון עשיר ב-AI. שליחות אישית עמוקה.",
-      bio: "עופר סוחמי הוא מומחה AI עתיר ניסיון ומי שכיהן כמנכ\"ל של חברת בינה מלאכותית ציבורית. כאב לילדה עם תסמונת רט, עופר רתם את המומחיות הטכנולוגית שלו למשימה אישית: להחזיר את הזמן לקלינאים ואת הקול לתלמידים.",
+      bio: "עופר סוחמי הוא יזם ומומחה במערכות נתוני AI בקנה מידה גדול, עם ניסיון נרחב בבנייה ובהרחבה של תשתיות טכנולוגיות מורכבות. כאב לילדה עם תסמונת רט, עופר רתם את המומחיות הטכנולוגית שלו למשימה אישית: להחזיר את הזמן לקלינאים ואת הקול לתלמידים.",
       imageAlt: "עופר סוחמי",
       calloutTitle: "עמידה מלאה בחוק הפרטיות הישראלי ובתקני HIPAA ו-FERPA הבינלאומיים.",
-      calloutText: "באמצעות אינטגרציה חכמה בין התל\"א לתת\"ח, הטכנולוגיה שלנו משפרת את איכות הטיפול ומקסמת את תוצאות התלמידים – תוך צמצום עלויות וחיסכון בזמן תפעולי.",
+      calloutText: "באמצעות אינטגרציה חכמה בין התל\\\"א לתת\\\"ח, הטכנולוגיה שלנו משפרת את איכות הטיפול ומקסמת את תוצאות התלמידים – תוך צמצום עלויות וחיסכון בזמן תפעולי.",
     },
     testimonial: {
       quote: "Aivota משנה את התמונה עבור קלינאיות תקשורת. לטכנולוגיה הזו יש את היכולת להפוך את העבודה שלנו לקלה ולטובה יותר. זה מטורף.",
-      authorName: "ד\"ר רז טננבאום",
+      authorName: "ד\\\"ר רז טננבאום",
       authorRole: "נשיאת ISAAC-ISRAEL",
     },
     form: {
       firstName: "שם פרטי",
       lastName: "שם משפחה",
-      email: "דוא\"ל",
+      email: "דוא\\\"ל",
       organization: "בית ספר / ארגון",
       role: "התפקיד שלך",
       selectRole: "בחר תפקיד...",
       message: "הערה / הודעה",
-      submit: "קביעת שיחת היכרות",
+      submit: "הזמנת הדגמה",
       required: "נא למלא את כל השדות הנדרשים.",
       error: "משהו השתבש. נא לנסות שוב.",
       success: "תודה! ניצור קשר בהקדם לתיאום שיחת היכרות.",
@@ -2443,13 +2466,13 @@ export const he = {
       subtitle: "הצטרפו עכשיו!",
     },
     footer: {
-      text: "2026 Aivota | עומדת בתקני HIPAA ,FERPA ופרטיות מידע | Designing the Future of Special Education",
+      text: "2026 Aivota | פלטפורמת הנתונים החכמה | עומדת בתקני HIPAA ו-FERPA",
       terms: "תנאי שימוש",
       privacy: "מדיניות פרטיות",
       cookies: "מדיניות עוגיות",
       accessibility: "הצהרת נגישות",
       aiPolicy: "מדיניות AI",
-      rights: `${new Date().getFullYear()} Aivota. כל הזכויות שמורות.`,
+      rights: `© ${new Date().getFullYear()} Aivota. All rights reserved.`,
     },
   },
 
@@ -2476,7 +2499,7 @@ export const he = {
       pendingInvite: "ממתין להזמנה",
       // Fields
       licenseName: "שם רישיון",
-      licenseNamePlaceholder: 'לדוגמה: רישיון פרימיום לבית ספר',
+      licenseNamePlaceholder: "e.g. School Premium License",
       owner: "בעלים",
       type: "סוג",
       permissions: "הרשאות",
@@ -2494,15 +2517,15 @@ export const he = {
       trialExpired: "ניסיון פג תוקף",
       // Recipient
       recipient: "נמען",
-      email: 'דוא"ל',
+      email: "Email",
       firstName: "שם פרטי",
       lastName: "שם משפחה",
-      emailRequired: 'דוא"ל הוא שדה חובה',
+      emailRequired: "Email is required",
       // Institute
       institute: "ארגון",
       createInstitute: "יצירת ארגון",
       instituteName: "שם ארגון",
-      instituteNamePlaceholder: 'לדוגמה: בית ספר אורט',
+      instituteNamePlaceholder: "e.g. Springfield School District",
       instituteType: "סוג ארגון",
       school: "בית ספר",
       clinic: "מרפאה",
@@ -2556,6 +2579,15 @@ export const he = {
         view: "נצפה",
         finalize: "אושר",
         revision: "תוקן",
+        share_invite_created: "Share invite created",
+        share_guardian_approved: "Guardian approved",
+        share_redeemed: "Code redeemed",
+        share_accepted: "Share accepted",
+        share_declined: "Share declined",
+        share_revoked: "Share revoked",
+        share_expired: "Share expired",
+        standing_share_granted: "Standing share granted",
+        standing_share_revoked: "Standing share revoked",
       },
       columns: {
         date: "תאריך",
@@ -2659,7 +2691,7 @@ export const he = {
     you: "אתה",
     rsvpAccept: "אישור",
     rsvpDecline: "דחייה",
-    overlapWarning: "השעה הזו חופפת לאירוע \"{title}\".",
+    overlapWarning: "השעה הזו חופפת לאירוע \\\"{title}\\\".",
     created: "האירוע נוצר בהצלחה",
     updated: "האירוע עודכן בהצלחה",
     deleted: "האירוע נמחק בהצלחה",
@@ -2776,6 +2808,156 @@ export const he = {
     faceApiError: "טעינת ספריית זיהוי הפנים נכשלה",
     fileTypeError: "הקובץ חייב להיות תמונה",
     linkedPhotoHint: "התמונה מגיעה מרשומת המשתמש/תלמיד המקושרת ומנוהלת שם.",
+  },
+
+  shares: {
+    title: "Shares",
+    tabs: {
+      outgoing: "Outgoing",
+      incoming: "Incoming",
+      inbox: "Inbox",
+    },
+    actions: {
+      create: "Create share",
+      redeem: "Redeem code",
+      review: "Review",
+      revoke: "Revoke",
+      approve: "Approve",
+      decline: "Decline",
+      accept: "Accept",
+      copy: "Copy",
+      generate: "Generate code",
+      renew: "Renew for 1 year",
+      revokeAll: "Revoke all",
+    },
+    bulkRevoke: {
+      title: "Revoke all access?",
+      description: "All active shares — per-object and standing — that you granted to this institute for this student will be revoked. This cannot be undone.",
+      confirm: "Revoke all",
+      toastSuccess: "Revoked {{count}} share(s).",
+    },
+    inbox: {
+      pendingHeader: "Pending invites",
+      standingHeader: "Active standing shares",
+    },
+    outgoing: {
+      invitesHeader: "Invites",
+      activeHeader: "Active shares",
+    },
+    incoming: {
+      invitesHeader: "Invites",
+      activeHeader: "Active shares",
+    },
+    active: {
+      objectSharesHeader: "Per-object shares",
+      standingSharesHeader: "Standing shares",
+      noExpiry: "No expiry set",
+    },
+    standing: {
+      expired: "Expired",
+      expiresInDays: "Expires in {{days}} days",
+      expiresOn: "Expires {{date}}",
+      renewedToast: "Standing share renewed for 1 year.",
+    },
+    status: {
+      pending_guardian: "Awaiting guardian",
+      pending_target: "Awaiting target",
+      pending_target_confirm: "Target reviewing",
+      accepted: "Active",
+      declined: "Declined",
+      revoked: "Revoked",
+      expired: "Expired",
+    },
+    objectType: {
+      summary: "Bundle",
+      program: "Program",
+      medical_record: "Medical record",
+      functional_report: "Functional report",
+      educational_report: "Educational report",
+      incident: "Incident",
+      deep_analysis: "Deep analysis",
+      custom_app_assignment: "App assignment",
+      monitor_note: "Monitor note",
+    },
+    permission: {
+      read: "Read",
+      write: "Write",
+    },
+    field: {
+      codeExpires: "Code expires",
+      shareExpires: "Share expires",
+      sensitiveCount: "{{count}} sensitive item(s)",
+    },
+    bundle: {
+      objects: "Objects",
+      standingTypes: "Standing-share types",
+      permission: "Permission",
+      sensitive: "Sensitive",
+    },
+    empty: {
+      noInstitute: "Select an institute to view shares.",
+      noInvites: "No share invites yet.",
+      inbox: "No invites awaiting your approval.",
+      standing: "No active standing shares.",
+      activeShares: "No active shares.",
+    },
+    redeem: {
+      title: "Redeem share code",
+      description: "Enter the code from the source institute. After redemption you will review and accept the share.",
+      codeLabel: "Share code",
+      submit: "Redeem",
+    },
+    accept: {
+      title: "Review and accept",
+      description: "Review what is being shared with your institute, then accept or decline.",
+    },
+    guardian: {
+      title: "Approve share?",
+      description: "A clinician is requesting to share these records. Review carefully — sensitive items are highlighted.",
+    },
+    create: {
+      title: "Create share",
+      description: "Define what to share, who is the guardian co-signer, and how long the grant lasts. The plaintext code is shown once after creation.",
+      objectType: "Object type",
+      objectId: "Object id",
+      guardianUserId: "Guardian user id",
+      permission: "Permission",
+      expiryDays: "Days until expiry",
+      messageLabel: "Message (optional)",
+      sensitiveAck: "I acknowledge that some items may be marked sensitive (medical / behavioral / educational).",
+      noStudent: "Select a student before creating a share.",
+      perObjectTab: "Per-object",
+      standingTab: "Standing",
+      guardianContact: "Guardian",
+      guardianContactPlaceholder: "Choose a contact...",
+      noLinkedContacts: "No linked contacts. Add a guardian contact with a linked user account first.",
+      shareExpiryDays: "Per-object expiry (days)",
+      standingExpiryDays: "Standing expiry (days)",
+      standingDescription: "Standing shares cover all current and future objects of these types for this student. Required for AI-generated streams; must have an expiry.",
+      noItems: "No shareable records found for this student.",
+      codeReadyTitle: "Share code generated",
+      codeReadyDescription: "The code is shown ONCE — copy it now; there is no recovery.",
+      codeNextStepsTitle: "How the recipient redeems this code",
+      codeStepSend: "Copy the code above and send it to an admin at the recipient institute (email, message, etc.). They must already have an account in the system.",
+      codeStepRedeem: "On their end, they open Shares → Redeem code, paste it in, and select their own institute as the recipient.",
+      codeStepApprove: "The named guardian approves the bundle (if not already done), then the recipient admin accepts. Access goes live at that point.",
+      codeTtlNote: "The code expires in 72 hours by default — generate a new one if it lapses.",
+      copied: "Copied",
+    },
+    errors: {
+      create: "Could not create share",
+      redeem: "Could not redeem code",
+      accept: "Could not accept",
+      decline: "Could not decline",
+      approve: "Could not approve",
+    },
+    notifications: {
+      bellLabel: "Share invites",
+      newInviteTitle: "New share invite",
+      newInviteBody: "{{count}} invite(s) awaiting your approval.",
+      expiringTitle: "Share approaching expiry",
+      expiringBody: "{{count}} standing share(s) expire soon — review and renew.",
+    },
   },
 
 };

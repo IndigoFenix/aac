@@ -266,6 +266,24 @@ export const STUDENT_MEMORY_FIELDS: AgentMemoryFieldWithDB[] = [
 ];
 
 /**
+ * Subset of `Student_*` fields backed by `students.chatMemory` — i.e. the
+ * fields populated by the AAC monitor agent during sessions. These are the
+ * "monitor notes" governed by the `monitor_note` standing-share type:
+ * exposed to the clinician AI only when the share grants it, hidden from the
+ * schema entirely otherwise (so the AI doesn't even know they exist).
+ *
+ * Excludes `Student_CustomApps`, which is backed by the assignments table and
+ * governed by `custom_app_assignment` access.
+ */
+export const STUDENT_CHAT_MEMORY_FIELD_IDS: ReadonlySet<string> = new Set([
+  "Student_People",
+  "Student_Interests",
+  "Student_CommunicationStyle",
+  "Student_Preferences",
+  "Student_Notes",
+]);
+
+/**
  * Get student memory fields
  */
 export function getStudentMemoryFields(): AgentMemoryFieldWithDB[] {

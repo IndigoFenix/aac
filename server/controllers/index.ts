@@ -11,7 +11,6 @@ export { customAppController, CustomAppController } from "./customAppController"
 export { onboardingController, OnboardingController } from "./onboardingController";
 export { slpClinicalController, SlpClinicalController } from "./slpClinicalController";
 export { programController, ProgramController } from "./programController";
-export { recordsController, RecordsController } from "./recordsController";
 export { instituteController, InstituteController } from "./instituteController";
 export { classroomController, ClassroomController } from "./classroomController";
 export { reportController, ReportController } from "./reportController";
@@ -21,3 +20,4 @@ export { sessionHistoryController } from "./sessionHistoryController";
 export { licenseController } from "./licenseController";
 export { calendarController } from "./calendarController";
 export { deepAnalysisController, DeepAnalysisController } from "./deepAnalysisController";
+export { shareInviteController, ShareInviteController } from "./shareInviteController";

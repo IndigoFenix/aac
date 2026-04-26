@@ -52,6 +52,10 @@ import {
   buildProgressSystemPrompt,
   AccessPermissions,
 } from "./chat-context-integration";
+import { buildSessionAccessCtx } from "./sharing/sessionCtx";
+import { canAccessMonitorNotes } from "./sharing/visibility";
+import { activityLogService } from "./activityLogService";
+import { STUDENT_CHAT_MEMORY_FIELD_IDS } from "./memory-schema/student-memory-schema";
 import {
   BOARD_SYSTEM_PROMPT,
   CUSTOM_APP_SYSTEM_PROMPT,
@@ -1207,19 +1211,65 @@ async function getMessageManager(input: GetMessageManagerInput): Promise<GetMess
     accessPermissions.educational = (hasEducationalRights && licenseAllowsReports) ? (canEdit ? 'editable' : 'readonly') : 'hidden';
   }
 
+  // Build the AccessCtx the AI's DB ops will use for cross-institute filtering.
+  // Mirrors buildClinicianCtx for HTTP controllers — see planning-docs/cross-
+  // institute-sharing-plan.md ("AI access" section).
+  const accessCtx = await buildSessionAccessCtx({
+    userId: context.user?.id,
+    studentId: context.student?.id,
+    instituteId: context.institute?.id,
+    isAACFeature,
+    isSystemAdmin: context.user?.isSystemAdmin ?? false,
+  });
+
+  // Gate the AAC-observed `Student_*` chat-memory fields behind monitor_note
+  // access. When a clinician (institute principal) lacks the share, drop those
+  // field definitions entirely so the AI never sees that surface — `Student_*`
+  // chat memory and AAC-recorded incidents (the latter handled at the
+  // visibility predicate via withIncidentVisibility). AAC mode (student
+  // principal) and admins always see chat memory.
+  //
+  // When the share IS granted, log a `view` of the monitor-note dataset for
+  // this student. The audit subject is the student (chat memory is keyed to
+  // students.chatMemory) — one event per session-init records "this institute
+  // had AAC-observed access for student Y at time T", which is the HIPAA-grade
+  // shape. Per-field-access logging would be too noisy and isn't needed at
+  // this granularity.
+  let masterFieldsForClinician = MASTER_MEMORY_FIELDS;
+  if (!isAACFeature && context.student && accessCtx?.kind === "institute") {
+    const allowMonitorNotes = await canAccessMonitorNotes(accessCtx, context.student.id);
+    if (!allowMonitorNotes) {
+      masterFieldsForClinician = MASTER_MEMORY_FIELDS.filter(
+        (f) => !STUDENT_CHAT_MEMORY_FIELD_IDS.has(f.id),
+      );
+    } else {
+      activityLogService.log({
+        userId: accessCtx.userId,
+        instituteId: accessCtx.instituteId,
+        eventType: "view",
+        subjectType1: "monitor_note",
+        subjectId1: context.student.id,
+        subjectType2: "student",
+        subjectId2: context.student.id,
+        details: { viaShare: true, dataset: "chatMemory" },
+      });
+    }
+  }
+
   // Create the unified manager
   // For AAC mode, we don't use chatContextManager.getMemoryFields(), so pass empty array
-  // For other modes, pass MASTER_MEMORY_FIELDS which gets included in the field list
+  // For other modes, pass the (possibly monitor_note-filtered) field list
   chatContextManager = await createChatContextManager(
     context.student?.id,
     context.user?.id,
     featureContext?.progress?.programId,
-    isAACFeature ? [] : MASTER_MEMORY_FIELDS,
+    isAACFeature ? [] : masterFieldsForClinician,
     existingLoadState,
     context.institute?.id, // instituteId for medical records filtering
     accessPermissions,
     licensePerms,
     input.timezone,
+    accessCtx,
   );
     
   // Build memory fields based on mode

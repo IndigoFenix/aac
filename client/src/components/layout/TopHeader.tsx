@@ -9,6 +9,7 @@ import { useInstitute } from '@/hooks/useInstitute';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useFeaturePanel } from '@/contexts/FeaturePanelContext';
 import { LanguageSelector } from '@/components/LanguageSelector';
+import { ShareInboxBell } from '@/features/sharing/ShareInboxBell';
 import { openUI } from '@/lib/uiEvents';
 import { apiRequest, apiUrl } from '@/lib/queryClient';
 import { useStudentLabel } from '@/hooks/useStudentLabel';
@@ -207,6 +208,8 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
               <User className="w-4 h-4 text-primary" />
             </AvatarFallback>
           </Avatar>
+          {/* Share-invite inbox bell — guardian notifications */}
+          <ShareInboxBell />
           {/* Settings & Logout - hidden on mobile (available in sidebar) */}
           <Button
             variant="ghost"

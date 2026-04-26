@@ -241,6 +241,56 @@
   border-color: var(--lp-accent-light);
 }
 
+/* Vertical segments */
+.landing-verticals {
+  background: #fff;
+}
+
+.vertical-segments-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1.5rem;
+}
+
+.segment-card {
+  background: #fff;
+  padding: 2rem 1.5rem;
+  border-radius: var(--lp-radius-lg);
+  border: 1px solid #E2E8F0;
+  text-align: center;
+  transition: var(--lp-transition);
+}
+
+.segment-card:hover {
+  transform: translateY(-5px);
+  box-shadow: var(--lp-shadow);
+  border-color: var(--lp-accent-light);
+}
+
+.segment-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--lp-accent-light);
+  color: var(--lp-accent);
+  border-radius: 50%;
+}
+
+.segment-card h3 {
+  color: var(--lp-primary);
+  font-size: 1.15rem;
+  margin-bottom: 0.5rem;
+}
+
+.segment-card p {
+  font-size: 0.9rem;
+  color: var(--lp-text-muted);
+  margin: 0;
+}
+
 /* Founder */
 .landing-founder-grid {
   display: grid;
@@ -427,6 +477,10 @@
 
   .landing-pillar-grid {
     grid-template-columns: 1fr;
+  }
+
+  .vertical-segments-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .landing-founder-grid {

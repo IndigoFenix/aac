@@ -9,6 +9,11 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 import { and, eq, inArray, or, isNull, desc } from "drizzle-orm";
+import {
+  withInstituteVisibility,
+  type AccessCtx,
+} from "../services/sharing/visibility";
+import { recordShareDerivedView } from "../services/sharing/audit";
 
 type CustomAppMetadata = Omit<CustomApp, "definition">;
 
@@ -141,11 +146,23 @@ export class CustomAppRepository {
       .orderBy(desc(customApps.loadedAt));
   }
 
-  /** App ids currently assigned to the student. */
-  async getAssignedAppIds(studentId: string): Promise<string[]> {
-    const rows = await db.select({ appId: customAppAssignments.appId })
+  /** App ids currently assigned to the student. Pass `ctx` to filter assignments by cross-institute visibility. */
+  async getAssignedAppIds(studentId: string, ctx?: AccessCtx): Promise<string[]> {
+    const where = ctx
+      ? and(
+          eq(customAppAssignments.studentId, studentId),
+          withInstituteVisibility(customAppAssignments, ctx, "custom_app_assignment"),
+        )
+      : eq(customAppAssignments.studentId, studentId);
+    const rows = await db.select({
+      id: customAppAssignments.id,
+      appId: customAppAssignments.appId,
+      studentId: customAppAssignments.studentId,
+      instituteId: customAppAssignments.instituteId,
+    })
       .from(customAppAssignments)
-      .where(eq(customAppAssignments.studentId, studentId));
+      .where(where);
+    if (ctx) recordShareDerivedView(ctx, "custom_app_assignment", rows);
     return rows.map((r) => r.appId);
   }
 
@@ -153,8 +170,8 @@ export class CustomAppRepository {
    * Apps currently assigned to the student, with full metadata.
    * Used by the AAC live session to show the AI what games it can launch.
    */
-  async getAssignedAppsForStudent(studentId: string): Promise<CustomAppMetadata[]> {
-    const ids = await this.getAssignedAppIds(studentId);
+  async getAssignedAppsForStudent(studentId: string, ctx?: AccessCtx): Promise<CustomAppMetadata[]> {
+    const ids = await this.getAssignedAppIds(studentId, ctx);
     if (ids.length === 0) return [];
     return await db.select({
       id: customApps.id,

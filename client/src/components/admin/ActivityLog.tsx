@@ -31,13 +31,23 @@ import {
   type ActivityLogEntry,
 } from "@/hooks/useActivityLog";
 
-const EVENT_TYPES = ["create", "update", "delete", "link", "unlink", "view", "finalize", "revision"] as const;
+const EVENT_TYPES = [
+  "create", "update", "delete", "link", "unlink", "view", "finalize", "revision",
+  // Share lifecycle — added by migration 0079.
+  "share_invite_created", "share_guardian_approved", "share_redeemed",
+  "share_accepted", "share_declined", "share_revoked", "share_expired",
+  "standing_share_granted", "standing_share_revoked",
+] as const;
 const SUBJECT_TYPES = [
   "student", "classroom", "institute", "user", "board", "custom_symbol",
   "program", "goal", "objective", "service", "accommodation",
-  "progress_report", "data_point", "team_member", "meeting",
+  "progress_report", "data_point", "team_member", "program_contact",
+  "student_contact", "biometric_data", "meeting",
   "medical_record", "functional_report", "educational_report",
   "profile_domain", "invite", "consent_form", "transition_plan", "transition_goal",
+  "custom_app", "deep_analysis",
+  "share_invite", "object_share", "standing_share",
+  "incident", "monitor_note", "custom_app_assignment",
 ] as const;
 
 function eventBadgeVariant(eventType: string): "default" | "secondary" | "destructive" | "outline" {
@@ -50,6 +60,20 @@ function eventBadgeVariant(eventType: string): "default" | "secondary" | "destru
     case "view": return "outline";
     case "finalize":
     case "revision": return "secondary";
+    // Share lifecycle: revocations/expirations stand out as destructive,
+    // grants/redemptions/acceptances as default, mid-flow steps as secondary.
+    case "share_revoked":
+    case "standing_share_revoked":
+    case "share_declined":
+    case "share_expired":
+      return "destructive";
+    case "share_accepted":
+    case "share_invite_created":
+    case "standing_share_granted":
+      return "default";
+    case "share_guardian_approved":
+    case "share_redeemed":
+      return "secondary";
     default: return "outline";
   }
 }

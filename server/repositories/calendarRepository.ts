@@ -11,7 +11,7 @@ import {
   type InsertEventAttendee,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, and, gte, lte, or, inArray, desc } from "drizzle-orm";
+import { eq, and, gte, lte, or, inArray, desc, isNull } from "drizzle-orm";
 
 /**
  * OR'd visibility criteria. An event is visible if ANY of these match.
@@ -231,7 +231,7 @@ export class CalendarRepository {
               ),
               lte(calendarEvents.startTime, endDate),
               or(
-                eq(calendarEvents.repeatEndDate, null as any),
+                isNull(calendarEvents.repeatEndDate),
                 gte(calendarEvents.repeatEndDate, startDate),
               ),
             ),

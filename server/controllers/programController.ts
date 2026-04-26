@@ -1,6 +1,8 @@
 import type { Request, Response } from "express";
 import { programService, studentService } from "../services";
 import { activityLogService } from "../services/activityLogService";
+import { buildClinicianCtx } from "../services/sharing/clinicianCtx";
+import { canWriteObject } from "../services/sharing/visibility";
 import {
   insertProgramSchema,
   updateProgramSchema,
@@ -138,7 +140,8 @@ export class ProgramController {
         return;
       }
 
-      const programs = await programService.getProgramsByStudentId(studentId);
+      const ctx = await buildClinicianCtx(req, studentId);
+      const programs = await programService.getProgramsByStudentId(studentId, ctx);
       res.json({ success: true, programs });
     } catch (error: any) {
       console.error("Error fetching programs:", error);
@@ -162,7 +165,8 @@ export class ProgramController {
         return;
       }
 
-      const program = await programService.getCurrentProgram(studentId);
+      const ctx = await buildClinicianCtx(req, studentId);
+      const program = await programService.getCurrentProgram(studentId, ctx);
       if (!program) {
         res.status(404).json({ success: false, message: "No active program found" });
         return;
@@ -190,7 +194,15 @@ export class ProgramController {
         return;
       }
 
-      res.json({ success: true, program });
+      // Re-fetch through visibility helper so cross-institute share rules apply.
+      const ctx = await buildClinicianCtx(req, program.studentId);
+      const visibleProgram = await programService.getProgramById(id, ctx);
+      if (!visibleProgram) {
+        res.status(403).json({ success: false, message: "Access denied to this program" });
+        return;
+      }
+
+      res.json({ success: true, program: visibleProgram });
     } catch (error: any) {
       console.error("Error fetching program:", error);
       res.status(500).json({ success: false, message: "Failed to fetch program" });
@@ -206,13 +218,14 @@ export class ProgramController {
       const currentUser = req.user as any;
       const { id } = req.params;
 
-      const { hasAccess } = await programService.verifyProgramAccess(id, currentUser.id);
-      if (!hasAccess) {
+      const { hasAccess, program } = await programService.verifyProgramAccess(id, currentUser.id);
+      if (!hasAccess || !program) {
         res.status(403).json({ success: false, message: "Access denied to this program" });
         return;
       }
 
-      const programDetails = await programService.getProgramWithDetails(id);
+      const ctx = await buildClinicianCtx(req, program.studentId);
+      const programDetails = await programService.getProgramWithDetails(id, ctx);
       if (!programDetails) {
         res.status(404).json({ success: false, message: "Program not found" });
         return;
@@ -234,9 +247,19 @@ export class ProgramController {
       const currentUser = req.user as any;
       const { id } = req.params;
 
-      const { hasAccess } = await programService.verifyProgramAccess(id, currentUser.id);
-      if (!hasAccess) {
+      const { hasAccess, program } = await programService.verifyProgramAccess(id, currentUser.id);
+      if (!hasAccess || !program) {
         res.status(403).json({ success: false, message: "Access denied to this program" });
+        return;
+      }
+
+      // Writes allowed when the institute owns the program OR holds a
+      // permission='write' share covering it. canWriteObject collapses both
+      // checks; student/admin principals always pass.
+      const ctx = await buildClinicianCtx(req, program.studentId);
+      if (ctx?.kind === "institute"
+          && !(await canWriteObject(ctx, "program", program.id, program.studentId, program.instituteId))) {
+        res.status(403).json({ success: false, message: "Cannot modify a program owned by another institute" });
         return;
       }
 
@@ -278,9 +301,16 @@ export class ProgramController {
       const currentUser = req.user as any;
       const { id } = req.params;
 
-      const { hasAccess } = await programService.verifyProgramAccess(id, currentUser.id);
-      if (!hasAccess) {
+      const { hasAccess, program } = await programService.verifyProgramAccess(id, currentUser.id);
+      if (!hasAccess || !program) {
         res.status(403).json({ success: false, message: "Access denied to this program" });
+        return;
+      }
+
+      const ctx = await buildClinicianCtx(req, program.studentId);
+      if (ctx?.kind === "institute"
+          && !(await canWriteObject(ctx, "program", program.id, program.studentId, program.instituteId))) {
+        res.status(403).json({ success: false, message: "Cannot modify a program owned by another institute" });
         return;
       }
 
@@ -313,9 +343,16 @@ export class ProgramController {
       const currentUser = req.user as any;
       const { id } = req.params;
 
-      const { hasAccess } = await programService.verifyProgramAccess(id, currentUser.id);
-      if (!hasAccess) {
+      const { hasAccess, program } = await programService.verifyProgramAccess(id, currentUser.id);
+      if (!hasAccess || !program) {
         res.status(403).json({ success: false, message: "Access denied to this program" });
+        return;
+      }
+
+      const ctx = await buildClinicianCtx(req, program.studentId);
+      if (ctx?.kind === "institute"
+          && !(await canWriteObject(ctx, "program", program.id, program.studentId, program.instituteId))) {
+        res.status(403).json({ success: false, message: "Cannot modify a program owned by another institute" });
         return;
       }
 
@@ -348,9 +385,16 @@ export class ProgramController {
       const currentUser = req.user as any;
       const { id } = req.params;
 
-      const { hasAccess } = await programService.verifyProgramAccess(id, currentUser.id);
-      if (!hasAccess) {
+      const { hasAccess, program } = await programService.verifyProgramAccess(id, currentUser.id);
+      if (!hasAccess || !program) {
         res.status(403).json({ success: false, message: "Access denied to this program" });
+        return;
+      }
+
+      const ctx = await buildClinicianCtx(req, program.studentId);
+      if (ctx?.kind === "institute"
+          && !(await canWriteObject(ctx, "program", program.id, program.studentId, program.instituteId))) {
+        res.status(403).json({ success: false, message: "Cannot delete a program owned by another institute" });
         return;
       }
 

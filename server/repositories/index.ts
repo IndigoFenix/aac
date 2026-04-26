@@ -13,13 +13,8 @@ export { programRepository, ProgramRepository } from "./programRepository";
 export { instituteRepository, InstituteRepository } from "./instituteRepository";
 export { classroomRepository, ClassroomRepository } from "./classroomRepository";
 export { reportRepository, ReportRepository } from "./reportRepository";
-export { medicalRecordRepository } from "./medicalRecordRepository";
-export { functionalReportRepository } from "./functionalReportRepository";
-export { educationalReportRepository } from "./educationalReportRepository";
 export { voiceRecordRepository, VoiceRecordRepository } from "./voiceRecordRepository";
 export { licenseRepository, LicenseRepository } from "./licenseRepository";
 export { calendarRepository, CalendarRepository } from "./calendarRepository";
 export { incidentRepository, IncidentRepository } from "./incidentRepository";
-
-// Re-export types
-export type { SecurityContext } from "./medicalRecordRepository";
+export { shareInviteRepository, ShareInviteRepository } from "./shareInviteRepository";

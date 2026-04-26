@@ -1,5 +1,6 @@
 import { programRepository } from "../repositories";
 import { studentRepository } from "../repositories";
+import type { AccessCtx } from "./sharing/visibility";
 import {
   type Program,
   type InsertProgram,
@@ -113,31 +114,32 @@ export class ProgramService {
   }
 
   /**
-   * Get a program by ID
+   * Get a program by ID. Pass `ctx` to filter through cross-institute visibility.
    */
-  async getProgramById(id: string): Promise<Program | undefined> {
-    return programRepository.getProgramById(id);
+  async getProgramById(id: string, ctx?: AccessCtx): Promise<Program | undefined> {
+    return programRepository.getProgramById(id, ctx);
   }
 
   /**
-   * Get programs for a student
+   * Get programs for a student. Pass `ctx` to filter through cross-institute visibility.
    */
-  async getProgramsByStudentId(studentId: string): Promise<Program[]> {
-    return programRepository.getProgramsByStudentId(studentId);
+  async getProgramsByStudentId(studentId: string, ctx?: AccessCtx): Promise<Program[]> {
+    return programRepository.getProgramsByStudentId(studentId, ctx);
   }
 
   /**
-   * Get the current active program for a student
+   * Get the current active program for a student. Pass `ctx` to filter through
+   * cross-institute visibility.
    */
-  async getCurrentProgram(studentId: string): Promise<Program | undefined> {
-    return programRepository.getCurrentProgram(studentId);
+  async getCurrentProgram(studentId: string, ctx?: AccessCtx): Promise<Program | undefined> {
+    return programRepository.getCurrentProgram(studentId, ctx);
   }
 
   /**
-   * Get full program with all details
+   * Get full program with all details. Pass `ctx` to filter through cross-institute visibility.
    */
-  async getProgramWithDetails(programId: string): Promise<ProgramWithDetails | undefined> {
-    return programRepository.getProgramWithDetails(programId);
+  async getProgramWithDetails(programId: string, ctx?: AccessCtx): Promise<ProgramWithDetails | undefined> {
+    return programRepository.getProgramWithDetails(programId, ctx);
   }
 
   /**

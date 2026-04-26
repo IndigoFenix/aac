@@ -35,6 +35,12 @@ import {
   type PaginationParams,
   type ListResult,
 } from "../chat/memory-types";
+import { canWriteObject, withInstituteVisibility, type AccessCtx } from "../sharing/visibility";
+import {
+  recordShareDerivedView,
+  recordShareDerivedViewSingle,
+} from "../sharing/audit";
+import type { ShareableObjectType } from "@shared/schema";
 const isProduction = process.env.NODE_ENV === 'production';
 const hideLogs = isProduction; // Set to true to hide logs in production
 
@@ -54,6 +60,32 @@ function toMemoryValue<T extends Record<string, any>>(
     delete (result as any)[field];
   }
   return result;
+}
+
+/**
+ * Cross-institute write authorization for the AI memory layer. Mirrors
+ * `requireOwningInstitute` in reportController. Institute principals must own
+ * the record OR hold a `permission='write'` share covering it; student/admin
+ * principals always pass.
+ */
+async function rejectCrossInstituteWrite(
+  ctx: DBOperationContext,
+  record: { id: string; instituteId: string | null; studentId: string },
+  label: string,
+  objectType: ShareableObjectType,
+) {
+  const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
+  if (!accessCtx || accessCtx.kind !== "institute") return;
+  const allowed = await canWriteObject(
+    accessCtx,
+    objectType,
+    record.id,
+    record.studentId,
+    record.instituteId,
+  );
+  if (!allowed) {
+    throw new Error(`Cannot modify a ${label} owned by another institute`);
+  }
 }
 
 // ============================================================================
@@ -238,28 +270,34 @@ function sanitizeValue(
 // ============================================================================
 
 /**
- * Get current medical record for student
+ * Get current medical record for student.
+ *
+ * When `accessCtx` is set, reads route through withInstituteVisibility — same
+ * gate as reportController. Otherwise falls back to the legacy `instituteId`
+ * filter (preserves behavior for unmigrated callers).
  */
 async function getCurrentMedicalRecord(
   studentId: string,
-  instituteId?: string
+  instituteId?: string,
+  accessCtx?: AccessCtx,
 ): Promise<MedicalRecord | undefined> {
-  const whereClause = instituteId
+  const statusGate = or(
+    eq(medicalRecords.status, "draft"),
+    eq(medicalRecords.status, "pending_review"),
+  );
+  const whereClause = accessCtx
     ? and(
         eq(medicalRecords.studentId, studentId),
-        eq(medicalRecords.instituteId, instituteId),
-        or(
-          eq(medicalRecords.status, "draft"),
-          eq(medicalRecords.status, "pending_review")
-        )
+        withInstituteVisibility(medicalRecords, accessCtx, "medical_record"),
+        statusGate,
       )
-    : and(
-        eq(medicalRecords.studentId, studentId),
-        or(
-          eq(medicalRecords.status, "draft"),
-          eq(medicalRecords.status, "pending_review")
+    : instituteId
+      ? and(
+          eq(medicalRecords.studentId, studentId),
+          eq(medicalRecords.instituteId, instituteId),
+          statusGate,
         )
-      );
+      : and(eq(medicalRecords.studentId, studentId), statusGate);
 
   const [record] = await db
     .select()
@@ -268,6 +306,7 @@ async function getCurrentMedicalRecord(
     .orderBy(desc(medicalRecords.createdAt))
     .limit(1);
 
+  if (accessCtx) recordShareDerivedViewSingle(accessCtx, "medical_record", record);
   return record;
 }
 
@@ -277,13 +316,14 @@ async function getCurrentMedicalRecord(
 const medicalRecordReadOp = async (ctx: DBOperationContext) => {
   const studentId = ctx.all.studentId;
   const instituteId = ctx.all.instituteId;
-  
+  const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
+
   if (!studentId) throw new Error("studentId required for medical record query");
 
   if (!hideLogs) console.log(`[medicalRecordReadOp] Loading for studentId: ${studentId}, instituteId: ${instituteId}`);
-  const record = await getCurrentMedicalRecord(studentId, instituteId);
+  const record = await getCurrentMedicalRecord(studentId, instituteId, accessCtx);
   if (!hideLogs) console.log(`[medicalRecordReadOp] Found:`, record ? `id=${record.id}` : 'null');
-  
+
   return record;
 };
 
@@ -295,7 +335,8 @@ const medicalRecordWriteOp = async (ctx: DBOperationContext, value: any): Promis
   const studentId = ctx.all.studentId;
   const userId = ctx.all.userId;
   const instituteId = ctx.all.instituteId;
-  
+  const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
+
   if (!studentId) throw new Error("studentId required for medical record write");
 
   if (!hideLogs) console.log(`[medicalRecordWriteOp] Writing for studentId: ${studentId}`);
@@ -303,18 +344,22 @@ const medicalRecordWriteOp = async (ctx: DBOperationContext, value: any): Promis
 
   // Sanitize the incoming value
   const sanitizedValue = sanitizeValue(value, MEDICAL_RECORD_FIELDS, MEDICAL_FIELD_MAPPINGS);
-  
+
   if (Object.keys(sanitizedValue).length === 0) {
     if (!hideLogs) console.log(`[medicalRecordWriteOp] No valid fields to save after sanitization`);
     return undefined;
   }
-  
-  // Check if we have an existing record
-  const existing = await getCurrentMedicalRecord(studentId, instituteId);
-  
+
+  // Check if we have an existing record (gated by visibility)
+  const existing = await getCurrentMedicalRecord(studentId, instituteId, accessCtx);
+
   if (existing) {
     if (!hideLogs) console.log(`[medicalRecordWriteOp] Updating existing record: ${existing.id}`);
-    
+
+    // An institute principal must own the record they're updating — read access
+    // via per-object share does NOT grant write.
+    await rejectCrossInstituteWrite(ctx, existing, "medical record", "medical_record");
+
     // Update existing record - merge with new values
     if (existing.status === "final" || existing.status === "superseded") {
       throw new Error("Cannot update a finalized or superseded record. Create a new revision instead.");
@@ -412,25 +457,27 @@ const archivedMedicalRecordsListOp = async (
 ): Promise<ListResult<MedicalRecord>> => {
   const studentId = ctx.all.studentId;
   const instituteId = ctx.all.instituteId;
-  
+  const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
+
   if (!studentId) throw new Error("studentId required for archived medical records query");
 
-  const whereClause = instituteId
+  const archivedGate = or(
+    eq(medicalRecords.status, "final"),
+    eq(medicalRecords.status, "superseded"),
+  );
+  const whereClause = accessCtx
     ? and(
         eq(medicalRecords.studentId, studentId),
-        eq(medicalRecords.instituteId, instituteId),
-        or(
-          eq(medicalRecords.status, "final"),
-          eq(medicalRecords.status, "superseded")
-        )
+        withInstituteVisibility(medicalRecords, accessCtx, "medical_record"),
+        archivedGate,
       )
-    : and(
-        eq(medicalRecords.studentId, studentId),
-        or(
-          eq(medicalRecords.status, "final"),
-          eq(medicalRecords.status, "superseded")
+    : instituteId
+      ? and(
+          eq(medicalRecords.studentId, studentId),
+          eq(medicalRecords.instituteId, instituteId),
+          archivedGate,
         )
-      );
+      : and(eq(medicalRecords.studentId, studentId), archivedGate);
 
   const items = await db
     .select()
@@ -444,6 +491,8 @@ const archivedMedicalRecordsListOp = async (
     .select()
     .from(medicalRecords)
     .where(whereClause);
+
+  if (accessCtx) recordShareDerivedView(accessCtx, "medical_record", items);
 
   return { items, total: allItems.length };
 };
@@ -459,24 +508,33 @@ const archivedMedicalRecordsOps: MemoryDBOperations<MedicalRecord> = {
 // ============================================================================
 
 /**
- * Get current functional report for student
+ * Get current functional report for student.
+ * accessCtx (when set) gates reads through withInstituteVisibility.
  */
-async function getCurrentFunctionalReport(studentId: string): Promise<FunctionalReport | undefined> {
+async function getCurrentFunctionalReport(
+  studentId: string,
+  accessCtx?: AccessCtx,
+): Promise<FunctionalReport | undefined> {
+  const statusGate = or(
+    eq(functionalReports.status, "draft"),
+    eq(functionalReports.status, "pending_review"),
+  );
+  const whereClause = accessCtx
+    ? and(
+        eq(functionalReports.studentId, studentId),
+        withInstituteVisibility(functionalReports, accessCtx, "functional_report"),
+        statusGate,
+      )
+    : and(eq(functionalReports.studentId, studentId), statusGate);
+
   const [report] = await db
     .select()
     .from(functionalReports)
-    .where(
-      and(
-        eq(functionalReports.studentId, studentId),
-        or(
-          eq(functionalReports.status, "draft"),
-          eq(functionalReports.status, "pending_review")
-        )
-      )
-    )
+    .where(whereClause)
     .orderBy(desc(functionalReports.createdAt))
     .limit(1);
 
+  if (accessCtx) recordShareDerivedViewSingle(accessCtx, "functional_report", report);
   return report;
 }
 
@@ -485,12 +543,13 @@ async function getCurrentFunctionalReport(studentId: string): Promise<Functional
  */
 const functionalReportReadOp = async (ctx: DBOperationContext) => {
   const studentId = ctx.all.studentId;
+  const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
   if (!studentId) throw new Error("studentId required for functional report query");
 
   if (!hideLogs) console.log(`[functionalReportReadOp] Loading for studentId: ${studentId}`);
-  const report = await getCurrentFunctionalReport(studentId);
+  const report = await getCurrentFunctionalReport(studentId, accessCtx);
   if (!hideLogs) console.log(`[functionalReportReadOp] Found:`, report ? `id=${report.id}` : 'null');
-  
+
   return report;
 };
 
@@ -503,7 +562,8 @@ const functionalReportWriteOp = async (ctx: DBOperationContext, value: any): Pro
   const userId = ctx.all.userId;
   const instituteId = ctx.all.instituteId;
   const programId = ctx.all.programId;
-  
+  const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
+
   if (!studentId) throw new Error("studentId required for functional report write");
 
   if (!hideLogs) console.log(`[functionalReportWriteOp] Writing for studentId: ${studentId}`);
@@ -511,18 +571,20 @@ const functionalReportWriteOp = async (ctx: DBOperationContext, value: any): Pro
 
   // Sanitize the incoming value
   const sanitizedValue = sanitizeValue(value, FUNCTIONAL_REPORT_FIELDS, FUNCTIONAL_FIELD_MAPPINGS);
-  
+
   if (Object.keys(sanitizedValue).length === 0) {
     if (!hideLogs) console.log(`[functionalReportWriteOp] No valid fields to save after sanitization`);
     return undefined;
   }
-  
-  // Check if we have an existing report
-  const existing = await getCurrentFunctionalReport(studentId);
-  
+
+  // Check if we have an existing report (gated by visibility)
+  const existing = await getCurrentFunctionalReport(studentId, accessCtx);
+
   if (existing) {
     if (!hideLogs) console.log(`[functionalReportWriteOp] Updating existing report: ${existing.id}`);
-    
+
+    await rejectCrossInstituteWrite(ctx, existing, "functional report", "functional_report");
+
     if (existing.status === "final" || existing.status === "superseded") {
       throw new Error("Cannot update a finalized or superseded report. Create a new revision instead.");
     }
@@ -603,15 +665,20 @@ const archivedFunctionalReportsListOp = async (
   { offset, limit }: PaginationParams
 ): Promise<ListResult<FunctionalReport>> => {
   const studentId = ctx.all.studentId;
+  const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
   if (!studentId) throw new Error("studentId required for archived functional reports query");
 
-  const whereClause = and(
-    eq(functionalReports.studentId, studentId),
-    or(
-      eq(functionalReports.status, "final"),
-      eq(functionalReports.status, "superseded")
-    )
+  const archivedGate = or(
+    eq(functionalReports.status, "final"),
+    eq(functionalReports.status, "superseded"),
   );
+  const whereClause = accessCtx
+    ? and(
+        eq(functionalReports.studentId, studentId),
+        withInstituteVisibility(functionalReports, accessCtx, "functional_report"),
+        archivedGate,
+      )
+    : and(eq(functionalReports.studentId, studentId), archivedGate);
 
   const items = await db
     .select()
@@ -625,6 +692,8 @@ const archivedFunctionalReportsListOp = async (
     .select()
     .from(functionalReports)
     .where(whereClause);
+
+  if (accessCtx) recordShareDerivedView(accessCtx, "functional_report", items);
 
   return { items, total: allItems.length };
 };
@@ -640,24 +709,33 @@ const archivedFunctionalReportsOps: MemoryDBOperations<FunctionalReport> = {
 // ============================================================================
 
 /**
- * Get current educational report for student
+ * Get current educational report for student.
+ * accessCtx (when set) gates reads through withInstituteVisibility.
  */
-async function getCurrentEducationalReport(studentId: string): Promise<EducationalReport | undefined> {
+async function getCurrentEducationalReport(
+  studentId: string,
+  accessCtx?: AccessCtx,
+): Promise<EducationalReport | undefined> {
+  const statusGate = or(
+    eq(educationalReports.status, "draft"),
+    eq(educationalReports.status, "pending_review"),
+  );
+  const whereClause = accessCtx
+    ? and(
+        eq(educationalReports.studentId, studentId),
+        withInstituteVisibility(educationalReports, accessCtx, "educational_report"),
+        statusGate,
+      )
+    : and(eq(educationalReports.studentId, studentId), statusGate);
+
   const [report] = await db
     .select()
     .from(educationalReports)
-    .where(
-      and(
-        eq(educationalReports.studentId, studentId),
-        or(
-          eq(educationalReports.status, "draft"),
-          eq(educationalReports.status, "pending_review")
-        )
-      )
-    )
+    .where(whereClause)
     .orderBy(desc(educationalReports.createdAt))
     .limit(1);
 
+  if (accessCtx) recordShareDerivedViewSingle(accessCtx, "educational_report", report);
   return report;
 }
 
@@ -666,12 +744,13 @@ async function getCurrentEducationalReport(studentId: string): Promise<Education
  */
 const educationalReportReadOp = async (ctx: DBOperationContext) => {
   const studentId = ctx.all.studentId;
+  const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
   if (!studentId) throw new Error("studentId required for educational report query");
 
   if (!hideLogs) console.log(`[educationalReportReadOp] Loading for studentId: ${studentId}`);
-  const report = await getCurrentEducationalReport(studentId);
+  const report = await getCurrentEducationalReport(studentId, accessCtx);
   if (!hideLogs) console.log(`[educationalReportReadOp] Found:`, report ? `id=${report.id}` : 'null');
-  
+
   return report;
 };
 
@@ -684,7 +763,8 @@ const educationalReportWriteOp = async (ctx: DBOperationContext, value: any): Pr
   const userId = ctx.all.userId;
   const instituteId = ctx.all.instituteId;
   const programId = ctx.all.programId;
-  
+  const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
+
   if (!studentId) throw new Error("studentId required for educational report write");
 
   if (!hideLogs) console.log(`[educationalReportWriteOp] Writing for studentId: ${studentId}`);
@@ -692,18 +772,20 @@ const educationalReportWriteOp = async (ctx: DBOperationContext, value: any): Pr
 
   // Sanitize the incoming value
   const sanitizedValue = sanitizeValue(value, EDUCATIONAL_REPORT_FIELDS, EDUCATIONAL_FIELD_MAPPINGS);
-  
+
   if (Object.keys(sanitizedValue).length === 0) {
     if (!hideLogs) console.log(`[educationalReportWriteOp] No valid fields to save after sanitization`);
     return undefined;
   }
-  
-  // Check if we have an existing report
-  const existing = await getCurrentEducationalReport(studentId);
-  
+
+  // Check if we have an existing report (gated by visibility)
+  const existing = await getCurrentEducationalReport(studentId, accessCtx);
+
   if (existing) {
     if (!hideLogs) console.log(`[educationalReportWriteOp] Updating existing report: ${existing.id}`);
-    
+
+    await rejectCrossInstituteWrite(ctx, existing, "educational report", "educational_report");
+
     if (existing.status === "final" || existing.status === "superseded") {
       throw new Error("Cannot update a finalized or superseded report. Create a new revision instead.");
     }
@@ -786,15 +868,20 @@ const archivedEducationalReportsListOp = async (
   { offset, limit }: PaginationParams
 ): Promise<ListResult<EducationalReport>> => {
   const studentId = ctx.all.studentId;
+  const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
   if (!studentId) throw new Error("studentId required for archived educational reports query");
 
-  const whereClause = and(
-    eq(educationalReports.studentId, studentId),
-    or(
-      eq(educationalReports.status, "final"),
-      eq(educationalReports.status, "superseded")
-    )
+  const archivedGate = or(
+    eq(educationalReports.status, "final"),
+    eq(educationalReports.status, "superseded"),
   );
+  const whereClause = accessCtx
+    ? and(
+        eq(educationalReports.studentId, studentId),
+        withInstituteVisibility(educationalReports, accessCtx, "educational_report"),
+        archivedGate,
+      )
+    : and(eq(educationalReports.studentId, studentId), archivedGate);
 
   const items = await db
     .select()
@@ -808,6 +895,8 @@ const archivedEducationalReportsListOp = async (
     .select()
     .from(educationalReports)
     .where(whereClause);
+
+  if (accessCtx) recordShareDerivedView(accessCtx, "educational_report", items);
 
   return { items, total: allItems.length };
 };
@@ -829,16 +918,17 @@ const archivedEducationalReportsOps: MemoryDBOperations<EducationalReport> = {
 const reportsContextReadOp = async (ctx: DBOperationContext) => {
   const studentId = ctx.all.studentId;
   const instituteId = ctx.all.instituteId;
-  
+  const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
+
   if (!studentId) throw new Error("studentId required for reports context read");
 
   if (!hideLogs) console.log(`[reportsContextReadOp] Loading all reports for studentId: ${studentId}`);
 
   // Load all current reports in parallel
   const [medicalRecord, functionalReport, educationalReport] = await Promise.all([
-    getCurrentMedicalRecord(studentId, instituteId),
-    getCurrentFunctionalReport(studentId),
-    getCurrentEducationalReport(studentId),
+    getCurrentMedicalRecord(studentId, instituteId, accessCtx),
+    getCurrentFunctionalReport(studentId, accessCtx),
+    getCurrentEducationalReport(studentId, accessCtx),
   ]);
 
   if (!hideLogs) console.log(`[reportsContextReadOp] Found: medical=${medicalRecord?.id ?? 'null'}, functional=${functionalReport?.id ?? 'null'}, educational=${educationalReport?.id ?? 'null'}`);

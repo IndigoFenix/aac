@@ -10,6 +10,7 @@ import {
   deleteDeepAnalysis,
 } from "../services/deepAnalysisService";
 import { activityLogService } from "../services/activityLogService";
+import { buildClinicianCtx } from "../services/sharing/clinicianCtx";
 
 const createSchema = z.object({
   studentId: z.string().min(1),
@@ -45,9 +46,17 @@ export class DeepAnalysisController {
   /** GET /api/deep-analysis/:id — current status + full record */
   async get(req: Request, res: Response): Promise<void> {
     try {
-      const row = await getDeepAnalysis(req.params.id);
-      if (!row) {
+      // Two-step: resolve studentId from a no-ctx fetch so family-institute
+      // escalation can fire on the second pass.
+      const baseline = await getDeepAnalysis(req.params.id);
+      if (!baseline) {
         res.status(404).json({ error: "Not found" });
+        return;
+      }
+      const ctx = await buildClinicianCtx(req, baseline.studentId);
+      const row = ctx ? await getDeepAnalysis(req.params.id, ctx) : baseline;
+      if (!row) {
+        res.status(403).json({ error: "Access denied" });
         return;
       }
       res.json(row);
@@ -64,7 +73,8 @@ export class DeepAnalysisController {
         res.status(400).json({ error: "studentId required" });
         return;
       }
-      const rows = await listDeepAnalysesForStudent(studentId);
+      const ctx = await buildClinicianCtx(req, studentId);
+      const rows = await listDeepAnalysesForStudent(studentId, ctx);
       res.json(rows);
     } catch (error: any) {
       res.status(500).json({ error: error.message });

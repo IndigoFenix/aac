@@ -222,8 +222,41 @@ export type ClassroomRole = typeof CLASSROOM_ROLES[number]["value"];
 export const verificationStatusEnum = pgEnum("verification_status", ["unverified", "pending", "verified"]);
 export const identityProviderProtocolEnum = pgEnum("identity_provider_protocol", ["oidc", "oauth2"]);
 
+// Cross-institute student sharing (see planning-docs/cross-institute-sharing-plan.md)
+export const shareInviteStatusEnum = pgEnum("share_invite_status", [
+  "pending_guardian",       // awaiting guardian co-sign
+  "pending_target",         // guardian approved, code redeemable
+  "pending_target_confirm", // code redeemed, target reviewing
+  "accepted",               // share live
+  "declined",
+  "revoked",
+  "expired",
+]);
+
+export const sharePermissionEnum = pgEnum("share_permission", ["read", "write"]);
+
+export const shareableObjectTypeEnum = pgEnum("shareable_object_type", [
+  "program",
+  "medical_record",
+  "functional_report",
+  "educational_report",
+  "incident",
+  "deep_analysis",
+  "custom_app_assignment",
+  "monitor_note",
+]);
+
 export const activityEventTypeEnum = pgEnum("activity_event_type", [
-  "create", "update", "delete", "link", "unlink", "view", "finalize", "revision"
+  "create", "update", "delete", "link", "unlink", "view", "finalize", "revision",
+  "share_invite_created",
+  "share_guardian_approved",
+  "share_redeemed",
+  "share_accepted",
+  "share_declined",
+  "share_revoked",
+  "share_expired",
+  "standing_share_granted",
+  "standing_share_revoked",
 ]);
 
 export const activitySubjectTypeEnum = pgEnum("activity_subject_type", [
@@ -233,7 +266,9 @@ export const activitySubjectTypeEnum = pgEnum("activity_subject_type", [
   "student_contact", "biometric_data", "meeting",
   "medical_record", "functional_report", "educational_report",
   "profile_domain", "invite", "consent_form", "transition_plan", "transition_goal",
-  "custom_app", "deep_analysis"
+  "custom_app", "deep_analysis",
+  "share_invite", "object_share", "standing_share",
+  "incident", "monitor_note", "custom_app_assignment",
 ]);
 
 // =============================================================================
@@ -1112,6 +1147,10 @@ export const incidentSeverityEnum = pgEnum("incident_severity", ["low", "moderat
 export const incidents = pgTable("incidents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   studentId: varchar("student_id").references(() => students.id, { onDelete: "cascade" }).notNull(),
+  // Owning institute. Null when AI-recorded during a student-context AAC session
+  // (treated as student-only data; standing-share eligible). Cross-schema FK:
+  // institutes.id lives in schema.ts — constraint enforced via migration.
+  instituteId: varchar("institute_id"),
 
   type: incidentTypeEnum("type").notNull(),
   severity: incidentSeverityEnum("severity").notNull(),
@@ -1119,9 +1158,16 @@ export const incidents = pgTable("incidents", {
   context: text("context"),
   collectedBy: text("collected_by"),
 
+  // Sensitivity markers — drive the share-flow's confirmation gate when
+  // sharing this incident across institutes (FERPA/HIPAA "Sensitive Data").
+  // Default true: most incidents are medical/behavioral by nature.
+  isSensitive: boolean("is_sensitive").default(true).notNull(),
+  sensitivityCategory: sensitivityCategoryEnum("sensitivity_category").default("medical").notNull(),
+
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_incidents_student_id").on(table.studentId),
+  index("idx_incidents_institute_id").on(table.instituteId),
   index("idx_incidents_recorded_at").on(table.recordedAt),
   index("idx_incidents_type").on(table.type),
 ]);
@@ -1324,6 +1370,9 @@ export const chatSessions = pgTable("chat_sessions", {
 export const deepAnalyses = pgTable("deep_analyses", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   studentId: varchar("student_id").references(() => students.id).notNull(),
+  // Owning institute. Null when AI-generated in student context (typical case);
+  // standing-share eligible. Cross-schema FK to institutes.id.
+  instituteId: varchar("institute_id"),
   createdByUserId: varchar("created_by_user_id").references(() => users.id).notNull(),
   model: varchar("model").notNull(),
   specialInstructions: text("special_instructions"),
@@ -1348,6 +1397,7 @@ export const deepAnalyses = pgTable("deep_analyses", {
   completedAt: timestamp("completed_at"),
 }, (table) => [
   index("idx_deep_analyses_student_id").on(table.studentId),
+  index("idx_deep_analyses_institute_id").on(table.instituteId),
   index("idx_deep_analyses_created_at").on(table.createdAt),
   index("idx_deep_analyses_status").on(table.status),
 ]);
@@ -1446,15 +1496,20 @@ export const customApps = pgTable("custom_apps", {
 ]);
 
 // Assignment join table: each row assigns one custom app to one student.
+// instituteId is the owner of this assignment for cross-institute visibility —
+// the assignment row is the PHI bit (reveals what apps the student uses).
+// Cross-schema FK to institutes.id.
 export const customAppAssignments = pgTable("custom_app_assignments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   appId: varchar("app_id").references(() => customApps.id, { onDelete: "cascade" }).notNull(),
   studentId: varchar("student_id").references(() => students.id, { onDelete: "cascade" }).notNull(),
+  instituteId: varchar("institute_id"),
   assignedByUserId: varchar("assigned_by_user_id").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("idx_custom_app_assignments_app_student").on(table.appId, table.studentId),
   index("idx_custom_app_assignments_student_id").on(table.studentId),
+  index("idx_custom_app_assignments_institute_id").on(table.instituteId),
 ]);
 
 // Dropbox Connections table
@@ -1517,6 +1572,133 @@ export const inviteCodeRedemptions = pgTable("invite_code_redemptions", {
   studentId: varchar("student_id").references(() => students.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// =============================================================================
+// CROSS-INSTITUTE SHARING (see planning-docs/cross-institute-sharing-plan.md)
+// =============================================================================
+
+/**
+ * Share invite — one row per consent transaction. Captures the three-party
+ * (or two-party, when source institute is absent) handshake authorizing one
+ * bundle of objectShares + standingShares to be created on acceptance.
+ *
+ * Cross-schema FKs: source/target institute references live in schema.ts —
+ * constraints enforced via migration.
+ */
+export const studentShareInvites = pgTable("student_share_invites", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").references(() => students.id).notNull(),
+
+  // Source institute. Null when the share originates from student-owned data
+  // (no institute owns the objects being shared); the flow collapses to two-party.
+  sourceInstituteId: varchar("source_institute_id"),
+  // Target institute is unknown until redemption — code is the only link.
+  targetInstituteId: varchar("target_institute_id"),
+
+  // Hash of the share code; plaintext is shown to source admin once.
+  codeHash: text("code_hash").notNull(),
+
+  createdByUserId: varchar("created_by_user_id").references(() => users.id).notNull(),
+  guardianUserId: varchar("guardian_user_id").references(() => users.id).notNull(),
+  guardianApprovedAt: timestamp("guardian_approved_at", { withTimezone: true }),
+
+  redeemedAt: timestamp("redeemed_at", { withTimezone: true }),
+  redeemedByUserId: varchar("redeemed_by_user_id").references(() => users.id),
+
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  acceptedByUserId: varchar("accepted_by_user_id").references(() => users.id),
+
+  status: shareInviteStatusEnum("status").default("pending_guardian").notNull(),
+
+  // Optional message from source/guardian to target.
+  message: text("message"),
+
+  // When the resulting shares stop granting access (the share itself).
+  // Nullable for indefinite per-object grants; standingShares enforce a value.
+  shareExpiresAt: timestamp("share_expires_at", { withTimezone: true }),
+  // When the redemption code itself rots — measured in hours, not days.
+  codeExpiresAt: timestamp("code_expires_at", { withTimezone: true }).notNull(),
+
+  // Bundle of what's being granted. Materializes into objectShares/standingShares
+  // rows on accept. Kept after accept as audit trail of the consent transaction.
+  pendingBundle: jsonb("pending_bundle").$type<ShareInviteBundle>().notNull().default({
+    objects: [],
+    standingTypes: [],
+    permission: "read",
+    shareExpiresAt: null,
+    standingExpiresAt: null,
+    sensitiveAcknowledged: false,
+  }),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_student_share_invites_student_id").on(table.studentId),
+  index("idx_student_share_invites_source_institute_id").on(table.sourceInstituteId),
+  index("idx_student_share_invites_target_institute_id").on(table.targetInstituteId),
+  index("idx_student_share_invites_status").on(table.status),
+  uniqueIndex("idx_student_share_invites_code_hash").on(table.codeHash),
+]);
+
+/**
+ * Object share — one row = one specific PHI object visible to one target institute.
+ * Created on acceptance of a studentShareInvite. Each row IS the legal ROI for
+ * that object.
+ */
+export const objectShares = pgTable("object_shares", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  objectType: shareableObjectTypeEnum("object_type").notNull(),
+  objectId: varchar("object_id").notNull(), // polymorphic; FK enforced at app layer
+  studentId: varchar("student_id").references(() => students.id).notNull(),
+
+  // Cross-schema FKs to institutes.id. Source may be null (student-owned origin).
+  sourceInstituteId: varchar("source_institute_id"),
+  targetInstituteId: varchar("target_institute_id").notNull(),
+
+  permission: sharePermissionEnum("permission").default("read").notNull(),
+  shareInviteId: varchar("share_invite_id").references(() => studentShareInvites.id).notNull(),
+
+  shareExpiresAt: timestamp("share_expires_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  revokedByUserId: varchar("revoked_by_user_id").references(() => users.id),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  // Hot lookup: "what's shared with this institute, of this type, for this student"
+  index("idx_object_shares_target_lookup").on(table.targetInstituteId, table.objectType, table.studentId),
+  index("idx_object_shares_object").on(table.objectType, table.objectId),
+  index("idx_object_shares_invite_id").on(table.shareInviteId),
+]);
+
+/**
+ * Standing share — pattern-match grant. Covers all current and future objects
+ * of the listed types for a specific student, granting visibility to the target
+ * institute. Used for AI-generated data where per-object consent is impractical.
+ * MUST have a finite shareExpiresAt (default 1 year, renewable).
+ */
+export const standingShares = pgTable("standing_shares", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").references(() => students.id).notNull(),
+  // Cross-schema FK to institutes.id.
+  targetInstituteId: varchar("target_institute_id").notNull(),
+
+  // Which AI-generated object types this standing grant covers.
+  objectTypes: shareableObjectTypeEnum("object_types").array().notNull(),
+
+  permission: sharePermissionEnum("permission").default("read").notNull(),
+  shareInviteId: varchar("share_invite_id").references(() => studentShareInvites.id).notNull(),
+
+  // Standing shares MUST expire — forgotten grants are exactly the access
+  // pattern HIPAA audits flag.
+  shareExpiresAt: timestamp("share_expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  revokedByUserId: varchar("revoked_by_user_id").references(() => users.id),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_standing_shares_target_student").on(table.targetInstituteId, table.studentId),
+  index("idx_standing_shares_invite_id").on(table.shareInviteId),
+]);
 
 // Student-symbol associations — links symbols to students with optional key/description overrides
 export const studentSymbolAssociations = pgTable("student_symbol_associations", {
@@ -1930,6 +2112,33 @@ export const updateStudentSymbolAssociationSchema = createInsertSchema(studentSy
   updatedAt: true,
 }).partial();
 
+// Cross-institute sharing schemas
+export const insertStudentShareInviteSchema = createInsertSchema(studentShareInvites).omit({
+  id: true,
+  status: true,
+  guardianApprovedAt: true,
+  redeemedAt: true,
+  redeemedByUserId: true,
+  acceptedAt: true,
+  acceptedByUserId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertObjectShareSchema = createInsertSchema(objectShares).omit({
+  id: true,
+  revokedAt: true,
+  revokedByUserId: true,
+  createdAt: true,
+});
+
+export const insertStandingShareSchema = createInsertSchema(standingShares).omit({
+  id: true,
+  revokedAt: true,
+  revokedByUserId: true,
+  createdAt: true,
+});
+
 // =============================================================================
 // ACTIVITY LOGS (Private)
 // =============================================================================
@@ -2124,6 +2333,43 @@ export type RedeemInviteCode = z.infer<typeof redeemInviteCodeSchema>;
 export type StudentSymbolAssociation = typeof studentSymbolAssociations.$inferSelect;
 export type InsertStudentSymbolAssociation = z.infer<typeof insertStudentSymbolAssociationSchema>;
 export type UpdateStudentSymbolAssociation = z.infer<typeof updateStudentSymbolAssociationSchema>;
+
+// Cross-institute sharing types
+export type StudentShareInvite = typeof studentShareInvites.$inferSelect;
+export type InsertStudentShareInvite = z.infer<typeof insertStudentShareInviteSchema>;
+export type ObjectShare = typeof objectShares.$inferSelect;
+export type InsertObjectShare = z.infer<typeof insertObjectShareSchema>;
+export type StandingShare = typeof standingShares.$inferSelect;
+export type InsertStandingShare = z.infer<typeof insertStandingShareSchema>;
+export type ShareInviteStatus = (typeof shareInviteStatusEnum.enumValues)[number];
+export type SharePermission = (typeof sharePermissionEnum.enumValues)[number];
+export type ShareableObjectType = (typeof shareableObjectTypeEnum.enumValues)[number];
+
+/**
+ * The "what's being granted" payload attached to a share invite. Lives on the
+ * invite while it's in-flight; materialized into objectShares + standingShares
+ * rows on accept. Retained on the invite afterwards as an audit-grade record
+ * of the consent transaction (the underlying objects' is_sensitive flag may
+ * change later, but this captures it as-of-grant).
+ */
+export type ShareInviteBundle = {
+  /** Specific objects being granted via per-object share. */
+  objects: Array<{
+    type: ShareableObjectType;
+    id: string;
+    /** Object's is_sensitive flag at invite-creation time. */
+    isSensitive: boolean;
+  }>;
+  /** Object types covered by the standing share grant (AI-generated streams). */
+  standingTypes: ShareableObjectType[];
+  permission: SharePermission;
+  /** Per-object shareExpiresAt (ISO). Null = indefinite. */
+  shareExpiresAt: string | null;
+  /** Standing shareExpiresAt (ISO). Required when standingTypes is non-empty. */
+  standingExpiresAt: string | null;
+  /** Source admin confirmed sharing despite a sensitive flag, at create time. */
+  sensitiveAcknowledged: boolean;
+};
 
 // Domain types
 export type ProgramFramework = 'tala' | 'us_iep';

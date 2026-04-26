@@ -8,6 +8,8 @@
 import type { Request, Response } from "express";
 import { reportService } from "../services";
 import { activityLogService } from "../services/activityLogService";
+import { buildClinicianCtx } from "../services/sharing/clinicianCtx";
+import { canWriteObject } from "../services/sharing/visibility";
 import {
   type InsertMedicalRecord,
   type UpdateMedicalRecord,
@@ -15,9 +17,46 @@ import {
   type UpdateFunctionalReport,
   type InsertEducationalReport,
   type UpdateEducationalReport,
+  type ShareableObjectType,
 } from "@shared/schema";
 
 export class ReportController {
+  /**
+   * Cross-institute write guard. Records can be read across institutes via
+   * shares; writes additionally require either ownership or a `permission='write'`
+   * share covering the object. Sends 403 and returns false on rejection.
+   *
+   * Student principal (family-institute escalation) and admin principals always
+   * pass. Institute principals pass when they own the record OR when
+   * `canWriteObject` finds an active write-capable share.
+   */
+  private async requireOwningInstitute(
+    req: Request,
+    res: Response,
+    record: { id: string; instituteId: string | null; studentId: string },
+    subjectLabel: string,
+    objectType: ShareableObjectType,
+  ): Promise<boolean> {
+    const ctx = await buildClinicianCtx(req, record.studentId);
+    if (!ctx || ctx.kind !== "institute") return true;
+
+    const allowed = await canWriteObject(
+      ctx,
+      objectType,
+      record.id,
+      record.studentId,
+      record.instituteId,
+    );
+    if (!allowed) {
+      res.status(403).json({
+        success: false,
+        message: `Cannot modify a ${subjectLabel} owned by another institute`,
+      });
+      return false;
+    }
+    return true;
+  }
+
   // ==========================================================================
   // MEDICAL RECORD ENDPOINTS
   // ==========================================================================
@@ -47,7 +86,8 @@ export class ReportController {
         return;
       }
 
-      const records = await reportService.getMedicalRecordsByStudentId(studentId);
+      const ctx = await buildClinicianCtx(req, studentId);
+      const records = await reportService.getMedicalRecordsByStudentId(studentId, ctx);
       res.json({ success: true, records });
     } catch (error: any) {
       console.error("Error fetching medical records:", error);
@@ -83,9 +123,11 @@ export class ReportController {
         return;
       }
 
+      const ctx = await buildClinicianCtx(req, studentId);
       const record = await reportService.getCurrentMedicalRecord(
         studentId,
-        instituteId as string | undefined
+        instituteId as string | undefined,
+        ctx,
       );
 
       if (!record) {
@@ -131,9 +173,11 @@ export class ReportController {
         return;
       }
 
+      const ctx = await buildClinicianCtx(req, studentId);
       const records = await reportService.getArchivedMedicalRecords(
         studentId,
-        instituteId as string | undefined
+        instituteId as string | undefined,
+        ctx,
       );
 
       res.json({ success: true, records });
@@ -155,7 +199,21 @@ export class ReportController {
       const currentUser = req.user as any;
       const { id } = req.params;
 
-      const result = await reportService.getMedicalRecordById(id, currentUser.id);
+      // Two-step: resolve studentId via no-ctx fetch so family-institute
+      // escalation can fire on the second pass with the proper ctx.
+      const baseline = await reportService.getMedicalRecordById(id, currentUser.id);
+      if (!baseline.record) {
+        res.status(baseline.hasAccess ? 404 : 403).json({
+          success: false,
+          message: baseline.hasAccess ? "Medical record not found" : "Access denied",
+        });
+        return;
+      }
+
+      const ctx = await buildClinicianCtx(req, baseline.record.studentId);
+      const result = ctx
+        ? await reportService.getMedicalRecordById(id, currentUser.id, ctx)
+        : baseline;
 
       if (!result.hasAccess) {
         res.status(403).json({
@@ -215,11 +273,20 @@ export class ReportController {
         return;
       }
 
+      // Force new-record ownership to the caller's selected institute. For
+      // student-principal callers (family-institute escalation), keep whatever
+      // the body specified — they may legitimately create records owned by
+      // their family institute or null.
+      const ctx = await buildClinicianCtx(req, studentId);
+      const ownedInstituteId =
+        ctx?.kind === "institute" ? ctx.instituteId : (req.body.instituteId ?? null);
+
       const data: InsertMedicalRecord = {
         ...req.body,
         studentId,
         userId: currentUser.id,
         status: "draft",
+        instituteId: ownedInstituteId,
       };
 
       const record = await reportService.createMedicalRecord(data);
@@ -229,7 +296,7 @@ export class ReportController {
         record,
       });
       activityLogService.log({
-        instituteId: instituteId ?? null,
+        instituteId: ownedInstituteId,
         userId: currentUser.id,
         eventType: "create",
         subjectType1: "medical_record",
@@ -268,6 +335,10 @@ export class ReportController {
           success: false,
           message: "Medical record not found",
         });
+        return;
+      }
+
+      if (!(await this.requireOwningInstitute(req, res, result.record, "medical record", "medical_record"))) {
         return;
       }
 
@@ -322,6 +393,10 @@ export class ReportController {
         return;
       }
 
+      if (!(await this.requireOwningInstitute(req, res, result.record, "medical record", "medical_record"))) {
+        return;
+      }
+
       const finalized = await reportService.finalizeMedicalRecord(id);
 
       res.json({
@@ -361,6 +436,10 @@ export class ReportController {
           success: false,
           message: "Access denied or record not found",
         });
+        return;
+      }
+
+      if (!(await this.requireOwningInstitute(req, res, result.record, "medical record", "medical_record"))) {
         return;
       }
 
@@ -407,6 +486,10 @@ export class ReportController {
           success: false,
           message: "Access denied or record not found",
         });
+        return;
+      }
+
+      if (!(await this.requireOwningInstitute(req, res, result.record, "medical record", "medical_record"))) {
         return;
       }
 
@@ -469,7 +552,8 @@ export class ReportController {
         return;
       }
 
-      const reports = await reportService.getFunctionalReportsByStudentId(studentId);
+      const ctx = await buildClinicianCtx(req, studentId);
+      const reports = await reportService.getFunctionalReportsByStudentId(studentId, ctx);
       res.json({ success: true, reports });
     } catch (error: any) {
       console.error("Error fetching functional reports:", error);
@@ -505,7 +589,8 @@ export class ReportController {
         return;
       }
 
-      const report = await reportService.getCurrentFunctionalReport(studentId);
+      const ctx = await buildClinicianCtx(req, studentId);
+      const report = await reportService.getCurrentFunctionalReport(studentId, ctx);
 
       if (!report) {
         res.status(404).json({
@@ -550,7 +635,8 @@ export class ReportController {
         return;
       }
 
-      const reports = await reportService.getArchivedFunctionalReports(studentId);
+      const ctx = await buildClinicianCtx(req, studentId);
+      const reports = await reportService.getArchivedFunctionalReports(studentId, ctx);
       res.json({ success: true, reports });
     } catch (error: any) {
       console.error("Error fetching archived functional reports:", error);
@@ -570,7 +656,19 @@ export class ReportController {
       const currentUser = req.user as any;
       const { id } = req.params;
 
-      const result = await reportService.getFunctionalReportById(id, currentUser.id);
+      const baseline = await reportService.getFunctionalReportById(id, currentUser.id);
+      if (!baseline.report) {
+        res.status(baseline.hasAccess ? 404 : 403).json({
+          success: false,
+          message: baseline.hasAccess ? "Functional report not found" : "Access denied",
+        });
+        return;
+      }
+
+      const ctx = await buildClinicianCtx(req, baseline.report.studentId);
+      const result = ctx
+        ? await reportService.getFunctionalReportById(id, currentUser.id, ctx)
+        : baseline;
 
       if (!result.hasAccess) {
         res.status(403).json({
@@ -630,11 +728,16 @@ export class ReportController {
         return;
       }
 
+      const ctx = await buildClinicianCtx(req, studentId);
+      const ownedInstituteId =
+        ctx?.kind === "institute" ? ctx.instituteId : (req.body.instituteId ?? null);
+
       const data: InsertFunctionalReport = {
         ...req.body,
         studentId,
         userId: currentUser.id,
         status: "draft",
+        instituteId: ownedInstituteId,
       };
 
       const report = await reportService.createFunctionalReport(data);
@@ -644,7 +747,7 @@ export class ReportController {
         report,
       });
       activityLogService.log({
-        instituteId: instituteId ?? null,
+        instituteId: ownedInstituteId,
         userId: currentUser.id,
         eventType: "create",
         subjectType1: "functional_report",
@@ -683,6 +786,10 @@ export class ReportController {
           success: false,
           message: "Functional report not found",
         });
+        return;
+      }
+
+      if (!(await this.requireOwningInstitute(req, res, result.report, "functional report", "functional_report"))) {
         return;
       }
 
@@ -737,6 +844,10 @@ export class ReportController {
         return;
       }
 
+      if (!(await this.requireOwningInstitute(req, res, result.report, "functional report", "functional_report"))) {
+        return;
+      }
+
       const finalized = await reportService.finalizeFunctionalReport(id);
 
       res.json({
@@ -776,6 +887,10 @@ export class ReportController {
           success: false,
           message: "Access denied or report not found",
         });
+        return;
+      }
+
+      if (!(await this.requireOwningInstitute(req, res, result.report, "functional report", "functional_report"))) {
         return;
       }
 
@@ -822,6 +937,10 @@ export class ReportController {
           success: false,
           message: "Access denied or report not found",
         });
+        return;
+      }
+
+      if (!(await this.requireOwningInstitute(req, res, result.report, "functional report", "functional_report"))) {
         return;
       }
 
@@ -884,7 +1003,8 @@ export class ReportController {
         return;
       }
 
-      const reports = await reportService.getEducationalReportsByStudentId(studentId);
+      const ctx = await buildClinicianCtx(req, studentId);
+      const reports = await reportService.getEducationalReportsByStudentId(studentId, ctx);
       res.json({ success: true, reports });
     } catch (error: any) {
       console.error("Error fetching educational reports:", error);
@@ -920,7 +1040,8 @@ export class ReportController {
         return;
       }
 
-      const report = await reportService.getCurrentEducationalReport(studentId);
+      const ctx = await buildClinicianCtx(req, studentId);
+      const report = await reportService.getCurrentEducationalReport(studentId, ctx);
 
       if (!report) {
         res.status(404).json({
@@ -965,7 +1086,8 @@ export class ReportController {
         return;
       }
 
-      const reports = await reportService.getArchivedEducationalReports(studentId);
+      const ctx = await buildClinicianCtx(req, studentId);
+      const reports = await reportService.getArchivedEducationalReports(studentId, ctx);
       res.json({ success: true, reports });
     } catch (error: any) {
       console.error("Error fetching archived educational reports:", error);
@@ -985,7 +1107,19 @@ export class ReportController {
       const currentUser = req.user as any;
       const { id } = req.params;
 
-      const result = await reportService.getEducationalReportById(id, currentUser.id);
+      const baseline = await reportService.getEducationalReportById(id, currentUser.id);
+      if (!baseline.report) {
+        res.status(baseline.hasAccess ? 404 : 403).json({
+          success: false,
+          message: baseline.hasAccess ? "Educational report not found" : "Access denied",
+        });
+        return;
+      }
+
+      const ctx = await buildClinicianCtx(req, baseline.report.studentId);
+      const result = ctx
+        ? await reportService.getEducationalReportById(id, currentUser.id, ctx)
+        : baseline;
 
       if (!result.hasAccess) {
         res.status(403).json({
@@ -1045,11 +1179,16 @@ export class ReportController {
         return;
       }
 
+      const ctx = await buildClinicianCtx(req, studentId);
+      const ownedInstituteId =
+        ctx?.kind === "institute" ? ctx.instituteId : (req.body.instituteId ?? null);
+
       const data: InsertEducationalReport = {
         ...req.body,
         studentId,
         userId: currentUser.id,
         status: "draft",
+        instituteId: ownedInstituteId,
       };
 
       const report = await reportService.createEducationalReport(data);
@@ -1059,7 +1198,7 @@ export class ReportController {
         report,
       });
       activityLogService.log({
-        instituteId: instituteId ?? null,
+        instituteId: ownedInstituteId,
         userId: currentUser.id,
         eventType: "create",
         subjectType1: "educational_report",
@@ -1098,6 +1237,10 @@ export class ReportController {
           success: false,
           message: "Educational report not found",
         });
+        return;
+      }
+
+      if (!(await this.requireOwningInstitute(req, res, result.report, "educational report", "educational_report"))) {
         return;
       }
 
@@ -1152,6 +1295,10 @@ export class ReportController {
         return;
       }
 
+      if (!(await this.requireOwningInstitute(req, res, result.report, "educational report", "educational_report"))) {
+        return;
+      }
+
       const finalized = await reportService.finalizeEducationalReport(id);
 
       res.json({
@@ -1191,6 +1338,10 @@ export class ReportController {
           success: false,
           message: "Access denied or report not found",
         });
+        return;
+      }
+
+      if (!(await this.requireOwningInstitute(req, res, result.report, "educational report", "educational_report"))) {
         return;
       }
 
@@ -1240,6 +1391,10 @@ export class ReportController {
         return;
       }
 
+      if (!(await this.requireOwningInstitute(req, res, result.report, "educational report", "educational_report"))) {
+        return;
+      }
+
       const deleted = await reportService.deleteEducationalReport(id);
 
       if (!deleted) {
@@ -1284,10 +1439,12 @@ export class ReportController {
       const { studentId } = req.params;
 
       const instituteId = req.query.instituteId as string | undefined;
+      const ctx = await buildClinicianCtx(req, studentId);
       const result = await reportService.getAllReportsForStudent(
         studentId,
         currentUser.id,
-        instituteId
+        instituteId,
+        ctx,
       );
 
       res.json({
@@ -1313,10 +1470,12 @@ export class ReportController {
       const { studentId } = req.params;
       const instituteId = req.query.instituteId as string | undefined;
 
+      const ctx = await buildClinicianCtx(req, studentId);
       const result = await reportService.getCurrentReportsForStudent(
         studentId,
         currentUser.id,
-        instituteId
+        instituteId,
+        ctx,
       );
 
       res.json({

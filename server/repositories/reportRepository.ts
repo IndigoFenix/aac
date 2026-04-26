@@ -1,8 +1,14 @@
 /**
  * reportRepository.ts
- * 
+ *
  * Repository layer for medical records, functional reports, and educational reports.
  * Handles all database operations for the reports system.
+ *
+ * Read methods accept an optional `ctx?: AccessCtx` — when set, the result is
+ * gated by the cross-institute visibility helper (institute ownership +
+ * per-object share + standing share). When omitted, the legacy unfiltered
+ * read is preserved (used by the AI memory-db bridge and other callers that
+ * supply their own access scoping). See planning-docs/cross-institute-sharing-plan.md.
  */
 
 import {
@@ -22,9 +28,45 @@ import {
   type InsertEducationalReport,
   type UpdateEducationalReport,
   type ReportStatus,
+  type ShareableObjectType,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, and, desc, asc, or, ne } from "drizzle-orm";
+import { eq, and, desc, asc, or, ne, type SQL } from "drizzle-orm";
+import {
+  withInstituteVisibility,
+  type AccessCtx,
+} from "../services/sharing/visibility";
+import {
+  recordShareDerivedView,
+  recordShareDerivedViewSingle,
+} from "../services/sharing/audit";
+
+/**
+ * Build the array of WHERE clauses for a student-scoped read against one of
+ * the three report tables, applying the visibility filter when `ctx` is set.
+ */
+function studentScope(
+  table: { id: any; instituteId: any; studentId: any },
+  studentId: string,
+  objectType: ShareableObjectType,
+  ctx?: AccessCtx,
+): SQL[] {
+  const conds: SQL[] = [eq(table.studentId, studentId)];
+  if (ctx) conds.push(withInstituteVisibility(table, ctx, objectType));
+  return conds;
+}
+
+/** Build WHERE clauses for an id-scoped read with optional ctx-gated filter. */
+function idScope(
+  table: { id: any; instituteId: any; studentId: any },
+  id: string,
+  objectType: ShareableObjectType,
+  ctx?: AccessCtx,
+): SQL[] {
+  const conds: SQL[] = [eq(table.id, id)];
+  if (ctx) conds.push(withInstituteVisibility(table, ctx, objectType));
+  return conds;
+}
 
 export class ReportRepository {
   // ==========================================================================
@@ -43,25 +85,35 @@ export class ReportRepository {
   }
 
   /**
-   * Get a medical record by ID
+   * Get a medical record by ID. Pass `ctx` to apply the cross-institute
+   * visibility filter; omit it (e.g. AI memory-db bridge) for raw read.
    */
-  async getMedicalRecordById(id: string): Promise<MedicalRecord | undefined> {
+  async getMedicalRecordById(
+    id: string,
+    ctx?: AccessCtx,
+  ): Promise<MedicalRecord | undefined> {
     const [record] = await db
       .select()
       .from(medicalRecords)
-      .where(eq(medicalRecords.id, id));
+      .where(and(...idScope(medicalRecords, id, "medical_record", ctx)));
+    if (ctx) recordShareDerivedViewSingle(ctx, "medical_record", record);
     return record || undefined;
   }
 
   /**
-   * Get all medical records for a student
+   * Get all medical records for a student.
    */
-  async getMedicalRecordsByStudentId(studentId: string): Promise<MedicalRecord[]> {
-    return await db
+  async getMedicalRecordsByStudentId(
+    studentId: string,
+    ctx?: AccessCtx,
+  ): Promise<MedicalRecord[]> {
+    const rows = await db
       .select()
       .from(medicalRecords)
-      .where(eq(medicalRecords.studentId, studentId))
+      .where(and(...studentScope(medicalRecords, studentId, "medical_record", ctx)))
       .orderBy(desc(medicalRecords.createdAt));
+    if (ctx) recordShareDerivedView(ctx, "medical_record", rows);
+    return rows;
   }
 
   /**
@@ -70,32 +122,27 @@ export class ReportRepository {
    */
   async getCurrentMedicalRecord(
     studentId: string,
-    instituteId?: string
+    instituteId?: string,
+    ctx?: AccessCtx,
   ): Promise<MedicalRecord | undefined> {
-    const whereClause = instituteId
-      ? and(
-          eq(medicalRecords.studentId, studentId),
-          eq(medicalRecords.instituteId, instituteId),
-          or(
-            eq(medicalRecords.status, "draft"),
-            eq(medicalRecords.status, "pending_review")
-          )
-        )
-      : and(
-          eq(medicalRecords.studentId, studentId),
-          or(
-            eq(medicalRecords.status, "draft"),
-            eq(medicalRecords.status, "pending_review")
-          )
-        );
+    const conds: SQL[] = [
+      eq(medicalRecords.studentId, studentId),
+      or(
+        eq(medicalRecords.status, "draft"),
+        eq(medicalRecords.status, "pending_review"),
+      )!,
+    ];
+    if (instituteId) conds.push(eq(medicalRecords.instituteId, instituteId));
+    if (ctx) conds.push(withInstituteVisibility(medicalRecords, ctx, "medical_record"));
 
     const [record] = await db
       .select()
       .from(medicalRecords)
-      .where(whereClause)
+      .where(and(...conds))
       .orderBy(desc(medicalRecords.createdAt))
       .limit(1);
 
+    if (ctx) recordShareDerivedViewSingle(ctx, "medical_record", record);
     return record || undefined;
   }
 
@@ -104,30 +151,26 @@ export class ReportRepository {
    */
   async getArchivedMedicalRecords(
     studentId: string,
-    instituteId?: string
+    instituteId?: string,
+    ctx?: AccessCtx,
   ): Promise<MedicalRecord[]> {
-    const whereClause = instituteId
-      ? and(
-          eq(medicalRecords.studentId, studentId),
-          eq(medicalRecords.instituteId, instituteId),
-          or(
-            eq(medicalRecords.status, "final"),
-            eq(medicalRecords.status, "superseded")
-          )
-        )
-      : and(
-          eq(medicalRecords.studentId, studentId),
-          or(
-            eq(medicalRecords.status, "final"),
-            eq(medicalRecords.status, "superseded")
-          )
-        );
+    const conds: SQL[] = [
+      eq(medicalRecords.studentId, studentId),
+      or(
+        eq(medicalRecords.status, "final"),
+        eq(medicalRecords.status, "superseded"),
+      )!,
+    ];
+    if (instituteId) conds.push(eq(medicalRecords.instituteId, instituteId));
+    if (ctx) conds.push(withInstituteVisibility(medicalRecords, ctx, "medical_record"));
 
-    return await db
+    const rows = await db
       .select()
       .from(medicalRecords)
-      .where(whereClause)
+      .where(and(...conds))
       .orderBy(desc(medicalRecords.finalizedAt));
+    if (ctx) recordShareDerivedView(ctx, "medical_record", rows);
+    return rows;
   }
 
   /**
@@ -208,11 +251,15 @@ export class ReportRepository {
   /**
    * Get a functional report by ID
    */
-  async getFunctionalReportById(id: string): Promise<FunctionalReport | undefined> {
+  async getFunctionalReportById(
+    id: string,
+    ctx?: AccessCtx,
+  ): Promise<FunctionalReport | undefined> {
     const [report] = await db
       .select()
       .from(functionalReports)
-      .where(eq(functionalReports.id, id));
+      .where(and(...idScope(functionalReports, id, "functional_report", ctx)));
+    if (ctx) recordShareDerivedViewSingle(ctx, "functional_report", report);
     return report || undefined;
   }
 
@@ -220,13 +267,16 @@ export class ReportRepository {
    * Get all functional reports for a student
    */
   async getFunctionalReportsByStudentId(
-    studentId: string
+    studentId: string,
+    ctx?: AccessCtx,
   ): Promise<FunctionalReport[]> {
-    return await db
+    const rows = await db
       .select()
       .from(functionalReports)
-      .where(eq(functionalReports.studentId, studentId))
+      .where(and(...studentScope(functionalReports, studentId, "functional_report", ctx)))
       .orderBy(desc(functionalReports.createdAt));
+    if (ctx) recordShareDerivedView(ctx, "functional_report", rows);
+    return rows;
   }
 
   /**
@@ -234,23 +284,26 @@ export class ReportRepository {
    * Only one active functional report per student.
    */
   async getCurrentFunctionalReport(
-    studentId: string
+    studentId: string,
+    ctx?: AccessCtx,
   ): Promise<FunctionalReport | undefined> {
+    const conds: SQL[] = [
+      eq(functionalReports.studentId, studentId),
+      or(
+        eq(functionalReports.status, "draft"),
+        eq(functionalReports.status, "pending_review"),
+      )!,
+    ];
+    if (ctx) conds.push(withInstituteVisibility(functionalReports, ctx, "functional_report"));
+
     const [report] = await db
       .select()
       .from(functionalReports)
-      .where(
-        and(
-          eq(functionalReports.studentId, studentId),
-          or(
-            eq(functionalReports.status, "draft"),
-            eq(functionalReports.status, "pending_review")
-          )
-        )
-      )
+      .where(and(...conds))
       .orderBy(desc(functionalReports.createdAt))
       .limit(1);
 
+    if (ctx) recordShareDerivedViewSingle(ctx, "functional_report", report);
     return report || undefined;
   }
 
@@ -258,21 +311,25 @@ export class ReportRepository {
    * Get archived functional reports for a student
    */
   async getArchivedFunctionalReports(
-    studentId: string
+    studentId: string,
+    ctx?: AccessCtx,
   ): Promise<FunctionalReport[]> {
-    return await db
+    const conds: SQL[] = [
+      eq(functionalReports.studentId, studentId),
+      or(
+        eq(functionalReports.status, "final"),
+        eq(functionalReports.status, "superseded"),
+      )!,
+    ];
+    if (ctx) conds.push(withInstituteVisibility(functionalReports, ctx, "functional_report"));
+
+    const rows = await db
       .select()
       .from(functionalReports)
-      .where(
-        and(
-          eq(functionalReports.studentId, studentId),
-          or(
-            eq(functionalReports.status, "final"),
-            eq(functionalReports.status, "superseded")
-          )
-        )
-      )
+      .where(and(...conds))
       .orderBy(desc(functionalReports.finalizedAt));
+    if (ctx) recordShareDerivedView(ctx, "functional_report", rows);
+    return rows;
   }
 
   /**
@@ -354,12 +411,14 @@ export class ReportRepository {
    * Get an educational report by ID
    */
   async getEducationalReportById(
-    id: string
+    id: string,
+    ctx?: AccessCtx,
   ): Promise<EducationalReport | undefined> {
     const [report] = await db
       .select()
       .from(educationalReports)
-      .where(eq(educationalReports.id, id));
+      .where(and(...idScope(educationalReports, id, "educational_report", ctx)));
+    if (ctx) recordShareDerivedViewSingle(ctx, "educational_report", report);
     return report || undefined;
   }
 
@@ -367,13 +426,16 @@ export class ReportRepository {
    * Get all educational reports for a student
    */
   async getEducationalReportsByStudentId(
-    studentId: string
+    studentId: string,
+    ctx?: AccessCtx,
   ): Promise<EducationalReport[]> {
-    return await db
+    const rows = await db
       .select()
       .from(educationalReports)
-      .where(eq(educationalReports.studentId, studentId))
+      .where(and(...studentScope(educationalReports, studentId, "educational_report", ctx)))
       .orderBy(desc(educationalReports.createdAt));
+    if (ctx) recordShareDerivedView(ctx, "educational_report", rows);
+    return rows;
   }
 
   /**
@@ -381,23 +443,26 @@ export class ReportRepository {
    * Only one active educational report per student.
    */
   async getCurrentEducationalReport(
-    studentId: string
+    studentId: string,
+    ctx?: AccessCtx,
   ): Promise<EducationalReport | undefined> {
+    const conds: SQL[] = [
+      eq(educationalReports.studentId, studentId),
+      or(
+        eq(educationalReports.status, "draft"),
+        eq(educationalReports.status, "pending_review"),
+      )!,
+    ];
+    if (ctx) conds.push(withInstituteVisibility(educationalReports, ctx, "educational_report"));
+
     const [report] = await db
       .select()
       .from(educationalReports)
-      .where(
-        and(
-          eq(educationalReports.studentId, studentId),
-          or(
-            eq(educationalReports.status, "draft"),
-            eq(educationalReports.status, "pending_review")
-          )
-        )
-      )
+      .where(and(...conds))
       .orderBy(desc(educationalReports.createdAt))
       .limit(1);
 
+    if (ctx) recordShareDerivedViewSingle(ctx, "educational_report", report);
     return report || undefined;
   }
 
@@ -405,21 +470,25 @@ export class ReportRepository {
    * Get archived educational reports for a student
    */
   async getArchivedEducationalReports(
-    studentId: string
+    studentId: string,
+    ctx?: AccessCtx,
   ): Promise<EducationalReport[]> {
-    return await db
+    const conds: SQL[] = [
+      eq(educationalReports.studentId, studentId),
+      or(
+        eq(educationalReports.status, "final"),
+        eq(educationalReports.status, "superseded"),
+      )!,
+    ];
+    if (ctx) conds.push(withInstituteVisibility(educationalReports, ctx, "educational_report"));
+
+    const rows = await db
       .select()
       .from(educationalReports)
-      .where(
-        and(
-          eq(educationalReports.studentId, studentId),
-          or(
-            eq(educationalReports.status, "final"),
-            eq(educationalReports.status, "superseded")
-          )
-        )
-      )
+      .where(and(...conds))
       .orderBy(desc(educationalReports.finalizedAt));
+    if (ctx) recordShareDerivedView(ctx, "educational_report", rows);
+    return rows;
   }
 
   /**
@@ -494,15 +563,18 @@ export class ReportRepository {
   /**
    * Get all reports summary for a student
    */
-  async getAllReportsForStudent(studentId: string): Promise<{
+  async getAllReportsForStudent(
+    studentId: string,
+    ctx?: AccessCtx,
+  ): Promise<{
     medicalRecords: MedicalRecord[];
     functionalReports: FunctionalReport[];
     educationalReports: EducationalReport[];
   }> {
     const [medRecords, funcReports, eduReports] = await Promise.all([
-      this.getMedicalRecordsByStudentId(studentId),
-      this.getFunctionalReportsByStudentId(studentId),
-      this.getEducationalReportsByStudentId(studentId),
+      this.getMedicalRecordsByStudentId(studentId, ctx),
+      this.getFunctionalReportsByStudentId(studentId, ctx),
+      this.getEducationalReportsByStudentId(studentId, ctx),
     ]);
 
     return {
@@ -515,15 +587,18 @@ export class ReportRepository {
   /**
    * Get current reports for a student (non-archived)
    */
-  async getCurrentReportsForStudent(studentId: string): Promise<{
+  async getCurrentReportsForStudent(
+    studentId: string,
+    ctx?: AccessCtx,
+  ): Promise<{
     medicalRecord: MedicalRecord | undefined;
     functionalReport: FunctionalReport | undefined;
     educationalReport: EducationalReport | undefined;
   }> {
     const [medRecord, funcReport, eduReport] = await Promise.all([
-      this.getCurrentMedicalRecord(studentId),
-      this.getCurrentFunctionalReport(studentId),
-      this.getCurrentEducationalReport(studentId),
+      this.getCurrentMedicalRecord(studentId, undefined, ctx),
+      this.getCurrentFunctionalReport(studentId, ctx),
+      this.getCurrentEducationalReport(studentId, ctx),
     ]);
 
     return {

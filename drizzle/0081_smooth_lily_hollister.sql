@@ -1,0 +1,2 @@
+ALTER TABLE "incidents" ADD COLUMN "is_sensitive" boolean DEFAULT true NOT NULL;--> statement-breakpoint
+ALTER TABLE "incidents" ADD COLUMN "sensitivity_category" "sensitivity_category" DEFAULT 'medical' NOT NULL;

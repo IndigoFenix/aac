@@ -7,6 +7,7 @@
 
 import { reportRepository } from "../repositories";
 import { studentService } from "../services";
+import type { AccessCtx } from "./sharing/visibility";
 import {
   type MedicalRecord,
   type InsertMedicalRecord,
@@ -86,13 +87,16 @@ export class ReportService {
   }
 
   /**
-   * Get a medical record by ID with access verification
+   * Get a medical record by ID with access verification.
+   * `ctx` (when set) gates the row read through the cross-institute visibility
+   * helper before the role-based access check fires.
    */
   async getMedicalRecordById(
     id: string,
-    userId: string
+    userId: string,
+    ctx?: AccessCtx,
   ): Promise<{ record: MedicalRecord | undefined; hasAccess: boolean }> {
-    const record = await reportRepository.getMedicalRecordById(id);
+    const record = await reportRepository.getMedicalRecordById(id, ctx);
     if (!record) {
       return { record: undefined, hasAccess: false };
     }
@@ -109,9 +113,10 @@ export class ReportService {
    * Get all medical records for a student
    */
   async getMedicalRecordsByStudentId(
-    studentId: string
+    studentId: string,
+    ctx?: AccessCtx,
   ): Promise<MedicalRecord[]> {
-    return reportRepository.getMedicalRecordsByStudentId(studentId);
+    return reportRepository.getMedicalRecordsByStudentId(studentId, ctx);
   }
 
   /**
@@ -119,9 +124,10 @@ export class ReportService {
    */
   async getCurrentMedicalRecord(
     studentId: string,
-    instituteId?: string
+    instituteId?: string,
+    ctx?: AccessCtx,
   ): Promise<MedicalRecord | undefined> {
-    return reportRepository.getCurrentMedicalRecord(studentId, instituteId);
+    return reportRepository.getCurrentMedicalRecord(studentId, instituteId, ctx);
   }
 
   /**
@@ -129,9 +135,10 @@ export class ReportService {
    */
   async getArchivedMedicalRecords(
     studentId: string,
-    instituteId?: string
+    instituteId?: string,
+    ctx?: AccessCtx,
   ): Promise<MedicalRecord[]> {
-    return reportRepository.getArchivedMedicalRecords(studentId, instituteId);
+    return reportRepository.getArchivedMedicalRecords(studentId, instituteId, ctx);
   }
 
   /**
@@ -218,9 +225,10 @@ export class ReportService {
    */
   async getFunctionalReportById(
     id: string,
-    userId: string
+    userId: string,
+    ctx?: AccessCtx,
   ): Promise<{ report: FunctionalReport | undefined; hasAccess: boolean }> {
-    const report = await reportRepository.getFunctionalReportById(id);
+    const report = await reportRepository.getFunctionalReportById(id, ctx);
     if (!report) {
       return { report: undefined, hasAccess: false };
     }
@@ -237,27 +245,30 @@ export class ReportService {
    * Get all functional reports for a student
    */
   async getFunctionalReportsByStudentId(
-    studentId: string
+    studentId: string,
+    ctx?: AccessCtx,
   ): Promise<FunctionalReport[]> {
-    return reportRepository.getFunctionalReportsByStudentId(studentId);
+    return reportRepository.getFunctionalReportsByStudentId(studentId, ctx);
   }
 
   /**
    * Get current functional report for a student
    */
   async getCurrentFunctionalReport(
-    studentId: string
+    studentId: string,
+    ctx?: AccessCtx,
   ): Promise<FunctionalReport | undefined> {
-    return reportRepository.getCurrentFunctionalReport(studentId);
+    return reportRepository.getCurrentFunctionalReport(studentId, ctx);
   }
 
   /**
    * Get archived functional reports
    */
   async getArchivedFunctionalReports(
-    studentId: string
+    studentId: string,
+    ctx?: AccessCtx,
   ): Promise<FunctionalReport[]> {
-    return reportRepository.getArchivedFunctionalReports(studentId);
+    return reportRepository.getArchivedFunctionalReports(studentId, ctx);
   }
 
   /**
@@ -342,9 +353,10 @@ export class ReportService {
    */
   async getEducationalReportById(
     id: string,
-    userId: string
+    userId: string,
+    ctx?: AccessCtx,
   ): Promise<{ report: EducationalReport | undefined; hasAccess: boolean }> {
-    const report = await reportRepository.getEducationalReportById(id);
+    const report = await reportRepository.getEducationalReportById(id, ctx);
     if (!report) {
       return { report: undefined, hasAccess: false };
     }
@@ -361,27 +373,30 @@ export class ReportService {
    * Get all educational reports for a student
    */
   async getEducationalReportsByStudentId(
-    studentId: string
+    studentId: string,
+    ctx?: AccessCtx,
   ): Promise<EducationalReport[]> {
-    return reportRepository.getEducationalReportsByStudentId(studentId);
+    return reportRepository.getEducationalReportsByStudentId(studentId, ctx);
   }
 
   /**
    * Get current educational report for a student
    */
   async getCurrentEducationalReport(
-    studentId: string
+    studentId: string,
+    ctx?: AccessCtx,
   ): Promise<EducationalReport | undefined> {
-    return reportRepository.getCurrentEducationalReport(studentId);
+    return reportRepository.getCurrentEducationalReport(studentId, ctx);
   }
 
   /**
    * Get archived educational reports
    */
   async getArchivedEducationalReports(
-    studentId: string
+    studentId: string,
+    ctx?: AccessCtx,
   ): Promise<EducationalReport[]> {
-    return reportRepository.getArchivedEducationalReports(studentId);
+    return reportRepository.getArchivedEducationalReports(studentId, ctx);
   }
 
   /**
@@ -448,7 +463,8 @@ export class ReportService {
   async getAllReportsForStudent(
     studentId: string,
     userId: string,
-    instituteId?: string
+    instituteId?: string,
+    ctx?: AccessCtx,
   ): Promise<{
     medicalRecords: MedicalRecord[];
     functionalReports: FunctionalReport[];
@@ -476,7 +492,7 @@ export class ReportService {
       };
     }
 
-    const allReports = await reportRepository.getAllReportsForStudent(studentId);
+    const allReports = await reportRepository.getAllReportsForStudent(studentId, ctx);
 
     return {
       medicalRecords: studentAccess.hasMedicalRights
@@ -501,7 +517,8 @@ export class ReportService {
   async getCurrentReportsForStudent(
     studentId: string,
     userId: string,
-    instituteId?: string
+    instituteId?: string,
+    ctx?: AccessCtx,
   ): Promise<{
     medicalRecord: MedicalRecord | undefined;
     functionalReport: FunctionalReport | undefined;
@@ -530,7 +547,8 @@ export class ReportService {
     }
 
     const currentReports = await reportRepository.getCurrentReportsForStudent(
-      studentId
+      studentId,
+      ctx,
     );
 
     return {

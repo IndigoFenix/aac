@@ -22,6 +22,11 @@ import {
   type PaginationParams,
   type ListFilters,
 } from "../chat/memory-types";
+import { withInstituteVisibility, type AccessCtx } from "../sharing/visibility";
+import {
+  recordShareDerivedView,
+  recordShareDerivedViewSingle,
+} from "../sharing/audit";
 
 interface AnalysisSummaryRow {
   id: string;
@@ -42,8 +47,11 @@ interface AnalysisFullRow extends AnalysisSummaryRow {
   outputTokens: number;
 }
 
-function buildWhere(studentId: string, filters?: ListFilters) {
+function buildWhere(studentId: string, filters?: ListFilters, accessCtx?: AccessCtx) {
   const conds: any[] = [eq(deepAnalyses.studentId, studentId)];
+  if (accessCtx) {
+    conds.push(withInstituteVisibility(deepAnalyses, accessCtx, "deep_analysis"));
+  }
   if (filters?.dateFrom) {
     const d = new Date(filters.dateFrom);
     if (!Number.isNaN(d.getTime())) conds.push(gte(deepAnalyses.createdAt, d));
@@ -66,12 +74,15 @@ async function listAnalyses(
 ): Promise<ListResult<AnalysisSummaryRow>> {
   const studentId = ctx.all.studentId;
   if (!studentId) return { items: [], total: 0, keys: [] };
+  const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
 
-  const where = buildWhere(studentId, filters);
+  const where = buildWhere(studentId, filters, accessCtx);
 
   const rows = await db
     .select({
       id: deepAnalyses.id,
+      studentId: deepAnalyses.studentId,
+      instituteId: deepAnalyses.instituteId,
       createdAt: deepAnalyses.createdAt,
       status: deepAnalyses.status,
       title: deepAnalyses.title,
@@ -87,6 +98,8 @@ async function listAnalyses(
     .select({ total: sql<number>`count(*)::int` })
     .from(deepAnalyses)
     .where(where);
+
+  if (accessCtx) recordShareDerivedView(accessCtx, "deep_analysis", rows);
 
   const items: AnalysisSummaryRow[] = rows.map(r => ({
     id: r.id,
@@ -106,13 +119,20 @@ async function getAnalysis(
 ): Promise<AnalysisFullRow | undefined> {
   const studentId = ctx.all.studentId;
   if (!studentId) return undefined;
+  const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
+
+  const conds: any[] = [eq(deepAnalyses.id, String(key)), eq(deepAnalyses.studentId, studentId)];
+  if (accessCtx) {
+    conds.push(withInstituteVisibility(deepAnalyses, accessCtx, "deep_analysis"));
+  }
 
   const [row] = await db
     .select()
     .from(deepAnalyses)
-    .where(and(eq(deepAnalyses.id, String(key)), eq(deepAnalyses.studentId, studentId)))
+    .where(and(...conds))
     .limit(1);
   if (!row) return undefined;
+  if (accessCtx) recordShareDerivedViewSingle(accessCtx, "deep_analysis", row);
 
   return {
     id: row.id,
