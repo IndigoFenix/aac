@@ -868,8 +868,8 @@ export function SettingsPanel() {
             "text-center text-sm text-muted-foreground pt-2",
             isRTL && "text-center"
           )}>
-            <p>CliniAACian v1.0.0</p>
-            <p className="text-xs mt-1">© 2025 All rights reserved</p>
+            <p>Aivota v1.0.0</p>
+            <p className="text-xs mt-1">© 2026 All rights reserved</p>
           </div>
         </div>
       </div>

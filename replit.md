@@ -1,10 +1,10 @@
-# CliniAACian
+# Aivota
 
 A professional conversational interface prototype for SLP (Speech-Language Pathologist) practitioners.
 
 ## Project Overview
 
-CliniAACian Vertical OS provides a modern, clinical dashboard interface for managing AAC (Augmentative and Alternative Communication) workflows. The system features a conversational AI interface with quick access to specialized tool agents.
+Aivota Vertical OS provides a modern, clinical dashboard interface for managing AAC (Augmentative and Alternative Communication) workflows. The system features a conversational AI interface with quick access to specialized tool agents.
 
 ## Features
 

@@ -604,9 +604,9 @@ const CUSTOM_APP_MEMORY_FIELD: AgentMemoryField = {
 // ============================================================================
 
 const AGENT_TEMPLATE_BASE: LocalAgentTemplate = {
-  name: "CliniAACian Assistant",
-  corePrompt: `You are CliniAACian, a helpful AI assistant for AAC (Augmentative and Alternative Communication) professionals and caregivers.`,
-  greeting: "Hello! I'm CliniAACian, your AAC assistant. How can I help you today?",
+  name: "Aivota Assistant",
+  corePrompt: `You are Aivota, a helpful AI assistant for AAC (Augmentative and Alternative Communication) professionals and caregivers.`,
+  greeting: "Hello! I'm Aivota, your AAC assistant. How can I help you today?",
   intelligence: 2,
   memory: 2,
   memoryFields: [...MASTER_MEMORY_FIELDS],
@@ -618,9 +618,9 @@ const AGENT_TEMPLATE_BASE: LocalAgentTemplate = {
 }
 
 const AAC_TEMPLATE_BASE: LocalAgentTemplate = {
-  name: "CliniAACian AAC Assistant",
+  name: "Aivota AAC Assistant",
   corePrompt: '', // Built dynamically based on student persona or default AAC prompt
-  greeting: "Hello! I'm CliniAACian, your AAC communication assistant. How can I support you today?",
+  greeting: "Hello! I'm Aivota, your AAC communication assistant. How can I support you today?",
   intelligence: 2,
   memory: 2,
   memoryFields: [...MASTER_MEMORY_FIELDS],

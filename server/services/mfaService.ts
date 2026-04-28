@@ -9,7 +9,7 @@ import { emailService } from "./emailService";
 import type { User } from "@shared/schema";
 
 // Configuration
-const APP_NAME = "CliniAACian";
+const APP_NAME = "Aivota";
 const MFA_TOKEN_EXPIRY_MINUTES = 5;
 const RECOVERY_TOKEN_EXPIRY_MINUTES = 60;
 

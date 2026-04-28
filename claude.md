@@ -1,4 +1,4 @@
-# CliniAACian project
+# Aivota project
 
 ## Purpose and goals
 This is a project to help students with special needs communicate, interact with the world and learn.
