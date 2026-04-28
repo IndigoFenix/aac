@@ -19,7 +19,34 @@ let _geminiChat: ChatProvider | null = null;
 let _claudeStructured: StructuredLLMProvider | null = null;
 let _claudeChat: ChatProvider | null = null;
 
+// Test seams: when populated, these take precedence over the real singletons.
+// Production code never touches them; only the test helpers in
+// server/tests/helpers/llm-mock.ts call setStructuredProvider/setChatProvider.
+const _structuredOverrides = new Map<LLMProviderKey, StructuredLLMProvider>();
+const _chatOverrides = new Map<LLMProviderKey, ChatProvider>();
+
+export function setStructuredProvider(
+  provider: LLMProviderKey,
+  instance: StructuredLLMProvider,
+): void {
+  _structuredOverrides.set(provider, instance);
+}
+
+export function setChatProvider(
+  provider: LLMProviderKey,
+  instance: ChatProvider,
+): void {
+  _chatOverrides.set(provider, instance);
+}
+
+export function clearProviderOverrides(): void {
+  _structuredOverrides.clear();
+  _chatOverrides.clear();
+}
+
 export function getStructuredProvider(provider: LLMProviderKey): StructuredLLMProvider {
+  const override = _structuredOverrides.get(provider);
+  if (override) return override;
   switch (provider) {
     case "openai":
       if (!_openaiStructured) {
@@ -45,6 +72,8 @@ export function getStructuredProvider(provider: LLMProviderKey): StructuredLLMPr
 }
 
 export function getChatProvider(provider: LLMProviderKey): ChatProvider {
+  const override = _chatOverrides.get(provider);
+  if (override) return override;
   switch (provider) {
     case "openai":
       if (!_openaiChat) {

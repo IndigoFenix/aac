@@ -38,6 +38,8 @@ import { s3Service } from "../services/storage/s3-service";
 import { updateBiometricDataSchema } from "@shared/schema";
 import { insertStudentContactSchema, updateStudentContactSchema } from "@shared/schema";
 import { studentService } from "../services";
+import { studentRepository } from "../repositories/studentRepository";
+import { toE164 } from "@shared/phone";
 
 // Validation schemas
 const faceEmbeddingSchema = z.object({
@@ -480,6 +482,36 @@ export class BiometricController {
   // ============================================================================
 
   /**
+   * Normalize the `contactPhone` field on the request body to E.164 using
+   * the student's country as the disambiguation hint. Throws when the phone
+   * value is non-empty but cannot be normalized — surfaces as a 400 to the
+   * client. Leaves the field alone when absent or empty.
+   */
+  private async normalizeContactPhoneInBody(
+    body: any,
+    studentId: string,
+  ): Promise<any> {
+    if (!body || typeof body !== "object") return body;
+    const raw = (body as any).contactPhone;
+    if (raw === undefined || raw === null || raw === "") return body;
+
+    const student = await studentRepository.getStudentById(studentId);
+    const country = student?.country ?? "IL";
+    const normalized = toE164(String(raw), country);
+    if (!normalized) {
+      // Throwing a ZodError-shaped object lets the existing handler return 400.
+      const err: any = new Error(
+        `Phone "${raw}" cannot be normalized to E.164 (country=${country}). ` +
+          `Use a country dropdown or enter the number in international format.`,
+      );
+      err.name = "ZodError";
+      err.errors = [{ path: ["contactPhone"], message: err.message }];
+      throw err;
+    }
+    return { ...body, contactPhone: normalized };
+  }
+
+  /**
    * POST /api/biometric/students/:studentId/contacts
    * Create a new contact for a student
    */
@@ -494,7 +526,8 @@ export class BiometricController {
         return;
       }
 
-      const data = insertStudentContactSchema.parse({ ...req.body, studentId });
+      const body = await this.normalizeContactPhoneInBody(req.body, studentId);
+      const data = insertStudentContactSchema.parse({ ...body, studentId });
       const contact = await createContact(data);
       res.status(201).json({ success: true, contact });
     } catch (error: any) {
@@ -578,7 +611,8 @@ export class BiometricController {
         return;
       }
 
-      const data = updateStudentContactSchema.parse(req.body);
+      const body = await this.normalizeContactPhoneInBody(req.body, studentId);
+      const data = updateStudentContactSchema.parse(body);
       const contact = await updateContact(id, data);
       res.json({ success: true, contact });
     } catch (error: any) {

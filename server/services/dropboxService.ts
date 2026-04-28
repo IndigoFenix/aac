@@ -357,9 +357,12 @@ export class DropboxService {
 
     let accessToken = await decrypt(connection.encryptedAccessToken);
     
-    // Check if token needs refresh
+    // Check if token needs refresh. Treat a missing expiry as already-expired
+    // (force refresh) rather than crashing on the Date constructor.
     const now = new Date();
-    const expiresAt = new Date(connection.tokenExpiresAt);
+    const expiresAt = connection.tokenExpiresAt
+      ? new Date(connection.tokenExpiresAt)
+      : new Date(0);
     
     if (expiresAt <= now) {
       // Token expired, refresh it

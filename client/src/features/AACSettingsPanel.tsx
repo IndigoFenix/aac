@@ -499,7 +499,12 @@ export function AACSettingsPanel({ isOpen = true, onClose }: AACSettingsPanelPro
                 <div className="flex-1">
                   <p className="font-medium">{student.name}</p>
                   <p className="text-sm text-muted-foreground">
-                    {student.gender === 'male' ? t('aacSettings.genderMale') : student.gender === 'female' ? t('aacSettings.genderFemale') : t('aacSettings.genderNotSpecified')}
+                    {(() => {
+                      const g = String(student.gender || '').toLowerCase();
+                      if (g === 'male') return t('aacSettings.genderMale');
+                      if (g === 'female') return t('aacSettings.genderFemale');
+                      return t('aacSettings.genderNotSpecified');
+                    })()}
                     {student.birthDate && ` • ${t('aacSettings.yearsOld').replace('{age}', String(new Date().getFullYear() - new Date(student.birthDate).getFullYear()))}`}
                   </p>
                 </div>

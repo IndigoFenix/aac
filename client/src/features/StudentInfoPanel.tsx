@@ -15,6 +15,11 @@ import { apiRequest, apiUrl } from '@/lib/queryClient';
 import { openUI } from '@/lib/uiEvents';
 import { cn } from '@/lib/utils';
 import { UserStudent } from '@shared/schema';
+import { useActiveConsent } from '@/hooks/useConsentApi';
+import { ConsentWizard } from '@/features/consent/ConsentWizard';
+import { SendConsentRequestDialog } from '@/features/consent/SendConsentRequestDialog';
+import { PendingInvitationsList } from '@/features/consent/PendingInvitationsList';
+import { ConsentHistoryPanel } from '@/features/consent/ConsentHistoryPanel';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -45,6 +50,7 @@ import {
   Building2,
   UserCircle,
   Save,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface StudentInfoPanelProps {
@@ -92,6 +98,10 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { student, refetchStudent } = useStudent();
+  const [consentWizardOpen, setConsentWizardOpen] = useState(false);
+  const [sendConsentDialogOpen, setSendConsentDialogOpen] = useState(false);
+  const consentQuery = useActiveConsent(student?.id);
+  const consentMissing = !!student?.id && !consentQuery.isLoading && !consentQuery.data?.consent;
   const {
     institutes,
     currentInstitute,
@@ -368,6 +378,61 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
             </p>
           </div>
 
+          {/* Consent banner — surfaces when student has no active consent record */}
+          {consentMissing && (
+            <Card className="border-amber-500/50 bg-amber-50/50 dark:bg-amber-950/20">
+              <CardContent className="pt-6 pb-6 flex items-start gap-3">
+                <ShieldCheck className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                <div className="flex-1 space-y-3">
+                  <div>
+                    <p className="font-medium text-foreground">
+                      {t('consent.wizard.title') || 'Informed consent'}
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {ts('consent.wizard.bannerDescription')
+                        || 'This student has no active informed-consent record. Some features will be blocked until consent is collected.'}
+                    </p>
+                  </div>
+                  {student?.id && <PendingInvitationsList studentId={student.id} />}
+                </div>
+                <div className="flex flex-col gap-2 flex-shrink-0">
+                  <Button onClick={() => setConsentWizardOpen(true)} variant="default">
+                    {t('consent.wizard.openButton') || 'Sign consent'}
+                  </Button>
+                  {/* Family-institute admins sign for themselves; clinic/school
+                      admins typically need to dispatch a magic link to the
+                      parent. Both buttons render — the right call depends on
+                      whether the current user IS the parent. */}
+                  {currentInstitute?.type !== 'family' && currentInstitute?.id && (
+                    <Button
+                      onClick={() => setSendConsentDialogOpen(true)}
+                      variant="outline"
+                      size="sm"
+                    >
+                      {t('consent.send.openButton') || 'Send to parent'}
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          {consentWizardOpen && student?.id && (
+            <ConsentWizard
+              studentId={student.id}
+              onClose={() => setConsentWizardOpen(false)}
+            />
+          )}
+          {sendConsentDialogOpen && student?.id && currentInstitute?.id && (
+            <SendConsentRequestDialog
+              studentId={student.id}
+              sourceInstituteId={currentInstitute.id}
+              onClose={() => setSendConsentDialogOpen(false)}
+            />
+          )}
+          {/* Consent history — collapsible audit-grade timeline. Renders only
+              when the student has at least one consent record (active or revoked). */}
+          {student?.id && <ConsentHistoryPanel studentId={student.id} />}
+
           {/* Profile Section */}
           <Card>
             <CardHeader>
@@ -397,7 +462,12 @@ export function StudentInfoPanel({ isOpen }: StudentInfoPanelProps) {
                   <h3 className="font-semibold text-lg">{student.name}</h3>
                   <p className="text-sm text-muted-foreground">
                     {[
-                      (student as any).gender && (t(`student.gender${(student as any).gender}`) || (student as any).gender),
+                      (student as any).gender && (() => {
+                        const g = String((student as any).gender);
+                        const key = `student.gender${g.charAt(0).toUpperCase()}${g.slice(1).toLowerCase()}`;
+                        const translated = t(key);
+                        return translated && translated !== key ? translated : g;
+                      })(),
                       age !== null && `${age} ${t('student.yearsOld') || 'years old'}`,
                     ].filter(Boolean).join(' • ')}
                   </p>

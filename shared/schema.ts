@@ -303,8 +303,22 @@ export const licenses = pgTable("licenses", {
   // Invite token for direct registration (non-institute licenses)
   inviteToken: text("invite_token"),
 
-  // Pre-filled defaults for the invite signup form (set at creation, not editable)
-  inviteDefaults: jsonb("invite_defaults").$type<{ firstName?: string; lastName?: string; userType?: string }>(),
+  // Pre-filled defaults for the invite signup form (set at creation, not editable).
+  // For family-institute provisioning the admin can additionally capture
+  // guardian-identity bits (country / phone / government ID) so the in-product
+  // consent wizard prefills instead of asking the parent again.
+  // See planning-docs/student-consent-onboarding-plan.md.
+  inviteDefaults: jsonb("invite_defaults").$type<{
+    firstName?: string;
+    lastName?: string;
+    userType?: string;
+    country?: string;                                            // ISO 3166-1 alpha-2
+    phone?: string;                                              // E.164
+    governmentIdNumber?: string;
+    governmentIdType?: 'national_id' | 'passport' | 'driver_license' | 'other';
+    governmentIdCountry?: string;                                // ISO 3166-1 alpha-2
+    identityProvenanceNote?: string;                             // admin attestation
+  }>(),
 
   // Status
   isActive: boolean("is_active").default(true).notNull(),
@@ -642,6 +656,12 @@ const inviteDefaultsSchema = z.object({
   firstName: z.string().optional(),
   lastName: z.string().optional(),
   userType: z.string().optional(),
+  country: z.string().optional(),
+  phone: z.string().optional(),
+  governmentIdNumber: z.string().optional(),
+  governmentIdType: z.enum(['national_id', 'passport', 'driver_license', 'other']).optional(),
+  governmentIdCountry: z.string().optional(),
+  identityProvenanceNote: z.string().optional(),
 }).nullable().optional();
 
 export const insertLicenseSchema = createInsertSchema(licenses, {

@@ -257,6 +257,7 @@ export default function UnifiedDebugPanel({
     return {
       cameras: stored.cameras ?? true,
       audioClips: stored.audioClips ?? true,
+      identifiedPeople: stored.identifiedPeople ?? true,
       faceImages: stored.faceImages ?? true,
       requests: stored.requests ?? true,
       interactive: stored.interactive ?? true,
@@ -664,6 +665,58 @@ export default function UnifiedDebugPanel({
                     ))
                   )}
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* ===== Section: People Identified (server-side face matching) ===== */}
+          <div>
+            <SectionHeader
+              title="People Identified"
+              icon={<User className="w-3.5 h-3.5" />}
+              isOpen={sections.identifiedPeople}
+              onClick={() => toggleSection("identifiedPeople")}
+              badge={
+                ctx.identifiedFaces.length > 0 ? (
+                  <Badge className="bg-green-500 text-white text-[9px] px-1">{ctx.identifiedFaces.length}</Badge>
+                ) : undefined
+              }
+            />
+            {sections.identifiedPeople && (
+              <div className="p-2 text-xs space-y-1">
+                {ctx.identifiedFaces.length === 0 ? (
+                  <p className="text-gray-400 text-[11px] text-center py-2">No faces detected</p>
+                ) : (
+                  ctx.identifiedFaces.map(face => {
+                    const conf = Math.round(face.confidence * 100);
+                    const confColor = !face.matched
+                      ? "bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
+                      : conf >= 70
+                      ? "bg-green-200 text-green-800 dark:bg-green-900 dark:text-green-200"
+                      : conf >= 40
+                      ? "bg-yellow-200 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+                      : "bg-orange-200 text-orange-800 dark:bg-orange-900 dark:text-orange-200";
+                    return (
+                      <div
+                        key={face.faceIndex}
+                        className="flex items-center gap-2 p-1.5 bg-gray-50 dark:bg-gray-800 rounded"
+                      >
+                        <span className="text-[11px] font-medium truncate flex-1">{face.name}</span>
+                        {face.relationship && (
+                          <span className="text-[9px] text-gray-500 dark:text-gray-400 truncate">{face.relationship}</span>
+                        )}
+                        {face.entityType && (
+                          <span className="text-[9px] px-1 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+                            {face.entityType}
+                          </span>
+                        )}
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${confColor}`}>
+                          {face.matched ? `${conf}%` : "no match"}
+                        </span>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             )}
           </div>

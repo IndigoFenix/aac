@@ -29,7 +29,8 @@ import {
   instituteController,
   classroomController,
   sessionHistoryController,
-  shareInviteController
+  shareInviteController,
+  consentController
 } from "./controllers";
 
 import {
@@ -431,6 +432,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // transfers institutes and the guardian wants to wind down access in one click.
   app.post("/api/shares/bulk-revoke", requireAuth, (req, res) =>
     shareInviteController.bulkRevoke(req, res)
+  );
+
+  // ============= STUDENT INFORMED-CONSENT ROUTES =============
+  // See planning-docs/student-consent-onboarding-plan.md
+  app.get("/api/consent/notice", requireAuth, (req, res) =>
+    consentController.getNotice(req, res)
+  );
+  app.get("/api/consent/students/:studentId/active", requireAuth, (req, res) =>
+    consentController.getActiveForStudent(req, res)
+  );
+  app.get("/api/consent/students/:studentId/history", requireAuth, (req, res) =>
+    consentController.listHistory(req, res)
+  );
+  app.get("/api/consent/students/:studentId/wizard-context", requireAuth, (req, res) =>
+    consentController.getWizardContext(req, res)
+  );
+  app.post("/api/consent/students/:studentId/sign", requireAuth, (req, res) =>
+    consentController.signConsent(req, res)
+  );
+  app.post("/api/consent/:consentId/revoke", requireAuth, (req, res) =>
+    consentController.revokeConsent(req, res)
+  );
+
+  // Magic-link consent invitations. Note: redeem + sign do NOT require auth —
+  // the token IS the auth (parents may not have user accounts).
+  app.post("/api/consent/invitations", requireAuth, (req, res) =>
+    consentController.createInvitation(req, res)
+  );
+  app.get("/api/consent/students/:studentId/invitations", requireAuth, (req, res) =>
+    consentController.listPendingInvitations(req, res)
+  );
+  app.get("/api/consent/invitations/redeem", (req, res) =>
+    consentController.redeemInvitation(req, res)
+  );
+  app.post("/api/consent/invitations/sign", (req, res) =>
+    consentController.signInvitation(req, res)
+  );
+  app.post("/api/consent/invitations/request-otp", (req, res) =>
+    consentController.requestPhoneOtp(req, res)
+  );
+  app.post("/api/consent/invitations/verify-otp", (req, res) =>
+    consentController.verifyPhoneOtp(req, res)
+  );
+  app.post("/api/consent/invitations/:id/revoke", requireAuth, (req, res) =>
+    consentController.revokeInvitation(req, res)
   );
 
 

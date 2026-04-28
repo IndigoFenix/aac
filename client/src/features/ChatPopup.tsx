@@ -50,6 +50,7 @@ import { useTextToSpeech, htmlToPlainText } from '@/hooks/useTextToSpeech';
 import { ChatMessage, ChatMessageContent } from '@shared/schema';
 import { cn } from '@/lib/utils';
 import { PersonaIcon, getPersonaColorClasses } from '@/components/chat/PersonaIcon';
+import { ConsentMissingIndicator } from '@/components/ConsentMissingIndicator';
 import { resolveLocalizedText } from '@shared/localized-text';
 import { marked } from 'marked';
 
@@ -416,8 +417,11 @@ export function ChatPopup() {
                 </SelectContent>
               </Select>
               {student && (
-                <p className="text-xs text-muted-foreground truncate">
-                  {t('chat.workingWith')} {student.name}
+                <p className="text-xs text-muted-foreground truncate inline-flex items-center gap-1">
+                  <span className="truncate">
+                    {t('chat.workingWith')} {student.name}
+                  </span>
+                  <ConsentMissingIndicator studentId={student.id} />
                 </p>
               )}
             </div>

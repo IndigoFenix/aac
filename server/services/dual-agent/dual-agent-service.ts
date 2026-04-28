@@ -33,6 +33,8 @@ import { APP_REGISTRY, getDefaultEnabledApps, getEnabledAppsFromConfig, type App
 import { getContactsByStudent } from "../biometric";
 import { boardRepository } from "../../repositories/boardRepository";
 import { customSymbolRepository } from "../../repositories/customSymbolRepository";
+import { requireActiveConsent, ConsentGateError } from "../consent/consentGate";
+import { activityLogService } from "../activityLogService";
 
 /**
  * Simple promise-based mutex for per-session concurrency control.
@@ -339,6 +341,11 @@ export class DualAgentService {
     localState?: import("@shared/aac-local-storage").AacSessionSnapshot,
     timezone?: string,
   ): Promise<DualAgentSessionState> {
+    // Consent gate — runs even on resume so a session opened against an
+    // active consent stops working once that consent is revoked.
+    // No-op when CONSENT_GATE_ENABLED is unset; honors legacy grace.
+    await requireActiveConsent(studentId);
+
     // Check cache first
     if (existingSessionId && sessionCache.has(existingSessionId)) {
       const cached = sessionCache.get(existingSessionId)!;
@@ -1334,6 +1341,83 @@ export class DualAgentService {
     const cached = sessionCache.get(sessionId);
     if (cached) cached.lastAccess = Date.now();
     return cached;
+  }
+
+  /**
+   * Test-only: inject a minimal SessionCache entry without spinning up
+   * a real LiveProvider / monitor agent. Used by the consent-cascade
+   * tests to verify termination plumbing. Intentionally exposed on the
+   * public service so tests don't need to reach into module internals.
+   */
+  injectTestSession(args: {
+    sessionId: string;
+    studentId: string;
+    userId?: string;
+    onTerminate?: (reason: string) => void;
+  }): void {
+    if (process.env.NODE_ENV === "production") return;
+    sessionCache.set(args.sessionId, {
+      state: {
+        sessionId: args.sessionId,
+        studentId: args.studentId,
+        userId: args.userId,
+        interactivePrompt: "",
+        monitorBusy: false,
+        messages: [],
+        pendingMessages: [],
+        interactionMode: "interact",
+        boardButtonLabels: [],
+        aiAddedButtonLabels: [],
+        onTerminate: args.onTerminate,
+      } as unknown as DualAgentSessionState,
+      interactiveAgent: {} as any,
+      monitorAgent: {} as any,
+      lastAccess: Date.now(),
+      monitorMutex: {
+        acquire: async () => () => {},
+        runExclusive: async <T>(fn: () => Promise<T>) => fn(),
+      } as any,
+    });
+  }
+
+  /**
+   * Force-terminate every cached AAC session for a student. Called by the
+   * consent-revocation cascade so an in-flight session can't continue after
+   * the parent withdraws consent. Each terminated session:
+   *   1. Has its onTerminate callback fired (closes the WebSocket cleanly).
+   *   2. Is evicted from sessionCache.
+   *   3. Gets its own activity-log entry tagged with cascade_reason.
+   *
+   * Returns the number of sessions terminated. Safe to call when none match.
+   */
+  terminateSessionsForStudent(
+    studentId: string,
+    actingUserId: string,
+    cascadeReason: string,
+  ): number {
+    let terminated = 0;
+    for (const [sessionId, cached] of sessionCache.entries()) {
+      if (cached.state.studentId !== studentId) continue;
+      try {
+        cached.state.onTerminate?.(cascadeReason);
+      } catch (err) {
+        console.error("[DualAgentService] onTerminate threw:", err);
+      }
+      sessionCache.delete(sessionId);
+      terminated++;
+      activityLogService.log({
+        userId: actingUserId,
+        eventType: "update",
+        subjectType1: "student",
+        subjectId1: studentId,
+        details: {
+          action: "aac_session_terminated",
+          sessionId,
+          cascade_reason: cascadeReason,
+        },
+      });
+    }
+    return terminated;
   }
 
   /**

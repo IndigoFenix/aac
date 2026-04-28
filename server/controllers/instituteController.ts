@@ -942,6 +942,19 @@ export class InstituteController {
           });
           const newUser = newUserResult.user;
 
+          // Carry over guardian-identity bits (phone/country) the admin
+          // captured at license provisioning, so the parent doesn't retype.
+          // Government-ID fields stay on inviteDefaults until the parent's
+          // first student is created (auto-guardian-contact flow).
+          const { userRepository } = await import("../repositories/userRepository");
+          const defaults = license.inviteDefaults;
+          if (defaults?.phone || defaults?.country) {
+            await userRepository.updateUser(newUser.id, {
+              ...(defaults.phone ? { phone: defaults.phone } : {}),
+              ...(defaults.country ? { country: defaults.country } : {}),
+            } as any);
+          }
+
           // Link the license to the new user
           await licenseService.linkLicenseToUser(license.inviteEmail, newUser.id);
 
@@ -1011,7 +1024,16 @@ export class InstituteController {
       // Accept the invite and mark onboarding complete — admin invited this user
       await userService.updateOnboardingStep(newUser.id, 3);
       const { licenseService } = await import("../services/licenseService");
-      await licenseService.linkLicenseToUser(invite.inviteeEmail, newUser.id);
+      const linkedLicense = await licenseService.linkLicenseToUser(invite.inviteeEmail, newUser.id);
+      // Propagate phone/country from license inviteDefaults onto the user.
+      const linkedDefaults = linkedLicense?.inviteDefaults;
+      if (linkedDefaults?.phone || linkedDefaults?.country) {
+        const { userRepository } = await import("../repositories/userRepository");
+        await userRepository.updateUser(newUser.id, {
+          ...(linkedDefaults.phone ? { phone: linkedDefaults.phone } : {}),
+          ...(linkedDefaults.country ? { country: linkedDefaults.country } : {}),
+        } as any);
+      }
       const acceptResult = await instituteService.acceptInvite(invite.id, newUser.id, userType);
       if (!acceptResult.success) {
         res.status(400).json({

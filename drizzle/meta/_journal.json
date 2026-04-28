@@ -589,6 +589,41 @@
       "when": 1777220821057,
       "tag": "0083_clammy_purifiers",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1777317976185,
+      "tag": "0084_mighty_daredevil",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1777318930670,
+      "tag": "0085_charming_sentinels",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1777321854909,
+      "tag": "0086_milky_thundra",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1777354609917,
+      "tag": "0087_fixed_cerise",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1777358924420,
+      "tag": "0088_rich_scarlet_witch",
+      "breakpoints": true
     }
   ]
 }

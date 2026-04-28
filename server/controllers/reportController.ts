@@ -10,6 +10,7 @@ import { reportService } from "../services";
 import { activityLogService } from "../services/activityLogService";
 import { buildClinicianCtx } from "../services/sharing/clinicianCtx";
 import { canWriteObject } from "../services/sharing/visibility";
+import { requireConsentForResponse } from "../services/consent/consentGate";
 import {
   type InsertMedicalRecord,
   type UpdateMedicalRecord,
@@ -394,6 +395,10 @@ export class ReportController {
       }
 
       if (!(await this.requireOwningInstitute(req, res, result.record, "medical record", "medical_record"))) {
+        return;
+      }
+
+      if (!(await requireConsentForResponse(req, res, (result.record as any).studentId))) {
         return;
       }
 
@@ -848,6 +853,10 @@ export class ReportController {
         return;
       }
 
+      if (!(await requireConsentForResponse(req, res, (result.report as any).studentId))) {
+        return;
+      }
+
       const finalized = await reportService.finalizeFunctionalReport(id);
 
       res.json({
@@ -1296,6 +1305,10 @@ export class ReportController {
       }
 
       if (!(await this.requireOwningInstitute(req, res, result.report, "educational report", "educational_report"))) {
+        return;
+      }
+
+      if (!(await requireConsentForResponse(req, res, (result.report as any).studentId))) {
         return;
       }
 

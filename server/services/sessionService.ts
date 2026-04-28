@@ -54,6 +54,7 @@ import {
 } from "./chat-context-integration";
 import { buildSessionAccessCtx } from "./sharing/sessionCtx";
 import { canAccessMonitorNotes } from "./sharing/visibility";
+import { getConsentStatus } from "./consent/consentGate";
 import { activityLogService } from "./activityLogService";
 import { STUDENT_CHAT_MEMORY_FIELD_IDS } from "./memory-schema/student-memory-schema";
 import {
@@ -1009,6 +1010,30 @@ async function loadFlaggedCalendarEvents(
   return flagged;
 }
 
+/**
+ * Build a system-prompt addendum describing the student's consent-gate state.
+ * The AI uses this to know up-front whether PHI write operations will be
+ * blocked, so it can explain blocked tool calls to the user without confusion.
+ *
+ * Returns null when there's nothing meaningful to say (gate off and no
+ * legacy-grace context — i.e. the AI has nothing to caveat).
+ */
+function formatConsentStatusForPrompt(
+  consent: import("./consent/consentGate").ConsentStatus,
+): string | null {
+  if (!consent.gateEnabled) return null; // gate off → no caveat needed
+
+  const header = "[CONSENT STATUS — informed-consent gate]";
+  if (consent.hasActiveConsent) {
+    return `${header}\nThis student has an active informed-consent record on file. PHI operations are permitted.`;
+  }
+  if (consent.inLegacyGrace) {
+    const until = consent.legacyConsentDeadline?.split("T")[0] ?? "soon";
+    return `${header}\nThis student does not yet have an informed-consent record but is in a legacy grace window through ${until}. PHI operations are still permitted today, but the record needs to be collected before the deadline. If the user asks about consent or progress on signing, mention this.`;
+  }
+  return `${header}\nThis student has no active informed-consent record. PHI write operations (creating/finalizing reports, sharing records, recording incidents, starting AAC sessions) WILL FAIL with a "consent_required" error until a guardian completes the consent wizard for this student. If a tool call fails for that reason, calmly explain to the user that the student is in consent-pending state and direct them to the "Sign consent" button on the Student Info panel.`;
+}
+
 async function getMessageManager(input: GetMessageManagerInput): Promise<GetMessageManagerResult> {
   const { userId, studentId, instituteId, sessionId, featureContext, persona, feature = "chat", onThinkingUpdate, onNavigate, onSelectStudent, onFilesNeeded } = input;
   const isAACFeature = (feature === 'aac');
@@ -1557,6 +1582,19 @@ Example button with custom symbol:
         .where(eq(chatSessions.id, session.id));
     }
   };
+
+  // Surface consent-gate status to the AI so it doesn't get confused when
+  // PHI tool calls fail with "consent_required". Only injects something
+  // when there's a student in scope and the gate is on the path of blocking.
+  if (context.student?.id) {
+    try {
+      const consent = await getConsentStatus(context.student.id);
+      const note = formatConsentStatusForPrompt(consent);
+      if (note) template.corePrompt = `${template.corePrompt}\n\n${note}`;
+    } catch (err) {
+      console.warn('[getMessageManager] Failed to load consent status for prompt:', err);
+    }
+  }
 
   template.corePrompt = enrichCorePrompt(context, template.corePrompt, isAACFeature);
 

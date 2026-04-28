@@ -29,9 +29,11 @@ import { ttsFacade, type ResolvedVoice } from "../voice/tts-facade";
 import { GeminiLiveTtsSession } from "../voice/gemini-live-tts-service";
 import { searchYouTube } from "../youtube/youtube-search";
 import { searchSpotify } from "../spotify/spotify-search";
-// Biometric imports removed along with the LEARN_FACE tool. Identification
-// still runs on the client; face-enrollment now goes through the Contacts
-// panel upload flow.
+import {
+  findMatchingFace,
+  recordContactSighting,
+  type FaceMatchResult,
+} from "../biometric/recognition-service";
 import { logDualAgent, logLiveSession } from "./dual-agent-logger";
 import { dualAgentService, type SessionCache } from "./dual-agent-service";
 import { buildInteractiveAgentPrompt, AAC_DEFAULT_PERSONA_PROMPT } from "../memory-schema/aac-memory-schema";
@@ -219,7 +221,28 @@ export type ServerMessage =
   | { type: "symbol_update"; data: { buttonLabel: string; symbolPath: string } }  // Auto-generated symbol ready — update button
   | { type: "context_button_add"; data: any }                 // Add one button to context sidebar (scrolls oldest out)
   | { type: "guessing_mode"; active: boolean }              // Guessing mode entered/exited
+  | { type: "people_identified"; data: IdentifiedFaceWire[] } // Server-side face matching results
   | { type: "complete"; data?: any };
+
+/** Public wire format for an identified face (server → client). */
+export interface IdentifiedFaceWire {
+  /** Index of the face within the descriptor batch (matches client face index when available). */
+  faceIndex: number;
+  /** True if matched to a known person above the confidence threshold. */
+  matched: boolean;
+  /** Display name — known person's name, or "Unknown #N" when no match. */
+  name: string;
+  /** Underlying entity type when matched. */
+  entityType?: "student" | "user" | "contact";
+  /** Entity id (contact id, user id, or student id) when matched. */
+  entityId?: string;
+  /** Relationship label (e.g. "mother", "teacher") when matched. */
+  relationship?: string;
+  /** Match confidence in [0,1]. 0 when unmatched. */
+  confidence: number;
+  /** Bounding box from the client detection, if provided. */
+  boundingBox?: { x: number; y: number; w: number; h: number };
+}
 
 // ---------------------------------------------------------------------------
 // State machine
@@ -281,6 +304,18 @@ export class LiveRelay {
 
   // Contact enrollment
   private unknownFaceDescriptors: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number } }> = [];
+
+  // Server-side face recognition — populated when the client sends face descriptors.
+  // Used both to inject "[PEOPLE PRESENT]" context into the model and to render the
+  // identified-people debug list on the client.
+  private currentIdentifiedFaces: IdentifiedFaceWire[] = [];
+  private currentIdentifiedFacesAt = 0;
+  /** Per-contact rate limit for `recordContactSighting()` — keyed by contact id. */
+  private lastSightingBumpAt: Map<string, number> = new Map();
+  /** TTL after which the identified-faces list is considered stale and dropped. */
+  private static readonly IDENTIFIED_FACES_TTL_MS = 30_000;
+  /** Minimum gap between sighting bumps for the same contact. */
+  private static readonly SIGHTING_BUMP_INTERVAL_MS = 60_000;
 
   // App canvas
   private latestAppCanvas: string | null = null;
@@ -711,9 +746,11 @@ export class LiveRelay {
           const gestureNote = msg.gestureContext
             ? `\n${msg.gestureContext}`
             : "";
+          const peopleContext = this.buildPeoplePresentContext();
+          const peopleNote = peopleContext ? `\n${peopleContext}` : "";
           this.provider!.sendFrameWithPrompt(
             msg.data,
-            `[scene update] React only if something here calls for action — add or update context buttons, take notes, save transcripts, update memory. If you are having difficulty identifying a new object, you may call focus_frame() to see it better. Stay silent unless there's a concrete reason to speak.${gestureNote}`,
+            `[scene update] React only if something here calls for action — add or update context buttons, take notes, save transcripts, update memory. If you are having difficulty identifying a new object, you may call focus_frame() to see it better. Stay silent unless there's a concrete reason to speak.${peopleNote}${gestureNote}`,
             extraImages,
           );
           break;
@@ -899,6 +936,13 @@ export class LiveRelay {
 
         case "unknown_face_descriptors":
           this.unknownFaceDescriptors = msg.data;
+          // Fire-and-forget: match each descriptor against the student's known
+          // people (self + linked users + contacts). Results populate
+          // currentIdentifiedFaces, get pushed to the client for the debug
+          // display, and feed the next frame_grid context string.
+          this.recognizeFaces(msg.data).catch(err => {
+            logLiveSession("FACE_RECOGNITION_ERROR", (err as Error).message);
+          });
           break;
 
         case "page_navigate":
@@ -1037,6 +1081,22 @@ export class LiveRelay {
           logLiveSession("MONITOR INJECTION FAILED", `provider not connected`);
         }
         this.send({ type: "context", data: `[Monitor] ${text}` });
+      };
+
+      // Server-initiated termination: dualAgentService calls this when the
+      // student's consent is revoked mid-session (or any future cascade
+      // condition). Send a typed error so the AAC client can surface a
+      // "consent required" prompt, then close the socket cleanly.
+      cached.state.onTerminate = (reason: string) => {
+        try {
+          this.send({
+            type: "error",
+            data: reason === "consent_revoked" ? "error:CONSENT_REVOKED" : "error:SESSION_TERMINATED",
+          });
+        } catch { /* ignore — close anyway */ }
+        try {
+          this.ws.close(1000, `terminated:${reason}`);
+        } catch { /* ignore */ }
       };
 
       // 3. Resolve voices
@@ -1284,8 +1344,15 @@ export class LiveRelay {
       console.log(`[LiveRelay] Initialized session ${state.sessionId} for student ${msg.studentId} (provider: ${providerLabel}, modality: ${providerConfig.responseModality || "default"}, model: ${providerConfig.model})`);
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
-      console.error("[LiveRelay] Initialize failed:", error.message);
-      this.send({ type: "error", data: "error:INIT_FAILED" });
+      // Distinguish consent-gate failures so the AAC client can surface a
+      // "consent required" prompt instead of a generic init failure.
+      if (error.name === "ConsentGateError" || /consent[_ ]required/i.test(error.message)) {
+        console.warn("[LiveRelay] Initialize blocked by consent gate:", error.message);
+        this.send({ type: "error", data: "error:CONSENT_REQUIRED" });
+      } else {
+        console.error("[LiveRelay] Initialize failed:", error.message);
+        this.send({ type: "error", data: "error:INIT_FAILED" });
+      }
     }
   }
 
@@ -3062,6 +3129,95 @@ When creating or referencing calendar events, interpret and speak in this local 
       level: this.consecutiveSafetyBlocks,
       lastCloseCode: this.provider?.lastCloseCode,
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // Face recognition
+  // -------------------------------------------------------------------------
+
+  /**
+   * Match each incoming face descriptor against the student's known people
+   * (self + linked users + contacts) via the database. Populates
+   * `currentIdentifiedFaces`, pushes the list to the client for the debug
+   * display, and rate-limit-bumps `recordContactSighting()` for matches.
+   */
+  private async recognizeFaces(
+    descriptors: Array<{ descriptor: number[]; boundingBox?: { x: number; y: number; w: number; h: number } }>,
+  ): Promise<void> {
+    if (!this.studentId) return;
+
+    if (!descriptors.length) {
+      if (this.currentIdentifiedFaces.length) {
+        this.currentIdentifiedFaces = [];
+        this.currentIdentifiedFacesAt = Date.now();
+        this.send({ type: "people_identified", data: [] });
+      }
+      return;
+    }
+
+    const matches = await Promise.all(
+      descriptors.map(d => findMatchingFace(d.descriptor, this.studentId!).catch(() => null as FaceMatchResult | null)),
+    );
+
+    let unknownCounter = 0;
+    const wire: IdentifiedFaceWire[] = descriptors.map((d, i) => {
+      const m = matches[i];
+      if (m && m.matched) {
+        return {
+          faceIndex: i,
+          matched: true,
+          name: m.name,
+          entityType: m.entityType,
+          entityId: m.entityId,
+          relationship: m.relationship,
+          confidence: m.confidence,
+          boundingBox: d.boundingBox,
+        };
+      }
+      unknownCounter += 1;
+      return {
+        faceIndex: i,
+        matched: false,
+        name: `Unknown #${unknownCounter}`,
+        confidence: 0,
+        boundingBox: d.boundingBox,
+      };
+    });
+
+    this.currentIdentifiedFaces = wire;
+    this.currentIdentifiedFacesAt = Date.now();
+    this.send({ type: "people_identified", data: wire });
+
+    // Rate-limited sighting bumps for confidently-matched contacts only
+    const now = Date.now();
+    for (const f of wire) {
+      if (!f.matched || f.entityType !== "contact" || !f.entityId) continue;
+      if (f.confidence < 0.4) continue;
+      const last = this.lastSightingBumpAt.get(f.entityId) ?? 0;
+      if (now - last < LiveRelay.SIGHTING_BUMP_INTERVAL_MS) continue;
+      this.lastSightingBumpAt.set(f.entityId, now);
+      recordContactSighting(f.entityId).catch(err => {
+        logLiveSession("SIGHTING_BUMP_ERROR", `${f.entityId}: ${(err as Error).message}`);
+      });
+    }
+  }
+
+  /**
+   * Render the currently-identified faces as a compact context block for the
+   * model. Returns an empty string when nothing recent is on file. The block
+   * is appended to the frame_grid prompt so the model knows who is visible
+   * and how confident the match is.
+   */
+  private buildPeoplePresentContext(): string {
+    if (!this.currentIdentifiedFaces.length) return "";
+    if (Date.now() - this.currentIdentifiedFacesAt > LiveRelay.IDENTIFIED_FACES_TTL_MS) return "";
+    const lines = this.currentIdentifiedFaces.map(f => {
+      if (!f.matched) return `- ${f.name} (no database match)`;
+      const conf = (f.confidence * 100).toFixed(0);
+      const rel = f.relationship ? `, ${f.relationship}` : "";
+      return `- ${f.name}${rel} — ${conf}% confidence`;
+    });
+    return `[PEOPLE PRESENT]\n${lines.join("\n")}`;
   }
 
   // -------------------------------------------------------------------------

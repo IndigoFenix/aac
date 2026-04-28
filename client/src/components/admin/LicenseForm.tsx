@@ -25,6 +25,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Upload, X } from 'lucide-react';
+import { PhoneInput } from '@/components/PhoneInput';
 import {
   useLicenseMutations,
   type AdminLicense,
@@ -72,6 +73,16 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
   const [instituteLanguage, setInstituteLanguage] = useState<string>(language || 'en');
   const [instituteLogo, setInstituteLogo] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+
+  // Family-institute provisioning: optional guardian-identity fields the
+  // admin captured off-band (intake call, signed paperwork). Stored on
+  // license.inviteDefaults so the consent wizard prefills.
+  const [country, setCountry] = useState('');
+  const [phone, setPhone] = useState('');
+  const [govIdType, setGovIdType] = useState<'national_id' | 'passport' | 'driver_license' | 'other'>('national_id');
+  const [govIdCountry, setGovIdCountry] = useState('');
+  const [govIdNumber, setGovIdNumber] = useState('');
+  const [identityProvenanceNote, setIdentityProvenanceNote] = useState('');
 
   // License fields
   const [name, setName] = useState('');
@@ -242,6 +253,19 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
           instituteType,
           language: instituteLanguage,
           instituteLogo: instituteLogo || undefined,
+          // Guardian-identity prefill is only meaningful for family institutes —
+          // backend rejects them for school/clinic anyway, but keep the wire
+          // payload tidy.
+          ...(instituteType === 'family' && {
+            country: country.trim() ? country.trim().toUpperCase() : undefined,
+            phone: phone.trim() || undefined,
+            governmentIdNumber: govIdNumber.trim() || undefined,
+            governmentIdType: govIdNumber.trim() ? govIdType : undefined,
+            governmentIdCountry: govIdNumber.trim() && govIdCountry.trim()
+              ? govIdCountry.trim().toUpperCase()
+              : undefined,
+            identityProvenanceNote: identityProvenanceNote.trim() || undefined,
+          }),
         };
         await createLicense.mutateAsync(data);
         toast({ title: t('admin.licenses.created') });
@@ -414,6 +438,83 @@ export function LicenseForm({ open, onClose, license }: LicenseFormProps) {
                   </div>
                 </div>
               </div>
+
+              {/* Family-institute consent prefill — only renders for family
+                  type. All fields optional; what the admin captures here
+                  pre-fills the in-product consent wizard the parent fills
+                  in later. See planning-docs/student-consent-onboarding-plan.md. */}
+              {instituteType === 'family' && (
+                <>
+                  <Separator />
+                  <div>
+                    <h3 className="text-sm font-semibold mb-1">
+                      {t('admin.licenses.guardianIdentity.header') || 'Guardian identity (optional)'}
+                    </h3>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      {t('admin.licenses.guardianIdentity.description')
+                        || 'If you verified the parent\'s identity off-band (intake call, signed forms), capture it here so the consent wizard prefills. The parent can still edit before signing.'}
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label>{t('admin.licenses.guardianIdentity.country') || 'Country'}</Label>
+                        <Input
+                          value={country}
+                          maxLength={2}
+                          onChange={(e) => setCountry(e.target.value.toUpperCase())}
+                          placeholder="IL"
+                        />
+                      </div>
+                      <div>
+                        <Label>{t('admin.licenses.guardianIdentity.phone') || 'Phone'}</Label>
+                        <PhoneInput
+                          value={phone}
+                          onChange={setPhone}
+                          defaultCountry={country || 'IL'}
+                        />
+                      </div>
+                      <div>
+                        <Label>{t('admin.licenses.guardianIdentity.govIdType.label') || 'ID type'}</Label>
+                        <Select value={govIdType} onValueChange={(v) => setGovIdType(v as any)}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="national_id">{t('admin.licenses.guardianIdentity.govIdType.national_id') || 'National ID'}</SelectItem>
+                            <SelectItem value="passport">{t('admin.licenses.guardianIdentity.govIdType.passport') || 'Passport'}</SelectItem>
+                            <SelectItem value="driver_license">{t('admin.licenses.guardianIdentity.govIdType.driver_license') || "Driver's license"}</SelectItem>
+                            <SelectItem value="other">{t('admin.licenses.guardianIdentity.govIdType.other') || 'Other'}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label>{t('admin.licenses.guardianIdentity.govIdCountry') || 'ID issuing country'}</Label>
+                        <Input
+                          value={govIdCountry}
+                          maxLength={2}
+                          onChange={(e) => setGovIdCountry(e.target.value.toUpperCase())}
+                          placeholder="IL"
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <Label>{t('admin.licenses.guardianIdentity.govIdNumber') || 'ID number'}</Label>
+                        <Input
+                          value={govIdNumber}
+                          onChange={(e) => setGovIdNumber(e.target.value)}
+                          placeholder={t('admin.licenses.guardianIdentity.govIdNumberPlaceholder') || 'ID number'}
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <Label>{t('admin.licenses.guardianIdentity.provenanceNote') || 'How was identity verified?'}</Label>
+                        <Input
+                          value={identityProvenanceNote}
+                          onChange={(e) => setIdentityProvenanceNote(e.target.value)}
+                          placeholder={t('admin.licenses.guardianIdentity.provenanceNotePlaceholder') || 'e.g. passport scan during intake call 2026-04-20'}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
 
               <Separator />
             </>

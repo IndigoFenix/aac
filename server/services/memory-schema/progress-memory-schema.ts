@@ -87,6 +87,7 @@ import { PROGRAM_TEAM_CONTACTS_FIELD } from "./contacts-memory-schema";
 import { parseLocalOrIsoInTimezone } from "../../lib/timezone";
 import { canWriteObject, withInstituteVisibility, type AccessCtx } from "../sharing/visibility";
 import { recordShareDerivedViewSingle } from "../sharing/audit";
+import { requireConsentForMemoryWrite } from "../consent/consentGate";
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -349,6 +350,7 @@ const programOps: MemoryDBOperations<Program> = {
     const studentId = ctx.all.studentId;
     const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
     if (!studentId) throw new Error("studentId required for program write");
+    await requireConsentForMemoryWrite(ctx);
 
     // Context_Program is object-shaped; the array variant of the write signature
     // is only relevant to array containers, not here.

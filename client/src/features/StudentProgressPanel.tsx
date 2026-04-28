@@ -2691,7 +2691,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                                 {/* consentGiven is schema field (NOT isSigned) */}
                                 {consent.responseDate && (
                                   <p className="text-xs text-muted-foreground">
-                                    {consent.consentGiven ? t('consent.signed') : t('consent.pending')}
+                                    {consent.consentGiven ? t('consent.signed') : t('consent.pendingStatus')}
                                     {consent.signedBy && ` • ${consent.signedBy}`}
                                   </p>
                                 )}
@@ -2703,7 +2703,7 @@ export function StudentProgressPanel({ isOpen, onClose }: StudentProgressPanelPr
                               ) : (
                                 <Circle className="w-3 h-3 me-1" />
                               )}
-                              {consent.consentGiven ? t('consent.signed') : t('consent.pending')}
+                              {consent.consentGiven ? t('consent.signed') : t('consent.pendingStatus')}
                             </Badge>
                           </div>
                         </CardContent>

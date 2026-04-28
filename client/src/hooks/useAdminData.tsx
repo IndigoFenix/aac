@@ -501,6 +501,15 @@ export interface CreateLicenseData {
   instituteType?: 'school' | 'clinic' | 'family';
   language?: string;
   instituteLogo?: File;
+  // Family-institute provisioning: optional guardian-identity bits captured
+  // off-band by the admin so the in-product consent wizard prefills.
+  // See planning-docs/student-consent-onboarding-plan.md.
+  country?: string;
+  phone?: string;
+  governmentIdNumber?: string;
+  governmentIdType?: 'national_id' | 'passport' | 'driver_license' | 'other';
+  governmentIdCountry?: string;
+  identityProvenanceNote?: string;
 }
 
 export interface UpdateLicenseData {

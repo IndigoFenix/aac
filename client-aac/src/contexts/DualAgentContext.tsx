@@ -2,7 +2,7 @@
 // Context for the dual-agent AAC system
 
 import React, { createContext, useContext, useCallback, useEffect, useRef, useState } from "react";
-import type { DualAgentMessage, IdentifiedPerson, BoardPatch, ActiveAppData, CachedAudioClip, UseDualAgentReturn } from "@/hooks/dual-agent-types";
+import type { DualAgentMessage, IdentifiedPerson, IdentifiedFace, BoardPatch, ActiveAppData, CachedAudioClip, UseDualAgentReturn } from "@/hooks/dual-agent-types";
 import { useLiveSession } from "@/hooks/useLiveSession";
 import type { CachedRequest } from "@/hooks/useDebugRequestCache";
 import { useCameraAttentivenessOptional } from "@/contexts/CameraAttentivenessContext";
@@ -84,6 +84,8 @@ interface DualAgentContextType {
   debugData: Record<string, any>;
   requestCache: CachedRequest[];
   audioClipCache: CachedAudioClip[];
+  /** Latest server-side face matching results — empty array when no faces or no descriptors recently sent. */
+  identifiedFaces: IdentifiedFace[];
 
   // Active app
   activeApp: ActiveAppData | null;
@@ -624,6 +626,7 @@ function ProviderShell({
     debugData: agent.debugData,
     requestCache: agent.requestCache,
     audioClipCache: agent.audioClipCache,
+    identifiedFaces: agent.identifiedFaces,
 
     activeApp: agent.activeApp,
     dismissApp: agent.dismissApp,

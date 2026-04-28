@@ -47,6 +47,7 @@ import {
   Check,
 } from 'lucide-react';
 import { BiometricPhotoUpload } from '@/components/BiometricPhotoUpload';
+import { ConsentWizard } from '@/features/consent/ConsentWizard';
 
 // =============================================================================
 // TYPES
@@ -90,6 +91,10 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
   // For creation: multi-select array of institute IDs
   const [selectedInstituteIds, setSelectedInstituteIds] = useState<string[]>([]);
 
+  // After creating in a family institute, surface the consent wizard for the
+  // newly-created student. Empty until the create mutation succeeds.
+  const [pendingConsentStudentId, setPendingConsentStudentId] = useState<string | null>(null);
+
   // ==========================================================================
   // MUTATIONS
   // ==========================================================================
@@ -99,7 +104,7 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
       const res = await apiRequest('POST', '/api/students', studentData);
       return res.json();
     },
-    onSuccess: async () => {
+    onSuccess: async (data: any) => {
       await refetchStudent();
       queryClient.invalidateQueries({ queryKey: ['/api/students'] });
 
@@ -108,7 +113,18 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
         description: t('toast.studentCreatedDesc') || 'The student has been created successfully.',
       });
 
-      handleClose();
+      // If the creator is a family-institute admin, the server auto-creates a
+      // guardian-contact row pointing at them. Surface the consent wizard so
+      // they can sign now rather than ending up in consent_pending state.
+      const newStudentId = data?.student?.id;
+      const createdInFamily = institutes.some(
+        (i) => selectedInstituteIds.includes(i.id) && i.type === 'family',
+      );
+      if (newStudentId && createdInFamily) {
+        setPendingConsentStudentId(newStudentId);
+      } else {
+        handleClose();
+      }
     },
     onError: (error: any) => {
       toast({
@@ -162,7 +178,7 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
       setFormData({
         firstName: editingStudent.firstName || '',
         lastName: editingStudent.lastName || '',
-        gender: editingStudent.gender || '',
+        gender: (editingStudent.gender || '').toLowerCase(),
         birthDate: editingStudent.birthDate || '',
       });
     } else {
@@ -311,9 +327,9 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
                   <SelectValue placeholder={t('student.genderPlaceholder') || 'Select gender'} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Male">{t('student.genderMale') || 'Male'}</SelectItem>
-                  <SelectItem value="Female">{t('student.genderFemale') || 'Female'}</SelectItem>
-                  <SelectItem value="Other">{t('student.genderOther') || 'Other'}</SelectItem>
+                  <SelectItem value="male">{t('student.genderMale') || 'Male'}</SelectItem>
+                  <SelectItem value="female">{t('student.genderFemale') || 'Female'}</SelectItem>
+                  <SelectItem value="other">{t('student.genderOther') || 'Other'}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -445,6 +461,16 @@ export function StudentModal({ isOpen, onClose, editingStudent }: StudentModalPr
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      {pendingConsentStudentId && (
+        <ConsentWizard
+          studentId={pendingConsentStudentId}
+          onClose={() => {
+            setPendingConsentStudentId(null);
+            handleClose();
+          }}
+        />
+      )}
     </Dialog>
   );
 }

@@ -18,6 +18,7 @@ import PurchaseCredits from "@/pages/purchase-credits";
 import TermsOfService from "@/pages/terms-of-service";
 import PrivacyPolicy from "@/pages/privacy-policy";
 import CookiePolicy from "@/pages/cookie-policy";
+import ConsentSignPage from "@/pages/ConsentSignPage";
 import AccessibilityStatement from "@/pages/accessibility-statement";
 import AIPolicy from "@/pages/ai-policy";
 import OnboardingFlow from "@/pages/OnboardingFlow";
@@ -170,6 +171,9 @@ function Router() {
       <Route path="/cookie-policy" component={CookiePolicy} />
       <Route path="/accessibility" component={AccessibilityStatement} />
       <Route path="/ai-policy" component={AIPolicy} />
+
+      {/* Magic-link consent — public, token-authed (parents may not have accounts). */}
+      <Route path="/consent/sign" component={ConsentSignPage} />
 
       {/* MFA Recovery routes */}
       <Route path="/mfa-recovery">

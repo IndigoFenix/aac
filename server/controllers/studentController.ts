@@ -138,6 +138,24 @@ export class StudentController {
         )
       );
 
+      // For family-institute creators, auto-create a guardian contact linked to
+      // the parent. The consent wizard reads from this row to prefill the
+      // identity fields the admin captured at license provisioning.
+      try {
+        const { autoCreateGuardianContactForFamilyAdmin } = await import(
+          "../services/consent/guardianContactAutoCreate"
+        );
+        await autoCreateGuardianContactForFamilyAdmin({
+          studentId: student.id,
+          creatingUserId: currentUser.id,
+          instituteIds,
+        });
+      } catch (err) {
+        // Don't fail student creation if guardian-contact auto-create errors.
+        // The parent can add themselves as a contact manually.
+        console.error("Auto-create guardian contact failed:", err);
+      }
+
       res.json({
         success: true,
         message: "student created successfully",

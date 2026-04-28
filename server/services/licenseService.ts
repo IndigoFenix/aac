@@ -5,7 +5,17 @@ import { licenseRepository, instituteRepository, studentRepository } from "../re
 import { emailService } from "./emailService";
 import type { InsertLicense, UpdateLicense, License } from "@shared/schema";
 import { type LicensePermissions, resolvePermissions, MAX_LICENSE_PERMISSIONS } from "@shared/license-permissions";
+import { toE164 } from "@shared/phone";
 import crypto from "crypto";
+
+class LicenseValidationError extends Error {
+  readonly code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+    this.name = "LicenseValidationError";
+  }
+}
 
 interface CreateLicenseInput {
   // License fields
@@ -31,6 +41,17 @@ interface CreateLicenseInput {
   instituteName?: string;
   instituteType?: "school" | "clinic" | "family";
   instituteLogo?: string; // base64 data URI
+
+  // Family-institute provisioning: optional guardian-identity bits captured
+  // off-band by the admin (intake call, signed paperwork, etc.). Stored on
+  // license.inviteDefaults so the in-product consent wizard prefills.
+  // See planning-docs/student-consent-onboarding-plan.md.
+  country?: string;                                            // ISO 3166-1 alpha-2
+  phone?: string;                                              // E.164
+  governmentIdNumber?: string;
+  governmentIdType?: 'national_id' | 'passport' | 'driver_license' | 'other';
+  governmentIdCountry?: string;                                // ISO 3166-1 alpha-2
+  identityProvenanceNote?: string;                             // admin attestation
 
   // Language for email (e.g. 'he' for Hebrew)
   language?: string;
@@ -58,9 +79,43 @@ class LicenseService {
     // Step 2: Generate invite token for non-institute licenses
     const inviteToken = instituteId ? undefined : crypto.randomBytes(32).toString("hex");
 
-    // Step 3: Build invite defaults from recipient info
-    const inviteDefaults = (data.firstName || data.lastName || data.userType)
+    // Step 3: Build invite defaults from recipient info. Guardian-identity
+    // fields are accepted only for family-institute provisioning — capturing
+    // them on a school/clinic license would store irrelevant data on the
+    // wrong record.
+    const isFamilyProvisioning = data.instituteType === "family";
+    const baseDefaults = (data.firstName || data.lastName || data.userType)
       ? { firstName: data.firstName, lastName: data.lastName, userType: data.userType }
+      : {};
+    // Normalize the captured phone to E.164 using the captured country.
+    // We reject rather than accept-then-fail-later: bad data on a license
+    // ripples downstream into the consent wizard and the OTP send path.
+    let normalizedPhone: string | undefined = undefined;
+    if (isFamilyProvisioning && data.phone && data.phone.trim()) {
+      const e164 = toE164(data.phone, data.country ?? "IL");
+      if (!e164) {
+        throw new LicenseValidationError(
+          "phone_invalid",
+          `Phone "${data.phone}" cannot be normalized to E.164 (country=${data.country ?? "unknown"}). ` +
+            `Use the country dropdown or enter the number in international format.`,
+        );
+      }
+      normalizedPhone = e164;
+    }
+
+    const familyDefaults = isFamilyProvisioning
+      ? {
+          country: data.country,
+          phone: normalizedPhone,
+          governmentIdNumber: data.governmentIdNumber,
+          governmentIdType: data.governmentIdType,
+          governmentIdCountry: data.governmentIdCountry,
+          identityProvenanceNote: data.identityProvenanceNote,
+        }
+      : {};
+    const merged = { ...baseDefaults, ...familyDefaults };
+    const inviteDefaults = Object.values(merged).some((v) => v !== undefined && v !== null)
+      ? merged
       : null;
 
     // Normalize email to lowercase for consistent lookups

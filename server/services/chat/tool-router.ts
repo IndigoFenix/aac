@@ -694,7 +694,7 @@ export async function callApiEndpoint(
       body: JSON.stringify(body),
     });
 
-    const responseBody = await response.json();
+    const responseBody = (await response.json()) as any;
     if (responseBody?.error) throw new Error(responseBody.error.message);
 
     if (!hideLogs) console.log(`HTTP endpoint ${endpoint.name} response:`, responseBody);

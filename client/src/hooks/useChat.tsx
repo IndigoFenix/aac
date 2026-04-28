@@ -611,6 +611,11 @@ export const ChatProvider = ({
       // Invalidate the main students list
       queryClient.invalidateQueries({ queryKey: ['/api/students'] });
 
+      // StudentProvider holds its list in useState (not useQuery), so cache
+      // invalidation alone won't refresh it. Notify it explicitly so panels
+      // that read from useStudent().students see the new student.
+      window.dispatchEvent(new CustomEvent('cliniaacian:students-updated'));
+
       // If a specific student was updated, also invalidate their details
       const updatedStudentId = contextData.studentUpdated?.studentId;
       if (updatedStudentId) {

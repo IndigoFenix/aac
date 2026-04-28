@@ -439,6 +439,30 @@ export class ShareInviteRepository {
    * the bulk-ungrant flow: a guardian revoking all access they granted to a
    * specific recipient (e.g. when a student transfers institutes).
    */
+  /**
+   * All active object + standing shares for a student, regardless of
+   * guardian or target institute. Used by the consent-revocation cascade.
+   */
+  async listAllActiveSharesForStudent(
+    studentId: string,
+  ): Promise<{ objectShares: ObjectShare[]; standingShares: StandingShare[] }> {
+    const [objectRows, standingRows] = await Promise.all([
+      db
+        .select()
+        .from(objectShares)
+        .where(
+          and(eq(objectShares.studentId, studentId), isNull(objectShares.revokedAt)),
+        ),
+      db
+        .select()
+        .from(standingShares)
+        .where(
+          and(eq(standingShares.studentId, studentId), isNull(standingShares.revokedAt)),
+        ),
+    ]);
+    return { objectShares: objectRows, standingShares: standingRows };
+  }
+
   async listActiveSharesForGuardianAtInstitute(
     guardianUserId: string,
     studentId: string,

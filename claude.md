@@ -40,6 +40,12 @@ If you see any missing translations on the client while working, add them.
 All translation files should have identical keys on identical lines.
 Use the scripts/validate-i18n.ts to check for this after editing translation files.
 
+## Testing
+At the end of each minor task, check to see if we have a testing suite set up for that part of the system. If not, create one. If so, test it.
+Run a full npm test after completing major tasks.
+The npm test does not call the real LLM - we use a mock LLM for this instead.
+Don't run test:llm or test:ai without being instructed to.
+
 ## General Behaviors
 Use logs whenever needed - preferably logging to a file rather than the console.
 If you try to fix an error and fail, don't hesitate to create a log that will help uncover the issue. The log can always be removed when the issue is fixed.

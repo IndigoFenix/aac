@@ -13,6 +13,7 @@ import { ShareInboxBell } from '@/features/sharing/ShareInboxBell';
 import { openUI } from '@/lib/uiEvents';
 import { apiRequest, apiUrl } from '@/lib/queryClient';
 import { useStudentLabel } from '@/hooks/useStudentLabel';
+import { ConsentMissingIndicator } from '@/components/ConsentMissingIndicator';
 import { cn } from '@/lib/utils';
 
 type TopHeaderProps = {
@@ -163,6 +164,7 @@ export function TopHeader({ onToggleSidebar }: TopHeaderProps) {
               </option>
             ))}
           </select>
+          <ConsentMissingIndicator studentId={student?.id} size="md" />
         </div>
 
         {/* License type badge - hidden on mobile */}

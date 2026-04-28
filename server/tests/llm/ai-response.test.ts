@@ -297,7 +297,7 @@ describe('AI Response Integration Tests', () => {
       );
 
       const { text, status } = await sendMessage(prompt, {
-        activeFeature: 'assistant',
+        activeFeature: 'assistant' as any,
       });
 
       expect(text.length).toBeGreaterThan(50);

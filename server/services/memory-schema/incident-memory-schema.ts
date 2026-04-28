@@ -20,6 +20,7 @@ import type {
 import type { Incident } from "@shared/schema";
 import { parseLocalOrIsoInTimezone } from "../../lib/timezone";
 import { canWriteObject, type AccessCtx } from "../sharing/visibility";
+import { requireConsentForMemoryWrite } from "../consent/consentGate";
 
 function toMemoryValue(record: Incident): any {
   const { ...rest } = record;
@@ -78,6 +79,7 @@ const incidentOps: MemoryDBOperations<Incident> = {
   add: async (ctx, value) => {
     const studentId = ctx.all.studentId as string | undefined;
     if (!studentId) throw new Error("studentId required to record an incident");
+    await requireConsentForMemoryWrite(ctx);
     const tz = ctx.all.timezone as string | undefined;
     const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
     // Institute principals attribute new incidents to their own institute.
@@ -98,6 +100,7 @@ const incidentOps: MemoryDBOperations<Incident> = {
   },
 
   update: async (ctx, key, value) => {
+    await requireConsentForMemoryWrite(ctx);
     const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
     // Load the existing row through the visibility gate so an institute
     // principal can't update an incident they shouldn't even be able to read.
@@ -119,6 +122,7 @@ const incidentOps: MemoryDBOperations<Incident> = {
   },
 
   delete: async (ctx, key) => {
+    await requireConsentForMemoryWrite(ctx);
     const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
     const existing = await incidentRepository.getById(String(key), accessCtx);
     if (!existing) throw new Error("Incident not found");

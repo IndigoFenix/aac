@@ -213,6 +213,19 @@ export const StudentProvider = ({ children }: { children: ReactNode }) => {
     checkStudentStatus();
   }, [user, currentInstituteId]);
 
+  // Refetch when the students list is updated elsewhere (e.g. AI chat adds a
+  // student). The provider holds students in useState rather than useQuery,
+  // so React Query cache invalidation alone wouldn't trigger a re-fetch.
+  useEffect(() => {
+    if (!user || !currentInstituteId) return;
+    const handler = () => {
+      queryClient.removeQueries({ queryKey: currentQueryKey });
+      loadStudents();
+    };
+    window.addEventListener('cliniaacian:students-updated', handler);
+    return () => window.removeEventListener('cliniaacian:students-updated', handler);
+  }, [user, currentInstituteId]);
+
   const contextValue: StudentContextType = {
     student,
     students,

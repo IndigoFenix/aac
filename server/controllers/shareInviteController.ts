@@ -77,6 +77,7 @@ const errorStatus: Record<ShareInviteErrorCode, number> = {
   share_expired: 410,
   validation: 400,
   sensitive_unacknowledged: 422,
+  consent_required: 412,
 };
 
 function handleError(res: Response, err: unknown): void {

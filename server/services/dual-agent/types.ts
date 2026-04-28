@@ -92,6 +92,13 @@ export interface DualAgentSessionState {
   studentId: string;
   userId?: string;
 
+  /**
+   * Set by LiveRelay during init so the dual-agent-service can ask the
+   * relay to close its WebSocket cleanly (e.g. consent revoked mid-session).
+   * Optional because non-WS callers (legacy HTTP path, tests) don't set it.
+   */
+  onTerminate?: (reason: string) => void;
+
   // Agent states
   interactivePrompt: string; // Full prompt for Interactive agent
   monitorBusy: boolean; // Is Monitor currently processing?

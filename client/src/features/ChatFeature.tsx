@@ -51,6 +51,7 @@ import { useSpeechToText } from '@/hooks/useSpeechToText';
 import { useTextToSpeech, htmlToPlainText } from '@/hooks/useTextToSpeech';
 import { ChatMessage, ChatMessageContent } from '@shared/schema';
 import { PersonaIcon, getPersonaColorClasses } from '@/components/chat/PersonaIcon';
+import { ConsentMissingIndicator } from '@/components/ConsentMissingIndicator';
 import { resolveLocalizedText } from '@shared/localized-text';
 import { cn } from '@/lib/utils';
 import { marked } from 'marked';
@@ -740,8 +741,11 @@ export function ChatFeature() {
                 }
               </p>
               {student && (
-                <p className="text-sm text-muted-foreground/70">
-                  {t('chat.workingWith')} <span className="font-medium">{student.firstName || student.name.split(' ')[0]}</span>
+                <p className="text-sm text-muted-foreground/70 inline-flex items-center gap-1.5 justify-center">
+                  <span>
+                    {t('chat.workingWith')} <span className="font-medium">{student.firstName || student.name.split(' ')[0]}</span>
+                  </span>
+                  <ConsentMissingIndicator studentId={student.id} />
                 </p>
               )}
             </div>

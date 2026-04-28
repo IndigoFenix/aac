@@ -21,6 +21,14 @@ const createLicenseSchema = z.object({
   instituteName: z.string().optional(),
   instituteType: z.enum(["school", "clinic", "family"]).optional(),
   language: z.string().optional(),
+  // Family-institute provisioning: guardian-identity bits ride into
+  // license.inviteDefaults so the consent wizard prefills.
+  country: z.string().optional(),
+  phone: z.string().optional(),
+  governmentIdNumber: z.string().optional(),
+  governmentIdType: z.enum(["national_id", "passport", "driver_license", "other"]).optional(),
+  governmentIdCountry: z.string().optional(),
+  identityProvenanceNote: z.string().optional(),
 });
 
 const updateLicenseSchema = z.object({
@@ -102,6 +110,10 @@ class LicenseController {
       res.status(201).json({ license });
     } catch (error: any) {
       console.error("Error creating license:", error);
+      if (error?.name === "LicenseValidationError") {
+        res.status(400).json({ message: error.message, code: error.code });
+        return;
+      }
       res.status(500).json({ message: "Failed to create license" });
     }
   }

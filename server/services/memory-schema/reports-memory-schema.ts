@@ -36,6 +36,7 @@ import {
   type ListResult,
 } from "../chat/memory-types";
 import { canWriteObject, withInstituteVisibility, type AccessCtx } from "../sharing/visibility";
+import { requireConsentForMemoryWrite } from "../consent/consentGate";
 import {
   recordShareDerivedView,
   recordShareDerivedViewSingle,
@@ -338,6 +339,7 @@ const medicalRecordWriteOp = async (ctx: DBOperationContext, value: any): Promis
   const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
 
   if (!studentId) throw new Error("studentId required for medical record write");
+  await requireConsentForMemoryWrite(ctx);
 
   if (!hideLogs) console.log(`[medicalRecordWriteOp] Writing for studentId: ${studentId}`);
   if (!hideLogs) console.log(`[medicalRecordWriteOp] Raw value:`, value);
@@ -565,6 +567,7 @@ const functionalReportWriteOp = async (ctx: DBOperationContext, value: any): Pro
   const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
 
   if (!studentId) throw new Error("studentId required for functional report write");
+  await requireConsentForMemoryWrite(ctx);
 
   if (!hideLogs) console.log(`[functionalReportWriteOp] Writing for studentId: ${studentId}`);
   if (!hideLogs) console.log(`[functionalReportWriteOp] Raw value:`, value);
@@ -766,6 +769,7 @@ const educationalReportWriteOp = async (ctx: DBOperationContext, value: any): Pr
   const accessCtx = ctx.all.accessCtx as AccessCtx | undefined;
 
   if (!studentId) throw new Error("studentId required for educational report write");
+  await requireConsentForMemoryWrite(ctx);
 
   if (!hideLogs) console.log(`[educationalReportWriteOp] Writing for studentId: ${studentId}`);
   if (!hideLogs) console.log(`[educationalReportWriteOp] Raw value:`, value);

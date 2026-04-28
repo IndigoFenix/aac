@@ -31,6 +31,8 @@ import {
 } from '@/components/ui/select';
 import { Loader2, Save, Link2, Unlink } from 'lucide-react';
 import { BiometricPhotoUpload } from '@/components/BiometricPhotoUpload';
+import { PhoneInput } from '@/components/PhoneInput';
+import { useStudent } from '@/hooks/useStudent';
 
 interface LinkableEntity {
   id: string;
@@ -129,6 +131,8 @@ function currentLinkValue(form: FormState): LinkValue {
 }
 
 export function ContactEditorModal({ isOpen, onClose, studentId, contact }: ContactEditorModalProps) {
+  const { student: selectedStudent } = useStudent();
+  const studentCountry = selectedStudent?.id === studentId ? selectedStudent?.country : null;
   const { t, isRTL } = useLanguage();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -362,9 +366,10 @@ export function ContactEditorModal({ isOpen, onClose, studentId, contact }: Cont
             </div>
             <div className="space-y-1">
               <Label className="text-sm">{t('contacts.phone')}</Label>
-              <Input
+              <PhoneInput
                 value={form.contactPhone}
-                onChange={(e) => setForm((f) => ({ ...f, contactPhone: e.target.value }))}
+                onChange={(v) => setForm((f) => ({ ...f, contactPhone: v }))}
+                defaultCountry={studentCountry}
               />
             </div>
           </div>

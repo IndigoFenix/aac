@@ -40,6 +40,7 @@ import {
 } from "../../repositories/shareInviteRepository";
 import { instituteRepository } from "../../repositories/instituteRepository";
 import { activityLogService } from "../activityLogService";
+import { requireActiveConsent, ConsentGateError } from "../consent/consentGate";
 
 // ============================================================================
 // Public errors — the controller layer maps these to HTTP responses.
@@ -63,7 +64,8 @@ export type ShareInviteErrorCode =
   | "code_expired"
   | "share_expired"
   | "validation"
-  | "sensitive_unacknowledged";
+  | "sensitive_unacknowledged"
+  | "consent_required";
 
 // ============================================================================
 // Inputs
@@ -123,6 +125,21 @@ class StudentShareInviteService {
   async createInvite(
     req: CreateInviteRequest,
   ): Promise<{ invite: StudentShareInvite; code: string }> {
+    // ── Consent gate: a student in consent_pending state cannot have their
+    //    PHI shared. No-op when CONSENT_GATE_ENABLED is unset.
+    try {
+      await requireActiveConsent(req.studentId);
+    } catch (e) {
+      if (e instanceof ConsentGateError) {
+        throw new ShareInviteError(
+          "Active student consent record required before sharing",
+          "consent_required",
+          { studentId: e.studentId },
+        );
+      }
+      throw e;
+    }
+
     // ── Permission: source institute admin OR guardian (when source is null)
     if (req.sourceInstituteId) {
       const isAdmin = await instituteRepository.isUserAdminOfInstitute(
@@ -528,6 +545,7 @@ class StudentShareInviteService {
   async revokeObjectShare(
     objectShareId: string,
     userId: string,
+    extraDetails?: Record<string, unknown>,
   ): Promise<ObjectShare> {
     const updated = await shareInviteRepository.revokeObjectShare(
       objectShareId,
@@ -547,7 +565,7 @@ class StudentShareInviteService {
       subjectId1: updated.studentId,
       subjectType2: "share_invite",
       subjectId2: updated.shareInviteId,
-      details: { scope: "object_share", objectShareId, objectType: updated.objectType },
+      details: { scope: "object_share", objectShareId, objectType: updated.objectType, ...extraDetails },
     });
     return updated;
   }
@@ -555,6 +573,7 @@ class StudentShareInviteService {
   async revokeStandingShare(
     standingShareId: string,
     userId: string,
+    extraDetails?: Record<string, unknown>,
   ): Promise<StandingShare> {
     const updated = await shareInviteRepository.revokeStandingShare(
       standingShareId,
@@ -574,7 +593,7 @@ class StudentShareInviteService {
       subjectId1: updated.studentId,
       subjectType2: "share_invite",
       subjectId2: updated.shareInviteId,
-      details: { standingShareId },
+      details: { standingShareId, ...extraDetails },
     });
     return updated;
   }
@@ -759,6 +778,44 @@ class StudentShareInviteService {
    * so the audit trail stays per-grant — no special bulk event type. Rows
    * already revoked are silently skipped (filtered at list time).
    */
+  /**
+   * Cascade revoke: revoke every active object_share and standing_share for
+   * a student, regardless of guardian or target institute. Called by the
+   * consent-revocation flow so withdrawing baseline consent automatically
+   * tears down every grant the student authorized previously. Each per-grant
+   * revoke logs its own audit entry tagged with `cascade_reason`.
+   */
+  async cascadeRevokeAllForStudent(
+    studentId: string,
+    actingUserId: string,
+    cascadeReason: string,
+  ): Promise<{ objectSharesRevoked: number; standingSharesRevoked: number }> {
+    const { objectShares: objs, standingShares: stds } =
+      await shareInviteRepository.listAllActiveSharesForStudent(studentId);
+
+    let objectSharesRevoked = 0;
+    let standingSharesRevoked = 0;
+    const extra = { cascade_reason: cascadeReason };
+
+    for (const os of objs) {
+      try {
+        await this.revokeObjectShare(os.id, actingUserId, extra);
+        objectSharesRevoked++;
+      } catch (err) {
+        if (!(err instanceof ShareInviteError && err.code === "not_found")) throw err;
+      }
+    }
+    for (const ss of stds) {
+      try {
+        await this.revokeStandingShare(ss.id, actingUserId, extra);
+        standingSharesRevoked++;
+      } catch (err) {
+        if (!(err instanceof ShareInviteError && err.code === "not_found")) throw err;
+      }
+    }
+    return { objectSharesRevoked, standingSharesRevoked };
+  }
+
   async bulkRevokeForGuardianAtInstitute(
     userId: string,
     studentId: string,

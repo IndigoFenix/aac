@@ -70,6 +70,11 @@ app.get('/health', (_req, res) => {
     console.error("Request error:", err);
   });
 
+  // Start the daily minor-threshold check. No-op in tests; deferred 30s
+  // after boot for the first run.
+  const { scheduleMinorThresholdCheck } = await import("./services/consent/consentThresholdCron");
+  scheduleMinorThresholdCheck();
+
   // DEVELOPMENT: Use Vite dev server
   if (process.env.NODE_ENV === "development") {
     // Dynamic import keeps vite out of production bundle

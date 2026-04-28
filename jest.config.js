@@ -12,6 +12,12 @@ export default {
       'ts-jest',
       {
         useESM: true,
+        // Skip full cross-file type checking — transpile each file in
+        // isolation. Cuts peak memory dramatically (the memory schema
+        // types are deeply recursive). Real type errors are still caught
+        // by `npm run check` (tsc) and the IDE.
+        isolatedModules: true,
+        diagnostics: false,
         tsconfig: {
           module: 'ESNext',
           moduleResolution: 'bundler',
@@ -33,7 +39,11 @@ export default {
   testMatch: [
     '<rootDir>/server/tests/**/*.test.ts',
   ],
+  // Real-LLM tests live in tests/llm/ — excluded from default `npm test` runs
+  // because they cost money and require API keys. Run them via `npm run test:llm`.
+  testPathIgnorePatterns: ['/node_modules/', '/dist/', '/server/tests/llm/'],
   setupFilesAfterEnv: ['<rootDir>/server/tests/setup.ts'],
+  globalSetup: '<rootDir>/server/tests/global-setup.ts',
   testTimeout: 30000,
   verbose: true,
   detectOpenHandles: true,
@@ -46,5 +56,4 @@ export default {
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   rootDir: '.',
   roots: ['<rootDir>/server'],
-  testPathIgnorePatterns: ['/node_modules/', '/dist/'],
 };

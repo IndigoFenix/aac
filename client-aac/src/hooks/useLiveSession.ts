@@ -15,6 +15,7 @@ import { useDebugRequestCache, type CachedRequest } from "./useDebugRequestCache
 export type {
   DualAgentMessage,
   IdentifiedPerson,
+  IdentifiedFace,
   ActiveAppData,
   BoardPatch,
   CachedAudioClip,
@@ -22,6 +23,7 @@ export type {
 import type {
   DualAgentMessage,
   IdentifiedPerson,
+  IdentifiedFace,
   ActiveAppData,
   BoardPatch,
   CachedAudioClip,
@@ -101,6 +103,9 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
   // Monitor status
   const [monitorError, setMonitorError] = useState<string | null>(null);
   const [monitorConsecutiveFailures, setMonitorConsecutiveFailures] = useState(0);
+
+  // Server-side face recognition results
+  const [identifiedFaces, setIdentifiedFaces] = useState<IdentifiedFace[]>([]);
 
   // Session state
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -593,6 +598,10 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
           setGuessingMode(msg.active ?? false);
           break;
 
+        case "people_identified":
+          setIdentifiedFaces(msg.data || []);
+          break;
+
         case "complete":
           // Turn complete — keep text visible. Mark that the next "text" message
           // should start a fresh accumulation instead of appending.
@@ -1004,6 +1013,7 @@ export function useLiveSession(options: UseLiveSessionOptions): UseDualAgentRetu
     debugData,
     requestCache: requestCache.cache,
     audioClipCache,
+    identifiedFaces,
 
     // Active app
     activeApp,

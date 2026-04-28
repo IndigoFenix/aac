@@ -3,6 +3,7 @@ import { programService, studentService } from "../services";
 import { activityLogService } from "../services/activityLogService";
 import { buildClinicianCtx } from "../services/sharing/clinicianCtx";
 import { canWriteObject } from "../services/sharing/visibility";
+import { requireConsentForResponse } from "../services/consent/consentGate";
 import {
   insertProgramSchema,
   updateProgramSchema,
@@ -311,6 +312,10 @@ export class ProgramController {
       if (ctx?.kind === "institute"
           && !(await canWriteObject(ctx, "program", program.id, program.studentId, program.instituteId))) {
         res.status(403).json({ success: false, message: "Cannot modify a program owned by another institute" });
+        return;
+      }
+
+      if (!(await requireConsentForResponse(req, res, program.studentId))) {
         return;
       }
 

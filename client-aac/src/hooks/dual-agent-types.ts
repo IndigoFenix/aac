@@ -29,6 +29,18 @@ export interface IdentifiedPerson {
   contextNotes?: string;
 }
 
+/** Server-side face match result delivered via the `people_identified` WS message. */
+export interface IdentifiedFace {
+  faceIndex: number;
+  matched: boolean;
+  name: string;
+  entityType?: "student" | "user" | "contact";
+  entityId?: string;
+  relationship?: string;
+  confidence: number;
+  boundingBox?: { x: number; y: number; w: number; h: number };
+}
+
 /** Data for an active add-on app */
 export interface ActiveAppData {
   appId: string;
@@ -95,6 +107,8 @@ export interface UseDualAgentReturn {
   debugData: Record<string, any>;
   requestCache: CachedRequest[];
   audioClipCache: CachedAudioClip[];
+  /** Latest server-side face matching results — empty array when no faces or no descriptors recently sent. */
+  identifiedFaces: IdentifiedFace[];
 
   // Active app
   activeApp: ActiveAppData | null;

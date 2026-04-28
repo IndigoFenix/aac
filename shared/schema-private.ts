@@ -222,6 +222,17 @@ export type ClassroomRole = typeof CLASSROOM_ROLES[number]["value"];
 export const verificationStatusEnum = pgEnum("verification_status", ["unverified", "pending", "verified"]);
 export const identityProviderProtocolEnum = pgEnum("identity_provider_protocol", ["oidc", "oauth2"]);
 
+// Guardian verification + informed consent (see planning-docs/student-consent-onboarding-plan.md)
+export const governmentIdTypeEnum = pgEnum("government_id_type", [
+  "national_id", "passport", "driver_license", "other",
+]);
+export const idVerificationSourceEnum = pgEnum("id_verification_source", [
+  "manual_entry", "gov_sso", "third_party_idv",
+]);
+export const shareLegalBasisEnum = pgEnum("share_legal_basis", [
+  "guardian_consent", "institutional_delegate", "formal_release_of_information",
+]);
+
 // Cross-institute student sharing (see planning-docs/cross-institute-sharing-plan.md)
 export const shareInviteStatusEnum = pgEnum("share_invite_status", [
   "pending_guardian",       // awaiting guardian co-sign
@@ -257,6 +268,11 @@ export const activityEventTypeEnum = pgEnum("activity_event_type", [
   "share_expired",
   "standing_share_granted",
   "standing_share_revoked",
+  "consent_signed",
+  "consent_revoked",
+  "consent_re_signed",
+  "guardian_id_verified",
+  "minor_threshold_crossed",
 ]);
 
 export const activitySubjectTypeEnum = pgEnum("activity_subject_type", [
@@ -269,6 +285,7 @@ export const activitySubjectTypeEnum = pgEnum("activity_subject_type", [
   "custom_app", "deep_analysis",
   "share_invite", "object_share", "standing_share",
   "incident", "monitor_note", "custom_app_assignment",
+  "consent_record",
 ]);
 
 // =============================================================================
@@ -317,6 +334,9 @@ export const users = pgTable("users", {
   mfaEnabled: boolean("mfa_enabled").default(false).notNull(),
   mfaSecret: text("mfa_secret"), // Encrypted TOTP secret
   mfaEnforcedByAdmin: boolean("mfa_enforced_by_admin").default(false).notNull(),
+
+  phone: text("phone"), // E.164
+  phoneVerifiedAt: timestamp("phone_verified_at"),
 
   // Biometric data — references shared biometric_data table (one row per real person).
   biometricDataId: varchar("biometric_data_id"),
@@ -378,6 +398,13 @@ export const students = pgTable("students", {
 
   // External storage — when set, sensitive fields are stored in the named backend
   externalStorage: varchar("external_storage"),
+
+  // Legacy-consent grace window: students that pre-date the informed-consent
+  // feature are exempt from the consent gate until this timestamp. New students
+  // get null (must collect consent before PHI ops). The migration backfills
+  // existing rows with now + 90 days. Admins can extend per-student.
+  // See planning-docs/student-consent-onboarding-plan.md.
+  legacyConsentDeadline: timestamp("legacy_consent_deadline", { withTimezone: true }),
 
   // Status and metadata
   isActive: boolean("is_active").default(true).notNull(),
@@ -536,6 +563,20 @@ export const studentContacts = pgTable("student_contacts", {
   contextNotes: text("context_notes"),
   lastSeenAt: timestamp("last_seen_at"),
   timesIdentified: integer("times_identified").default(0).notNull(),
+
+  // Guardian verification — populated when this contact signs informed consent.
+  // governmentIdNumber is sensitive; encrypt at rest via the existing
+  // PHI-column pattern when production-grade encryption lands.
+  governmentIdNumber: text("government_id_number"),
+  governmentIdType: governmentIdTypeEnum("government_id_type"),
+  governmentIdCountry: text("government_id_country"), // ISO 3166-1 alpha-2
+  governmentIdVerifiedVia: idVerificationSourceEnum("government_id_verified_via"),
+  governmentIdVerificationProvider: text("government_id_verification_provider"),
+  governmentIdVerifiedAt: timestamp("government_id_verified_at"),
+
+  isLegalGuardian: boolean("is_legal_guardian").default(false).notNull(),
+  coGuardianAcknowledged: boolean("co_guardian_acknowledged").default(false).notNull(),
+  legalGuardianDeclaredAt: timestamp("legal_guardian_declared_at"),
 
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -1304,6 +1345,169 @@ export const consentForms = pgTable("consent_forms", {
   index("idx_consent_forms_consent_type").on(table.consentType),
 ]);
 
+/**
+ * Student informed-consent records — the data-collection consent at the student
+ * level. Distinct from consent_forms (per-program ROI artefact). One active row
+ * per student authorises baseline processing; revoked rows are kept for audit
+ * and gate the student into consent_pending state.
+ *
+ * See planning-docs/student-consent-onboarding-plan.md.
+ */
+export const studentConsentRecords = pgTable("student_consent_records", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").references(() => students.id).notNull(),
+  signedByContactId: varchar("signed_by_contact_id")
+    .references(() => studentContacts.id).notNull(),
+
+  // Frozen at signing time so later edits to students.country / birthDate
+  // don't retroactively alter the consent's legal context.
+  country: text("country").notNull(),                // ISO 3166-1 alpha-2
+  ageAtSigningYears: integer("age_at_signing_years").notNull(),
+  isMinorEnhancedProtection: boolean("is_minor_enhanced_protection").default(false).notNull(),
+  enhancedProtectionRegime: text("enhanced_protection_regime"),
+  // 'us_coppa' | 'eu_gdpr_minor' | 'uk_ico_under13' | 'il_general' |
+  // 'gdpr_superset_default' | null. Resolved by per-country adapter at sign.
+
+  consentTextVersion: text("consent_text_version").notNull(),    // e.g. 'IL.2026.04'
+  consentTextHash: text("consent_text_hash").notNull(),          // SHA-256
+
+  // Required disclosures — schema-enforced shape, country-specific wording.
+  purposeAcknowledged: boolean("purpose_acknowledged").notNull(),
+  voluntarinessAcknowledged: boolean("voluntariness_acknowledged").notNull(),
+  thirdPartyTransfersAcknowledged: boolean("third_party_transfers_acknowledged").notNull(),
+  thirdPartyRecipients: jsonb("third_party_recipients").notNull(),
+
+  // Opt-ins — DEFAULT FALSE on every one. Forced false server-side when
+  // enhancedProtectionRegime forbids them (e.g., us_coppa).
+  optInModelTraining: boolean("opt_in_model_training").default(false).notNull(),
+  optInAdvertising: boolean("opt_in_advertising").default(false).notNull(),
+  optInThirdPartyResearch: boolean("opt_in_third_party_research").default(false).notNull(),
+  optInMarketingComms: boolean("opt_in_marketing_comms").default(false).notNull(),
+  optInsForcedOff: boolean("opt_ins_forced_off").default(false).notNull(),
+  // True when the regime forced the opt-ins off regardless of UI submission.
+  // Re-consent at age-out should re-prompt rather than inherit forced state.
+
+  // Identity verification + non-repudiation evidence (PPA Feb-2026 requirement).
+  // Stored as text so adding a method = data, not migration. Validated at
+  // write time against the per-regime eligibility list in shared/legal/.
+  identityVerificationMethod: text("identity_verification_method").notNull(),
+  identityVerificationEvidence: jsonb("identity_verification_evidence").notNull(),
+  nonRepudiationMethod: text("non_repudiation_method").notNull(),
+  nonRepudiationEvidence: jsonb("non_repudiation_evidence").notNull(),
+
+  signedAt: timestamp("signed_at", { withTimezone: true }).defaultNow().notNull(),
+  signedFromIp: text("signed_from_ip"),
+  signedFromUserAgent: text("signed_from_user_agent"),
+
+  // Withdrawal of consent. Cascade revokes object/standing shares — handled
+  // in service layer, not via FK cascades.
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  revokedByUserId: varchar("revoked_by_user_id").references(() => users.id),
+  revocationReason: text("revocation_reason"),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_consent_records_student").on(table.studentId),
+  index("idx_consent_records_signed_by_contact").on(table.signedByContactId),
+  index("idx_consent_records_active")
+    .on(table.studentId)
+    .where(sql`revoked_at IS NULL`),
+]);
+
+/**
+ * Consent invitations — token-based magic link a clinician sends to a parent
+ * who doesn't have a user account. The parent clicks the link, fills the
+ * wizard against the resolved (student, contact) tuple, and signs. The token
+ * IS the auth — the parent doesn't need to log in.
+ *
+ * Channel: email or SMS. Either is set at creation time. The plaintext code
+ * is shown to the clinician once (used to compose the link); only the hash
+ * is persisted. After redemption + signing, redeemedAt is set and signedConsentId
+ * points to the resulting student_consent_records row.
+ *
+ * See planning-docs/student-consent-onboarding-plan.md.
+ */
+export const consentInvitations = pgTable("consent_invitations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+
+  studentId: varchar("student_id").references(() => students.id).notNull(),
+  contactId: varchar("contact_id").references(() => studentContacts.id).notNull(),
+  sourceInstituteId: varchar("source_institute_id"),
+
+  codeHash: text("code_hash").notNull(),
+
+  createdByUserId: varchar("created_by_user_id").references(() => users.id).notNull(),
+  channel: text("channel").notNull(), // 'email' | 'sms' | 'manual'
+  sentTo: text("sent_to").notNull(),  // email address or E.164 phone (for audit)
+
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  redeemedAt: timestamp("redeemed_at", { withTimezone: true }),
+  signedConsentId: varchar("signed_consent_id").references(() => studentConsentRecords.id),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  revokedByUserId: varchar("revoked_by_user_id").references(() => users.id),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_consent_invitations_student").on(table.studentId),
+  index("idx_consent_invitations_contact").on(table.contactId),
+  uniqueIndex("idx_consent_invitations_code_hash").on(table.codeHash),
+  index("idx_consent_invitations_pending")
+    .on(table.studentId)
+    .where(sql`redeemed_at IS NULL AND revoked_at IS NULL`),
+]);
+
+/**
+ * Phone OTP codes — short-lived one-time passcodes sent over SMS for
+ * verifying possession of a phone number. Used by the consent magic-link
+ * flow to add a `verified_phone_otp` non-repudiation leg, and reusable for
+ * any other phone-verification need (e.g. user phone verification at
+ * profile time).
+ *
+ * Lifecycle:
+ *  1. service.request(phone, purpose, scopeId) inserts a row with hashed
+ *     code + expiry; SMS is dispatched.
+ *  2. service.verify(phone, code, purpose, scopeId) looks up the active
+ *     unconsumed row for that scope, checks attempts, sets consumedAt.
+ *  3. Downstream (e.g. signWithToken) reads the row to confirm the OTP
+ *     for this scope was consumed within the verification freshness
+ *     window. The row stays as audit evidence.
+ *
+ * Plaintext code is NEVER stored — only sha256(code).
+ */
+export const phoneOtpCodes = pgTable("phone_otp_codes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+
+  phone: text("phone").notNull(), // E.164
+  codeHash: text("code_hash").notNull(),
+
+  // Scope binds an OTP to what it's verifying. Purpose distinguishes use
+  // cases (consent invitation vs. user phone change vs. ...). scopeId is
+  // free-form (e.g. consent_invitations.id, users.id). Both indexed.
+  purpose: text("purpose").notNull(),
+  scopeId: text("scope_id"),
+
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(5),
+
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+
+  // Audit fingerprint of the actual SMS dispatch.
+  sendCount: integer("send_count").notNull().default(0),
+  lastProviderMessageId: text("last_provider_message_id"),
+  lastProvider: text("last_provider"),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_phone_otp_codes_active")
+    .on(table.purpose, table.scopeId, table.phone)
+    .where(sql`consumed_at IS NULL`),
+  index("idx_phone_otp_codes_expires_at").on(table.expiresAt),
+]);
+
 // =============================================================================
 // SESSIONS / CONTENT TABLES (Private)
 // =============================================================================
@@ -1609,6 +1813,14 @@ export const studentShareInvites = pgTable("student_share_invites", {
   acceptedByUserId: varchar("accepted_by_user_id").references(() => users.id),
 
   status: shareInviteStatusEnum("status").default("pending_guardian").notNull(),
+
+  // Legal basis under which this share is being made. Default 'guardian_consent'
+  // matches the existing flow. 'institutional_delegate' (FERPA "school official"
+  // / GDPR processor / HIPAA business associate) skips the guardian step;
+  // requires source-admin attestation. 'formal_release_of_information' is a
+  // documented ROI tracked outside the system; same approval path as guardian
+  // consent but tagged for audit.
+  legalBasis: shareLegalBasisEnum("legal_basis").default("guardian_consent").notNull(),
 
   // Optional message from source/guardian to target.
   message: text("message"),
@@ -2050,6 +2262,24 @@ export const insertConsentFormSchema = createInsertSchema(consentForms).omit({
   updatedAt: true,
 });
 
+export const insertStudentConsentRecordSchema = createInsertSchema(studentConsentRecords).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertConsentInvitationSchema = createInsertSchema(consentInvitations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertPhoneOtpCodeSchema = createInsertSchema(phoneOtpCodes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const updateConsentFormSchema = createInsertSchema(consentForms).omit({
   id: true,
   programId: true,
@@ -2309,6 +2539,15 @@ export type UpdateMeeting = z.infer<typeof updateMeetingSchema>;
 export type ConsentForm = typeof consentForms.$inferSelect;
 export type InsertConsentForm = z.infer<typeof insertConsentFormSchema>;
 export type UpdateConsentForm = z.infer<typeof updateConsentFormSchema>;
+
+export type StudentConsentRecord = typeof studentConsentRecords.$inferSelect;
+export type InsertStudentConsentRecord = z.infer<typeof insertStudentConsentRecordSchema>;
+
+export type ConsentInvitation = typeof consentInvitations.$inferSelect;
+export type InsertConsentInvitation = z.infer<typeof insertConsentInvitationSchema>;
+
+export type PhoneOtpCode = typeof phoneOtpCodes.$inferSelect;
+export type InsertPhoneOtpCode = z.infer<typeof insertPhoneOtpCodeSchema>;
 
 // Chat types
 export type ChatSession = typeof chatSessions.$inferSelect;

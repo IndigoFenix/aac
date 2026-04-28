@@ -460,16 +460,17 @@ export function usePersonIdentification(
         const result = matchFaceToKnownPeople(detection.descriptor);
         setCurrentIdentification(result);
 
-        // Track unmatched face descriptors for AI-triggered enrollment
-        if (!result.identified) {
-          const box = detection.detection.box;
-          unmatchedDescriptorsRef.current = [{
-            descriptor: Array.from(detection.descriptor),
-            boundingBox: box ? { x: box.x, y: box.y, w: box.width, h: box.height } : undefined,
-          }];
-        } else {
-          unmatchedDescriptorsRef.current = [];
+        // Always surface the detected descriptor so the server can run its own
+        // (authoritative) database match. The local match above is kept only
+        // for client-side face-image caching; the server is the source of
+        // truth for the AI.
+        const box = detection.detection.box;
+        unmatchedDescriptorsRef.current = [{
+          descriptor: Array.from(detection.descriptor),
+          boundingBox: box ? { x: box.x, y: box.y, w: box.width, h: box.height } : undefined,
+        }];
 
+        if (result.identified) {
           // Auto-capture face image for contacts (client-side cache only)
           if (result.person?.type === "contact") {
             const contactId = result.person.id;
